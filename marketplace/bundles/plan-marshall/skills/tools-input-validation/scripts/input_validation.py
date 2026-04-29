@@ -2,12 +2,25 @@
 """
 Shared input validation module for plan-marshall scripts.
 
-Provides validators for plan IDs, file paths, enum values, and skill notation.
-All stdlib-only — no external dependencies.
+Provides validators for the canonical identifier vocabulary plus file paths,
+enum values, and skill notation. All stdlib-only — no external dependencies.
 
 Usage:
     from input_validation import (
         validate_plan_id,
+        validate_lesson_id,
+        validate_session_id,
+        validate_task_number,
+        validate_task_id,
+        validate_component,
+        validate_hash_id,
+        validate_memory_id,
+        validate_phase_id,
+        validate_field_name,
+        validate_module_name,
+        validate_package_name,
+        validate_domain_name,
+        validate_resource_name,
         validate_relative_path,
         validate_enum,
         validate_skill_notation,
@@ -20,6 +33,33 @@ import re
 import sys
 from pathlib import Path
 
+# --- Canonical identifier regexes (single source of truth) ---
+
+PLAN_ID_RE = re.compile(r'^[a-z][a-z0-9-]*$')
+LESSON_ID_RE = re.compile(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]+$')
+SESSION_ID_RE = re.compile(r'^[A-Za-z0-9_-]{1,128}$')
+TASK_NUMBER_RE = re.compile(r'^[0-9]+$')
+TASK_ID_RE = re.compile(r'^TASK-[0-9]+$')
+COMPONENT_RE = re.compile(r'^[a-z0-9-]+(:[a-z0-9-]+)*$')
+HASH_ID_RE = re.compile(r'^[a-f0-9]{4,}$')
+MEMORY_ID_RE = re.compile(r'^[a-z0-9_-]+$')
+PHASE_ID_RE = re.compile(r'^[1-6]-(init|refine|outline|plan|execute|finalize)$')
+FIELD_NAME_RE = re.compile(r'^[a-z][a-z0-9_]*$')
+MODULE_NAME_RE = re.compile(r'^[a-z][a-z0-9_-]*$')
+PACKAGE_NAME_RE = re.compile(r'^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$')
+DOMAIN_NAME_RE = re.compile(r'^[a-z][a-z0-9-]*$')
+RESOURCE_NAME_RE = re.compile(r'^[a-zA-Z0-9_-]+$')
+
+# Phase enum (kept in sync with PHASE_ID_RE alternation)
+VALID_PHASES = (
+    '1-init',
+    '2-refine',
+    '3-outline',
+    '4-plan',
+    '5-execute',
+    '6-finalize',
+)
+
 # --- Raising validators (for new code and argparse integration) ---
 
 
@@ -29,9 +69,128 @@ def validate_plan_id(plan_id: str) -> str:
     Returns the validated value for chaining.
     Raises ValueError if invalid.
     """
-    if not plan_id or not re.match(r'^[a-z][a-z0-9-]*$', plan_id):
-        raise ValueError(f'Invalid plan_id format: {plan_id!r}. Must match ^[a-z][a-z0-9-]*$')
+    if not plan_id or not PLAN_ID_RE.match(plan_id):
+        raise ValueError(f'Invalid plan_id format: {plan_id!r}. Must match {PLAN_ID_RE.pattern}')
     return plan_id
+
+
+def validate_lesson_id(lesson_id: str) -> str:
+    """Validate lesson_id matches YYYY-MM-DD-HH-NNN (date-hour-counter).
+
+    Examples: "2026-04-28-12-001", "2026-04-27-18-007".
+    """
+    if not lesson_id or not LESSON_ID_RE.match(lesson_id):
+        raise ValueError(
+            f'Invalid lesson_id format: {lesson_id!r}. Must match {LESSON_ID_RE.pattern}'
+        )
+    return lesson_id
+
+
+def validate_session_id(session_id: str) -> str:
+    """Validate session_id is the Claude Code UUID-shape token.
+
+    Allows letters, digits, underscore, hyphen; 1-128 chars.
+    """
+    if not session_id or not SESSION_ID_RE.match(session_id):
+        raise ValueError(
+            f'Invalid session_id format: {session_id!r}. Must match {SESSION_ID_RE.pattern}'
+        )
+    return session_id
+
+
+def validate_task_number(task_number: str) -> str:
+    """Validate task_number is a non-negative integer string (e.g., "1", "12")."""
+    if not task_number or not TASK_NUMBER_RE.match(task_number):
+        raise ValueError(
+            f'Invalid task_number format: {task_number!r}. Must match {TASK_NUMBER_RE.pattern}'
+        )
+    return task_number
+
+
+def validate_task_id(task_id: str) -> str:
+    """Validate task_id is the canonical TASK-NNN form (e.g., "TASK-001")."""
+    if not task_id or not TASK_ID_RE.match(task_id):
+        raise ValueError(f'Invalid task_id format: {task_id!r}. Must match {TASK_ID_RE.pattern}')
+    return task_id
+
+
+def validate_component(component: str) -> str:
+    """Validate component is colon-separated kebab-case (e.g., "plan-marshall:manage-tasks")."""
+    if not component or not COMPONENT_RE.match(component):
+        raise ValueError(
+            f'Invalid component format: {component!r}. Must match {COMPONENT_RE.pattern}'
+        )
+    return component
+
+
+def validate_hash_id(hash_id: str) -> str:
+    """Validate hash_id is a lowercase-hex string of >=4 chars (truncated SHA prefix)."""
+    if not hash_id or not HASH_ID_RE.match(hash_id):
+        raise ValueError(f'Invalid hash_id format: {hash_id!r}. Must match {HASH_ID_RE.pattern}')
+    return hash_id
+
+
+def validate_memory_id(memory_id: str) -> str:
+    """Validate memory_id is lowercase letters/digits/underscore/hyphen."""
+    if not memory_id or not MEMORY_ID_RE.match(memory_id):
+        raise ValueError(
+            f'Invalid memory_id format: {memory_id!r}. Must match {MEMORY_ID_RE.pattern}'
+        )
+    return memory_id
+
+
+def validate_phase_id(phase_id: str) -> str:
+    """Validate phase_id is one of the canonical 6 phases (e.g., "3-outline")."""
+    if not phase_id or not PHASE_ID_RE.match(phase_id):
+        raise ValueError(
+            f'Invalid phase_id format: {phase_id!r}. Must match {PHASE_ID_RE.pattern}'
+        )
+    return phase_id
+
+
+def validate_field_name(field_name: str) -> str:
+    """Validate field_name is snake_case starting with a lowercase letter."""
+    if not field_name or not FIELD_NAME_RE.match(field_name):
+        raise ValueError(
+            f'Invalid field_name format: {field_name!r}. Must match {FIELD_NAME_RE.pattern}'
+        )
+    return field_name
+
+
+def validate_module_name(module_name: str) -> str:
+    """Validate module_name is kebab-or-snake starting with a lowercase letter."""
+    if not module_name or not MODULE_NAME_RE.match(module_name):
+        raise ValueError(
+            f'Invalid module_name format: {module_name!r}. Must match {MODULE_NAME_RE.pattern}'
+        )
+    return module_name
+
+
+def validate_package_name(package_name: str) -> str:
+    """Validate package_name is dotted snake_case (e.g., "foo.bar.baz")."""
+    if not package_name or not PACKAGE_NAME_RE.match(package_name):
+        raise ValueError(
+            f'Invalid package_name format: {package_name!r}. Must match {PACKAGE_NAME_RE.pattern}'
+        )
+    return package_name
+
+
+def validate_domain_name(domain_name: str) -> str:
+    """Validate domain_name is kebab-case starting with a lowercase letter."""
+    if not domain_name or not DOMAIN_NAME_RE.match(domain_name):
+        raise ValueError(
+            f'Invalid domain_name format: {domain_name!r}. Must match {DOMAIN_NAME_RE.pattern}'
+        )
+    return domain_name
+
+
+def validate_resource_name(resource_name: str) -> str:
+    """Validate resource_name (e.g., agent/skill/component name) is alphanumeric + _-."""
+    if not resource_name or not RESOURCE_NAME_RE.match(resource_name):
+        raise ValueError(
+            f'Invalid resource_name format: {resource_name!r}. Must match {RESOURCE_NAME_RE.pattern}'
+        )
+    return resource_name
 
 
 def validate_relative_path(file_path: str) -> str:
@@ -264,6 +423,126 @@ def add_boolean_arg(parser, name: str, *, help_text: str = '', default: bool = F
     )
 
 
+def add_lesson_id_arg(parser, required: bool = True) -> None:
+    """Add the standard --lesson-id argument to a parser or subparser."""
+    parser.add_argument(
+        '--lesson-id',
+        required=required,
+        type=validate_lesson_id,
+        help='Lesson identifier (YYYY-MM-DD-NN[-NNN])',
+    )
+
+
+def add_session_id_arg(parser, required: bool = True) -> None:
+    """Add the standard --session-id argument to a parser or subparser."""
+    parser.add_argument(
+        '--session-id',
+        required=required,
+        type=validate_session_id,
+        help='Claude Code session identifier',
+    )
+
+
+def add_task_number_arg(parser, required: bool = True) -> None:
+    """Add the standard --task-number argument to a parser or subparser."""
+    parser.add_argument(
+        '--task-number',
+        required=required,
+        type=validate_task_number,
+        help='Task number (positive integer)',
+    )
+
+
+def add_task_id_arg(parser, required: bool = True) -> None:
+    """Add the standard --task-id argument to a parser or subparser."""
+    parser.add_argument(
+        '--task-id',
+        required=required,
+        type=validate_task_id,
+        help='Task identifier (TASK-NNN)',
+    )
+
+
+def add_component_arg(parser, required: bool = True) -> None:
+    """Add the standard --component argument to a parser or subparser."""
+    parser.add_argument(
+        '--component',
+        required=required,
+        type=validate_component,
+        help='Component notation (bundle:skill[:script])',
+    )
+
+
+def add_hash_id_arg(parser, required: bool = True) -> None:
+    """Add the standard --hash-id argument to a parser or subparser."""
+    parser.add_argument(
+        '--hash-id',
+        required=required,
+        type=validate_hash_id,
+        help='Hash identifier (lowercase hex, >=4 chars)',
+    )
+
+
+def add_memory_id_arg(parser, required: bool = True) -> None:
+    """Add the standard --memory-id argument to a parser or subparser."""
+    parser.add_argument(
+        '--memory-id',
+        required=required,
+        type=validate_memory_id,
+        help='Memory identifier (lowercase letters/digits/_-)',
+    )
+
+
+def add_field_arg(parser, required: bool = True) -> None:
+    """Add the standard --field argument to a parser or subparser."""
+    parser.add_argument(
+        '--field',
+        required=required,
+        type=validate_field_name,
+        help='Field name (snake_case)',
+    )
+
+
+def add_module_arg(parser, required: bool = True) -> None:
+    """Add the standard --module argument to a parser or subparser."""
+    parser.add_argument(
+        '--module',
+        required=required,
+        type=validate_module_name,
+        help='Module name (kebab-or-snake)',
+    )
+
+
+def add_package_arg(parser, required: bool = True) -> None:
+    """Add the standard --package argument to a parser or subparser."""
+    parser.add_argument(
+        '--package',
+        required=required,
+        type=validate_package_name,
+        help='Package name (dotted snake_case)',
+    )
+
+
+def add_domain_arg(parser, required: bool = True) -> None:
+    """Add the standard --domain argument to a parser or subparser."""
+    parser.add_argument(
+        '--domain',
+        required=required,
+        type=validate_domain_name,
+        help='Domain name (kebab-case)',
+    )
+
+
+def add_name_arg(parser, required: bool = True) -> None:
+    """Add the standard --name argument to a parser or subparser."""
+    parser.add_argument(
+        '--name',
+        required=required,
+        type=validate_resource_name,
+        help='Resource name (alphanumeric + _-)',
+    )
+
+
 # --- Bool companions (drop-in replacements for existing call sites) ---
 
 
@@ -286,6 +565,123 @@ def is_valid_relative_path(file_path: str) -> bool:
     """
     try:
         validate_relative_path(file_path)
+        return True
+    except ValueError:
+        return False
+
+
+def is_valid_lesson_id(lesson_id: str) -> bool:
+    """Bool companion for validate_lesson_id."""
+    try:
+        validate_lesson_id(lesson_id)
+        return True
+    except ValueError:
+        return False
+
+
+def is_valid_session_id(session_id: str) -> bool:
+    """Bool companion for validate_session_id."""
+    try:
+        validate_session_id(session_id)
+        return True
+    except ValueError:
+        return False
+
+
+def is_valid_task_number(task_number: str) -> bool:
+    """Bool companion for validate_task_number."""
+    try:
+        validate_task_number(task_number)
+        return True
+    except ValueError:
+        return False
+
+
+def is_valid_task_id(task_id: str) -> bool:
+    """Bool companion for validate_task_id."""
+    try:
+        validate_task_id(task_id)
+        return True
+    except ValueError:
+        return False
+
+
+def is_valid_component(component: str) -> bool:
+    """Bool companion for validate_component."""
+    try:
+        validate_component(component)
+        return True
+    except ValueError:
+        return False
+
+
+def is_valid_hash_id(hash_id: str) -> bool:
+    """Bool companion for validate_hash_id."""
+    try:
+        validate_hash_id(hash_id)
+        return True
+    except ValueError:
+        return False
+
+
+def is_valid_memory_id(memory_id: str) -> bool:
+    """Bool companion for validate_memory_id."""
+    try:
+        validate_memory_id(memory_id)
+        return True
+    except ValueError:
+        return False
+
+
+def is_valid_phase_id(phase_id: str) -> bool:
+    """Bool companion for validate_phase_id."""
+    try:
+        validate_phase_id(phase_id)
+        return True
+    except ValueError:
+        return False
+
+
+def is_valid_field_name(field_name: str) -> bool:
+    """Bool companion for validate_field_name."""
+    try:
+        validate_field_name(field_name)
+        return True
+    except ValueError:
+        return False
+
+
+def is_valid_module_name(module_name: str) -> bool:
+    """Bool companion for validate_module_name."""
+    try:
+        validate_module_name(module_name)
+        return True
+    except ValueError:
+        return False
+
+
+def is_valid_package_name(package_name: str) -> bool:
+    """Bool companion for validate_package_name."""
+    try:
+        validate_package_name(package_name)
+        return True
+    except ValueError:
+        return False
+
+
+def is_valid_domain_name(domain_name: str) -> bool:
+    """Bool companion for validate_domain_name."""
+    try:
+        validate_domain_name(domain_name)
+        return True
+    except ValueError:
+        return False
+
+
+def is_valid_resource_name(resource_name: str) -> bool:
+    """Bool companion for validate_resource_name."""
+    try:
+        validate_resource_name(resource_name)
         return True
     except ValueError:
         return False

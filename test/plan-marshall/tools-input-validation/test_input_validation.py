@@ -4,13 +4,39 @@
 
 import pytest
 from input_validation import (  # type: ignore[import-not-found]I001
+    is_valid_component,
+    is_valid_domain_name,
+    is_valid_field_name,
+    is_valid_hash_id,
+    is_valid_lesson_id,
+    is_valid_memory_id,
+    is_valid_module_name,
+    is_valid_package_name,
+    is_valid_phase_id,
     is_valid_plan_id,
     is_valid_relative_path,
+    is_valid_resource_name,
+    is_valid_session_id,
+    is_valid_task_id,
+    is_valid_task_number,
+    validate_component,
+    validate_domain_name,
     validate_enum,
+    validate_field_name,
+    validate_hash_id,
+    validate_lesson_id,
+    validate_memory_id,
+    validate_module_name,
+    validate_package_name,
+    validate_phase_id,
     validate_plan_id,
     validate_relative_path,
+    validate_resource_name,
     validate_script_notation,
+    validate_session_id,
     validate_skill_notation,
+    validate_task_id,
+    validate_task_number,
 )
 
 # =============================================================================
@@ -249,3 +275,154 @@ class TestValidateScriptNotation:
     def test_invalid_four_parts(self):
         with pytest.raises(ValueError, match='Invalid script notation'):
             validate_script_notation('a:b:c:d')
+
+
+# =============================================================================
+# 6-axis coverage for the canonical identifier vocabulary
+# =============================================================================
+#
+# Per-validator: empty / path-separator / glob-meta / traversal / length / happy-path.
+# `length` only applies to validators with a concrete upper bound; for the
+# others the rejection comes from the regex itself (no bounded length probe is
+# needed because the character class disallows the long input naturally).
+# =============================================================================
+
+
+_IDENTIFIER_VALIDATORS = [
+    # (raising, bool, happy_path, error_label)
+    (validate_lesson_id, is_valid_lesson_id, '2026-04-28-12-001', 'Invalid lesson_id'),
+    (validate_session_id, is_valid_session_id, 'Abc123_session-9', 'Invalid session_id'),
+    (validate_task_number, is_valid_task_number, '12', 'Invalid task_number'),
+    (validate_task_id, is_valid_task_id, 'TASK-001', 'Invalid task_id'),
+    (validate_component, is_valid_component, 'plan-marshall:manage-tasks', 'Invalid component'),
+    (validate_hash_id, is_valid_hash_id, 'a1b2', 'Invalid hash_id'),
+    (validate_memory_id, is_valid_memory_id, 'plan_marshall-memo-1', 'Invalid memory_id'),
+    (validate_phase_id, is_valid_phase_id, '3-outline', 'Invalid phase_id'),
+    (validate_field_name, is_valid_field_name, 'modified_files', 'Invalid field_name'),
+    (validate_module_name, is_valid_module_name, 'plan-marshall', 'Invalid module_name'),
+    (validate_package_name, is_valid_package_name, 'foo.bar.baz', 'Invalid package_name'),
+    (validate_domain_name, is_valid_domain_name, 'plan-marshall-plugin-dev', 'Invalid domain_name'),
+    (validate_resource_name, is_valid_resource_name, 'manage-tasks_v2', 'Invalid resource_name'),
+]
+
+
+_REJECTION_AXES = [
+    ('empty', ''),
+    ('path-sep-fwd', 'a/b'),
+    ('path-sep-back', 'a\\b'),
+    ('glob-star', 'foo*bar'),
+    ('glob-question', 'foo?bar'),
+    ('glob-bracket-open', 'foo[bar'),
+    ('glob-bracket-close', 'foo]bar'),
+    ('traversal', '..'),
+    ('traversal-slash', '../escape'),
+    ('overlong', 'A' * 200),
+]
+
+
+@pytest.mark.parametrize(
+    ('raising', 'bool_companion', 'happy_path', 'error_label'),
+    _IDENTIFIER_VALIDATORS,
+    ids=[v[3].split(' ', 1)[1] for v in _IDENTIFIER_VALIDATORS],
+)
+class TestIdentifierValidators:
+    """6-axis coverage per canonical identifier validator."""
+
+    def test_happy_path_returns_value(self, raising, bool_companion, happy_path, error_label):
+        assert raising(happy_path) == happy_path
+        assert bool_companion(happy_path) is True
+
+    @pytest.mark.parametrize(('label', 'value'), _REJECTION_AXES, ids=[a[0] for a in _REJECTION_AXES])
+    def test_rejection_axes(self, raising, bool_companion, happy_path, error_label, label, value):
+        # Skip the `overlong` axis when the validator has no bounded length:
+        # its character class still rejects the synthetic input via case-mismatch
+        # (uppercase) for everything except resource_name, which legitimately
+        # accepts long alphanumeric runs. Override here so the parametrize stays
+        # one-shot.
+        if label == 'overlong' and raising is validate_resource_name:
+            value = value + '*'  # reintroduce a forbidden glob so overlong still rejects
+        with pytest.raises(ValueError, match=error_label):
+            raising(value)
+        assert bool_companion(value) is False
+
+
+# Validator-specific edge cases not covered by the generic 6-axis matrix.
+
+
+class TestSessionIdLengthBound:
+    def test_at_upper_bound(self):
+        validate_session_id('A' * 128)
+
+    def test_above_upper_bound(self):
+        with pytest.raises(ValueError, match='Invalid session_id'):
+            validate_session_id('A' * 129)
+
+
+class TestPhaseIdEnum:
+    @pytest.mark.parametrize(
+        'phase',
+        ['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-finalize'],
+    )
+    def test_all_canonical_phases(self, phase):
+        assert validate_phase_id(phase) == phase
+
+    def test_unknown_phase_name(self):
+        with pytest.raises(ValueError, match='Invalid phase_id'):
+            validate_phase_id('7-publish')
+
+    def test_uppercase_phase(self):
+        with pytest.raises(ValueError, match='Invalid phase_id'):
+            validate_phase_id('3-OUTLINE')
+
+
+class TestComponentNotation:
+    def test_three_part(self):
+        assert (
+            validate_component('plan-marshall:manage-tasks:script')
+            == 'plan-marshall:manage-tasks:script'
+        )
+
+    def test_trailing_colon(self):
+        with pytest.raises(ValueError, match='Invalid component'):
+            validate_component('plan-marshall:')
+
+    def test_uppercase_in_component(self):
+        with pytest.raises(ValueError, match='Invalid component'):
+            validate_component('Plan-Marshall:tasks')
+
+
+class TestHashIdLowerBound:
+    def test_three_chars_rejected(self):
+        with pytest.raises(ValueError, match='Invalid hash_id'):
+            validate_hash_id('abc')
+
+    def test_uppercase_rejected(self):
+        with pytest.raises(ValueError, match='Invalid hash_id'):
+            validate_hash_id('AB12')
+
+
+class TestPackageNameDots:
+    def test_single_segment(self):
+        assert validate_package_name('foo') == 'foo'
+
+    def test_leading_dot_rejected(self):
+        with pytest.raises(ValueError, match='Invalid package_name'):
+            validate_package_name('.foo')
+
+    def test_trailing_dot_rejected(self):
+        with pytest.raises(ValueError, match='Invalid package_name'):
+            validate_package_name('foo.')
+
+
+class TestTaskIdAndNumber:
+    def test_task_id_uppercase_required(self):
+        with pytest.raises(ValueError, match='Invalid task_id'):
+            validate_task_id('task-001')
+
+    def test_task_number_no_negative(self):
+        with pytest.raises(ValueError, match='Invalid task_number'):
+            validate_task_number('-1')
+
+    def test_task_number_no_leading_plus(self):
+        with pytest.raises(ValueError, match='Invalid task_number'):
+            validate_task_number('+12')

@@ -24,11 +24,14 @@ user-invocable: false
 
 ## What This Skill Provides
 
+- Canonical regex constants for the full identifier vocabulary (single source of truth)
 - Plan ID validation (kebab-case format)
+- Lesson, session, task, component, hash, memory, phase, field, module, package, domain, and resource-name validators
 - Relative path validation (rejects absolute paths and traversal)
 - Enum membership validation
 - Skill notation validation (bundle:skill format)
 - Both raising (ValueError) and bool return styles
+- Argparse builder helpers (`add_<id>_arg(parser)`) that wire the validator into argparse `type=` so malformed input is rejected at the script boundary
 
 ## When to Use
 
@@ -96,9 +99,30 @@ error: validation_failed
 message: Plan ID contains invalid characters: bad!!id
 ```
 
+## Canonical Identifier Registry
+
+| Identifier | Regex | Use sites |
+|------------|-------|-----------|
+| `plan_id` | `^[a-z][a-z0-9-]*$` | All `manage-*` scripts |
+| `lesson_id` | `^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]+$` | `manage-lessons`, `phase-1-init` |
+| `session_id` | `^[A-Za-z0-9_-]{1,128}$` | `manage_session`, `set_terminal_title` |
+| `task_number` | `^[0-9]+$` | `manage-tasks`, `execute-task` |
+| `task_id` | `^TASK-[0-9]+$` | `manage-tasks` (legacy id form) |
+| `component` | `^[a-z0-9-]+(:[a-z0-9-]+)*$` | `manage-lessons`, `manage-findings` |
+| `hash_id` | `^[a-f0-9]{4,}$` | `manage-findings` (assessment / qgate) |
+| `memory_id` | `^[a-z0-9_-]+$` | `manage-memories` |
+| `phase_id` | `^[1-6]-(init\|refine\|outline\|plan\|execute\|finalize)$` | All phase scripts |
+| `field_name` | `^[a-z][a-z0-9_]*$` | `manage-config`, `manage-references`, `manage-run-config` |
+| `module_name` | `^[a-z][a-z0-9_-]*$` | `manage-architecture` |
+| `package_name` | `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$` | `manage-architecture` |
+| `domain_name` | `^[a-z][a-z0-9-]*$` | `manage-architecture`, `manage-config` |
+| `resource_name` | `^[a-zA-Z0-9_-]+$` | Plugin component names (skill / agent / command) |
+
+The constants are exported from `input_validation.py` as `PLAN_ID_RE`, `LESSON_ID_RE`, etc., so consumers can reuse the canonical regex without re-deriving it.
+
 ## Adoption
 
-Scripts that accept `plan_id` arguments should import validators from this module rather than doing inline validation. Currently adopted by: `manage-files`, `manage-references`, `manage-metrics`, `manage-status`, `manage-plan-documents`, `manage-solution-outline`, `manage-findings`, `manage-logging`. Not yet adopted: `manage-tasks` (validates via shared module), `manage-assessments` (no plan-id validation).
+Scripts that accept identifier-shaped arguments should import the matching validator (or the `add_<id>_arg(parser)` builder) from this module rather than doing inline validation. Currently adopted for `--plan-id`: `manage-files`, `manage-references`, `manage-metrics`, `manage-status`, `manage-plan-documents`, `manage-solution-outline`, `manage-findings`, `manage-logging`. The remaining identifier validators (`lesson_id`, `session_id`, `task_number`, `task_id`, `component`, `hash_id`, `memory_id`, `phase_id`, `field_name`, `module_name`, `package_name`, `domain_name`, `resource_name`) are wired in their respective scripts as part of the audit-and-harden sweep documented in `standards/identifier-validation-audit.md`.
 
 ## Python Usage
 
