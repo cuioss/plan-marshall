@@ -268,6 +268,18 @@ def _classify_generic(rel_from_module: str, basename: str) -> str | None:
     return None
 
 
+def _join_rel_path(parent: str, name: str) -> str:
+    """Join a parent project-relative path with a child name.
+
+    Returns POSIX-style paths so the regex matcher always sees ``a/b/c``
+    regardless of host OS. Treats ``''`` and ``'.'`` as project-root
+    sentinels — the join collapses to just ``name`` instead of ``./name``.
+    """
+    if parent in {'', '.'}:
+        return name
+    return (Path(parent) / name).as_posix()
+
+
 def _walk_module_root(
     module_root: Path,
     project_path: Path,
@@ -287,8 +299,10 @@ def _walk_module_root(
 
     # Stack of (current_dir, rules_in_effect, rel_from_project, rel_from_module).
     # Rules are accumulated as we descend so a child .gitignore augments the
-    # parent set without mutating it.
-    initial_rel = module_root.resolve().relative_to(project_path.resolve()).as_posix()
+    # parent set without mutating it. ``module_root`` and ``project_path`` are
+    # already resolved by the caller (``_post_process_files``); resolving them
+    # again here would be redundant.
+    initial_rel = module_root.relative_to(project_path).as_posix()
     stack: list[tuple[Path, list[tuple[re.Pattern[str], bool, bool]], str]] = [
         (module_root, list(project_root_rules), initial_rel)
     ]
@@ -319,21 +333,17 @@ def _walk_module_root(
             if entry.is_dir():
                 if name in _FILES_ALWAYS_IGNORED_DIRS:
                     continue
-                child_rel_from_project = (
-                    f'{rel_from_project}/{name}' if rel_from_project not in {'', '.'} else name
-                )
+                child_rel_from_project = _join_rel_path(rel_from_project, name)
                 if _is_ignored_by_rules(child_rel_from_project, True, rules):
                     continue
                 stack.append((entry, rules, child_rel_from_project))
                 continue
             # File entry.
-            child_rel_from_project = (
-                f'{rel_from_project}/{name}' if rel_from_project not in {'', '.'} else name
-            )
+            child_rel_from_project = _join_rel_path(rel_from_project, name)
             if _is_ignored_by_rules(child_rel_from_project, False, rules):
                 continue
             try:
-                rel_from_module = entry.resolve().relative_to(module_root.resolve()).as_posix()
+                rel_from_module = entry.relative_to(module_root).as_posix()
             except ValueError:
                 # Symlink-like indirection escaped the module — skip defensively.
                 continue
