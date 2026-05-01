@@ -307,6 +307,10 @@ npm,python3 .plan/execute-script.py plan-marshall:build-npm:npm run --package ni
 | `module` | Module details | Condensed (default) or full (`--full`) |
 | `commands` | Module commands | Command names with descriptions |
 | `resolve` | Executable command | Full python3 invocation |
+| `files` | Module file inventory | Categorised paths, optionally filtered by `--category` |
+| `which-module` | Reverse path lookup | Owning module for a given path |
+| `find` | Glob inventory search | Cross-module path matches |
+| `diff-modules` | Snapshot diff | `added`/`removed`/`changed`/`unchanged` module buckets |
 
 **Default vs Full**:
 - Default: Key packages, key dependencies, proposed skill domains (no reasoning)
@@ -489,6 +493,126 @@ results[3]{module,category,path}:
   contract is the same as `files`. To search beyond the sample, fall
   back to `Glob` against the working tree.
 - No matches: `count: 0`, `results: []`, `status: success`.
+
+---
+
+### diff-modules
+
+Diff per-module `derived.json` files against a pre-snapshot directory and
+classify every module into one of four buckets. Used by callers that
+need to know which modules' derived structure shifted between two points
+in time (for example, before/after a refactor or between two branches).
+
+```bash
+architecture.py diff-modules --pre PATH
+```
+
+**Options**:
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--pre` | Yes | — | Path to the pre-snapshot. Either a snapshot root containing `_project.json` directly, or a project root whose `.plan/project-architecture/` subtree holds the snapshot. The first shape that points at an existing `_project.json` wins. |
+
+**Comparison surface**: only the sha256 of each module's `derived.json`
+is compared. Differences confined to `enriched.json` (LLM-curated
+fields) never produce a `changed` classification — enrichment drift is
+expected and is not a structural change. See
+[architecture-persistence.md](architecture-persistence.md) for the
+per-module file layout.
+
+**Classification rules**:
+
+- `added` — module exists in the current project but not in the snapshot
+- `removed` — module exists in the snapshot but not in the current project
+- `changed` — module exists in both, but the `derived.json` shas differ.
+  A pair is also classified as `changed` when either side's
+  `derived.json` is missing on disk while the index lists the module —
+  the sha surface cannot certify equality, so the safe default is
+  `changed`.
+- `unchanged` — module exists in both and the `derived.json` shas match
+
+The four buckets are disjoint and their union equals the union of the
+snapshot and current module name sets. Each bucket is sorted
+alphabetically.
+
+**Output** (TOON, success):
+
+```toon
+status: success
+added[1]:
+  - oauth-sheriff-quarkus-devui
+removed[1]:
+  - legacy-module
+changed[1]:
+  - oauth-sheriff-core
+unchanged[2]:
+  - oauth-sheriff-parent
+  - oauth-sheriff-quarkus
+```
+
+**Output** (TOON, no changes):
+
+```toon
+status: success
+added[0]:
+removed[0]:
+changed[0]:
+unchanged[3]:
+  - oauth-sheriff-parent
+  - oauth-sheriff-core
+  - oauth-sheriff-quarkus
+```
+
+**Error contract**: when the snapshot directory or its `_project.json`
+is missing, returns:
+
+```toon
+status: error
+error: snapshot_not_found
+path: /path/passed/to/--pre
+```
+
+The `path` echoes the original `--pre` argument so callers can identify
+which input failed. When the JSON file exists but is unreadable, the
+result also includes a `detail` field with the underlying error message.
+
+**Worked example — capturing a snapshot, then diffing after a refactor**:
+
+```bash
+# 1. Save the current architecture state into a snapshot directory.
+cp -r .plan/project-architecture /tmp/arch-before
+
+# 2. Run a refactor that splits a module, regenerates _project.json, etc.
+# ... edits, then re-run discovery to refresh derived.json files ...
+
+# 3. Diff against the snapshot. Either form of --pre works:
+architecture.py diff-modules --pre /tmp/arch-before
+# or, when handed the project root that owns the snapshot:
+architecture.py diff-modules --pre /path/to/old-checkout
+```
+
+**Worked example — error path**:
+
+```bash
+architecture.py diff-modules --pre /does/not/exist
+```
+
+Output:
+
+```toon
+status: error
+error: snapshot_not_found
+path: /does/not/exist
+```
+
+**Use cases**:
+
+- Detect which modules need re-verification after a refactor (run
+  module-tests only on `added` ∪ `changed`)
+- Confirm that a documentation-only change left every module
+  `unchanged`
+- Drive deliverable scoping: a change touching `derived.json` in N
+  modules implies N module-scoped tasks
 
 ---
 
