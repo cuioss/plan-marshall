@@ -9,6 +9,7 @@ intentionally narrow — only ``derived.json`` shas matter; differences in
 """
 
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -250,18 +251,22 @@ def test_argparse_registers_diff_modules_subcommand():
     --help`` as a subprocess so the assertion exercises the real argparse
     wiring rather than internal dispatch tables.
     """
+    env = os.environ.copy()
+    env['PYTHONPATH'] = os.pathsep.join(sys.path)
     cmd_help = subprocess.run(
         [sys.executable, str(_SCRIPTS_DIR / 'architecture.py'), '--help'],
         capture_output=True,
         text=True,
-        check=True,
+        env=env,
     )
+    assert cmd_help.returncode == 0, f'--help failed: {cmd_help.stderr}'
     assert 'diff-modules' in cmd_help.stdout
 
     sub_help = subprocess.run(
         [sys.executable, str(_SCRIPTS_DIR / 'architecture.py'), 'diff-modules', '--help'],
         capture_output=True,
         text=True,
-        check=True,
+        env=env,
     )
+    assert sub_help.returncode == 0, f'diff-modules --help failed: {sub_help.stderr}'
     assert '--pre' in sub_help.stdout
