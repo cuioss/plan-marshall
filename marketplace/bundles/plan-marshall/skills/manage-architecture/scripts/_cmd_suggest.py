@@ -3,6 +3,10 @@
 
 Handles: suggest-domains
 Thin orchestrator that delegates domain applicability to extension.py implementations.
+
+Persistence model: per-module on-disk layout under
+``.plan/project-architecture/``. Loads the module's ``derived.json`` lazily
+from ``_project.json``'s index — no monolithic file is ever read.
 """
 
 from typing import Any
@@ -10,10 +14,10 @@ from typing import Any
 from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundInProjectError,
-    get_module,
     handle_module_not_found_result,
-    load_derived_data,
-    require_derived_data_result,
+    iter_modules,
+    load_module_derived,
+    require_project_meta_result,
 )
 
 # =============================================================================
@@ -28,18 +32,21 @@ def suggest_domains(module_name: str, project_dir: str = '.') -> dict[str, Any]:
     applicable domains with confidence and signals.
 
     Args:
-        module_name: Module name from derived-data.json
+        module_name: Module name from ``_project.json``
         project_dir: Project directory path
 
     Returns:
         Dict with status, module, and list of applicable domains
 
     Raises:
-        ModuleNotFoundInProjectError: If module not found
-        DataNotFoundError: If derived-data.json not found
+        ModuleNotFoundInProjectError: If module not in ``_project.json``
+        DataNotFoundError: If ``_project.json`` itself is missing
     """
-    derived = load_derived_data(project_dir)
-    module_data = get_module(derived, module_name)
+    available = iter_modules(project_dir)
+    if module_name not in available:
+        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', available)
+
+    module_data = load_module_derived(module_name, project_dir)
 
     # Discover all extensions
     from extension_discovery import discover_all_extensions  # type: ignore[import-not-found]
@@ -138,6 +145,6 @@ def cmd_suggest_domains(args) -> dict:
     except ModuleNotFoundInProjectError:
         return handle_module_not_found_result(args.module, args.project_dir)
     except DataNotFoundError:
-        return require_derived_data_result(args.project_dir)
+        return require_project_meta_result(args.project_dir)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}

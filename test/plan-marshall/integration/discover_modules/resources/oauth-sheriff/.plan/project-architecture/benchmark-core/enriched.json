@@ -1,0 +1,32 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [
+    "oauth-sheriff-core",
+    "benchmarking-common"
+  ],
+  "key_dependencies": [
+    "org.openjdk.jmh:jmh-core",
+    "io.jsonwebtoken:jjwt-api",
+    "org.hdrhistogram:HdrHistogram"
+  ],
+  "key_dependencies_reasoning": "JMH for benchmarking, JJWT for comparison baseline, HdrHistogram for latency. Internal: core library and shared benchmark infrastructure",
+  "key_packages": {},
+  "purpose": "benchmark",
+  "purpose_reasoning": "Contains JMH benchmark annotations and benchmark execution code",
+  "responsibility": "Executes JMH micro-benchmarks for JWT token validation performance measuring throughput, latency, and memory allocation.",
+  "responsibility_reasoning": "From pom.xml description and package structure with benchmark classes",
+  "skills_by_profile": {
+    "benchmark-testing": [
+      "pm-dev-java:java-core",
+      "pm-dev-java:java-lombok",
+      "pm-dev-java:junit-core"
+    ],
+    "implementation": [
+      "pm-dev-java:java-core",
+      "pm-dev-java:java-lombok"
+    ]
+  },
+  "skills_by_profile_reasoning": "Benchmark module - minimal skills, focus on JMH patterns",
+  "tips": []
+}

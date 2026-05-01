@@ -1,0 +1,15 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [],
+  "key_dependencies_reasoning": "",
+  "key_packages": {},
+  "purpose": "parent",
+  "purpose_reasoning": "packaging=pom, parent module for benchmark children",
+  "responsibility": "Parent module for benchmarking that coordinates configuration for JMH micro-benchmarks and WRK integration benchmarks.",
+  "responsibility_reasoning": "From pom.xml description, parent of benchmark modules",
+  "skills_by_profile": {},
+  "skills_by_profile_reasoning": "Parent POM module with no source files - no skill profiles needed",
+  "tips": []
+}

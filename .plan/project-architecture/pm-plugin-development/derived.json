@@ -1,0 +1,114 @@
+{
+  "build_systems": [
+    "marshall-plugin"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-plugin-development\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-plugin-development\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-plugin-development\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-plugin-development\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-plugin-development\"",
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-plugin-development\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-plugin-development\""
+  },
+  "dependencies": [],
+  "metadata": {
+    "bundle_name": "pm-plugin-development",
+    "description": "Complete toolchain for creating, diagnosing, fixing, and maintaining marketplace components"
+  },
+  "name": "pm-plugin-development",
+  "packages": {
+    "agent:ext-outline-component-agent": {
+      "description": "Analyze component files against request using semantic reasoning. Input: plan_id, component_type, request_text, files list. Output: TOON summary with status, counts of certain_include/certain_exclude/uncertain, assessments_logged.",
+      "path": "agents/ext-outline-component-agent.md",
+      "type": "agent"
+    },
+    "agent:ext-outline-inventory-agent": {
+      "description": "Load marketplace inventory and perform initial scope assessment (artifact types, bundle scope). Input: plan_id, component_types, content_pattern, bundle_scope, include_tests, include_project_skills. Output: TOON summary with status, inventory_file path, scope, and counts per component type.",
+      "path": "agents/ext-outline-inventory-agent.md",
+      "type": "agent"
+    },
+    "agent:tool-coverage-agent": {
+      "description": "Analyze tool declarations vs actual usage in a component file. Input: file_path, declared_tools list, component_type. Output: JSON with declared_tools, used_tools, analysis (missing/unused/false_positives), confidence.",
+      "path": "agents/tool-coverage-agent.md",
+      "type": "agent"
+    },
+    "skill:ext-outline-workflow": {
+      "description": "Shared workflow steps and verification knowledge for plugin development outline, loaded by phase-3-outline skill",
+      "path": "skills/ext-outline-workflow",
+      "type": "skill"
+    },
+    "skill:ext-triage-plugin": {
+      "description": "Triage extension for marketplace plugin findings during plan-finalize phase",
+      "path": "skills/ext-triage-plugin",
+      "type": "skill"
+    },
+    "skill:plugin-apply-lessons-learned": {
+      "description": "Apply accumulated lessons learned to component documentation",
+      "path": "skills/plugin-apply-lessons-learned",
+      "type": "skill"
+    },
+    "skill:plugin-architecture": {
+      "description": "Architecture principles, skill patterns, and design guidance for building goal-based marketplace components",
+      "path": "skills/plugin-architecture",
+      "type": "skill"
+    },
+    "skill:plugin-create": {
+      "description": "Create new marketplace components (agents, commands, skills, bundles) with proper structure and standards compliance",
+      "path": "skills/plugin-create",
+      "type": "skill"
+    },
+    "skill:plugin-doctor": {
+      "description": "Diagnose and fix quality issues in marketplace components with automated safe fixes and prompted risky fixes",
+      "path": "skills/plugin-doctor",
+      "type": "skill"
+    },
+    "skill:plugin-maintain": {
+      "description": "Comprehensive maintenance skill for marketplace components - update components, manage knowledge, maintain READMEs, restructure, and apply orchestration compliance",
+      "path": "skills/plugin-maintain",
+      "type": "skill"
+    },
+    "skill:plugin-plan-implement": {
+      "description": "Implement plugin tasks from plan with step iteration and progress tracking",
+      "path": "skills/plugin-plan-implement",
+      "type": "skill"
+    },
+    "skill:plugin-script-architecture": {
+      "description": "Script development standards covering implementation patterns, testing, and output contracts",
+      "path": "skills/plugin-script-architecture",
+      "type": "skill"
+    },
+    "skill:plugin-task-plan": {
+      "description": "Create implementation tasks from deliverables using skill delegation",
+      "path": "skills/plugin-task-plan",
+      "type": "skill"
+    },
+    "skill:tools-marketplace-inventory": {
+      "description": "Scans and reports complete marketplace inventory (bundles, agents, commands, skills, scripts)",
+      "path": "skills/tools-marketplace-inventory",
+      "type": "skill"
+    },
+    "skill:verification-mode": {
+      "description": "Verification mode that stops and analyzes on failures, workarounds, or resolution issues",
+      "path": "skills/verification-mode",
+      "type": "skill"
+    }
+  },
+  "paths": {
+    "descriptor": "marketplace/bundles/pm-plugin-development/.claude-plugin/plugin.json",
+    "module": "marketplace/bundles/pm-plugin-development",
+    "readme": "marketplace/bundles/pm-plugin-development/README.md",
+    "sources": [
+      "marketplace/bundles/pm-plugin-development/skills",
+      "marketplace/bundles/pm-plugin-development/agents"
+    ],
+    "tests": [
+      "test/pm-plugin-development"
+    ]
+  },
+  "stats": {
+    "agent_count": 3,
+    "command_count": 0,
+    "skill_count": 12
+  }
+}

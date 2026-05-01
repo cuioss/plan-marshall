@@ -1,0 +1,47 @@
+{
+  "build_systems": [
+    "maven"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Pcoverage\"",
+    "install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"install\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify\""
+  },
+  "dependencies": [],
+  "metadata": {
+    "artifact_id": "oauth-sheriff-parent",
+    "description": "A comprehensive framework for validating OAuth/JWT tokens in multi-issuer environments.\n        The module provides robust token parsing, validation, and management capabilities\n        with a focus on security and ease of use, leveraging standard JDK cryptographic providers.",
+    "group_id": "de.cuioss.sheriff.oauth",
+    "packaging": "pom",
+    "parent": "de.cuioss:cui-java-parent",
+    "profiles": [
+      {
+        "canonical": "coverage",
+        "id": "coverage"
+      },
+      {
+        "canonical": "javadoc",
+        "id": "javadoc"
+      },
+      {
+        "canonical": "quality-gate",
+        "id": "pre-commit"
+      }
+    ]
+  },
+  "name": "oauth-sheriff-parent",
+  "packages": {},
+  "paths": {
+    "descriptor": "pom.xml",
+    "module": ".",
+    "readme": "README.adoc",
+    "sources": [],
+    "tests": []
+  },
+  "stats": {
+    "source_files": 0,
+    "test_files": 0
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [
+    "oauth-sheriff-core"
+  ],
+  "key_dependencies": [
+    "io.quarkus:quarkus-core",
+    "io.quarkus:quarkus-arc",
+    "io.quarkus:quarkus-micrometer",
+    "io.quarkus:quarkus-smallrye-health",
+    "io.quarkus:quarkus-resteasy"
+  ],
+  "key_dependencies_reasoning": "Core Quarkus runtime deps for CDI, metrics, health, and REST. Depends on core validation library.",
+  "key_packages": {
+    "de.cuioss.sheriff.oauth.quarkus.config": {
+      "description": "Quarkus configuration bindings for issuer setup, JWKS endpoints, and validation parameters."
+    },
+    "de.cuioss.sheriff.oauth.quarkus.interceptor": {
+      "description": "Provides @BearerAuth interceptor for declarative security on JAX-RS endpoints with automatic error responses."
+    },
+    "de.cuioss.sheriff.oauth.quarkus.metrics": {
+      "description": "Micrometer metrics integration for JWT validation monitoring including validation counts, latencies, and error rates."
+    },
+    "de.cuioss.sheriff.oauth.quarkus.producer": {
+      "description": "CDI producers for injecting validated BearerTokenResult into application code with scope configuration."
+    }
+  },
+  "purpose": "extension",
+  "purpose_reasoning": "Quarkus extension runtime with CDI producers and annotations",
+  "responsibility": "Provides Quarkus runtime integration for JWT validation including CDI producers for token injection, @BearerAuth interceptors, Micrometer metrics integration, SmallRye health checks, and YAML configuration support.",
+  "responsibility_reasoning": "From pom.xml description and packages: producer, interceptor, metrics, health, config",
+  "skills_by_profile": {
+    "implementation": [
+      "pm-dev-java:java-core",
+      "pm-dev-java:java-null-safety",
+      "pm-dev-java:java-lombok",
+      "pm-dev-java:java-cdi",
+      "pm-dev-java:java-cdi-quarkus",
+      "pm-dev-java:java-maintenance",
+      "pm-dev-java-cui:cui-logging"
+    ],
+    "unit-testing": [
+      "pm-dev-java:java-core",
+      "pm-dev-java:java-null-safety",
+      "pm-dev-java:java-lombok",
+      "pm-dev-java:junit-core",
+      "pm-dev-java-cui:cui-testing"
+    ]
+  },
+  "skills_by_profile_reasoning": "Quarkus extension with heavy CDI usage - added java-cdi and java-cdi-quarkus, CUI logging/testing",
+  "tips": []
+}

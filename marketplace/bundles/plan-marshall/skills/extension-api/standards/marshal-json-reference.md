@@ -35,12 +35,20 @@ Central reference for all extension-related configuration paths in `marshal.json
 | `commands.{tool}:{cmd}.timeout_seconds` | Timeout learning | Build execution | [ext-point-build.md](ext-point-build.md) |
 | `{tool}.acceptable_warnings` | User config | check-warnings | [ext-point-build.md](ext-point-build.md) |
 
-## Project Architecture (derived-data.json)
+## Project Architecture (per-module layout under `.plan/architecture/`)
+
+The architecture cache is split: a top-level `_project.json` declares the canonical
+module set and project-wide facts, and each entry in `_project.json["modules"]`
+has its own subdirectory `<module>/` containing `derived.json` (raw discovery
+output) and, after LLM enrichment, `enriched.json`. `_project.json["modules"]`
+is the single source of truth — orphan subdirectories are ignored.
 
 | Path | Set By | Used By | Extension Point Doc |
 |------|--------|---------|---------------------|
-| `modules[]` | `discover_modules()` | phase-4-plan, phase-5-execute | [ext-point-build.md](ext-point-build.md) |
-| `modules[].commands` | `discover_modules()` | Architecture resolve | [ext-point-build.md](ext-point-build.md) |
+| `_project.json["modules"]` | `discover_modules()` (canonicalised) | phase-4-plan, phase-5-execute | [ext-point-build.md](ext-point-build.md) |
+| `<module>/derived.json` (raw module facts) | `discover_modules()` | phase-4-plan, phase-5-execute | [ext-point-build.md](ext-point-build.md) |
+| `<module>/derived.json` `commands` | `discover_modules()` | Architecture resolve | [ext-point-build.md](ext-point-build.md) |
+| `<module>/enriched.json` (LLM-enriched view) | manage-architecture enrichment | phase-3-outline, phase-4-plan | [ext-point-build.md](ext-point-build.md) |
 
 ## Runtime-Only (Not Persisted)
 

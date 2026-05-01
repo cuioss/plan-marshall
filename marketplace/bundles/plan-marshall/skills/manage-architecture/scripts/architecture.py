@@ -30,12 +30,28 @@ def main() -> int:
 
     # discover - Run extension API discovery
     discover_parser = subparsers.add_parser('discover', help='Run extension API discovery', allow_abbrev=False)
-    discover_parser.add_argument('--force', action='store_true', help='Overwrite existing derived-data.json')
+    discover_parser.add_argument(
+        '--force',
+        action='store_true',
+        help='Overwrite the existing project-architecture/ tree (atomic tmp+swap)',
+    )
 
-    # init - Initialize enrichment file
-    init_parser = subparsers.add_parser('init', help='Initialize llm-enriched.json from derived data', allow_abbrev=False)
-    init_parser.add_argument('--check', action='store_true', help='Check if enrichment file exists, output status only')
-    init_parser.add_argument('--force', action='store_true', help='Overwrite existing llm-enriched.json')
+    # init - Initialize per-module enrichment stubs
+    init_parser = subparsers.add_parser(
+        'init',
+        help='Initialize per-module enriched.json stubs from _project.json',
+        allow_abbrev=False,
+    )
+    init_parser.add_argument(
+        '--check',
+        action='store_true',
+        help='Check whether _project.json exists and how many modules are enriched; output status only',
+    )
+    init_parser.add_argument(
+        '--force',
+        action='store_true',
+        help='Overwrite existing per-module enriched.json stubs',
+    )
 
     # =========================================================================
     # Manage Commands (Read Raw)

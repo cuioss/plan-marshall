@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Client command handlers for architecture script.
 
-Handles: info, modules, graph, module, commands, resolve
-These commands merge derived + enriched data for consumer output.
+Handles: info, modules, graph, module, commands, resolve, profiles, siblings.
+
+Persistence model: per-module on-disk layout under
+``.plan/project-architecture/``. Readers iterate ``_project.json``'s
+``modules`` index and lazy-load per-module ``derived.json`` /
+``enriched.json`` on demand via the core helpers.
 """
 
 from typing import Any
@@ -12,14 +16,28 @@ from _architecture_core import (
     ModuleNotFoundInProjectError,
     error_result_command_not_found,
     error_result_module_not_found,
-    get_module,
-    get_module_names,
     get_root_module,
-    load_derived_data,
-    load_llm_enriched_or_empty,
+    iter_modules,
+    load_module_derived,
+    load_module_enriched_or_empty,
+    load_project_meta,
     merge_module_data,
-    require_derived_data_result,
+    require_project_meta_result,
 )
+
+
+def _load_module_or_raise(module_name: str, project_dir: str) -> dict[str, Any]:
+    """Validate module presence in ``_project.json`` and return its derived dict.
+
+    Distinct from a missing ``_project.json`` case (which raises
+    ``DataNotFoundError`` upstream): if the module is not in the index, raise
+    ``ModuleNotFoundInProjectError`` regardless of disk state.
+    """
+    available = iter_modules(project_dir)
+    if module_name not in available:
+        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', available)
+    return load_module_derived(module_name, project_dir)
+
 
 # =============================================================================
 # API Functions
@@ -27,72 +45,51 @@ from _architecture_core import (
 
 
 def get_project_info(project_dir: str = '.') -> dict[str, Any]:
-    """Get project summary with metadata and module overview.
+    """Get project summary with metadata and module overview."""
+    meta = load_project_meta(project_dir)
 
-    Args:
-        project_dir: Project directory path
+    module_names = iter_modules(project_dir)
 
-    Returns:
-        Dict with project info, technologies, and module overview
-    """
-    derived = load_derived_data(project_dir)
-    enriched = load_llm_enriched_or_empty(project_dir)
+    # Collect unique build systems and per-module rows.
+    technologies: set[str] = set()
+    module_overview: list[dict[str, Any]] = []
 
-    project = derived.get('project', {})
-    enriched_project = enriched.get('project', {})
-
-    # Collect unique build systems
-    technologies = set()
-    modules_data = derived.get('modules', {})
-    for module in modules_data.values():
-        for bs in module.get('build_systems', []):
+    for name in module_names:
+        try:
+            derived = load_module_derived(name, project_dir)
+        except DataNotFoundError:
+            derived = {}
+        for bs in derived.get('build_systems', []):
             technologies.add(bs)
 
-    # Build module overview with enriched purpose
-    module_overview: list[dict[str, Any]] = []
-    enriched_modules = enriched.get('modules', {})
-    for name, data in modules_data.items():
-        paths = data.get('paths', {})
-        enriched_module = enriched_modules.get(name, {})
+        enriched = load_module_enriched_or_empty(name, project_dir)
+        paths = derived.get('paths', {})
         module_overview.append(
-            {'name': name, 'path': paths.get('module', ''), 'purpose': enriched_module.get('purpose', '')}
+            {'name': name, 'path': paths.get('module', ''), 'purpose': enriched.get('purpose', '')}
         )
 
     return {
-        'project': {'name': project.get('name', ''), 'description': enriched_project.get('description', '')},
+        'project': {'name': meta.get('name', ''), 'description': meta.get('description', '')},
         'technologies': sorted(technologies),
         'modules': module_overview,
     }
 
 
 def get_modules_list(project_dir: str = '.') -> list[str]:
-    """Get list of module names.
-
-    Args:
-        project_dir: Project directory path
-
-    Returns:
-        List of module names
-    """
-    derived = load_derived_data(project_dir)
-    return get_module_names(derived)
+    """Get list of module names from ``_project.json``."""
+    return iter_modules(project_dir)
 
 
 def get_modules_with_command(command_name: str, project_dir: str = '.') -> list[str]:
-    """Get list of module names that provide a specific command.
-
-    Args:
-        command_name: Command name to filter by
-        project_dir: Project directory path
-
-    Returns:
-        List of module names that have the specified command
-    """
-    derived = load_derived_data(project_dir)
+    """Get list of module names that provide a specific command."""
     modules_with_command: list[str] = []
 
-    for module_name, module_data in derived.get('modules', {}).items():
-        commands = module_data.get('commands', {})
+    for module_name in iter_modules(project_dir):
+        try:
+            derived = load_module_derived(module_name, project_dir)
+        except DataNotFoundError:
+            continue
+        commands = derived.get('commands', {})
         if command_name in commands:
             modules_with_command.append(module_name)
 
@@ -103,25 +100,22 @@ def get_modules_by_physical_path(physical_path: str, project_dir: str = '.') -> 
     """Get list of module names at a specific physical path.
 
     For virtual modules, multiple modules may share the same physical path.
-
-    Args:
-        physical_path: Physical directory path to filter by
-        project_dir: Project directory path
-
-    Returns:
-        List of module names at the specified physical path
     """
-    derived = load_derived_data(project_dir)
     modules_at_path: list[str] = []
 
-    for module_name, module_data in derived.get('modules', {}).items():
-        # Check virtual_module.physical_path first
-        virtual = module_data.get('virtual_module', {})
+    for module_name in iter_modules(project_dir):
+        try:
+            derived = load_module_derived(module_name, project_dir)
+        except DataNotFoundError:
+            continue
+
+        # Check virtual_module.physical_path first.
+        virtual = derived.get('virtual_module', {})
         mod_physical_path = virtual.get('physical_path') if virtual else None
 
-        # Fall back to paths.module
+        # Fall back to paths.module.
         if not mod_physical_path:
-            paths = module_data.get('paths', {})
+            paths = derived.get('paths', {})
             mod_physical_path = paths.get('module', '.')
 
         if mod_physical_path == physical_path:
@@ -131,19 +125,9 @@ def get_modules_by_physical_path(physical_path: str, project_dir: str = '.') -> 
 
 
 def get_sibling_modules(module_name: str, project_dir: str = '.') -> list[str]:
-    """Get sibling virtual modules for a given module.
-
-    Args:
-        module_name: Module name to find siblings for
-        project_dir: Project directory path
-
-    Returns:
-        List of sibling module names (empty if not a virtual module)
-    """
-    derived = load_derived_data(project_dir)
-    module = get_module(derived, module_name)
-
-    virtual = module.get('virtual_module', {})
+    """Get sibling virtual modules for a given module."""
+    derived = _load_module_or_raise(module_name, project_dir)
+    virtual = derived.get('virtual_module', {})
     siblings: list[str] = virtual.get('sibling_modules', [])
     return siblings
 
@@ -153,103 +137,93 @@ def get_module_graph(project_dir: str = '.', full: bool = False) -> dict[str, An
 
     Uses Kahn's algorithm to compute execution layers where layer 0 contains
     modules with no dependencies, and higher layers depend only on lower layers.
-
-    Args:
-        project_dir: Project directory path
-        full: Include aggregator modules (pom-only parents). Default filters them out.
-
-    Returns:
-        Dict with graph structure: nodes, edges, layers, roots, leaves
     """
-    derived = load_derived_data(project_dir)
-    enriched = load_llm_enriched_or_empty(project_dir)
-    enriched_modules = enriched.get('modules', {})
+    module_names_all = iter_modules(project_dir)
 
-    modules_data = derived.get('modules', {})
+    # Lazily load each module's derived/enriched data once.
+    derived_by_name: dict[str, dict[str, Any]] = {}
+    enriched_by_name: dict[str, dict[str, Any]] = {}
+    for name in module_names_all:
+        try:
+            derived_by_name[name] = load_module_derived(name, project_dir)
+        except DataNotFoundError:
+            derived_by_name[name] = {}
+        enriched_by_name[name] = load_module_enriched_or_empty(name, project_dir)
 
-    # Build mapping of groupId:artifactId -> module_name for internal dep detection
-    # This allows us to identify which dependencies are internal to the project
+    # Build mapping of groupId:artifactId -> module_name for internal dep
+    # detection. Lets us identify which dependencies are internal to the project.
     artifact_to_module: dict[str, str] = {}
-    for mod_name, mod_data in modules_data.items():
+    for mod_name, mod_data in derived_by_name.items():
         metadata = mod_data.get('metadata', {})
         group_id = metadata.get('group_id')
         artifact_id = metadata.get('artifact_id')
         if group_id and artifact_id:
             artifact_to_module[f'{group_id}:{artifact_id}'] = mod_name
 
-    # Compute internal_dependencies for each module from its dependencies list
+    # Compute internal_dependencies for each module from its dependencies list.
     internal_deps_map: dict[str, list[str]] = {}
-    for mod_name, mod_data in modules_data.items():
-        # Check enriched data first (LLM-curated internal deps)
-        enriched_mod = enriched_modules.get(mod_name, {})
+    for mod_name, mod_data in derived_by_name.items():
+        enriched_mod = enriched_by_name.get(mod_name, {})
         if 'internal_dependencies' in enriched_mod:
             internal_deps_map[mod_name] = enriched_mod['internal_dependencies']
-        # Check derived data next (from discover command)
         elif 'internal_dependencies' in mod_data:
             internal_deps_map[mod_name] = mod_data['internal_dependencies']
         else:
-            # Compute from dependencies list (deduplicated)
             deps = mod_data.get('dependencies', [])
-            internal = set()  # Use set to deduplicate
+            internal: set[str] = set()
             for dep in deps:
-                # Format: groupId:artifactId:scope or groupId:artifactId:version:scope
                 parts = dep.split(':')
                 if len(parts) >= 2:
                     ga = f'{parts[0]}:{parts[1]}'
                     if ga in artifact_to_module:
                         dep_module = artifact_to_module[ga]
-                        if dep_module != mod_name:  # Don't include self
+                        if dep_module != mod_name:
                             internal.add(dep_module)
             internal_deps_map[mod_name] = list(internal)
 
-    # Filter out aggregator modules unless --full is specified
-    # Aggregators are pom-packaging modules (not jar, nar, war, etc.)
-    # BUT enriched data can mark pom modules as is_leaf to override filtering
+    # Filter out aggregator modules unless --full is specified.
+    # Aggregators are pom-packaging modules (not jar, nar, war, etc.). However
+    # enriched data can mark pom modules as is_leaf to override filtering.
     if full:
-        module_names: list[str] = list(modules_data.keys())
+        module_names: list[str] = list(module_names_all)
         filtered_out: list[str] = []
     else:
         module_names = []
         filtered_out = []
-        for name, data in modules_data.items():
+        for name in module_names_all:
+            data = derived_by_name.get(name, {})
             metadata = data.get('metadata', {})
             packaging = metadata.get('packaging', 'jar')
-            enriched_mod = enriched_modules.get(name, {})
+            enriched_mod = enriched_by_name.get(name, {})
 
-            # Check if enriched data marks this as a leaf (overrides packaging filter)
             is_leaf = enriched_mod.get('is_leaf', False)
-            # Also check purpose - integration-tests/deployment/benchmark are leaves
             purpose = enriched_mod.get('purpose', '')
             is_purpose_leaf = purpose in ['integration-tests', 'e2e', 'deployment', 'benchmark']
 
-            # Include if: non-pom packaging OR marked as leaf OR purpose indicates leaf
             if packaging != 'pom' or is_leaf or is_purpose_leaf:
                 module_names.append(name)
             else:
                 filtered_out.append(name)
 
-    # Build adjacency list and in-degree count
-    # Edge direction: from dependency TO dependent (for topological sort)
+    # Build adjacency list and in-degree count.
+    # Edge direction: from dependency TO dependent (for topological sort).
     in_degree: dict[str, int] = dict.fromkeys(module_names, 0)
-    dependents: dict[str, list[str]] = {name: [] for name in module_names}  # who depends on this module
+    dependents: dict[str, list[str]] = {name: [] for name in module_names}
 
     edges: list[dict[str, str]] = []
     for module_name in module_names:
         internal_deps = internal_deps_map.get(module_name, [])
         for dep in internal_deps:
             if dep in module_names:
-                # module_name depends on dep
-                # Edge: dep -> module_name (dep must be built before module_name)
                 edges.append({'from': dep, 'to': module_name})
                 in_degree[module_name] += 1
                 dependents[dep].append(module_name)
 
-    # Kahn's algorithm for topological sort with layer assignment
+    # Kahn's algorithm for topological sort with layer assignment.
     layers: list[dict[str, Any]] = []
     remaining = set(module_names)
     node_layers: dict[str, int] = {}
 
-    # Find all nodes with no dependencies (layer 0)
     current_layer = [name for name in module_names if in_degree[name] == 0]
 
     layer_num = 0
@@ -259,7 +233,6 @@ def get_module_graph(project_dir: str = '.', full: bool = False) -> dict[str, An
             node_layers[name] = layer_num
             remaining.discard(name)
 
-        # Find next layer: nodes whose dependencies are all processed
         next_layer = []
         for name in current_layer:
             for dependent in dependents[name]:
@@ -271,22 +244,19 @@ def get_module_graph(project_dir: str = '.', full: bool = False) -> dict[str, An
         current_layer = next_layer
         layer_num += 1
 
-    # Check for circular dependencies
     circular_deps: list[str] | None = list(remaining) if remaining else None
 
-    # Build nodes with layer and purpose
     nodes: list[dict[str, Any]] = []
     for name in module_names:
-        enriched_module = enriched_modules.get(name, {})
+        enriched_module = enriched_by_name.get(name, {})
         nodes.append(
             {
                 'name': name,
                 'purpose': enriched_module.get('purpose', ''),
-                'layer': node_layers.get(name, -1),  # -1 indicates circular dependency
+                'layer': node_layers.get(name, -1),
             }
         )
 
-    # Identify roots (no dependencies) and leaves (nothing depends on them)
     roots = [name for name in module_names if not internal_deps_map.get(name, [])]
     leaves = [name for name in module_names if not dependents[name]]
 
@@ -303,31 +273,20 @@ def get_module_graph(project_dir: str = '.', full: bool = False) -> dict[str, An
 
 
 def get_module_info(module_name: str | None = None, full: bool = False, project_dir: str = '.') -> dict[str, Any]:
-    """Get module information merged from derived + enriched data.
-
-    Args:
-        module_name: Module name (None for root module)
-        full: Include all fields (packages, dependencies, reasoning)
-        project_dir: Project directory path
-
-    Returns:
-        Merged module data dict
-    """
-    derived = load_derived_data(project_dir)
-    enriched = load_llm_enriched_or_empty(project_dir)
-
-    # Default to root module
+    """Get module information merged from derived + enriched data."""
     if not module_name:
-        module_name = get_root_module(derived)
+        module_name = get_root_module(project_dir)
         if not module_name:
             raise ModuleNotFoundInProjectError('No modules found', [])
 
-    # Merge data
-    merged = merge_module_data(derived, enriched, module_name)
+    # Validate the resolved name appears in the index.
+    available = iter_modules(project_dir)
+    if module_name not in available:
+        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', available)
 
-    # Filter fields based on full flag
+    merged = merge_module_data(module_name, project_dir)
+
     if not full:
-        # Remove reasoning fields and full package/dependency lists
         reasoning_fields = [
             'responsibility_reasoning',
             'purpose_reasoning',
@@ -337,37 +296,22 @@ def get_module_info(module_name: str | None = None, full: bool = False, project_
         for field in reasoning_fields:
             merged.pop(field, None)
 
-        # Keep only key_packages, not all packages
         merged.pop('packages', None)
-
-        # Keep only key_dependencies (already in enriched)
         merged.pop('dependencies', None)
 
     return merged
 
 
 def get_module_commands(module_name: str | None = None, project_dir: str = '.') -> dict[str, Any]:
-    """Get available commands for a module.
-
-    Args:
-        module_name: Module name (None for root module)
-        project_dir: Project directory path
-
-    Returns:
-        Dict with module name and commands list
-    """
-    derived = load_derived_data(project_dir)
-
-    # Default to root module
+    """Get available commands for a module."""
     if not module_name:
-        module_name = get_root_module(derived)
+        module_name = get_root_module(project_dir)
         if not module_name:
             raise ModuleNotFoundInProjectError('No modules found', [])
 
-    module = get_module(derived, module_name)
-    commands = module.get('commands', {})
+    derived = _load_module_or_raise(module_name, project_dir)
+    commands = derived.get('commands', {})
 
-    # Build command list with descriptions
     command_list: list[dict[str, str]] = []
     for cmd_name, cmd_data in commands.items():
         description = ''
@@ -385,36 +329,28 @@ def resolve_command(command_name: str, module_name: str | None = None, project_d
     1. Try command at specified module
     2. If not found AND module is not the root module -> try at root module
     3. If still not found -> raise ValueError
-
-    Args:
-        command_name: Command name to resolve
-        module_name: Module name (None for root module)
-        project_dir: Project directory path
-
-    Returns:
-        Dict with module, command, executable, and resolution_level
     """
-    derived = load_derived_data(project_dir)
-
-    # Default to root module
     if not module_name:
-        module_name = get_root_module(derived)
+        module_name = get_root_module(project_dir)
         if not module_name:
             raise ModuleNotFoundInProjectError('No modules found', [])
 
-    module = get_module(derived, module_name)
-    commands = module.get('commands', {})
+    derived = _load_module_or_raise(module_name, project_dir)
+    commands = derived.get('commands', {})
 
     if command_name in commands:
         cmd_data = commands[command_name]
         executable = cmd_data if isinstance(cmd_data, str) else cmd_data.get('executable', '')
         return {'module': module_name, 'command': command_name, 'executable': executable, 'resolution_level': 'module'}
 
-    # Cascade: try root module if current module is not already root
-    root_module_name = get_root_module(derived)
+    # Cascade: try root module if current module is not already root.
+    root_module_name = get_root_module(project_dir)
     if root_module_name and module_name != root_module_name:
-        root_module = get_module(derived, root_module_name)
-        root_commands = root_module.get('commands', {})
+        try:
+            root_derived = load_module_derived(root_module_name, project_dir)
+        except DataNotFoundError:
+            root_derived = {}
+        root_commands = root_derived.get('commands', {})
         if command_name in root_commands:
             cmd_data = root_commands[command_name]
             executable = cmd_data if isinstance(cmd_data, str) else cmd_data.get('executable', '')
@@ -444,7 +380,7 @@ def cmd_info(args) -> dict:
         info = get_project_info(args.project_dir)
         return {'status': 'success', **info}
     except DataNotFoundError:
-        return require_derived_data_result(args.project_dir)
+        return require_project_meta_result(args.project_dir)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 
@@ -465,7 +401,7 @@ def cmd_modules(args) -> dict:
             modules = get_modules_list(args.project_dir)
             return {'status': 'success', 'modules': modules}
     except DataNotFoundError:
-        return require_derived_data_result(args.project_dir)
+        return require_project_meta_result(args.project_dir)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 
@@ -476,7 +412,7 @@ def cmd_graph(args) -> dict:
         result = get_module_graph(args.project_dir, args.full)
         return {'status': 'success', **result}
     except DataNotFoundError:
-        return require_derived_data_result(args.project_dir)
+        return require_project_meta_result(args.project_dir)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 
@@ -484,14 +420,19 @@ def cmd_graph(args) -> dict:
 def cmd_module(args) -> dict:
     """CLI handler for module command."""
     try:
-        derived = load_derived_data(args.project_dir)
-        module_name = args.module or get_root_module(derived)
+        # Resolve module name (root if not provided), then merge.
+        module_name = args.module or get_root_module(args.project_dir)
+        if not module_name:
+            raise ModuleNotFoundInProjectError('No modules found', [])
         module = get_module_info(module_name, args.full, args.project_dir)
         return {'status': 'success', 'module': module}
     except DataNotFoundError:
-        return require_derived_data_result(args.project_dir)
+        return require_project_meta_result(args.project_dir)
     except ModuleNotFoundInProjectError:
-        modules = get_modules_list(args.project_dir)
+        try:
+            modules = get_modules_list(args.project_dir)
+        except Exception:
+            modules = []
         return error_result_module_not_found(args.module, modules)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
@@ -503,9 +444,12 @@ def cmd_commands(args) -> dict:
         result = get_module_commands(args.module, args.project_dir)
         return {'status': 'success', **result}
     except DataNotFoundError:
-        return require_derived_data_result(args.project_dir)
+        return require_project_meta_result(args.project_dir)
     except ModuleNotFoundInProjectError:
-        modules = get_modules_list(args.project_dir)
+        try:
+            modules = get_modules_list(args.project_dir)
+        except Exception:
+            modules = []
         return error_result_module_not_found(args.module, modules)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
@@ -517,16 +461,25 @@ def cmd_resolve(args) -> dict:
         result = resolve_command(args.resolve_command, args.module, args.project_dir)
         return {'status': 'success', **result}
     except DataNotFoundError:
-        return require_derived_data_result(args.project_dir)
+        return require_project_meta_result(args.project_dir)
     except ModuleNotFoundInProjectError:
-        modules = get_modules_list(args.project_dir)
+        try:
+            modules = get_modules_list(args.project_dir)
+        except Exception:
+            modules = []
         return error_result_module_not_found(args.module, modules)
     except ValueError:
-        # Command not found
-        derived = load_derived_data(args.project_dir)
-        resolved_module: str = args.module or get_root_module(derived) or ''
-        module = get_module(derived, resolved_module)
-        commands = list(module.get('commands', {}).keys())
+        # Command not found at the resolved module.
+        try:
+            resolved_module = args.module or get_root_module(args.project_dir) or ''
+            if resolved_module:
+                derived = load_module_derived(resolved_module, args.project_dir)
+                commands = list(derived.get('commands', {}).keys())
+            else:
+                commands = []
+        except Exception:
+            resolved_module = args.module or ''
+            commands = []
         return error_result_command_not_found(resolved_module, args.resolve_command, commands)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
@@ -539,28 +492,21 @@ def cmd_profiles(args) -> dict:
     Used by marshall-steward to auto-discover profiles for task_executors config.
     """
     try:
-        derived = load_derived_data(args.project_dir)
-        enriched = load_llm_enriched_or_empty(args.project_dir)
-        enriched_modules = enriched.get('modules', {})
+        all_modules = iter_modules(args.project_dir)
 
-        # Determine which modules to analyze
         if args.modules:
             module_names = [m.strip() for m in args.modules.split(',')]
-            # Validate module names
-            all_modules = get_module_names(derived)
             for name in module_names:
                 if name not in all_modules:
                     raise ModuleNotFoundInProjectError(f'Module not found: {name}', all_modules)
         else:
-            # Default: all modules with enrichment data
-            module_names = list(enriched_modules.keys())
+            module_names = list(all_modules)
 
-        # Collect unique profiles from skills_by_profile
         profiles: set[str] = set()
-        modules_analyzed = []
+        modules_analyzed: list[str] = []
 
         for module_name in module_names:
-            module_enriched = enriched_modules.get(module_name, {})
+            module_enriched = load_module_enriched_or_empty(module_name, args.project_dir)
             skills_by_profile = module_enriched.get('skills_by_profile', {})
             if skills_by_profile:
                 modules_analyzed.append(module_name)
@@ -573,9 +519,12 @@ def cmd_profiles(args) -> dict:
             'modules_analyzed': sorted(modules_analyzed),
         }
     except DataNotFoundError:
-        return require_derived_data_result(args.project_dir)
+        return require_project_meta_result(args.project_dir)
     except ModuleNotFoundInProjectError as e:
-        modules = get_module_names(load_derived_data(args.project_dir))
+        try:
+            modules = iter_modules(args.project_dir)
+        except Exception:
+            modules = []
         return error_result_module_not_found(str(e), modules)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
@@ -600,9 +549,12 @@ def cmd_siblings(args) -> dict:
 
         return result
     except DataNotFoundError:
-        return require_derived_data_result(args.project_dir)
+        return require_project_meta_result(args.project_dir)
     except ModuleNotFoundInProjectError:
-        modules = get_modules_list(args.project_dir)
+        try:
+            modules = get_modules_list(args.project_dir)
+        except Exception:
+            modules = []
         return error_result_module_not_found(args.module, modules)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}

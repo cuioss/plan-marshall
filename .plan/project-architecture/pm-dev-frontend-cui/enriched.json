@@ -1,0 +1,47 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [],
+  "key_dependencies_reasoning": "",
+  "key_packages": {
+    "cui_javascript_project": {
+      "description": "CUI JavaScript project structure, package.json conventions, dependency management, and Maven integration via frontend-maven-plugin."
+    },
+    "triage_ext": {
+      "description": "Plan-finalize triage extension that classifies JavaScript/CSS findings into fix vs suppress decisions for the CUI frontend domain."
+    }
+  },
+  "purpose": "extension",
+  "purpose_reasoning": "CUI-flavoured layer on top of pm-dev-frontend; activates only for CUI OSS projects.",
+  "responsibility": "CUI-specific JavaScript project conventions covering Maven integration with frontend-maven-plugin, Quarkus DevUI, NiFi extensions, and SonarQube scanning configuration for CUI OSS projects.",
+  "responsibility_reasoning": "CUI-flavoured layer on top of pm-dev-frontend; activates only for CUI OSS projects.",
+  "skills_by_profile": {
+    "implementation": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    },
+    "module_testing": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    },
+    "quality": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    }
+  },
+  "skills_by_profile_reasoning": "",
+  "tips": []
+}

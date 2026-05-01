@@ -355,12 +355,23 @@ The primary consumer is **solution-outline** during task planning.
 
 ```
 .plan/project-architecture/
-├── derived-data.json  # Extension API output
-└── llm-enriched.json  # LLM-enriched fields
+├── _project.json                   # Top-level project metadata + module index
+├── {module}/
+│   ├── derived.json                # Extension API output for one module
+│   └── enriched.json               # LLM-enriched fields for one module
+└── ...
 ```
 
-See [architecture-persistence.md](architecture-persistence.md) for complete schema.
+`_project.json`'s `modules` field is the single source of truth for "which
+modules exist"; clients iterate the index and lazy-load the per-module
+`derived.json` and `enriched.json` files on demand.
 
-> **Persistence details**: See `standards/architecture-persistence.md` for the underlying storage schema.
+See [architecture-persistence.md](architecture-persistence.md) for complete
+schema, including the atomic tmp+swap protocol used by `discover --force`.
 
-Commands merge both files for output. If data does not exist, commands return error with instructions to run discovery first.
+> **Persistence details**: See `standards/architecture-persistence.md` for
+> the underlying storage schema.
+
+Commands merge `{module}/derived.json` and `{module}/enriched.json` for
+output. If `_project.json` does not exist, commands return an error with
+instructions to run discovery first.

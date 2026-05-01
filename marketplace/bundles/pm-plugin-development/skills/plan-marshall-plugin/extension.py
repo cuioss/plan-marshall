@@ -2,7 +2,10 @@
 """Extension API for pm-plugin-development bundle.
 
 Provides module discovery and skill domains for plugin development projects.
-Discovers marketplace bundles as modules for derived-data.json generation.
+Discovers marketplace bundles as modules for the per-module architecture
+layout (a top-level ``_project.json`` plus one
+``{module}/derived.json`` per indexed module under
+``.plan/project-architecture/``).
 """
 
 import sys

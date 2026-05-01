@@ -1,0 +1,151 @@
+{
+  "build_systems": [
+    "maven",
+    "npm"
+  ],
+  "commands": {
+    "clean": {
+      "maven": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean -pl oauth-sheriff-quarkus-deployment\"",
+      "npm": "python3 .plan/execute-script.py plan-marshall:build-npm:npm run --command-args \"--prefix oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment run clean\""
+    },
+    "clean-install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean install -pl oauth-sheriff-quarkus-deployment\"",
+    "compile": {
+      "maven": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"compile -pl oauth-sheriff-quarkus-deployment\"",
+      "npm": "python3 .plan/execute-script.py plan-marshall:build-npm:npm run --command-args \"--prefix oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment run build\""
+    },
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Pcoverage -pl oauth-sheriff-quarkus-deployment\"",
+    "install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"install -pl oauth-sheriff-quarkus-deployment\"",
+    "module-tests": {
+      "maven": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test -pl oauth-sheriff-quarkus-deployment\"",
+      "npm": "python3 .plan/execute-script.py plan-marshall:build-npm:npm run --command-args \"--prefix oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment test\""
+    },
+    "package": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"package -pl oauth-sheriff-quarkus-deployment\"",
+    "quality-gate": {
+      "maven": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-quarkus-deployment\"",
+      "npm": "python3 .plan/execute-script.py plan-marshall:build-npm:npm run --command-args \"--prefix oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment run lint\""
+    },
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test-compile -pl oauth-sheriff-quarkus-deployment\"",
+    "verify": {
+      "maven": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl oauth-sheriff-quarkus-deployment\"",
+      "npm": "python3 .plan/execute-script.py plan-marshall:build-npm:npm run --command-args \"--prefix oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment run build && npm test\""
+    }
+  },
+  "dependencies": [
+    "npm:@babel/core:compile",
+    "npm:@babel/plugin-syntax-dynamic-import:compile",
+    "npm:@babel/plugin-transform-class-properties:compile",
+    "npm:@babel/plugin-transform-nullish-coalescing-operator:compile",
+    "npm:@babel/plugin-transform-optional-chaining:compile",
+    "npm:@babel/plugin-transform-private-methods:compile",
+    "npm:@babel/preset-env:compile",
+    "npm:@eslint/js:compile",
+    "npm:@testing-library/jest-dom:compile",
+    "npm:babel-jest:compile",
+    "npm:core-js:compile",
+    "npm:css-tree:compile",
+    "npm:del-cli:compile",
+    "npm:eslint-config-prettier:compile",
+    "npm:eslint-plugin-import:compile",
+    "npm:eslint-plugin-jest:compile",
+    "npm:eslint-plugin-jsdoc:compile",
+    "npm:eslint-plugin-lit:compile",
+    "npm:eslint-plugin-prettier:compile",
+    "npm:eslint-plugin-promise:compile",
+    "npm:eslint-plugin-security:compile",
+    "npm:eslint-plugin-unicorn:compile",
+    "npm:eslint-plugin-wc:compile",
+    "npm:eslint:compile",
+    "npm:jest-environment-jsdom:compile",
+    "npm:jest:compile",
+    "npm:license-checker:compile",
+    "npm:lit:compile",
+    "npm:postcss-lit:compile",
+    "npm:prettier:compile",
+    "npm:specificity:compile",
+    "npm:stylelint-config-standard:compile",
+    "npm:stylelint-declaration-strict-value:compile",
+    "npm:stylelint-order:compile",
+    "npm:stylelint:compile",
+    "npm:terser:compile",
+    "npm:webpack-cli:compile",
+    "npm:webpack:compile",
+    "de.cuioss.sheriff.oauth:oauth-sheriff-quarkus:compile",
+    "io.quarkus:quarkus-core-deployment:compile",
+    "io.quarkus:quarkus-arc-deployment:compile",
+    "io.quarkus:quarkus-micrometer-deployment:compile",
+    "io.quarkus:quarkus-security-deployment:compile",
+    "io.quarkus:quarkus-smallrye-health-deployment:compile",
+    "io.quarkus:quarkus-vertx-http-deployment:compile",
+    "io.quarkus:quarkus-scheduler-deployment:compile",
+    "io.quarkus:quarkus-config-yaml-deployment:compile",
+    "io.quarkus:quarkus-hibernate-validator-deployment:compile",
+    "io.quarkus:quarkus-devui-deployment-spi:compile",
+    "io.quarkus:quarkus-junit5-internal:test",
+    "org.jboss.logmanager:jboss-logmanager:test",
+    "org.junit.jupiter:junit-jupiter:test",
+    "de.cuioss.sheriff.oauth:oauth-sheriff-core:compile",
+    "io.quarkus:quarkus-core:compile",
+    "io.quarkus:quarkus-arc:compile",
+    "io.quarkus:quarkus-micrometer:compile",
+    "io.quarkus:quarkus-security:compile",
+    "org.projectlombok:lombok:provided",
+    "io.quarkus:quarkus-junit5:test",
+    "de.cuioss.test:cui-test-juli-logger:test"
+  ],
+  "metadata": {
+    "artifact_id": "oauth-sheriff-quarkus-deployment",
+    "description": "DevUI components for OAuth Sheriff Quarkus extension",
+    "group_id": "de.cuioss.sheriff.oauth",
+    "packaging": "jar",
+    "parent": "de.cuioss.sheriff.oauth:oauth-sheriff-quarkus-parent",
+    "profiles": [
+      {
+        "canonical": "coverage",
+        "id": "coverage"
+      },
+      {
+        "canonical": "javadoc",
+        "id": "javadoc"
+      },
+      {
+        "canonical": "quality-gate",
+        "id": "pre-commit"
+      }
+    ],
+    "type": "module"
+  },
+  "name": "oauth-sheriff-quarkus-devui",
+  "packages": {
+    "de.cuioss.sheriff.oauth.quarkus.deployment": {
+      "package_info": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment/src/main/java/de/cuioss/sheriff/oauth/quarkus/deployment/package-info.java",
+      "path": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment/src/main/java/de/cuioss/sheriff/oauth/quarkus/deployment"
+    },
+    "main": {
+      "path": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment/src/main"
+    },
+    "test": {
+      "path": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment/src/test"
+    }
+  },
+  "paths": {
+    "descriptors": [
+      "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment/package.json",
+      "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment/pom.xml"
+    ],
+    "module": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment",
+    "readme": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment/README.adoc",
+    "sources": [
+      "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment/src",
+      "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment/src/main/java",
+      "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment/src/main/resources"
+    ],
+    "tests": [
+      "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment/src/test/java",
+      "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-deployment/src/test/resources"
+    ]
+  },
+  "stats": {
+    "source_files": 17,
+    "test_files": 6
+  }
+}

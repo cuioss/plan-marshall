@@ -1,0 +1,15 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [],
+  "key_dependencies_reasoning": "",
+  "key_packages": {},
+  "purpose": "parent",
+  "purpose_reasoning": "packaging=pom, BOM for dependency management",
+  "responsibility": "Provides a Bill of Materials (BOM) for dependency version management across OAuth Sheriff modules.",
+  "responsibility_reasoning": "packaging=pom, name indicates BOM purpose",
+  "skills_by_profile": {},
+  "skills_by_profile_reasoning": "BOM module with no source files - no skill profiles needed",
+  "tips": []
+}

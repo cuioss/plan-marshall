@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
-"""Tests for profiles.py module."""
+"""Tests for profiles.py module.
+
+Seeds project architecture data using the per-module on-disk layout
+(``_project.json`` + per-module ``derived.json``) introduced by D2.
+The legacy monolithic ``derived-data.json`` shape is intentionally
+absent from this surface — TASK-2 removed it from ``_architecture_core``.
+"""
 
 import sys
 import tempfile
 
 # Direct imports - conftest sets up PYTHONPATH
-from _architecture_core import save_derived_data
+from _architecture_core import save_module_derived, save_project_meta
 from profiles import (
     classify_profile,
     get_unmatched_profiles,
@@ -19,7 +25,13 @@ from profiles import (
 
 
 def create_test_derived_data(tmpdir: str, profiles: list | None = None) -> dict:
-    """Create test derived-data.json with Maven module and profiles."""
+    """Seed per-module layout (``_project.json`` + per-module ``derived.json``).
+
+    Writes a single Maven module ``module-a`` whose ``metadata.profiles`` is
+    the supplied (or default) profile list. Returns the same shape the
+    legacy helper returned so call-sites that inspect the dict (none today,
+    but kept stable for the test contract) continue to work.
+    """
     if profiles is None:
         profiles = [
             {'id': 'jacoco', 'canonical': 'coverage'},
@@ -28,22 +40,37 @@ def create_test_derived_data(tmpdir: str, profiles: list | None = None) -> dict:
             {'id': 'custom-profile', 'canonical': 'NO-MATCH-FOUND'},
         ]
 
-    test_data = {
-        'project': {'name': 'test-project'},
-        'modules': {
-            'module-a': {
-                'name': 'module-a',
-                'build_systems': ['maven'],
-                'paths': {'module': 'module-a'},
-                'metadata': {'profiles': profiles},
-                'packages': {},
-                'dependencies': [],
-                'commands': {},
-            }
-        },
+    module_data = {
+        'name': 'module-a',
+        'build_systems': ['maven'],
+        'paths': {'module': 'module-a'},
+        'metadata': {'profiles': profiles},
+        'packages': {},
+        'dependencies': [],
+        'commands': {},
     }
-    save_derived_data(test_data, tmpdir)
-    return test_data
+
+    # _project.json — top-level meta with the modules index. The index is the
+    # canonical "which modules exist" source; iter_modules() reads from it.
+    save_project_meta(
+        {
+            'name': 'test-project',
+            'description': '',
+            'description_reasoning': '',
+            'extensions_used': [],
+            'modules': {'module-a': {}},
+        },
+        tmpdir,
+    )
+    # Per-module derived.json — production-side helpers (list_profiles,
+    # get_unmatched_profiles, suggest_classifications) consume it via
+    # load_module_derived().
+    save_module_derived('module-a', module_data, tmpdir)
+
+    return {
+        'project': {'name': 'test-project'},
+        'modules': {'module-a': module_data},
+    }
 
 
 # =============================================================================

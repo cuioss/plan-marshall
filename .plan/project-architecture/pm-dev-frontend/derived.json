@@ -1,0 +1,63 @@
+{
+  "build_systems": [
+    "marshall-plugin"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-dev-frontend\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-dev-frontend\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-dev-frontend\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-dev-frontend\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-dev-frontend\"",
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-dev-frontend\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-frontend\""
+  },
+  "dependencies": [],
+  "metadata": {
+    "bundle_name": "pm-dev-frontend",
+    "description": "JavaScript, CSS, and web component standards for applications"
+  },
+  "name": "pm-dev-frontend",
+  "packages": {
+    "skill:css": {
+      "description": "Modern CSS standards covering native nesting, cascade layers, Container Queries, custom properties, responsive design, accessibility, and PostCSS/Stylelint tooling",
+      "path": "skills/css",
+      "type": "skill"
+    },
+    "skill:ext-triage-js": {
+      "description": "Triage extension for JavaScript findings during plan-finalize phase",
+      "path": "skills/ext-triage-js",
+      "type": "skill"
+    },
+    "skill:javascript": {
+      "description": "Core JavaScript development standards covering ES modules, modern patterns, code quality, async programming, JSDoc documentation, and tooling",
+      "path": "skills/javascript",
+      "type": "skill"
+    },
+    "skill:jest-testing": {
+      "description": "JavaScript unit testing standards covering Jest framework, DOM and web component testing, mocking patterns, async testing, and coverage configuration",
+      "path": "skills/jest-testing",
+      "type": "skill"
+    },
+    "skill:lint-config": {
+      "description": "ESLint flat config, Prettier, and Stylelint configuration, rule customization, and build integration standards for JavaScript projects",
+      "path": "skills/lint-config",
+      "type": "skill"
+    }
+  },
+  "paths": {
+    "descriptor": "marketplace/bundles/pm-dev-frontend/.claude-plugin/plugin.json",
+    "module": "marketplace/bundles/pm-dev-frontend",
+    "readme": "marketplace/bundles/pm-dev-frontend/README.md",
+    "sources": [
+      "marketplace/bundles/pm-dev-frontend/skills"
+    ],
+    "tests": [
+      "test/pm-dev-frontend"
+    ]
+  },
+  "stats": {
+    "agent_count": 0,
+    "command_count": 0,
+    "skill_count": 5
+  }
+}

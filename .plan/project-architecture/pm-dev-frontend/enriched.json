@@ -1,0 +1,50 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [],
+  "key_dependencies_reasoning": "",
+  "key_packages": {
+    "css_and_lint": {
+      "description": "CSS skill covering modern features (nesting, container queries, layers) and lint-config skill for ESLint/Stylelint/Prettier setup."
+    },
+    "javascript_standards": {
+      "description": "Core JavaScript skill covering ES modules, modern syntax, async patterns, JSDoc documentation, and code quality conventions."
+    },
+    "jest_testing": {
+      "description": "Jest unit testing skill covering DOM testing, web component testing, mocking, async tests, and coverage configuration."
+    }
+  },
+  "purpose": "extension",
+  "purpose_reasoning": "Optional domain extension that activates when a project has frontend modules; not required by the core lifecycle.",
+  "responsibility": "JavaScript, CSS, and frontend tooling standards covering ES modules, modern syntax, JSDoc conventions, ESLint/Stylelint configuration, and Jest unit testing for browser and component code.",
+  "responsibility_reasoning": "Optional domain extension that activates when a project has frontend modules; not required by the core lifecycle.",
+  "skills_by_profile": {
+    "implementation": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    },
+    "module_testing": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    },
+    "quality": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    }
+  },
+  "skills_by_profile_reasoning": "",
+  "tips": []
+}

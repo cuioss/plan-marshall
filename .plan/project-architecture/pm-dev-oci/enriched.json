@@ -1,0 +1,47 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [],
+  "key_dependencies_reasoning": "",
+  "key_packages": {
+    "oci_image_standards": {
+      "description": "OCI image building skill covering base images, multi-stage builds, version pinning, .dockerignore, multi-platform builds, and OCI labels."
+    },
+    "oci_security": {
+      "description": "OCI runtime security skill covering capability dropping, read-only filesystems, image signing (Cosign), SBOMs (Syft), and Trivy vulnerability scanning."
+    }
+  },
+  "purpose": "extension",
+  "purpose_reasoning": "Optional container domain extension activated when projects build OCI images.",
+  "responsibility": "OCI container standards covering image building, multi-platform builds, Dockerfile best practices, runtime security hardening, and supply-chain controls (SBOM, signing, scanning).",
+  "responsibility_reasoning": "Optional container domain extension activated when projects build OCI images.",
+  "skills_by_profile": {
+    "implementation": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    },
+    "module_testing": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    },
+    "quality": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    }
+  },
+  "skills_by_profile_reasoning": "",
+  "tips": []
+}

@@ -1,0 +1,63 @@
+{
+  "build_systems": [
+    "marshall-plugin"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-documents\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-documents\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-documents\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-documents\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-documents\"",
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-documents\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-documents\""
+  },
+  "dependencies": [],
+  "metadata": {
+    "bundle_name": "pm-documents",
+    "description": "AsciiDoc and documentation standards enforcement for projects"
+  },
+  "name": "pm-documents",
+  "packages": {
+    "skill:ext-triage-docs": {
+      "description": "Triage extension for documentation findings during plan-finalize phase",
+      "path": "skills/ext-triage-docs",
+      "type": "skill"
+    },
+    "skill:manage-adr": {
+      "description": "Manage Architectural Decision Records (ADRs) with CRUD operations, automatic numbering, and AsciiDoc formatting",
+      "path": "skills/manage-adr",
+      "type": "skill"
+    },
+    "skill:manage-interface": {
+      "description": "Manage Interface specifications with CRUD operations, automatic numbering, and AsciiDoc formatting",
+      "path": "skills/manage-interface",
+      "type": "skill"
+    },
+    "skill:ref-asciidoc": {
+      "description": "AsciiDoc formatting, validation, link verification, and template creation workflows",
+      "path": "skills/ref-asciidoc",
+      "type": "skill"
+    },
+    "skill:ref-documentation": {
+      "description": "Content quality, tone analysis, organization standards, and review orchestration for technical documentation",
+      "path": "skills/ref-documentation",
+      "type": "skill"
+    }
+  },
+  "paths": {
+    "descriptor": "marketplace/bundles/pm-documents/.claude-plugin/plugin.json",
+    "module": "marketplace/bundles/pm-documents",
+    "readme": "marketplace/bundles/pm-documents/README.md",
+    "sources": [
+      "marketplace/bundles/pm-documents/skills"
+    ],
+    "tests": [
+      "test/pm-documents"
+    ]
+  },
+  "stats": {
+    "agent_count": 0,
+    "command_count": 0,
+    "skill_count": 5
+  }
+}

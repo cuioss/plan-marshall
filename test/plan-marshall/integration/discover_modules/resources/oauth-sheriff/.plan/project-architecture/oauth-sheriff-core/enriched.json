@@ -1,0 +1,49 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [
+    "de.cuioss:cui-java-tools",
+    "de.cuioss:cui-http",
+    "jakarta.json:jakarta.json-api",
+    "com.dslplatform:dsl-json",
+    "org.jspecify:jspecify"
+  ],
+  "key_dependencies_reasoning": "cui-java-tools and cui-http for core utilities and HTTP, jakarta.json for JSON processing, dsl-json for high-perf JSON, jspecify for null-safety",
+  "key_packages": {
+    "de.cuioss.sheriff.oauth.core": {
+      "description": "Main entry point providing TokenValidator for creating and validating tokens, IssuerConfig for issuer setup, and ParserConfig for parsing configuration."
+    },
+    "de.cuioss.sheriff.oauth.core.domain": {
+      "description": "Contains domain models for tokens (AccessToken, IdToken, RefreshToken), claims, validation contexts, and authorization results."
+    },
+    "de.cuioss.sheriff.oauth.core.jwks": {
+      "description": "Handles JWKS (JSON Web Key Set) operations including key parsing, HTTP fetching, caching, and rotation support."
+    },
+    "de.cuioss.sheriff.oauth.core.pipeline": {
+      "description": "Implements the validation pipeline with pluggable validators for signature verification, claim validation, and expiration checking."
+    }
+  },
+  "purpose": "library",
+  "purpose_reasoning": "packaging=jar, no runtime deps, no main class, used as compile dependency",
+  "responsibility": "Provides the core JWT token validation library with multi-issuer support, JWKS key management, validation pipelines, and domain models for tokens, claims, and validation contexts.",
+  "responsibility_reasoning": "From package-info.java and module structure with 19 packages covering pipeline, jwks, domain, cache",
+  "skills_by_profile": {
+    "implementation": [
+      "pm-dev-java:java-core",
+      "pm-dev-java:java-null-safety",
+      "pm-dev-java:java-lombok",
+      "pm-dev-java:java-maintenance",
+      "pm-dev-java-cui:cui-logging"
+    ],
+    "unit-testing": [
+      "pm-dev-java:java-core",
+      "pm-dev-java:java-null-safety",
+      "pm-dev-java:java-lombok",
+      "pm-dev-java:junit-core",
+      "pm-dev-java-cui:cui-testing"
+    ]
+  },
+  "skills_by_profile_reasoning": "Core library uses Lombok, JSpecify null-safety, CUI logging. Removed java-cdi (no CDI annotations). Added CUI-specific skills for logging and testing.",
+  "tips": []
+}

@@ -1,0 +1,12 @@
+{
+  "build_systems": [
+    "documentation"
+  ],
+  "metadata": {
+    "description": "Project documentation"
+  },
+  "name": "documentation",
+  "paths": {
+    "module": "doc"
+  }
+}

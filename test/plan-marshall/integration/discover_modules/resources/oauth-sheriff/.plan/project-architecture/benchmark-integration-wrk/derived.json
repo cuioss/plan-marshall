@@ -1,0 +1,92 @@
+{
+  "build_systems": [
+    "maven"
+  ],
+  "commands": {
+    "benchmark": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Pstress -pl benchmark-integration-wrk\"",
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean -pl benchmark-integration-wrk\"",
+    "clean-install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean install -pl benchmark-integration-wrk\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"compile -pl benchmark-integration-wrk\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Pcoverage -pl benchmark-integration-wrk\"",
+    "install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"install -pl benchmark-integration-wrk\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test -pl benchmark-integration-wrk\"",
+    "package": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"package -pl benchmark-integration-wrk\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit -pl benchmark-integration-wrk\"",
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test-compile -pl benchmark-integration-wrk\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl benchmark-integration-wrk\""
+  },
+  "dependencies": [
+    "de.cuioss.sheriff.oauth:benchmarking-common:compile",
+    "com.google.code.gson:gson:compile",
+    "org.projectlombok:lombok:provided",
+    "commons-io:commons-io:compile",
+    "org.openjdk.jmh:jmh-core:compile",
+    "de.cuioss:cui-java-tools:compile",
+    "org.junit.jupiter:junit-jupiter:test",
+    "org.awaitility:awaitility:test"
+  ],
+  "metadata": {
+    "artifact_id": "benchmark-integration-wrk",
+    "description": "WRK-based HTTP benchmarks for OAuth/JWT validation endpoints with integration test infrastructure",
+    "group_id": "de.cuioss.sheriff.oauth",
+    "packaging": "jar",
+    "parent": "de.cuioss.sheriff.oauth:benchmarking",
+    "profiles": [
+      {
+        "canonical": "coverage",
+        "id": "coverage"
+      },
+      {
+        "canonical": "benchmark",
+        "id": "stress"
+      },
+      {
+        "canonical": "NO-MATCH-FOUND",
+        "id": "quick"
+      },
+      {
+        "canonical": "NO-MATCH-FOUND",
+        "id": "max"
+      },
+      {
+        "canonical": "quality-gate",
+        "id": "pre-commit"
+      },
+      {
+        "canonical": "NO-MATCH-FOUND",
+        "id": "autoscale"
+      },
+      {
+        "canonical": "NO-MATCH-FOUND",
+        "id": "benchmark"
+      },
+      {
+        "canonical": "javadoc",
+        "id": "javadoc"
+      }
+    ]
+  },
+  "name": "benchmark-integration-wrk",
+  "packages": {
+    "de.cuioss.sheriff.oauth.wrk.benchmark": {
+      "path": "benchmarking/benchmark-integration-wrk/src/main/java/de/cuioss/sheriff/oauth/wrk/benchmark"
+    }
+  },
+  "paths": {
+    "descriptor": "benchmarking/benchmark-integration-wrk/pom.xml",
+    "module": "benchmarking/benchmark-integration-wrk",
+    "readme": "benchmarking/benchmark-integration-wrk/README.adoc",
+    "sources": [
+      "benchmarking/benchmark-integration-wrk/src/main/java",
+      "benchmarking/benchmark-integration-wrk/src/main/resources"
+    ],
+    "tests": [
+      "benchmarking/benchmark-integration-wrk/src/test/java",
+      "benchmarking/benchmark-integration-wrk/src/test/resources"
+    ]
+  },
+  "stats": {
+    "source_files": 1,
+    "test_files": 1
+  }
+}

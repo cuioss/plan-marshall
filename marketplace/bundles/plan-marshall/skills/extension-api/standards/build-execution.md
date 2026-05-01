@@ -248,20 +248,24 @@ Implementations **must** support content filtering via `--mode` parameter:
 
 ## Invocation Patterns
 
-### From Aggregated Output
+### From Per-Module Architecture Cache
 
-The orchestrator resolves commands per module in `.plan/project-architecture/derived-data.json`. Each command is **complete** with all routing embedded:
+The orchestrator resolves commands per module from the architecture cache. The cache lives under `.plan/architecture/`: a top-level `_project.json` declares the canonical `modules[]` set, and each entry has its own subdirectory `<module>/` with `derived.json` (raw module facts, including the `commands` map) and, after enrichment, `enriched.json`. `_project.json["modules"]` is the source of truth — orphan subdirectories are ignored. Each command is **complete** with all routing embedded:
 
+`.plan/architecture/_project.json`:
 ```json
 {
-  "modules": {
-    "oauth-sheriff-core": {
-      "commands": {
-        "module-tests": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test -pl oauth-sheriff-core\"",
-        "verify": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl oauth-sheriff-core\"",
-        "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-core\""
-      }
-    }
+  "modules": ["oauth-sheriff-core", "oauth-sheriff-api"]
+}
+```
+
+`.plan/architecture/oauth-sheriff-core/derived.json`:
+```json
+{
+  "commands": {
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test -pl oauth-sheriff-core\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl oauth-sheriff-core\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-core\""
   }
 }
 ```
@@ -557,7 +561,9 @@ if result['status'] == 'error':
 
 | File | Owner | Content |
 |------|-------|---------|
-| `.plan/project-architecture/derived-data.json` | manage-architecture | Discovered modules with command strings |
+| `.plan/architecture/_project.json` | manage-architecture | Project-wide facts and canonical `modules[]` (source of truth) |
+| `.plan/architecture/<module>/derived.json` | manage-architecture | Raw discovered module facts including command strings |
+| `.plan/architecture/<module>/enriched.json` | manage-architecture | LLM-enriched per-module view (post-enrichment) |
 | `.plan/run-configuration.json` | run-config | Learned timeouts, acceptable warnings |
 | `.plan/temp/build-output/{scope}/{system}-{ts}.log` | build scripts | Raw build output (timestamped) |
 

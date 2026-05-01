@@ -1,0 +1,43 @@
+{
+  "build_systems": [
+    "marshall-plugin"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-dev-frontend-cui\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-dev-frontend-cui\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-dev-frontend-cui\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-dev-frontend-cui\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-dev-frontend-cui\"",
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-dev-frontend-cui\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-frontend-cui\""
+  },
+  "dependencies": [],
+  "metadata": {
+    "bundle_name": "pm-dev-frontend-cui",
+    "description": "CUI-specific JavaScript project standards covering Maven integration, Quarkus DevUI, NiFi, and SonarQube"
+  },
+  "name": "pm-dev-frontend-cui",
+  "packages": {
+    "skill:cui-javascript-project": {
+      "description": "JavaScript project structure, package.json configuration, dependency management, and Maven integration standards for consistent project setup and builds",
+      "path": "skills/cui-javascript-project",
+      "type": "skill"
+    }
+  },
+  "paths": {
+    "descriptor": "marketplace/bundles/pm-dev-frontend-cui/.claude-plugin/plugin.json",
+    "module": "marketplace/bundles/pm-dev-frontend-cui",
+    "readme": "marketplace/bundles/pm-dev-frontend-cui/README.md",
+    "sources": [
+      "marketplace/bundles/pm-dev-frontend-cui/skills"
+    ],
+    "tests": [
+      "test/pm-dev-frontend-cui"
+    ]
+  },
+  "stats": {
+    "agent_count": 0,
+    "command_count": 0,
+    "skill_count": 1
+  }
+}
