@@ -25,6 +25,7 @@
     "de.cuioss.test:cui-test-juli-logger:test",
     "org.awaitility:awaitility:test"
   ],
+  "files": {},
   "metadata": {
     "artifact_id": "cui-http",
     "description": "Provides a number of http-related utilities .",

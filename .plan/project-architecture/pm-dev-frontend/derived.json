@@ -12,6 +12,52 @@
     "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-frontend\""
   },
   "dependencies": [],
+  "files": {
+    "doc": [
+      "marketplace/bundles/pm-dev-frontend/README.md"
+    ],
+    "script": [
+      "marketplace/bundles/pm-dev-frontend/skills/javascript/scripts/jsdoc.py"
+    ],
+    "skill": [
+      "marketplace/bundles/pm-dev-frontend/skills/css/SKILL.md",
+      "marketplace/bundles/pm-dev-frontend/skills/ext-triage-js/SKILL.md",
+      "marketplace/bundles/pm-dev-frontend/skills/javascript/SKILL.md",
+      "marketplace/bundles/pm-dev-frontend/skills/jest-testing/SKILL.md",
+      "marketplace/bundles/pm-dev-frontend/skills/lint-config/SKILL.md",
+      "marketplace/bundles/pm-dev-frontend/skills/plan-marshall-plugin/SKILL.md"
+    ],
+    "standard": [
+      "marketplace/bundles/pm-dev-frontend/skills/css/standards/css-essentials.md",
+      "marketplace/bundles/pm-dev-frontend/skills/css/standards/css-quality-tooling.md",
+      "marketplace/bundles/pm-dev-frontend/skills/css/standards/css-responsive.md",
+      "marketplace/bundles/pm-dev-frontend/skills/ext-triage-js/standards/severity.md",
+      "marketplace/bundles/pm-dev-frontend/skills/ext-triage-js/standards/suppression.md",
+      "marketplace/bundles/pm-dev-frontend/skills/javascript/standards/async-programming.md",
+      "marketplace/bundles/pm-dev-frontend/skills/javascript/standards/code-quality.md",
+      "marketplace/bundles/pm-dev-frontend/skills/javascript/standards/javascript-fundamentals.md",
+      "marketplace/bundles/pm-dev-frontend/skills/javascript/standards/jsdoc-essentials.md",
+      "marketplace/bundles/pm-dev-frontend/skills/javascript/standards/jsdoc-patterns.md",
+      "marketplace/bundles/pm-dev-frontend/skills/javascript/standards/modern-patterns.md",
+      "marketplace/bundles/pm-dev-frontend/skills/jest-testing/standards/dom-component-testing.md",
+      "marketplace/bundles/pm-dev-frontend/skills/jest-testing/standards/mocking-async.md",
+      "marketplace/bundles/pm-dev-frontend/skills/jest-testing/standards/test-fundamentals.md",
+      "marketplace/bundles/pm-dev-frontend/skills/lint-config/standards/eslint-configuration.md",
+      "marketplace/bundles/pm-dev-frontend/skills/lint-config/standards/eslint-integration.md",
+      "marketplace/bundles/pm-dev-frontend/skills/lint-config/standards/eslint-rules.md",
+      "marketplace/bundles/pm-dev-frontend/skills/lint-config/standards/prettier-configuration.md",
+      "marketplace/bundles/pm-dev-frontend/skills/lint-config/standards/stylelint-setup.md"
+    ],
+    "test": [
+      "test/pm-dev-frontend/README.md",
+      "test/pm-dev-frontend/jsdoc/missing-jsdoc.js",
+      "test/pm-dev-frontend/jsdoc/partial-jsdoc.js",
+      "test/pm-dev-frontend/jsdoc/valid-jsdoc.js",
+      "test/pm-dev-frontend/jsdoc/violations-report.json",
+      "test/pm-dev-frontend/jsdoc/web-component.js",
+      "test/pm-dev-frontend/test_jsdoc.py"
+    ]
+  },
   "metadata": {
     "bundle_name": "pm-dev-frontend",
     "description": "JavaScript, CSS, and web component standards for applications"

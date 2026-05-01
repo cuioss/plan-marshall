@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Client command handlers for architecture script.
 
-Handles: info, modules, graph, module, commands, resolve, profiles, siblings.
+Handles: info, modules, graph, module, commands, resolve, profiles, siblings,
+files, which-module, find.
 
 Persistence model: per-module on-disk layout under
 ``.plan/project-architecture/``. Readers iterate ``_project.json``'s
@@ -9,6 +10,7 @@ Persistence model: per-module on-disk layout under
 ``enriched.json`` on demand via the core helpers.
 """
 
+import fnmatch
 from typing import Any
 
 from _architecture_core import (
@@ -558,3 +560,164 @@ def cmd_siblings(args) -> dict:
         return error_result_module_not_found(args.module, modules)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
+
+
+# =============================================================================
+# Files Inventory Readers (files / which-module / find)
+# =============================================================================
+
+
+def _flatten_inventory(files_block: dict) -> list[tuple[str, str]]:
+    """Flatten a ``files`` block into ``(category, path)`` pairs.
+
+    Elided categories contribute their ``sample`` paths only — callers that
+    need the full list must fall back to Glob, which is the documented
+    contract of the elision shape.
+    """
+    pairs: list[tuple[str, str]] = []
+    for category, value in files_block.items():
+        if isinstance(value, list):
+            for path in value:
+                pairs.append((category, path))
+        elif isinstance(value, dict) and 'sample' in value:
+            for path in value['sample']:
+                pairs.append((category, path))
+    return pairs
+
+
+def cmd_files(args) -> dict:
+    """CLI handler for the ``files`` reader.
+
+    Loads the target module's ``derived.json`` and returns its ``files``
+    block. When ``--category`` is supplied, the response is narrowed to
+    that single bucket (and the ``elided``/``sample`` shape is preserved
+    verbatim if the bucket was capped).
+    """
+    try:
+        derived = _load_module_or_raise(args.module, args.project_dir)
+    except DataNotFoundError:
+        return require_project_meta_result(args.project_dir)
+    except ModuleNotFoundInProjectError:
+        try:
+            modules = get_modules_list(args.project_dir)
+        except Exception:
+            modules = []
+        return error_result_module_not_found(args.module, modules)
+    except Exception as e:
+        return {'status': 'error', 'error': str(e)}
+
+    files_block = derived.get('files') or {}
+    category = getattr(args, 'category', None)
+
+    if category:
+        bucket = files_block.get(category)
+        if bucket is None:
+            return {
+                'status': 'success',
+                'module': args.module,
+                'category': category,
+                'files': [],
+            }
+        return {
+            'status': 'success',
+            'module': args.module,
+            'category': category,
+            'files': bucket,
+        }
+
+    return {
+        'status': 'success',
+        'module': args.module,
+        'files': files_block,
+    }
+
+
+def cmd_which_module(args) -> dict:
+    """CLI handler for the ``which-module`` reader.
+
+    Resolves a path to its owning module by scanning every module's
+    ``files`` inventory. When the path appears in more than one module
+    (e.g. paths shared across virtual modules), the tie-breaker is the
+    longest ``paths.module`` prefix — so a file under
+    ``marketplace/bundles/pm-dev-java/...`` resolves to ``pm-dev-java``,
+    not the project-root ``default`` module.
+    """
+    target = args.path
+    try:
+        module_names = iter_modules(args.project_dir)
+    except DataNotFoundError:
+        return require_project_meta_result(args.project_dir)
+    except Exception as e:
+        return {'status': 'error', 'error': str(e)}
+
+    matches: list[tuple[int, str]] = []  # (paths.module length, name)
+    for name in module_names:
+        try:
+            derived = load_module_derived(name, args.project_dir)
+        except DataNotFoundError:
+            continue
+        files_block = derived.get('files') or {}
+        for _category, path in _flatten_inventory(files_block):
+            if path == target:
+                module_path = (derived.get('paths') or {}).get('module') or ''
+                matches.append((len(module_path), name))
+                break
+
+    if not matches:
+        return {
+            'status': 'success',
+            'path': target,
+            'module': None,
+        }
+
+    # Longest paths.module prefix wins. ``sorted`` is stable so module names
+    # tie-break alphabetically when the prefix length is identical.
+    matches.sort(key=lambda item: (-item[0], item[1]))
+    return {
+        'status': 'success',
+        'path': target,
+        'module': matches[0][1],
+    }
+
+
+def cmd_find(args) -> dict:
+    """CLI handler for the ``find`` reader.
+
+    Cross-module pattern search across the inventory. ``--pattern`` is
+    glob-style (``fnmatch``), case-sensitive, anchored to the full path.
+    ``--category`` narrows the search to one bucket. Elided buckets
+    contribute their ``sample`` only — the same fallback contract as
+    ``files``.
+    """
+    pattern = args.pattern
+    category_filter = getattr(args, 'category', None)
+
+    try:
+        module_names = iter_modules(args.project_dir)
+    except DataNotFoundError:
+        return require_project_meta_result(args.project_dir)
+    except Exception as e:
+        return {'status': 'error', 'error': str(e)}
+
+    results: list[dict[str, str]] = []
+    for name in module_names:
+        try:
+            derived = load_module_derived(name, args.project_dir)
+        except DataNotFoundError:
+            continue
+        files_block = derived.get('files') or {}
+        for category, path in _flatten_inventory(files_block):
+            if category_filter and category != category_filter:
+                continue
+            if fnmatch.fnmatchcase(path, pattern):
+                results.append({'module': name, 'category': category, 'path': path})
+
+    results.sort(key=lambda item: (item['module'], item['category'], item['path']))
+
+    return {
+        'status': 'success',
+        'pattern': pattern,
+        'category': category_filter,
+        'count': len(results),
+        'results': results,
+    }

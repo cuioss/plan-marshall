@@ -34,6 +34,7 @@
     "com.google.code.gson:gson:compile",
     "org.awaitility:awaitility:test"
   ],
+  "files": {},
   "metadata": {
     "artifact_id": "benchmark-core",
     "description": "Benchmarking module for OAuth/JWT token validation",

@@ -37,6 +37,7 @@ scope: hybrid
 | `enrich *` | [manage-api](standards/manage-api.md) | Write enrichment data |
 | `suggest-domains` | — | Suggest applicable skill domains for a module |
 | `info`, `module`, `modules`, `commands`, `resolve` | [client-api](standards/client-api.md) | Consumer queries |
+| `files`, `which-module`, `find` | [client-api](standards/client-api.md) | Files-inventory readers (categorised paths, reverse lookup, glob search) |
 
 ---
 

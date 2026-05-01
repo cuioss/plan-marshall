@@ -36,6 +36,7 @@
     "io.quarkus:quarkus-junit5:test",
     "de.cuioss.test:cui-test-juli-logger:test"
   ],
+  "files": {},
   "metadata": {
     "artifact_id": "oauth-sheriff-quarkus-integration-tests",
     "description": "Integration tests for the OAuth Sheriff Quarkus extension including native container testing with HTTPS support",

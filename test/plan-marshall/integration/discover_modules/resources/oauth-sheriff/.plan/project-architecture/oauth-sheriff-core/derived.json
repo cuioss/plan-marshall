@@ -37,6 +37,7 @@
     "org.slf4j:jcl-over-slf4j:test",
     "org.awaitility:awaitility:test"
   ],
+  "files": {},
   "metadata": {
     "artifact_id": "oauth-sheriff-core",
     "description": "Core library for OAuth/JWT token validation in multi-issuer environments",

@@ -10,6 +10,7 @@
     "verify": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify\""
   },
   "dependencies": [],
+  "files": {},
   "metadata": {
     "artifact_id": "oauth-sheriff-parent",
     "description": "A comprehensive framework for validating OAuth/JWT tokens in multi-issuer environments.\n        The module provides robust token parsing, validation, and management capabilities\n        with a focus on security and ease of use, leveraging standard JDK cryptographic providers.",

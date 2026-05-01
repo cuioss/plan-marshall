@@ -127,6 +127,40 @@ def main() -> int:
         '--modules', help='Comma-separated module names (default: all modules with enrichment)'
     )
 
+    # files - List files inventory for a module (optionally filtered by category)
+    files_parser = subparsers.add_parser(
+        'files',
+        help="List a module's files inventory grouped by category",
+        allow_abbrev=False,
+    )
+    add_module_arg(files_parser)
+    files_parser.add_argument(
+        '--category',
+        help='Filter to a single category (skill, agent, command, script, standard, '
+        'template, source, test, build_file, doc, config)',
+    )
+
+    # which-module - Reverse-lookup a path back to its owning module
+    which_module_parser = subparsers.add_parser(
+        'which-module',
+        help='Find which module owns a given path (uses files inventory)',
+        allow_abbrev=False,
+    )
+    which_module_parser.add_argument('--path', required=True, help='Path to look up')
+
+    # find - Cross-module glob pattern search across the files inventory
+    find_parser = subparsers.add_parser(
+        'find',
+        help='Search the files inventory across all modules for a glob pattern',
+        allow_abbrev=False,
+    )
+    find_parser.add_argument(
+        '--pattern',
+        required=True,
+        help='Glob pattern (fnmatch syntax, case-sensitive, anchored to full path)',
+    )
+    find_parser.add_argument('--category', help='Restrict search to a single category')
+
     # =========================================================================
     # Enrich Commands (Write Enrichment)
     # =========================================================================
@@ -249,6 +283,8 @@ def main() -> int:
     # Import command handlers
     from _cmd_client import (
         cmd_commands,
+        cmd_files,
+        cmd_find,
         cmd_graph,
         cmd_info,
         cmd_module,
@@ -256,6 +292,7 @@ def main() -> int:
         cmd_profiles,
         cmd_resolve,
         cmd_siblings,
+        cmd_which_module,
     )
     from _cmd_enrich import (
         cmd_enrich_add_domain,
@@ -292,6 +329,9 @@ def main() -> int:
         'profiles': cmd_profiles,
         'siblings': cmd_siblings,
         'suggest-domains': cmd_suggest_domains,
+        'files': cmd_files,
+        'which-module': cmd_which_module,
+        'find': cmd_find,
     }
 
     if args.command == 'enrich':

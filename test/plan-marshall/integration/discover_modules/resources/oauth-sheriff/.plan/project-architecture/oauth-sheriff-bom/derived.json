@@ -10,6 +10,7 @@
     "verify": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl oauth-sheriff-bom\""
   },
   "dependencies": [],
+  "files": {},
   "metadata": {
     "artifact_id": "oauth-sheriff-bom",
     "description": "Bill of Materials (BOM) for OAuth Sheriff modules",

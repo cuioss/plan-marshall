@@ -12,6 +12,30 @@
     "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-java-cui\""
   },
   "dependencies": [],
+  "files": {
+    "doc": [
+      "marketplace/bundles/pm-dev-java-cui/README.md"
+    ],
+    "skill": [
+      "marketplace/bundles/pm-dev-java-cui/skills/cui-http-testing/SKILL.md",
+      "marketplace/bundles/pm-dev-java-cui/skills/cui-http/SKILL.md",
+      "marketplace/bundles/pm-dev-java-cui/skills/cui-logging/SKILL.md",
+      "marketplace/bundles/pm-dev-java-cui/skills/cui-testing/SKILL.md",
+      "marketplace/bundles/pm-dev-java-cui/skills/plan-marshall-plugin/SKILL.md",
+      "marketplace/bundles/pm-dev-java-cui/skills/recipe-cui-logging-enforce/SKILL.md"
+    ],
+    "standard": [
+      "marketplace/bundles/pm-dev-java-cui/skills/cui-http-testing/standards/testing-mockwebserver.md",
+      "marketplace/bundles/pm-dev-java-cui/skills/cui-http/standards/cui-http.md",
+      "marketplace/bundles/pm-dev-java-cui/skills/cui-logging/standards/dsl-constants.md",
+      "marketplace/bundles/pm-dev-java-cui/skills/cui-logging/standards/logging-maintenance-reference.md",
+      "marketplace/bundles/pm-dev-java-cui/skills/cui-logging/standards/logging-standards.md",
+      "marketplace/bundles/pm-dev-java-cui/skills/cui-logging/standards/logmessages-documentation.md",
+      "marketplace/bundles/pm-dev-java-cui/skills/cui-testing/standards/test-generator-framework.md",
+      "marketplace/bundles/pm-dev-java-cui/skills/cui-testing/standards/testing-juli-logger.md",
+      "marketplace/bundles/pm-dev-java-cui/skills/cui-testing/standards/testing-value-objects.md"
+    ]
+  },
   "metadata": {
     "bundle_name": "pm-dev-java-cui",
     "description": "CUI-specific Java development standards covering CuiLogger, test generators, value object contracts, and HTTP client patterns"

@@ -2,6 +2,7 @@
   "build_systems": [
     "documentation"
   ],
+  "files": {},
   "metadata": {
     "description": "Project documentation"
   },

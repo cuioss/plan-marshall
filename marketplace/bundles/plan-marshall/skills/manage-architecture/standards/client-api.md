@@ -338,6 +338,160 @@ available[5]:
   - install
 ```
 
+### files
+
+List a module's categorised file inventory. Backed by the `files:` block
+in `derived.json` — see
+[architecture-persistence.md](architecture-persistence.md) for the
+classification rules, walk policy, and per-category cap.
+
+```bash
+architecture.py files --module MODULE [--category CATEGORY]
+```
+
+**Options**:
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--module` | Yes | — | Module name from `_project.json` |
+| `--category` | No | (all) | Restrict to one category (`skill`, `agent`, `command`, `script`, `standard`, `template`, `source`, `test`, `build_file`, `doc`, `config`) |
+
+**Output** (TOON, no filter):
+
+```toon
+status: success
+module: pm-dev-java
+files:
+  agent[1]:
+    - marketplace/bundles/pm-dev-java/agents/reviewer.md
+  build_file[1]:
+    - marketplace/bundles/pm-dev-java/plugin.json
+  skill[2]:
+    - marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md
+    - marketplace/bundles/pm-dev-java/skills/lombok/SKILL.md
+```
+
+**Output** (TOON, `--category skill`):
+
+```toon
+status: success
+module: pm-dev-java
+category: skill
+files[2]:
+  - marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md
+  - marketplace/bundles/pm-dev-java/skills/lombok/SKILL.md
+```
+
+**Output** (elision passthrough — bucket capped at 500):
+
+```toon
+status: success
+module: big
+category: source
+files:
+  elided: 1234
+  sample[100]:
+    - src/a.py
+    - src/b.py
+    ...
+```
+
+**Edge cases**:
+
+- Unknown category: returns `files: []` (empty list) — distinct from a
+  capped bucket which returns the elision shape.
+- Unknown module: returns `error: Module not found` plus an `available`
+  list of module names from `_project.json`.
+
+---
+
+### which-module
+
+Reverse-lookup: given a path, return the module that owns it. Iterates
+every module's `files:` inventory and returns the single best match.
+
+```bash
+architecture.py which-module --path P
+```
+
+**Options**:
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--path` | Yes | — | Project-relative path to look up |
+
+**Tie-breaker**: when more than one module lists the same path, the module
+with the longest `paths.module` prefix wins. This ensures a path under
+`marketplace/bundles/pm-dev-java/...` resolves to `pm-dev-java`, not the
+project-root `default` module that nominally covers `.`.
+
+**Output** (TOON, match found):
+
+```toon
+status: success
+path: marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md
+module: pm-dev-java
+```
+
+**Output** (TOON, no match):
+
+```toon
+status: success
+path: nope/missing.md
+module: null
+```
+
+**Edge cases**:
+
+- Path matches a sample entry of an elided bucket: still resolves
+  (callers see the elision contract via `files`, not via this verb).
+- Path matches no module: `module: null` with `status: success` — the
+  command did not fail, the path is simply outside the inventory.
+
+---
+
+### find
+
+Cross-module glob pattern search across the inventory.
+
+```bash
+architecture.py find --pattern P [--category CATEGORY]
+```
+
+**Options**:
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--pattern` | Yes | — | Glob pattern (`fnmatch` syntax, case-sensitive, anchored to the full path) |
+| `--category` | No | (all) | Restrict search to one category |
+
+**Pattern semantics**: `*` matches any sequence of non-`/` characters, `?`
+matches one non-`/` character, `[seq]` matches one character from the
+sequence. Patterns are matched against the full inventory path with
+`fnmatch.fnmatchcase`, not the basename.
+
+**Output** (TOON):
+
+```toon
+status: success
+pattern: "*SKILL.md"
+category: null
+count: 3
+results[3]{module,category,path}:
+  pm-dev-java,skill,marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md
+  pm-dev-java,skill,marketplace/bundles/pm-dev-java/skills/lombok/SKILL.md
+  plan-marshall,skill,marketplace/bundles/plan-marshall/skills/manage-architecture/SKILL.md
+```
+
+**Edge cases**:
+
+- Elided buckets contribute their `sample` paths to results — the
+  contract is the same as `files`. To search beyond the sample, fall
+  back to `Glob` against the working tree.
+- No matches: `count: 0`, `results: []`, `status: success`.
+
+---
+
 ## Consumer View
 
 The primary consumer is **solution-outline** during task planning.

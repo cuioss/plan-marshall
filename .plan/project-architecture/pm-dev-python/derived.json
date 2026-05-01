@@ -12,6 +12,23 @@
     "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-python\""
   },
   "dependencies": [],
+  "files": {
+    "doc": [
+      "marketplace/bundles/pm-dev-python/README.md"
+    ],
+    "skill": [
+      "marketplace/bundles/pm-dev-python/skills/ext-triage-python/SKILL.md",
+      "marketplace/bundles/pm-dev-python/skills/plan-marshall-plugin/SKILL.md",
+      "marketplace/bundles/pm-dev-python/skills/pytest-testing/SKILL.md",
+      "marketplace/bundles/pm-dev-python/skills/python-core/SKILL.md"
+    ],
+    "standard": [
+      "marketplace/bundles/pm-dev-python/skills/ext-triage-python/standards/severity.md",
+      "marketplace/bundles/pm-dev-python/skills/ext-triage-python/standards/suppression.md",
+      "marketplace/bundles/pm-dev-python/skills/pytest-testing/standards/testing-pytest.md",
+      "marketplace/bundles/pm-dev-python/skills/python-core/standards/python-core.md"
+    ]
+  },
   "metadata": {
     "bundle_name": "pm-dev-python",
     "description": "Python domain extension with pyprojectx build operations"
