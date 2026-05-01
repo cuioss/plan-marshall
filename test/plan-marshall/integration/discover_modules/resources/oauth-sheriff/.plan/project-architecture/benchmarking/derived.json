@@ -1,0 +1,51 @@
+{
+  "build_systems": [
+    "maven"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean -pl benchmarking\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Pcoverage -pl benchmarking\"",
+    "install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"install -pl benchmarking\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit -pl benchmarking\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl benchmarking\""
+  },
+  "dependencies": [],
+  "metadata": {
+    "artifact_id": "benchmarking",
+    "description": "Parent module for all benchmarking related modules including library and integration benchmarks",
+    "group_id": "de.cuioss.sheriff.oauth",
+    "packaging": "pom",
+    "parent": "de.cuioss.sheriff.oauth:oauth-sheriff-parent",
+    "profiles": [
+      {
+        "canonical": "coverage",
+        "id": "coverage"
+      },
+      {
+        "canonical": "javadoc",
+        "id": "javadoc"
+      },
+      {
+        "canonical": "quality-gate",
+        "id": "pre-commit"
+      },
+      {
+        "canonical": "NO-MATCH-FOUND",
+        "id": "benchmark"
+      }
+    ]
+  },
+  "name": "benchmarking",
+  "packages": {},
+  "paths": {
+    "descriptor": "benchmarking/pom.xml",
+    "module": "benchmarking",
+    "readme": "benchmarking/README.adoc",
+    "sources": [],
+    "tests": []
+  },
+  "stats": {
+    "source_files": 0,
+    "test_files": 0
+  }
+}

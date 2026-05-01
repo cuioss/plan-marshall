@@ -13,7 +13,8 @@ from typing import Any
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
 from _architecture_core import (  # type: ignore[import-not-found]
     DataNotFoundError,
-    load_derived_data,
+    iter_modules,
+    load_module_derived,
 )
 from _config_core import ext_defaults_get  # type: ignore[import-not-found]
 from file_ops import print_toon_list, print_toon_table  # type: ignore[import-not-found]
@@ -135,6 +136,10 @@ def get_configured_mapped_profiles(project_dir: str = '.') -> set[str]:
 def list_profiles(project_dir: str = '.', module_name: str | None = None) -> dict[str, Any]:
     """List Maven profiles from derived data.
 
+    Loads the per-module ``derived.json`` files referenced by ``_project.json``
+    instead of a monolithic file — the canonical source of "which modules
+    exist" is the project-meta index, not directory presence on disk.
+
     Args:
         project_dir: Project directory path
         module_name: Optional module filter
@@ -142,14 +147,18 @@ def list_profiles(project_dir: str = '.', module_name: str | None = None) -> dic
     Returns:
         Dict with profiles grouped by module
     """
-    derived = load_derived_data(project_dir)
-    modules = derived.get('modules', {})
-
     result: dict[str, Any] = {'modules': [], 'total_profiles': 0, 'unmatched_count': 0}
 
-    for name, data in modules.items():
+    for name in iter_modules(project_dir):
         # Filter by module if specified
         if module_name and name != module_name:
+            continue
+
+        try:
+            data = load_module_derived(name, project_dir)
+        except DataNotFoundError:
+            # Half-written or pruned module entry — skip silently to match the
+            # "_project.json is the source of truth" contract.
             continue
 
         # Only process Maven modules

@@ -1,0 +1,98 @@
+{
+  "build_systems": [
+    "marshall-plugin"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-dev-java\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-dev-java\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-dev-java\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-dev-java\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-dev-java\"",
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-dev-java\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-java\""
+  },
+  "dependencies": [],
+  "metadata": {
+    "bundle_name": "pm-dev-java",
+    "description": "Comprehensive Java development expertise bundle with agent-first architecture for autonomous code implementation, testing, and standards compliance"
+  },
+  "name": "pm-dev-java",
+  "packages": {
+    "skill:ext-triage-java": {
+      "description": "Triage extension for Java findings during plan-finalize phase",
+      "path": "skills/ext-triage-java",
+      "type": "skill"
+    },
+    "skill:java-cdi": {
+      "description": "Core CDI patterns including constructor injection, scopes, producers, events, observers, and interceptors",
+      "path": "skills/java-cdi",
+      "type": "skill"
+    },
+    "skill:java-core": {
+      "description": "Core Java development standards for patterns, modern features, and performance optimization",
+      "path": "skills/java-core",
+      "type": "skill"
+    },
+    "skill:java-lombok": {
+      "description": "Lombok patterns including @Delegate, @Builder, @UtilityClass for reducing boilerplate",
+      "path": "skills/java-lombok",
+      "type": "skill"
+    },
+    "skill:java-maintenance": {
+      "description": "Java code maintenance standards including prioritization, refactoring triggers, and compliance verification",
+      "path": "skills/java-maintenance",
+      "type": "skill"
+    },
+    "skill:java-null-safety": {
+      "description": "JSpecify null safety annotations with @NullMarked, @Nullable, and package-level configuration",
+      "path": "skills/java-null-safety",
+      "type": "skill"
+    },
+    "skill:java-quarkus": {
+      "description": "Quarkus-specific CDI standards with testing, native image support, and GraalVM reflection configuration",
+      "path": "skills/java-quarkus",
+      "type": "skill"
+    },
+    "skill:javadoc": {
+      "description": "JavaDoc documentation standards including class, method, and code example patterns",
+      "path": "skills/javadoc",
+      "type": "skill"
+    },
+    "skill:junit-core": {
+      "description": "JUnit 5 core testing patterns with AAA structure, test organization, and coverage standards",
+      "path": "skills/junit-core",
+      "type": "skill"
+    },
+    "skill:junit-integration": {
+      "description": "Maven integration testing with Failsafe plugin, IT naming conventions, and profile configuration",
+      "path": "skills/junit-integration",
+      "type": "skill"
+    },
+    "skill:junit-weld-testing": {
+      "description": "Weld Testing standards for CDI unit testing with @EnableAutoWeld, @AddBeanClasses, and auto-discovery patterns",
+      "path": "skills/junit-weld-testing",
+      "type": "skill"
+    },
+    "skill:manage-maven-profiles": {
+      "description": "Maven build profile classification and user workflow for unmatched profiles",
+      "path": "skills/manage-maven-profiles",
+      "type": "skill"
+    }
+  },
+  "paths": {
+    "descriptor": "marketplace/bundles/pm-dev-java/.claude-plugin/plugin.json",
+    "module": "marketplace/bundles/pm-dev-java",
+    "readme": "marketplace/bundles/pm-dev-java/README.md",
+    "sources": [
+      "marketplace/bundles/pm-dev-java/skills"
+    ],
+    "tests": [
+      "test/pm-dev-java"
+    ]
+  },
+  "stats": {
+    "agent_count": 0,
+    "command_count": 0,
+    "skill_count": 12
+  }
+}

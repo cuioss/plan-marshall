@@ -36,7 +36,7 @@ Canonical definitions for terms used across the plan-marshall bundle. When a ter
 
 | Term | Definition |
 |------|-----------|
-| **module** (project) | A build system unit (Maven module, Gradle subproject, npm workspace, Python package). Discovered by `manage-architecture` and stored in `derived-data.json`. Not to be confused with Python modules or marketplace components. |
+| **module** (project) | A build system unit (Maven module, Gradle subproject, npm workspace, Python package). Discovered by `manage-architecture` and stored per-module under `.plan/architecture/<module>/derived.json` (raw facts) and `.plan/architecture/<module>/enriched.json` (LLM-enriched view), with the canonical module set declared by `.plan/architecture/_project.json["modules"]`. Not to be confused with Python modules or marketplace components. |
 | **domain** (skill) | A technology area that determines which development skills are loaded. Standard domains: `system`, `java`, `javascript`, `plan-marshall-plugin-dev`, `documentation`. Configured in `marshal.json` under `skill_domains`. |
 | **marshal.json** | Project-level configuration file (`.plan/marshal.json`) managed by `manage-config`. Contains skill domains, phase-specific settings, and CI configuration. |
 | **run-config** | Per-execution transient configuration (`.plan/run-config.json`) managed by `manage-run-config`. Stores resolved build commands and runtime state. Distinct from the persistent `marshal.json`. |

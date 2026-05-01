@@ -1,0 +1,50 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [],
+  "key_dependencies_reasoning": "",
+  "key_packages": {
+    "planning_and_traceability": {
+      "description": "Planning and traceability skills for tracking task status, linking specifications to implementation code, and maintaining bidirectional documentation traceability."
+    },
+    "project_setup": {
+      "description": "Project initialization skill providing standards for setting up requirements directory structure and initial documents in new projects."
+    },
+    "requirements_authoring": {
+      "description": "Requirements authoring skill covering SMART principles, document structure, integrity, and traceability for specification documents."
+    }
+  },
+  "purpose": "extension",
+  "purpose_reasoning": "Optional requirements engineering bundle activated when projects need traceable specifications.",
+  "responsibility": "Requirements engineering standards covering specification authoring, planning, traceability between docs and code, and project initialization templates.",
+  "responsibility_reasoning": "Optional requirements engineering bundle activated when projects need traceable specifications.",
+  "skills_by_profile": {
+    "implementation": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    },
+    "module_testing": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    },
+    "quality": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    }
+  },
+  "skills_by_profile_reasoning": "",
+  "tips": []
+}

@@ -277,7 +277,22 @@ VALID_WORK_CATEGORIES = ('ARTIFACT', 'PROGRESS', 'ERROR', 'OUTCOME', 'FINDING')
 # ---------------------------------------------------------------------------
 # Storage filenames (additional)
 # ---------------------------------------------------------------------------
-FILE_DERIVED_DATA = 'derived-data.json'
-FILE_LLM_ENRICHED = 'llm-enriched.json'
 FILE_SOLUTION_OUTLINE = 'solution_outline.md'
 FILE_WORK_METRICS = 'work/metrics.toon'
+
+# ---------------------------------------------------------------------------
+# Project-architecture per-module storage
+# ---------------------------------------------------------------------------
+# Top-level project metadata file at the root of `.plan/project-architecture/`.
+# Acts as the single source of truth for "which modules exist": its `modules`
+# index is what clients iterate via `iter_modules`. Per-module directory
+# presence on disk is NOT a substitute for the index — half-written
+# directories must be ignored.
+FILE_PROJECT_META = '_project.json'
+
+# Per-module filenames, sitting under `.plan/project-architecture/{module}/`.
+# `derived.json` holds the deterministic discovery output (paths, packages,
+# dependencies). `enriched.json` holds the LLM-augmented fields
+# (responsibility, purpose, key_packages, skills_by_profile, …).
+DIR_PER_MODULE_DERIVED = 'derived.json'
+DIR_PER_MODULE_ENRICHED = 'enriched.json'

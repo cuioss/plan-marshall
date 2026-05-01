@@ -2,7 +2,13 @@
 """Plugin bundle discovery for marketplace bundles.
 
 Discovers marketplace bundles with complete metadata.
-Each bundle becomes a module in derived-data.json format.
+Each bundle becomes one entry in the per-module architecture layout:
+``manage-architecture`` writes a top-level ``_project.json`` whose
+``modules`` index is the source of truth, plus one
+``{module}/derived.json`` per indexed module under
+``.plan/project-architecture/``. This script returns the list of
+module dicts that are persisted as those per-module ``derived.json``
+files (one entry per bundle).
 
 Packages are:
 - skills: Each skill directory (description from SKILL.md frontmatter)

@@ -1,0 +1,50 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [],
+  "key_dependencies_reasoning": "",
+  "key_packages": {
+    "build_and_ci": {
+      "description": "Build-system abstractions (build-maven, build-gradle, build-npm, build-python) and CI/Sonar/Git integrations (tools-integration-ci, workflow-integration-sonar, workflow-integration-git*)."
+    },
+    "manage_apis": {
+      "description": "Foundational manage-* CRUD scripts (manage-tasks, manage-files, manage-findings, manage-lessons, manage-config, manage-status) accessed via the .plan/execute-script.py executor."
+    },
+    "phase_lifecycle": {
+      "description": "Six-phase plan workflow skills (phase-1-init through phase-6-finalize) plus the plan-marshall orchestrator that drives the lifecycle end-to-end."
+    }
+  },
+  "purpose": "extension",
+  "purpose_reasoning": "Forms the load-bearing skeleton other bundles plug into; classified as extension because it ships skills, agents, and commands consumed via the Claude Code marketplace plugin system.",
+  "responsibility": "Core orchestration bundle providing the 6-phase plan lifecycle (init, refine, outline, plan, execute, finalize), foundational manage-* scripts for plans/tasks/findings/lessons, and project-wide build/CI/Sonar abstractions.",
+  "responsibility_reasoning": "Forms the load-bearing skeleton other bundles plug into; classified as extension because it ships skills, agents, and commands consumed via the Claude Code marketplace plugin system.",
+  "skills_by_profile": {
+    "implementation": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    },
+    "module_testing": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    },
+    "quality": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    }
+  },
+  "skills_by_profile_reasoning": "",
+  "tips": []
+}

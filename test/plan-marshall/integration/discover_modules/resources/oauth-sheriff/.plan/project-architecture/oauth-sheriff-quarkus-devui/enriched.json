@@ -1,0 +1,46 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [
+    "oauth-sheriff-quarkus"
+  ],
+  "key_dependencies": [
+    "io.quarkus:quarkus-core-deployment",
+    "io.quarkus:quarkus-arc-deployment",
+    "io.quarkus:quarkus-devui-deployment-spi",
+    "npm:lit"
+  ],
+  "key_dependencies_reasoning": "Quarkus deployment SPIs for build-time processing and DevUI integration. Lit for web components. Depends on runtime module.",
+  "key_packages": {
+    "de.cuioss.sheriff.oauth.quarkus.deployment": {
+      "description": "Quarkus deployment processors with @BuildStep annotations for extension registration and DevUI card configuration."
+    }
+  },
+  "purpose": "deployment",
+  "purpose_reasoning": "Contains @BuildStep annotations for Quarkus build-time processing, -deployment artifact convention",
+  "responsibility": "Quarkus deployment module providing DevUI components for the OAuth Sheriff extension using Lit web components, with @BuildStep processors for build-time extension registration.",
+  "responsibility_reasoning": "Hybrid Maven+npm, contains deployment package with @BuildStep, Lit web components in src/main",
+  "skills_by_profile": {
+    "implementation": {
+      "java": [
+        "pm-dev-java:java-core",
+        "pm-dev-java:java-cdi-quarkus"
+      ],
+      "javascript": [
+        "pm-dev-frontend:javascript",
+        "pm-dev-frontend:lint-config"
+      ]
+    },
+    "unit-testing": {
+      "java": [
+        "pm-dev-java:java-core",
+        "pm-dev-java:junit-core"
+      ],
+      "javascript": [
+        "pm-dev-frontend:javascript"
+      ]
+    }
+  },
+  "skills_by_profile_reasoning": "Hybrid module: Java for @BuildStep deployment code, JavaScript for Lit web components. Removed cypress (not used).",
+  "tips": []
+}

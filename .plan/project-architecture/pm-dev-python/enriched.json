@@ -1,0 +1,47 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [],
+  "key_dependencies_reasoning": "",
+  "key_packages": {
+    "pytest_testing": {
+      "description": "Pytest testing skill covering AAA pattern, fixtures, parametrization, isolation, mocking, assertions, and coverage configuration."
+    },
+    "python_core": {
+      "description": "Core Python 3.10+ skill covering type annotations, dataclasses, pathlib, async patterns, error handling, and naming conventions."
+    }
+  },
+  "purpose": "extension",
+  "purpose_reasoning": "Optional Python domain extension activated for Python projects using pyprojectx.",
+  "responsibility": "Python 3.10+ development standards covering type annotations, dataclasses, pathlib, async patterns, and pytest testing methodology, plus pyprojectx (./pw) build operations.",
+  "responsibility_reasoning": "Optional Python domain extension activated for Python projects using pyprojectx.",
+  "skills_by_profile": {
+    "implementation": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    },
+    "module_testing": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    },
+    "quality": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    }
+  },
+  "skills_by_profile_reasoning": "",
+  "tips": []
+}

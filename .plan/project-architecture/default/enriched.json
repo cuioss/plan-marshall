@@ -1,0 +1,63 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [],
+  "key_dependencies_reasoning": "",
+  "key_packages": {
+    "marketplace_adapters": {
+      "description": "Adapter system in marketplace/adapters/ that exports bundles to other AI assistant formats (currently OpenCode) while keeping Claude Code as the source of truth."
+    },
+    "python_build": {
+      "description": "Python build configuration via pyproject.toml and the ./pw pyprojectx wrapper, exposing compile/test/quality-gate/verify/coverage targets."
+    }
+  },
+  "purpose": "library",
+  "purpose_reasoning": "The repo root packages a Python library/build harness rather than a deployable artifact.",
+  "responsibility": "Project root pyproject module hosting the Python build configuration (pyproject.toml, ./pw wrapper) and the marketplace adapter generator that exports bundles to other AI assistant formats.",
+  "responsibility_reasoning": "The repo root packages a Python library/build harness rather than a deployable artifact.",
+  "skills_by_profile": {
+    "implementation": {
+      "defaults": [
+        {
+          "description": "Foundational development practices (user interaction, tool usage, research, dependency management)",
+          "skill": "plan-marshall:dev-general-practices"
+        },
+        {
+          "description": "Language-agnostic code quality, refactoring, and documentation principles",
+          "skill": "plan-marshall:dev-general-code-quality"
+        }
+      ]
+    },
+    "module_testing": {
+      "defaults": [
+        {
+          "description": "Foundational development practices (user interaction, tool usage, research, dependency management)",
+          "skill": "plan-marshall:dev-general-practices"
+        },
+        {
+          "description": "Language-agnostic code quality principles (SRP, CQS, complexity, error handling)",
+          "skill": "plan-marshall:dev-general-code-quality"
+        },
+        {
+          "description": "Language-agnostic testing methodology (AAA, coverage, reliability, determinism)",
+          "skill": "plan-marshall:dev-general-module-testing"
+        }
+      ]
+    },
+    "quality": {
+      "defaults": [
+        {
+          "description": "Foundational development practices (user interaction, tool usage, research, dependency management)",
+          "skill": "plan-marshall:dev-general-practices"
+        },
+        {
+          "description": "Language-agnostic code quality, refactoring, and documentation principles",
+          "skill": "plan-marshall:dev-general-code-quality"
+        }
+      ]
+    }
+  },
+  "skills_by_profile_reasoning": "",
+  "tips": []
+}

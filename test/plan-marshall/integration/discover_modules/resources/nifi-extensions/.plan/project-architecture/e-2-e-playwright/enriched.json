@@ -1,0 +1,27 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [
+    "@playwright/test",
+    "axe-playwright",
+    "jwt-decode"
+  ],
+  "key_dependencies_reasoning": "Playwright for E2E testing, axe-playwright for accessibility testing, jwt-decode for token validation in tests",
+  "key_packages": {},
+  "purpose": "integration-tests",
+  "purpose_reasoning": "packaging=pom, contains only test files, Playwright E2E tests",
+  "responsibility": "Comprehensive Playwright-based end-to-end testing framework with WCAG accessibility checks, Docker integration, and automated CI/CD workflows for testing NiFi processors in realistic environments.",
+  "responsibility_reasoning": "From README.adoc and npm dependencies showing playwright, axe-playwright for accessibility",
+  "skills_by_profile": {
+    "implementation": [
+      "pm-dev-frontend:javascript",
+      "pm-dev-frontend:lint-config"
+    ],
+    "integration-testing": [
+      "pm-dev-frontend:javascript"
+    ]
+  },
+  "skills_by_profile_reasoning": "JavaScript E2E test module, Playwright tests map to integration-testing profile",
+  "tips": []
+}

@@ -1,0 +1,49 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [
+    "org.openjdk.jmh:jmh-core",
+    "de.cuioss:cui-java-tools",
+    "org.hdrhistogram:HdrHistogram",
+    "com.google.code.gson:gson"
+  ],
+  "key_dependencies_reasoning": "JMH core for benchmarking, CUI tools for utilities, HdrHistogram for latency measurements, Gson for JSON output",
+  "key_packages": {
+    "de.cuioss.benchmarking.common": {
+      "description": "Root package providing benchmark infrastructure entry points and common utilities."
+    },
+    "de.cuioss.benchmarking.common.report": {
+      "description": "Generates benchmark reports and publishes results to artifact repository."
+    },
+    "de.cuioss.benchmarking.common.runner": {
+      "description": "Provides benchmark runner implementations for executing JMH benchmarks with configurable options."
+    }
+  },
+  "purpose": "library",
+  "purpose_reasoning": "packaging=jar, shared by benchmark-core and benchmark-integration-wrk",
+  "responsibility": "Provides shared JMH benchmarking infrastructure including base classes, metrics collection, report generation, and artifact publishing during benchmark execution.",
+  "responsibility_reasoning": "From pom.xml description and 15 packages covering base, metrics, runner, report, model",
+  "skills_by_profile": {
+    "benchmark-testing": [
+      "pm-dev-java:java-core",
+      "pm-dev-java:java-null-safety",
+      "pm-dev-java:java-lombok",
+      "pm-dev-java:junit-core"
+    ],
+    "implementation": [
+      "pm-dev-java:java-core",
+      "pm-dev-java:java-null-safety",
+      "pm-dev-java:java-lombok",
+      "pm-dev-java:java-maintenance"
+    ],
+    "unit-testing": [
+      "pm-dev-java:java-core",
+      "pm-dev-java:java-null-safety",
+      "pm-dev-java:java-lombok",
+      "pm-dev-java:junit-core"
+    ]
+  },
+  "skills_by_profile_reasoning": "JMH benchmark library - removed java-cdi (no CDI), added benchmark-testing profile",
+  "tips": []
+}

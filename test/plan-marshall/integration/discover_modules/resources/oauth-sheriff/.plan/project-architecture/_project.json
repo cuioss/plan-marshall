@@ -1,0 +1,22 @@
+{
+  "description": "A comprehensive library for validating JWT tokens in multi-issuer environments with focus on offline validation, providing sub-millisecond performance, automatic JWKS key management, and Quarkus extension for seamless integration.",
+  "description_reasoning": "From README.adoc 'What is it?' section and Core Features list",
+  "extensions_used": [
+    "pm-dev-frontend",
+    "pm-dev-java"
+  ],
+  "modules": {
+    "benchmark-core": {},
+    "benchmark-integration-wrk": {},
+    "benchmarking": {},
+    "benchmarking-common": {},
+    "oauth-sheriff-bom": {},
+    "oauth-sheriff-core": {},
+    "oauth-sheriff-parent": {},
+    "oauth-sheriff-quarkus": {},
+    "oauth-sheriff-quarkus-devui": {},
+    "oauth-sheriff-quarkus-integration-tests": {},
+    "oauth-sheriff-quarkus-parent": {}
+  },
+  "name": "OAuth-Sheriff"
+}

@@ -110,7 +110,7 @@ Invoke the analysis skill to auto-populate enrichment with semantic descriptions
 Skill: plan-marshall:manage-architecture
 ```
 
-This regenerates `.plan/project-architecture/derived-data.json` from current build file definitions with updated module data and extensions.
+This regenerates the per-module architecture layout under `.plan/project-architecture/` from current build file definitions: a refreshed `_project.json` (whose `modules` index is the source of truth for which modules exist) plus one updated `derived.json` per indexed module. Previously-enriched per-module `enriched.json` files are preserved when the regenerate step opts to keep enrichment.
 
 ---
 

@@ -1,0 +1,270 @@
+{
+  "build_systems": [
+    "marshall-plugin"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean plan-marshall\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile plan-marshall\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage plan-marshall\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests plan-marshall\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate plan-marshall\"",
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile plan-marshall\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify plan-marshall\""
+  },
+  "dependencies": [],
+  "metadata": {
+    "bundle_name": "plan-marshall",
+    "description": "Environment setup, permission management, cross-cutting utilities, and solution-based development workflow from task implementation to PR quality verification"
+  },
+  "name": "plan-marshall",
+  "packages": {
+    "agent:automated-review-agent": {
+      "description": "Named agent that performs the finalize-phase Automated Review step. Loads plan-marshall:dev-general-practices into its own context, then delegates end-to-end to the authoritative standard phase-6-finalize/standards/automated-review.md, using plan-marshall:tools-integration-ci and plan-marshall:workflow-integration-github (or plan-marshall:workflow-integration-gitlab, depending on provider) to fetch, triage, and respond to automated review comments.",
+      "path": "agents/automated-review-agent.md",
+      "type": "agent"
+    },
+    "agent:classify-knowledge-agent": {
+      "description": "Named agent that classifies whether a plan's changes resolve, partially resolve, supersede, or leave unaffected a given lesson or memory candidate. Mirrors the verbatim classification prompt embedded in phase-6-finalize/standards/review-knowledge.md \u00a73f so the caller (review-knowledge step 3f) can pass {kind}, {id}, and {body} parameters without altering the verdict contract.",
+      "path": "agents/classify-knowledge-agent.md",
+      "type": "agent"
+    },
+    "agent:create-pr-agent": {
+      "description": "Named agent that performs the finalize-phase Create PR step. Loads plan-marshall:dev-general-practices into its own context, then delegates end-to-end to the authoritative standard phase-6-finalize/standards/create-pr.md, using plan-marshall:tools-integration-ci for PR creation.",
+      "path": "agents/create-pr-agent.md",
+      "type": "agent"
+    },
+    "agent:detect-change-type-agent": {
+      "description": "Analyzes a plan request to detect its change type (feature, bug_fix, tech_debt, enhancement, verification, analysis) using LLM reasoning. Persists the detected change type to status metadata.",
+      "path": "agents/detect-change-type-agent.md",
+      "type": "agent"
+    },
+    "agent:knowledge-capture-agent": {
+      "description": "Named agent that performs the finalize-phase Knowledge Capture step. Loads plan-marshall:dev-general-practices into its own context, then delegates end-to-end to the authoritative standard phase-6-finalize/standards/knowledge-capture.md to surface new memories and artifacts worth preserving from the plan run.",
+      "path": "agents/knowledge-capture-agent.md",
+      "type": "agent"
+    },
+    "agent:lessons-capture-agent": {
+      "description": "Named agent that performs the finalize-phase Lessons Capture step. Loads plan-marshall:dev-general-practices into its own context, then delegates end-to-end to the authoritative standard phase-6-finalize/standards/lessons-capture.md to extract lessons learned from the plan run and record them via plan-marshall:manage-lessons.",
+      "path": "agents/lessons-capture-agent.md",
+      "type": "agent"
+    },
+    "agent:phase-agent": {
+      "description": "Generic thin wrapper that loads a caller-specified skill and delegates all execution to it. Supports any plan phase (init, refine, outline, plan, execute, finalize).",
+      "path": "agents/phase-agent.md",
+      "type": "agent"
+    },
+    "agent:q-gate-validation-agent": {
+      "description": "Verifies solution outline deliverables against request intent and assessments. Catches false positives, missing coverage, and scope drift.",
+      "path": "agents/q-gate-validation-agent.md",
+      "type": "agent"
+    },
+    "agent:research-best-practices-agent": {
+      "description": "Performs comprehensive web research to find best practices, recommendations, and information about a specified topic using multiple online sources. Analyzes top 10+ sources and synthesizes findings with confidence levels.",
+      "path": "agents/research-best-practices-agent.md",
+      "type": "agent"
+    },
+    "agent:sonar-roundtrip-agent": {
+      "description": "Named agent that performs the finalize-phase Sonar Roundtrip step. Loads plan-marshall:dev-general-practices into its own context, then delegates end-to-end to the authoritative standard phase-6-finalize/standards/sonar-roundtrip.md, using plan-marshall:workflow-integration-sonar to fetch, triage, and resolve SonarQube/SonarCloud issues against the plan's PR.",
+      "path": "agents/sonar-roundtrip-agent.md",
+      "type": "agent"
+    },
+    "command:tools-fix-intellij-diagnostics": {
+      "description": "Retrieve and fix IDE diagnostics automatically, suppressing only when no reasonable fix is available",
+      "path": "commands/tools-fix-intellij-diagnostics.md",
+      "type": "command"
+    },
+    "command:tools-sync-agents-file": {
+      "description": "Create or update project-specific agents.md file following OpenAI specification",
+      "path": "commands/tools-sync-agents-file.md",
+      "type": "command"
+    },
+    "skill:dev-general-code-quality": {
+      "description": "Language-agnostic code quality principles covering SRP, CQS, complexity thresholds, refactoring triggers, error handling, and documentation standards",
+      "path": "skills/dev-general-code-quality",
+      "type": "skill"
+    },
+    "skill:dev-general-module-testing": {
+      "description": "Language-agnostic testing methodology covering AAA pattern, test structure, organization, coverage, property-based testing, test doubles, and determinism",
+      "path": "skills/dev-general-module-testing",
+      "type": "skill"
+    },
+    "skill:dev-general-practices": {
+      "description": "Foundational development practices covering user interaction, tool usage, research, dependency management, and document proliferation",
+      "path": "skills/dev-general-practices",
+      "type": "skill"
+    },
+    "skill:execute-task": {
+      "description": "Execute a single plan task with profile-based workflow selection (implementation, module_testing, verification)",
+      "path": "skills/execute-task",
+      "type": "skill"
+    },
+    "skill:extension-api": {
+      "description": "Extension API for domain bundle discovery, module detection, and canonical command generation",
+      "path": "skills/extension-api",
+      "type": "skill"
+    },
+    "skill:manage-architecture": {
+      "description": "LLM-based architectural analysis that transforms raw project data into meaningful structure",
+      "path": "skills/manage-architecture",
+      "type": "skill"
+    },
+    "skill:manage-findings": {
+      "description": "Unified JSONL storage for plan-scoped findings, phase-scoped Q-Gate findings, and component assessments",
+      "path": "skills/manage-findings",
+      "type": "skill"
+    },
+    "skill:manage-lessons": {
+      "description": "Manage lessons learned with global scope",
+      "path": "skills/manage-lessons",
+      "type": "skill"
+    },
+    "skill:manage-memories": {
+      "description": "Memory layer operations for persistent session storage",
+      "path": "skills/manage-memories",
+      "type": "skill"
+    },
+    "skill:manage-providers": {
+      "description": "Provider management for external tool authentication \u2014 secure storage, interactive configuration, and REST client infrastructure",
+      "path": "skills/manage-providers",
+      "type": "skill"
+    },
+    "skill:manage-run-config": {
+      "description": "Run configuration handling for persistent command configuration storage",
+      "path": "skills/manage-run-config",
+      "type": "skill"
+    },
+    "skill:manage-tasks": {
+      "description": "Manage implementation tasks with sequential sub-steps within a plan",
+      "path": "skills/manage-tasks",
+      "type": "skill"
+    },
+    "skill:marshall-steward": {
+      "description": "Project configuration wizard for planning system. Manages executor generation, health checks, build systems, and skill domains.",
+      "path": "skills/marshall-steward",
+      "type": "skill"
+    },
+    "skill:phase-1-init": {
+      "description": "Init phase skill. Creates plan directory, request.md, references, and status. Complete initialization in a single agent call.",
+      "path": "skills/phase-1-init",
+      "type": "skill"
+    },
+    "skill:phase-2-refine": {
+      "description": "Iterative request clarification until confidence threshold reached",
+      "path": "skills/phase-2-refine",
+      "type": "skill"
+    },
+    "skill:phase-3-outline": {
+      "description": "Two-track solution outline creation - Simple Track for localized changes, Complex Track for codebase-wide discovery",
+      "path": "skills/phase-3-outline",
+      "type": "skill"
+    },
+    "skill:phase-4-plan": {
+      "description": "Domain-agnostic task planning from deliverables with skill resolution and optimization",
+      "path": "skills/phase-4-plan",
+      "type": "skill"
+    },
+    "skill:phase-5-execute": {
+      "description": "Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.json files sequentially.",
+      "path": "skills/phase-5-execute",
+      "type": "skill"
+    },
+    "skill:phase-6-finalize": {
+      "description": "Complete plan execution with git workflow and PR management",
+      "path": "skills/phase-6-finalize",
+      "type": "skill"
+    },
+    "skill:plan-marshall": {
+      "description": "Unified plan lifecycle management - create, outline, execute, verify, and finalize plans",
+      "path": "skills/plan-marshall",
+      "type": "skill"
+    },
+    "skill:plan-retrospective": {
+      "description": "Opt-in plan quality audit \u2014 analyzes artifacts, logs, metrics, chat, and invariants; compiles report and seeds lessons",
+      "path": "skills/plan-retrospective",
+      "type": "skill"
+    },
+    "skill:recipe-lesson-cleanup": {
+      "description": "Domain-invariant recipe for converting a single lesson-learned into a slim, deterministic plan with surgical-style cascades",
+      "path": "skills/recipe-lesson-cleanup",
+      "type": "skill"
+    },
+    "skill:recipe-refactor-to-profile-standards": {
+      "description": "Domain-invariant recipe for refactoring code to comply with configured profile standards, package by package",
+      "path": "skills/recipe-refactor-to-profile-standards",
+      "type": "skill"
+    },
+    "skill:ref-toon-format": {
+      "description": "TOON format knowledge and usage patterns for agent communication and memory persistence in plan-marshall marketplace",
+      "path": "skills/ref-toon-format",
+      "type": "skill"
+    },
+    "skill:ref-workflow-architecture": {
+      "description": "Centralized architecture documentation for the plan-marshall bundle with visual diagrams",
+      "path": "skills/ref-workflow-architecture",
+      "type": "skill"
+    },
+    "skill:tools-integration-ci": {
+      "description": "CI provider abstraction with unified API for GitHub and GitLab operations (PR, issues, CI status)",
+      "path": "skills/tools-integration-ci",
+      "type": "skill"
+    },
+    "skill:tools-permission-doctor": {
+      "description": "Diagnose permission issues across settings files (read-only analysis)",
+      "path": "skills/tools-permission-doctor",
+      "type": "skill"
+    },
+    "skill:tools-permission-fix": {
+      "description": "Write operations for fixing and managing Claude Code permissions - add, remove, consolidate, ensure, apply-fixes, executor migration, wildcard generation.",
+      "path": "skills/tools-permission-fix",
+      "type": "skill"
+    },
+    "skill:workflow-integration-git": {
+      "description": "Git commit workflow with conventional commits, artifact cleanup, and optional push",
+      "path": "skills/workflow-integration-git",
+      "type": "skill"
+    },
+    "skill:workflow-integration-github": {
+      "description": "GitHub provider for PR review workflows \u2014 fetch comments, triage, and respond to review feedback via gh CLI",
+      "path": "skills/workflow-integration-github",
+      "type": "skill"
+    },
+    "skill:workflow-integration-gitlab": {
+      "description": "GitLab provider for MR review workflows \u2014 fetch comments, triage, and respond to review feedback via glab CLI",
+      "path": "skills/workflow-integration-gitlab",
+      "type": "skill"
+    },
+    "skill:workflow-integration-sonar": {
+      "description": "SonarQube/SonarCloud issue workflow - fetch issues, triage, and fix or suppress based on context",
+      "path": "skills/workflow-integration-sonar",
+      "type": "skill"
+    },
+    "skill:workflow-permission-web": {
+      "description": "Analyze and consolidate WebFetch domain permissions across projects with security research and validation",
+      "path": "skills/workflow-permission-web",
+      "type": "skill"
+    },
+    "skill:workflow-pr-doctor": {
+      "description": "Diagnose and fix PR issues (build, reviews, Sonar)",
+      "path": "skills/workflow-pr-doctor",
+      "type": "skill"
+    }
+  },
+  "paths": {
+    "descriptor": "marketplace/bundles/plan-marshall/.claude-plugin/plugin.json",
+    "module": "marketplace/bundles/plan-marshall",
+    "readme": "marketplace/bundles/plan-marshall/README.md",
+    "sources": [
+      "marketplace/bundles/plan-marshall/skills",
+      "marketplace/bundles/plan-marshall/agents",
+      "marketplace/bundles/plan-marshall/commands"
+    ],
+    "tests": [
+      "test/plan-marshall"
+    ]
+  },
+  "stats": {
+    "agent_count": 10,
+    "command_count": 2,
+    "skill_count": 34
+  }
+}

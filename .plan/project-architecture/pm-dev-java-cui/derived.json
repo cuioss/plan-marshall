@@ -1,0 +1,63 @@
+{
+  "build_systems": [
+    "marshall-plugin"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-dev-java-cui\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-dev-java-cui\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-dev-java-cui\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-dev-java-cui\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-dev-java-cui\"",
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-dev-java-cui\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-java-cui\""
+  },
+  "dependencies": [],
+  "metadata": {
+    "bundle_name": "pm-dev-java-cui",
+    "description": "CUI-specific Java development standards covering CuiLogger, test generators, value object contracts, and HTTP client patterns"
+  },
+  "name": "pm-dev-java-cui",
+  "packages": {
+    "skill:cui-http": {
+      "description": "CUI HTTP client standards with HttpHandler, HttpResult pattern, and async-first adapters",
+      "path": "skills/cui-http",
+      "type": "skill"
+    },
+    "skill:cui-http-testing": {
+      "description": "CUI MockWebServer standards for HTTP client testing with JUnit 5 integration",
+      "path": "skills/cui-http-testing",
+      "type": "skill"
+    },
+    "skill:cui-logging": {
+      "description": "CUI logging standards with CuiLogger, LogRecord patterns, and DSL-style LogMessages classes",
+      "path": "skills/cui-logging",
+      "type": "skill"
+    },
+    "skill:cui-testing": {
+      "description": "CUI test library standards for test data generation, value object contracts, and JUL log testing",
+      "path": "skills/cui-testing",
+      "type": "skill"
+    },
+    "skill:recipe-cui-logging-enforce": {
+      "description": "Recipe for enforcing CUI logging standards across all modules \u2014 migrate loggers, implement LogRecords, add test coverage",
+      "path": "skills/recipe-cui-logging-enforce",
+      "type": "skill"
+    }
+  },
+  "paths": {
+    "descriptor": "marketplace/bundles/pm-dev-java-cui/.claude-plugin/plugin.json",
+    "module": "marketplace/bundles/pm-dev-java-cui",
+    "readme": "marketplace/bundles/pm-dev-java-cui/README.md",
+    "sources": [
+      "marketplace/bundles/pm-dev-java-cui/skills"
+    ],
+    "tests": [
+      "test/pm-dev-java-cui"
+    ]
+  },
+  "stats": {
+    "agent_count": 0,
+    "command_count": 0,
+    "skill_count": 5
+  }
+}

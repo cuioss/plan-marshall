@@ -1,0 +1,53 @@
+{
+  "build_systems": [
+    "marshall-plugin"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-dev-oci\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-dev-oci\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-dev-oci\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-dev-oci\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-dev-oci\"",
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-dev-oci\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-oci\""
+  },
+  "dependencies": [],
+  "metadata": {
+    "bundle_name": "pm-dev-oci",
+    "description": "OCI container standards and security best practices"
+  },
+  "name": "pm-dev-oci",
+  "packages": {
+    "skill:ext-triage-oci": {
+      "description": "Triage extension for OCI container findings during plan-finalize phase",
+      "path": "skills/ext-triage-oci",
+      "type": "skill"
+    },
+    "skill:oci-security": {
+      "description": "Use when hardening container runtime configuration, scanning for vulnerabilities, securing the image supply chain, or auditing against OWASP Docker Top 10. Covers capability dropping, read-only filesystems, image signing, SBOMs, and Trivy/Cosign/Syft workflows.",
+      "path": "skills/oci-security",
+      "type": "skill"
+    },
+    "skill:oci-standards": {
+      "description": "Use when writing, reviewing, or debugging Dockerfiles and Containerfiles \u2014 covers base image selection, multi-stage builds, version pinning, .dockerignore, multi-platform builds, OCI labels, certificate management, and Quarkus distroless health probes. Activate for any container image building task.",
+      "path": "skills/oci-standards",
+      "type": "skill"
+    }
+  },
+  "paths": {
+    "descriptor": "marketplace/bundles/pm-dev-oci/.claude-plugin/plugin.json",
+    "module": "marketplace/bundles/pm-dev-oci",
+    "readme": "marketplace/bundles/pm-dev-oci/README.md",
+    "sources": [
+      "marketplace/bundles/pm-dev-oci/skills"
+    ],
+    "tests": [
+      "test/pm-dev-oci"
+    ]
+  },
+  "stats": {
+    "agent_count": 0,
+    "command_count": 0,
+    "skill_count": 3
+  }
+}

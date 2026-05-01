@@ -298,7 +298,9 @@ class ExtensionBase(ABC):
         skills are defaults vs optionals per module.
 
         Args:
-            module_data: Module dict from derived-data.json containing:
+            module_data: Module dict from the module's derived.json
+                (.plan/architecture/<module>/derived.json; the canonical
+                module set lives in _project.json["modules"]) containing:
                 build_systems, paths, dependencies, packages, metadata, stats
             active_profiles: Optional positive list of profiles to include.
                 Overrides signal detection when provided (Layer 2/3).
@@ -339,7 +341,8 @@ class ExtensionBase(ABC):
 
         Args:
             profiles: Dict of profile definitions from get_skill_domains()
-            module_data: Module dict from derived-data.json, or None
+            module_data: Module dict from the module's derived.json
+                (.plan/architecture/<module>/derived.json), or None
 
         Returns:
             Set of applicable profile names, or None for no filtering.

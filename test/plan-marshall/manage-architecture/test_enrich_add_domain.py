@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Tests for enrich_add_domain() API function in _cmd_enrich.py."""
+"""Tests for ``enrich_add_domain()`` in ``_cmd_enrich.py``.
+
+Pins the per-module on-disk layout: enrich_add_domain validates the module
+via ``_project.json``'s index and writes only the touched module's
+``enriched.json``. Legacy monolithic files are intentionally absent from
+this surface.
+"""
 
 import importlib.util
 import sys
@@ -24,10 +30,12 @@ _architecture_core = _load_module('_architecture_core', '_architecture_core.py')
 _cmd_enrich = _load_module('_cmd_enrich', '_cmd_enrich.py')
 
 ModuleNotFoundInProjectError = _architecture_core.ModuleNotFoundInProjectError
-load_llm_enriched = _architecture_core.load_llm_enriched
-save_derived_data = _architecture_core.save_derived_data
-save_llm_enriched = _architecture_core.save_llm_enriched
+save_project_meta = _architecture_core.save_project_meta
+save_module_derived = _architecture_core.save_module_derived
+save_module_enriched = _architecture_core.save_module_enriched
+load_module_enriched = _architecture_core.load_module_enriched
 enrich_add_domain = _cmd_enrich.enrich_add_domain
+
 
 # =============================================================================
 # Helper Functions
@@ -43,8 +51,19 @@ def _extract_skill_names(profile_data: dict) -> list[str]:
     return skills
 
 
+def _empty_enrichment_stub() -> dict:
+    return {
+        'responsibility': '',
+        'purpose': '',
+        'key_packages': {},
+        'skills_by_profile': {},
+        'skills_by_profile_reasoning': '',
+    }
+
+
 def setup_test_project(tmpdir: str, modules: dict | None = None) -> None:
-    """Create test derived-data.json and llm-enriched.json."""
+    """Seed ``_project.json`` plus per-module ``derived.json`` and empty
+    ``enriched.json`` stubs for every module."""
     if modules is None:
         modules = {
             'module-a': {
@@ -59,19 +78,19 @@ def setup_test_project(tmpdir: str, modules: dict | None = None) -> None:
             }
         }
 
-    derived_data = {'project': {'name': 'test-project'}, 'modules': modules}
-    save_derived_data(derived_data, tmpdir)
-
-    enriched_data = {'project': {'description': ''}, 'modules': {}}
-    for name in modules:
-        enriched_data['modules'][name] = {
-            'responsibility': '',
-            'purpose': '',
-            'key_packages': {},
-            'skills_by_profile': {},
-            'skills_by_profile_reasoning': '',
-        }
-    save_llm_enriched(enriched_data, tmpdir)
+    save_project_meta(
+        {
+            'name': 'test-project',
+            'description': '',
+            'description_reasoning': '',
+            'extensions_used': [],
+            'modules': {name: {} for name in modules},
+        },
+        tmpdir,
+    )
+    for name, data in modules.items():
+        save_module_derived(name, data, tmpdir)
+        save_module_enriched(name, _empty_enrichment_stub(), tmpdir)
 
 
 # =============================================================================
@@ -103,28 +122,24 @@ def test_add_domain_creates_profiles():
 
 
 def test_add_domain_additive_merge():
-    """Add java then general-dev: both domains' skills present, deduped."""
+    """Add java then general-dev: both domains' skills are present, deduped."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
-        # First add java domain
         result1 = enrich_add_domain('module-a', 'java', tmpdir)
         assert result1['status'] == 'success'
 
-        # Then add general-dev
         result2 = enrich_add_domain('module-a', 'general-dev', tmpdir)
         assert result2['status'] == 'success'
 
-        # Verify skills from both domains present
         sbp = result2['skills_by_profile']
-        all_skills = []
+        all_skills: list[str] = []
         for profile_data in sbp.values():
             if isinstance(profile_data, dict):
                 for section in ['defaults', 'optionals']:
                     for entry in profile_data.get(section, []):
                         all_skills.append(entry.get('skill', entry) if isinstance(entry, dict) else entry)
 
-        # Should have java skills and general-dev skills
         java_skills = [s for s in all_skills if 'pm-dev-java:' in str(s)]
         general_skills = [s for s in all_skills if 'plan-marshall:dev-general-' in str(s)]
         assert len(java_skills) > 0, 'Should have java skills'
@@ -132,21 +147,18 @@ def test_add_domain_additive_merge():
 
 
 def test_add_domain_preserves_existing():
-    """Adding a domain preserves skills from prior domain add."""
+    """Adding a domain preserves skills from a prior domain add."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
         enrich_add_domain('module-a', 'java', tmpdir)
-
-        # Load and check java skills are there
-        enriched = load_llm_enriched(tmpdir)
-        sbp_after_java = enriched['modules']['module-a']['skills_by_profile'].copy()
+        enriched_after_java = load_module_enriched('module-a', tmpdir)
+        sbp_after_java = enriched_after_java['skills_by_profile'].copy()
 
         enrich_add_domain('module-a', 'general-dev', tmpdir)
 
-        # Check java skills still present
-        enriched2 = load_llm_enriched(tmpdir)
-        sbp_after_both = enriched2['modules']['module-a']['skills_by_profile']
+        enriched_after_both = load_module_enriched('module-a', tmpdir)
+        sbp_after_both = enriched_after_both['skills_by_profile']
 
         for profile, skills in sbp_after_java.items():
             if isinstance(skills, dict):
@@ -163,17 +175,16 @@ def test_add_domain_include_optionals_true():
         result = enrich_add_domain('module-a', 'java', tmpdir, include_optionals=True)
 
         sbp = result['skills_by_profile']
-        all_skills = []
+        all_skills: list[str] = []
         for profile_data in sbp.values():
             if isinstance(profile_data, dict):
                 all_skills.extend(_extract_skill_names(profile_data))
 
-        # Java domain has optionals like java-cdi, java-lombok — they should be present
         assert len(all_skills) > 0
 
 
-def test_add_domain_include_optionals_false():
-    """include_optionals=False (default) only includes defaults."""
+def test_add_domain_include_optionals_false_subset_of_true():
+    """include_optionals=True returns at least as many skills as defaults-only."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
         result_defaults = enrich_add_domain('module-a', 'java', tmpdir, include_optionals=False)
@@ -182,7 +193,6 @@ def test_add_domain_include_optionals_false():
         setup_test_project(tmpdir)
         result_all = enrich_add_domain('module-a', 'java', tmpdir, include_optionals=True)
 
-    # The optionals-included version should have >= skills
     count_defaults = sum(
         len(_extract_skill_names(v)) for v in result_defaults['skills_by_profile'].values() if isinstance(v, dict)
     )
@@ -199,14 +209,14 @@ def test_add_domain_reasoning_appended():
         enrich_add_domain('module-a', 'java', tmpdir, reasoning='java: maven build system')
         enrich_add_domain('module-a', 'general-dev', tmpdir, reasoning='general-dev: cross-cutting')
 
-        enriched = load_llm_enriched(tmpdir)
-        reasoning = enriched['modules']['module-a']['skills_by_profile_reasoning']
+        enriched = load_module_enriched('module-a', tmpdir)
+        reasoning = enriched['skills_by_profile_reasoning']
         assert 'java: maven build system' in reasoning
         assert 'general-dev: cross-cutting' in reasoning
 
 
 def test_add_domain_system_rejected():
-    """system domain raises ValueError."""
+    """Adding the 'system' domain raises ValueError."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
         try:

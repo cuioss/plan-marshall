@@ -1,0 +1,46 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [
+    "nifi-cuioss-processors"
+  ],
+  "key_dependencies": [
+    "org.apache.nifi:nifi-api",
+    "jakarta.servlet:jakarta.servlet-api",
+    "de.cuioss:cui-http",
+    "de.cuioss.sheriff.oauth:oauth-sheriff-core"
+  ],
+  "key_dependencies_reasoning": "NiFi API for processor integration, Servlet API for HTTP handling, cui-http for HTTP client, oauth-sheriff for token operations, depends on processors module",
+  "key_packages": {
+    "de.cuioss.nifi.ui.service": {
+      "description": "Service layer providing business logic for UI operations and processor configuration management"
+    },
+    "de.cuioss.nifi.ui.servlets": {
+      "description": "HTTP servlets providing REST endpoints for UI component configuration and processor interaction"
+    },
+    "de.cuioss.nifi.ui.util": {
+      "description": "Utility classes for common UI operations, request/response handling, and data transformation"
+    }
+  },
+  "purpose": "library",
+  "purpose_reasoning": "packaging=war, provides UI components to be packaged in NAR",
+  "responsibility": "Web UI components providing configuration interfaces for NiFi processors, including JavaScript components with ESLint/Jest testing and Java servlets for backend services.",
+  "responsibility_reasoning": "From package structure showing servlets, service, util packages, and npm dependencies for JS dev",
+  "skills_by_profile": {
+    "implementation": [
+      "pm-dev-java:java-core",
+      "pm-dev-java:java-null-safety",
+      "pm-dev-java:java-lombok",
+      "pm-dev-java:java-maintenance",
+      "pm-dev-frontend:javascript",
+      "pm-dev-frontend:lint-config"
+    ],
+    "unit-testing": [
+      "pm-dev-java:java-core",
+      "pm-dev-java:junit-core",
+      "pm-dev-frontend:javascript"
+    ]
+  },
+  "skills_by_profile_reasoning": "Hybrid module with Java servlets and JavaScript UI; both domains apply; no CDI",
+  "tips": []
+}

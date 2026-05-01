@@ -5,10 +5,15 @@ Script API for managing architecture data. Used during the enrichment workflow.
 ## Purpose
 
 These commands support the LLM enrichment workflow:
-- Reading raw discovered data (derived-data.json only)
-- Writing enrichment data (llm-enriched.json)
+- Reading raw discovered data (per-module `derived.json` files only).
+- Writing enrichment data (top-level `_project.json` for project-level
+  fields, per-module `enriched.json` for module-scoped fields).
 
 For client/consumer commands, see [client-api.md](client-api.md).
+
+For the on-disk layout (`_project.json` + per-module `{derived,enriched}.json`)
+and the atomic tmp+swap protocol used by `discover --force`, see
+[architecture-persistence.md](architecture-persistence.md).
 
 ## Script Pattern
 
@@ -31,20 +36,25 @@ architecture.py discover [--force]
 **Options**:
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `--force` | No | false | Overwrite existing derived-data.json |
+| `--force` | No | false | Overwrite existing `project-architecture/` tree (atomic tmp+swap) |
 
 **Output (TOON)**:
 ```toon
 status	success
 modules_discovered	4
-output_file	.plan/project-architecture/derived-data.json
+output_file	.plan/project-architecture/_project.json
 ```
+
+The whole layout (`_project.json` + per-module `{derived,enriched}.json`)
+is staged under `.plan/project-architecture.tmp/` and then `os.replace`-ed
+onto the live path so the swap is atomic.
 
 ---
 
 ### init
 
-Initialize llm-enriched.json template from derived-data.json.
+Initialize per-module `enriched.json` stubs for every module listed in
+`_project.json`.
 
 ```bash
 architecture.py init [--check] [--force]
@@ -53,27 +63,27 @@ architecture.py init [--check] [--force]
 **Options**:
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `--check` | No | false | Check if llm-enriched.json exists, output status only |
-| `--force` | No | false | Overwrite existing llm-enriched.json |
+| `--check` | No | false | Check whether `_project.json` exists and how many per-module `enriched.json` stubs are present; output status only |
+| `--force` | No | false | Overwrite existing per-module `enriched.json` stubs |
 
 **Output (TOON)** - with `--check`:
 ```toon
 status	exists
-file	.plan/project-architecture/llm-enriched.json
+file	.plan/project-architecture/_project.json
 modules_enriched	3
 ```
 
-Or if file doesn't exist:
+Or if `_project.json` does not exist:
 ```toon
 status	missing
-file	.plan/project-architecture/llm-enriched.json
+file	.plan/project-architecture/_project.json
 ```
 
 **Output (TOON)** - without `--check`:
 ```toon
 status	success
 modules_initialized	4
-output_file	.plan/project-architecture/llm-enriched.json
+output_file	.plan/project-architecture/_project.json
 ```
 
 ---
@@ -378,40 +388,49 @@ available[4]:
 ```toon
 error	Derived data not found
 resolution	Run 'architecture.py discover' first
-expected_file	.plan/project-architecture/derived-data.json
+expected_file	.plan/project-architecture/_project.json
 ```
 
 ---
 
 ## Data Sources
 
+`_project.json` lives at the top of `.plan/project-architecture/` and acts
+as the source of truth for the module index. Per-module files live under
+`.plan/project-architecture/{module}/{derived,enriched}.json`.
+
 | Command | Reads | Writes |
 |---------|-------|--------|
-| `discover` | Extension API, run-configuration.json | derived-data.json |
-| `init` | derived-data.json | llm-enriched.json |
-| `derived` | derived-data.json | - |
-| `derived-module` | derived-data.json | - |
-| `enrich project` | llm-enriched.json | llm-enriched.json |
-| `enrich module` | llm-enriched.json | llm-enriched.json |
-| `enrich package` | llm-enriched.json | llm-enriched.json |
-| `enrich skills` | llm-enriched.json | llm-enriched.json |
-| `enrich dependencies` | llm-enriched.json | llm-enriched.json |
-| `enrich tip` | llm-enriched.json | llm-enriched.json |
-| `enrich insight` | llm-enriched.json | llm-enriched.json |
-| `enrich best-practice` | llm-enriched.json | llm-enriched.json |
+| `discover` | Extension API, run-configuration.json | `_project.json` + per-module `{derived,enriched}.json` (via tmp+swap) |
+| `init` | `_project.json` | per-module `enriched.json` (one per module) |
+| `derived` | `_project.json` + per-module `derived.json` | - |
+| `derived-module` | `_project.json` + `{module}/derived.json` | - |
+| `enrich project` | `_project.json` | `_project.json` |
+| `enrich module` | `{module}/enriched.json` | `{module}/enriched.json` |
+| `enrich package` | `{module}/enriched.json` | `{module}/enriched.json` |
+| `enrich skills` | `{module}/enriched.json` | `{module}/enriched.json` |
+| `enrich dependencies` | `{module}/enriched.json` | `{module}/enriched.json` |
+| `enrich tip` | `{module}/enriched.json` | `{module}/enriched.json` |
+| `enrich insight` | `{module}/enriched.json` | `{module}/enriched.json` |
+| `enrich best-practice` | `{module}/enriched.json` | `{module}/enriched.json` |
 
 ---
 
 ## Orchestration Flow
 
-The `architecture.py` script acts as the thin orchestrator for project structure discovery. It delegates to the extension-api for module discovery and handles persistence to `derived-data.json`.
+The `architecture.py` script acts as the thin orchestrator for project
+structure discovery. It delegates to the extension-api for module discovery
+and persists results into the per-module layout under
+`.plan/project-architecture/` (top-level `_project.json` plus per-module
+`{derived,enriched}.json`).
 
 ### Orchestrator Responsibilities
 
 ```
 1. Invoke extension-api discovery
 2. Receive aggregated module data
-3. Persist to derived-data.json
+3. Stage the new layout under .plan/project-architecture.tmp/ and
+   atomically swap it onto .plan/project-architecture/
 4. Provide client query interface
 
 What the orchestrator does NOT do:
@@ -450,8 +469,11 @@ architecture.py discover --project-dir /path/to/project
        my-module-npm   (build_systems: ["npm"])
                             │
                             ▼
-  4. PERSISTENCE
-     Write to: .plan/project-architecture/derived-data.json
+  4. PERSISTENCE (tmp+swap)
+     Stage: .plan/project-architecture.tmp/
+              ├── _project.json
+              └── {module}/{derived,enriched}.json   (one dir per module)
+     Swap:  os.replace(.tmp, .plan/project-architecture/)
 ```
 
 ### Module Aggregation Algorithm
@@ -476,9 +498,9 @@ For each unique path in discovered modules:
 architecture.py resolve --command verify --module my-module
                             │
                             ▼
-  1. Load derived-data.json
-  2. Find module by name
-  3. Look up command in module.commands
+  1. Load _project.json + {module}/derived.json
+  2. Find module by name (validated against the _project.json index)
+  3. Look up command in derived.commands
   4. Return complete command string
 
 Key principle: Commands are STORED complete, not composed at resolution.
@@ -490,7 +512,7 @@ The caller executes the returned string directly.
 ```
 INIT (phase-1)
   marshall-steward calls: architecture.py discover
-  Result: derived-data.json populated
+  Result: _project.json + per-module {derived,enriched}.json populated
 
 REFINE (phase-2)
   (no architecture calls)
@@ -514,9 +536,11 @@ TASK EXECUTE (phase-5)
 DISCOVER → LOAD → ANALYZE → PERSIST → CLIENT
 
 1. DISCOVER: Extension API gathers raw module data
-2. LOAD: Read derived-data.json, determine domain skills from technologies
+2. LOAD: Iterate _project.json + per-module derived.json, determine domain
+   skills from technologies
 3. ANALYZE: LLM reads docs/code to derive responsibility, purpose, key packages
-4. PERSIST: Write enrichments to llm-enriched.json
+4. PERSIST: Write enrichments to per-module enriched.json (project-level
+   description writes to _project.json)
 5. CLIENT: Provide merged read access via architecture.py {verb}
 ```
 

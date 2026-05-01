@@ -1,0 +1,50 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [],
+  "key_dependencies_reasoning": "",
+  "key_packages": {
+    "adr_management": {
+      "description": "Architectural Decision Record skill providing CRUD operations, automatic numbering, and AsciiDoc formatting for ADR catalogues."
+    },
+    "asciidoc_authoring": {
+      "description": "AsciiDoc reference skill covering formatting, validation, link verification, and template creation workflows."
+    },
+    "interface_specs": {
+      "description": "Interface specification skill providing CRUD operations, automatic numbering, and AsciiDoc formatting for interface catalogues."
+    }
+  },
+  "purpose": "extension",
+  "purpose_reasoning": "Optional documentation domain extension activated when projects maintain AsciiDoc artefacts and ADRs.",
+  "responsibility": "Documentation standards for AsciiDoc authoring, Architectural Decision Records (ADRs), and Interface specifications, with validation, formatting, and verification workflows.",
+  "responsibility_reasoning": "Optional documentation domain extension activated when projects maintain AsciiDoc artefacts and ADRs.",
+  "skills_by_profile": {
+    "implementation": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    },
+    "module_testing": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    },
+    "quality": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    }
+  },
+  "skills_by_profile_reasoning": "",
+  "tips": []
+}

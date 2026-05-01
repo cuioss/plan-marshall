@@ -316,7 +316,9 @@ def applies_to_module(self, module_data: dict,
     apply to a module and what skills they provide.
 
     Args:
-        module_data: Module dict from derived-data.json
+        module_data: Module dict from the module's derived.json
+            (.plan/architecture/<module>/derived.json; the canonical
+            module set lives in _project.json["modules"])
         active_profiles: Optional positive list of profiles to include
 
     Returns:

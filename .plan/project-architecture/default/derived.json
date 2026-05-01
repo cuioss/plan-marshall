@@ -1,0 +1,666 @@
+{
+  "build_systems": [
+    "python"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify\""
+  },
+  "dependencies": [],
+  "metadata": {
+    "name": "plan-marshall",
+    "requires_python": ">=3.12",
+    "version": "0.1.0"
+  },
+  "name": "default",
+  "packages": {},
+  "paths": {
+    "descriptor": "pyproject.toml",
+    "module": ".",
+    "readme": "README.adoc",
+    "sources": null,
+    "tests": [
+      "test"
+    ]
+  },
+  "stats": {
+    "source_files": 0,
+    "test_files": 238
+  },
+  "test_packages": {
+    "adapters": {
+      "files": [
+        "__init__.py",
+        "conftest.py",
+        "test_adapter_base.py",
+        "test_opencode_adapter.py"
+      ],
+      "path": "test/adapters"
+    },
+    "integration_common": {
+      "files": [
+        "__init__.py"
+      ],
+      "path": "test/integration_common"
+    },
+    "plan-marshall": {
+      "files": [
+        "_input_validation_fixtures.py",
+        "build_test_helpers.py",
+        "discovery_test_helpers.py",
+        "test_recipe_lesson_cleanup.py"
+      ],
+      "path": "test/plan-marshall"
+    },
+    "plan-marshall.build-gradle": {
+      "files": [
+        "test_gradle.py",
+        "test_gradle_cmd_parse.py",
+        "test_gradle_coverage_report.py",
+        "test_gradle_discover_modules.py",
+        "test_gradle_execute.py",
+        "test_gradle_find_project.py",
+        "test_gradle_run.py"
+      ],
+      "path": "test/plan-marshall/build-gradle"
+    },
+    "plan-marshall.build-gradle.fixtures.source-no-markers.src.main.java": {
+      "files": [
+        "CleanFile.java"
+      ],
+      "path": "test/plan-marshall/build-gradle/fixtures/source-no-markers/src/main/java"
+    },
+    "plan-marshall.build-gradle.fixtures.source-with-markers.src.main.java.com.example": {
+      "files": [
+        "CleanService.java",
+        "HandlerWithMarker.java",
+        "ServiceWithMarkers.java"
+      ],
+      "path": "test/plan-marshall/build-gradle/fixtures/source-with-markers/src/main/java/com/example"
+    },
+    "plan-marshall.build-maven": {
+      "files": [
+        "test_discover_modules.py",
+        "test_discover_packages.py",
+        "test_maven.py",
+        "test_maven_cmd_parse.py",
+        "test_maven_coverage_report.py",
+        "test_maven_execute.py",
+        "test_maven_run.py"
+      ],
+      "path": "test/plan-marshall/build-maven"
+    },
+    "plan-marshall.build-maven.fixtures.source-no-markers.src.main.java": {
+      "files": [
+        "CleanFile.java"
+      ],
+      "path": "test/plan-marshall/build-maven/fixtures/source-no-markers/src/main/java"
+    },
+    "plan-marshall.build-maven.fixtures.source-with-markers.src.main.java.com.example": {
+      "files": [
+        "CleanService.java",
+        "HandlerWithMarker.java",
+        "ServiceWithMarkers.java"
+      ],
+      "path": "test/plan-marshall/build-maven/fixtures/source-with-markers/src/main/java/com/example"
+    },
+    "plan-marshall.build-npm": {
+      "files": [
+        "test_js_coverage.py",
+        "test_npm.py",
+        "test_npm_coverage_report.py",
+        "test_npm_discover.py",
+        "test_npm_discover_modules.py",
+        "test_npm_execute.py",
+        "test_npm_parsers.py",
+        "test_npm_run.py"
+      ],
+      "path": "test/plan-marshall/build-npm"
+    },
+    "plan-marshall.build-operations": {
+      "files": [
+        "test_extension_implementations.py"
+      ],
+      "path": "test/plan-marshall/build-operations"
+    },
+    "plan-marshall.build-python": {
+      "files": [
+        "test_dynamic_mypypath.py",
+        "test_python_build.py",
+        "test_python_cmd_parse.py",
+        "test_python_coverage_report.py",
+        "test_python_execute.py",
+        "test_python_extension.py"
+      ],
+      "path": "test/plan-marshall/build-python"
+    },
+    "plan-marshall.execute-task": {
+      "files": [
+        "__init__.py",
+        "test_assert_test_identifiers.py",
+        "test_inject_project_dir.py"
+      ],
+      "path": "test/plan-marshall/execute-task"
+    },
+    "plan-marshall.extension-api": {
+      "files": [
+        "test_coverage_parse.py",
+        "test_extension_discovery_validators.py"
+      ],
+      "path": "test/plan-marshall/extension-api"
+    },
+    "plan-marshall.finalize-step-plugin-doctor": {
+      "files": [
+        "test_finalize_step_plugin_doctor.py"
+      ],
+      "path": "test/plan-marshall/finalize-step-plugin-doctor"
+    },
+    "plan-marshall.finalize-step-regenerate-executor": {
+      "files": [
+        "test_finalize_step_regenerate_executor.py"
+      ],
+      "path": "test/plan-marshall/finalize-step-regenerate-executor"
+    },
+    "plan-marshall.integration": {
+      "files": [
+        "__init__.py"
+      ],
+      "path": "test/plan-marshall/integration"
+    },
+    "plan-marshall.integration.discover_modules": {
+      "files": [
+        "__init__.py",
+        "test_gradle_discover_modules_integration.py",
+        "test_maven_discover_modules.py"
+      ],
+      "path": "test/plan-marshall/integration/discover_modules"
+    },
+    "plan-marshall.integration.module_aggregation": {
+      "files": [
+        "__init__.py",
+        "test_hybrid_merge.py"
+      ],
+      "path": "test/plan-marshall/integration/module_aggregation"
+    },
+    "plan-marshall.manage-architecture": {
+      "files": [
+        "test_architecture_core.py",
+        "test_architecture_input_validation.py",
+        "test_cmd_client.py",
+        "test_cmd_enrich.py",
+        "test_cmd_manage.py",
+        "test_cmd_suggest.py",
+        "test_enrich_add_domain.py",
+        "test_enrich_all.py"
+      ],
+      "path": "test/plan-marshall/manage-architecture"
+    },
+    "plan-marshall.manage-config": {
+      "files": [
+        "test_cmd_init.py",
+        "test_cmd_quality_phases.py",
+        "test_cmd_recipes.py",
+        "test_cmd_skill_domains.py",
+        "test_cmd_skill_resolution.py",
+        "test_cmd_system_plan.py",
+        "test_config_detection.py",
+        "test_detection.py",
+        "test_helpers.py",
+        "test_manage_config_input_validation.py",
+        "test_plan_marshall_config.py"
+      ],
+      "path": "test/plan-marshall/manage-config"
+    },
+    "plan-marshall.manage-execution-manifest": {
+      "files": [
+        "test_decision_rules.py",
+        "test_manage_execution_manifest.py",
+        "test_manage_execution_manifest_input_validation.py"
+      ],
+      "path": "test/plan-marshall/manage-execution-manifest"
+    },
+    "plan-marshall.manage-files": {
+      "files": [
+        "test_manage_files.py",
+        "test_manage_files_input_validation.py"
+      ],
+      "path": "test/plan-marshall/manage-files"
+    },
+    "plan-marshall.manage-findings": {
+      "files": [
+        "test_findings_store.py",
+        "test_manage_assessments.py",
+        "test_manage_findings.py",
+        "test_manage_findings_input_validation.py"
+      ],
+      "path": "test/plan-marshall/manage-findings"
+    },
+    "plan-marshall.manage-lessons": {
+      "files": [
+        "test_manage_lessons.py",
+        "test_manage_lessons_input_validation.py"
+      ],
+      "path": "test/plan-marshall/manage-lessons"
+    },
+    "plan-marshall.manage-lifecycle": {
+      "files": [
+        "test_manage_lifecycle.py"
+      ],
+      "path": "test/plan-marshall/manage-lifecycle"
+    },
+    "plan-marshall.manage-logging": {
+      "files": [
+        "test_logging.py",
+        "test_manage_logging.py",
+        "test_manage_logging_input_validation.py"
+      ],
+      "path": "test/plan-marshall/manage-logging"
+    },
+    "plan-marshall.manage-memories": {
+      "files": [
+        "test_manage_memories_input_validation.py",
+        "test_manage_memory.py"
+      ],
+      "path": "test/plan-marshall/manage-memories"
+    },
+    "plan-marshall.manage-metrics": {
+      "files": [
+        "test_manage_metrics.py",
+        "test_manage_metrics_input_validation.py",
+        "test_manage_metrics_phase_boundary.py"
+      ],
+      "path": "test/plan-marshall/manage-metrics"
+    },
+    "plan-marshall.manage-plan-documents": {
+      "files": [
+        "test_manage_plan_documents.py",
+        "test_manage_plan_documents_input_validation.py"
+      ],
+      "path": "test/plan-marshall/manage-plan-documents"
+    },
+    "plan-marshall.manage-providers": {
+      "files": [
+        "test_configure.py",
+        "test_ensure_denied.py",
+        "test_git_provider_extension.py",
+        "test_list_providers.py",
+        "test_provider_extension.py",
+        "test_providers_core.py",
+        "test_verify.py"
+      ],
+      "path": "test/plan-marshall/manage-providers"
+    },
+    "plan-marshall.manage-references": {
+      "files": [
+        "test_manage_references.py",
+        "test_manage_references_input_validation.py"
+      ],
+      "path": "test/plan-marshall/manage-references"
+    },
+    "plan-marshall.manage-run-config": {
+      "files": [
+        "test_cleanup.py",
+        "test_run_config.py",
+        "test_warning_api.py"
+      ],
+      "path": "test/plan-marshall/manage-run-config"
+    },
+    "plan-marshall.manage-solution-outline": {
+      "files": [
+        "test_get_module_context.py",
+        "test_manage_solution_outline.py",
+        "test_manage_solution_outline_input_validation.py",
+        "test_plan_parsing.py"
+      ],
+      "path": "test/plan-marshall/manage-solution-outline"
+    },
+    "plan-marshall.manage-status": {
+      "files": [
+        "test_manage_status.py",
+        "test_manage_status_input_validation.py",
+        "test_mark_step_done.py",
+        "test_short_description.py"
+      ],
+      "path": "test/plan-marshall/manage-status"
+    },
+    "plan-marshall.manage-tasks": {
+      "files": [
+        "test_manage_tasks.py",
+        "test_manage_tasks_batch_add.py",
+        "test_manage_tasks_input_validation.py",
+        "test_manage_tasks_rename.py",
+        "test_task_new_fields.py"
+      ],
+      "path": "test/plan-marshall/manage-tasks"
+    },
+    "plan-marshall.manage-worktree": {
+      "files": [
+        "test_manage_worktree.py",
+        "test_manage_worktree_input_validation.py"
+      ],
+      "path": "test/plan-marshall/manage-worktree"
+    },
+    "plan-marshall.marshall-steward": {
+      "files": [
+        "test_bootstrap_plugin.py"
+      ],
+      "path": "test/plan-marshall/marshall-steward"
+    },
+    "plan-marshall.phase-1-init": {
+      "files": [
+        "test_phase_1_init.py"
+      ],
+      "path": "test/plan-marshall/phase-1-init"
+    },
+    "plan-marshall.phase-2-refine": {
+      "files": [
+        "test_phase_2_refine_scope_estimate.py"
+      ],
+      "path": "test/plan-marshall/phase-2-refine"
+    },
+    "plan-marshall.phase-3-outline": {
+      "files": [
+        "test_phase_3_outline_qgate_bypass.py"
+      ],
+      "path": "test/plan-marshall/phase-3-outline"
+    },
+    "plan-marshall.phase-5-execute": {
+      "files": [
+        "test_phase_5_manifest_executor.py"
+      ],
+      "path": "test/plan-marshall/phase-5-execute"
+    },
+    "plan-marshall.phase-6-finalize": {
+      "files": [
+        "test_phase_6_manifest_executor.py",
+        "test_subagent_timeout.py",
+        "test_triage_extension.py",
+        "test_triage_integration.py"
+      ],
+      "path": "test/plan-marshall/phase-6-finalize"
+    },
+    "plan-marshall.plan-marshall": {
+      "files": [
+        "test_determine_mode.py",
+        "test_gitignore_setup.py",
+        "test_invariants.py",
+        "test_lifecycle_and_status.py",
+        "test_lifecycle_handshake_e2e.py",
+        "test_lifecycle_status.py",
+        "test_manage_session.py",
+        "test_manage_session_validators.py",
+        "test_phase_handshake.py",
+        "test_phase_handshake_validators.py",
+        "test_set_terminal_title.py",
+        "test_set_terminal_title_session_cache.py"
+      ],
+      "path": "test/plan-marshall/plan-marshall"
+    },
+    "plan-marshall.plan-retrospective": {
+      "files": [
+        "__init__.py",
+        "_fixtures.py",
+        "test_analyze_logs.py",
+        "test_check_artifact_consistency.py",
+        "test_collect_fragments.py",
+        "test_collect_plan_artifacts.py",
+        "test_compile_report.py",
+        "test_direct_gh_glab_usage.py",
+        "test_plan_retrospective_manifest.py",
+        "test_retrospective_validators.py",
+        "test_summarize_invariants.py"
+      ],
+      "path": "test/plan-marshall/plan-retrospective"
+    },
+    "plan-marshall.ref-toon-format": {
+      "files": [
+        "test_measure_toon_savings.py",
+        "test_toon_parser.py",
+        "test_validate_toon_syntax.py"
+      ],
+      "path": "test/plan-marshall/ref-toon-format"
+    },
+    "plan-marshall.script-shared": {
+      "files": [
+        "test_build_check_warnings.py",
+        "test_build_config_contract.py",
+        "test_build_discover.py",
+        "test_build_execute.py",
+        "test_build_execute_factory.py",
+        "test_build_format.py",
+        "test_build_parse.py",
+        "test_build_result.py",
+        "test_build_shared.py",
+        "test_build_wrapper.py",
+        "test_cmd_run_common.py",
+        "test_extension.py",
+        "test_extension_base.py",
+        "test_markers_search.py",
+        "test_marketplace_bundles.py",
+        "test_marketplace_paths.py",
+        "test_triage_helpers.py",
+        "test_warnings_classify.py"
+      ],
+      "path": "test/plan-marshall/script-shared"
+    },
+    "plan-marshall.tools-file-ops": {
+      "files": [
+        "test_file_ops.py"
+      ],
+      "path": "test/plan-marshall/tools-file-ops"
+    },
+    "plan-marshall.tools-input-validation": {
+      "files": [
+        "test_input_validation.py",
+        "test_schema_validation.py"
+      ],
+      "path": "test/plan-marshall/tools-input-validation"
+    },
+    "plan-marshall.tools-integration-ci": {
+      "files": [
+        "test_ci.py",
+        "test_ci_base.py",
+        "test_ci_base_branch_delete.py",
+        "test_ci_health.py",
+        "test_ci_validators.py"
+      ],
+      "path": "test/plan-marshall/tools-integration-ci"
+    },
+    "plan-marshall.tools-permission-doctor": {
+      "files": [
+        "test_permission.py",
+        "test_permission_common.py"
+      ],
+      "path": "test/plan-marshall/tools-permission-doctor"
+    },
+    "plan-marshall.tools-permission-fix": {
+      "files": [
+        "test_permission_fix.py"
+      ],
+      "path": "test/plan-marshall/tools-permission-fix"
+    },
+    "plan-marshall.tools-script-executor": {
+      "files": [
+        "test_await_until.py",
+        "test_execute_script.py",
+        "test_executor_integration.py",
+        "test_generate_executor.py"
+      ],
+      "path": "test/plan-marshall/tools-script-executor"
+    },
+    "plan-marshall.tools-self-review": {
+      "files": [
+        "test_self_review.py",
+        "test_self_review_validators.py"
+      ],
+      "path": "test/plan-marshall/tools-self-review"
+    },
+    "plan-marshall.workflow-integration-git": {
+      "files": [
+        "test_git_workflow.py"
+      ],
+      "path": "test/plan-marshall/workflow-integration-git"
+    },
+    "plan-marshall.workflow-integration-github": {
+      "files": [
+        "test_github.py",
+        "test_github_ops.py",
+        "test_github_ops_pr_merge.py",
+        "test_github_ops_wait.py",
+        "test_github_pr.py"
+      ],
+      "path": "test/plan-marshall/workflow-integration-github"
+    },
+    "plan-marshall.workflow-integration-gitlab": {
+      "files": [
+        "test_gitlab.py",
+        "test_gitlab_ops.py",
+        "test_gitlab_ops_mr_merge.py",
+        "test_gitlab_ops_wait.py",
+        "test_gitlab_pr.py"
+      ],
+      "path": "test/plan-marshall/workflow-integration-gitlab"
+    },
+    "plan-marshall.workflow-integration-sonar": {
+      "files": [
+        "test_sonar.py",
+        "test_sonar_rest.py",
+        "test_sonar_rest_validators.py"
+      ],
+      "path": "test/plan-marshall/workflow-integration-sonar"
+    },
+    "plan-marshall.workflow-permission-web": {
+      "files": [
+        "test_permission_web.py"
+      ],
+      "path": "test/plan-marshall/workflow-permission-web"
+    },
+    "plan-marshall.workflow-pr-doctor": {
+      "files": [
+        "test_pr_doctor.py"
+      ],
+      "path": "test/plan-marshall/workflow-pr-doctor"
+    },
+    "plan-marshall.workflow-shared": {
+      "files": [
+        "test_config_validation.py"
+      ],
+      "path": "test/plan-marshall/workflow-shared"
+    },
+    "pm-dev-frontend": {
+      "files": [
+        "test_jsdoc.py"
+      ],
+      "path": "test/pm-dev-frontend"
+    },
+    "pm-dev-frontend-cui": {
+      "files": [
+        "test_cui_js_extension.py"
+      ],
+      "path": "test/pm-dev-frontend-cui"
+    },
+    "pm-dev-java.fixtures": {
+      "files": [
+        "sample-logging-compliant.java",
+        "sample-logging-violations.java",
+        "sample-logmessages.java"
+      ],
+      "path": "test/pm-dev-java/fixtures"
+    },
+    "pm-dev-java.logging": {
+      "files": [
+        "empty-holder.java",
+        "logrecord-sample.java",
+        "valid-logger-usage.java",
+        "violation-examples.java"
+      ],
+      "path": "test/pm-dev-java/logging"
+    },
+    "pm-dev-java.maven-profile-management": {
+      "files": [
+        "_input_validation_fixtures.py",
+        "test_profiles.py",
+        "test_profiles_input_validation.py"
+      ],
+      "path": "test/pm-dev-java/maven-profile-management"
+    },
+    "pm-documents.manage-adr": {
+      "files": [
+        "test_manage_adr.py"
+      ],
+      "path": "test/pm-documents/manage-adr"
+    },
+    "pm-documents.manage-interface": {
+      "files": [
+        "_input_validation_fixtures.py",
+        "test_manage_interface.py",
+        "test_manage_interface_input_validation.py"
+      ],
+      "path": "test/pm-documents/manage-interface"
+    },
+    "pm-documents.ref-asciidoc": {
+      "files": [
+        "test_asciidoc.py"
+      ],
+      "path": "test/pm-documents/ref-asciidoc"
+    },
+    "pm-documents.ref-documentation": {
+      "files": [
+        "test_docs.py"
+      ],
+      "path": "test/pm-documents/ref-documentation"
+    },
+    "pm-plugin-development.plan-marshall-plugin": {
+      "files": [
+        "__init__.py",
+        "test_discover.py"
+      ],
+      "path": "test/pm-plugin-development/plan-marshall-plugin"
+    },
+    "pm-plugin-development.plugin-create": {
+      "files": [
+        "test_component.py",
+        "test_validate_generate.py"
+      ],
+      "path": "test/pm-plugin-development/plugin-create"
+    },
+    "pm-plugin-development.plugin-doctor": {
+      "files": [
+        "test_analyze.py",
+        "test_analyze_verb_chains.py",
+        "test_argparse_safety.py",
+        "test_doctor_marketplace.py",
+        "test_fix.py",
+        "test_plugin_doctor_extension.py",
+        "test_resolver_gap.py",
+        "test_validate.py"
+      ],
+      "path": "test/pm-plugin-development/plugin-doctor"
+    },
+    "pm-plugin-development.plugin-doctor.fixtures.skill-structure.table-references.scripts": {
+      "files": [
+        "validate-input.py"
+      ],
+      "path": "test/pm-plugin-development/plugin-doctor/fixtures/skill-structure/table-references/scripts"
+    },
+    "pm-plugin-development.plugin-maintain": {
+      "files": [
+        "test_maintain.py",
+        "test_maintain_subcommands.py"
+      ],
+      "path": "test/pm-plugin-development/plugin-maintain"
+    },
+    "pm-plugin-development.tools-marketplace-inventory": {
+      "files": [
+        "test_resolve_dependencies.py",
+        "test_scan_marketplace_inventory.py",
+        "test_scan_planning_inventory.py"
+      ],
+      "path": "test/pm-plugin-development/tools-marketplace-inventory"
+    }
+  }
+}

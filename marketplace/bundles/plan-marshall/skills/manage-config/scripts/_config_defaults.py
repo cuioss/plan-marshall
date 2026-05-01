@@ -191,7 +191,9 @@ def get_default_config() -> dict:
 
     NOTE:
     - build_systems is NOT included - determined at runtime via extension discovery
-    - Module facts come from derived-data.json (see plan-marshall:manage-architecture)
+    - Module facts come from per-module derived.json/enriched.json under
+      .plan/architecture/<module>/, with the module set canonicalised by
+      .plan/architecture/_project.json["modules"] (see plan-marshall:manage-architecture)
     - Extension verify steps in phase-5-execute.steps are appended by skill-domains configure
     """
     import copy

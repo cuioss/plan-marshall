@@ -1,0 +1,63 @@
+{
+  "build_systems": [
+    "marshall-plugin"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-requirements\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-requirements\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-requirements\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-requirements\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-requirements\"",
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-requirements\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-requirements\""
+  },
+  "dependencies": [],
+  "metadata": {
+    "bundle_name": "pm-requirements",
+    "description": "Requirements engineering and specification standards"
+  },
+  "name": "pm-requirements",
+  "packages": {
+    "skill:ext-triage-reqs": {
+      "description": "Triage extension for requirements findings during plan-finalize phase",
+      "path": "skills/ext-triage-reqs",
+      "type": "skill"
+    },
+    "skill:planning": {
+      "description": "Standards for creating and maintaining project planning documentation with task tracking, status indicators, and traceability to requirements",
+      "path": "skills/planning",
+      "type": "skill"
+    },
+    "skill:requirements-authoring": {
+      "description": "Comprehensive standards for creating and maintaining requirements and specification documents with SMART principles, proper structure, integrity, and traceability",
+      "path": "skills/requirements-authoring",
+      "type": "skill"
+    },
+    "skill:setup": {
+      "description": "Standards for setting up requirements and specification documentation in new projects with proper directory structure and initial documents",
+      "path": "skills/setup",
+      "type": "skill"
+    },
+    "skill:traceability": {
+      "description": "Standards for linking specifications to implementation code and maintaining bidirectional traceability between documentation and source code",
+      "path": "skills/traceability",
+      "type": "skill"
+    }
+  },
+  "paths": {
+    "descriptor": "marketplace/bundles/pm-requirements/.claude-plugin/plugin.json",
+    "module": "marketplace/bundles/pm-requirements",
+    "readme": "marketplace/bundles/pm-requirements/README.md",
+    "sources": [
+      "marketplace/bundles/pm-requirements/skills"
+    ],
+    "tests": [
+      "test/pm-requirements"
+    ]
+  },
+  "stats": {
+    "agent_count": 0,
+    "command_count": 0,
+    "skill_count": 5
+  }
+}
