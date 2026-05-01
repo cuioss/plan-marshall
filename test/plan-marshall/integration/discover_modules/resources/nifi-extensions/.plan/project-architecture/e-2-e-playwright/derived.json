@@ -86,6 +86,7 @@
     "org.junit.platform:junit-platform-commons:test",
     "org.slf4j:slf4j-simple:test"
   ],
+  "files": {},
   "metadata": {
     "artifact_id": "e-2-e-playwright",
     "description": "End-to-End Playwright tests for NiFi Extensions - Implements centralized JavaScript/ESLint standards",

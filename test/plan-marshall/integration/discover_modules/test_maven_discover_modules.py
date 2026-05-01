@@ -45,6 +45,7 @@ from _architecture_core import (  # noqa: E402
     save_project_meta,
 )
 from _cmd_client import get_module_graph  # noqa: E402
+from _cmd_manage import _post_process_files  # noqa: E402
 from extension import Extension  # noqa: E402
 
 from integration_common import (  # noqa: E402
@@ -252,7 +253,9 @@ def save_graph_outputs(output_dir: Path, project_name: str, modules: list, proje
     # Copy architecture files from test resources if available
     resources_copied = copy_resources_if_exists(project_name, project_output_dir)
 
-    # Build module-name -> module-data map
+    # Build module-name -> module-data map. The Phase B files-inventory
+    # has already been populated on the modules list by the main test loop;
+    # rebuilding the dict here just gives downstream code a name-keyed view.
     modules_dict = {}
     for mod in modules:
         mod_name = mod.get('name', 'unknown')
@@ -326,6 +329,50 @@ def save_graph_outputs(output_dir: Path, project_name: str, modules: list, proje
 
 
 # =============================================================================
+# Phase B Files-Inventory Schema Assertion
+# =============================================================================
+
+
+def assert_files_inventory_schema(modules: list) -> list:
+    """Schema-only assertions for the ``files`` block on each module.
+
+    Cardinality / content is intentionally NOT checked — exact path lists
+    drift with project content. The contract pinned here is structural:
+    the key exists, the value is a dict whose values are either lists of
+    strings or the canonical ``{elided, sample}`` shape.
+
+    Returns:
+        List of error strings (empty list on full pass).
+    """
+    errors: list[str] = []
+    for mod in modules:
+        name = mod.get('name', '?')
+        files_block = mod.get('files')
+        if files_block is None:
+            errors.append(f'{name}: missing ``files`` block')
+            continue
+        if not isinstance(files_block, dict):
+            errors.append(f'{name}: ``files`` is not a dict (got {type(files_block).__name__})')
+            continue
+        for category, value in files_block.items():
+            if isinstance(value, list):
+                if not all(isinstance(p, str) for p in value):
+                    errors.append(f'{name}.files.{category}: non-string entry in path list')
+            elif isinstance(value, dict):
+                if 'elided' not in value or 'sample' not in value:
+                    errors.append(f'{name}.files.{category}: dict value missing ``elided``/``sample`` keys')
+                elif not isinstance(value.get('elided'), int):
+                    errors.append(f'{name}.files.{category}: ``elided`` is not an integer')
+                elif not isinstance(value.get('sample'), list):
+                    errors.append(f'{name}.files.{category}: ``sample`` is not a list')
+            else:
+                errors.append(
+                    f'{name}.files.{category}: unexpected value type {type(value).__name__}'
+                )
+    return errors
+
+
+# =============================================================================
 # Test Projects Configuration
 # =============================================================================
 
@@ -390,6 +437,12 @@ def run_integration_tests() -> int:
                 modules = ext.discover_modules(str(project_path))
                 print(f'  Found: {len(modules)} module(s)')
 
+                # Phase B: populate the per-module ``files`` inventory so
+                # downstream save/assertion steps see the same shape that
+                # ``api_discover`` would produce.
+                modules_dict = {mod.get('name', 'unknown'): mod for mod in modules}
+                _post_process_files(modules_dict, str(project_path))
+
                 # Save result
                 output_path = ctx.save_result(project, modules)
                 print(f'  Saved: {output_path.name}')
@@ -419,6 +472,15 @@ def run_integration_tests() -> int:
                 root_errors = assert_has_root_aggregator(modules, project_path, ['pom.xml'])
                 if root_errors:
                     errors.extend(root_errors)
+
+                # Assert Phase B files-inventory schema: every module's
+                # post-discovery dict must contain a ``files`` block whose
+                # values are either lists or the elision shape. Only schema
+                # / cardinality checks — exact path lists drift with project
+                # content and are not pinned here.
+                files_errors = assert_files_inventory_schema(modules)
+                if files_errors:
+                    errors.extend(files_errors)
 
                 # Report results
                 if errors:

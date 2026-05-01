@@ -43,6 +43,7 @@
     "io.quarkus:quarkus-junit5:test",
     "de.cuioss.test:cui-test-juli-logger:test"
   ],
+  "files": {},
   "metadata": {
     "artifact_id": "oauth-sheriff-quarkus",
     "description": "Runtime module for Quarkus integration for OAuth/JWT token validation, providing configuration, producers,\n        and integration from SecurityEvents to Micrometer",

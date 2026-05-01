@@ -12,6 +12,27 @@
     "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-oci\""
   },
   "dependencies": [],
+  "files": {
+    "doc": [
+      "marketplace/bundles/pm-dev-oci/README.md"
+    ],
+    "skill": [
+      "marketplace/bundles/pm-dev-oci/skills/ext-triage-oci/SKILL.md",
+      "marketplace/bundles/pm-dev-oci/skills/oci-security/SKILL.md",
+      "marketplace/bundles/pm-dev-oci/skills/oci-standards/SKILL.md",
+      "marketplace/bundles/pm-dev-oci/skills/plan-marshall-plugin/SKILL.md"
+    ],
+    "standard": [
+      "marketplace/bundles/pm-dev-oci/skills/ext-triage-oci/standards/severity.md",
+      "marketplace/bundles/pm-dev-oci/skills/ext-triage-oci/standards/suppression.md",
+      "marketplace/bundles/pm-dev-oci/skills/oci-security/standards/owasp-container-security.md",
+      "marketplace/bundles/pm-dev-oci/skills/oci-security/standards/runtime-security.md",
+      "marketplace/bundles/pm-dev-oci/skills/oci-security/standards/supply-chain-security.md",
+      "marketplace/bundles/pm-dev-oci/skills/oci-standards/standards/certificate-management.md",
+      "marketplace/bundles/pm-dev-oci/skills/oci-standards/standards/image-building.md",
+      "marketplace/bundles/pm-dev-oci/skills/oci-standards/standards/quarkus-distroless-health-probes.md"
+    ]
+  },
   "metadata": {
     "bundle_name": "pm-dev-oci",
     "description": "OCI container standards and security best practices"

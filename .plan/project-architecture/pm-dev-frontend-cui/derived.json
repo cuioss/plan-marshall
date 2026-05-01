@@ -12,6 +12,30 @@
     "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-frontend-cui\""
   },
   "dependencies": [],
+  "files": {
+    "doc": [
+      "marketplace/bundles/pm-dev-frontend-cui/README.md"
+    ],
+    "skill": [
+      "marketplace/bundles/pm-dev-frontend-cui/skills/cui-javascript-project/SKILL.md",
+      "marketplace/bundles/pm-dev-frontend-cui/skills/plan-marshall-plugin/SKILL.md"
+    ],
+    "standard": [
+      "marketplace/bundles/pm-dev-frontend-cui/skills/cui-javascript-project/standards/dependency-management.md",
+      "marketplace/bundles/pm-dev-frontend-cui/skills/cui-javascript-project/standards/maven-integration.md",
+      "marketplace/bundles/pm-dev-frontend-cui/skills/cui-javascript-project/standards/project-structure.md"
+    ],
+    "test": [
+      "test/pm-dev-frontend-cui/README.md",
+      "test/pm-dev-frontend-cui/coverage/coverage-analysis.toon",
+      "test/pm-dev-frontend-cui/coverage/coverage-summary.json",
+      "test/pm-dev-frontend-cui/coverage/empty-coverage.json",
+      "test/pm-dev-frontend-cui/coverage/high-coverage.json",
+      "test/pm-dev-frontend-cui/coverage/lcov.info",
+      "test/pm-dev-frontend-cui/coverage/low-coverage.json",
+      "test/pm-dev-frontend-cui/test_cui_js_extension.py"
+    ]
+  },
   "metadata": {
     "bundle_name": "pm-dev-frontend-cui",
     "description": "CUI-specific JavaScript project standards covering Maven integration, Quarkus DevUI, NiFi, and SonarQube"

@@ -12,6 +12,46 @@
     "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-requirements\""
   },
   "dependencies": [],
+  "files": {
+    "doc": [
+      "marketplace/bundles/pm-requirements/README.md"
+    ],
+    "skill": [
+      "marketplace/bundles/pm-requirements/skills/ext-triage-reqs/SKILL.md",
+      "marketplace/bundles/pm-requirements/skills/plan-marshall-plugin/SKILL.md",
+      "marketplace/bundles/pm-requirements/skills/planning/SKILL.md",
+      "marketplace/bundles/pm-requirements/skills/requirements-authoring/SKILL.md",
+      "marketplace/bundles/pm-requirements/skills/setup/SKILL.md",
+      "marketplace/bundles/pm-requirements/skills/traceability/SKILL.md"
+    ],
+    "standard": [
+      "marketplace/bundles/pm-requirements/skills/ext-triage-reqs/standards/severity.md",
+      "marketplace/bundles/pm-requirements/skills/ext-triage-reqs/standards/suppression.md",
+      "marketplace/bundles/pm-requirements/skills/planning/standards/document-structure.md",
+      "marketplace/bundles/pm-requirements/skills/planning/standards/examples.md",
+      "marketplace/bundles/pm-requirements/skills/planning/standards/maintenance.md",
+      "marketplace/bundles/pm-requirements/skills/planning/standards/requirement-linking.md",
+      "marketplace/bundles/pm-requirements/skills/planning/standards/status-tracking.md",
+      "marketplace/bundles/pm-requirements/skills/planning/standards/task-organization.md",
+      "marketplace/bundles/pm-requirements/skills/requirements-authoring/standards/documentation-lifecycle-management.md",
+      "marketplace/bundles/pm-requirements/skills/requirements-authoring/standards/integrity-and-quality-standards.md",
+      "marketplace/bundles/pm-requirements/skills/requirements-authoring/standards/requirements-format-and-structure.md",
+      "marketplace/bundles/pm-requirements/skills/requirements-authoring/standards/requirements-maintenance.md",
+      "marketplace/bundles/pm-requirements/skills/requirements-authoring/standards/smart-requirements-principles.md",
+      "marketplace/bundles/pm-requirements/skills/requirements-authoring/standards/specification-structure-and-backtracking.md",
+      "marketplace/bundles/pm-requirements/skills/setup/standards/directory-structure.md",
+      "marketplace/bundles/pm-requirements/skills/setup/standards/document-templates.md",
+      "marketplace/bundles/pm-requirements/skills/setup/standards/prefix-selection.md",
+      "marketplace/bundles/pm-requirements/skills/setup/standards/quality-checklist.md",
+      "marketplace/bundles/pm-requirements/skills/setup/standards/setup-workflow.md",
+      "marketplace/bundles/pm-requirements/skills/traceability/standards/code-to-specification-linking.md",
+      "marketplace/bundles/pm-requirements/skills/traceability/standards/cross-reference-maintenance.md",
+      "marketplace/bundles/pm-requirements/skills/traceability/standards/information-distribution.md",
+      "marketplace/bundles/pm-requirements/skills/traceability/standards/quality-standards.md",
+      "marketplace/bundles/pm-requirements/skills/traceability/standards/specification-to-code-linking.md",
+      "marketplace/bundles/pm-requirements/skills/traceability/standards/verification-and-validation-linking.md"
+    ]
+  },
   "metadata": {
     "bundle_name": "pm-requirements",
     "description": "Requirements engineering and specification standards"

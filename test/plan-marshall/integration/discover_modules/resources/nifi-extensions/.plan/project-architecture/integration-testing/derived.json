@@ -69,6 +69,7 @@
     "org.junit.platform:junit-platform-commons:test",
     "org.slf4j:slf4j-simple:test"
   ],
+  "files": {},
   "metadata": {
     "artifact_id": "integration-testing",
     "description": "Module for integration testing with Docker",

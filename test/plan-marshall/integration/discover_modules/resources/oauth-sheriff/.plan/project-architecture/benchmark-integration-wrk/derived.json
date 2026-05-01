@@ -25,6 +25,7 @@
     "org.junit.jupiter:junit-jupiter:test",
     "org.awaitility:awaitility:test"
   ],
+  "files": {},
   "metadata": {
     "artifact_id": "benchmark-integration-wrk",
     "description": "WRK-based HTTP benchmarks for OAuth/JWT validation endpoints with integration test infrastructure",

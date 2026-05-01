@@ -10,6 +10,7 @@
     "verify": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl benchmarking\""
   },
   "dependencies": [],
+  "files": {},
   "metadata": {
     "artifact_id": "benchmarking",
     "description": "Parent module for all benchmarking related modules including library and integration benchmarks",

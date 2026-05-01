@@ -35,6 +35,9 @@ save_module_derived = _architecture_core.save_module_derived
 
 cmd_modules = _cmd_client.cmd_modules
 cmd_resolve = _cmd_client.cmd_resolve
+cmd_files = _cmd_client.cmd_files
+cmd_which_module = _cmd_client.cmd_which_module
+cmd_find = _cmd_client.cmd_find
 get_module_graph = _cmd_client.get_module_graph
 get_modules_list = _cmd_client.get_modules_list
 get_modules_with_command = _cmd_client.get_modules_with_command
@@ -558,3 +561,312 @@ def test_cmd_resolve_unknown_command_returns_error():
         result = cmd_resolve(args)
 
         assert result['status'] == 'error'
+
+
+# =============================================================================
+# Files Inventory Readers (cmd_files / cmd_which_module / cmd_find)
+# =============================================================================
+
+
+def _seed_inventory_project(tmpdir: str) -> None:
+    """Two modules with hand-crafted ``files`` blocks for inventory readers."""
+    modules = {
+        'pm-dev-java': {
+            'name': 'pm-dev-java',
+            'paths': {'module': 'marketplace/bundles/pm-dev-java'},
+            'files': {
+                'skill': [
+                    'marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md',
+                    'marketplace/bundles/pm-dev-java/skills/lombok/SKILL.md',
+                ],
+                'agent': ['marketplace/bundles/pm-dev-java/agents/reviewer.md'],
+                'build_file': ['marketplace/bundles/pm-dev-java/plugin.json'],
+            },
+        },
+        'plan-marshall': {
+            'name': 'plan-marshall',
+            'paths': {'module': 'marketplace/bundles/plan-marshall'},
+            'files': {
+                'skill': [
+                    'marketplace/bundles/plan-marshall/skills/manage-architecture/SKILL.md',
+                ],
+                'test': ['test/plan-marshall/manage-architecture/test_files_inventory.py'],
+            },
+        },
+        'default': {
+            'name': 'default',
+            'paths': {'module': '.'},
+            'files': {
+                'doc': ['README.md'],
+                # Shared path with a deeper-prefix module (tie-breaker check):
+                'skill': ['marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md'],
+            },
+        },
+    }
+    _seed_project(tmpdir, modules)
+
+
+def test_cmd_files_returns_full_inventory():
+    """cmd_files without --category returns the whole files block."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_inventory_project(tmpdir)
+
+        args = Namespace(project_dir=tmpdir, module='pm-dev-java', category=None)
+        result = cmd_files(args)
+
+        assert result['status'] == 'success'
+        assert result['module'] == 'pm-dev-java'
+        assert 'skill' in result['files']
+        assert 'agent' in result['files']
+
+
+def test_cmd_files_with_category_filters():
+    """cmd_files with --category narrows to a single bucket."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_inventory_project(tmpdir)
+
+        args = Namespace(project_dir=tmpdir, module='pm-dev-java', category='skill')
+        result = cmd_files(args)
+
+        assert result['status'] == 'success'
+        assert result['category'] == 'skill'
+        assert result['files'] == [
+            'marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md',
+            'marketplace/bundles/pm-dev-java/skills/lombok/SKILL.md',
+        ]
+
+
+def test_cmd_files_unknown_category_returns_empty_list():
+    """cmd_files with a category that has no entries returns empty results."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_inventory_project(tmpdir)
+
+        args = Namespace(project_dir=tmpdir, module='pm-dev-java', category='template')
+        result = cmd_files(args)
+
+        assert result['status'] == 'success'
+        assert result['files'] == []
+
+
+def test_cmd_files_passes_through_elision_shape():
+    """A capped category preserves the ``{elided, sample}`` shape verbatim."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        elided = {'elided': 750, 'sample': ['a', 'b', 'c']}
+        modules = {
+            'big': {
+                'name': 'big',
+                'paths': {'module': 'big'},
+                'files': {'source': elided},
+            },
+        }
+        _seed_project(tmpdir, modules)
+
+        args = Namespace(project_dir=tmpdir, module='big', category='source')
+        result = cmd_files(args)
+
+        assert result['status'] == 'success'
+        assert result['files'] == elided
+
+
+def test_cmd_files_unknown_module_returns_error():
+    """cmd_files returns error_result when --module is not in the index."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_inventory_project(tmpdir)
+
+        args = Namespace(project_dir=tmpdir, module='nope', category=None)
+        result = cmd_files(args)
+
+        assert result['status'] == 'error'
+
+
+def test_cmd_which_module_resolves_unique_path():
+    """cmd_which_module returns the single owning module for a unique path."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_inventory_project(tmpdir)
+
+        args = Namespace(
+            project_dir=tmpdir,
+            path='marketplace/bundles/pm-dev-java/agents/reviewer.md',
+        )
+        result = cmd_which_module(args)
+
+        assert result['status'] == 'success'
+        assert result['module'] == 'pm-dev-java'
+
+
+def test_cmd_which_module_tie_breaks_by_longest_prefix():
+    """When multiple modules list the same path, the longest paths.module wins."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_inventory_project(tmpdir)
+
+        # The path appears in both ``default`` (paths.module = '.') and
+        # ``pm-dev-java`` (paths.module = 'marketplace/bundles/pm-dev-java').
+        # The longer prefix wins.
+        args = Namespace(
+            project_dir=tmpdir,
+            path='marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md',
+        )
+        result = cmd_which_module(args)
+
+        assert result['status'] == 'success'
+        assert result['module'] == 'pm-dev-java'
+
+
+def test_cmd_which_module_no_match_returns_null():
+    """cmd_which_module returns ``module: None`` when no inventory matches."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_inventory_project(tmpdir)
+
+        args = Namespace(project_dir=tmpdir, path='nope/missing.md')
+        result = cmd_which_module(args)
+
+        assert result['status'] == 'success'
+        assert result['module'] is None
+
+
+def test_cmd_find_aggregates_across_modules():
+    """cmd_find returns matches from every module that has a hit."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_inventory_project(tmpdir)
+
+        args = Namespace(project_dir=tmpdir, pattern='*SKILL.md', category=None)
+        result = cmd_find(args)
+
+        assert result['status'] == 'success'
+        # pm-dev-java contributes 2 SKILL.md files, plan-marshall contributes 1,
+        # default contributes 1 (the cross-listed path) — 4 total.
+        modules_in_results = {r['module'] for r in result['results']}
+        assert {'pm-dev-java', 'plan-marshall', 'default'}.issubset(modules_in_results)
+        assert all(r['path'].endswith('SKILL.md') for r in result['results'])
+
+
+def test_cmd_find_with_category_filter():
+    """cmd_find narrows results to the requested category."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_inventory_project(tmpdir)
+
+        args = Namespace(project_dir=tmpdir, pattern='*', category='agent')
+        result = cmd_find(args)
+
+        assert result['status'] == 'success'
+        assert all(r['category'] == 'agent' for r in result['results'])
+        assert any(r['path'].endswith('reviewer.md') for r in result['results'])
+
+
+def test_cmd_find_no_matches_returns_empty_results():
+    """cmd_find with a non-matching pattern returns count=0."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_inventory_project(tmpdir)
+
+        args = Namespace(project_dir=tmpdir, pattern='*.nonexistent', category=None)
+        result = cmd_find(args)
+
+        assert result['status'] == 'success'
+        assert result['count'] == 0
+        assert result['results'] == []
+
+
+def test_cmd_find_searches_elided_sample_paths():
+    """Elided buckets contribute their ``sample`` paths to find results."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        modules = {
+            'big': {
+                'name': 'big',
+                'paths': {'module': 'big'},
+                'files': {
+                    'source': {'elided': 9999, 'sample': ['big/a.py', 'big/b.py']},
+                },
+            },
+        }
+        _seed_project(tmpdir, modules)
+
+        args = Namespace(project_dir=tmpdir, pattern='big/a.py', category=None)
+        result = cmd_find(args)
+
+        assert result['status'] == 'success'
+        assert result['count'] == 1
+        assert result['results'][0]['path'] == 'big/a.py'
+
+
+# =============================================================================
+# Argparse wiring assertion (catches subcommand-registration regressions)
+# =============================================================================
+
+
+def test_architecture_argparse_registers_files_inventory_subcommands():
+    """Loading ``architecture.py``'s ``--help`` exposes the three new verbs.
+
+    A unit-level guard against accidentally dropping subparser registration
+    in ``architecture.py``. Invokes the script with ``--help`` and parses
+    the output for the verb names — this is identical to how a user would
+    discover the commands.
+    """
+    import os
+    import subprocess
+
+    env = os.environ.copy()
+    env['PYTHONPATH'] = os.pathsep.join(sys.path)
+    proc = subprocess.run(
+        [sys.executable, str(_SCRIPTS_DIR / 'architecture.py'), '--help'],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert proc.returncode == 0, f'--help failed: {proc.stderr}'
+    help_text = proc.stdout
+    assert 'files' in help_text
+    assert 'which-module' in help_text
+    assert 'find' in help_text
+
+
+def test_architecture_argparse_files_subcommand_accepts_module_and_category():
+    """``files --module X --category Y`` is a valid argument combination."""
+    import os
+    import subprocess
+
+    env = os.environ.copy()
+    env['PYTHONPATH'] = os.pathsep.join(sys.path)
+    proc = subprocess.run(
+        [sys.executable, str(_SCRIPTS_DIR / 'architecture.py'), 'files', '--help'],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert proc.returncode == 0
+    assert '--module' in proc.stdout
+    assert '--category' in proc.stdout
+
+
+def test_architecture_argparse_which_module_subcommand_accepts_path():
+    """``which-module --path P`` is a valid argument combination."""
+    import os
+    import subprocess
+
+    env = os.environ.copy()
+    env['PYTHONPATH'] = os.pathsep.join(sys.path)
+    proc = subprocess.run(
+        [sys.executable, str(_SCRIPTS_DIR / 'architecture.py'), 'which-module', '--help'],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert proc.returncode == 0
+    assert '--path' in proc.stdout
+
+
+def test_architecture_argparse_find_subcommand_accepts_pattern_and_category():
+    """``find --pattern P --category Y`` is a valid argument combination."""
+    import os
+    import subprocess
+
+    env = os.environ.copy()
+    env['PYTHONPATH'] = os.pathsep.join(sys.path)
+    proc = subprocess.run(
+        [sys.executable, str(_SCRIPTS_DIR / 'architecture.py'), 'find', '--help'],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert proc.returncode == 0
+    assert '--pattern' in proc.stdout
+    assert '--category' in proc.stdout

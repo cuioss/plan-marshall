@@ -27,6 +27,7 @@
     "jakarta.servlet:jakarta.servlet-api:test",
     "org.awaitility:awaitility:test"
   ],
+  "files": {},
   "metadata": {
     "artifact_id": "benchmarking-common",
     "description": "Common benchmarking infrastructure with JMH integration for artifact generation during benchmark execution",

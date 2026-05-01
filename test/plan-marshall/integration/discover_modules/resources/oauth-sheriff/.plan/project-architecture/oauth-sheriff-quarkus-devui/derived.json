@@ -92,6 +92,7 @@
     "io.quarkus:quarkus-junit5:test",
     "de.cuioss.test:cui-test-juli-logger:test"
   ],
+  "files": {},
   "metadata": {
     "artifact_id": "oauth-sheriff-quarkus-deployment",
     "description": "DevUI components for OAuth Sheriff Quarkus extension",

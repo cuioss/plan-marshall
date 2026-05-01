@@ -153,6 +153,96 @@ Dependencies use technology-native format without prefixes:
 | Maven | `groupId:artifactId:scope` | `de.cuioss:cui-java-tools:compile` |
 | npm | `name:scope` | `lit:compile`, `@testing-library/dom:test` |
 
+### `files:` block — categorised inventory
+
+`derived.json` carries a `files:` block on every module. The block lists
+every non-ignored file under the module's `paths.module` (and any
+`paths.tests` directories that fall outside the module root) grouped by
+category. The inventory is path-only — no hashes, no line counts, no
+content excerpts — and is refreshed on every `discover --force`.
+
+```json
+{
+  "files": {
+    "skill": [
+      "marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md",
+      "marketplace/bundles/pm-dev-java/skills/lombok/SKILL.md"
+    ],
+    "agent": ["marketplace/bundles/pm-dev-java/agents/reviewer.md"],
+    "build_file": ["marketplace/bundles/pm-dev-java/plugin.json"],
+    "doc": ["marketplace/bundles/pm-dev-java/README.md"],
+    "source": {
+      "elided": 1234,
+      "sample": [
+        "src/main/java/com/example/A.java",
+        "src/main/java/com/example/B.java"
+      ]
+    }
+  }
+}
+```
+
+#### Classification rules
+
+Marketplace-specific categories appear only when the module's
+`paths.module` sits under `marketplace/bundles/`. Other modules use the
+generic set.
+
+| Category | Marketplace bundle | Generic project |
+|----------|--------------------|-----------------|
+| `skill` | `skills/*/SKILL.md` | — |
+| `agent` | `agents/*.md` (immediate child) | — |
+| `command` | `commands/*.md` (immediate child) | — |
+| `script` | `skills/*/scripts/**/*.py`, `*.sh` | language-detected scripts (`*.sh`/`*.bash`/`*.zsh`) |
+| `standard` | `skills/*/standards/**/*.md` | — |
+| `template` | `skills/*/templates/**` | — |
+| `source` | — | language source files (`*.py`, `*.java`, `*.js/.jsx/.ts/.tsx`, `*.go`, `*.rs`, `*.kt`, `*.c/.cpp/.h/.hpp`, `*.cs`) |
+| `test` | files under `paths.tests/**/*.py` | files under `test/`, `tests/`, `__tests__/`, or `test_*` / `*_test.py` filenames |
+| `build_file` | `pyproject.toml`, `package.json`, `pom.xml`, `plugin.json` | same |
+| `doc` | filenames starting with `README` or `CHANGELOG` | same |
+| `config` | (only if explicitly recognised) | (only if explicitly recognised) |
+
+Unclassified files are silently dropped from the inventory — the block is
+never a complete file listing, only a category-keyed view of the files
+the inventory understands.
+
+#### Walk policy
+
+- `.gitignore` files at the project root and below are honoured. Trailing-`/`
+  directory rules prune subtrees; leading-`/` rules anchor to the gitignore
+  file's directory; `**/` matches any number of intermediate path segments;
+  `*` matches within a single segment.
+- A fixed set of always-ignored directory names is pruned even without a
+  `.gitignore` entry: `.git`, `__pycache__`, `node_modules`, `target`,
+  `.venv`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.idea`,
+  `.pyprojectx`, `htmlcov`.
+- **Symlinks** (file or directory) are skipped unconditionally.
+- **Dotfiles** are skipped except for the allowlist `.gitignore`,
+  `.editorconfig`.
+
+#### Determinism
+
+Each category list is sorted byte-wise (equivalent to `LC_COLLATE=C`) so
+the output is byte-identical across operating systems. Two consecutive
+`discover --force` runs against the same working tree produce identical
+`derived.json` files.
+
+#### Per-category cap
+
+Categories above 500 entries are replaced with the elision shape:
+
+```json
+{
+  "elided": 1234,
+  "sample": ["first/100/paths/in/sorted/order"]
+}
+```
+
+`elided` is the **total** count, not the count beyond 500. `sample`
+always carries the first 100 paths in sorted order. Callers detect the
+shape by checking `isinstance(value, dict) and "elided" in value` and
+fall back to `Glob`/filesystem search to get the full list.
+
 ### Virtual Modules
 
 When a directory contains multiple build systems (e.g., pom.xml +
@@ -371,6 +461,7 @@ files for output:
 | `dependencies` | `derived.json` | No | Yes |
 | `stats` | `derived.json` | Yes | Yes |
 | `commands` | `derived.json` | Yes | Yes |
+| `files` | `derived.json` | Yes | Yes |
 | `virtual_module` | `derived.json` | Yes | Yes |
 | `responsibility` | `enriched.json` | Yes | Yes |
 | `responsibility_reasoning` | `enriched.json` | No | Yes |
