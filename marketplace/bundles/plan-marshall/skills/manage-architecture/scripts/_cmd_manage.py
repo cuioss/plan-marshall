@@ -16,6 +16,7 @@ from pathlib import Path
 from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundInProjectError,
+    _write_json,
     error_result_module_not_found,
     get_data_dir,
     get_module_derived_path,
@@ -121,21 +122,19 @@ def api_discover(project_dir: str = '.', force: bool = False) -> dict:
         shutil.rmtree(tmp_dir)
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
-    # Write _project.json.
-    import json
-
+    # Write _project.json via the shared helper to keep encoding/formatting
+    # consistent with non-tmp paths.
     project_meta_tmp = tmp_dir / FILE_PROJECT_META
-    with open(project_meta_tmp, 'w') as f:
-        json.dump(project_meta, f, indent=2, sort_keys=True)
+    _write_json(project_meta_tmp, project_meta)
 
-    # Write per-module derived.json + empty enriched.json stubs.
+    # Write per-module derived.json + empty enriched.json stubs via the shared
+    # helper so all on-disk JSON in the architecture layout flows through one
+    # writer (encoding, indent, key-sort).
     for module_name, module_data in modules.items():
         module_tmp = tmp_dir / module_name
         module_tmp.mkdir(parents=True, exist_ok=True)
-        with open(module_tmp / DIR_PER_MODULE_DERIVED, 'w') as f:
-            json.dump(module_data, f, indent=2, sort_keys=True)
-        with open(module_tmp / DIR_PER_MODULE_ENRICHED, 'w') as f:
-            json.dump(_empty_module_enrichment(), f, indent=2, sort_keys=True)
+        _write_json(module_tmp / DIR_PER_MODULE_DERIVED, module_data)
+        _write_json(module_tmp / DIR_PER_MODULE_ENRICHED, _empty_module_enrichment())
 
     # Atomically swap the staged tree into place.
     swap_data_dir(tmp_dir, project_dir)

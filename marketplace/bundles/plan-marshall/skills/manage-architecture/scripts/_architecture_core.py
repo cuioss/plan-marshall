@@ -129,14 +129,14 @@ def get_module_enriched_path(module_name: str, project_dir: str = '.') -> Path:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    with open(path) as f:
+    with open(path, encoding='utf-8') as f:
         result: dict[str, Any] = json.load(f)
         return result
 
 
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, 'w') as f:
+    with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2, sort_keys=True)
 
 
@@ -242,9 +242,22 @@ def swap_data_dir(tmp_dir: Path, project_dir: str = '.') -> Path:
     Implements the tmp-then-swap pattern that gives ``discover --force`` its
     atomicity guarantee: callers build the entire new layout under ``tmp_dir``
     (typically the path returned by ``get_tmp_data_dir()``), then this function
-    deletes any previous ``project-architecture/`` directory and ``os.replace``-s
-    ``tmp_dir`` onto the real path. A forced interruption either before or after
-    the rename leaves the project in a consistent state.
+    swaps it into place using a backup-rename so the data directory is never
+    absent on disk:
+
+        1. Clean any stale ``project-architecture.old/`` left over from a
+           previously interrupted swap.
+        2. Rename the existing ``project-architecture/`` to
+           ``project-architecture.old/`` (atomic on the same filesystem).
+        3. ``os.replace`` ``tmp_dir`` onto the real path.
+        4. Delete the backup.
+
+    Compared to the older rmtree-then-replace flow, this closes the window where
+    the data directory does not exist on disk: between steps 2 and 3 the backup
+    is the canonical layout, and the rename in step 2 is atomic. A forced
+    interruption either before, during, or after the rename leaves the project
+    in a consistent state — the next ``discover --force`` will pick up the
+    leftover ``.old/`` and clean it in step 1.
 
     Args:
         tmp_dir: Source directory containing the new layout. Must exist.
@@ -263,12 +276,23 @@ def swap_data_dir(tmp_dir: Path, project_dir: str = '.') -> Path:
     real = get_data_dir(project_dir)
     real.parent.mkdir(parents=True, exist_ok=True)
 
-    if real.exists():
-        # os.replace requires the destination to not exist (when both are dirs)
-        # on some platforms; nuke the old tree first.
-        shutil.rmtree(real)
+    backup = real.with_name(real.name + '.old')
 
+    # Step 1: Clean any stale backup left over from a previously interrupted swap.
+    if backup.exists():
+        shutil.rmtree(backup)
+
+    # Step 2: Move the current layout aside (atomic rename on same filesystem).
+    if real.exists():
+        os.replace(real, backup)
+
+    # Step 3: Move the staged layout into place.
     os.replace(tmp_dir, real)
+
+    # Step 4: Delete the backup now that the new layout is live.
+    if backup.exists():
+        shutil.rmtree(backup)
+
     return real
 
 
