@@ -1,0 +1,95 @@
+{
+  "build_systems": [
+    "maven"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean -pl oauth-sheriff-quarkus-integration-tests\"",
+    "clean-install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean install -pl oauth-sheriff-quarkus-integration-tests\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"compile -pl oauth-sheriff-quarkus-integration-tests\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Pcoverage -pl oauth-sheriff-quarkus-integration-tests\"",
+    "install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"install -pl oauth-sheriff-quarkus-integration-tests\"",
+    "integration-tests": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Pintegration-tests -pl oauth-sheriff-quarkus-integration-tests\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test -pl oauth-sheriff-quarkus-integration-tests\"",
+    "package": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"package -pl oauth-sheriff-quarkus-integration-tests\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-quarkus-integration-tests\"",
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test-compile -pl oauth-sheriff-quarkus-integration-tests\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl oauth-sheriff-quarkus-integration-tests\""
+  },
+  "dependencies": [
+    "de.cuioss.sheriff.oauth:oauth-sheriff-quarkus:compile",
+    "de.cuioss.sheriff.oauth:oauth-sheriff-quarkus-deployment:test",
+    "io.quarkus:quarkus-resteasy:compile",
+    "io.quarkus:quarkus-resteasy-jackson:compile",
+    "io.quarkus:quarkus-smallrye-health:compile",
+    "io.quarkus:quarkus-micrometer-registry-prometheus:compile",
+    "de.cuioss.sheriff.oauth:oauth-sheriff-core:1.0.0-SNAPSHOT:test",
+    "io.rest-assured:rest-assured:test",
+    "org.junit.jupiter:junit-jupiter:test",
+    "org.awaitility:awaitility:test",
+    "io.quarkus:quarkus-devui-test-spi:test",
+    "de.cuioss.sheriff.oauth:oauth-sheriff-core:compile",
+    "io.quarkus:quarkus-core:compile",
+    "io.quarkus:quarkus-arc:compile",
+    "io.quarkus:quarkus-micrometer:compile",
+    "io.quarkus:quarkus-security:compile",
+    "org.projectlombok:lombok:provided",
+    "io.quarkus:quarkus-junit5:test",
+    "de.cuioss.test:cui-test-juli-logger:test"
+  ],
+  "files": {},
+  "metadata": {
+    "artifact_id": "oauth-sheriff-quarkus-integration-tests",
+    "description": "Integration tests for the OAuth Sheriff Quarkus extension including native container testing with HTTPS support",
+    "group_id": "de.cuioss.sheriff.oauth",
+    "packaging": "jar",
+    "parent": "de.cuioss.sheriff.oauth:oauth-sheriff-quarkus-parent",
+    "profiles": [
+      {
+        "canonical": "coverage",
+        "id": "coverage"
+      },
+      {
+        "canonical": "quality-gate",
+        "id": "pre-commit"
+      },
+      {
+        "canonical": "integration-tests",
+        "id": "integration-tests"
+      },
+      {
+        "canonical": "javadoc",
+        "id": "javadoc"
+      },
+      {
+        "canonical": "NO-MATCH-FOUND",
+        "id": "jfr"
+      }
+    ]
+  },
+  "name": "oauth-sheriff-quarkus-integration-tests",
+  "packages": {
+    "de.cuioss.sheriff.oauth.integration": {
+      "path": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-integration-tests/src/main/java/de/cuioss/sheriff/oauth/integration"
+    },
+    "de.cuioss.sheriff.oauth.integration.endpoint": {
+      "path": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-integration-tests/src/main/java/de/cuioss/sheriff/oauth/integration/endpoint"
+    }
+  },
+  "paths": {
+    "descriptor": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-integration-tests/pom.xml",
+    "module": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-integration-tests",
+    "readme": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-integration-tests/README.adoc",
+    "sources": [
+      "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-integration-tests/src/main/java",
+      "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-integration-tests/src/main/resources"
+    ],
+    "tests": [
+      "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-integration-tests/src/test/java",
+      "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus-integration-tests/src/test/resources"
+    ]
+  },
+  "stats": {
+    "source_files": 2,
+    "test_files": 9
+  }
+}

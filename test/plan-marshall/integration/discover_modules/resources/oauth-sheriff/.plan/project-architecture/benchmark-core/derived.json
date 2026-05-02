@@ -1,0 +1,113 @@
+{
+  "build_systems": [
+    "maven"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean -pl benchmark-core\"",
+    "clean-install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean install -pl benchmark-core\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"compile -pl benchmark-core\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Pcoverage -pl benchmark-core\"",
+    "install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"install -pl benchmark-core\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test -pl benchmark-core\"",
+    "package": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"package -pl benchmark-core\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit -pl benchmark-core\"",
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test-compile -pl benchmark-core\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl benchmark-core\""
+  },
+  "dependencies": [
+    "de.cuioss.sheriff.oauth:oauth-sheriff-core:compile",
+    "de.cuioss.sheriff.oauth:benchmarking-common:compile",
+    "de.cuioss.sheriff.oauth:oauth-sheriff-core:1.0.0-SNAPSHOT:compile",
+    "de.cuioss.test:cui-test-keycloak-integration:compile",
+    "io.rest-assured:rest-assured:compile",
+    "de.cuioss.test:cui-test-generator:compile",
+    "org.openjdk.jmh:jmh-core:compile",
+    "org.openjdk.jmh:jmh-generator-annprocess:provided",
+    "org.junit.jupiter:junit-jupiter:test",
+    "org.projectlombok:lombok:provided",
+    "io.jsonwebtoken:jjwt-api:compile",
+    "io.jsonwebtoken:jjwt-impl:compile",
+    "io.jsonwebtoken:jjwt-jackson:compile",
+    "jakarta.json:jakarta.json-api:compile",
+    "org.eclipse.parsson:parsson:compile",
+    "org.hdrhistogram:HdrHistogram:compile",
+    "com.google.code.gson:gson:compile",
+    "org.awaitility:awaitility:test"
+  ],
+  "files": {},
+  "metadata": {
+    "artifact_id": "benchmark-core",
+    "description": "Benchmarking module for OAuth/JWT token validation",
+    "group_id": "de.cuioss.sheriff.oauth",
+    "packaging": "jar",
+    "parent": "de.cuioss.sheriff.oauth:benchmarking",
+    "profiles": [
+      {
+        "canonical": "coverage",
+        "id": "coverage"
+      },
+      {
+        "canonical": "NO-MATCH-FOUND",
+        "id": "quick"
+      },
+      {
+        "canonical": "quality-gate",
+        "id": "pre-commit"
+      },
+      {
+        "canonical": "NO-MATCH-FOUND",
+        "id": "benchmark"
+      },
+      {
+        "canonical": "NO-MATCH-FOUND",
+        "id": "benchmark-jfr"
+      },
+      {
+        "canonical": "javadoc",
+        "id": "javadoc"
+      },
+      {
+        "canonical": "NO-MATCH-FOUND",
+        "id": "analyze-jfr"
+      }
+    ]
+  },
+  "name": "benchmark-core",
+  "packages": {
+    "de.cuioss.sheriff.oauth.core.benchmark": {
+      "package_info": "benchmarking/benchmark-core/src/main/java/de/cuioss/sheriff/oauth/core/benchmark/package-info.java",
+      "path": "benchmarking/benchmark-core/src/main/java/de/cuioss/sheriff/oauth/core/benchmark"
+    },
+    "de.cuioss.sheriff.oauth.core.benchmark.base": {
+      "path": "benchmarking/benchmark-core/src/main/java/de/cuioss/sheriff/oauth/core/benchmark/base"
+    },
+    "de.cuioss.sheriff.oauth.core.benchmark.delegates": {
+      "path": "benchmarking/benchmark-core/src/main/java/de/cuioss/sheriff/oauth/core/benchmark/delegates"
+    },
+    "de.cuioss.sheriff.oauth.core.benchmark.jfr": {
+      "package_info": "benchmarking/benchmark-core/src/main/java/de/cuioss/sheriff/oauth/core/benchmark/jfr/package-info.java",
+      "path": "benchmarking/benchmark-core/src/main/java/de/cuioss/sheriff/oauth/core/benchmark/jfr"
+    },
+    "de.cuioss.sheriff.oauth.core.benchmark.jfr.benchmarks": {
+      "path": "benchmarking/benchmark-core/src/main/java/de/cuioss/sheriff/oauth/core/benchmark/jfr/benchmarks"
+    },
+    "de.cuioss.sheriff.oauth.core.benchmark.standard": {
+      "path": "benchmarking/benchmark-core/src/main/java/de/cuioss/sheriff/oauth/core/benchmark/standard"
+    }
+  },
+  "paths": {
+    "descriptor": "benchmarking/benchmark-core/pom.xml",
+    "module": "benchmarking/benchmark-core",
+    "readme": "benchmarking/benchmark-core/README.adoc",
+    "sources": [
+      "benchmarking/benchmark-core/src/main/java"
+    ],
+    "tests": [
+      "benchmarking/benchmark-core/src/test/java"
+    ]
+  },
+  "stats": {
+    "source_files": 21,
+    "test_files": 1
+  }
+}

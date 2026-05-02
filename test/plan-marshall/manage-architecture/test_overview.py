@@ -28,8 +28,10 @@ def _load_module(name, filename):
 _architecture_core = _load_module('_architecture_core', '_architecture_core.py')
 _cmd_client = _load_module('_cmd_client', '_cmd_client.py')
 
-save_derived_data = _architecture_core.save_derived_data
-save_llm_enriched = _architecture_core.save_llm_enriched
+save_project_meta = _architecture_core.save_project_meta
+save_module_derived = _architecture_core.save_module_derived
+save_module_enriched = _architecture_core.save_module_enriched
+
 render_overview = _cmd_client.render_overview
 render_module_markdown = _cmd_client.render_module_markdown
 cmd_overview = _cmd_client.cmd_overview
@@ -40,81 +42,97 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-architecture', 'architect
 
 
 # =============================================================================
-# Fixtures
+# Fixture helpers
 # =============================================================================
 
 
-def _create_three_module_project(tmpdir: str, with_enrichment: bool = True) -> None:
-    save_derived_data(
+def _seed_project(
+    tmpdir: str,
+    project_name: str,
+    project_description: str,
+    derived: dict[str, dict],
+    enriched: dict[str, dict] | None = None,
+) -> None:
+    """Write ``_project.json`` plus per-module ``derived.json`` / ``enriched.json``."""
+    save_project_meta(
         {
-            'project': {'name': 'demo'},
-            'modules': {
-                'api': {
-                    'name': 'api',
-                    'paths': {'module': 'api'},
-                    'internal_dependencies': [],
-                    'commands': {},
-                },
-                'core': {
-                    'name': 'core',
-                    'paths': {'module': 'core'},
-                    'internal_dependencies': ['api'],
-                    'commands': {},
-                },
-                'service': {
-                    'name': 'service',
-                    'paths': {'module': 'service'},
-                    'internal_dependencies': ['core', 'api'],
-                    'commands': {},
-                },
-            },
+            'name': project_name,
+            'description': project_description,
+            'description_reasoning': '',
+            'extensions_used': [],
+            'modules': {name: {} for name in derived},
         },
         tmpdir,
     )
+    for name, data in derived.items():
+        save_module_derived(name, data, tmpdir)
+    if enriched:
+        for name, data in enriched.items():
+            save_module_enriched(name, data, tmpdir)
+
+
+def _create_three_module_project(tmpdir: str, with_enrichment: bool = True) -> None:
+    derived = {
+        'api': {
+            'name': 'api',
+            'paths': {'module': 'api'},
+            'internal_dependencies': [],
+            'commands': {},
+        },
+        'core': {
+            'name': 'core',
+            'paths': {'module': 'core'},
+            'internal_dependencies': ['api'],
+            'commands': {},
+        },
+        'service': {
+            'name': 'service',
+            'paths': {'module': 'service'},
+            'internal_dependencies': ['core', 'api'],
+            'commands': {},
+        },
+    }
+    enriched = None
+    description = ''
     if with_enrichment:
-        save_llm_enriched(
-            {
-                'project': {'description': 'A demo project for overview rendering tests.'},
-                'modules': {
-                    'api': {
-                        'purpose': 'library',
-                        'responsibility': 'HTTP API surface',
-                        'skills_by_profile': {
-                            'implementation': {
-                                'defaults': [{'skill': 'pm-dev-java:java-core', 'description': 'core'}],
-                                'optionals': [],
-                            },
-                        },
-                    },
-                    'core': {
-                        'purpose': 'library',
-                        'responsibility': 'Business logic',
-                    },
-                    'service': {
-                        'purpose': 'application',
-                        'responsibility': 'Wires API and core into a deployable service',
+        description = 'A demo project for overview rendering tests.'
+        enriched = {
+            'api': {
+                'purpose': 'library',
+                'responsibility': 'HTTP API surface',
+                'skills_by_profile': {
+                    'implementation': {
+                        'defaults': [{'skill': 'pm-dev-java:java-core', 'description': 'core'}],
+                        'optionals': [],
                     },
                 },
             },
-            tmpdir,
-        )
+            'core': {
+                'purpose': 'library',
+                'responsibility': 'Business logic',
+            },
+            'service': {
+                'purpose': 'application',
+                'responsibility': 'Wires API and core into a deployable service',
+            },
+        }
+    _seed_project(tmpdir, 'demo', description, derived, enriched)
 
 
 def _create_minimal_project(tmpdir: str) -> None:
     """Project with no enrichment so skills_by_profile section is omitted."""
-    save_derived_data(
+    _seed_project(
+        tmpdir,
+        'minimal',
+        '',
         {
-            'project': {'name': 'minimal'},
-            'modules': {
-                'solo': {
-                    'name': 'solo',
-                    'paths': {'module': 'solo'},
-                    'internal_dependencies': [],
-                    'commands': {},
-                },
+            'solo': {
+                'name': 'solo',
+                'paths': {'module': 'solo'},
+                'internal_dependencies': [],
+                'commands': {},
             },
         },
-        tmpdir,
     )
 
 

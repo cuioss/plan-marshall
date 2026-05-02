@@ -1,0 +1,57 @@
+{
+  "build_systems": [
+    "maven"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean -pl oauth-sheriff-quarkus-parent\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Pcoverage -pl oauth-sheriff-quarkus-parent\"",
+    "install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"install -pl oauth-sheriff-quarkus-parent\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-quarkus-parent\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl oauth-sheriff-quarkus-parent\""
+  },
+  "dependencies": [
+    "de.cuioss.sheriff.oauth:oauth-sheriff-core:compile",
+    "io.quarkus:quarkus-core:compile",
+    "io.quarkus:quarkus-arc:compile",
+    "io.quarkus:quarkus-micrometer:compile",
+    "io.quarkus:quarkus-security:compile",
+    "org.projectlombok:lombok:provided",
+    "io.quarkus:quarkus-junit5:test",
+    "de.cuioss.test:cui-test-juli-logger:test"
+  ],
+  "files": {},
+  "metadata": {
+    "artifact_id": "oauth-sheriff-quarkus-parent",
+    "description": "Parent module for Quarkus integration for OAuth/JWT token validation, providing configuration, producers, and integration from SecurityEvents to Micrometer",
+    "group_id": "de.cuioss.sheriff.oauth",
+    "packaging": "pom",
+    "parent": "de.cuioss.sheriff.oauth:oauth-sheriff-parent",
+    "profiles": [
+      {
+        "canonical": "coverage",
+        "id": "coverage"
+      },
+      {
+        "canonical": "javadoc",
+        "id": "javadoc"
+      },
+      {
+        "canonical": "quality-gate",
+        "id": "pre-commit"
+      }
+    ]
+  },
+  "name": "oauth-sheriff-quarkus-parent",
+  "packages": {},
+  "paths": {
+    "descriptor": "oauth-sheriff-quarkus-parent/pom.xml",
+    "module": "oauth-sheriff-quarkus-parent",
+    "readme": "oauth-sheriff-quarkus-parent/README.adoc",
+    "sources": [],
+    "tests": []
+  },
+  "stats": {
+    "source_files": 0,
+    "test_files": 0
+  }
+}

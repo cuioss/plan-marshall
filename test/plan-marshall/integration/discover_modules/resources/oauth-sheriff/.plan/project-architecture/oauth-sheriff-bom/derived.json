@@ -1,0 +1,48 @@
+{
+  "build_systems": [
+    "maven"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean -pl oauth-sheriff-bom\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Pcoverage -pl oauth-sheriff-bom\"",
+    "install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"install -pl oauth-sheriff-bom\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-bom\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl oauth-sheriff-bom\""
+  },
+  "dependencies": [],
+  "files": {},
+  "metadata": {
+    "artifact_id": "oauth-sheriff-bom",
+    "description": "Bill of Materials (BOM) for OAuth Sheriff modules",
+    "group_id": "de.cuioss.sheriff.oauth",
+    "packaging": "pom",
+    "parent": "de.cuioss.sheriff.oauth:oauth-sheriff-parent",
+    "profiles": [
+      {
+        "canonical": "coverage",
+        "id": "coverage"
+      },
+      {
+        "canonical": "javadoc",
+        "id": "javadoc"
+      },
+      {
+        "canonical": "quality-gate",
+        "id": "pre-commit"
+      }
+    ]
+  },
+  "name": "oauth-sheriff-bom",
+  "packages": {},
+  "paths": {
+    "descriptor": "bom/pom.xml",
+    "module": "bom",
+    "readme": null,
+    "sources": [],
+    "tests": []
+  },
+  "stats": {
+    "source_files": 0,
+    "test_files": 0
+  }
+}

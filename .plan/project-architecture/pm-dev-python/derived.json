@@ -1,0 +1,70 @@
+{
+  "build_systems": [
+    "marshall-plugin"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-dev-python\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-dev-python\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-dev-python\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-dev-python\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-dev-python\"",
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-dev-python\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-dev-python\""
+  },
+  "dependencies": [],
+  "files": {
+    "doc": [
+      "marketplace/bundles/pm-dev-python/README.md"
+    ],
+    "skill": [
+      "marketplace/bundles/pm-dev-python/skills/ext-triage-python/SKILL.md",
+      "marketplace/bundles/pm-dev-python/skills/plan-marshall-plugin/SKILL.md",
+      "marketplace/bundles/pm-dev-python/skills/pytest-testing/SKILL.md",
+      "marketplace/bundles/pm-dev-python/skills/python-core/SKILL.md"
+    ],
+    "standard": [
+      "marketplace/bundles/pm-dev-python/skills/ext-triage-python/standards/severity.md",
+      "marketplace/bundles/pm-dev-python/skills/ext-triage-python/standards/suppression.md",
+      "marketplace/bundles/pm-dev-python/skills/pytest-testing/standards/testing-pytest.md",
+      "marketplace/bundles/pm-dev-python/skills/python-core/standards/python-core.md"
+    ]
+  },
+  "metadata": {
+    "bundle_name": "pm-dev-python",
+    "description": "Python domain extension with pyprojectx build operations"
+  },
+  "name": "pm-dev-python",
+  "packages": {
+    "skill:ext-triage-python": {
+      "description": "Triage extension for Python findings during plan-finalize phase",
+      "path": "skills/ext-triage-python",
+      "type": "skill"
+    },
+    "skill:pytest-testing": {
+      "description": "Use when writing, reviewing, or debugging Python tests \u2014 covers pytest framework, AAA pattern, fixtures, parametrization, isolation, mocking, assertions, and coverage configuration. Activate for any Python testing task.",
+      "path": "skills/pytest-testing",
+      "type": "skill"
+    },
+    "skill:python-core": {
+      "description": "Use when writing, reviewing, or refactoring Python 3.10+ code \u2014 covers type annotations, data structures, error handling, resource management, async patterns, naming conventions, and imports. Activate for any Python production code task. Also use when working with pathlib, dataclass, pydantic, match statements, or structural pattern matching.",
+      "path": "skills/python-core",
+      "type": "skill"
+    }
+  },
+  "paths": {
+    "descriptor": "marketplace/bundles/pm-dev-python/.claude-plugin/plugin.json",
+    "module": "marketplace/bundles/pm-dev-python",
+    "readme": "marketplace/bundles/pm-dev-python/README.md",
+    "sources": [
+      "marketplace/bundles/pm-dev-python/skills"
+    ],
+    "tests": [
+      "test/pm-dev-python"
+    ]
+  },
+  "stats": {
+    "agent_count": 0,
+    "command_count": 0,
+    "skill_count": 3
+  }
+}

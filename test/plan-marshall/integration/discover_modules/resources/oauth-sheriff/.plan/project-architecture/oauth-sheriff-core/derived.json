@@ -1,0 +1,156 @@
+{
+  "build_systems": [
+    "maven"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean -pl oauth-sheriff-core\"",
+    "clean-install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean install -pl oauth-sheriff-core\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"compile -pl oauth-sheriff-core\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Pcoverage -pl oauth-sheriff-core\"",
+    "install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"install -pl oauth-sheriff-core\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test -pl oauth-sheriff-core\"",
+    "package": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"package -pl oauth-sheriff-core\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-core\"",
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test-compile -pl oauth-sheriff-core\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl oauth-sheriff-core\""
+  },
+  "dependencies": [
+    "org.projectlombok:lombok:provided",
+    "de.cuioss:cui-java-tools:compile",
+    "de.cuioss:cui-http:compile",
+    "org.junit.jupiter:junit-jupiter:test",
+    "io.jsonwebtoken:jjwt-api:test",
+    "io.jsonwebtoken:jjwt-impl:test",
+    "io.jsonwebtoken:jjwt-jackson:test",
+    "de.cuioss.test:cui-test-mockwebserver-junit5:test",
+    "org.eclipse.parsson:parsson:test",
+    "jakarta.json:jakarta.json-api:provided",
+    "com.dslplatform:dsl-json:compile",
+    "org.jspecify:jspecify:compile",
+    "org.junit.jupiter:junit-jupiter-params:test",
+    "de.cuioss.test:cui-test-value-objects:test",
+    "io.rest-assured:rest-assured:test",
+    "jakarta.servlet:jakarta.servlet-api:test",
+    "de.cuioss.test:cui-test-generator:test",
+    "de.cuioss.test:cui-test-juli-logger:test",
+    "org.slf4j:slf4j-jdk14:test",
+    "org.slf4j:jcl-over-slf4j:test",
+    "org.awaitility:awaitility:test"
+  ],
+  "files": {},
+  "metadata": {
+    "artifact_id": "oauth-sheriff-core",
+    "description": "Core library for OAuth/JWT token validation in multi-issuer environments",
+    "group_id": "de.cuioss.sheriff.oauth",
+    "packaging": "jar",
+    "parent": "de.cuioss.sheriff.oauth:oauth-sheriff-parent",
+    "profiles": [
+      {
+        "canonical": "coverage",
+        "id": "coverage"
+      },
+      {
+        "canonical": "javadoc",
+        "id": "javadoc"
+      },
+      {
+        "canonical": "quality-gate",
+        "id": "pre-commit"
+      }
+    ]
+  },
+  "name": "oauth-sheriff-core",
+  "packages": {
+    "de.cuioss.sheriff.oauth.core": {
+      "package_info": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/package-info.java",
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core"
+    },
+    "de.cuioss.sheriff.oauth.core.cache": {
+      "package_info": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/cache/package-info.java",
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/cache"
+    },
+    "de.cuioss.sheriff.oauth.core.domain": {
+      "package_info": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/domain/package-info.java",
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/domain"
+    },
+    "de.cuioss.sheriff.oauth.core.domain.claim": {
+      "package_info": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/domain/claim/package-info.java",
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/domain/claim"
+    },
+    "de.cuioss.sheriff.oauth.core.domain.claim.mapper": {
+      "package_info": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/domain/claim/mapper/package-info.java",
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/domain/claim/mapper"
+    },
+    "de.cuioss.sheriff.oauth.core.domain.context": {
+      "package_info": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/domain/context/package-info.java",
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/domain/context"
+    },
+    "de.cuioss.sheriff.oauth.core.domain.token": {
+      "package_info": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/domain/token/package-info.java",
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/domain/token"
+    },
+    "de.cuioss.sheriff.oauth.core.exception": {
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/exception"
+    },
+    "de.cuioss.sheriff.oauth.core.json": {
+      "package_info": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/json/package-info.java",
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/json"
+    },
+    "de.cuioss.sheriff.oauth.core.jwks": {
+      "package_info": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/jwks/package-info.java",
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/jwks"
+    },
+    "de.cuioss.sheriff.oauth.core.jwks.http": {
+      "package_info": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/jwks/http/package-info.java",
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/jwks/http"
+    },
+    "de.cuioss.sheriff.oauth.core.jwks.key": {
+      "package_info": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/jwks/key/package-info.java",
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/jwks/key"
+    },
+    "de.cuioss.sheriff.oauth.core.jwks.parser": {
+      "package_info": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/jwks/parser/package-info.java",
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/jwks/parser"
+    },
+    "de.cuioss.sheriff.oauth.core.metrics": {
+      "package_info": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/metrics/package-info.java",
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/metrics"
+    },
+    "de.cuioss.sheriff.oauth.core.pipeline": {
+      "package_info": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/pipeline/package-info.java",
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/pipeline"
+    },
+    "de.cuioss.sheriff.oauth.core.pipeline.validator": {
+      "package_info": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/pipeline/validator/package-info.java",
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/pipeline/validator"
+    },
+    "de.cuioss.sheriff.oauth.core.security": {
+      "package_info": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/security/package-info.java",
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/security"
+    },
+    "de.cuioss.sheriff.oauth.core.util": {
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/util"
+    },
+    "de.cuioss.sheriff.oauth.core.well_known": {
+      "package_info": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/well_known/package-info.java",
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/well_known"
+    }
+  },
+  "paths": {
+    "descriptor": "oauth-sheriff-core/pom.xml",
+    "module": "oauth-sheriff-core",
+    "readme": "oauth-sheriff-core/README.adoc",
+    "sources": [
+      "oauth-sheriff-core/src/main/java",
+      "oauth-sheriff-core/src/main/resources"
+    ],
+    "tests": [
+      "oauth-sheriff-core/src/test/java",
+      "oauth-sheriff-core/src/test/resources"
+    ]
+  },
+  "stats": {
+    "source_files": 95,
+    "test_files": 126
+  }
+}

@@ -1,6 +1,9 @@
 # Architecture Persistence
 
-Storage format for project architecture data with separation of raw and derived data.
+Storage format for project architecture data. The on-disk layout is fanned
+out per module: a single top-level `_project.json` plus one directory per
+module containing `derived.json` (deterministic discovery output) and
+`enriched.json` (LLM-augmented fields).
 
 ## Storage
 
@@ -8,59 +11,121 @@ Storage format for project architecture data with separation of raw and derived 
 
 ```
 .plan/project-architecture/
-├── derived-data.json  # Extension API output (deterministic)
-└── llm-enriched.json  # LLM-enriched fields
+├── _project.json                   # Top-level project metadata + module index
+├── {module-1}/
+│   ├── derived.json                # Extension API output (deterministic)
+│   └── enriched.json               # LLM-enriched fields
+├── {module-2}/
+│   ├── derived.json
+│   └── enriched.json
+└── ...
 ```
 
-**Benefits of separation:**
-- Raw data regenerated independently (re-run discovery)
-- Derived data updated without expensive re-discovery
-- Clear provenance (tooling vs LLM analysis)
-- No field duplication
+**Atomicity contract**: `architecture discover --force` builds the new tree
+under a sibling staging directory `project-architecture.tmp/` and then
+`os.replace`-swaps it onto the real path. A forced interruption either
+before or after the rename leaves the project in a consistent state — the
+old layout is intact, or the new layout is intact, never half-written.
 
-## derived-data.json
+**Source of truth invariant**: `_project.json`'s `modules` field is the
+canonical answer to "which modules exist". Per-module directory presence on
+disk is **not** a substitute for the index — half-written directories from
+interrupted writes must be ignored. Clients iterate `_project.json` and
+lazy-load per-module files; they MUST NOT enumerate the directory tree.
 
-Direct output from `discover_project_modules()`. See [module-discovery.md](../../extension-api/standards/module-discovery.md) for full specification.
+**Benefits of the per-module layout:**
+- Smaller, easier-to-read files per module (no 60+ KB monoliths).
+- Per-module re-enrichment is local — editing one module never rewrites the
+  whole project.
+- Atomic writes via tmp+swap are simple to reason about.
+- Clear provenance: extensions own `derived.json`; the LLM owns
+  `enriched.json`; the project metadata sits in `_project.json`.
+
+---
+
+## `_project.json`
+
+Top-level project metadata and the module index.
 
 ### Structure
 
 ```json
 {
-  "project": {
-    "name": "oauth-sheriff"
-  },
+  "name": "oauth-sheriff",
+  "description": "JWT validation library for Quarkus applications",
+  "description_reasoning": "Derived from: root README.md first paragraph",
+  "extensions_used": ["pm-dev-java", "plan-marshall"],
   "modules": {
-    "oauth-sheriff-core": {
-      "name": "oauth-sheriff-core",
-      "build_systems": ["maven"],
-      "paths": {
-        "module": "oauth-sheriff-core",
-        "descriptor": "oauth-sheriff-core/pom.xml",
-        "sources": ["oauth-sheriff-core/src/main/java"],
-        "tests": ["oauth-sheriff-core/src/test/java"],
-        "readme": "oauth-sheriff-core/README.adoc"
-      },
-      "metadata": {
-        "artifact_id": "oauth-sheriff-core",
-        "group_id": "de.cuioss.sheriff.oauth",
-        "packaging": "jar",
-        "description": "Core OAuth Sheriff functionality",
-        "profiles": [...]
-      },
-      "packages": {
-        "de.cuioss.sheriff.oauth.core": {
-          "path": "...",
-          "package_info": "..."
-        }
-      },
-      "dependencies": ["de.cuioss:cui-java-tools:compile", ...],
-      "stats": {"source_files": 45, "test_files": 38},
-      "commands": {
-        "module-tests": "python3 ...",
-        "verify": "python3 ...",
-        "quality-gate": "python3 ..."
-      }
+    "oauth-sheriff-parent": {},
+    "oauth-sheriff-core": {},
+    "oauth-sheriff-quarkus": {},
+    "oauth-sheriff-quarkus-deployment": {}
+  }
+}
+```
+
+### Fields
+
+| Field | Description |
+|-------|-------------|
+| `name` | Project name (typically the repository directory name) |
+| `description` | LLM-generated 1-2 sentence project description |
+| `description_reasoning` | Source/rationale for the description |
+| `extensions_used` | Domain extensions that contributed to discovery |
+| `modules` | **Module index** — keys are module names, values are reserved for future per-module overrides (empty objects today). The set of keys is the canonical "which modules exist" answer. |
+
+### `modules` index — discovery surface
+
+Clients iterate `_project.json["modules"]` to know which modules to load.
+The values are presently empty objects but the field is reserved as the
+extension point for per-module project-level metadata in future revisions.
+
+The `iter_modules()` core helper returns the sorted key list and is the
+only blessed way to enumerate modules; callers MUST NOT scan the
+`project-architecture/` directory tree directly.
+
+---
+
+## Per-module `derived.json`
+
+Path: `.plan/project-architecture/{module}/derived.json`
+
+Direct output from `discover_project_modules()` for one module. See
+[module-discovery.md](../../extension-api/standards/module-discovery.md) for
+the full extension contract.
+
+### Structure
+
+```json
+{
+  "name": "oauth-sheriff-core",
+  "build_systems": ["maven"],
+  "paths": {
+    "module": "oauth-sheriff-core",
+    "descriptor": "oauth-sheriff-core/pom.xml",
+    "sources": ["oauth-sheriff-core/src/main/java"],
+    "tests": ["oauth-sheriff-core/src/test/java"],
+    "readme": "oauth-sheriff-core/README.adoc"
+  },
+  "metadata": {
+    "artifact_id": "oauth-sheriff-core",
+    "group_id": "de.cuioss.sheriff.oauth",
+    "packaging": "jar",
+    "description": "Core OAuth Sheriff functionality",
+    "profiles": []
+  },
+  "packages": {
+    "de.cuioss.sheriff.oauth.core": {
+      "path": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core",
+      "package_info": "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/package-info.java"
     }
+  },
+  "dependencies": ["de.cuioss:cui-java-tools:compile"],
+  "stats": {"source_files": 45, "test_files": 38},
+  "commands": {
+    "module-tests": "python3 ...",
+    "verify": "python3 ...",
+    "quality-gate": "python3 ..."
   }
 }
 ```
@@ -88,52 +153,127 @@ Dependencies use technology-native format without prefixes:
 | Maven | `groupId:artifactId:scope` | `de.cuioss:cui-java-tools:compile` |
 | npm | `name:scope` | `lit:compile`, `@testing-library/dom:test` |
 
-### Virtual Modules
+### `files:` block — categorised inventory
 
-When a directory contains multiple build systems (e.g., pom.xml + package.json), the discovery creates separate **virtual modules** with technology suffixes instead of merging them:
+`derived.json` carries a `files:` block on every module. The block lists
+every non-ignored file under the module's `paths.module` (and any
+`paths.tests` directories that fall outside the module root) grouped by
+category. The inventory is path-only — no hashes, no line counts, no
+content excerpts — and is refreshed on every `discover --force`.
 
 ```json
 {
-  "modules": {
-    "nifi-cuioss-ui-maven": {
-      "name": "nifi-cuioss-ui-maven",
-      "build_systems": ["maven"],
-      "virtual_module": {
-        "physical_path": "nifi-cuioss-ui",
-        "technology": "maven",
-        "sibling_modules": ["nifi-cuioss-ui-npm"]
-      },
-      "paths": {
-        "module": "nifi-cuioss-ui",
-        "descriptor": "nifi-cuioss-ui/pom.xml",
-        "sources": ["nifi-cuioss-ui/src/main/java"]
-      },
-      "dependencies": ["jakarta.servlet:jakarta.servlet-api:provided"],
-      "commands": {
-        "module-tests": "python3 .plan/execute-script.py pm-dev-java:..."
-      }
-    },
-    "nifi-cuioss-ui-npm": {
-      "name": "nifi-cuioss-ui-npm",
-      "build_systems": ["npm"],
-      "virtual_module": {
-        "physical_path": "nifi-cuioss-ui",
-        "technology": "npm",
-        "sibling_modules": ["nifi-cuioss-ui-maven"]
-      },
-      "paths": {
-        "module": "nifi-cuioss-ui",
-        "descriptor": "nifi-cuioss-ui/package.json",
-        "sources": ["nifi-cuioss-ui/src"]
-      },
-      "dependencies": ["lit:compile", "@playwright/test:test"],
-      "commands": {
-        "module-tests": "python3 .plan/execute-script.py pm-dev-frontend:..."
-      }
+  "files": {
+    "skill": [
+      "marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md",
+      "marketplace/bundles/pm-dev-java/skills/lombok/SKILL.md"
+    ],
+    "agent": ["marketplace/bundles/pm-dev-java/agents/reviewer.md"],
+    "build_file": ["marketplace/bundles/pm-dev-java/plugin.json"],
+    "doc": ["marketplace/bundles/pm-dev-java/README.md"],
+    "source": {
+      "elided": 1234,
+      "sample": [
+        "src/main/java/com/example/A.java",
+        "src/main/java/com/example/B.java"
+      ]
     }
   }
 }
 ```
+
+#### Classification rules
+
+Marketplace-specific categories appear only when the module's
+`paths.module` sits under `marketplace/bundles/`. Other modules use the
+generic set.
+
+| Category | Marketplace bundle | Generic project |
+|----------|--------------------|-----------------|
+| `skill` | `skills/*/SKILL.md` | — |
+| `agent` | `agents/*.md` (immediate child) | — |
+| `command` | `commands/*.md` (immediate child) | — |
+| `script` | `skills/*/scripts/**/*.py`, `*.sh` | language-detected scripts (`*.sh`/`*.bash`/`*.zsh`) |
+| `standard` | `skills/*/standards/**/*.md` | — |
+| `template` | `skills/*/templates/**` | — |
+| `source` | — | language source files (`*.py`, `*.java`, `*.js/.jsx/.ts/.tsx`, `*.go`, `*.rs`, `*.kt`, `*.c/.cpp/.h/.hpp`, `*.cs`) |
+| `test` | files under `paths.tests/**/*.py` | files under `test/`, `tests/`, `__tests__/`, or `test_*` / `*_test.py` filenames |
+| `build_file` | `pyproject.toml`, `package.json`, `pom.xml`, `plugin.json` | same |
+| `doc` | filenames starting with `README` or `CHANGELOG` | same |
+| `config` | (only if explicitly recognised) | (only if explicitly recognised) |
+
+Unclassified files are silently dropped from the inventory — the block is
+never a complete file listing, only a category-keyed view of the files
+the inventory understands.
+
+#### Walk policy
+
+- `.gitignore` files at the project root and below are honoured. Trailing-`/`
+  directory rules prune subtrees; leading-`/` rules anchor to the gitignore
+  file's directory; `**/` matches any number of intermediate path segments;
+  `*` matches within a single segment.
+- A fixed set of always-ignored directory names is pruned even without a
+  `.gitignore` entry: `.git`, `__pycache__`, `node_modules`, `target`,
+  `.venv`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.idea`,
+  `.pyprojectx`, `htmlcov`.
+- **Symlinks** (file or directory) are skipped unconditionally.
+- **Dotfiles** are skipped except for the allowlist `.gitignore`,
+  `.editorconfig`.
+
+#### Determinism
+
+Each category list is sorted byte-wise (equivalent to `LC_COLLATE=C`) so
+the output is byte-identical across operating systems. Two consecutive
+`discover --force` runs against the same working tree produce identical
+`derived.json` files.
+
+#### Per-category cap
+
+Categories above 500 entries are replaced with the elision shape:
+
+```json
+{
+  "elided": 1234,
+  "sample": ["first/100/paths/in/sorted/order"]
+}
+```
+
+`elided` is the **total** count, not the count beyond 500. `sample`
+always carries the first 100 paths in sorted order. Callers detect the
+shape by checking `isinstance(value, dict) and "elided" in value` and
+fall back to `Glob`/filesystem search to get the full list.
+
+### Virtual Modules
+
+When a directory contains multiple build systems (e.g., pom.xml +
+package.json), discovery creates separate **virtual modules** with
+technology suffixes instead of merging them. Each virtual module gets its
+own per-module directory under `project-architecture/`.
+
+```json
+{
+  "name": "nifi-cuioss-ui-maven",
+  "build_systems": ["maven"],
+  "virtual_module": {
+    "physical_path": "nifi-cuioss-ui",
+    "technology": "maven",
+    "sibling_modules": ["nifi-cuioss-ui-npm"]
+  },
+  "paths": {
+    "module": "nifi-cuioss-ui",
+    "descriptor": "nifi-cuioss-ui/pom.xml",
+    "sources": ["nifi-cuioss-ui/src/main/java"]
+  },
+  "dependencies": ["jakarta.servlet:jakarta.servlet-api:provided"],
+  "commands": {
+    "module-tests": "python3 .plan/execute-script.py pm-dev-java:..."
+  }
+}
+```
+
+The corresponding npm sibling lives at
+`.plan/project-architecture/nifi-cuioss-ui-npm/derived.json` with
+`build_systems: ["npm"]`.
 
 **Virtual Module Fields:**
 
@@ -141,71 +281,56 @@ When a directory contains multiple build systems (e.g., pom.xml + package.json),
 |-------|-------------|
 | `physical_path` | Actual directory path (shared by siblings) |
 | `technology` | Build system technology (`maven`, `npm`, `gradle`) |
-| `sibling_modules` | List of other virtual modules from same directory |
+| `sibling_modules` | List of other virtual modules from the same directory |
 
 **Benefits of virtual modules:**
-- Each module has single build system (no ambiguity)
+- Each module has a single build system (no ambiguity)
 - Commands are strings (no nested technology selection)
 - Skills by profile are technology-specific
-- Task assignment targets single technology
+- Task assignment targets a single technology
 
 ---
 
-## llm-enriched.json
+## Per-module `enriched.json`
 
-LLM-generated enrichments referencing modules by name.
+Path: `.plan/project-architecture/{module}/enriched.json`
+
+LLM-generated enrichments for one module. Seeded as an empty stub by
+`architecture discover` and populated by `architecture init` and the
+`architecture enrich *` commands.
 
 ### Structure
 
 ```json
 {
-  "project": {
-    "description": "JWT validation library for Quarkus applications",
-    "description_reasoning": "Derived from: root README.md first paragraph"
-  },
-  "modules": {
-    "oauth-sheriff-core": {
-      "responsibility": "Core JWT validation logic including claim extraction and signature verification",
-      "responsibility_reasoning": "Derived from: README overview, ClaimValidator pattern",
-      "purpose": "library",
-      "purpose_reasoning": "packaging=jar, no runtime dependencies",
-      "key_packages": {
-        "de.cuioss.sheriff.oauth.core.pipeline": {
-          "description": "JWT validation pipeline components",
-          "components": ["ClaimValidator", "JwtPipeline", "ValidationResult"]
-        }
-      },
-      "internal_dependencies": [],
-      "key_dependencies": [
-        "de.cuioss:cui-java-tools",
-        "org.jspecify:jspecify"
-      ],
-      "key_dependencies_reasoning": "Foundation utilities and null-safety annotations",
-      "skills_by_profile": {
-        "implementation": [
-          "pm-dev-java:java-core",
-          "pm-dev-java:java-null-safety",
-          "pm-dev-java:java-lombok"
-        ],
-        "module_testing": [
-          "pm-dev-java:java-core",
-          "pm-dev-java:junit-core"
-        ]
-      },
-      "skills_by_profile_reasoning": "Plain Java library, no CDI/Quarkus runtime",
-      "tips": [
-        "Use @ApplicationScoped for singleton services",
-        "Prefer constructor injection over field injection"
-      ],
-      "insights": [
-        "Heavy validation happens in boundary layer",
-        "Token caching improves performance 10x"
-      ],
-      "best_practices": [
-        "Always validate tokens before extracting claims"
-      ]
+  "responsibility": "Core JWT validation logic including claim extraction and signature verification",
+  "responsibility_reasoning": "Derived from: README overview, ClaimValidator pattern",
+  "purpose": "library",
+  "purpose_reasoning": "packaging=jar, no runtime dependencies",
+  "key_packages": {
+    "de.cuioss.sheriff.oauth.core.pipeline": {
+      "description": "JWT validation pipeline components",
+      "components": ["ClaimValidator", "JwtPipeline", "ValidationResult"]
     }
-  }
+  },
+  "internal_dependencies": [],
+  "key_dependencies": [
+    "de.cuioss:cui-java-tools",
+    "org.jspecify:jspecify"
+  ],
+  "key_dependencies_reasoning": "Foundation utilities and null-safety annotations",
+  "skills_by_profile": {
+    "implementation": {
+      "defaults": [
+        {"skill": "pm-dev-java:java-core", "description": "Core Java patterns"}
+      ],
+      "optionals": []
+    }
+  },
+  "skills_by_profile_reasoning": "Plain Java library, no CDI/Quarkus runtime",
+  "tips": ["Use @ApplicationScoped for singleton services"],
+  "insights": ["Heavy validation happens in boundary layer"],
+  "best_practices": ["Always validate tokens before extracting claims"]
 }
 ```
 
@@ -221,7 +346,7 @@ LLM-generated enrichments referencing modules by name.
 | `internal_dependencies` | Dependencies on other project modules |
 | `key_dependencies` | Important external dependencies (no technology prefix) |
 | `key_dependencies_reasoning` | Filtering rationale |
-| `skills_by_profile` | Skills organized by execution profile |
+| `skills_by_profile` | Skills organized by execution profile (defaults/optionals shape) |
 | `skills_by_profile_reasoning` | Selection and filtering rationale |
 | `tips` | Implementation tips for working with the module |
 | `insights` | Learned insights from implementation experience |
@@ -229,7 +354,8 @@ LLM-generated enrichments referencing modules by name.
 
 ### Skills by Profile
 
-The `skills_by_profile` field organizes skills by execution profile with defaults/optionals structure:
+The `skills_by_profile` field organizes skills by execution profile with a
+defaults/optionals structure:
 
 | Profile | Purpose |
 |---------|---------|
@@ -239,6 +365,7 @@ The `skills_by_profile` field organizes skills by execution profile with default
 | `benchmark-testing` | Skills for performance tests (if applicable) |
 
 **Structure** (defaults/optionals with descriptions):
+
 ```json
 {
   "skills_by_profile": {
@@ -253,10 +380,6 @@ The `skills_by_profile` field organizes skills by execution profile with default
         {
           "skill": "pm-plugin-development:plugin-script-architecture",
           "description": "Script development standards covering implementation patterns"
-        },
-        {
-          "skill": "plan-marshall:ref-toon-format",
-          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON"
         }
       ]
     }
@@ -264,11 +387,14 @@ The `skills_by_profile` field organizes skills by execution profile with default
 }
 ```
 
-**Resolution behavior**:
-- `defaults`: Always loaded for the profile
-- `optionals`: LLM-selected based on description match against deliverable context
+**Resolution behaviour**:
+- `defaults`: Always loaded for the profile.
+- `optionals`: LLM-selected based on description match against deliverable
+  context.
 
-Skills are derived from configured domain skill sets. Query available domains and their skills via:
+Skills are derived from configured domain skill sets. Query available
+domains and their skills via:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config get-skills-by-profile --domain java
 ```
@@ -288,15 +414,38 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config get-sk
 
 ---
 
+## Atomicity: tmp+swap protocol
+
+`architecture discover --force` writes the entire layout to a sibling
+staging directory before atomically replacing the live tree:
+
+```
+Step 1. Stage:    Build .plan/project-architecture.tmp/
+                    ├── _project.json
+                    ├── {module-1}/{derived,enriched}.json
+                    └── {module-2}/{derived,enriched}.json
+Step 2. Swap:     os.replace(project-architecture.tmp, project-architecture)
+                  (after rmtree-ing the old tree if it existed)
+```
+
+**Guarantee**: An interrupt either before or after Step 2 leaves either the
+old layout intact (interrupt before swap) or the new layout intact
+(interrupt after swap). There is never a half-written `project-architecture/`
+directory. Implementation lives in
+[`_architecture_core.py:swap_data_dir`](../scripts/_architecture_core.py).
+
+---
+
 ## Client API Mapping
 
-The [client-api.md](client-api.md) merges both files for output:
+The [client-api.md](client-api.md) merges `_project.json` and per-module
+files for output:
 
-| API Output | derived-data.json | llm-enriched.json |
-|------------|-------------------|-------------------|
-| `module` (default) | paths, commands | responsibility, purpose, key_packages, internal_dependencies, key_dependencies, skills_by_profile |
-| `module --full` | + packages, dependencies | + reasoning fields |
-| `info` | project.name | project.description |
+| API Output | `_project.json` | `{module}/derived.json` | `{module}/enriched.json` |
+|------------|-----------------|--------------------------|---------------------------|
+| `module` (default) | — | paths, commands | responsibility, purpose, key_packages, internal_dependencies, key_dependencies, skills_by_profile |
+| `module --full` | — | + packages, dependencies | + reasoning fields |
+| `info` | name, description | build_systems (per module) | purpose (per module) |
 
 ---
 
@@ -304,34 +453,36 @@ The [client-api.md](client-api.md) merges both files for output:
 
 | Field | Source | Default Output | Full Output |
 |-------|--------|----------------|-------------|
-| `name` | derived | Yes | Yes |
-| `build_systems` | derived | Yes | Yes |
-| `paths` | derived | Yes | Yes |
-| `metadata` | derived | Yes | Yes |
-| `packages` | derived | No | Yes |
-| `dependencies` | derived | No | Yes |
-| `stats` | derived | Yes | Yes |
-| `commands` | derived | Yes | Yes |
-| `virtual_module` | derived | Yes | Yes |
-| `responsibility` | llm-enriched | Yes | Yes |
-| `responsibility_reasoning` | llm-enriched | No | Yes |
-| `purpose` | llm-enriched | Yes | Yes |
-| `purpose_reasoning` | llm-enriched | No | Yes |
-| `key_packages` | llm-enriched | Yes | Yes |
-| `internal_dependencies` | llm-enriched | Yes | Yes |
-| `key_dependencies` | llm-enriched | Yes | Yes |
-| `key_dependencies_reasoning` | llm-enriched | No | Yes |
-| `skills_by_profile` | llm-enriched | Yes | Yes |
-| `skills_by_profile_reasoning` | llm-enriched | No | Yes |
-| `tips` | llm-enriched | Yes | Yes |
-| `insights` | llm-enriched | Yes | Yes |
-| `best_practices` | llm-enriched | Yes | Yes |
+| `name` | `derived.json` | Yes | Yes |
+| `build_systems` | `derived.json` | Yes | Yes |
+| `paths` | `derived.json` | Yes | Yes |
+| `metadata` | `derived.json` | Yes | Yes |
+| `packages` | `derived.json` | No | Yes |
+| `dependencies` | `derived.json` | No | Yes |
+| `stats` | `derived.json` | Yes | Yes |
+| `commands` | `derived.json` | Yes | Yes |
+| `files` | `derived.json` | Yes | Yes |
+| `virtual_module` | `derived.json` | Yes | Yes |
+| `responsibility` | `enriched.json` | Yes | Yes |
+| `responsibility_reasoning` | `enriched.json` | No | Yes |
+| `purpose` | `enriched.json` | Yes | Yes |
+| `purpose_reasoning` | `enriched.json` | No | Yes |
+| `key_packages` | `enriched.json` | Yes | Yes |
+| `internal_dependencies` | `enriched.json` | Yes | Yes |
+| `key_dependencies` | `enriched.json` | Yes | Yes |
+| `key_dependencies_reasoning` | `enriched.json` | No | Yes |
+| `skills_by_profile` | `enriched.json` | Yes | Yes |
+| `skills_by_profile_reasoning` | `enriched.json` | No | Yes |
+| `tips` | `enriched.json` | Yes | Yes |
+| `insights` | `enriched.json` | Yes | Yes |
+| `best_practices` | `enriched.json` | Yes | Yes |
 
 ---
 
 ## Module Graph Format
 
-Output format for the `architecture graph` command. Returns module dependencies as a tree.
+Output format for the `architecture graph` command. Returns module
+dependencies as a tree.
 
 ### Purpose
 
@@ -346,16 +497,22 @@ Provides a view of internal module dependencies for:
 |-----------|-------------|
 | `--full` | Include aggregator modules (pom-only parents with no source paths) |
 
-By default, aggregator modules (pom packaging) are filtered out since they contain no code to implement.
+By default, aggregator modules (pom packaging) are filtered out since they
+contain no code to implement.
 
 ### Filtering Logic
 
 Modules are included in the default view if ANY of these conditions are true:
-1. **Non-pom packaging**: jar, war, nar, etc.
-2. **is_leaf flag**: Enriched data explicitly marks module as `is_leaf: true`
-3. **Leaf purpose**: Enriched data has `purpose` in ["integration-tests", "deployment", "benchmark"]
 
-This allows test modules with pom packaging (like e2e-playwright) to appear in the default view when they have the appropriate purpose set in llm-enriched.json.
+1. **Non-pom packaging**: jar, war, nar, etc.
+2. **is_leaf flag**: Enriched data explicitly marks the module as
+   `is_leaf: true`.
+3. **Leaf purpose**: Enriched data has `purpose` in
+   `["integration-tests", "deployment", "benchmark"]`.
+
+This allows test modules with pom packaging (like e2e-playwright) to appear
+in the default view when their per-module `enriched.json` carries the
+appropriate purpose.
 
 ### Output Format
 
@@ -380,19 +537,22 @@ oauth-sheriff-quarkus-deployment
 ```
 
 The tree shows what each module depends on:
-- `oauth-sheriff-quarkus-deployment` depends on `oauth-sheriff-core` and `oauth-sheriff-quarkus`
-- `oauth-sheriff-core` depends on `oauth-sheriff-api`
-- `oauth-sheriff-quarkus` depends on `oauth-sheriff-core`
+- `oauth-sheriff-quarkus-deployment` depends on `oauth-sheriff-core` and
+  `oauth-sheriff-quarkus`.
+- `oauth-sheriff-core` depends on `oauth-sheriff-api`.
+- `oauth-sheriff-quarkus` depends on `oauth-sheriff-core`.
 
 ### Use Cases
 
 **Ordering Deliverables**: Read the tree bottom-up for execution order:
-1. `oauth-sheriff-api` - no dependencies, execute first
-2. `oauth-sheriff-core` - depends on api
-3. `oauth-sheriff-quarkus` - depends on core
-4. `oauth-sheriff-quarkus-deployment` - depends on quarkus and core
 
-Modules at the same tree depth with no cross-dependencies can execute in parallel.
+1. `oauth-sheriff-api` — no dependencies, execute first.
+2. `oauth-sheriff-core` — depends on api.
+3. `oauth-sheriff-quarkus` — depends on core.
+4. `oauth-sheriff-quarkus-deployment` — depends on quarkus and core.
+
+Modules at the same tree depth with no cross-dependencies can execute in
+parallel.
 
 **Detecting Circular Dependencies**:
 
@@ -411,7 +571,10 @@ circular_dependencies[2]:
 
 ## Documentation Sources
 
-Priority order for documentation sources when analyzing project architecture. Documentation sources vary by technology domain -- the examples below include Java-specific patterns where noted; other domains follow similar conventions with their native documentation formats.
+Priority order for documentation sources when analyzing project
+architecture. Documentation sources vary by technology domain — the
+examples below include Java-specific patterns where noted; other domains
+follow similar conventions with their native documentation formats.
 
 ### Project-Level Sources
 
@@ -438,15 +601,17 @@ Sources for understanding individual module purpose and implementation.
 ### Reading Strategy
 
 **Project-Level Analysis**:
-1. Start with `README.md` - often has architecture overview
-2. Check `doc/` directory for detailed documentation
-3. Review ADRs for design decisions that affect structure
+
+1. Start with `README.md` — often has architecture overview.
+2. Check `doc/` directory for detailed documentation.
+3. Review ADRs for design decisions that affect structure.
 
 **Module-Level Analysis**:
-1. Check module README first - quickest understanding
-2. Read `package-info.java` for Java modules
-3. Sample 2-3 main source files for actual patterns
-4. Check test files for usage examples
+
+1. Check the module README first — quickest understanding.
+2. Read `package-info.java` for Java modules.
+3. Sample 2-3 main source files for actual patterns.
+4. Check test files for usage examples.
 
 ### Missing Documentation Handling
 
@@ -458,23 +623,28 @@ Sources for understanding individual module purpose and implementation.
 
 ### Content Extraction
 
-**From README Files**: Look for first paragraph (module purpose), "Overview" or "Description" section, code examples (show usage patterns).
+**From README Files**: Look for first paragraph (module purpose), "Overview"
+or "Description" section, code examples (show usage patterns).
 
-**From package-info.java** (Java-specific): Look for package-level JavaDoc comment, @see references to related packages, links to documentation.
+**From package-info.java** (Java-specific): Look for package-level JavaDoc
+comment, `@see` references to related packages, links to documentation.
 
-**From Source Files** (Java-specific examples, adapt for other languages): Look for class-level JavaDoc (or equivalent doc comments), framework annotations (`@Path`, `@Processor`, etc.), import statements (show dependencies), method signatures (show capabilities).
+**From Source Files** (Java-specific examples, adapt for other languages):
+Look for class-level JavaDoc (or equivalent doc comments), framework
+annotations (`@Path`, `@Processor`, etc.), import statements (show
+dependencies), method signatures (show capabilities).
 
 ### Output Integration
 
-Documentation findings feed into `llm-enriched.json`:
+Documentation findings feed into the per-module `enriched.json`:
 
 | Documentation Finding | Target Field |
 |----------------------|--------------|
-| Module purpose statement | `modules.{name}.responsibility` |
-| Module classification | `modules.{name}.purpose` |
-| Package descriptions | `modules.{name}.key_packages.{pkg}.description` |
-| Important dependencies | `modules.{name}.key_dependencies` |
-| Framework/library usage | `modules.{name}.skills_by_profile` |
+| Module purpose statement | `responsibility` |
+| Module classification | `purpose` |
+| Package descriptions | `key_packages.{pkg}.description` |
+| Important dependencies | `key_dependencies` |
+| Framework/library usage | `skills_by_profile` |
 
 ---
 

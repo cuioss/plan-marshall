@@ -484,6 +484,10 @@ npm,python3 .plan/execute-script.py plan-marshall:build-npm:npm run --package ni
 | `overview` | Project architecture summary | Deterministic markdown |
 | `commands` | Module commands | Command names with descriptions |
 | `resolve` | Executable command | Full python3 invocation |
+| `files` | Module file inventory | Categorised paths, optionally filtered by `--category` |
+| `which-module` | Reverse path lookup | Owning module for a given path |
+| `find` | Glob inventory search | Cross-module path matches |
+| `diff-modules` | Snapshot diff | `added`/`removed`/`changed`/`unchanged` module buckets |
 
 **Default vs Full**:
 - Default: Key packages, key dependencies, proposed skill domains (no reasoning)
@@ -515,6 +519,280 @@ available[5]:
   - install
 ```
 
+### files
+
+List a module's categorised file inventory. Backed by the `files:` block
+in `derived.json` — see
+[architecture-persistence.md](architecture-persistence.md) for the
+classification rules, walk policy, and per-category cap.
+
+```bash
+architecture.py files --module MODULE [--category CATEGORY]
+```
+
+**Options**:
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--module` | Yes | — | Module name from `_project.json` |
+| `--category` | No | (all) | Restrict to one category (`skill`, `agent`, `command`, `script`, `standard`, `template`, `source`, `test`, `build_file`, `doc`, `config`) |
+
+**Output** (TOON, no filter):
+
+```toon
+status: success
+module: pm-dev-java
+files:
+  agent[1]:
+    - marketplace/bundles/pm-dev-java/agents/reviewer.md
+  build_file[1]:
+    - marketplace/bundles/pm-dev-java/plugin.json
+  skill[2]:
+    - marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md
+    - marketplace/bundles/pm-dev-java/skills/lombok/SKILL.md
+```
+
+**Output** (TOON, `--category skill`):
+
+```toon
+status: success
+module: pm-dev-java
+category: skill
+files[2]:
+  - marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md
+  - marketplace/bundles/pm-dev-java/skills/lombok/SKILL.md
+```
+
+**Output** (elision passthrough — bucket capped at 500):
+
+```toon
+status: success
+module: big
+category: source
+files:
+  elided: 1234
+  sample[100]:
+    - src/a.py
+    - src/b.py
+    ...
+```
+
+**Edge cases**:
+
+- Unknown category: returns `files: []` (empty list) — distinct from a
+  capped bucket which returns the elision shape.
+- Unknown module: returns `error: Module not found` plus an `available`
+  list of module names from `_project.json`.
+
+---
+
+### which-module
+
+Reverse-lookup: given a path, return the module that owns it. Iterates
+every module's `files:` inventory and returns the single best match.
+
+```bash
+architecture.py which-module --path P
+```
+
+**Options**:
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--path` | Yes | — | Project-relative path to look up |
+
+**Tie-breaker**: when more than one module lists the same path, the module
+with the longest `paths.module` prefix wins. This ensures a path under
+`marketplace/bundles/pm-dev-java/...` resolves to `pm-dev-java`, not the
+project-root `default` module that nominally covers `.`.
+
+**Output** (TOON, match found):
+
+```toon
+status: success
+path: marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md
+module: pm-dev-java
+```
+
+**Output** (TOON, no match):
+
+```toon
+status: success
+path: nope/missing.md
+module: null
+```
+
+**Edge cases**:
+
+- Path matches a sample entry of an elided bucket: still resolves
+  (callers see the elision contract via `files`, not via this verb).
+- Path matches no module: `module: null` with `status: success` — the
+  command did not fail, the path is simply outside the inventory.
+
+---
+
+### find
+
+Cross-module glob pattern search across the inventory.
+
+```bash
+architecture.py find --pattern P [--category CATEGORY]
+```
+
+**Options**:
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--pattern` | Yes | — | Glob pattern (`fnmatch` syntax, case-sensitive, anchored to the full path) |
+| `--category` | No | (all) | Restrict search to one category |
+
+**Pattern semantics**: `*` matches any sequence of non-`/` characters, `?`
+matches one non-`/` character, `[seq]` matches one character from the
+sequence. Patterns are matched against the full inventory path with
+`fnmatch.fnmatchcase`, not the basename.
+
+**Output** (TOON):
+
+```toon
+status: success
+pattern: "*SKILL.md"
+category: null
+count: 3
+results[3]{module,category,path}:
+  pm-dev-java,skill,marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md
+  pm-dev-java,skill,marketplace/bundles/pm-dev-java/skills/lombok/SKILL.md
+  plan-marshall,skill,marketplace/bundles/plan-marshall/skills/manage-architecture/SKILL.md
+```
+
+**Edge cases**:
+
+- Elided buckets contribute their `sample` paths to results — the
+  contract is the same as `files`. To search beyond the sample, fall
+  back to `Glob` against the working tree.
+- No matches: `count: 0`, `results: []`, `status: success`.
+
+---
+
+### diff-modules
+
+Diff per-module `derived.json` files against a pre-snapshot directory and
+classify every module into one of four buckets. Used by callers that
+need to know which modules' derived structure shifted between two points
+in time (for example, before/after a refactor or between two branches).
+
+```bash
+architecture.py diff-modules --pre PATH
+```
+
+**Options**:
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--pre` | Yes | — | Path to the pre-snapshot. Either a snapshot root containing `_project.json` directly, or a project root whose `.plan/project-architecture/` subtree holds the snapshot. The first shape that points at an existing `_project.json` wins. |
+
+**Comparison surface**: only the sha256 of each module's `derived.json`
+is compared. Differences confined to `enriched.json` (LLM-curated
+fields) never produce a `changed` classification — enrichment drift is
+expected and is not a structural change. See
+[architecture-persistence.md](architecture-persistence.md) for the
+per-module file layout.
+
+**Classification rules**:
+
+- `added` — module exists in the current project but not in the snapshot
+- `removed` — module exists in the snapshot but not in the current project
+- `changed` — module exists in both, but the `derived.json` shas differ.
+  A pair is also classified as `changed` when either side's
+  `derived.json` is missing on disk while the index lists the module —
+  the sha surface cannot certify equality, so the safe default is
+  `changed`.
+- `unchanged` — module exists in both and the `derived.json` shas match
+
+The four buckets are disjoint and their union equals the union of the
+snapshot and current module name sets. Each bucket is sorted
+alphabetically.
+
+**Output** (TOON, success):
+
+```toon
+status: success
+added[1]:
+  - oauth-sheriff-quarkus-devui
+removed[1]:
+  - legacy-module
+changed[1]:
+  - oauth-sheriff-core
+unchanged[2]:
+  - oauth-sheriff-parent
+  - oauth-sheriff-quarkus
+```
+
+**Output** (TOON, no changes):
+
+```toon
+status: success
+added[0]:
+removed[0]:
+changed[0]:
+unchanged[3]:
+  - oauth-sheriff-parent
+  - oauth-sheriff-core
+  - oauth-sheriff-quarkus
+```
+
+**Error contract**: when the snapshot directory or its `_project.json`
+is missing, returns:
+
+```toon
+status: error
+error: snapshot_not_found
+path: /path/passed/to/--pre
+```
+
+The `path` echoes the original `--pre` argument so callers can identify
+which input failed. When the JSON file exists but is unreadable, the
+result also includes a `detail` field with the underlying error message.
+
+**Worked example — capturing a snapshot, then diffing after a refactor**:
+
+```bash
+# 1. Save the current architecture state into a snapshot directory.
+cp -r .plan/project-architecture /tmp/arch-before
+
+# 2. Run a refactor that splits a module, regenerates _project.json, etc.
+# ... edits, then re-run discovery to refresh derived.json files ...
+
+# 3. Diff against the snapshot. Either form of --pre works:
+architecture.py diff-modules --pre /tmp/arch-before
+# or, when handed the project root that owns the snapshot:
+architecture.py diff-modules --pre /path/to/old-checkout
+```
+
+**Worked example — error path**:
+
+```bash
+architecture.py diff-modules --pre /does/not/exist
+```
+
+Output:
+
+```toon
+status: error
+error: snapshot_not_found
+path: /does/not/exist
+```
+
+**Use cases**:
+
+- Detect which modules need re-verification after a refactor (run
+  module-tests only on `added` ∪ `changed`)
+- Confirm that a documentation-only change left every module
+  `unchanged`
+- Drive deliverable scoping: a change touching `derived.json` in N
+  modules implies N module-scoped tasks
+
+---
+
 ## Consumer View
 
 The primary consumer is **solution-outline** during task planning.
@@ -532,12 +810,23 @@ The primary consumer is **solution-outline** during task planning.
 
 ```
 .plan/project-architecture/
-├── derived-data.json  # Extension API output
-└── llm-enriched.json  # LLM-enriched fields
+├── _project.json                   # Top-level project metadata + module index
+├── {module}/
+│   ├── derived.json                # Extension API output for one module
+│   └── enriched.json               # LLM-enriched fields for one module
+└── ...
 ```
 
-See [architecture-persistence.md](architecture-persistence.md) for complete schema.
+`_project.json`'s `modules` field is the single source of truth for "which
+modules exist"; clients iterate the index and lazy-load the per-module
+`derived.json` and `enriched.json` files on demand.
 
-> **Persistence details**: See `standards/architecture-persistence.md` for the underlying storage schema.
+See [architecture-persistence.md](architecture-persistence.md) for complete
+schema, including the atomic tmp+swap protocol used by `discover --force`.
 
-Commands merge both files for output. If data does not exist, commands return error with instructions to run discovery first.
+> **Persistence details**: See `standards/architecture-persistence.md` for
+> the underlying storage schema.
+
+Commands merge `{module}/derived.json` and `{module}/enriched.json` for
+output. If `_project.json` does not exist, commands return an error with
+instructions to run discovery first.

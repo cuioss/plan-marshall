@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Tests for graph-traversal verbs: path, neighbors, impact."""
+"""Tests for graph-traversal verbs: path, neighbors, impact.
+
+Uses the per-module on-disk layout: ``_project.json`` index plus per-module
+``derived.json`` files written via ``save_project_meta`` and
+``save_module_derived``.
+"""
 
 import importlib.util
 import sys
@@ -28,7 +33,9 @@ def _load_module(name, filename):
 _architecture_core = _load_module('_architecture_core', '_architecture_core.py')
 _cmd_client = _load_module('_cmd_client', '_cmd_client.py')
 
-save_derived_data = _architecture_core.save_derived_data
+save_project_meta = _architecture_core.save_project_meta
+save_module_derived = _architecture_core.save_module_derived
+
 get_module_path = _cmd_client.get_module_path
 get_module_neighbors = _cmd_client.get_module_neighbors
 get_module_impact = _cmd_client.get_module_impact
@@ -41,175 +48,181 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-architecture', 'architect
 
 
 # =============================================================================
-# Fixtures
+# Fixture helpers
 # =============================================================================
+
+
+def _seed_project(tmpdir: str, project_name: str, modules: dict[str, dict]) -> None:
+    """Write ``_project.json`` plus per-module ``derived.json`` files."""
+    save_project_meta(
+        {
+            'name': project_name,
+            'description': '',
+            'description_reasoning': '',
+            'extensions_used': [],
+            'modules': {name: {} for name in modules},
+        },
+        tmpdir,
+    )
+    for name, data in modules.items():
+        save_module_derived(name, data, tmpdir)
 
 
 def _create_chain_graph(tmpdir: str) -> None:
     """Linear chain: alpha -> beta -> gamma."""
-    save_derived_data(
+    _seed_project(
+        tmpdir,
+        'chain',
         {
-            'project': {'name': 'chain'},
-            'modules': {
-                'alpha': {
-                    'name': 'alpha',
-                    'paths': {'module': 'alpha'},
-                    'internal_dependencies': ['beta'],
-                    'commands': {},
-                },
-                'beta': {
-                    'name': 'beta',
-                    'paths': {'module': 'beta'},
-                    'internal_dependencies': ['gamma'],
-                    'commands': {},
-                },
-                'gamma': {
-                    'name': 'gamma',
-                    'paths': {'module': 'gamma'},
-                    'internal_dependencies': [],
-                    'commands': {},
-                },
+            'alpha': {
+                'name': 'alpha',
+                'paths': {'module': 'alpha'},
+                'internal_dependencies': ['beta'],
+                'commands': {},
+            },
+            'beta': {
+                'name': 'beta',
+                'paths': {'module': 'beta'},
+                'internal_dependencies': ['gamma'],
+                'commands': {},
+            },
+            'gamma': {
+                'name': 'gamma',
+                'paths': {'module': 'gamma'},
+                'internal_dependencies': [],
+                'commands': {},
             },
         },
-        tmpdir,
     )
 
 
 def _create_disconnected_graph(tmpdir: str) -> None:
     """Two disconnected nodes: lefty and righty with no edges."""
-    save_derived_data(
+    _seed_project(
+        tmpdir,
+        'disjoint',
         {
-            'project': {'name': 'disjoint'},
-            'modules': {
-                'lefty': {
-                    'name': 'lefty',
-                    'paths': {'module': 'lefty'},
-                    'internal_dependencies': [],
-                    'commands': {},
-                },
-                'righty': {
-                    'name': 'righty',
-                    'paths': {'module': 'righty'},
-                    'internal_dependencies': [],
-                    'commands': {},
-                },
+            'lefty': {
+                'name': 'lefty',
+                'paths': {'module': 'lefty'},
+                'internal_dependencies': [],
+                'commands': {},
+            },
+            'righty': {
+                'name': 'righty',
+                'paths': {'module': 'righty'},
+                'internal_dependencies': [],
+                'commands': {},
             },
         },
-        tmpdir,
     )
 
 
 def _create_cyclic_graph(tmpdir: str) -> None:
     """A cycle: alpha -> beta -> gamma -> alpha."""
-    save_derived_data(
+    _seed_project(
+        tmpdir,
+        'cycle',
         {
-            'project': {'name': 'cycle'},
-            'modules': {
-                'alpha': {
-                    'name': 'alpha',
-                    'paths': {'module': 'alpha'},
-                    'internal_dependencies': ['beta'],
-                    'commands': {},
-                },
-                'beta': {
-                    'name': 'beta',
-                    'paths': {'module': 'beta'},
-                    'internal_dependencies': ['gamma'],
-                    'commands': {},
-                },
-                'gamma': {
-                    'name': 'gamma',
-                    'paths': {'module': 'gamma'},
-                    'internal_dependencies': ['alpha'],
-                    'commands': {},
-                },
+            'alpha': {
+                'name': 'alpha',
+                'paths': {'module': 'alpha'},
+                'internal_dependencies': ['beta'],
+                'commands': {},
+            },
+            'beta': {
+                'name': 'beta',
+                'paths': {'module': 'beta'},
+                'internal_dependencies': ['gamma'],
+                'commands': {},
+            },
+            'gamma': {
+                'name': 'gamma',
+                'paths': {'module': 'gamma'},
+                'internal_dependencies': ['alpha'],
+                'commands': {},
             },
         },
-        tmpdir,
     )
 
 
 def _create_fan_out_graph(tmpdir: str) -> None:
     """Fan-out: hub -> a, b, c; a -> a-leaf; b -> b-leaf."""
-    save_derived_data(
+    _seed_project(
+        tmpdir,
+        'fan',
         {
-            'project': {'name': 'fan'},
-            'modules': {
-                'hub': {
-                    'name': 'hub',
-                    'paths': {'module': 'hub'},
-                    'internal_dependencies': ['a', 'b', 'c'],
-                    'commands': {},
-                },
-                'a': {
-                    'name': 'a',
-                    'paths': {'module': 'a'},
-                    'internal_dependencies': ['a-leaf'],
-                    'commands': {},
-                },
-                'b': {
-                    'name': 'b',
-                    'paths': {'module': 'b'},
-                    'internal_dependencies': ['b-leaf'],
-                    'commands': {},
-                },
-                'c': {
-                    'name': 'c',
-                    'paths': {'module': 'c'},
-                    'internal_dependencies': [],
-                    'commands': {},
-                },
-                'a-leaf': {
-                    'name': 'a-leaf',
-                    'paths': {'module': 'a-leaf'},
-                    'internal_dependencies': [],
-                    'commands': {},
-                },
-                'b-leaf': {
-                    'name': 'b-leaf',
-                    'paths': {'module': 'b-leaf'},
-                    'internal_dependencies': [],
-                    'commands': {},
-                },
+            'hub': {
+                'name': 'hub',
+                'paths': {'module': 'hub'},
+                'internal_dependencies': ['a', 'b', 'c'],
+                'commands': {},
+            },
+            'a': {
+                'name': 'a',
+                'paths': {'module': 'a'},
+                'internal_dependencies': ['a-leaf'],
+                'commands': {},
+            },
+            'b': {
+                'name': 'b',
+                'paths': {'module': 'b'},
+                'internal_dependencies': ['b-leaf'],
+                'commands': {},
+            },
+            'c': {
+                'name': 'c',
+                'paths': {'module': 'c'},
+                'internal_dependencies': [],
+                'commands': {},
+            },
+            'a-leaf': {
+                'name': 'a-leaf',
+                'paths': {'module': 'a-leaf'},
+                'internal_dependencies': [],
+                'commands': {},
+            },
+            'b-leaf': {
+                'name': 'b-leaf',
+                'paths': {'module': 'b-leaf'},
+                'internal_dependencies': [],
+                'commands': {},
             },
         },
-        tmpdir,
     )
 
 
 def _create_diamond_graph(tmpdir: str) -> None:
     """Diamond: app -> service -> {core, api}; core -> api."""
-    save_derived_data(
+    _seed_project(
+        tmpdir,
+        'diamond',
         {
-            'project': {'name': 'diamond'},
-            'modules': {
-                'api': {
-                    'name': 'api',
-                    'paths': {'module': 'api'},
-                    'internal_dependencies': [],
-                    'commands': {},
-                },
-                'core': {
-                    'name': 'core',
-                    'paths': {'module': 'core'},
-                    'internal_dependencies': ['api'],
-                    'commands': {},
-                },
-                'service': {
-                    'name': 'service',
-                    'paths': {'module': 'service'},
-                    'internal_dependencies': ['core', 'api'],
-                    'commands': {},
-                },
-                'app': {
-                    'name': 'app',
-                    'paths': {'module': 'app'},
-                    'internal_dependencies': ['service'],
-                    'commands': {},
-                },
+            'api': {
+                'name': 'api',
+                'paths': {'module': 'api'},
+                'internal_dependencies': [],
+                'commands': {},
+            },
+            'core': {
+                'name': 'core',
+                'paths': {'module': 'core'},
+                'internal_dependencies': ['api'],
+                'commands': {},
+            },
+            'service': {
+                'name': 'service',
+                'paths': {'module': 'service'},
+                'internal_dependencies': ['core', 'api'],
+                'commands': {},
+            },
+            'app': {
+                'name': 'app',
+                'paths': {'module': 'app'},
+                'internal_dependencies': ['service'],
+                'commands': {},
             },
         },
-        tmpdir,
     )
 
 

@@ -1,0 +1,17 @@
+{
+  "description": "Custom Apache NiFi extensions by CUI-OSS, providing JWT token authentication from multiple issuers with a comprehensive E2E testing framework using Playwright and Docker.",
+  "description_reasoning": "From README.adoc overview and components sections",
+  "extensions_used": [
+    "pm-dev-frontend",
+    "pm-dev-java"
+  ],
+  "modules": {
+    "e-2-e-playwright": {},
+    "integration-testing": {},
+    "nifi-cuioss-nar": {},
+    "nifi-cuioss-processors": {},
+    "nifi-cuioss-ui": {},
+    "nifi-extensions": {}
+  },
+  "name": "nifi-extensions"
+}

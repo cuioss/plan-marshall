@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Tests for _cmd_enrich.py module."""
+"""Tests for ``_cmd_enrich.py`` — per-module enrichment commands.
+
+Pins the per-module on-disk layout: ``enrich project`` updates
+``_project.json``; module-scoped enrich commands load and save only the
+touched module's ``enriched.json``. Legacy monolithic files are intentionally
+absent from this surface.
+"""
 
 import importlib.util
 import sys
@@ -25,9 +31,14 @@ _cmd_enrich = _load_module('_cmd_enrich', '_cmd_enrich.py')
 
 DataNotFoundError = _architecture_core.DataNotFoundError
 ModuleNotFoundInProjectError = _architecture_core.ModuleNotFoundInProjectError
-load_llm_enriched = _architecture_core.load_llm_enriched
-save_derived_data = _architecture_core.save_derived_data
-save_llm_enriched = _architecture_core.save_llm_enriched
+
+save_project_meta = _architecture_core.save_project_meta
+load_project_meta = _architecture_core.load_project_meta
+save_module_derived = _architecture_core.save_module_derived
+save_module_enriched = _architecture_core.save_module_enriched
+load_module_enriched = _architecture_core.load_module_enriched
+load_module_enriched_or_empty = _architecture_core.load_module_enriched_or_empty
+
 enrich_best_practice = _cmd_enrich.enrich_best_practice
 enrich_dependencies = _cmd_enrich.enrich_dependencies
 enrich_insight = _cmd_enrich.enrich_insight
@@ -37,16 +48,53 @@ enrich_project = _cmd_enrich.enrich_project
 enrich_skills_by_profile = _cmd_enrich.enrich_skills_by_profile
 enrich_tip = _cmd_enrich.enrich_tip
 
+
 # =============================================================================
 # Helper Functions
 # =============================================================================
 
 
+def _seed_project(tmpdir: str, modules: dict[str, dict] | None = None) -> None:
+    """Write ``_project.json`` plus per-module ``derived.json`` and empty
+    ``enriched.json`` stubs for every module passed in."""
+    if modules is None:
+        modules = {}
+    save_project_meta(
+        {
+            'name': 'test-project',
+            'description': '',
+            'description_reasoning': '',
+            'extensions_used': [],
+            'modules': {name: {} for name in modules},
+        },
+        tmpdir,
+    )
+    for name, data in modules.items():
+        save_module_derived(name, data, tmpdir)
+        # Seed empty enrichment stub so load_module_enriched_or_empty / readers
+        # see a present-by-default file (mirrors discover's swap-time behaviour).
+        save_module_enriched(
+            name,
+            {
+                'responsibility': '',
+                'purpose': '',
+                'key_packages': {},
+                'skills_by_profile': {},
+                'key_dependencies': [],
+                'internal_dependencies': [],
+                'tips': [],
+                'insights': [],
+                'best_practices': [],
+            },
+            tmpdir,
+        )
+
+
 def setup_test_project(tmpdir: str) -> None:
-    """Create test derived-data.json and llm-enriched.json."""
-    derived_data = {
-        'project': {'name': 'test-project'},
-        'modules': {
+    """Default fixture: a single ``module-a`` module."""
+    _seed_project(
+        tmpdir,
+        {
             'module-a': {
                 'name': 'module-a',
                 'build_systems': ['maven'],
@@ -57,26 +105,7 @@ def setup_test_project(tmpdir: str) -> None:
                 'commands': {},
             }
         },
-    }
-    save_derived_data(derived_data, tmpdir)
-
-    enriched_data = {
-        'project': {'description': ''},
-        'modules': {
-            'module-a': {
-                'responsibility': '',
-                'purpose': '',
-                'key_packages': {},
-                'skills_by_profile': {},
-                'key_dependencies': [],
-                'internal_dependencies': [],
-                'tips': [],
-                'insights': [],
-                'best_practices': [],
-            }
-        },
-    }
-    save_llm_enriched(enriched_data, tmpdir)
+    )
 
 
 # =============================================================================
@@ -84,8 +113,8 @@ def setup_test_project(tmpdir: str) -> None:
 # =============================================================================
 
 
-def test_enrich_project_updates_description():
-    """enrich_project updates project description."""
+def test_enrich_project_updates_description_on_meta():
+    """enrich_project writes description into ``_project.json``."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
@@ -94,47 +123,40 @@ def test_enrich_project_updates_description():
         assert result['status'] == 'success'
         assert result['updated'] == 'project.description'
 
-        # Verify file updated
-        enriched = load_llm_enriched(tmpdir)
-        assert enriched['project']['description'] == 'Test project description'
+        meta = load_project_meta(tmpdir)
+        assert meta['description'] == 'Test project description'
 
 
-def test_enrich_project_with_reasoning():
+def test_enrich_project_with_reasoning_persists_reasoning():
     """enrich_project stores reasoning when provided."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
-        result = enrich_project('Test project description', tmpdir, reasoning='Derived from README.md first paragraph')
+        enrich_project(
+            'Test project description', tmpdir, reasoning='Derived from README.md first paragraph'
+        )
 
-        assert result['status'] == 'success'
-
-        enriched = load_llm_enriched(tmpdir)
-        assert enriched['project']['description'] == 'Test project description'
-        assert enriched['project']['description_reasoning'] == 'Derived from README.md first paragraph'
+        meta = load_project_meta(tmpdir)
+        assert meta['description'] == 'Test project description'
+        assert meta['description_reasoning'] == 'Derived from README.md first paragraph'
 
 
 def test_enrich_project_without_reasoning_preserves_existing():
-    """enrich_project without reasoning does not overwrite existing reasoning."""
+    """enrich_project without reasoning does not overwrite stored reasoning."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
-        # First call with reasoning
         enrich_project('Desc 1', tmpdir, reasoning='Original reasoning')
-
-        # Second call without reasoning
         enrich_project('Desc 2', tmpdir)
 
-        enriched = load_llm_enriched(tmpdir)
-        assert enriched['project']['description'] == 'Desc 2'
-        assert enriched['project']['description_reasoning'] == 'Original reasoning'
+        meta = load_project_meta(tmpdir)
+        assert meta['description'] == 'Desc 2'
+        assert meta['description_reasoning'] == 'Original reasoning'
 
 
-def test_enrich_project_missing_file_raises():
-    """enrich_project raises DataNotFoundError when file missing."""
+def test_enrich_project_missing_meta_raises():
+    """enrich_project raises DataNotFoundError when ``_project.json`` is missing."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Only create derived, not enriched
-        save_derived_data({'project': {}, 'modules': {}}, tmpdir)
-
         try:
             enrich_project('desc', tmpdir)
             assert False, 'Should have raised DataNotFoundError'
@@ -148,7 +170,7 @@ def test_enrich_project_missing_file_raises():
 
 
 def test_enrich_module_updates_responsibility():
-    """enrich_module updates module responsibility."""
+    """enrich_module updates the module's ``enriched.json`` responsibility."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
@@ -158,8 +180,8 @@ def test_enrich_module_updates_responsibility():
         assert result['module'] == 'module-a'
         assert 'responsibility' in result['updated']
 
-        enriched = load_llm_enriched(tmpdir)
-        assert enriched['modules']['module-a']['responsibility'] == 'Core validation logic'
+        enriched = load_module_enriched('module-a', tmpdir)
+        assert enriched['responsibility'] == 'Core validation logic'
 
 
 def test_enrich_module_updates_purpose():
@@ -171,12 +193,12 @@ def test_enrich_module_updates_purpose():
 
         assert 'purpose' in result['updated']
 
-        enriched = load_llm_enriched(tmpdir)
-        assert enriched['modules']['module-a']['purpose'] == 'library'
+        enriched = load_module_enriched('module-a', tmpdir)
+        assert enriched['purpose'] == 'library'
 
 
-def test_enrich_module_not_found_raises():
-    """enrich_module raises ModuleNotFoundInProjectError for invalid module."""
+def test_enrich_module_unknown_module_raises():
+    """enrich_module raises ModuleNotFoundInProjectError for unknown module."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
@@ -187,28 +209,30 @@ def test_enrich_module_not_found_raises():
             pass
 
 
-def test_enrich_module_with_reasoning():
-    """enrich_module stores reasoning when provided."""
+def test_enrich_module_with_shared_reasoning_applied_to_both():
+    """enrich_module applies the shared `reasoning` to both fields."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
-        result = enrich_module(
-            'module-a', 'Core validation logic', 'library', tmpdir, reasoning='Derived from README overview'
+        enrich_module(
+            'module-a',
+            'Core validation logic',
+            'library',
+            tmpdir,
+            reasoning='Derived from README overview',
         )
 
-        assert result['status'] == 'success'
-
-        enriched = load_llm_enriched(tmpdir)
-        assert enriched['modules']['module-a']['responsibility_reasoning'] == 'Derived from README overview'
-        assert enriched['modules']['module-a']['purpose_reasoning'] == 'Derived from README overview'
+        enriched = load_module_enriched('module-a', tmpdir)
+        assert enriched['responsibility_reasoning'] == 'Derived from README overview'
+        assert enriched['purpose_reasoning'] == 'Derived from README overview'
 
 
 def test_enrich_module_with_separate_reasoning():
-    """enrich_module stores separate reasoning for responsibility and purpose."""
+    """enrich_module supports distinct responsibility and purpose reasoning."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
-        result = enrich_module(
+        enrich_module(
             'module-a',
             'Core validation logic',
             'library',
@@ -217,11 +241,9 @@ def test_enrich_module_with_separate_reasoning():
             purpose_reasoning='packaging=jar analysis',
         )
 
-        assert result['status'] == 'success'
-
-        enriched = load_llm_enriched(tmpdir)
-        assert enriched['modules']['module-a']['responsibility_reasoning'] == 'From README'
-        assert enriched['modules']['module-a']['purpose_reasoning'] == 'packaging=jar analysis'
+        enriched = load_module_enriched('module-a', tmpdir)
+        assert enriched['responsibility_reasoning'] == 'From README'
+        assert enriched['purpose_reasoning'] == 'packaging=jar analysis'
 
 
 # =============================================================================
@@ -229,8 +251,8 @@ def test_enrich_module_with_separate_reasoning():
 # =============================================================================
 
 
-def test_enrich_package_adds_new():
-    """enrich_package adds new key package."""
+def test_enrich_package_adds_new_key_package():
+    """enrich_package adds a new entry into the module's ``key_packages``."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
@@ -239,75 +261,71 @@ def test_enrich_package_adds_new():
         assert result['status'] == 'success'
         assert result['action'] == 'added'
 
-        enriched = load_llm_enriched(tmpdir)
-        assert 'com.example.core' in enriched['modules']['module-a']['key_packages']
-        assert enriched['modules']['module-a']['key_packages']['com.example.core']['description'] == 'Core package'
+        enriched = load_module_enriched('module-a', tmpdir)
+        assert 'com.example.core' in enriched['key_packages']
+        assert enriched['key_packages']['com.example.core']['description'] == 'Core package'
 
 
 def test_enrich_package_updates_existing():
-    """enrich_package updates existing key package."""
+    """enrich_package updates an existing key package description."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
-        # Add first
         enrich_package('module-a', 'com.example.core', 'Original', tmpdir)
-
-        # Update
         result = enrich_package('module-a', 'com.example.core', 'Updated', tmpdir)
 
         assert result['action'] == 'updated'
-
-        enriched = load_llm_enriched(tmpdir)
-        assert enriched['modules']['module-a']['key_packages']['com.example.core']['description'] == 'Updated'
+        enriched = load_module_enriched('module-a', tmpdir)
+        assert enriched['key_packages']['com.example.core']['description'] == 'Updated'
 
 
 def test_enrich_package_with_components():
-    """enrich_package stores components list when provided."""
+    """enrich_package stores components when provided."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
         components = ['ClaimValidator', 'JwtPipeline', 'ValidationResult']
-        result = enrich_package('module-a', 'com.example.core', 'Core components', tmpdir, components=components)
+        result = enrich_package(
+            'module-a', 'com.example.core', 'Core components', tmpdir, components=components
+        )
 
         assert result['status'] == 'success'
         assert result['components'] == components
 
-        enriched = load_llm_enriched(tmpdir)
-        pkg = enriched['modules']['module-a']['key_packages']['com.example.core']
+        enriched = load_module_enriched('module-a', tmpdir)
+        pkg = enriched['key_packages']['com.example.core']
         assert pkg['description'] == 'Core components'
         assert pkg['components'] == components
 
 
 def test_enrich_package_update_preserves_components():
-    """enrich_package updating description preserves existing components."""
+    """Updating description without components preserves the stored components."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
-        # Add with components
-        enrich_package('module-a', 'com.example.core', 'Original', tmpdir, components=['Class1', 'Class2'])
-
-        # Update description only
+        enrich_package(
+            'module-a', 'com.example.core', 'Original', tmpdir, components=['Class1', 'Class2']
+        )
         enrich_package('module-a', 'com.example.core', 'Updated', tmpdir)
 
-        enriched = load_llm_enriched(tmpdir)
-        pkg = enriched['modules']['module-a']['key_packages']['com.example.core']
+        enriched = load_module_enriched('module-a', tmpdir)
+        pkg = enriched['key_packages']['com.example.core']
         assert pkg['description'] == 'Updated'
         assert pkg['components'] == ['Class1', 'Class2']
 
 
 def test_enrich_package_update_components():
-    """enrich_package can update just components."""
+    """enrich_package can replace components on an existing package."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
-        # Add with description and components
         enrich_package('module-a', 'com.example.core', 'Desc', tmpdir, components=['Class1'])
+        enrich_package(
+            'module-a', 'com.example.core', 'Desc', tmpdir, components=['Class1', 'Class2', 'Class3']
+        )
 
-        # Update with new components
-        enrich_package('module-a', 'com.example.core', 'Desc', tmpdir, components=['Class1', 'Class2', 'Class3'])
-
-        enriched = load_llm_enriched(tmpdir)
-        pkg = enriched['modules']['module-a']['key_packages']['com.example.core']
+        enriched = load_module_enriched('module-a', tmpdir)
+        pkg = enriched['key_packages']['com.example.core']
         assert pkg['components'] == ['Class1', 'Class2', 'Class3']
 
 
@@ -317,7 +335,7 @@ def test_enrich_package_update_components():
 
 
 def test_enrich_skills_by_profile_sets_structure():
-    """enrich_skills_by_profile sets skills_by_profile structure."""
+    """enrich_skills_by_profile stores the dict on the module's enriched.json."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
@@ -330,11 +348,11 @@ def test_enrich_skills_by_profile_sets_structure():
         assert result['status'] == 'success'
         assert result['skills_by_profile'] == skills_by_profile
 
-        enriched = load_llm_enriched(tmpdir)
-        assert enriched['modules']['module-a']['skills_by_profile'] == skills_by_profile
+        enriched = load_module_enriched('module-a', tmpdir)
+        assert enriched['skills_by_profile'] == skills_by_profile
 
 
-def test_enrich_skills_by_profile_with_all_profiles():
+def test_enrich_skills_by_profile_with_all_profile_types():
     """enrich_skills_by_profile handles all profile types."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
@@ -357,18 +375,16 @@ def test_enrich_skills_by_profile_with_reasoning():
         setup_test_project(tmpdir)
 
         skills_by_profile = {'implementation': ['pm-dev-java:java-core']}
-        result = enrich_skills_by_profile(
+        enrich_skills_by_profile(
             'module-a', skills_by_profile, tmpdir, reasoning='Pure Java library with no CDI'
         )
 
-        assert result['status'] == 'success'
-
-        enriched = load_llm_enriched(tmpdir)
-        assert enriched['modules']['module-a']['skills_by_profile_reasoning'] == 'Pure Java library with no CDI'
+        enriched = load_module_enriched('module-a', tmpdir)
+        assert enriched['skills_by_profile_reasoning'] == 'Pure Java library with no CDI'
 
 
-def test_enrich_skills_by_profile_module_not_found():
-    """enrich_skills_by_profile raises for invalid module."""
+def test_enrich_skills_by_profile_unknown_module_raises():
+    """enrich_skills_by_profile raises ModuleNotFoundInProjectError for unknown module."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
@@ -380,22 +396,19 @@ def test_enrich_skills_by_profile_module_not_found():
 
 
 def test_enrich_skills_by_profile_overwrites():
-    """enrich_skills_by_profile overwrites existing structure."""
+    """A second call overwrites the prior skills_by_profile structure."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
-        # First call
         enrich_skills_by_profile('module-a', {'implementation': ['skill-1']}, tmpdir)
-
-        # Second call should overwrite
         enrich_skills_by_profile('module-a', {'implementation': ['skill-2']}, tmpdir)
 
-        enriched = load_llm_enriched(tmpdir)
-        assert enriched['modules']['module-a']['skills_by_profile']['implementation'] == ['skill-2']
+        enriched = load_module_enriched('module-a', tmpdir)
+        assert enriched['skills_by_profile']['implementation'] == ['skill-2']
 
 
 def test_enrich_skills_by_profile_defaults_optionals_structure():
-    """enrich_skills_by_profile accepts defaults/optionals structure with descriptions."""
+    """enrich_skills_by_profile accepts the structured defaults/optionals shape."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
@@ -424,55 +437,51 @@ def test_enrich_skills_by_profile_defaults_optionals_structure():
         assert result['status'] == 'success'
         assert result['skills_by_profile'] == skills_by_profile
 
-        enriched = load_llm_enriched(tmpdir)
-        stored = enriched['modules']['module-a']['skills_by_profile']
+        enriched = load_module_enriched('module-a', tmpdir)
+        stored = enriched['skills_by_profile']
         assert stored['implementation']['defaults'][0]['skill'] == 'pm-plugin-development:plugin-architecture'
         assert 'description' in stored['implementation']['defaults'][0]
         assert len(stored['implementation']['optionals']) == 2
 
 
-def test_enrich_skills_by_profile_validates_skill_notation():
-    """enrich_skills_by_profile warns on missing bundle:skill notation."""
+def test_enrich_skills_by_profile_warns_on_missing_bundle_prefix():
+    """enrich_skills_by_profile emits warnings when bundle:skill notation is missing."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
         skills_by_profile = {
             'implementation': {
-                'defaults': [
-                    {'skill': 'plugin-architecture', 'description': 'Missing bundle prefix'}  # Invalid
-                ],
+                'defaults': [{'skill': 'plugin-architecture', 'description': 'Missing bundle prefix'}],
                 'optionals': [],
             }
         }
         result = enrich_skills_by_profile('module-a', skills_by_profile, tmpdir)
 
-        assert result['status'] == 'success'  # Still succeeds but with warnings
+        assert result['status'] == 'success'
         assert 'warnings' in result
         assert any('missing bundle:skill notation' in w for w in result['warnings'])
 
 
-def test_enrich_skills_by_profile_validates_missing_description():
-    """enrich_skills_by_profile warns on missing description field."""
+def test_enrich_skills_by_profile_warns_on_missing_description():
+    """enrich_skills_by_profile emits warnings when description is missing."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
         skills_by_profile = {
             'implementation': {
-                'defaults': [
-                    {'skill': 'pm-plugin-development:plugin-architecture'}  # Missing description
-                ],
+                'defaults': [{'skill': 'pm-plugin-development:plugin-architecture'}],
                 'optionals': [],
             }
         }
         result = enrich_skills_by_profile('module-a', skills_by_profile, tmpdir)
 
-        assert result['status'] == 'success'  # Still succeeds but with warnings
+        assert result['status'] == 'success'
         assert 'warnings' in result
         assert any("missing 'description' field" in w for w in result['warnings'])
 
 
-def test_enrich_skills_by_profile_empty_optionals():
-    """enrich_skills_by_profile handles empty optionals array."""
+def test_enrich_skills_by_profile_empty_optionals_no_warnings():
+    """Valid structure with empty optionals produces no warnings."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
@@ -489,13 +498,13 @@ def test_enrich_skills_by_profile_empty_optionals():
         assert result['status'] == 'success'
         assert 'warnings' not in result or len(result.get('warnings', [])) == 0
 
-        enriched = load_llm_enriched(tmpdir)
-        stored = enriched['modules']['module-a']['skills_by_profile']
+        enriched = load_module_enriched('module-a', tmpdir)
+        stored = enriched['skills_by_profile']
         assert stored['implementation']['optionals'] == []
 
 
 def test_enrich_skills_by_profile_mixed_format():
-    """enrich_skills_by_profile accepts structured format."""
+    """enrich_skills_by_profile accepts the structured format across multiple profiles."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
@@ -516,8 +525,8 @@ def test_enrich_skills_by_profile_mixed_format():
         result = enrich_skills_by_profile('module-a', skills_by_profile, tmpdir)
 
         assert result['status'] == 'success'
-        enriched = load_llm_enriched(tmpdir)
-        stored = enriched['modules']['module-a']['skills_by_profile']
+        enriched = load_module_enriched('module-a', tmpdir)
+        stored = enriched['skills_by_profile']
         assert isinstance(stored['implementation'], dict)
         assert isinstance(stored['module_testing'], dict)
 
@@ -528,7 +537,7 @@ def test_enrich_skills_by_profile_mixed_format():
 
 
 def test_enrich_dependencies_sets_key():
-    """enrich_dependencies sets key dependencies."""
+    """enrich_dependencies stores key dependencies on the module's enriched.json."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
@@ -538,8 +547,8 @@ def test_enrich_dependencies_sets_key():
         assert result['status'] == 'success'
         assert result['key_dependencies'] == key_deps
 
-        enriched = load_llm_enriched(tmpdir)
-        assert enriched['modules']['module-a']['key_dependencies'] == key_deps
+        enriched = load_module_enriched('module-a', tmpdir)
+        assert enriched['key_dependencies'] == key_deps
 
 
 def test_enrich_dependencies_with_reasoning():
@@ -548,20 +557,16 @@ def test_enrich_dependencies_with_reasoning():
         setup_test_project(tmpdir)
 
         key_deps = ['de.cuioss:cui-java-tools']
-        result = enrich_dependencies(
+        enrich_dependencies(
             'module-a', key_deps, None, tmpdir, reasoning='Core utilities used throughout the module'
         )
 
-        assert result['status'] == 'success'
-
-        enriched = load_llm_enriched(tmpdir)
-        assert (
-            enriched['modules']['module-a']['key_dependencies_reasoning'] == 'Core utilities used throughout the module'
-        )
+        enriched = load_module_enriched('module-a', tmpdir)
+        assert enriched['key_dependencies_reasoning'] == 'Core utilities used throughout the module'
 
 
 def test_enrich_dependencies_sets_internal():
-    """enrich_dependencies sets internal dependencies."""
+    """enrich_dependencies stores internal_dependencies."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
@@ -573,7 +578,7 @@ def test_enrich_dependencies_sets_internal():
 
 
 def test_enrich_dependencies_sets_both():
-    """enrich_dependencies can set both key and internal."""
+    """enrich_dependencies can set both key and internal in one call."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
@@ -589,10 +594,10 @@ def test_enrich_dependencies_sets_both():
 
 
 def _setup_project_with_deps(tmpdir: str, dependencies: list[str]) -> None:
-    """Create test project with specific module dependencies in derived-data."""
-    derived_data = {
-        'project': {'name': 'test-project'},
-        'modules': {
+    """Seed a single-module project whose derived.json has the given deps."""
+    _seed_project(
+        tmpdir,
+        {
             'module-a': {
                 'name': 'module-a',
                 'build_systems': ['maven'],
@@ -603,14 +608,11 @@ def _setup_project_with_deps(tmpdir: str, dependencies: list[str]) -> None:
                 'commands': {},
             }
         },
-    }
-    llm_enriched = {'project': {}, 'modules': {}}
-    save_derived_data(derived_data, tmpdir)
-    save_llm_enriched(llm_enriched, tmpdir)
+    )
 
 
 def test_enrich_dependencies_warns_on_unmatched():
-    """enrich_dependencies warns when key_dep not found in declared deps."""
+    """enrich_dependencies warns when key_dep absent from declared deps."""
     with tempfile.TemporaryDirectory() as tmpdir:
         _setup_project_with_deps(tmpdir, ['de.cuioss:cui-java-tools:compile'])
 
@@ -624,12 +626,15 @@ def test_enrich_dependencies_warns_on_unmatched():
 
 
 def test_enrich_dependencies_no_warning_when_all_match():
-    """enrich_dependencies emits no warnings when all key_deps match declared deps."""
+    """enrich_dependencies emits no warnings when every key_dep matches a declared dep."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        _setup_project_with_deps(tmpdir, [
-            'de.cuioss:cui-java-tools:compile',
-            'io.quarkus:quarkus-core:compile',
-        ])
+        _setup_project_with_deps(
+            tmpdir,
+            [
+                'de.cuioss:cui-java-tools:compile',
+                'io.quarkus:quarkus-core:compile',
+            ],
+        )
 
         key_deps = ['de.cuioss:cui-java-tools', 'io.quarkus:quarkus-core']
         result = enrich_dependencies('module-a', key_deps, None, tmpdir)
@@ -639,7 +644,7 @@ def test_enrich_dependencies_no_warning_when_all_match():
 
 
 def test_enrich_dependencies_warns_all_unmatched_against_empty():
-    """enrich_dependencies warns on all key_deps when module has no declared deps."""
+    """enrich_dependencies warns on every key_dep when the module has no declared deps."""
     with tempfile.TemporaryDirectory() as tmpdir:
         _setup_project_with_deps(tmpdir, [])
 
@@ -651,7 +656,7 @@ def test_enrich_dependencies_warns_all_unmatched_against_empty():
         assert len(result['warnings']) == 1
 
 
-def test_enrich_dependencies_still_persists_despite_warnings():
+def test_enrich_dependencies_persists_despite_warnings():
     """enrich_dependencies persists key_deps even when warnings are emitted."""
     with tempfile.TemporaryDirectory() as tmpdir:
         _setup_project_with_deps(tmpdir, [])
@@ -660,8 +665,8 @@ def test_enrich_dependencies_still_persists_despite_warnings():
         result = enrich_dependencies('module-a', key_deps, None, tmpdir)
 
         assert result['key_dependencies'] == key_deps
-        enriched = load_llm_enriched(tmpdir)
-        assert enriched['modules']['module-a']['key_dependencies'] == key_deps
+        enriched = load_module_enriched('module-a', tmpdir)
+        assert enriched['key_dependencies'] == key_deps
 
 
 # =============================================================================
@@ -670,7 +675,7 @@ def test_enrich_dependencies_still_persists_despite_warnings():
 
 
 def test_enrich_tip_appends():
-    """enrich_tip appends to tips array."""
+    """enrich_tip appends to tips array in the module's enriched.json."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
@@ -682,7 +687,7 @@ def test_enrich_tip_appends():
 
 
 def test_enrich_tip_no_duplicates():
-    """enrich_tip does not add duplicates."""
+    """enrich_tip does not append duplicate tips."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
@@ -710,57 +715,9 @@ def test_enrich_best_practice_appends():
         assert result['best_practices'] == ['Practice 1']
 
 
-if __name__ == '__main__':
-    import traceback
+# =============================================================================
+# Suppress unused-import lint warnings.
+# =============================================================================
 
-    tests = [
-        test_enrich_project_updates_description,
-        test_enrich_project_with_reasoning,
-        test_enrich_project_without_reasoning_preserves_existing,
-        test_enrich_project_missing_file_raises,
-        test_enrich_module_updates_responsibility,
-        test_enrich_module_updates_purpose,
-        test_enrich_module_not_found_raises,
-        test_enrich_module_with_reasoning,
-        test_enrich_module_with_separate_reasoning,
-        test_enrich_package_adds_new,
-        test_enrich_package_updates_existing,
-        test_enrich_package_with_components,
-        test_enrich_package_update_preserves_components,
-        test_enrich_package_update_components,
-        test_enrich_skills_by_profile_sets_structure,
-        test_enrich_skills_by_profile_with_all_profiles,
-        test_enrich_skills_by_profile_with_reasoning,
-        test_enrich_skills_by_profile_module_not_found,
-        test_enrich_skills_by_profile_overwrites,
-        test_enrich_skills_by_profile_defaults_optionals_structure,
-        test_enrich_skills_by_profile_validates_skill_notation,
-        test_enrich_skills_by_profile_validates_missing_description,
-        test_enrich_skills_by_profile_empty_optionals,
-        test_enrich_skills_by_profile_mixed_format,
-        test_enrich_dependencies_sets_key,
-        test_enrich_dependencies_with_reasoning,
-        test_enrich_dependencies_sets_internal,
-        test_enrich_dependencies_sets_both,
-        test_enrich_tip_appends,
-        test_enrich_tip_no_duplicates,
-        test_enrich_insight_appends,
-        test_enrich_best_practice_appends,
-    ]
 
-    passed = 0
-    failed = 0
-
-    for test in tests:
-        try:
-            test()
-            passed += 1
-            print(f'PASSED: {test.__name__}')
-        except Exception:
-            failed += 1
-            print(f'FAILED: {test.__name__}')
-            traceback.print_exc()
-            print()
-
-    print(f'\nResults: {passed} passed, {failed} failed')
-    sys.exit(0 if failed == 0 else 1)
+_ = (load_module_enriched_or_empty,)

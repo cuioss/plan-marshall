@@ -1,0 +1,50 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [],
+  "key_dependencies_reasoning": "",
+  "key_packages": {
+    "cdi_and_quarkus": {
+      "description": "CDI and Quarkus skills covering injection patterns, scopes, producers, observers, native-image support, and GraalVM reflection configuration."
+    },
+    "java_core_and_quality": {
+      "description": "Core Java skills covering modern language features, null-safety with JSpecify, Lombok patterns, code maintenance, and JavaDoc documentation standards."
+    },
+    "junit_testing": {
+      "description": "JUnit 5 testing skills covering AAA structure, integration tests with Failsafe, Weld CDI testing, and Maven profile management."
+    }
+  },
+  "purpose": "extension",
+  "purpose_reasoning": "Optional Java domain extension activated for Maven/Gradle Java modules.",
+  "responsibility": "Java development standards covering core language patterns, JSpecify null-safety, Lombok, CDI/Quarkus, JUnit 5 testing, JavaDoc, and Maven profile management with verification and coverage agents.",
+  "responsibility_reasoning": "Optional Java domain extension activated for Maven/Gradle Java modules.",
+  "skills_by_profile": {
+    "implementation": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    },
+    "module_testing": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    },
+    "quality": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    }
+  },
+  "skills_by_profile_reasoning": "",
+  "tips": []
+}

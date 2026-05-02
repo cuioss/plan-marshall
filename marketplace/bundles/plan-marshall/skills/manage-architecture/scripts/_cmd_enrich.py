@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Enrich command handlers for architecture script.
 
-Handles: enrich project, module, package, skills, dependencies, tip, insight, best-practice
-These commands write to llm-enriched.json.
+Handles: enrich project, module, package, skills, dependencies, tip, insight, best-practice.
+
+Persistence model: per-module on-disk layout under
+``.plan/project-architecture/``. ``enrich project`` loads/saves the top-level
+``_project.json``; all module-scoped enrich commands load/save only the
+touched module's ``enriched.json``.
 """
 
 from pathlib import Path
@@ -11,12 +15,16 @@ from typing import Any
 from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundInProjectError,
-    get_enriched_path,
-    get_module_names,
+    get_module_enriched_path,
     handle_module_not_found_result,
-    load_derived_data,
-    load_llm_enriched,
-    save_llm_enriched,
+    iter_modules,
+    load_module_derived,
+    load_module_enriched,
+    load_module_enriched_or_empty,
+    load_project_meta,
+    require_project_meta_result,
+    save_module_enriched,
+    save_project_meta,
 )
 
 # =============================================================================
@@ -25,7 +33,7 @@ from _architecture_core import (
 
 
 def enrich_project(description: str, project_dir: str = '.', reasoning: str | None = None) -> dict:
-    """Update project description.
+    """Update project description on ``_project.json``.
 
     Args:
         description: Project description (1-2 sentences)
@@ -35,20 +43,25 @@ def enrich_project(description: str, project_dir: str = '.', reasoning: str | No
     Returns:
         Dict with status and updated field
     """
-    enriched = load_llm_enriched(project_dir)
+    meta = load_project_meta(project_dir)
 
-    if 'project' not in enriched:
-        enriched['project'] = {}
+    meta['description'] = description
 
-    enriched['project']['description'] = description
-
-    # Only update reasoning if provided (preserve existing)
+    # Only update reasoning if provided (preserve existing).
     if reasoning is not None:
-        enriched['project']['description_reasoning'] = reasoning
+        meta['description_reasoning'] = reasoning
 
-    save_llm_enriched(enriched, project_dir)
+    save_project_meta(meta, project_dir)
 
     return {'status': 'success', 'updated': 'project.description'}
+
+
+def _load_module_or_raise(module_name: str, project_dir: str) -> dict:
+    """Validate module exists in ``_project.json`` and return its derived dict."""
+    modules = iter_modules(project_dir)
+    if module_name not in modules:
+        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', modules)
+    return load_module_derived(module_name, project_dir)
 
 
 def enrich_module(
@@ -60,103 +73,62 @@ def enrich_module(
     responsibility_reasoning: str | None = None,
     purpose_reasoning: str | None = None,
 ) -> dict:
-    """Update module responsibility and purpose.
+    """Update module responsibility and purpose."""
+    _load_module_or_raise(module_name, project_dir)
 
-    Args:
-        module_name: Module name
-        responsibility: Module description (1-3 sentences)
-        purpose: Module classification (library, extension, etc.)
-        project_dir: Project directory path
-        reasoning: Shared reasoning for both fields (convenience)
-        responsibility_reasoning: Specific reasoning for responsibility
-        purpose_reasoning: Specific reasoning for purpose
-
-    Returns:
-        Dict with status, module, and updated fields
-    """
-    # Validate module exists in derived data
-    derived = load_derived_data(project_dir)
-    modules = get_module_names(derived)
-    if module_name not in modules:
-        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', modules)
-
-    enriched = load_llm_enriched(project_dir)
-
-    if 'modules' not in enriched:
-        enriched['modules'] = {}
-    if module_name not in enriched['modules']:
-        enriched['modules'][module_name] = {}
+    enriched = load_module_enriched_or_empty(module_name, project_dir)
 
     updated = []
-    enriched['modules'][module_name]['responsibility'] = responsibility
+    enriched['responsibility'] = responsibility
     updated.append('responsibility')
 
-    # Handle responsibility reasoning
     resp_reason = responsibility_reasoning or reasoning
     if resp_reason is not None:
-        enriched['modules'][module_name]['responsibility_reasoning'] = resp_reason
+        enriched['responsibility_reasoning'] = resp_reason
 
     if purpose:
-        enriched['modules'][module_name]['purpose'] = purpose
+        enriched['purpose'] = purpose
         updated.append('purpose')
 
-        # Handle purpose reasoning
         purp_reason = purpose_reasoning or reasoning
         if purp_reason is not None:
-            enriched['modules'][module_name]['purpose_reasoning'] = purp_reason
+            enriched['purpose_reasoning'] = purp_reason
 
-    save_llm_enriched(enriched, project_dir)
+    save_module_enriched(module_name, enriched, project_dir)
 
     return {'status': 'success', 'module': module_name, 'updated': updated}
 
 
 def enrich_package(
-    module_name: str, package_name: str, description: str, project_dir: str = '.', components: list | None = None
+    module_name: str,
+    package_name: str,
+    description: str,
+    project_dir: str = '.',
+    components: list | None = None,
 ) -> dict:
-    """Add or update key package description and components.
+    """Add or update key package description and components."""
+    _load_module_or_raise(module_name, project_dir)
 
-    Args:
-        module_name: Module name
-        package_name: Full package name
-        description: Package description (1-2 sentences)
-        project_dir: Project directory path
-        components: List of key class/interface names in the package
+    enriched = load_module_enriched_or_empty(module_name, project_dir)
 
-    Returns:
-        Dict with status, module, package, action, and optionally components
-    """
-    # Validate module exists
-    derived = load_derived_data(project_dir)
-    modules = get_module_names(derived)
-    if module_name not in modules:
-        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', modules)
+    if 'key_packages' not in enriched:
+        enriched['key_packages'] = {}
 
-    enriched = load_llm_enriched(project_dir)
+    action = 'updated' if package_name in enriched['key_packages'] else 'added'
 
-    if 'modules' not in enriched:
-        enriched['modules'] = {}
-    if module_name not in enriched['modules']:
-        enriched['modules'][module_name] = {}
-    if 'key_packages' not in enriched['modules'][module_name]:
-        enriched['modules'][module_name]['key_packages'] = {}
-
-    action = 'updated' if package_name in enriched['modules'][module_name]['key_packages'] else 'added'
-
-    # Preserve existing components if not provided
-    existing = enriched['modules'][module_name]['key_packages'].get(package_name, {})
+    existing = enriched['key_packages'].get(package_name, {})
     existing_components = existing.get('components')
 
     pkg_data: dict[str, Any] = {'description': description}
 
-    # Use provided components, or preserve existing
     if components is not None:
         pkg_data['components'] = components
     elif existing_components is not None:
         pkg_data['components'] = existing_components
 
-    enriched['modules'][module_name]['key_packages'][package_name] = pkg_data
+    enriched['key_packages'][package_name] = pkg_data
 
-    save_llm_enriched(enriched, project_dir)
+    save_module_enriched(module_name, enriched, project_dir)
 
     result = {'status': 'success', 'module': module_name, 'package': package_name, 'action': action}
 
@@ -258,15 +230,7 @@ def enrich_add_domain(
     if domain_key == 'system':
         raise ValueError("Cannot add 'system' domain to modules")
 
-    # Validate module exists
-    derived = load_derived_data(project_dir)
-    from _architecture_core import get_module, get_module_names
-
-    modules = get_module_names(derived)
-    if module_name not in modules:
-        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', modules)
-
-    module_data = get_module(derived, module_name)
+    module_data = _load_module_or_raise(module_name, project_dir)
 
     # Find extension for this domain (supports multi-domain extensions)
     from extension_discovery import discover_all_extensions  # type: ignore[import-not-found]
@@ -301,16 +265,11 @@ def enrich_add_domain(
     result = target_ext.applies_to_module(module_data, active_profiles=active)
     skills_by_profile = result.get('skills_by_profile', {})
 
-    # Load current enriched data
-    enriched = load_llm_enriched(project_dir)
-    if 'modules' not in enriched:
-        enriched['modules'] = {}
-    if module_name not in enriched['modules']:
-        enriched['modules'][module_name] = {}
-    if 'skills_by_profile' not in enriched['modules'][module_name]:
-        enriched['modules'][module_name]['skills_by_profile'] = {}
+    enriched = load_module_enriched_or_empty(module_name, project_dir)
+    if 'skills_by_profile' not in enriched:
+        enriched['skills_by_profile'] = {}
 
-    current = enriched['modules'][module_name]['skills_by_profile']
+    current = enriched['skills_by_profile']
     profiles_updated = []
 
     for profile_name, profile_data in skills_by_profile.items():
@@ -325,11 +284,9 @@ def enrich_add_domain(
         if not new_entries:
             continue
 
-        # Get existing skills for this profile
         existing = current.get(profile_name, {})
         existing_names = set(_extract_skill_names_from_profile(existing) if existing else [])
 
-        # Merge into structured format: add new skills to defaults
         if not isinstance(existing, dict):
             existing = {'defaults': [], 'optionals': []}
         merged = dict(existing)
@@ -350,17 +307,16 @@ def enrich_add_domain(
         if added_in_profile:
             profiles_updated.append(profile_name)
 
-    enriched['modules'][module_name]['skills_by_profile'] = current
+    enriched['skills_by_profile'] = current
 
-    # Append reasoning
     if reasoning:
-        existing_reasoning = enriched['modules'][module_name].get('skills_by_profile_reasoning', '')
+        existing_reasoning = enriched.get('skills_by_profile_reasoning', '')
         if existing_reasoning:
-            enriched['modules'][module_name]['skills_by_profile_reasoning'] = f'{existing_reasoning}; {reasoning}'
+            enriched['skills_by_profile_reasoning'] = f'{existing_reasoning}; {reasoning}'
         else:
-            enriched['modules'][module_name]['skills_by_profile_reasoning'] = reasoning
+            enriched['skills_by_profile_reasoning'] = reasoning
 
-    save_llm_enriched(enriched, project_dir)
+    save_module_enriched(module_name, enriched, project_dir)
 
     return {
         'status': 'success',
@@ -374,17 +330,18 @@ def enrich_add_domain(
 def enrich_all(project_dir: str = '.', include_optionals: bool = False, reasoning: str | None = None) -> dict:
     """Populate skills_by_profile for every module × every applicable extension.
 
-    Iterates all modules from derived data and all discovered extensions. For each
-    (module, domain) pair where the extension's applies_to_module() returns skills,
-    delegates to enrich_add_domain() to merge skills into the module's enrichment.
+    Iterates all modules from ``_project.json`` and all discovered extensions.
+    For each (module, domain) pair where the extension's applies_to_module()
+    returns skills, delegates to ``enrich_add_domain()`` to merge skills into
+    the module's enrichment.
 
-    Returns a summary dict. Safe to re-run (idempotent — existing skills are not duplicated).
+    Returns a summary dict. Safe to re-run (idempotent — existing skills are
+    not duplicated).
     """
     from extension_discovery import discover_all_extensions
 
-    # Load derived data (raises DataNotFoundError if missing)
-    derived = load_derived_data(project_dir)
-    module_names = get_module_names(derived)
+    # iter_modules raises DataNotFoundError if _project.json is missing.
+    module_names = iter_modules(project_dir)
 
     extensions = discover_all_extensions()
 
@@ -455,28 +412,18 @@ def enrich_skills_by_profile(
     module_name: str, skills_by_profile: dict, project_dir: str = '.', reasoning: str | None = None
 ) -> dict:
     """Update skills organized by profile."""
-    # Validate module exists
-    derived = load_derived_data(project_dir)
-    modules = get_module_names(derived)
-    if module_name not in modules:
-        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', modules)
+    _load_module_or_raise(module_name, project_dir)
 
-    # Validate structure
     warnings = _validate_skills_by_profile_structure(skills_by_profile)
 
-    enriched = load_llm_enriched(project_dir)
+    enriched = load_module_enriched_or_empty(module_name, project_dir)
 
-    if 'modules' not in enriched:
-        enriched['modules'] = {}
-    if module_name not in enriched['modules']:
-        enriched['modules'][module_name] = {}
-
-    enriched['modules'][module_name]['skills_by_profile'] = skills_by_profile
+    enriched['skills_by_profile'] = skills_by_profile
 
     if reasoning is not None:
-        enriched['modules'][module_name]['skills_by_profile_reasoning'] = reasoning
+        enriched['skills_by_profile_reasoning'] = reasoning
 
-    save_llm_enriched(enriched, project_dir)
+    save_module_enriched(module_name, enriched, project_dir)
 
     result = {'status': 'success', 'module': module_name, 'skills_by_profile': skills_by_profile}
 
@@ -494,27 +441,17 @@ def enrich_dependencies(
     reasoning: str | None = None,
 ) -> dict:
     """Update key and internal dependencies."""
-    # Validate module exists
-    derived = load_derived_data(project_dir)
-    modules = get_module_names(derived)
-    if module_name not in modules:
-        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', modules)
+    module_data = _load_module_or_raise(module_name, project_dir)
 
-    enriched = load_llm_enriched(project_dir)
-
-    if 'modules' not in enriched:
-        enriched['modules'] = {}
-    if module_name not in enriched['modules']:
-        enriched['modules'][module_name] = {}
+    enriched = load_module_enriched_or_empty(module_name, project_dir)
 
     result: dict[str, Any] = {'status': 'success', 'module': module_name}
 
     if key_deps is not None:
-        enriched['modules'][module_name]['key_dependencies'] = key_deps
+        enriched['key_dependencies'] = key_deps
         result['key_dependencies'] = key_deps
 
-        # Cross-check key_deps against actual dependencies in derived-data
-        module_data = derived.get('modules', {}).get(module_name, {})
+        # Cross-check key_deps against actual dependencies in derived data.
         actual_deps = module_data.get('dependencies', [])
         # actual deps are "groupId:artifactId:scope", key deps are "groupId:artifactId"
         actual_prefixes = {':'.join(d.split(':')[:2]) for d in actual_deps if ':' in d}
@@ -523,13 +460,13 @@ def enrich_dependencies(
             result['warnings'] = [f'key_dependency not found in declared dependencies: {d}' for d in unmatched]
 
     if internal_deps is not None:
-        enriched['modules'][module_name]['internal_dependencies'] = internal_deps
+        enriched['internal_dependencies'] = internal_deps
         result['internal_dependencies'] = internal_deps
 
     if reasoning is not None:
-        enriched['modules'][module_name]['key_dependencies_reasoning'] = reasoning
+        enriched['key_dependencies_reasoning'] = reasoning
 
-    save_llm_enriched(enriched, project_dir)
+    save_module_enriched(module_name, enriched, project_dir)
 
     return result
 
@@ -551,28 +488,19 @@ def enrich_best_practice(module_name: str, practice: str, project_dir: str = '.'
 
 def _append_to_list(module_name: str, field: str, value: str, project_dir: str = '.') -> dict:
     """Append value to a list field in module enrichment."""
-    # Validate module exists
-    derived = load_derived_data(project_dir)
-    modules = get_module_names(derived)
-    if module_name not in modules:
-        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', modules)
+    _load_module_or_raise(module_name, project_dir)
 
-    enriched = load_llm_enriched(project_dir)
+    enriched = load_module_enriched_or_empty(module_name, project_dir)
 
-    if 'modules' not in enriched:
-        enriched['modules'] = {}
-    if module_name not in enriched['modules']:
-        enriched['modules'][module_name] = {}
-    if field not in enriched['modules'][module_name]:
-        enriched['modules'][module_name][field] = []
+    if field not in enriched:
+        enriched[field] = []
 
-    # Append if not duplicate
-    if value not in enriched['modules'][module_name][field]:
-        enriched['modules'][module_name][field].append(value)
+    if value not in enriched[field]:
+        enriched[field].append(value)
 
-    save_llm_enriched(enriched, project_dir)
+    save_module_enriched(module_name, enriched, project_dir)
 
-    return {'status': 'success', 'module': module_name, field: enriched['modules'][module_name][field]}
+    return {'status': 'success', 'module': module_name, field: enriched[field]}
 
 
 # =============================================================================
@@ -580,13 +508,13 @@ def _append_to_list(module_name: str, field: str, value: str, project_dir: str =
 # =============================================================================
 
 
-def _enrichment_not_found_result(project_dir: str) -> dict:
-    """Return enrichment data not found error dict."""
+def _enrichment_not_found_result(module_name: str, project_dir: str) -> dict:
+    """Return enrichment data not found error dict for a specific module."""
     return {
         'status': 'error',
         'error': 'data_not_found',
         'message': 'Enrichment data not found',
-        'expected_file': str(get_enriched_path(project_dir)),
+        'expected_file': str(get_module_enriched_path(module_name, project_dir)),
         'resolution': "Run 'architecture.py init' first",
     }
 
@@ -597,7 +525,7 @@ def cmd_enrich_project(args) -> dict:
         reasoning = getattr(args, 'reasoning', None)
         return enrich_project(args.description, args.project_dir, reasoning)
     except DataNotFoundError:
-        return _enrichment_not_found_result(args.project_dir)
+        return require_project_meta_result(args.project_dir)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 
@@ -620,7 +548,7 @@ def cmd_enrich_module(args) -> dict:
     except ModuleNotFoundInProjectError:
         return handle_module_not_found_result(args.name, args.project_dir)
     except DataNotFoundError:
-        return _enrichment_not_found_result(args.project_dir)
+        return require_project_meta_result(args.project_dir)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 
@@ -635,7 +563,7 @@ def cmd_enrich_package(args) -> dict:
     except ModuleNotFoundInProjectError:
         return handle_module_not_found_result(args.module, args.project_dir)
     except DataNotFoundError:
-        return _enrichment_not_found_result(args.project_dir)
+        return require_project_meta_result(args.project_dir)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 
@@ -645,7 +573,6 @@ def cmd_enrich_skills_by_profile(args) -> dict:
     import json
 
     try:
-        # Parse JSON input
         skills_by_profile = json.loads(args.skills_json)
         reasoning = getattr(args, 'reasoning', None)
         return enrich_skills_by_profile(args.module, skills_by_profile, args.project_dir, reasoning)
@@ -654,7 +581,7 @@ def cmd_enrich_skills_by_profile(args) -> dict:
     except ModuleNotFoundInProjectError:
         return handle_module_not_found_result(args.module, args.project_dir)
     except DataNotFoundError:
-        return _enrichment_not_found_result(args.project_dir)
+        return require_project_meta_result(args.project_dir)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 
@@ -674,7 +601,7 @@ def cmd_enrich_dependencies(args) -> dict:
     except ModuleNotFoundInProjectError:
         return handle_module_not_found_result(args.module, args.project_dir)
     except DataNotFoundError:
-        return _enrichment_not_found_result(args.project_dir)
+        return require_project_meta_result(args.project_dir)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 
@@ -686,7 +613,7 @@ def cmd_enrich_tip(args) -> dict:
     except ModuleNotFoundInProjectError:
         return handle_module_not_found_result(args.module, args.project_dir)
     except DataNotFoundError:
-        return _enrichment_not_found_result(args.project_dir)
+        return require_project_meta_result(args.project_dir)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 
@@ -698,7 +625,7 @@ def cmd_enrich_insight(args) -> dict:
     except ModuleNotFoundInProjectError:
         return handle_module_not_found_result(args.module, args.project_dir)
     except DataNotFoundError:
-        return _enrichment_not_found_result(args.project_dir)
+        return require_project_meta_result(args.project_dir)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 
@@ -710,7 +637,7 @@ def cmd_enrich_best_practice(args) -> dict:
     except ModuleNotFoundInProjectError:
         return handle_module_not_found_result(args.module, args.project_dir)
     except DataNotFoundError:
-        return _enrichment_not_found_result(args.project_dir)
+        return require_project_meta_result(args.project_dir)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 
@@ -745,6 +672,11 @@ def cmd_enrich_all(args) -> dict:
         reasoning = getattr(args, 'reasoning', None)
         return enrich_all(args.project_dir, include_optionals, reasoning)
     except DataNotFoundError:
-        return _enrichment_not_found_result(args.project_dir)
+        return require_project_meta_result(args.project_dir)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
+
+
+# Suppress unused-import lint warnings — load_module_enriched is exported for
+# downstream tests that ``from _cmd_enrich import ...`` it.
+_ = (load_module_enriched,)

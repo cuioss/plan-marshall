@@ -37,6 +37,7 @@ scope: hybrid
 | `enrich *` | [manage-api](standards/manage-api.md) | Write enrichment data |
 | `suggest-domains` | — | Suggest applicable skill domains for a module |
 | `info`, `module`, `modules`, `commands`, `resolve` | [client-api](standards/client-api.md) | Consumer queries |
+| `files`, `which-module`, `find` | [client-api](standards/client-api.md) | Files-inventory readers (categorised paths, reverse lookup, glob search) |
 
 ---
 
@@ -48,9 +49,13 @@ Run extension API discovery:
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover --force
 ```
 
-**Output**: `.plan/project-architecture/derived-data.json`
+**Output**: `.plan/project-architecture/_project.json` plus per-module
+`{module}/derived.json` and an empty `{module}/enriched.json` stub for every
+discovered module. The whole tree is staged under
+`.plan/project-architecture.tmp/` and swapped into place atomically — an
+interrupted run leaves either the old layout or the new layout intact.
 
-Always overwrites existing data to ensure fresh discovery.
+Always overwrites the existing tree to ensure fresh discovery.
 
 ---
 
@@ -58,7 +63,8 @@ Always overwrites existing data to ensure fresh discovery.
 
 **Condition**: Only if any module has `build_systems` containing `maven`.
 
-Check derived-data.json for NO-MATCH-FOUND profiles in `modules.*.metadata.profiles`.
+Check each module's `derived.json` for NO-MATCH-FOUND profiles in
+`metadata.profiles`.
 
 **If Maven modules exist AND unmatched profiles found**:
 
@@ -73,17 +79,20 @@ Load skill `pm-dev-java:manage-maven-profiles` and follow its workflow to:
 
 ## Step 3: Initialize Enrichment
 
-Check if `llm-enriched.json` already exists:
+Check whether per-module `enriched.json` stubs already exist:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture init --check
 ```
 
-**If file exists**, ask user:
+`init --check` reports how many modules already carry an `enriched.json`
+file under their per-module directory.
+
+**If stubs exist**, ask user:
 
 ```yaml
 AskUserQuestion:
-  question: "llm-enriched.json already exists. What do you want to do?"
+  question: "Per-module enriched.json stubs already exist. What do you want to do?"
   header: "Enrichment"
   options:
     - label: "Skip"
@@ -299,8 +308,9 @@ Project: {project name}
 Modules enriched: {count}
 
 Files created:
-  - .plan/project-architecture/derived-data.json
-  - .plan/project-architecture/llm-enriched.json
+  - .plan/project-architecture/_project.json
+  - .plan/project-architecture/{module}/derived.json    (per module)
+  - .plan/project-architecture/{module}/enriched.json   (per module)
 
 Next steps:
   - Solution outline will use this data for placement decisions
@@ -318,7 +328,7 @@ Next steps:
 | Documentation not found | Analyze source code directly, note "Inferred from source analysis" |
 | Partial discovery failure | Some extensions may fail while others succeed — check which modules are missing and re-run `discover --force` after fixing the failing extension |
 | Interrupted enrichment | Safe to resume — `enrich module` overwrites per-module data; re-run Steps 5-8 for incomplete modules |
-| `manage-maven-profiles` skill unavailable | Skip Step 2 entirely; unmatched profiles will remain as NO-MATCH-FOUND in derived data |
+| `manage-maven-profiles` skill unavailable | Skip Step 2 entirely; unmatched profiles will remain as NO-MATCH-FOUND in each module's `derived.json` |
 
 ---
 

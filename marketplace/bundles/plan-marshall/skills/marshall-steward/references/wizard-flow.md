@@ -145,7 +145,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config init -
 
 **Output**: "Created .plan/marshal.json with defaults"
 
-**Note**: marshal.json contains configuration only. Module list comes from derived-data.json (Step 9).
+**Note**: marshal.json contains configuration only. The module list comes from `_project.json["modules"]` (Step 9), which is the source of truth — per-module `derived.json` files are loaded lazily off that index.
 
 ---
 
@@ -264,7 +264,7 @@ See `standards/extension-contract.md` in `extension-api` skill for the callback 
 
 ## Step 9: Discover Project Architecture (Source of Truth)
 
-Discover modules directly from filesystem via extension API. This creates `derived-data.json` which is the single source of truth for module information.
+Discover modules directly from filesystem via extension API. This writes the per-module architecture layout under `.plan/project-architecture/`: a top-level `_project.json` whose `modules` index is the single source of truth for "which modules exist", plus one subdirectory per module containing a deterministic `derived.json`. Per-module directories present on disk but absent from `_project.json["modules"]` MUST be ignored — the index is authoritative, not the filesystem.
 
 **Prerequisites**: Step 8 sets up profile skip lists and mappings in `run-configuration.json`, so discovered profiles are already filtered.
 
@@ -276,14 +276,12 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture d
 ```toon
 status	success
 modules_discovered	10
-output_file	.plan/project-architecture/derived-data.json
+output_dir	.plan/project-architecture/
 ```
 
-This creates `.plan/project-architecture/derived-data.json` with:
-- All modules with paths, build_systems, packaging
-- Per-module details (packages, dependencies, source/test counts)
-- Documentation paths (README locations)
-- Build commands (with filtered profiles)
+This produces:
+- `.plan/project-architecture/_project.json` — project metadata (`name`, `description`, `extensions_used`) and the module index.
+- `.plan/project-architecture/{module}/derived.json` — per-module discovery output (paths, build systems, packaging, packages, dependencies, source/test counts, documentation paths, build commands with filtered profiles).
 
 **Verification** - Display discovered modules:
 ```
@@ -334,7 +332,7 @@ Only include commands that resolved successfully.
 
 **Condition**: Only if any Maven module was discovered.
 
-Check the `derived-data.json` for profiles with `"canonical": "NO-MATCH-FOUND"` in any `modules.*.metadata.profiles` array.
+Iterate the modules listed in `_project.json["modules"]` and load each module's `derived.json` to look for profiles with `"canonical": "NO-MATCH-FOUND"` in `metadata.profiles`.
 
 **If NO-MATCH-FOUND profiles exist**:
 
@@ -353,9 +351,9 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture d
 
 **Condition**: Only if any Maven module was discovered.
 
-Check the `derived-data.json` for modules where multiple profiles map to the same canonical command. The `commands` section in derived-data is built from `_build_commands()` which detects conflicts — look for a `conflicts` key in any module's commands output.
+Iterate the modules listed in `_project.json["modules"]` and inspect each module's `derived.json` for cases where multiple profiles map to the same canonical command. The `commands` section in each `derived.json` is built from `_build_commands()` which detects conflicts — look for a `conflicts` key in any module's commands output.
 
-Alternatively, inspect `modules.*.metadata.profiles` and group by canonical value. If any canonical has more than one profile mapped to it, a conflict exists.
+Alternatively, inspect each module's `metadata.profiles` and group by canonical value. If any canonical has more than one profile mapped to it, a conflict exists.
 
 **If conflicts exist** (e.g., both `pre-commit` and `sonar` map to `quality-gate`):
 
@@ -387,7 +385,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture d
 
 ## Step 11: Skill Domain Configuration
 
-Skill domains are determined from the architecture analysis results. The `extensions_used` field in `derived-data.json` (populated during Step 9) contains the bundles whose extensions detected applicable modules in this project.
+Skill domains are determined from the architecture analysis results. The `extensions_used` field in `_project.json` (populated during Step 9) contains the bundles whose extensions detected applicable modules in this project.
 
 **Step 11a: Query architecture analysis for applicable domains**
 
@@ -580,7 +578,7 @@ Confirm that `system` has `execute_task_skills` populated and each technical dom
 
 Generate project structure knowledge for solution outline support.
 
-**Prerequisites**: Step 9 created `.plan/project-architecture/derived-data.json` with all module information.
+**Prerequisites**: Step 9 created the per-module architecture layout (`_project.json` plus per-module `derived.json` files) under `.plan/project-architecture/`.
 
 ### Step 13a: LLM Architectural Analysis
 
@@ -597,7 +595,7 @@ The LLM analysis reads discovered data, samples documentation and source code, t
 - Proposed skill domains
 - Implementation tips and insights
 
-**Output**: `.plan/project-architecture/llm-enriched.json` with rich, meaningful content
+**Output**: One `.plan/project-architecture/{module}/enriched.json` per module, each holding the LLM-augmented fields for that module. The top-level `_project.json` may also receive enriched project-level metadata (e.g., `description`, `description_reasoning`).
 
 ### Step 13b: User Refinement (Optional)
 

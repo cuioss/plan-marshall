@@ -1,0 +1,122 @@
+{
+  "build_systems": [
+    "maven"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean -pl oauth-sheriff-quarkus\"",
+    "clean-install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean install -pl oauth-sheriff-quarkus\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"compile -pl oauth-sheriff-quarkus\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Pcoverage -pl oauth-sheriff-quarkus\"",
+    "install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"install -pl oauth-sheriff-quarkus\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test -pl oauth-sheriff-quarkus\"",
+    "package": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"package -pl oauth-sheriff-quarkus\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit -pl oauth-sheriff-quarkus\"",
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test-compile -pl oauth-sheriff-quarkus\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl oauth-sheriff-quarkus\""
+  },
+  "dependencies": [
+    "io.rest-assured:rest-assured:test",
+    "org.jboss.logmanager:jboss-logmanager:test",
+    "org.jboss.weld:weld-junit5:test",
+    "org.junit.jupiter:junit-jupiter:test",
+    "de.cuioss.sheriff.oauth:oauth-sheriff-core:1.0.0-SNAPSHOT:test",
+    "io.quarkus:quarkus-scheduler:compile",
+    "io.quarkus:quarkus-config-yaml:compile",
+    "io.quarkus:quarkus-hibernate-validator:compile",
+    "io.quarkus:quarkus-smallrye-health:compile",
+    "io.quarkus:quarkus-vertx-http:compile",
+    "jakarta.servlet:jakarta.servlet-api:provided",
+    "io.quarkus:quarkus-resteasy:compile",
+    "io.quarkus:quarkus-jacoco:test",
+    "org.awaitility:awaitility:test",
+    "io.jsonwebtoken:jjwt-api:test",
+    "io.jsonwebtoken:jjwt-impl:test",
+    "io.jsonwebtoken:jjwt-jackson:test",
+    "de.cuioss.test:cui-test-generator:test",
+    "org.easymock:easymock:test",
+    "de.cuioss.sheriff.oauth:oauth-sheriff-core:compile",
+    "io.quarkus:quarkus-core:compile",
+    "io.quarkus:quarkus-arc:compile",
+    "io.quarkus:quarkus-micrometer:compile",
+    "io.quarkus:quarkus-security:compile",
+    "org.projectlombok:lombok:provided",
+    "io.quarkus:quarkus-junit5:test",
+    "de.cuioss.test:cui-test-juli-logger:test"
+  ],
+  "files": {},
+  "metadata": {
+    "artifact_id": "oauth-sheriff-quarkus",
+    "description": "Runtime module for Quarkus integration for OAuth/JWT token validation, providing configuration, producers,\n        and integration from SecurityEvents to Micrometer",
+    "group_id": "de.cuioss.sheriff.oauth",
+    "packaging": "jar",
+    "parent": "de.cuioss.sheriff.oauth:oauth-sheriff-quarkus-parent",
+    "profiles": [
+      {
+        "canonical": "coverage",
+        "id": "coverage"
+      },
+      {
+        "canonical": "javadoc",
+        "id": "javadoc"
+      },
+      {
+        "canonical": "quality-gate",
+        "id": "pre-commit"
+      }
+    ]
+  },
+  "name": "oauth-sheriff-quarkus",
+  "packages": {
+    "de.cuioss.sheriff.oauth.quarkus": {
+      "package_info": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/src/main/java/de/cuioss/sheriff/oauth/quarkus/package-info.java",
+      "path": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/src/main/java/de/cuioss/sheriff/oauth/quarkus"
+    },
+    "de.cuioss.sheriff.oauth.quarkus.annotation": {
+      "package_info": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/src/main/java/de/cuioss/sheriff/oauth/quarkus/annotation/package-info.java",
+      "path": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/src/main/java/de/cuioss/sheriff/oauth/quarkus/annotation"
+    },
+    "de.cuioss.sheriff.oauth.quarkus.config": {
+      "package_info": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/src/main/java/de/cuioss/sheriff/oauth/quarkus/config/package-info.java",
+      "path": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/src/main/java/de/cuioss/sheriff/oauth/quarkus/config"
+    },
+    "de.cuioss.sheriff.oauth.quarkus.health": {
+      "path": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/src/main/java/de/cuioss/sheriff/oauth/quarkus/health"
+    },
+    "de.cuioss.sheriff.oauth.quarkus.interceptor": {
+      "package_info": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/src/main/java/de/cuioss/sheriff/oauth/quarkus/interceptor/package-info.java",
+      "path": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/src/main/java/de/cuioss/sheriff/oauth/quarkus/interceptor"
+    },
+    "de.cuioss.sheriff.oauth.quarkus.logging": {
+      "path": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/src/main/java/de/cuioss/sheriff/oauth/quarkus/logging"
+    },
+    "de.cuioss.sheriff.oauth.quarkus.metrics": {
+      "path": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/src/main/java/de/cuioss/sheriff/oauth/quarkus/metrics"
+    },
+    "de.cuioss.sheriff.oauth.quarkus.producer": {
+      "path": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/src/main/java/de/cuioss/sheriff/oauth/quarkus/producer"
+    },
+    "de.cuioss.sheriff.oauth.quarkus.runtime": {
+      "path": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/src/main/java/de/cuioss/sheriff/oauth/quarkus/runtime"
+    },
+    "de.cuioss.sheriff.oauth.quarkus.servlet": {
+      "path": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/src/main/java/de/cuioss/sheriff/oauth/quarkus/servlet"
+    }
+  },
+  "paths": {
+    "descriptor": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/pom.xml",
+    "module": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus",
+    "readme": "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/README.adoc",
+    "sources": [
+      "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/src/main/java",
+      "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/src/main/resources"
+    ],
+    "tests": [
+      "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/src/test/java",
+      "oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus/src/test/resources"
+    ]
+  },
+  "stats": {
+    "source_files": 34,
+    "test_files": 35
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [],
+  "key_dependencies_reasoning": "",
+  "key_packages": {},
+  "purpose": "integration-tests",
+  "purpose_reasoning": "Module name and description indicate Docker-based test infrastructure",
+  "responsibility": "Docker-based integration testing infrastructure providing container configurations for NiFi and Keycloak to enable local and CI integration test execution.",
+  "responsibility_reasoning": "From pom.xml description and module purpose as test infrastructure",
+  "skills_by_profile": {
+    "implementation": [
+      "pm-dev-java:java-core"
+    ]
+  },
+  "skills_by_profile_reasoning": "Docker configuration module, minimal Java skills for infrastructure setup",
+  "tips": []
+}

@@ -1,0 +1,11 @@
+{
+  "description": "Security-focused HTTP utilities library providing validation pipelines for detecting attack patterns (path traversal, injection, protocol violations), SSL/TLS context management, and HTTP client handlers for secure web communication.",
+  "description_reasoning": "From README.adoc 'What is it?' section",
+  "extensions_used": [
+    "pm-dev-java"
+  ],
+  "modules": {
+    "cui-http": {}
+  },
+  "name": "cui-http"
+}

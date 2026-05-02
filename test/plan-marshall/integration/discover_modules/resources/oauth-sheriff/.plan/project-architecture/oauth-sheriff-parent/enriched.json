@@ -1,0 +1,15 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [],
+  "key_dependencies_reasoning": "",
+  "key_packages": {},
+  "purpose": "parent",
+  "purpose_reasoning": "packaging=pom at project root level",
+  "responsibility": "Root POM that coordinates build configuration, dependency management, and quality profiles for all child modules in the OAuth Sheriff project.",
+  "responsibility_reasoning": "packaging=pom, root position, contains shared build configuration",
+  "skills_by_profile": {},
+  "skills_by_profile_reasoning": "Parent POM module with no source files - no skill profiles needed",
+  "tips": []
+}

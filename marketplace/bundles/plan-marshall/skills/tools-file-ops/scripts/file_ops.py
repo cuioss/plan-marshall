@@ -45,6 +45,10 @@ for _ancestor in _THIS_FILE.parents:
             sys.path.insert(0, _shared_scripts)
         break
 
+from constants import (  # noqa: E402
+    DIR_PER_MODULE_DERIVED,
+    DIR_PER_MODULE_ENRICHED,
+)
 from marketplace_paths import (  # type: ignore[import-not-found]  # noqa: E402
     PLAN_DIR_NAME,
     git_main_checkout_root,
@@ -267,6 +271,15 @@ def get_tracked_config_dir() -> Path:
     (``marshal.json`` and ``project-architecture/``). Unlike get_base_dir(),
     this normally points at the repo — not the per-project global directory.
 
+    The ``project-architecture/`` subdirectory uses a per-module layout: a
+    top-level ``_project.json`` (the source of truth for "which modules
+    exist") plus one directory per module containing ``derived.json``
+    (deterministic discovery output) and ``enriched.json`` (LLM-augmented
+    fields). Path constants live in ``constants.py`` as ``FILE_PROJECT_META``,
+    ``DIR_PER_MODULE_DERIVED``, and ``DIR_PER_MODULE_ENRICHED``; per-module
+    paths are constructed via ``get_module_derived_path()`` and
+    ``get_module_enriched_path()``.
+
     Resolution order:
         1. Explicit set_base_dir() override (tests).
         2. PLAN_TRACKED_CONFIG_DIR environment variable (tests, fine-grained
@@ -299,6 +312,57 @@ def get_marshal_path() -> Path:
 def get_project_architecture_dir() -> Path:
     """Path to the tracked project-architecture/ directory."""
     return get_tracked_config_dir() / 'project-architecture'
+
+
+def get_module_derived_path(plan_id: str, module_name: str) -> Path:
+    """Path to a module's ``derived.json`` under project-architecture.
+
+    Resolves to ``{tracked_config_dir}/project-architecture/{module_name}/derived.json``.
+    The file holds the deterministic discovery output for the named module
+    (paths, packages, dependencies). Use ``constants.DIR_PER_MODULE_DERIVED``
+    as the filename literal.
+
+    Args:
+        plan_id: Plan identifier. Reserved for future per-plan
+            project-architecture overrides; currently unused because the
+            tracked project-architecture tree is project-wide. Pass the
+            active plan id for forward compatibility.
+        module_name: Module name as listed in ``_project.json``'s ``modules``
+            index.
+
+    Returns:
+        Path to ``{module_name}/derived.json`` under the project-architecture
+        directory. Existence is not checked.
+    """
+    # plan_id is currently unused; project-architecture is project-wide,
+    # but keeping the parameter preserves the public signature so callers
+    # can pass plan-scoped context when (and if) per-plan overlays land.
+    del plan_id
+    return get_project_architecture_dir() / module_name / DIR_PER_MODULE_DERIVED
+
+
+def get_module_enriched_path(plan_id: str, module_name: str) -> Path:
+    """Path to a module's ``enriched.json`` under project-architecture.
+
+    Resolves to ``{tracked_config_dir}/project-architecture/{module_name}/enriched.json``.
+    The file holds the LLM-augmented fields for the named module
+    (responsibility, purpose, key_packages, skills_by_profile, …). Use
+    ``constants.DIR_PER_MODULE_ENRICHED`` as the filename literal.
+
+    Args:
+        plan_id: Plan identifier. Reserved for future per-plan
+            project-architecture overrides; currently unused because the
+            tracked project-architecture tree is project-wide. Pass the
+            active plan id for forward compatibility.
+        module_name: Module name as listed in ``_project.json``'s ``modules``
+            index.
+
+    Returns:
+        Path to ``{module_name}/enriched.json`` under the project-architecture
+        directory. Existence is not checked.
+    """
+    del plan_id
+    return get_project_architecture_dir() / module_name / DIR_PER_MODULE_ENRICHED
 
 
 def read_json(path: str | Path, default: Any = None) -> Any:

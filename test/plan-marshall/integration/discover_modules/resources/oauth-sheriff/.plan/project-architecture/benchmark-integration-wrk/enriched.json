@@ -1,0 +1,30 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [
+    "benchmarking-common"
+  ],
+  "key_dependencies": [
+    "com.google.code.gson:gson",
+    "commons-io:commons-io"
+  ],
+  "key_dependencies_reasoning": "Gson for WRK JSON output parsing, commons-io for file handling. Uses shared benchmark infrastructure.",
+  "key_packages": {},
+  "purpose": "benchmark",
+  "purpose_reasoning": "Contains WRK load testing integration and HTTP benchmark execution",
+  "responsibility": "Executes WRK-based HTTP load testing benchmarks against Quarkus endpoints to measure real-world JWT validation performance under load.",
+  "responsibility_reasoning": "From pom.xml description mentioning WRK HTTP benchmarks with integration test infrastructure",
+  "skills_by_profile": {
+    "benchmark-testing": [
+      "pm-dev-java:java-core",
+      "pm-dev-java:java-lombok",
+      "pm-dev-java:junit-core"
+    ],
+    "implementation": [
+      "pm-dev-java:java-core",
+      "pm-dev-java:java-lombok"
+    ]
+  },
+  "skills_by_profile_reasoning": "WRK integration benchmark module - minimal skills",
+  "tips": []
+}

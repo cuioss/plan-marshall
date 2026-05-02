@@ -1,0 +1,124 @@
+{
+  "build_systems": [
+    "maven"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean -pl benchmarking-common\"",
+    "clean-install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean install -pl benchmarking-common\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"compile -pl benchmarking-common\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Pcoverage -pl benchmarking-common\"",
+    "install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"install -pl benchmarking-common\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test -pl benchmarking-common\"",
+    "package": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"package -pl benchmarking-common\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit -pl benchmarking-common\"",
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test-compile -pl benchmarking-common\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl benchmarking-common\""
+  },
+  "dependencies": [
+    "org.openjdk.jmh:jmh-core:compile",
+    "org.openjdk.jmh:jmh-generator-annprocess:provided",
+    "de.cuioss:cui-java-tools:compile",
+    "org.projectlombok:lombok:provided",
+    "com.google.code.gson:gson:compile",
+    "org.hdrhistogram:HdrHistogram:compile",
+    "commons-io:commons-io:compile",
+    "org.junit.jupiter:junit-jupiter:test",
+    "de.cuioss.test:cui-test-mockwebserver-junit5:test",
+    "jakarta.servlet:jakarta.servlet-api:test",
+    "org.awaitility:awaitility:test"
+  ],
+  "files": {},
+  "metadata": {
+    "artifact_id": "benchmarking-common",
+    "description": "Common benchmarking infrastructure with JMH integration for artifact generation during benchmark execution",
+    "group_id": "de.cuioss.sheriff.oauth",
+    "packaging": "jar",
+    "parent": "de.cuioss.sheriff.oauth:benchmarking",
+    "profiles": [
+      {
+        "canonical": "coverage",
+        "id": "coverage"
+      },
+      {
+        "canonical": "javadoc",
+        "id": "javadoc"
+      },
+      {
+        "canonical": "quality-gate",
+        "id": "pre-commit"
+      },
+      {
+        "canonical": "NO-MATCH-FOUND",
+        "id": "benchmark"
+      }
+    ]
+  },
+  "name": "benchmarking-common",
+  "packages": {
+    "de.cuioss.benchmarking.common": {
+      "package_info": "benchmarking/benchmarking-common/src/main/java/de/cuioss/benchmarking/common/package-info.java",
+      "path": "benchmarking/benchmarking-common/src/main/java/de/cuioss/benchmarking/common"
+    },
+    "de.cuioss.benchmarking.common.base": {
+      "package_info": "benchmarking/benchmarking-common/src/main/java/de/cuioss/benchmarking/common/base/package-info.java",
+      "path": "benchmarking/benchmarking-common/src/main/java/de/cuioss/benchmarking/common/base"
+    },
+    "de.cuioss.benchmarking.common.config": {
+      "path": "benchmarking/benchmarking-common/src/main/java/de/cuioss/benchmarking/common/config"
+    },
+    "de.cuioss.benchmarking.common.constants": {
+      "path": "benchmarking/benchmarking-common/src/main/java/de/cuioss/benchmarking/common/constants"
+    },
+    "de.cuioss.benchmarking.common.converter": {
+      "path": "benchmarking/benchmarking-common/src/main/java/de/cuioss/benchmarking/common/converter"
+    },
+    "de.cuioss.benchmarking.common.http": {
+      "path": "benchmarking/benchmarking-common/src/main/java/de/cuioss/benchmarking/common/http"
+    },
+    "de.cuioss.benchmarking.common.jfr": {
+      "package_info": "benchmarking/benchmarking-common/src/main/java/de/cuioss/benchmarking/common/jfr/package-info.java",
+      "path": "benchmarking/benchmarking-common/src/main/java/de/cuioss/benchmarking/common/jfr"
+    },
+    "de.cuioss.benchmarking.common.metrics": {
+      "path": "benchmarking/benchmarking-common/src/main/java/de/cuioss/benchmarking/common/metrics"
+    },
+    "de.cuioss.benchmarking.common.model": {
+      "path": "benchmarking/benchmarking-common/src/main/java/de/cuioss/benchmarking/common/model"
+    },
+    "de.cuioss.benchmarking.common.output": {
+      "path": "benchmarking/benchmarking-common/src/main/java/de/cuioss/benchmarking/common/output"
+    },
+    "de.cuioss.benchmarking.common.report": {
+      "path": "benchmarking/benchmarking-common/src/main/java/de/cuioss/benchmarking/common/report"
+    },
+    "de.cuioss.benchmarking.common.repository": {
+      "path": "benchmarking/benchmarking-common/src/main/java/de/cuioss/benchmarking/common/repository"
+    },
+    "de.cuioss.benchmarking.common.runner": {
+      "path": "benchmarking/benchmarking-common/src/main/java/de/cuioss/benchmarking/common/runner"
+    },
+    "de.cuioss.benchmarking.common.token": {
+      "path": "benchmarking/benchmarking-common/src/main/java/de/cuioss/benchmarking/common/token"
+    },
+    "de.cuioss.benchmarking.common.util": {
+      "path": "benchmarking/benchmarking-common/src/main/java/de/cuioss/benchmarking/common/util"
+    }
+  },
+  "paths": {
+    "descriptor": "benchmarking/benchmarking-common/pom.xml",
+    "module": "benchmarking/benchmarking-common",
+    "readme": "benchmarking/benchmarking-common/README.adoc",
+    "sources": [
+      "benchmarking/benchmarking-common/src/main/java",
+      "benchmarking/benchmarking-common/src/main/resources"
+    ],
+    "tests": [
+      "benchmarking/benchmarking-common/src/test/java",
+      "benchmarking/benchmarking-common/src/test/resources"
+    ]
+  },
+  "stats": {
+    "source_files": 46,
+    "test_files": 30
+  }
+}

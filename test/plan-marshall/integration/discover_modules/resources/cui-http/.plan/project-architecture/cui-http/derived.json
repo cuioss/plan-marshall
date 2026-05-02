@@ -1,0 +1,120 @@
+{
+  "build_systems": [
+    "maven"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean\"",
+    "clean-install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"clean install\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"compile\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Pcoverage\"",
+    "install": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"install\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test\"",
+    "package": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"package\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit\"",
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test-compile\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify\""
+  },
+  "dependencies": [
+    "de.cuioss:cui-java-tools:compile",
+    "org.projectlombok:lombok:provided",
+    "org.jspecify:jspecify:compile",
+    "de.cuioss.test:cui-test-generator:test",
+    "org.junit.jupiter:junit-jupiter-api:test",
+    "de.cuioss.test:cui-test-mockwebserver-junit5:test",
+    "de.cuioss.test:cui-test-value-objects:test",
+    "de.cuioss.test:cui-test-juli-logger:test",
+    "org.awaitility:awaitility:test"
+  ],
+  "files": {},
+  "metadata": {
+    "artifact_id": "cui-http",
+    "description": "Provides a number of http-related utilities .",
+    "group_id": "de.cuioss",
+    "packaging": "jar",
+    "parent": "de.cuioss:cui-java-parent",
+    "profiles": [
+      {
+        "canonical": "coverage",
+        "id": "coverage"
+      },
+      {
+        "canonical": "javadoc",
+        "id": "javadoc"
+      },
+      {
+        "canonical": "quality-gate",
+        "id": "pre-commit"
+      }
+    ]
+  },
+  "name": "cui-http",
+  "packages": {
+    "de.cuioss.http.client": {
+      "package_info": "src/main/java/de/cuioss/http/client/package-info.java",
+      "path": "src/main/java/de/cuioss/http/client"
+    },
+    "de.cuioss.http.client.adapter": {
+      "package_info": "src/main/java/de/cuioss/http/client/adapter/package-info.java",
+      "path": "src/main/java/de/cuioss/http/client/adapter"
+    },
+    "de.cuioss.http.client.converter": {
+      "package_info": "src/main/java/de/cuioss/http/client/converter/package-info.java",
+      "path": "src/main/java/de/cuioss/http/client/converter"
+    },
+    "de.cuioss.http.client.handler": {
+      "package_info": "src/main/java/de/cuioss/http/client/handler/package-info.java",
+      "path": "src/main/java/de/cuioss/http/client/handler"
+    },
+    "de.cuioss.http.client.result": {
+      "package_info": "src/main/java/de/cuioss/http/client/result/package-info.java",
+      "path": "src/main/java/de/cuioss/http/client/result"
+    },
+    "de.cuioss.http.security": {
+      "package_info": "src/main/java/de/cuioss/http/security/package-info.java",
+      "path": "src/main/java/de/cuioss/http/security"
+    },
+    "de.cuioss.http.security.config": {
+      "package_info": "src/main/java/de/cuioss/http/security/config/package-info.java",
+      "path": "src/main/java/de/cuioss/http/security/config"
+    },
+    "de.cuioss.http.security.core": {
+      "package_info": "src/main/java/de/cuioss/http/security/core/package-info.java",
+      "path": "src/main/java/de/cuioss/http/security/core"
+    },
+    "de.cuioss.http.security.data": {
+      "package_info": "src/main/java/de/cuioss/http/security/data/package-info.java",
+      "path": "src/main/java/de/cuioss/http/security/data"
+    },
+    "de.cuioss.http.security.exceptions": {
+      "package_info": "src/main/java/de/cuioss/http/security/exceptions/package-info.java",
+      "path": "src/main/java/de/cuioss/http/security/exceptions"
+    },
+    "de.cuioss.http.security.monitoring": {
+      "package_info": "src/main/java/de/cuioss/http/security/monitoring/package-info.java",
+      "path": "src/main/java/de/cuioss/http/security/monitoring"
+    },
+    "de.cuioss.http.security.pipeline": {
+      "package_info": "src/main/java/de/cuioss/http/security/pipeline/package-info.java",
+      "path": "src/main/java/de/cuioss/http/security/pipeline"
+    },
+    "de.cuioss.http.security.validation": {
+      "package_info": "src/main/java/de/cuioss/http/security/validation/package-info.java",
+      "path": "src/main/java/de/cuioss/http/security/validation"
+    }
+  },
+  "paths": {
+    "descriptor": "pom.xml",
+    "module": ".",
+    "readme": "README.adoc",
+    "sources": [
+      "src/main/java"
+    ],
+    "tests": [
+      "src/test/java"
+    ]
+  },
+  "stats": {
+    "source_files": 56,
+    "test_files": 145
+  }
+}

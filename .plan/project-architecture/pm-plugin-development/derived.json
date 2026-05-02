@@ -1,0 +1,310 @@
+{
+  "build_systems": [
+    "marshall-plugin"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-plugin-development\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-plugin-development\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-plugin-development\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-plugin-development\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-plugin-development\"",
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-plugin-development\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-plugin-development\""
+  },
+  "dependencies": [],
+  "files": {
+    "agent": [
+      "marketplace/bundles/pm-plugin-development/agents/ext-outline-component-agent.md",
+      "marketplace/bundles/pm-plugin-development/agents/ext-outline-inventory-agent.md",
+      "marketplace/bundles/pm-plugin-development/agents/tool-coverage-agent.md"
+    ],
+    "doc": [
+      "marketplace/bundles/pm-plugin-development/README.md"
+    ],
+    "script": [
+      "marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/scripts/plugin_discover.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-create/scripts/cmd_generate.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-create/scripts/cmd_validate.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-create/scripts/component.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_argument_naming.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_coverage.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_crossfile.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_markdown.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_shared.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_structure.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_verb_chains.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_cmd_apply.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_cmd_categorize.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_cmd_cross_file.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_cmd_extension.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_cmd_extract.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_cmd_inventory.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_cmd_references.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_cmd_verify.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_doctor_analysis.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_doctor_report.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_doctor_shared.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_fix.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_validate.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-maintain/scripts/_cmd_analyze.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-maintain/scripts/_cmd_check_duplication.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-maintain/scripts/_cmd_readme.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-maintain/scripts/_cmd_update.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-maintain/scripts/_maintain_shared.py",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-maintain/scripts/maintain.py",
+      "marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/_dep_detection.py",
+      "marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/_dep_index.py",
+      "marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/resolve-dependencies.py",
+      "marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/scan-marketplace-inventory.py",
+      "marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/scan-planning-inventory.py"
+    ],
+    "skill": [
+      "marketplace/bundles/pm-plugin-development/skills/ext-outline-workflow/SKILL.md",
+      "marketplace/bundles/pm-plugin-development/skills/ext-triage-plugin/SKILL.md",
+      "marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/SKILL.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-apply-lessons-learned/SKILL.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-architecture/SKILL.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-create/SKILL.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/SKILL.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-maintain/SKILL.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-plan-implement/SKILL.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-script-architecture/SKILL.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-task-plan/SKILL.md",
+      "marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/SKILL.md",
+      "marketplace/bundles/pm-plugin-development/skills/verification-mode/SKILL.md"
+    ],
+    "standard": [
+      "marketplace/bundles/pm-plugin-development/skills/ext-outline-workflow/standards/change-bug_fix.md",
+      "marketplace/bundles/pm-plugin-development/skills/ext-outline-workflow/standards/change-enhancement.md",
+      "marketplace/bundles/pm-plugin-development/skills/ext-outline-workflow/standards/change-feature.md",
+      "marketplace/bundles/pm-plugin-development/skills/ext-outline-workflow/standards/change-tech_debt.md",
+      "marketplace/bundles/pm-plugin-development/skills/ext-outline-workflow/standards/change-types.md",
+      "marketplace/bundles/pm-plugin-development/skills/ext-triage-plugin/standards/severity.md",
+      "marketplace/bundles/pm-plugin-development/skills/ext-triage-plugin/standards/suppression.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-create/standards/workflow-create-agent.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-create/standards/workflow-create-bundle.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-create/standards/workflow-create-command.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-create/standards/workflow-create-skill.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/standards/doctor-agents.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/standards/doctor-commands.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/standards/doctor-marketplace.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/standards/doctor-skill-content.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/standards/doctor-skill-knowledge.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/standards/doctor-skills.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-plan-implement/standards/step-execution.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-script-architecture/standards/output-contract.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-script-architecture/standards/python-implementation.md",
+      "marketplace/bundles/pm-plugin-development/skills/plugin-script-architecture/standards/testing-standards.md",
+      "marketplace/bundles/pm-plugin-development/skills/verification-mode/standards/failure-analysis.md",
+      "marketplace/bundles/pm-plugin-development/skills/verification-mode/standards/log-error-analysis.md",
+      "marketplace/bundles/pm-plugin-development/skills/verification-mode/standards/planning-compliance.md",
+      "marketplace/bundles/pm-plugin-development/skills/verification-mode/standards/planning-verification.md",
+      "marketplace/bundles/pm-plugin-development/skills/verification-mode/standards/resolution-analysis.md",
+      "marketplace/bundles/pm-plugin-development/skills/verification-mode/standards/workaround-detection.md"
+    ],
+    "template": [
+      "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/templates/tool-coverage-results.toon"
+    ],
+    "test": [
+      "test/pm-plugin-development/plan-marshall-plugin/__init__.py",
+      "test/pm-plugin-development/plan-marshall-plugin/test_discover.py",
+      "test/pm-plugin-development/plugin-create/fixtures/agent-answers-full.json",
+      "test/pm-plugin-development/plugin-create/fixtures/agent-answers-no-model.json",
+      "test/pm-plugin-development/plugin-create/fixtures/agent-answers-special-chars.json",
+      "test/pm-plugin-development/plugin-create/fixtures/command-answers.json",
+      "test/pm-plugin-development/plugin-create/fixtures/invalid-agent-array-tools.md",
+      "test/pm-plugin-development/plugin-create/fixtures/invalid-agent-bad-yaml.md",
+      "test/pm-plugin-development/plugin-create/fixtures/invalid-agent-no-frontmatter.md",
+      "test/pm-plugin-development/plugin-create/fixtures/invalid-agent-self-invoke.md",
+      "test/pm-plugin-development/plugin-create/fixtures/invalid-agent-task-tool.md",
+      "test/pm-plugin-development/plugin-create/fixtures/invalid-command-missing-section.md",
+      "test/pm-plugin-development/plugin-create/fixtures/invalid-skill-bad-frontmatter.md",
+      "test/pm-plugin-development/plugin-create/fixtures/skill-answers-no-tools.json",
+      "test/pm-plugin-development/plugin-create/fixtures/skill-answers-with-tools.json",
+      "test/pm-plugin-development/plugin-create/fixtures/valid-agent-no-model.md",
+      "test/pm-plugin-development/plugin-create/fixtures/valid-agent.md",
+      "test/pm-plugin-development/plugin-create/fixtures/valid-command.md",
+      "test/pm-plugin-development/plugin-create/fixtures/valid-skill.md",
+      "test/pm-plugin-development/plugin-create/test_component.py",
+      "test/pm-plugin-development/plugin-create/test_validate_generate.py",
+      "test/pm-plugin-development/plugin-diagnose/fixtures/markdown-file/bloated-command.md",
+      "test/pm-plugin-development/plugin-diagnose/fixtures/markdown-file/rule6-violation.md",
+      "test/pm-plugin-development/plugin-diagnose/fixtures/markdown-file/valid-agent.md",
+      "test/pm-plugin-development/plugin-diagnose/fixtures/markdown-file/version-section-violation.md",
+      "test/pm-plugin-development/plugin-diagnose/fixtures/tool-coverage/critical-violations.md",
+      "test/pm-plugin-development/plugin-diagnose/fixtures/tool-coverage/missing-tools.md",
+      "test/pm-plugin-development/plugin-diagnose/fixtures/tool-coverage/perfect-coverage.md",
+      "test/pm-plugin-development/plugin-diagnose/fixtures/tool-coverage/unused-tools.md",
+      "test/pm-plugin-development/plugin-doctor/fixtures/cross-file-analysis/skill-clean/references/api-reference.md",
+      "test/pm-plugin-development/plugin-doctor/fixtures/cross-file-analysis/skill-clean/references/configuration-guide.md",
+      "test/pm-plugin-development/plugin-doctor/fixtures/cross-file-analysis/skill-clean/workflows/setup-workflow.md",
+      "test/pm-plugin-development/plugin-doctor/fixtures/cross-file-analysis/skill-with-duplicates/references/guide-a.md",
+      "test/pm-plugin-development/plugin-doctor/fixtures/cross-file-analysis/skill-with-duplicates/references/guide-b.md",
+      "test/pm-plugin-development/plugin-doctor/fixtures/cross-file-analysis/skill-with-duplicates/templates/report-template.md",
+      "test/pm-plugin-development/plugin-doctor/fixtures/cross-file-analysis/skill-with-duplicates/workflows/process-workflow.md",
+      "test/pm-plugin-development/plugin-doctor/fixtures/skill-structure/code-block-examples/SKILL.md",
+      "test/pm-plugin-development/plugin-doctor/fixtures/skill-structure/code-block-examples/references/actual-guide.md",
+      "test/pm-plugin-development/plugin-doctor/fixtures/skill-structure/cross-skill-references/SKILL.md",
+      "test/pm-plugin-development/plugin-doctor/fixtures/skill-structure/cross-skill-references/references/local-guide.md",
+      "test/pm-plugin-development/plugin-doctor/fixtures/skill-structure/skill-with-noun-suffix/SKILL.md",
+      "test/pm-plugin-development/plugin-doctor/fixtures/skill-structure/table-references/SKILL.md",
+      "test/pm-plugin-development/plugin-doctor/fixtures/skill-structure/table-references/references/guide.md",
+      "test/pm-plugin-development/plugin-doctor/fixtures/skill-structure/table-references/scripts/analyze-data.sh",
+      "test/pm-plugin-development/plugin-doctor/fixtures/skill-structure/table-references/scripts/validate-input.py",
+      "test/pm-plugin-development/plugin-doctor/test_analyze.py",
+      "test/pm-plugin-development/plugin-doctor/test_analyze_verb_chains.py",
+      "test/pm-plugin-development/plugin-doctor/test_argparse_safety.py",
+      "test/pm-plugin-development/plugin-doctor/test_doctor_marketplace.py",
+      "test/pm-plugin-development/plugin-doctor/test_fix.py",
+      "test/pm-plugin-development/plugin-doctor/test_plugin_doctor_extension.py",
+      "test/pm-plugin-development/plugin-doctor/test_resolver_gap.py",
+      "test/pm-plugin-development/plugin-doctor/test_validate.py",
+      "test/pm-plugin-development/plugin-fix/fixtures/apply-fix/agent-array-syntax.md",
+      "test/pm-plugin-development/plugin-fix/fixtures/apply-fix/agent-missing-description.md",
+      "test/pm-plugin-development/plugin-fix/fixtures/apply-fix/agent-missing-frontmatter.md",
+      "test/pm-plugin-development/plugin-fix/fixtures/apply-fix/agent-pattern-22.md",
+      "test/pm-plugin-development/plugin-fix/fixtures/apply-fix/agent-task-tool.md",
+      "test/pm-plugin-development/plugin-fix/fixtures/apply-fix/agent-unused-tools.md",
+      "test/pm-plugin-development/plugin-fix/fixtures/apply-fix/command-trailing-whitespace.md",
+      "test/pm-plugin-development/plugin-fix/fixtures/apply-fix/perfect-agent.md",
+      "test/pm-plugin-development/plugin-fix/fixtures/categorization/extracted-empty.json",
+      "test/pm-plugin-development/plugin-fix/fixtures/categorization/extracted-mixed.json",
+      "test/pm-plugin-development/plugin-fix/fixtures/categorization/extracted-risky-only.json",
+      "test/pm-plugin-development/plugin-fix/fixtures/categorization/extracted-safe-only.json",
+      "test/pm-plugin-development/plugin-fix/fixtures/diagnosis/diagnosis-all-fixable.json",
+      "test/pm-plugin-development/plugin-fix/fixtures/diagnosis/diagnosis-empty.json",
+      "test/pm-plugin-development/plugin-fix/fixtures/diagnosis/diagnosis-no-fixable.json",
+      "test/pm-plugin-development/plugin-fix/fixtures/diagnosis/diagnosis-with-fixable.json",
+      "test/pm-plugin-development/plugin-maintain/fixtures/components/bloated-command.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/components/empty-component.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/components/invalid-frontmatter.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/components/missing-sections-agent.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/components/no-frontmatter.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/components/perfect-agent.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/components/tool-compliance-violation.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/knowledge/new-empty.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/knowledge/new-high-duplicate.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/knowledge/new-partial-duplicate.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/knowledge/new-unique-content.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/knowledge/skill-no-references/SKILL.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/knowledge/skill-with-references/SKILL.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/knowledge/skill-with-references/references/existing-guide.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/knowledge/skill-with-references/references/patterns-guide.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/readmes/bundle-commands-only/commands/only-command.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/readmes/bundle-commands-only/plugin.json",
+      "test/pm-plugin-development/plugin-maintain/fixtures/readmes/bundle-complete/README.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/readmes/bundle-complete/agents/test-agent.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/readmes/bundle-complete/commands/test-command.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/readmes/bundle-complete/plugin.json",
+      "test/pm-plugin-development/plugin-maintain/fixtures/readmes/bundle-complete/skills/test-skill/SKILL.md",
+      "test/pm-plugin-development/plugin-maintain/fixtures/readmes/bundle-empty/plugin.json",
+      "test/pm-plugin-development/plugin-maintain/test_maintain.py",
+      "test/pm-plugin-development/plugin-maintain/test_maintain_subcommands.py",
+      "test/pm-plugin-development/tools-marketplace-inventory/test_resolve_dependencies.py",
+      "test/pm-plugin-development/tools-marketplace-inventory/test_scan_marketplace_inventory.py",
+      "test/pm-plugin-development/tools-marketplace-inventory/test_scan_planning_inventory.py"
+    ]
+  },
+  "metadata": {
+    "bundle_name": "pm-plugin-development",
+    "description": "Complete toolchain for creating, diagnosing, fixing, and maintaining marketplace components"
+  },
+  "name": "pm-plugin-development",
+  "packages": {
+    "agent:ext-outline-component-agent": {
+      "description": "Analyze component files against request using semantic reasoning. Input: plan_id, component_type, request_text, files list. Output: TOON summary with status, counts of certain_include/certain_exclude/uncertain, assessments_logged.",
+      "path": "agents/ext-outline-component-agent.md",
+      "type": "agent"
+    },
+    "agent:ext-outline-inventory-agent": {
+      "description": "Load marketplace inventory and perform initial scope assessment (artifact types, bundle scope). Input: plan_id, component_types, content_pattern, bundle_scope, include_tests, include_project_skills. Output: TOON summary with status, inventory_file path, scope, and counts per component type.",
+      "path": "agents/ext-outline-inventory-agent.md",
+      "type": "agent"
+    },
+    "agent:tool-coverage-agent": {
+      "description": "Analyze tool declarations vs actual usage in a component file. Input: file_path, declared_tools list, component_type. Output: JSON with declared_tools, used_tools, analysis (missing/unused/false_positives), confidence.",
+      "path": "agents/tool-coverage-agent.md",
+      "type": "agent"
+    },
+    "skill:ext-outline-workflow": {
+      "description": "Shared workflow steps and verification knowledge for plugin development outline, loaded by phase-3-outline skill",
+      "path": "skills/ext-outline-workflow",
+      "type": "skill"
+    },
+    "skill:ext-triage-plugin": {
+      "description": "Triage extension for marketplace plugin findings during plan-finalize phase",
+      "path": "skills/ext-triage-plugin",
+      "type": "skill"
+    },
+    "skill:plugin-apply-lessons-learned": {
+      "description": "Apply accumulated lessons learned to component documentation",
+      "path": "skills/plugin-apply-lessons-learned",
+      "type": "skill"
+    },
+    "skill:plugin-architecture": {
+      "description": "Architecture principles, skill patterns, and design guidance for building goal-based marketplace components",
+      "path": "skills/plugin-architecture",
+      "type": "skill"
+    },
+    "skill:plugin-create": {
+      "description": "Create new marketplace components (agents, commands, skills, bundles) with proper structure and standards compliance",
+      "path": "skills/plugin-create",
+      "type": "skill"
+    },
+    "skill:plugin-doctor": {
+      "description": "Diagnose and fix quality issues in marketplace components with automated safe fixes and prompted risky fixes",
+      "path": "skills/plugin-doctor",
+      "type": "skill"
+    },
+    "skill:plugin-maintain": {
+      "description": "Comprehensive maintenance skill for marketplace components - update components, manage knowledge, maintain READMEs, restructure, and apply orchestration compliance",
+      "path": "skills/plugin-maintain",
+      "type": "skill"
+    },
+    "skill:plugin-plan-implement": {
+      "description": "Implement plugin tasks from plan with step iteration and progress tracking",
+      "path": "skills/plugin-plan-implement",
+      "type": "skill"
+    },
+    "skill:plugin-script-architecture": {
+      "description": "Script development standards covering implementation patterns, testing, and output contracts",
+      "path": "skills/plugin-script-architecture",
+      "type": "skill"
+    },
+    "skill:plugin-task-plan": {
+      "description": "Create implementation tasks from deliverables using skill delegation",
+      "path": "skills/plugin-task-plan",
+      "type": "skill"
+    },
+    "skill:tools-marketplace-inventory": {
+      "description": "Scans and reports complete marketplace inventory (bundles, agents, commands, skills, scripts)",
+      "path": "skills/tools-marketplace-inventory",
+      "type": "skill"
+    },
+    "skill:verification-mode": {
+      "description": "Verification mode that stops and analyzes on failures, workarounds, or resolution issues",
+      "path": "skills/verification-mode",
+      "type": "skill"
+    }
+  },
+  "paths": {
+    "descriptor": "marketplace/bundles/pm-plugin-development/.claude-plugin/plugin.json",
+    "module": "marketplace/bundles/pm-plugin-development",
+    "readme": "marketplace/bundles/pm-plugin-development/README.md",
+    "sources": [
+      "marketplace/bundles/pm-plugin-development/skills",
+      "marketplace/bundles/pm-plugin-development/agents"
+    ],
+    "tests": [
+      "test/pm-plugin-development"
+    ]
+  },
+  "stats": {
+    "agent_count": 3,
+    "command_count": 0,
+    "skill_count": 12
+  }
+}

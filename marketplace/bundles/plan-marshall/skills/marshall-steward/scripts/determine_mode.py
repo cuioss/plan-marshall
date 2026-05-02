@@ -6,7 +6,7 @@ Subcommands:
     mode            Determine wizard vs menu mode based on existing files
     check-docs      Check if project docs need .plan/temp documentation
     fix-docs        Deterministically fix missing documentation content
-    check-structure Check if project-architecture directory exists
+    check-structure Check if the per-module project-architecture layout exists
 
 Note: check-docs and check-structure overlap with menu-healthcheck steps 2 and 5.
 The healthcheck runs these same checks via the menu path; this script provides
@@ -45,9 +45,11 @@ Output (TOON format):
     check-structure subcommand:
         status	exists
         path	.plan/project-architecture
+        modules_count	3
 
         status	missing
         path	.plan/project-architecture
+        modules_count	0
 """
 
 import argparse
@@ -150,23 +152,53 @@ def determine_mode(plan_dir: Path) -> tuple[str, str]:
         return 'menu', 'both_exist'
 
 
-def check_structure(plan_dir: Path) -> tuple[str, Path]:
+def check_structure(plan_dir: Path) -> tuple[str, Path, int]:
     """
-    Check if project-architecture directory exists with derived-data.json.
+    Check if the per-module project-architecture layout exists.
+
+    The per-module layout consists of a top-level ``_project.json`` (the
+    source of truth for "which modules exist") plus one subdirectory per
+    module containing ``derived.json`` and ``enriched.json``. The
+    ``_project.json`` ``modules`` index is authoritative — orphan or
+    half-written per-module directories are ignored. The layout is
+    considered to exist when ``_project.json`` parses successfully and at
+    least one module from its index has a readable ``derived.json``.
 
     Args:
         plan_dir: Path to the .plan directory
 
     Returns:
-        Tuple of (status, path) where status is 'exists' or 'missing'
+        Tuple of (status, path, valid_modules_count) where status is
+        'exists' or 'missing' and valid_modules_count is the number of
+        per-module entries from ``_project.json["modules"]`` whose
+        ``derived.json`` file is present on disk.
     """
-    arch_dir = plan_dir / 'project-architecture'
-    derived_path = arch_dir / 'derived-data.json'
+    import json
 
-    if derived_path.exists():
-        return 'exists', arch_dir
-    else:
-        return 'missing', arch_dir
+    arch_dir = plan_dir / 'project-architecture'
+    project_path = arch_dir / '_project.json'
+
+    if not project_path.is_file():
+        return 'missing', arch_dir, 0
+
+    try:
+        project_data = json.loads(project_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return 'missing', arch_dir, 0
+
+    modules = project_data.get('modules')
+    if not isinstance(modules, dict) or not modules:
+        return 'missing', arch_dir, 0
+
+    valid_count = 0
+    for module_name in modules:
+        derived_path = arch_dir / module_name / 'derived.json'
+        if derived_path.is_file():
+            valid_count += 1
+
+    if valid_count == 0:
+        return 'missing', arch_dir, 0
+    return 'exists', arch_dir, valid_count
 
 
 def check_docs(project_root: Path) -> tuple[str, list[dict[str, str]]]:
@@ -283,9 +315,14 @@ def cmd_check_docs(args: argparse.Namespace) -> dict:
 def cmd_check_structure(args: argparse.Namespace) -> dict:
     """Handle the 'check-structure' subcommand."""
     plan_dir = Path(args.plan_dir)
-    status, path = check_structure(plan_dir)
+    status, path, modules_count = check_structure(plan_dir)
 
-    return {'status': 'success', 'check_status': status, 'path': str(path)}
+    return {
+        'status': 'success',
+        'check_status': status,
+        'path': str(path),
+        'modules_count': modules_count,
+    }
 
 
 def main() -> int:
@@ -313,7 +350,9 @@ def main() -> int:
 
     # check-structure subcommand
     structure_parser = subparsers.add_parser(
-        'check-structure', help='Check if project-architecture directory exists', allow_abbrev=False
+        'check-structure',
+        help='Check if the per-module project-architecture layout exists',
+        allow_abbrev=False,
     )
     structure_parser.add_argument('--plan-dir', type=str, default='.plan', help='Directory to check (default: .plan)')
 

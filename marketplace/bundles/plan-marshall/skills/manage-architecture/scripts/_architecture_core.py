@@ -1,14 +1,36 @@
 #!/usr/bin/env python3
 """Shared utilities for architecture scripts.
 
-Provides load/save operations, TOON output formatting, and error handling.
+Persists project architecture data using a per-module on-disk layout under
+``.plan/project-architecture/``:
+
+- ``_project.json`` — top-level project metadata; the ``modules`` field is the
+  single source of truth for "which modules exist". Per-module directory
+  presence on disk is NOT a substitute for the index — half-written
+  directories must be ignored.
+- ``{module}/derived.json`` — deterministic discovery output for one module
+  (paths, packages, dependencies).
+- ``{module}/enriched.json`` — LLM-augmented fields for one module
+  (responsibility, purpose, key_packages, skills_by_profile, …).
+
+Atomic writes use a tmp-then-swap pattern: callers build the new layout under
+``project-architecture.tmp/`` and call ``swap_data_dir(tmp_dir)`` which
+``os.replace``s it onto the real path. A forced interruption mid-write leaves
+either the old layout or the new layout intact, never half-written state.
 """
 
 import json
+import os
+import shutil
 from pathlib import Path
 from typing import Any, NoReturn
 
-from constants import DIR_ARCHITECTURE, FILE_DERIVED_DATA, FILE_LLM_ENRICHED  # type: ignore[import-not-found]
+from constants import (  # type: ignore[import-not-found]
+    DIR_ARCHITECTURE,
+    DIR_PER_MODULE_DERIVED,
+    DIR_PER_MODULE_ENRICHED,
+    FILE_PROJECT_META,
+)
 
 # Data sub-directory for architecture files (appended to base dir / project_dir)
 _ARCHITECTURE_SUBDIR = DIR_ARCHITECTURE
@@ -17,9 +39,8 @@ _ARCHITECTURE_SUBDIR = DIR_ARCHITECTURE
 # not the runtime base dir — it is checked in alongside marshal.json.
 _TRACKED_CONFIG_SUBDIR = '.plan'
 
-# File names
-DERIVED_DATA_FILE = FILE_DERIVED_DATA
-LLM_ENRICHED_FILE = FILE_LLM_ENRICHED
+# Tmp suffix used for the atomic tmp+swap protocol on `discover --force`.
+_TMP_SUFFIX = '.tmp'
 
 
 # =============================================================================
@@ -52,7 +73,7 @@ class CommandNotFoundError(ArchitectureError):
 
 
 # =============================================================================
-# File Operations
+# Path Helpers
 # =============================================================================
 
 
@@ -71,198 +92,261 @@ def get_data_dir(project_dir: str = '.') -> Path:
     return Path(project_dir) / DATA_DIR
 
 
-def get_derived_path(project_dir: str = '.') -> Path:
-    """Get path to derived-data.json."""
-    return get_data_dir(project_dir) / DERIVED_DATA_FILE
+def get_tmp_data_dir(project_dir: str = '.') -> Path:
+    """Get the tmp staging directory used for atomic ``discover --force`` writes.
 
-
-def get_enriched_path(project_dir: str = '.') -> Path:
-    """Get path to llm-enriched.json."""
-    return get_data_dir(project_dir) / LLM_ENRICHED_FILE
-
-
-def load_derived_data(project_dir: str = '.') -> dict[str, Any]:
-    """Load derived-data.json.
-
-    Args:
-        project_dir: Project directory path
-
-    Returns:
-        Dict containing derived module data
-
-    Raises:
-        DataNotFoundError: If file does not exist
+    Resolves to ``{project_dir}/.plan/project-architecture.tmp/``. Callers build
+    the new layout here, then call ``swap_data_dir(tmp_dir)`` to atomically
+    replace the real directory.
     """
-    path = get_derived_path(project_dir)
-    if not path.exists():
-        raise DataNotFoundError(f"Derived data not found. Run 'architecture.py discover' first. Expected: {path}")
-    with open(path) as f:
-        result: dict[str, Any] = json.load(f)
-        return result
+    real = get_data_dir(project_dir)
+    return real.with_name(real.name + _TMP_SUFFIX)
 
 
-def load_llm_enriched(project_dir: str = '.') -> dict[str, Any]:
-    """Load llm-enriched.json.
-
-    Args:
-        project_dir: Project directory path
-
-    Returns:
-        Dict containing enriched module data, or empty structure if missing
-
-    Raises:
-        DataNotFoundError: If file does not exist
-    """
-    path = get_enriched_path(project_dir)
-    if not path.exists():
-        raise DataNotFoundError(f"Enrichment data not found. Run 'architecture.py init' first. Expected: {path}")
-    with open(path) as f:
-        result: dict[str, Any] = json.load(f)
-        return result
+def get_project_meta_path(project_dir: str = '.') -> Path:
+    """Path to the top-level ``_project.json`` file."""
+    return get_data_dir(project_dir) / FILE_PROJECT_META
 
 
-def load_llm_enriched_or_empty(project_dir: str = '.') -> dict[str, Any]:
-    """Load llm-enriched.json or return empty structure.
-
-    Args:
-        project_dir: Project directory path
-
-    Returns:
-        Dict containing enriched module data, or empty structure
-    """
-    path = get_enriched_path(project_dir)
-    if not path.exists():
-        return {'project': {}, 'modules': {}}
-    with open(path) as f:
-        result: dict[str, Any] = json.load(f)
-        return result
+def get_module_dir(module_name: str, project_dir: str = '.') -> Path:
+    """Path to a module's directory under project-architecture."""
+    return get_data_dir(project_dir) / module_name
 
 
-def save_derived_data(data: dict[str, Any], project_dir: str = '.') -> Path:
-    """Save derived-data.json.
-
-    Args:
-        data: Dict to save
-        project_dir: Project directory path
-
-    Returns:
-        Path to saved file
-    """
-    path = get_derived_path(project_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, 'w') as f:
-        json.dump(data, f, indent=2)
-    return path
+def get_module_derived_path(module_name: str, project_dir: str = '.') -> Path:
+    """Path to a module's ``derived.json``."""
+    return get_module_dir(module_name, project_dir) / DIR_PER_MODULE_DERIVED
 
 
-def save_llm_enriched(data: dict[str, Any], project_dir: str = '.') -> Path:
-    """Save llm-enriched.json.
-
-    Args:
-        data: Dict to save
-        project_dir: Project directory path
-
-    Returns:
-        Path to saved file
-    """
-    path = get_enriched_path(project_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, 'w') as f:
-        json.dump(data, f, indent=2)
-    return path
+def get_module_enriched_path(module_name: str, project_dir: str = '.') -> Path:
+    """Path to a module's ``enriched.json``."""
+    return get_module_dir(module_name, project_dir) / DIR_PER_MODULE_ENRICHED
 
 
 # =============================================================================
-# Module Operations
+# Load / Save Operations
 # =============================================================================
 
 
-def get_module_names(derived: dict[str, Any]) -> list[str]:
-    """Get list of module names from derived data.
+def _read_json(path: Path) -> dict[str, Any]:
+    with open(path, encoding='utf-8') as f:
+        result: dict[str, Any] = json.load(f)
+        return result
 
-    Args:
-        derived: Derived data dict
+
+def _write_json(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2, sort_keys=True)
+
+
+def load_project_meta(project_dir: str = '.') -> dict[str, Any]:
+    """Load ``_project.json`` — the source of truth for module discovery.
+
+    Raises:
+        DataNotFoundError: If ``_project.json`` does not exist.
+    """
+    path = get_project_meta_path(project_dir)
+    if not path.exists():
+        raise DataNotFoundError(
+            f"Project metadata not found. Run 'architecture.py discover' first. Expected: {path}"
+        )
+    return _read_json(path)
+
+
+def save_project_meta(meta: dict[str, Any], project_dir: str = '.') -> Path:
+    """Save ``_project.json``."""
+    path = get_project_meta_path(project_dir)
+    _write_json(path, meta)
+    return path
+
+
+def load_module_derived(module_name: str, project_dir: str = '.') -> dict[str, Any]:
+    """Load one module's ``derived.json``.
+
+    Raises:
+        DataNotFoundError: If the file does not exist.
+    """
+    path = get_module_derived_path(module_name, project_dir)
+    if not path.exists():
+        raise DataNotFoundError(
+            f"Derived data not found for module '{module_name}'. "
+            f"Run 'architecture.py discover' first. Expected: {path}"
+        )
+    return _read_json(path)
+
+
+def save_module_derived(module_name: str, data: dict[str, Any], project_dir: str = '.') -> Path:
+    """Save one module's ``derived.json``."""
+    path = get_module_derived_path(module_name, project_dir)
+    _write_json(path, data)
+    return path
+
+
+def load_module_enriched(module_name: str, project_dir: str = '.') -> dict[str, Any]:
+    """Load one module's ``enriched.json``.
+
+    Raises:
+        DataNotFoundError: If the file does not exist.
+    """
+    path = get_module_enriched_path(module_name, project_dir)
+    if not path.exists():
+        raise DataNotFoundError(
+            f"Enrichment data not found for module '{module_name}'. "
+            f"Run 'architecture.py init' first. Expected: {path}"
+        )
+    return _read_json(path)
+
+
+def load_module_enriched_or_empty(module_name: str, project_dir: str = '.') -> dict[str, Any]:
+    """Load one module's ``enriched.json`` or return an empty dict.
+
+    Use this when callers want to tolerate missing enrichment (e.g. read paths
+    after ``discover`` but before ``init``).
+    """
+    path = get_module_enriched_path(module_name, project_dir)
+    if not path.exists():
+        return {}
+    return _read_json(path)
+
+
+def save_module_enriched(module_name: str, data: dict[str, Any], project_dir: str = '.') -> Path:
+    """Save one module's ``enriched.json``."""
+    path = get_module_enriched_path(module_name, project_dir)
+    _write_json(path, data)
+    return path
+
+
+def iter_modules(project_dir: str = '.') -> list[str]:
+    """Iterate module names from ``_project.json``'s ``modules`` index.
+
+    The index is the canonical answer to "which modules exist"; per-module
+    directory presence on disk is not consulted because half-written
+    directories from interrupted writes must be ignored.
 
     Returns:
-        List of module names
+        Sorted list of module names. Empty list when the project has no
+        modules defined yet.
+
+    Raises:
+        DataNotFoundError: If ``_project.json`` does not exist.
     """
-    return list(derived.get('modules', {}).keys())
+    meta = load_project_meta(project_dir)
+    modules = meta.get('modules', {}) or {}
+    return sorted(modules.keys())
 
 
-def get_root_module(derived: dict[str, Any]) -> str | None:
-    """Get the root module name (module at project root).
+def swap_data_dir(tmp_dir: Path, project_dir: str = '.') -> Path:
+    """Atomically replace ``project-architecture/`` with the contents of ``tmp_dir``.
 
-    Root module is determined by:
-    1. Module with path "." or "" (at project root)
-    2. Fallback: first module in the list
+    Implements the tmp-then-swap pattern that gives ``discover --force`` its
+    atomicity guarantee: callers build the entire new layout under ``tmp_dir``
+    (typically the path returned by ``get_tmp_data_dir()``), then this function
+    swaps it into place using a backup-rename so the data directory is never
+    absent on disk:
 
-    For single-module projects, the root module is typically the only module.
-    For multi-module projects, the root is usually the parent/aggregator module.
+        1. Clean any stale ``project-architecture.old/`` left over from a
+           previously interrupted swap.
+        2. Rename the existing ``project-architecture/`` to
+           ``project-architecture.old/`` (atomic on the same filesystem).
+        3. ``os.replace`` ``tmp_dir`` onto the real path.
+        4. Delete the backup.
+
+    Compared to the older rmtree-then-replace flow, this closes the window where
+    the data directory does not exist on disk: between steps 2 and 3 the backup
+    is the canonical layout, and the rename in step 2 is atomic. A forced
+    interruption either before, during, or after the rename leaves the project
+    in a consistent state — the next ``discover --force`` will pick up the
+    leftover ``.old/`` and clean it in step 1.
 
     Args:
-        derived: Derived data dict
+        tmp_dir: Source directory containing the new layout. Must exist.
+        project_dir: Project directory path.
 
     Returns:
-        Root module name, or None if no modules exist
+        The final ``project-architecture/`` path.
+
+    Raises:
+        FileNotFoundError: If ``tmp_dir`` does not exist.
     """
-    modules: dict[str, Any] = derived.get('modules', {})
-    for name, data in modules.items():
+    tmp_dir = Path(tmp_dir)
+    if not tmp_dir.exists():
+        raise FileNotFoundError(f'tmp data dir does not exist: {tmp_dir}')
+
+    real = get_data_dir(project_dir)
+    real.parent.mkdir(parents=True, exist_ok=True)
+
+    backup = real.with_name(real.name + '.old')
+
+    # Step 1: Clean any stale backup left over from a previously interrupted swap.
+    if backup.exists():
+        shutil.rmtree(backup)
+
+    # Step 2: Move the current layout aside (atomic rename on same filesystem).
+    if real.exists():
+        os.replace(real, backup)
+
+    # Step 3: Move the staged layout into place.
+    os.replace(tmp_dir, real)
+
+    # Step 4: Delete the backup now that the new layout is live.
+    if backup.exists():
+        shutil.rmtree(backup)
+
+    return real
+
+
+# =============================================================================
+# Module Helpers
+# =============================================================================
+
+
+def get_root_module(project_dir: str = '.') -> str | None:
+    """Get the root module name (the module sitting at the project root).
+
+    Determined by:
+        1. Module whose ``paths.module`` is ``"."`` or empty (project root).
+        2. Fallback: first module in ``_project.json``'s ``modules`` index.
+
+    Returns:
+        Module name, or None if the project has no modules.
+    """
+    try:
+        names = iter_modules(project_dir)
+    except DataNotFoundError:
+        return None
+    if not names:
+        return None
+    for name in names:
+        try:
+            data = load_module_derived(name, project_dir)
+        except DataNotFoundError:
+            continue
         paths = data.get('paths', {})
         module_path = paths.get('module', '')
-        if module_path == '.' or module_path == '':
-            root_name: str = name
-            return root_name
-    # Fallback: first module
-    result: str | None = next(iter(modules.keys()), None)
-    return result
+        if module_path in ('.', ''):
+            return name
+    return names[0]
 
 
-def get_module(derived: dict[str, Any], module_name: str) -> dict[str, Any]:
-    """Get module data by name.
+def merge_module_data(module_name: str, project_dir: str = '.') -> dict[str, Any]:
+    """Merge derived and enriched data for a single module.
 
-    Args:
-        derived: Derived data dict
-        module_name: Module name
-
-    Returns:
-        Module data dict
+    Loads ``{module}/derived.json`` and ``{module}/enriched.json`` (the latter
+    treated as empty when missing), then overlays enriched fields onto derived
+    data. Enriched values that are falsy do NOT overwrite derived values — this
+    matches the legacy semantics that downstream callers depend on.
 
     Raises:
-        ModuleNotFoundInProjectError: If module not found
+        DataNotFoundError: If ``derived.json`` is missing for the named module.
     """
-    modules = derived.get('modules', {})
-    if module_name not in modules:
-        available = list(modules.keys())
-        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', available)
-    result: dict[str, Any] = modules[module_name]
-    return result
+    derived = load_module_derived(module_name, project_dir)
+    enriched = load_module_enriched_or_empty(module_name, project_dir)
 
-
-def merge_module_data(derived: dict[str, Any], enriched: dict[str, Any], module_name: str) -> dict[str, Any]:
-    """Merge derived and enriched data for a module.
-
-    Args:
-        derived: Derived data dict
-        enriched: Enriched data dict
-        module_name: Module name to merge
-
-    Returns:
-        Merged module data dict
-    """
-    derived_modules = derived.get('modules', {})
-    enriched_modules = enriched.get('modules', {})
-
-    derived_module = derived_modules.get(module_name, {})
-    enriched_module = enriched_modules.get(module_name, {})
-
-    # Start with derived data
-    merged = dict(derived_module)
-
-    # Overlay enriched fields (they take precedence for fields they define)
-    for key, value in enriched_module.items():
-        if value:  # Only overlay non-empty values
+    merged = dict(derived)
+    for key, value in enriched.items():
+        if value:
             merged[key] = value
-
     return merged
 
 
@@ -276,13 +360,6 @@ def error_exit(message: str, context: dict[str, Any] | None = None) -> 'NoReturn
 
     CLI-boundary helper — only call from command handlers, not library functions.
     For library code, raise ArchitectureError or DataNotFoundError instead.
-
-    Args:
-        message: Error message
-        context: Optional context dict with key-value pairs
-
-    Raises:
-        ArchitectureError: Always raised after printing TOON error output
     """
     from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
@@ -294,74 +371,40 @@ def error_exit(message: str, context: dict[str, Any] | None = None) -> 'NoReturn
 
 
 def error_module_not_found(module_name: str, available: list):
-    """Print module not found error and exit.
-
-    Args:
-        module_name: Requested module name
-        available: List of available module names
-    """
     error_exit('Module not found', {'module': module_name, 'available': available})
 
 
 def error_command_not_found(module_name: str, command_name: str, available: list):
-    """Print command not found error and exit.
-
-    Args:
-        module_name: Module name
-        command_name: Requested command name
-        available: List of available command names
-    """
     error_exit('Command not found', {'module': module_name, 'command': command_name, 'available': available})
 
 
 def error_data_not_found(expected_file: str, resolution: str):
-    """Print data not found error and exit.
-
-    Args:
-        expected_file: Path to expected file
-        resolution: How to fix
-    """
     error_exit('Data not found', {'expected_file': expected_file, 'resolution': resolution})
 
 
-def require_derived_data(project_dir: str = '.') -> 'dict[str, Any]':
-    """Load derived data or exit with a structured error.
+def require_project_meta(project_dir: str = '.') -> dict[str, Any]:
+    """Load ``_project.json`` or exit with a structured error.
 
     Convenience wrapper that replaces repeated try/except DataNotFoundError
-    blocks in CLI handlers.  On success it returns the loaded dict; on
-    failure it prints the standard error message and raises ArchitectureError.
-
-    Args:
-        project_dir: Project directory path
-
-    Returns:
-        Derived data dict
-
-    Raises:
-        ArchitectureError: If derived-data.json does not exist
+    blocks in CLI handlers. On success it returns the loaded dict; on failure
+    it prints the standard error message and raises ArchitectureError.
     """
     try:
-        return load_derived_data(project_dir)
+        return load_project_meta(project_dir)
     except DataNotFoundError:
-        error_data_not_found(str(get_derived_path(project_dir)), "Run 'architecture.py discover' first")
+        error_data_not_found(
+            str(get_project_meta_path(project_dir)),
+            "Run 'architecture.py discover' first",
+        )
         raise  # unreachable – error_data_not_found raises ArchitectureError
 
 
 def handle_module_not_found(module_name: str, project_dir: str) -> int:
-    """Print module-not-found error with available modules list and return 1.
-
-    Args:
-        module_name: The requested (missing) module name
-        project_dir: Project directory path
-
-    Returns:
-        Always returns 1
-    """
+    """Print module-not-found error with available modules list and return 1."""
     from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
     try:
-        derived = load_derived_data(project_dir)
-        modules = get_module_names(derived)
+        modules = iter_modules(project_dir)
     except Exception:
         modules = []
 
@@ -377,7 +420,6 @@ def handle_module_not_found(module_name: str, project_dir: str) -> int:
 
 
 def error_result_module_not_found(module_name: str, available: list) -> dict:
-    """Return module not found error dict."""
     return {
         'status': 'error',
         'error': 'architecture_error',
@@ -388,7 +430,6 @@ def error_result_module_not_found(module_name: str, available: list) -> dict:
 
 
 def error_result_command_not_found(module_name: str, command_name: str, available: list) -> dict:
-    """Return command not found error dict."""
     return {
         'status': 'error',
         'error': 'architecture_error',
@@ -399,12 +440,12 @@ def error_result_command_not_found(module_name: str, command_name: str, availabl
     }
 
 
-def require_derived_data_result(project_dir: str = '.') -> dict:
-    """Return derived data not found error dict."""
+def require_project_meta_result(project_dir: str = '.') -> dict:
+    """Return ``_project.json`` not found error dict."""
     return {
         'status': 'error',
         'error': 'data_not_found',
-        'expected_file': str(get_derived_path(project_dir)),
+        'expected_file': str(get_project_meta_path(project_dir)),
         'resolution': "Run 'architecture.py discover' first",
     }
 
@@ -412,8 +453,7 @@ def require_derived_data_result(project_dir: str = '.') -> dict:
 def handle_module_not_found_result(module_name: str, project_dir: str) -> dict:
     """Return module-not-found error dict with available modules list."""
     try:
-        derived = load_derived_data(project_dir)
-        modules = get_module_names(derived)
+        modules = iter_modules(project_dir)
     except Exception:
         modules = []
 
@@ -427,13 +467,7 @@ def handle_module_not_found_result(module_name: str, project_dir: str) -> dict:
 
 
 def print_skills_by_profile(skills_by_profile: dict) -> None:
-    """Print skills_by_profile in TOON format.
-
-    Args:
-        skills_by_profile: Dict mapping profile names to structured skill dicts
-            {"profile": {"defaults": [{"skill": "...", "description": "..."}],
-                         "optionals": [...]}}
-    """
+    """Print skills_by_profile in TOON format."""
     print('skills_by_profile:')
     for profile, profile_data in skills_by_profile.items():
         print(f'  {profile}:')

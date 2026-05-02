@@ -1,0 +1,50 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [],
+  "key_dependencies_reasoning": "",
+  "key_packages": {
+    "architecture_guidance": {
+      "description": "Plugin architecture skill providing principles, skill patterns, and design guidance for building goal-based marketplace components."
+    },
+    "marketplace_inventory": {
+      "description": "Marketplace inventory tool that scans and reports all bundles, agents, commands, skills, and scripts across the marketplace."
+    },
+    "plugin_lifecycle": {
+      "description": "Plugin lifecycle skills (plugin-create, plugin-doctor, plugin-maintain) covering creation wizards, quality diagnosis, and maintenance workflows for marketplace components."
+    }
+  },
+  "purpose": "extension",
+  "purpose_reasoning": "Optional meta-bundle that helps authors build new marketplace bundles, skills, agents, and commands.",
+  "responsibility": "Plugin development toolkit for marketplace components covering creation wizards, quality diagnosis (plugin-doctor), inventory scanning, architecture guidance, and component maintenance workflows.",
+  "responsibility_reasoning": "Optional meta-bundle that helps authors build new marketplace bundles, skills, agents, and commands.",
+  "skills_by_profile": {
+    "implementation": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    },
+    "module_testing": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    },
+    "quality": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        }
+      ]
+    }
+  },
+  "skills_by_profile_reasoning": "",
+  "tips": []
+}

@@ -1,0 +1,24 @@
+{
+  "description": "",
+  "description_reasoning": "",
+  "extensions_used": [
+    "plan-marshall",
+    "pm-documents",
+    "pm-plugin-development"
+  ],
+  "modules": {
+    "default": {},
+    "documentation": {},
+    "plan-marshall": {},
+    "pm-dev-frontend": {},
+    "pm-dev-frontend-cui": {},
+    "pm-dev-java": {},
+    "pm-dev-java-cui": {},
+    "pm-dev-oci": {},
+    "pm-dev-python": {},
+    "pm-documents": {},
+    "pm-plugin-development": {},
+    "pm-requirements": {}
+  },
+  "name": "plan-marshall"
+}

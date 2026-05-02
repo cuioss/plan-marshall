@@ -1,0 +1,24 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [
+    "nifi-cuioss-processors",
+    "nifi-cuioss-ui"
+  ],
+  "key_dependencies": [
+    "org.apache.nifi:nifi-standard-services-api-nar"
+  ],
+  "key_dependencies_reasoning": "NiFi services NAR for runtime API, bundles processors and UI modules",
+  "key_packages": {},
+  "purpose": "deployment",
+  "purpose_reasoning": "packaging=nar, bundles other modules for NiFi deployment",
+  "responsibility": "NiFi Archive (NAR) packaging module that bundles nifi-cuioss-processors and nifi-cuioss-ui into a deployable NiFi extension archive.",
+  "responsibility_reasoning": "packaging=nar with dependencies on processors and ui modules",
+  "skills_by_profile": {
+    "implementation": [
+      "pm-dev-java:java-core"
+    ]
+  },
+  "skills_by_profile_reasoning": "NAR packaging module, minimal skills needed for build configuration",
+  "tips": []
+}

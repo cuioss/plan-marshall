@@ -32,7 +32,15 @@ Domain extension providing plugin development skill registration and module disc
 
 ## Module Discovery
 
-Discovers marketplace bundles as modules. Each bundle in `marketplace/bundles/` becomes a module with:
+Discovers marketplace bundles as modules for the per-module architecture
+layout under `.plan/project-architecture/`. `manage-architecture` writes a
+top-level `_project.json` whose `modules` index is the source of truth for
+which modules exist, plus one `{module}/derived.json` per indexed module
+holding this extension's discovery output. Per-module subdirectories present
+on disk but absent from `_project.json["modules"]` are ignored — the index is
+authoritative, not the filesystem.
+
+Each bundle in `marketplace/bundles/` becomes one such module with:
 
 | Aspect | Value |
 |--------|-------|
@@ -74,7 +82,7 @@ Configuration in `extension.py` implements the Extension API contract:
 | Function | Purpose |
 |----------|---------|
 | `get_skill_domains()` | Domain metadata with profiles |
-| `discover_modules()` | Module discovery for derived-data.json |
+| `discover_modules()` | Module discovery whose results feed each bundle's per-module `derived.json` under `.plan/project-architecture/{module}/` |
 | `provides_triage()` | Returns `pm-plugin-development:ext-triage-plugin` |
 | `provides_outline_skill()` | Returns `pm-plugin-development:ext-outline-workflow` |
 

@@ -10,9 +10,21 @@ Consider them as local verification tests, not part of the CI gate.
 
 Run with:
     python3 test/plan-marshall/integration/discover_modules/test_maven_discover_modules.py
+
+Per-module on-disk layout (post phase-a-arch-split):
+
+- ``.plan/project-architecture/_project.json`` — top-level project metadata; the
+  ``modules`` field is the source of truth for module discovery.
+- ``.plan/project-architecture/{module}/derived.json`` — deterministic discovery
+  output for a single module (paths, packages, dependencies).
+- ``.plan/project-architecture/{module}/enriched.json`` — LLM-augmented fields
+  for a single module (internal_dependencies, is_leaf, …).
+
+The fixture trees under ``resources/{project}/.plan/project-architecture/`` mirror
+this layout, and the helpers below copy / synthesise the per-module files (never
+the deprecated monolithic ``derived-data.json`` / ``llm-enriched.json`` pair).
 """
 
-import json
 import shutil
 import sys
 from pathlib import Path
@@ -20,13 +32,20 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
 RESOURCES_DIR = Path(__file__).parent / 'resources'
 
-# Import Extension from pm-dev-java
-EXTENSION_DIR = PROJECT_ROOT / 'marketplace' / 'bundles' / 'pm-dev-java' / 'skills' / 'plan-marshall-plugin'
+# Import Extension from plan-marshall:plan-marshall-plugin (relocated from
+# pm-dev-java in phase-a-arch-split). The ``_architecture_core`` save helpers
+# and ``_cmd_client.get_module_graph`` now live in plan-marshall:manage-architecture.
+EXTENSION_DIR = PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'plan-marshall-plugin'
 sys.path.insert(0, str(EXTENSION_DIR))
 
 # Direct imports - conftest sets up PYTHONPATH for cross-skill imports
-from _architecture_core import save_derived_data  # noqa: E402
+from _architecture_core import (  # noqa: E402
+    save_module_derived,
+    save_module_enriched,
+    save_project_meta,
+)
 from _cmd_client import get_module_graph  # noqa: E402
+from _cmd_manage import _post_process_files  # noqa: E402
 from extension import Extension  # noqa: E402
 
 from integration_common import (  # noqa: E402
@@ -102,8 +121,12 @@ def format_graph_toon(result: dict) -> str:
     return '\n'.join(lines)
 
 
-def generate_enriched_data(modules_dict: dict) -> dict:
-    """Generate LLM-enriched data with computed internal_dependencies.
+def generate_per_module_enriched(modules_dict: dict) -> dict:
+    """Generate per-module LLM-enriched data with computed internal_dependencies.
+
+    Mirrors the per-module ``enriched.json`` contract: each value is the
+    enrichment payload for a single module (NOT a project-level dict with a
+    nested ``modules`` index).
 
     Computes:
     - internal_dependencies: which project modules this module depends on
@@ -113,7 +136,8 @@ def generate_enriched_data(modules_dict: dict) -> dict:
         modules_dict: Dict of module name -> module data
 
     Returns:
-        Enriched data structure with modules section
+        Dict of module name -> per-module enrichment payload. Modules with no
+        meaningful enrichment data are omitted.
     """
     # Build mapping of groupId:artifactId -> module_name
     artifact_to_module = {}
@@ -124,7 +148,6 @@ def generate_enriched_data(modules_dict: dict) -> dict:
         if group_id and artifact_id:
             artifact_to_module[f'{group_id}:{artifact_id}'] = mod_name
 
-    # Compute internal dependencies and is_leaf for each module
     enriched_modules = {}
     for mod_name, mod_data in modules_dict.items():
         deps = mod_data.get('dependencies', [])
@@ -140,7 +163,6 @@ def generate_enriched_data(modules_dict: dict) -> dict:
 
         internal_deps = sorted(internal)
 
-        # Only add to enriched if there's something meaningful
         metadata = mod_data.get('metadata', {})
         packaging = metadata.get('packaging', 'jar')
 
@@ -159,18 +181,24 @@ def generate_enriched_data(modules_dict: dict) -> dict:
             if enriched_mod:  # Only add if not empty
                 enriched_modules[mod_name] = enriched_mod
 
-    return {'project': {}, 'modules': enriched_modules}
+    return enriched_modules
 
 
 def copy_resources_if_exists(project_name: str, output_dir: Path) -> bool:
-    """Copy architecture files from test resources if they exist.
+    """Copy per-module architecture files from test resources if they exist.
+
+    Mirrors the per-module on-disk layout:
+
+    - ``_project.json`` (top-level project metadata)
+    - ``{module}/derived.json`` (one per module)
+    - ``{module}/enriched.json`` (one per module)
 
     Args:
         project_name: Project name (matches resources subdirectory)
         output_dir: Target output directory
 
     Returns:
-        True if resources were copied, False otherwise
+        True if any resources were copied, False otherwise
     """
     resource_name = project_name.lower().replace(' ', '-').replace('/', '-')
     resource_dir = RESOURCES_DIR / resource_name / '.plan' / 'project-architecture'
@@ -182,18 +210,34 @@ def copy_resources_if_exists(project_name: str, output_dir: Path) -> bool:
     target_dir.mkdir(parents=True, exist_ok=True)
 
     copied = False
-    for filename in ['derived-data.json', 'llm-enriched.json']:
-        src = resource_dir / filename
-        if src.exists():
-            shutil.copy2(src, target_dir / filename)
-            print(f'  Copied: {filename} (from test resources)')
-            copied = True
+
+    # Copy top-level _project.json
+    project_meta_src = resource_dir / '_project.json'
+    if project_meta_src.exists():
+        shutil.copy2(project_meta_src, target_dir / '_project.json')
+        print('  Copied: _project.json (from test resources)')
+        copied = True
+
+    # Copy each module subdirectory's derived.json / enriched.json
+    for module_subdir in sorted(p for p in resource_dir.iterdir() if p.is_dir()):
+        target_module_dir = target_dir / module_subdir.name
+        target_module_dir.mkdir(parents=True, exist_ok=True)
+        for filename in ('derived.json', 'enriched.json'):
+            src = module_subdir / filename
+            if src.exists():
+                shutil.copy2(src, target_module_dir / filename)
+                print(f'  Copied: {module_subdir.name}/{filename} (from test resources)')
+                copied = True
 
     return copied
 
 
 def save_graph_outputs(output_dir: Path, project_name: str, modules: list, project_path: Path):
     """Save graph outputs (default and --full) for a discovered project.
+
+    Writes the per-module on-disk layout (``_project.json`` plus
+    ``{module}/derived.json`` and ``{module}/enriched.json``) using the
+    relocated ``_architecture_core`` save helpers.
 
     Args:
         output_dir: Directory to save outputs
@@ -209,36 +253,59 @@ def save_graph_outputs(output_dir: Path, project_name: str, modules: list, proje
     # Copy architecture files from test resources if available
     resources_copied = copy_resources_if_exists(project_name, project_output_dir)
 
-    # Build derived data structure
+    # Build module-name -> module-data map. The Phase B files-inventory
+    # has already been populated on the modules list by the main test loop;
+    # rebuilding the dict here just gives downstream code a name-keyed view.
     modules_dict = {}
     for mod in modules:
         mod_name = mod.get('name', 'unknown')
         modules_dict[mod_name] = mod
 
-    # Save derived data for architecture script
-    # Only generate if no existing derived-data.json (preserve marshal-steward output)
-    derived_path = project_output_dir / '.plan' / 'project-architecture' / 'derived-data.json'
-    if derived_path.exists():
-        if not resources_copied:
-            print('  Derived: derived-data.json (existing)')
-    else:
-        derived_data = {'project': {'name': project_name}, 'modules': modules_dict}
-        save_derived_data(derived_data, str(project_output_dir))
-        print('  Derived: derived-data.json (generated)')
+    arch_dir = project_output_dir / '.plan' / 'project-architecture'
 
-    # Generate and save enriched data with computed internal_dependencies
-    # Only generate if no existing llm-enriched.json (preserve marshal-steward output)
-    enriched_path = project_output_dir / '.plan' / 'project-architecture' / 'llm-enriched.json'
-    if enriched_path.exists():
+    # Save top-level _project.json (skip if already copied from resources to
+    # preserve marshal-steward output and any hand-curated description fields).
+    project_meta_path = arch_dir / '_project.json'
+    if project_meta_path.exists():
         if not resources_copied:
-            print('  Enriched: llm-enriched.json (existing)')
+            print('  Project meta: _project.json (existing)')
     else:
-        enriched_data = generate_enriched_data(modules_dict)
-        if enriched_data['modules']:
-            enriched_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(enriched_path, 'w') as f:
-                json.dump(enriched_data, f, indent=2)
-            print('  Enriched: llm-enriched.json (generated)')
+        project_meta = {
+            'name': project_name,
+            'modules': {name: {} for name in sorted(modules_dict)},
+        }
+        save_project_meta(project_meta, str(project_output_dir))
+        print('  Project meta: _project.json (generated)')
+
+    # Save per-module derived.json files (skip any already provided by
+    # resources to preserve marshal-steward output).
+    derived_generated = 0
+    derived_existing = 0
+    for mod_name, mod_data in modules_dict.items():
+        module_derived_path = arch_dir / mod_name / 'derived.json'
+        if module_derived_path.exists():
+            derived_existing += 1
+            continue
+        save_module_derived(mod_name, mod_data, str(project_output_dir))
+        derived_generated += 1
+    if derived_generated:
+        print(f'  Derived: {derived_generated} module(s) generated')
+    if derived_existing and not resources_copied:
+        print(f'  Derived: {derived_existing} module(s) existing')
+
+    # Save per-module enriched.json files where computed enrichment is
+    # meaningful (internal_dependencies / is_leaf). Skip modules where a
+    # resources-supplied enriched.json already exists.
+    enriched_payloads = generate_per_module_enriched(modules_dict)
+    enriched_generated = 0
+    for mod_name, payload in enriched_payloads.items():
+        module_enriched_path = arch_dir / mod_name / 'enriched.json'
+        if module_enriched_path.exists():
+            continue
+        save_module_enriched(mod_name, payload, str(project_output_dir))
+        enriched_generated += 1
+    if enriched_generated:
+        print(f'  Enriched: {enriched_generated} module(s) generated')
 
     # Generate graph without --full (filters aggregators)
     try:
@@ -259,6 +326,50 @@ def save_graph_outputs(output_dir: Path, project_name: str, modules: list, proje
         print(f'  Graph (--full): {graph_full_path.name}')
     except Exception as e:
         print(f'  Graph (--full): ERROR - {e}')
+
+
+# =============================================================================
+# Phase B Files-Inventory Schema Assertion
+# =============================================================================
+
+
+def assert_files_inventory_schema(modules: list) -> list:
+    """Schema-only assertions for the ``files`` block on each module.
+
+    Cardinality / content is intentionally NOT checked — exact path lists
+    drift with project content. The contract pinned here is structural:
+    the key exists, the value is a dict whose values are either lists of
+    strings or the canonical ``{elided, sample}`` shape.
+
+    Returns:
+        List of error strings (empty list on full pass).
+    """
+    errors: list[str] = []
+    for mod in modules:
+        name = mod.get('name', '?')
+        files_block = mod.get('files')
+        if files_block is None:
+            errors.append(f'{name}: missing ``files`` block')
+            continue
+        if not isinstance(files_block, dict):
+            errors.append(f'{name}: ``files`` is not a dict (got {type(files_block).__name__})')
+            continue
+        for category, value in files_block.items():
+            if isinstance(value, list):
+                if not all(isinstance(p, str) for p in value):
+                    errors.append(f'{name}.files.{category}: non-string entry in path list')
+            elif isinstance(value, dict):
+                if 'elided' not in value or 'sample' not in value:
+                    errors.append(f'{name}.files.{category}: dict value missing ``elided``/``sample`` keys')
+                elif not isinstance(value.get('elided'), int):
+                    errors.append(f'{name}.files.{category}: ``elided`` is not an integer')
+                elif not isinstance(value.get('sample'), list):
+                    errors.append(f'{name}.files.{category}: ``sample`` is not a list')
+            else:
+                errors.append(
+                    f'{name}.files.{category}: unexpected value type {type(value).__name__}'
+                )
+    return errors
 
 
 # =============================================================================
@@ -326,6 +437,12 @@ def run_integration_tests() -> int:
                 modules = ext.discover_modules(str(project_path))
                 print(f'  Found: {len(modules)} module(s)')
 
+                # Phase B: populate the per-module ``files`` inventory so
+                # downstream save/assertion steps see the same shape that
+                # ``api_discover`` would produce.
+                modules_dict = {mod.get('name', 'unknown'): mod for mod in modules}
+                _post_process_files(modules_dict, str(project_path))
+
                 # Save result
                 output_path = ctx.save_result(project, modules)
                 print(f'  Saved: {output_path.name}')
@@ -355,6 +472,15 @@ def run_integration_tests() -> int:
                 root_errors = assert_has_root_aggregator(modules, project_path, ['pom.xml'])
                 if root_errors:
                     errors.extend(root_errors)
+
+                # Assert Phase B files-inventory schema: every module's
+                # post-discovery dict must contain a ``files`` block whose
+                # values are either lists or the elision shape. Only schema
+                # / cardinality checks — exact path lists drift with project
+                # content and are not pinned here.
+                files_errors = assert_files_inventory_schema(modules)
+                if files_errors:
+                    errors.extend(files_errors)
 
                 # Report results
                 if errors:

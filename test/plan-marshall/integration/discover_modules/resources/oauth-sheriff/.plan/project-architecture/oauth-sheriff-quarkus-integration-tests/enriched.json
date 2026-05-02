@@ -1,0 +1,38 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [
+    "oauth-sheriff-quarkus",
+    "oauth-sheriff-quarkus-devui"
+  ],
+  "key_dependencies": [
+    "io.quarkus:quarkus-junit5",
+    "io.rest-assured:rest-assured",
+    "io.quarkus:quarkus-devui-test-spi"
+  ],
+  "key_dependencies_reasoning": "Quarkus test framework, REST-assured for HTTP testing, DevUI test SPI. Tests runtime and deployment modules.",
+  "key_packages": {
+    "de.cuioss.sheriff.oauth.integration": {
+      "description": "Integration test infrastructure and test application setup for Quarkus testing."
+    },
+    "de.cuioss.sheriff.oauth.integration.endpoint": {
+      "description": "JAX-RS test endpoints demonstrating @BearerAuth interceptor and token injection patterns."
+    }
+  },
+  "purpose": "integration-tests",
+  "purpose_reasoning": "Contains *IT.java test files, test-only packaging, integration-tests profile",
+  "responsibility": "Provides integration tests for the OAuth Sheriff Quarkus extension, testing against real Keycloak containers with HTTPS support, DevUI components, and native image builds.",
+  "responsibility_reasoning": "From pom.xml description mentioning native container testing with HTTPS",
+  "skills_by_profile": {
+    "integration-testing": [
+      "pm-dev-java:java-core",
+      "pm-dev-java:java-null-safety",
+      "pm-dev-java:java-lombok",
+      "pm-dev-java:java-cdi-quarkus",
+      "pm-dev-java:junit-core",
+      "pm-dev-java:junit-integration"
+    ]
+  },
+  "skills_by_profile_reasoning": "Integration test module - only integration-testing profile. Quarkus CDI for test app, junit-integration for IT patterns.",
+  "tips": []
+}

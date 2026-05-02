@@ -1,0 +1,46 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [
+    "org.apache.nifi:nifi-api",
+    "de.cuioss.sheriff.oauth:oauth-sheriff-core",
+    "de.cuioss:cui-java-tools",
+    "org.yaml:snakeyaml"
+  ],
+  "key_dependencies_reasoning": "NiFi API defines processor contract, oauth-sheriff-core provides JWT validation, cui-java-tools for utilities, snakeyaml for YAML config parsing",
+  "key_packages": {
+    "de.cuioss.nifi.processors.auth": {
+      "description": "Core processor implementations including MultiIssuerJWTTokenAuthenticator for JWT validation from multiple identity providers"
+    },
+    "de.cuioss.nifi.processors.auth.config": {
+      "description": "Configuration handling for processor properties including issuer settings and validation parameters"
+    },
+    "de.cuioss.nifi.processors.auth.i18n": {
+      "description": "Internationalization support with localized messages and log record identifiers"
+    },
+    "de.cuioss.nifi.processors.auth.util": {
+      "description": "Utility classes for token parsing, YAML/JSON processing, and common authentication helpers"
+    }
+  },
+  "purpose": "library",
+  "purpose_reasoning": "packaging=jar, processor library consumed by nifi-cuioss-nar",
+  "responsibility": "Core NiFi processor implementations including MultiIssuerJWTTokenAuthenticator for validating JWT tokens from multiple identity providers using oauth-sheriff-core library.",
+  "responsibility_reasoning": "From README.md and package structure showing auth processing packages",
+  "skills_by_profile": {
+    "implementation": [
+      "pm-dev-java:java-core",
+      "pm-dev-java:java-null-safety",
+      "pm-dev-java:java-lombok",
+      "pm-dev-java:java-maintenance"
+    ],
+    "unit-testing": [
+      "pm-dev-java:java-core",
+      "pm-dev-java:java-null-safety",
+      "pm-dev-java:java-lombok",
+      "pm-dev-java:junit-core"
+    ]
+  },
+  "skills_by_profile_reasoning": "Java module without CDI annotations, removed java-cdi; standard JUnit testing without integration",
+  "tips": []
+}

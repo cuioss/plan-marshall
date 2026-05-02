@@ -2,10 +2,17 @@
 """Tests for plugin bundle discovery.
 
 Tests the plugin_discover module that discovers marketplace bundles
-and generates module dicts for derived-data.json.
+and produces the per-bundle module dicts that ``manage-architecture``
+persists into the per-module architecture layout
+(``_project.json`` plus one ``{module}/derived.json`` per indexed
+module under ``.plan/project-architecture/``). The
+``_project.json["modules"]`` index is the source of truth — orphan
+per-module directories are ignored.
 """
 
+import importlib.util
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -24,6 +31,38 @@ from plugin_discover import (
     extract_frontmatter,
     load_plugin_json,
 )
+
+# =============================================================================
+# Cross-skill loader: import ``_architecture_core`` for layout fixtures.
+#
+# ``manage-architecture`` is the canonical writer of the per-module layout.
+# We re-use its save_* helpers here so test fixtures stay in lock-step with
+# the production persistence contract — if the on-disk shape ever changes,
+# this import will fail loudly instead of letting these tests drift.
+# =============================================================================
+
+_ARCH_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-architecture'
+    / 'scripts'
+)
+
+
+def _load_arch_core():
+    spec = importlib.util.spec_from_file_location(
+        '_architecture_core', _ARCH_SCRIPTS_DIR / '_architecture_core.py'
+    )
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules['_architecture_core'] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_architecture_core = _load_arch_core()
 
 
 class TestExtractFrontmatter(unittest.TestCase):
@@ -339,6 +378,117 @@ class TestMarketplaceCheck(unittest.TestCase):
 
             modules = discover_plugin_modules(temp_dir)
             self.assertEqual(modules, [])
+
+
+class TestPerModuleLayoutFixtures(unittest.TestCase):
+    """Exercise the per-module architecture layout end-to-end.
+
+    Each test seeds a top-level ``_project.json`` plus one
+    ``{module}/derived.json`` per indexed module using the canonical
+    ``manage-architecture`` save helpers, then asserts the layout matches
+    the contract that ``_project.json["modules"]`` is the source of truth
+    and orphan per-module directories are ignored.
+    """
+
+    def _seed_layout(self, tmp_root: Path, modules: dict[str, dict]) -> None:
+        """Write ``_project.json`` plus per-module ``derived.json`` files."""
+        _architecture_core.save_project_meta(
+            {
+                'name': 'test-project',
+                'description': '',
+                'description_reasoning': '',
+                'extensions_used': ['pm-plugin-development'],
+                'modules': {name: {} for name in modules},
+            },
+            str(tmp_root),
+        )
+        for name, derived in modules.items():
+            _architecture_core.save_module_derived(name, derived, str(tmp_root))
+
+    def test_seeded_layout_round_trips_via_iter_modules(self):
+        """``_project.json["modules"]`` is the canonical iteration index."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            modules = {
+                'pm-plugin-development': {
+                    'name': 'pm-plugin-development',
+                    'build_systems': [BUILD_SYSTEM],
+                    'paths': {'module': 'marketplace/bundles/pm-plugin-development'},
+                    'metadata': {'bundle_name': 'pm-plugin-development'},
+                    'packages': {'skill:plugin-doctor': {'type': 'skill', 'path': 'skills/plugin-doctor'}},
+                    'dependencies': [],
+                    'stats': {'skill_count': 1, 'agent_count': 0, 'command_count': 0},
+                    'commands': build_commands('pm-plugin-development'),
+                },
+                'plan-marshall': {
+                    'name': 'plan-marshall',
+                    'build_systems': [BUILD_SYSTEM],
+                    'paths': {'module': 'marketplace/bundles/plan-marshall'},
+                    'metadata': {'bundle_name': 'plan-marshall'},
+                    'packages': {},
+                    'dependencies': [],
+                    'stats': {'skill_count': 0, 'agent_count': 0, 'command_count': 0},
+                    'commands': build_commands('plan-marshall'),
+                },
+            }
+            self._seed_layout(tmp_root, modules)
+
+            iterated = list(_architecture_core.iter_modules(str(tmp_root)))
+            self.assertEqual(sorted(iterated), ['plan-marshall', 'pm-plugin-development'])
+
+            for name, expected in modules.items():
+                loaded = _architecture_core.load_module_derived(name, str(tmp_root))
+                self.assertEqual(loaded, expected)
+
+    def test_orphan_module_directory_is_ignored(self):
+        """Per-module dirs absent from ``_project.json["modules"]`` are ignored."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            modules = {
+                'pm-plugin-development': {
+                    'name': 'pm-plugin-development',
+                    'build_systems': [BUILD_SYSTEM],
+                    'paths': {'module': 'marketplace/bundles/pm-plugin-development'},
+                    'metadata': {'bundle_name': 'pm-plugin-development'},
+                    'packages': {},
+                    'dependencies': [],
+                    'stats': {'skill_count': 0, 'agent_count': 0, 'command_count': 0},
+                    'commands': build_commands('pm-plugin-development'),
+                },
+            }
+            self._seed_layout(tmp_root, modules)
+
+            # Drop a stray module directory NOT listed in _project.json["modules"].
+            arch_dir = tmp_root / _architecture_core.DATA_DIR
+            stray_dir = arch_dir / 'orphan-bundle'
+            stray_dir.mkdir(parents=True)
+            (stray_dir / 'derived.json').write_text(json.dumps({'name': 'orphan-bundle'}))
+
+            iterated = list(_architecture_core.iter_modules(str(tmp_root)))
+            self.assertEqual(iterated, ['pm-plugin-development'])
+            self.assertNotIn('orphan-bundle', iterated)
+
+    def test_layout_paths_match_contract(self):
+        """Seeded files land at the documented per-module paths."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            modules = {
+                'pm-plugin-development': {
+                    'name': 'pm-plugin-development',
+                    'build_systems': [BUILD_SYSTEM],
+                    'paths': {'module': 'marketplace/bundles/pm-plugin-development'},
+                    'metadata': {'bundle_name': 'pm-plugin-development'},
+                    'packages': {},
+                    'dependencies': [],
+                    'stats': {'skill_count': 0, 'agent_count': 0, 'command_count': 0},
+                    'commands': build_commands('pm-plugin-development'),
+                },
+            }
+            self._seed_layout(tmp_root, modules)
+
+            arch_dir = tmp_root / _architecture_core.DATA_DIR
+            self.assertTrue((arch_dir / '_project.json').is_file())
+            self.assertTrue((arch_dir / 'pm-plugin-development' / 'derived.json').is_file())
 
 
 if __name__ == '__main__':

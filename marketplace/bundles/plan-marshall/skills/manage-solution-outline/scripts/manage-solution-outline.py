@@ -24,6 +24,14 @@ import argparse
 from pathlib import Path
 from typing import Any, cast
 
+from _architecture_core import (  # type: ignore[import-not-found]
+    DataNotFoundError,
+    get_project_meta_path,
+    iter_modules,
+    load_module_derived,
+    load_module_enriched_or_empty,
+    load_project_meta,
+)
 from _plan_parsing import (  # type: ignore[import-not-found]
     _slugify_section_name,
     extract_deliverables,
@@ -37,9 +45,6 @@ from input_validation import (  # type: ignore[import-not-found]
 )
 
 SOLUTION_FILE = 'solution_outline.md'
-ARCHITECTURE_DIR = 'project-architecture'
-DERIVED_DATA_FILE = 'derived-data.json'
-LLM_ENRICHED_FILE = 'llm-enriched.json'
 
 # Solution-level metadata: scope_estimate enum (see standards/solution-outline-standard.md)
 SCOPE_ESTIMATE_VALUES = ('none', 'surgical', 'single_module', 'multi_module', 'broad')
@@ -630,46 +635,61 @@ def cmd_update(args) -> dict:
 def cmd_get_module_context(args) -> dict:
     """Get project architecture context for placement decisions.
 
-    Reads .plan/project-architecture/ files and returns module information
-    to help with file placement decisions during solution outline creation.
-    """
-    plan_base = base_path()
-    arch_dir = plan_base / ARCHITECTURE_DIR
-    derived_path = arch_dir / DERIVED_DATA_FILE
-    enriched_path = arch_dir / LLM_ENRICHED_FILE
+    Reads the per-module project-architecture layout (top-level
+    ``_project.json`` plus per-module ``{derived,enriched}.json`` files) and
+    returns module information to help with file placement decisions during
+    solution outline creation.
 
-    if not derived_path.exists():
+    The ``not_found`` status keys off ``_project.json`` existence — that file
+    is the single source of truth for "which modules exist", matching the
+    contract codified in ``_architecture_core``.
+    """
+    project_dir = getattr(args, 'project_dir', '.')
+    meta_path = get_project_meta_path(project_dir)
+
+    if not meta_path.exists():
         return {
             'status': 'not_found',
-            'file': str(arch_dir),
+            'file': str(meta_path.parent),
             'message': 'Project architecture not discovered. Run architecture discovery first.',
             'suggestion': 'Run: python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover',
         }
 
     try:
-        import json
-
-        with open(derived_path, encoding='utf-8') as f:
-            derived_data = json.load(f)
-
-        enriched_data = {}
-        if enriched_path.exists():
-            with open(enriched_path, encoding='utf-8') as f:
-                enriched_data = json.load(f)
+        load_project_meta(project_dir)
+        module_names = iter_modules(project_dir)
+    except DataNotFoundError as e:
+        # Should not happen given the existence check above, but the helper
+        # raises this exception type; surface it as the not_found branch.
+        return {
+            'status': 'not_found',
+            'file': str(meta_path.parent),
+            'message': str(e),
+            'suggestion': 'Run: python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover',
+        }
     except Exception as e:
-        return {'status': 'error', 'error': 'parse_error', 'file': str(arch_dir), 'message': str(e)}
+        return {'status': 'error', 'error': 'parse_error', 'file': str(meta_path.parent), 'message': str(e)}
 
-    # Extract modules from derived data
-    derived_modules = derived_data.get('modules', {})
-    enriched_modules = enriched_data.get('modules', {})
-
-    # Build context for LLM
     modules_list: list[dict] = []
-    context: dict[str, Any] = {'status': 'success', 'module_count': len(derived_modules), 'modules': modules_list}
+    context: dict[str, Any] = {'status': 'success', 'module_count': len(module_names), 'modules': modules_list}
 
-    for name, mod in derived_modules.items():
-        enriched = enriched_modules.get(name, {})
-        paths = mod.get('paths', {})
+    for name in module_names:
+        try:
+            derived = load_module_derived(name, project_dir)
+        except DataNotFoundError:
+            # ``_project.json`` lists the module but its ``derived.json`` is
+            # missing — treat as an empty derived shape so callers still see
+            # a stable per-module entry.
+            derived = {}
+        except Exception as e:
+            return {'status': 'error', 'error': 'parse_error', 'file': str(meta_path.parent), 'message': str(e)}
+
+        try:
+            enriched = load_module_enriched_or_empty(name, project_dir)
+        except Exception as e:
+            return {'status': 'error', 'error': 'parse_error', 'file': str(meta_path.parent), 'message': str(e)}
+
+        paths = derived.get('paths', {})
         module_info = {
             'name': name,
             'path': paths.get('module', '.'),
@@ -769,6 +789,11 @@ def main() -> int:
     # get-module-context
     context_parser = subparsers.add_parser(
         'get-module-context', help='Get project structure context for placement', allow_abbrev=False
+    )
+    context_parser.add_argument(
+        '--project-dir',
+        default='.',
+        help='Project directory containing .plan/project-architecture/ (default: current directory)',
     )
     context_parser.set_defaults(func=cmd_get_module_context)
 

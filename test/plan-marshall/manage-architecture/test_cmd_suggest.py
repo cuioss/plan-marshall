@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Tests for _cmd_suggest.py module — suggest_domains() API function."""
+"""Tests for ``_cmd_suggest.py`` — ``suggest_domains()`` API.
+
+Pins the per-module on-disk layout: suggest_domains looks up the module via
+``iter_modules`` (``_project.json`` index) and lazy-loads its
+``derived.json``. Legacy monolithic files are intentionally absent from this
+surface.
+"""
 
 import importlib.util
 import sys
@@ -24,17 +30,29 @@ _architecture_core = _load_module('_architecture_core', '_architecture_core.py')
 _cmd_suggest = _load_module('_cmd_suggest', '_cmd_suggest.py')
 
 ModuleNotFoundInProjectError = _architecture_core.ModuleNotFoundInProjectError
-save_derived_data = _architecture_core.save_derived_data
-save_llm_enriched = _architecture_core.save_llm_enriched
+save_project_meta = _architecture_core.save_project_meta
+save_module_derived = _architecture_core.save_module_derived
+save_module_enriched = _architecture_core.save_module_enriched
 suggest_domains = _cmd_suggest.suggest_domains
+
 
 # =============================================================================
 # Helper Functions
 # =============================================================================
 
 
+def _empty_enrichment_stub() -> dict:
+    return {
+        'responsibility': '',
+        'purpose': '',
+        'key_packages': {},
+        'skills_by_profile': {},
+    }
+
+
 def setup_test_project(tmpdir: str, modules: dict | None = None) -> None:
-    """Create test derived-data.json and llm-enriched.json."""
+    """Seed ``_project.json`` plus per-module ``derived.json`` and empty
+    ``enriched.json`` stubs for every module."""
     if modules is None:
         modules = {
             'module-a': {
@@ -49,18 +67,19 @@ def setup_test_project(tmpdir: str, modules: dict | None = None) -> None:
             }
         }
 
-    derived_data = {'project': {'name': 'test-project'}, 'modules': modules}
-    save_derived_data(derived_data, tmpdir)
-
-    enriched_data = {'project': {'description': ''}, 'modules': {}}
-    for name in modules:
-        enriched_data['modules'][name] = {
-            'responsibility': '',
-            'purpose': '',
-            'key_packages': {},
-            'skills_by_profile': {},
-        }
-    save_llm_enriched(enriched_data, tmpdir)
+    save_project_meta(
+        {
+            'name': 'test-project',
+            'description': '',
+            'description_reasoning': '',
+            'extensions_used': [],
+            'modules': {name: {} for name in modules},
+        },
+        tmpdir,
+    )
+    for name, data in modules.items():
+        save_module_derived(name, data, tmpdir)
+        save_module_enriched(name, _empty_enrichment_stub(), tmpdir)
 
 
 # =============================================================================
@@ -69,7 +88,7 @@ def setup_test_project(tmpdir: str, modules: dict | None = None) -> None:
 
 
 def test_suggest_domains_java_module():
-    """Java module (maven) gets java domain suggested."""
+    """Maven module → java domain suggested."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
         result = suggest_domains('module-a', tmpdir)
@@ -81,8 +100,8 @@ def test_suggest_domains_java_module():
         assert 'java' in domain_keys, f'Expected java in {domain_keys}'
 
 
-def test_suggest_domains_general_dev_always():
-    """general-dev always suggested for any module."""
+def test_suggest_domains_general_dev_always_for_code_modules():
+    """general-dev is suggested for any module with detectable code."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
         result = suggest_domains('module-a', tmpdir)
@@ -91,8 +110,8 @@ def test_suggest_domains_general_dev_always():
         assert 'general-dev' in domain_keys, f'Expected general-dev in {domain_keys}'
 
 
-def test_suggest_domains_npm_module():
-    """npm module gets javascript domain suggested."""
+def test_suggest_domains_npm_module_gets_javascript_only():
+    """npm module → javascript domain (and not java)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         modules = {
             'frontend': {
@@ -110,12 +129,12 @@ def test_suggest_domains_npm_module():
         result = suggest_domains('frontend', tmpdir)
 
         domain_keys = [d['domain'] for d in result['domains']]
-        assert 'javascript' in domain_keys, f'Expected javascript in {domain_keys}'
-        assert 'java' not in domain_keys, f'java should not be in {domain_keys}'
+        assert 'javascript' in domain_keys
+        assert 'java' not in domain_keys
 
 
 def test_suggest_domains_documentation_module():
-    """Documentation module (build_systems=documentation) gets documentation domain."""
+    """documentation build_system → documentation domain."""
     with tempfile.TemporaryDirectory() as tmpdir:
         modules = {
             'docs': {
@@ -133,21 +152,21 @@ def test_suggest_domains_documentation_module():
         result = suggest_domains('docs', tmpdir)
 
         domain_keys = [d['domain'] for d in result['domains']]
-        assert 'documentation' in domain_keys, f'Expected documentation in {domain_keys}'
+        assert 'documentation' in domain_keys
 
 
 def test_suggest_domains_system_excluded():
-    """system domain excluded from suggestions."""
+    """The 'system' domain is filtered out of suggestions."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
         result = suggest_domains('module-a', tmpdir)
 
         domain_keys = [d['domain'] for d in result['domains']]
-        assert 'system' not in domain_keys, f'system should not be in {domain_keys}'
+        assert 'system' not in domain_keys
 
 
 def test_suggest_domains_additive_parent_not_applicable():
-    """Additive domain NOT suggested when parent not applicable."""
+    """Additive domain (java-cui) is filtered when its parent (java) is not applicable."""
     with tempfile.TemporaryDirectory() as tmpdir:
         modules = {
             'frontend': {
@@ -165,23 +184,21 @@ def test_suggest_domains_additive_parent_not_applicable():
         result = suggest_domains('frontend', tmpdir)
 
         domain_keys = [d['domain'] for d in result['domains']]
-        # java-cui is additive_to java, but java is not applicable for npm module
-        assert 'java-cui' not in domain_keys, f'java-cui should not be in {domain_keys}'
+        assert 'java-cui' not in domain_keys
 
 
 def test_suggest_domains_additive_parent_applicable():
-    """Additive domain suggested when parent is also applicable."""
+    """Additive domain is suggested when parent is also applicable."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        setup_test_project(tmpdir)  # maven module = java applicable
+        setup_test_project(tmpdir)  # maven module, so java applicable
         result = suggest_domains('module-a', tmpdir)
 
         domain_keys = [d['domain'] for d in result['domains']]
-        # java-cui is additive_to java, and java IS applicable
-        assert 'java-cui' in domain_keys, f'Expected java-cui in {domain_keys}'
+        assert 'java-cui' in domain_keys
 
 
 def test_suggest_domains_has_confidence():
-    """Each suggested domain has confidence level."""
+    """Each suggested domain carries a confidence level."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
         result = suggest_domains('module-a', tmpdir)
@@ -192,7 +209,7 @@ def test_suggest_domains_has_confidence():
 
 
 def test_suggest_domains_has_skills_by_profile():
-    """Each suggested domain includes skills_by_profile."""
+    """Each suggested domain carries skills_by_profile (or a skill_count)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
         result = suggest_domains('module-a', tmpdir)
@@ -202,7 +219,7 @@ def test_suggest_domains_has_skills_by_profile():
 
 
 def test_suggest_domains_no_matching_signals():
-    """Module with no code build systems gets no domains (general-dev is content-aware)."""
+    """Module with no code build_systems gets no general-dev / java / javascript."""
     with tempfile.TemporaryDirectory() as tmpdir:
         modules = {
             'empty': {
@@ -226,7 +243,7 @@ def test_suggest_domains_no_matching_signals():
 
 
 def test_suggest_domains_module_not_found():
-    """Non-existent module raises ModuleNotFoundInProjectError."""
+    """Unknown module raises ModuleNotFoundInProjectError."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
         try:

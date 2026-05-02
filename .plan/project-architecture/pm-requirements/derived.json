@@ -1,0 +1,103 @@
+{
+  "build_systems": [
+    "marshall-plugin"
+  ],
+  "commands": {
+    "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean pm-requirements\"",
+    "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-requirements\"",
+    "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage pm-requirements\"",
+    "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests pm-requirements\"",
+    "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate pm-requirements\"",
+    "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile pm-requirements\"",
+    "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify pm-requirements\""
+  },
+  "dependencies": [],
+  "files": {
+    "doc": [
+      "marketplace/bundles/pm-requirements/README.md"
+    ],
+    "skill": [
+      "marketplace/bundles/pm-requirements/skills/ext-triage-reqs/SKILL.md",
+      "marketplace/bundles/pm-requirements/skills/plan-marshall-plugin/SKILL.md",
+      "marketplace/bundles/pm-requirements/skills/planning/SKILL.md",
+      "marketplace/bundles/pm-requirements/skills/requirements-authoring/SKILL.md",
+      "marketplace/bundles/pm-requirements/skills/setup/SKILL.md",
+      "marketplace/bundles/pm-requirements/skills/traceability/SKILL.md"
+    ],
+    "standard": [
+      "marketplace/bundles/pm-requirements/skills/ext-triage-reqs/standards/severity.md",
+      "marketplace/bundles/pm-requirements/skills/ext-triage-reqs/standards/suppression.md",
+      "marketplace/bundles/pm-requirements/skills/planning/standards/document-structure.md",
+      "marketplace/bundles/pm-requirements/skills/planning/standards/examples.md",
+      "marketplace/bundles/pm-requirements/skills/planning/standards/maintenance.md",
+      "marketplace/bundles/pm-requirements/skills/planning/standards/requirement-linking.md",
+      "marketplace/bundles/pm-requirements/skills/planning/standards/status-tracking.md",
+      "marketplace/bundles/pm-requirements/skills/planning/standards/task-organization.md",
+      "marketplace/bundles/pm-requirements/skills/requirements-authoring/standards/documentation-lifecycle-management.md",
+      "marketplace/bundles/pm-requirements/skills/requirements-authoring/standards/integrity-and-quality-standards.md",
+      "marketplace/bundles/pm-requirements/skills/requirements-authoring/standards/requirements-format-and-structure.md",
+      "marketplace/bundles/pm-requirements/skills/requirements-authoring/standards/requirements-maintenance.md",
+      "marketplace/bundles/pm-requirements/skills/requirements-authoring/standards/smart-requirements-principles.md",
+      "marketplace/bundles/pm-requirements/skills/requirements-authoring/standards/specification-structure-and-backtracking.md",
+      "marketplace/bundles/pm-requirements/skills/setup/standards/directory-structure.md",
+      "marketplace/bundles/pm-requirements/skills/setup/standards/document-templates.md",
+      "marketplace/bundles/pm-requirements/skills/setup/standards/prefix-selection.md",
+      "marketplace/bundles/pm-requirements/skills/setup/standards/quality-checklist.md",
+      "marketplace/bundles/pm-requirements/skills/setup/standards/setup-workflow.md",
+      "marketplace/bundles/pm-requirements/skills/traceability/standards/code-to-specification-linking.md",
+      "marketplace/bundles/pm-requirements/skills/traceability/standards/cross-reference-maintenance.md",
+      "marketplace/bundles/pm-requirements/skills/traceability/standards/information-distribution.md",
+      "marketplace/bundles/pm-requirements/skills/traceability/standards/quality-standards.md",
+      "marketplace/bundles/pm-requirements/skills/traceability/standards/specification-to-code-linking.md",
+      "marketplace/bundles/pm-requirements/skills/traceability/standards/verification-and-validation-linking.md"
+    ]
+  },
+  "metadata": {
+    "bundle_name": "pm-requirements",
+    "description": "Requirements engineering and specification standards"
+  },
+  "name": "pm-requirements",
+  "packages": {
+    "skill:ext-triage-reqs": {
+      "description": "Triage extension for requirements findings during plan-finalize phase",
+      "path": "skills/ext-triage-reqs",
+      "type": "skill"
+    },
+    "skill:planning": {
+      "description": "Standards for creating and maintaining project planning documentation with task tracking, status indicators, and traceability to requirements",
+      "path": "skills/planning",
+      "type": "skill"
+    },
+    "skill:requirements-authoring": {
+      "description": "Comprehensive standards for creating and maintaining requirements and specification documents with SMART principles, proper structure, integrity, and traceability",
+      "path": "skills/requirements-authoring",
+      "type": "skill"
+    },
+    "skill:setup": {
+      "description": "Standards for setting up requirements and specification documentation in new projects with proper directory structure and initial documents",
+      "path": "skills/setup",
+      "type": "skill"
+    },
+    "skill:traceability": {
+      "description": "Standards for linking specifications to implementation code and maintaining bidirectional traceability between documentation and source code",
+      "path": "skills/traceability",
+      "type": "skill"
+    }
+  },
+  "paths": {
+    "descriptor": "marketplace/bundles/pm-requirements/.claude-plugin/plugin.json",
+    "module": "marketplace/bundles/pm-requirements",
+    "readme": "marketplace/bundles/pm-requirements/README.md",
+    "sources": [
+      "marketplace/bundles/pm-requirements/skills"
+    ],
+    "tests": [
+      "test/pm-requirements"
+    ]
+  },
+  "stats": {
+    "agent_count": 0,
+    "command_count": 0,
+    "skill_count": 5
+  }
+}

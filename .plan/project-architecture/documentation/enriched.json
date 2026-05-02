@@ -1,0 +1,43 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [],
+  "key_dependencies_reasoning": "",
+  "key_packages": {
+    "architecture_docs": {
+      "description": "Top-level architecture and project-overview documents (build-structure.adoc, component-catalogue.adoc, plan-marshall-overview.adoc) describing repository structure and bundle layout."
+    },
+    "contributor_docs": {
+      "description": "Contributor-facing reference documents covering bundle authorship, skill-frontmatter conventions, and orchestration patterns."
+    }
+  },
+  "purpose": "library",
+  "purpose_reasoning": "Documentation-only module \u2014 neither extension nor deployable; classified as library because it ships reference content consumed by readers and tooling.",
+  "responsibility": "Top-level project documentation tree (doc/) hosting AsciiDoc and Markdown reference material covering build structure, architecture, and bundle catalogues for plan-marshall.",
+  "responsibility_reasoning": "Documentation-only module \u2014 neither extension nor deployable; classified as library because it ships reference content consumed by readers and tooling.",
+  "skills_by_profile": {
+    "implementation": {
+      "defaults": [
+        {
+          "description": "AsciiDoc formatting, validation, link verification, and template creation",
+          "skill": "pm-documents:ref-asciidoc"
+        },
+        {
+          "description": "Content quality, tone, and organization standards for technical documentation",
+          "skill": "pm-documents:ref-documentation"
+        }
+      ]
+    },
+    "module_testing": {
+      "defaults": [
+        {
+          "description": "AsciiDoc validation and link verification",
+          "skill": "pm-documents:ref-asciidoc"
+        }
+      ]
+    }
+  },
+  "skills_by_profile_reasoning": "Documentation module operates against AsciiDoc/Markdown content; the relevant skills come from pm-documents.",
+  "tips": []
+}

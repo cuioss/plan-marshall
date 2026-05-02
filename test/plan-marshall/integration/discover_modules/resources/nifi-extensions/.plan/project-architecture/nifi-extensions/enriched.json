@@ -1,0 +1,20 @@
+{
+  "best_practices": [],
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [],
+  "key_dependencies_reasoning": "",
+  "key_packages": {},
+  "purpose": "parent",
+  "purpose_reasoning": "packaging=pom at project root, manages child modules",
+  "responsibility": "Parent POM coordinating build configuration, dependency management, and plugin settings for all NiFi extension child modules.",
+  "responsibility_reasoning": "packaging=pom with multiple child modules visible in derived data",
+  "skills_by_profile": {
+    "implementation": [
+      "pm-dev-java:java-core",
+      "pm-dev-java:java-maintenance"
+    ]
+  },
+  "skills_by_profile_reasoning": "Parent POM module, only build configuration management applies",
+  "tips": []
+}
