@@ -13,6 +13,7 @@ from input_validation import (  # type: ignore[import-not-found]
     add_name_arg,
     add_package_arg,
     parse_args_with_toon_errors,
+    validate_module_name,
 )
 
 
@@ -87,11 +88,61 @@ def main() -> int:
     )
     graph_parser.add_argument('--full', action='store_true', help='Include aggregator modules (pom-only parents)')
 
+    # path - BFS shortest path between two modules
+    path_parser = subparsers.add_parser(
+        'path',
+        help='BFS shortest path between two modules over the dependency graph',
+        allow_abbrev=False,
+    )
+    path_parser.add_argument('source', type=validate_module_name, help='Source module name')
+    path_parser.add_argument('target', type=validate_module_name, help='Target module name')
+
+    # neighbors - N-hop neighborhood
+    neighbors_parser = subparsers.add_parser(
+        'neighbors',
+        help='N-hop neighborhood of a module over the dependency graph',
+        allow_abbrev=False,
+    )
+    add_module_arg(neighbors_parser)
+    neighbors_parser.add_argument(
+        '--depth',
+        type=int,
+        default=1,
+        help='Hop count (default 1, max 8)',
+    )
+
+    # impact - reverse-dependency closure
+    impact_parser = subparsers.add_parser(
+        'impact',
+        help='Transitive reverse-dependency closure for a module',
+        allow_abbrev=False,
+    )
+    add_module_arg(impact_parser)
+
     # module - Get module information
     module_parser = subparsers.add_parser('module', help='Get module information', allow_abbrev=False)
     add_module_arg(module_parser, required=False)
     module_parser.add_argument(
         '--full', action='store_true', help='Include all fields (packages, dependencies, reasoning)'
+    )
+    module_parser.add_argument(
+        '--budget',
+        type=int,
+        default=None,
+        help='Render markdown deep-dive bounded to this many lines (requires --full)',
+    )
+
+    # overview - Render deterministic project overview markdown
+    overview_parser = subparsers.add_parser(
+        'overview',
+        help='Render deterministic markdown summary of the project architecture',
+        allow_abbrev=False,
+    )
+    overview_parser.add_argument(
+        '--budget',
+        type=int,
+        default=200,
+        help='Maximum line count for the rendered overview (default 200)',
     )
 
     # commands - List commands for module
@@ -306,9 +357,13 @@ def main() -> int:
         cmd_files,
         cmd_find,
         cmd_graph,
+        cmd_impact,
         cmd_info,
         cmd_module,
         cmd_modules,
+        cmd_neighbors,
+        cmd_overview,
+        cmd_path,
         cmd_profiles,
         cmd_resolve,
         cmd_siblings,
@@ -343,7 +398,11 @@ def main() -> int:
         'info': cmd_info,
         'modules': cmd_modules,
         'graph': cmd_graph,
+        'path': cmd_path,
+        'neighbors': cmd_neighbors,
+        'impact': cmd_impact,
         'module': cmd_module,
+        'overview': cmd_overview,
         'commands': cmd_commands,
         'resolve': cmd_resolve,
         'profiles': cmd_profiles,
@@ -374,7 +433,10 @@ def main() -> int:
 
     if handler:
         result = handler(args)
-        output_toon(result)
+        if isinstance(result, str):
+            print(result, end='' if result.endswith('\n') else '\n')
+        else:
+            output_toon(result)
         return 0
     else:
         parser.print_help()
