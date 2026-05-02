@@ -122,6 +122,123 @@ Tree interpretation:
 - Identify modules that can run in parallel (same depth, no cross-dependencies)
 - Detect circular dependencies (warning section if graph cannot be topologically sorted)
 
+**Related**: For incremental graph queries that don't need the full topological dump, prefer `path`, `neighbors`, or `impact` (below). For a side-by-side comparison of two architecture snapshots, see [`diff-modules`](#diff-modules).
+
+---
+
+### path
+
+BFS shortest path between two modules over the dependency graph.
+
+```bash
+architecture.py path SOURCE TARGET
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `SOURCE` | Yes | Starting module name |
+| `TARGET` | Yes | Destination module name |
+
+Edges are directed: there is an edge from `M` to `N` iff `N ∈ M.internal_dependencies`. The returned path therefore walks the "depends on" relation — each successor in the list is a direct dependency of its predecessor.
+
+**Output** (TOON):
+```toon
+status: success
+source: oauth-sheriff-quarkus-integration-tests
+target: oauth-sheriff-core
+path[3]:
+  - oauth-sheriff-quarkus-integration-tests
+  - oauth-sheriff-quarkus
+  - oauth-sheriff-core
+```
+
+When `SOURCE == TARGET`, the path is a singleton `[SOURCE]`.
+
+When `TARGET` is unreachable from `SOURCE`, `path` is rendered as `null`:
+```toon
+status: success
+source: lefty
+target: righty
+path: null
+```
+
+When either module is unknown, the standard `Module not found` error envelope is returned.
+
+**Use cases**:
+- Justify why module A transitively depends on module B (audit trail)
+- Identify the shortest refactor surface to break a dependency
+
+---
+
+### neighbors
+
+N-hop neighborhood of a module over the dependency graph (forward edges).
+
+```bash
+architecture.py neighbors --module MODULE [--depth N]
+```
+
+**Options**:
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--module` | Yes | - | Starting module name |
+| `--depth` | No | 1 | Hop count. `0` returns just the module itself; values above the cap (8) are silently clamped. |
+
+The closure walks the same "depends on" edges as `path`. The starting module is always included in the result; results are sorted alphabetically for determinism.
+
+**Output** (TOON):
+```toon
+status: success
+module: oauth-sheriff-quarkus-integration-tests
+depth: 2
+neighbors[4]:
+  - oauth-sheriff-core
+  - oauth-sheriff-quarkus
+  - oauth-sheriff-quarkus-devui
+  - oauth-sheriff-quarkus-integration-tests
+```
+
+The `depth` echoed in the response is the **clamped** value — useful when callers pass `--depth 999` and want to verify the actual horizon used.
+
+**Use cases**:
+- Bound the working set when refactoring a module (depth 1 = direct deps; depth 2 = deps of deps)
+- Generate context for an LLM consumer that needs only the local neighborhood
+
+---
+
+### impact
+
+Transitive reverse-dependency closure for a module.
+
+```bash
+architecture.py impact --module MODULE
+```
+
+**Options**:
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--module` | Yes | - | Module whose impact set should be computed |
+
+Returns every module `Y` such that the requested module appears in the transitive closure of `Y.internal_dependencies`. The starting module is excluded from its own impact set. Results are sorted alphabetically.
+
+**Output** (TOON):
+```toon
+status: success
+module: oauth-sheriff-core
+impact[3]:
+  - oauth-sheriff-quarkus
+  - oauth-sheriff-quarkus-devui
+  - oauth-sheriff-quarkus-integration-tests
+```
+
+A leaf module (nothing depends on it) returns an empty `impact` list.
+
+**Use cases**:
+- Estimate blast radius before changing a low-level module
+- Identify which downstream modules need re-verification after a breaking change
+- Pair with `neighbors` to bound both upstream and downstream working sets
+
 ---
 
 ### module
@@ -129,7 +246,7 @@ Tree interpretation:
 Get module information including description, paths, and commands.
 
 ```bash
-architecture.py module [--module MODULE] [--full]
+architecture.py module [--module MODULE] [--full] [--budget N]
 ```
 
 **Options**:
@@ -137,6 +254,7 @@ architecture.py module [--module MODULE] [--full]
 |--------|----------|---------|-------------|
 | `--module` | No | (root module) | Module name. Root module = module at project root (path "." or ""), or first module if no root exists. |
 | `--full` | No | false | Include all fields (packages, dependencies, reasoning) |
+| `--budget` | No | (none) | Render a markdown deep-dive bounded to this many lines. **Only honoured together with `--full`** — `--budget` without `--full` is a no-op (TOON output). |
 
 **Output** (TOON, default):
 ```toon
@@ -235,6 +353,61 @@ commands[3]:
   - quality-gate
 ```
 
+#### module --full --budget
+
+When `--full --budget N` is supplied, the command renders a **markdown** deep-dive (not TOON) bounded to roughly `N` lines. Sections in priority order: header (name, purpose, responsibility) > internal dependencies > key packages > skills_by_profile > tips/insights/best practices. When the rendered output exceeds `N` lines, trailing sections are dropped first and a marker is appended:
+
+```
+... (truncated to fit budget=N; full output requires --budget {required})
+```
+
+The starting module is validated up-front: an unknown module raises the standard `Module not found` error envelope (TOON) instead of the markdown contract.
+
+**Determinism**: two consecutive invocations with the same arguments produce byte-identical output.
+
+**Use cases**:
+- Generate a token-bounded module summary for an LLM consumer
+- Quick CLI inspection of a module without parsing the full TOON dump
+
+---
+
+### overview
+
+Render a deterministic markdown summary of the project architecture.
+
+```bash
+architecture.py overview [--budget N]
+```
+
+**Options**:
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--budget` | No | 200 | Maximum line count for the rendered output |
+
+**Output**: markdown text (not TOON) consisting of, in priority order:
+
+1. **Project header** — name + description (from `llm-enriched.json`)
+2. **Modules** — table of `Module | Purpose | Responsibility`
+3. **Adjacency** — table of `Module | Internal Dependencies`
+4. **Skills by Profile** — per-module skill counts (omitted if no module has `skills_by_profile`)
+
+**Truncation rule**: when the rendered output would exceed `--budget` lines, trailing sections are dropped one at a time (Skills first, then Adjacency, etc.) until the output fits, leaving room for a single marker line:
+
+```
+... (truncated to fit budget=N; full output requires --budget {required})
+```
+
+The Modules section has the highest priority and is preserved as long as any single section can fit.
+
+**Determinism**: byte-identical on repeat invocations with the same arguments.
+
+**No committed `OVERVIEW.md`**: by design, `overview` is render-on-demand. The output is **never** persisted into the working tree (no `OVERVIEW.md` artifact, no commit hook, no auto-write). Callers that need to inspect the overview redirect stdout themselves; the tool stays a pure read-only renderer.
+
+**Use cases**:
+- Provide an LLM consumer with a single-chunk architecture summary
+- Smoke-test the architecture data after `architecture.py discover` / `enrich`
+- Produce ad-hoc documentation snippets without committing duplicate files
+
 ---
 
 ### commands
@@ -304,7 +477,11 @@ npm,python3 .plan/execute-script.py plan-marshall:build-npm:npm run --package ni
 | `info` | Project overview | Project metadata + module list |
 | `modules` | List modules | Module names, optionally filtered by `--command` |
 | `graph` | Module dependency graph | Dependency tree for ordering |
-| `module` | Module details | Condensed (default) or full (`--full`) |
+| `path` | Shortest dependency path between two modules | TOON path list (or `null`) |
+| `neighbors` | N-hop neighborhood of a module | TOON sorted module list |
+| `impact` | Reverse-dependency closure | TOON sorted module list |
+| `module` | Module details | Condensed (default), full (`--full`), or markdown (`--full --budget N`) |
+| `overview` | Project architecture summary | Deterministic markdown |
 | `commands` | Module commands | Command names with descriptions |
 | `resolve` | Executable command | Full python3 invocation |
 

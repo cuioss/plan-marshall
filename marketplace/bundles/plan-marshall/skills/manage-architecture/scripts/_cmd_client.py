@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Client command handlers for architecture script.
 
-Handles: info, modules, graph, module, commands, resolve
+Handles: info, modules, graph, module, commands, resolve, path, neighbors,
+impact, overview.
 These commands merge derived + enriched data for consumer output.
 """
 
+from collections import deque
 from typing import Any
 
 from _architecture_core import (
@@ -20,6 +22,9 @@ from _architecture_core import (
     merge_module_data,
     require_derived_data_result,
 )
+
+NEIGHBORS_DEPTH_CAP = 8
+DEFAULT_OVERVIEW_BUDGET = 200
 
 # =============================================================================
 # API Functions
@@ -429,6 +434,428 @@ def resolve_command(command_name: str, module_name: str | None = None, project_d
 
 
 # =============================================================================
+# Graph Traversal Helpers
+# =============================================================================
+
+
+def _build_internal_deps_map(project_dir: str = '.') -> tuple[dict[str, list[str]], list[str]]:
+    """Build internal_dependencies mapping for all modules.
+
+    Resolution order per module mirrors get_module_graph:
+      1. enriched.modules.{X}.internal_dependencies (LLM-curated)
+      2. derived.modules.{X}.internal_dependencies (from discover)
+      3. computed from derived.modules.{X}.dependencies via groupId:artifactId
+
+    Args:
+        project_dir: Project directory path
+
+    Returns:
+        Tuple of (deps_map, module_names) where deps_map maps each module name
+        to its list of internal dependency module names. Lists are sorted to
+        guarantee deterministic traversal order.
+    """
+    derived = load_derived_data(project_dir)
+    enriched = load_llm_enriched_or_empty(project_dir)
+    enriched_modules = enriched.get('modules', {})
+    modules_data = derived.get('modules', {})
+
+    artifact_to_module: dict[str, str] = {}
+    for mod_name, mod_data in modules_data.items():
+        metadata = mod_data.get('metadata', {})
+        group_id = metadata.get('group_id')
+        artifact_id = metadata.get('artifact_id')
+        if group_id and artifact_id:
+            artifact_to_module[f'{group_id}:{artifact_id}'] = mod_name
+
+    deps_map: dict[str, list[str]] = {}
+    for mod_name, mod_data in modules_data.items():
+        enriched_mod = enriched_modules.get(mod_name, {})
+        if 'internal_dependencies' in enriched_mod:
+            deps_map[mod_name] = sorted(set(enriched_mod['internal_dependencies']))
+        elif 'internal_dependencies' in mod_data:
+            deps_map[mod_name] = sorted(set(mod_data['internal_dependencies']))
+        else:
+            deps = mod_data.get('dependencies', [])
+            internal: set[str] = set()
+            for dep in deps:
+                parts = dep.split(':')
+                if len(parts) >= 2:
+                    ga = f'{parts[0]}:{parts[1]}'
+                    if ga in artifact_to_module:
+                        dep_module = artifact_to_module[ga]
+                        if dep_module != mod_name:
+                            internal.add(dep_module)
+            deps_map[mod_name] = sorted(internal)
+
+    return deps_map, list(modules_data.keys())
+
+
+def get_module_path(source: str, target: str, project_dir: str = '.') -> list[str] | None:
+    """BFS shortest path from source to target over internal_dependencies edges.
+
+    Edge semantics: a directed edge exists from M to N iff N appears in M's
+    internal_dependencies. The path therefore walks the "depends on" relation:
+    each successor in the returned list is a direct dependency of its predecessor.
+
+    Args:
+        source: Starting module name
+        target: Destination module name
+        project_dir: Project directory path
+
+    Returns:
+        Shortest path [source, ..., target] as a list of module names, or None
+        when target is unreachable from source. When source == target returns
+        [source].
+
+    Raises:
+        ModuleNotFoundInProjectError: If source or target is not a known module
+    """
+    deps_map, module_names = _build_internal_deps_map(project_dir)
+
+    if source not in deps_map:
+        raise ModuleNotFoundInProjectError(f'Module not found: {source}', module_names)
+    if target not in deps_map:
+        raise ModuleNotFoundInProjectError(f'Module not found: {target}', module_names)
+
+    if source == target:
+        return [source]
+
+    visited: set[str] = {source}
+    queue: deque[tuple[str, list[str]]] = deque([(source, [source])])
+    while queue:
+        current, path = queue.popleft()
+        for neighbor in deps_map.get(current, []):
+            if neighbor == target:
+                return [*path, neighbor]
+            if neighbor not in visited:
+                visited.add(neighbor)
+                queue.append((neighbor, [*path, neighbor]))
+    return None
+
+
+def get_module_neighbors(module_name: str, depth: int, project_dir: str = '.') -> list[str]:
+    """N-hop neighborhood of a module over internal_dependencies edges.
+
+    Args:
+        module_name: Starting module
+        depth: Hop count. 0 returns just the module itself; values above
+            NEIGHBORS_DEPTH_CAP are clamped to the cap.
+        project_dir: Project directory path
+
+    Returns:
+        Sorted list of module names reachable within `depth` hops, including
+        the starting module. Excludes modules that are not part of the project.
+
+    Raises:
+        ValueError: If depth is negative
+        ModuleNotFoundInProjectError: If module_name is not a known module
+    """
+    if depth < 0:
+        raise ValueError(f'depth must be >= 0, got {depth}')
+    if depth > NEIGHBORS_DEPTH_CAP:
+        depth = NEIGHBORS_DEPTH_CAP
+
+    deps_map, module_names = _build_internal_deps_map(project_dir)
+
+    if module_name not in deps_map:
+        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', module_names)
+
+    visited: set[str] = {module_name}
+    frontier: set[str] = {module_name}
+    for _ in range(depth):
+        next_frontier: set[str] = set()
+        for node in frontier:
+            for neighbor in deps_map.get(node, []):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    next_frontier.add(neighbor)
+        if not next_frontier:
+            break
+        frontier = next_frontier
+    return sorted(visited)
+
+
+def get_module_impact(module_name: str, project_dir: str = '.') -> list[str]:
+    """Transitive reverse-dependency closure of a module.
+
+    Returns every module Y such that `module_name` is in the transitive closure
+    of Y's internal_dependencies. The starting module itself is excluded from
+    the result.
+
+    Args:
+        module_name: Module name whose impact set should be computed
+        project_dir: Project directory path
+
+    Returns:
+        Sorted list of module names that transitively depend on module_name.
+
+    Raises:
+        ModuleNotFoundInProjectError: If module_name is not a known module
+    """
+    deps_map, module_names = _build_internal_deps_map(project_dir)
+
+    if module_name not in deps_map:
+        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', module_names)
+
+    rev: dict[str, list[str]] = {name: [] for name in module_names}
+    for mod, deps in deps_map.items():
+        for dep in deps:
+            if dep in rev:
+                rev[dep].append(mod)
+
+    impact: set[str] = set()
+    queue: deque[str] = deque(rev.get(module_name, []))
+    while queue:
+        current = queue.popleft()
+        if current == module_name or current in impact:
+            continue
+        impact.add(current)
+        queue.extend(rev.get(current, []))
+    return sorted(impact)
+
+
+# =============================================================================
+# Overview Renderer
+# =============================================================================
+
+
+_TRUNCATION_MARKER_PREFIX = '... (truncated to fit budget='
+
+
+def _truncation_marker(budget: int, required: int) -> str:
+    return f'{_TRUNCATION_MARKER_PREFIX}{budget}; full output requires --budget {required})'
+
+
+def _render_project_section(derived: dict, enriched: dict) -> list[str]:
+    project = derived.get('project', {})
+    enriched_project = enriched.get('project', {})
+    name = project.get('name', '(unnamed project)')
+    description = enriched_project.get('description', '').strip()
+    lines = [f'# {name}', '']
+    if description:
+        lines.extend([description, ''])
+    return lines
+
+
+def _render_modules_section(derived: dict, enriched: dict) -> list[str]:
+    modules_data = derived.get('modules', {})
+    enriched_modules = enriched.get('modules', {})
+    if not modules_data:
+        return []
+
+    lines = ['## Modules', '', '| Module | Purpose | Responsibility |', '|---|---|---|']
+    for name in sorted(modules_data.keys()):
+        enriched_mod = enriched_modules.get(name, {})
+        purpose = enriched_mod.get('purpose', '').strip() or '—'
+        responsibility = enriched_mod.get('responsibility', '').strip()
+        responsibility = responsibility.replace('\n', ' ') if responsibility else '—'
+        lines.append(f'| {name} | {purpose} | {responsibility} |')
+    lines.append('')
+    return lines
+
+
+def _render_adjacency_section(deps_map: dict[str, list[str]]) -> list[str]:
+    if not deps_map:
+        return []
+    lines = ['## Adjacency', '', '| Module | Internal Dependencies |', '|---|---|']
+    for name in sorted(deps_map.keys()):
+        deps = deps_map[name]
+        rendered = ', '.join(sorted(deps)) if deps else '—'
+        lines.append(f'| {name} | {rendered} |')
+    lines.append('')
+    return lines
+
+
+def _render_skills_by_profile_section(enriched: dict) -> list[str]:
+    enriched_modules = enriched.get('modules', {})
+    rows: list[tuple[str, dict]] = []
+    for name in sorted(enriched_modules.keys()):
+        skills_by_profile = enriched_modules[name].get('skills_by_profile', {})
+        if skills_by_profile:
+            rows.append((name, skills_by_profile))
+    if not rows:
+        return []
+
+    lines = ['## Skills by Profile', '']
+    for name, skills_by_profile in rows:
+        lines.append(f'### {name}')
+        lines.append('')
+        for profile in sorted(skills_by_profile.keys()):
+            data = skills_by_profile[profile]
+            if isinstance(data, dict):
+                defaults = data.get('defaults', [])
+                optionals = data.get('optionals', [])
+                count = len(defaults) + len(optionals)
+            elif isinstance(data, list):
+                count = len(data)
+            else:
+                count = 0
+            lines.append(f'- {profile}: {count} skill{"s" if count != 1 else ""}')
+        lines.append('')
+    return lines
+
+
+def _apply_budget(sections: list[list[str]], budget: int) -> tuple[list[str], int]:
+    """Apply line budget to ordered sections, dropping trailing sections first.
+
+    Sections are listed in priority order (most important first). When the
+    concatenated output exceeds `budget` lines, drop trailing sections one at
+    a time until it fits, leaving room for a single truncation marker line.
+
+    Returns:
+        (rendered_lines, required_budget) where required_budget is the line
+        count that would be needed to render every section in full.
+    """
+    full = [line for section in sections for line in section]
+    required = len(full)
+    if required <= budget:
+        return full, required
+
+    # Try keeping prefixes of section list, leaving 1 line for marker.
+    for keep in range(len(sections) - 1, 0, -1):
+        prefix = [line for section in sections[:keep] for line in section]
+        if len(prefix) + 1 <= budget:
+            return [*prefix, _truncation_marker(budget, required)], required
+
+    # Even one section won't fit. Hard-truncate the first section.
+    head = sections[0][: max(budget - 1, 0)]
+    return [*head, _truncation_marker(budget, required)], required
+
+
+def render_overview(project_dir: str = '.', budget: int = DEFAULT_OVERVIEW_BUDGET) -> str:
+    """Render deterministic markdown summary of the project architecture.
+
+    Sections in priority order: project header > modules table > adjacency
+    table > skills_by_profile summary. When the rendered output exceeds
+    `budget` lines, trailing sections are dropped and a marker is appended.
+
+    Args:
+        project_dir: Project directory path
+        budget: Maximum line count for the rendered markdown
+
+    Returns:
+        Markdown string. Always ends with a trailing newline so byte-identical
+        repeat invocations produce identical files.
+    """
+    derived = load_derived_data(project_dir)
+    enriched = load_llm_enriched_or_empty(project_dir)
+    deps_map, _ = _build_internal_deps_map(project_dir)
+
+    sections = [
+        _render_project_section(derived, enriched),
+        _render_modules_section(derived, enriched),
+        _render_adjacency_section(deps_map),
+        _render_skills_by_profile_section(enriched),
+    ]
+    sections = [s for s in sections if s]
+
+    rendered, _ = _apply_budget(sections, budget)
+    return '\n'.join(rendered).rstrip('\n') + '\n'
+
+
+def render_module_markdown(
+    module_name: str | None = None,
+    project_dir: str = '.',
+    budget: int = DEFAULT_OVERVIEW_BUDGET,
+) -> str:
+    """Render budgeted markdown deep-dive for a single module.
+
+    Sections in priority order: header (name, purpose, responsibility) >
+    internal dependencies > key packages > skills_by_profile > tips/insights.
+
+    Args:
+        module_name: Module name (None resolves to root module)
+        project_dir: Project directory path
+        budget: Maximum line count for the rendered markdown
+
+    Returns:
+        Markdown string ending with a trailing newline.
+    """
+    derived = load_derived_data(project_dir)
+    enriched = load_llm_enriched_or_empty(project_dir)
+
+    if not module_name:
+        module_name = get_root_module(derived)
+        if not module_name:
+            raise ModuleNotFoundInProjectError('No modules found', [])
+
+    # Validate the module exists; raises ModuleNotFoundInProjectError otherwise
+    get_module(derived, module_name)
+    merged = merge_module_data(derived, enriched, module_name)
+
+    purpose = merged.get('purpose', '').strip() or '—'
+    responsibility = merged.get('responsibility', '').strip() or '—'
+    header = [
+        f'# {module_name}',
+        '',
+        f'**Purpose**: {purpose}',
+        f'**Responsibility**: {responsibility}',
+        '',
+    ]
+
+    deps = sorted(merged.get('internal_dependencies', []) or [])
+    deps_section: list[str] = []
+    if deps:
+        deps_section = ['## Internal Dependencies', '']
+        deps_section.extend(f'- {d}' for d in deps)
+        deps_section.append('')
+
+    packages = merged.get('key_packages') or merged.get('packages') or []
+    packages_section: list[str] = []
+    if packages:
+        packages_section = ['## Key Packages', '']
+        for pkg in packages:
+            if isinstance(pkg, dict):
+                pkg_name = pkg.get('name') or pkg.get('package') or ''
+                desc = pkg.get('description', '').strip()
+                if desc:
+                    packages_section.append(f'- `{pkg_name}` — {desc}')
+                else:
+                    packages_section.append(f'- `{pkg_name}`')
+            else:
+                packages_section.append(f'- `{pkg}`')
+        packages_section.append('')
+
+    skills_section: list[str] = []
+    skills_by_profile = merged.get('skills_by_profile', {})
+    if skills_by_profile:
+        skills_section = ['## Skills by Profile', '']
+        for profile in sorted(skills_by_profile.keys()):
+            data = skills_by_profile[profile]
+            if isinstance(data, dict):
+                defaults = data.get('defaults', [])
+                optionals = data.get('optionals', [])
+                count = len(defaults) + len(optionals)
+            elif isinstance(data, list):
+                count = len(data)
+            else:
+                count = 0
+            skills_section.append(f'- {profile}: {count} skill{"s" if count != 1 else ""}')
+        skills_section.append('')
+
+    notes_section: list[str] = []
+    tips = merged.get('tips') or []
+    insights = merged.get('insights') or []
+    practices = merged.get('best_practices') or []
+    if tips or insights or practices:
+        notes_section = ['## Notes', '']
+        for label, items in (('Tips', tips), ('Insights', insights), ('Best Practices', practices)):
+            if items:
+                notes_section.append(f'**{label}**:')
+                for item in items:
+                    if isinstance(item, dict):
+                        text = item.get('text') or item.get('message') or item.get('description') or str(item)
+                    else:
+                        text = str(item)
+                    notes_section.append(f'- {text}')
+                notes_section.append('')
+
+    sections = [s for s in (header, deps_section, packages_section, skills_section, notes_section) if s]
+    rendered, _ = _apply_budget(sections, budget)
+    return '\n'.join(rendered).rstrip('\n') + '\n'
+
+
+# =============================================================================
 # CLI Handlers
 # =============================================================================
 
@@ -481,11 +908,19 @@ def cmd_graph(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def cmd_module(args) -> dict:
-    """CLI handler for module command."""
+def cmd_module(args) -> Any:
+    """CLI handler for module command.
+
+    Returns a TOON dict by default. When `--full --budget N` is supplied, returns
+    a markdown string for a token-bounded module deep-dive instead. `--budget`
+    without `--full` is silently a no-op (TOON output, identical to plain `--full`).
+    """
     try:
         derived = load_derived_data(args.project_dir)
         module_name = args.module or get_root_module(derived)
+        budget = getattr(args, 'budget', None)
+        if args.full and budget is not None:
+            return render_module_markdown(module_name, args.project_dir, budget)
         module = get_module_info(module_name, args.full, args.project_dir)
         return {'status': 'success', 'module': module}
     except DataNotFoundError:
@@ -493,6 +928,17 @@ def cmd_module(args) -> dict:
     except ModuleNotFoundInProjectError:
         modules = get_modules_list(args.project_dir)
         return error_result_module_not_found(args.module, modules)
+    except Exception as e:
+        return {'status': 'error', 'error': str(e)}
+
+
+def cmd_overview(args) -> Any:
+    """CLI handler for overview command. Returns markdown string."""
+    try:
+        budget = getattr(args, 'budget', DEFAULT_OVERVIEW_BUDGET)
+        return render_overview(args.project_dir, budget)
+    except DataNotFoundError:
+        return require_derived_data_result(args.project_dir)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 
@@ -599,6 +1045,65 @@ def cmd_siblings(args) -> dict:
             result['note'] = 'Module is not a virtual module or has no siblings'
 
         return result
+    except DataNotFoundError:
+        return require_derived_data_result(args.project_dir)
+    except ModuleNotFoundInProjectError:
+        modules = get_modules_list(args.project_dir)
+        return error_result_module_not_found(args.module, modules)
+    except Exception as e:
+        return {'status': 'error', 'error': str(e)}
+
+
+def cmd_path(args) -> dict:
+    """CLI handler for path command."""
+    try:
+        path = get_module_path(args.source, args.target, args.project_dir)
+        return {
+            'status': 'success',
+            'source': args.source,
+            'target': args.target,
+            'path': path,
+        }
+    except DataNotFoundError:
+        return require_derived_data_result(args.project_dir)
+    except ModuleNotFoundInProjectError as e:
+        modules = get_modules_list(args.project_dir)
+        missing = e.args[0].split(': ', 1)[-1] if e.args else args.source
+        return error_result_module_not_found(missing, modules)
+    except Exception as e:
+        return {'status': 'error', 'error': str(e)}
+
+
+def cmd_neighbors(args) -> dict:
+    """CLI handler for neighbors command."""
+    try:
+        neighbors = get_module_neighbors(args.module, args.depth, args.project_dir)
+        return {
+            'status': 'success',
+            'module': args.module,
+            'depth': min(args.depth, NEIGHBORS_DEPTH_CAP),
+            'neighbors': neighbors,
+        }
+    except DataNotFoundError:
+        return require_derived_data_result(args.project_dir)
+    except ModuleNotFoundInProjectError:
+        modules = get_modules_list(args.project_dir)
+        return error_result_module_not_found(args.module, modules)
+    except ValueError as e:
+        return {'status': 'error', 'error': str(e)}
+    except Exception as e:
+        return {'status': 'error', 'error': str(e)}
+
+
+def cmd_impact(args) -> dict:
+    """CLI handler for impact command."""
+    try:
+        impact = get_module_impact(args.module, args.project_dir)
+        return {
+            'status': 'success',
+            'module': args.module,
+            'impact': impact,
+        }
     except DataNotFoundError:
         return require_derived_data_result(args.project_dir)
     except ModuleNotFoundInProjectError:
