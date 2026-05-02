@@ -2,7 +2,7 @@
 """Client command handlers for architecture script.
 
 Handles: info, modules, graph, module, commands, resolve, profiles, siblings,
-files, which-module, find.
+files, which-module, find, diff-modules.
 
 Persistence model: per-module on-disk layout under
 ``.plan/project-architecture/``. Readers iterate ``_project.json``'s
@@ -11,9 +11,13 @@ Persistence model: per-module on-disk layout under
 """
 
 import fnmatch
+import hashlib
+import json
+from pathlib import Path
 from typing import Any
 
 from _architecture_core import (
+    DATA_DIR,
     DataNotFoundError,
     ModuleNotFoundInProjectError,
     error_result_command_not_found,
@@ -25,6 +29,10 @@ from _architecture_core import (
     load_project_meta,
     merge_module_data,
     require_project_meta_result,
+)
+from constants import (  # type: ignore[import-not-found]
+    DIR_PER_MODULE_DERIVED,
+    FILE_PROJECT_META,
 )
 
 
@@ -720,4 +728,110 @@ def cmd_find(args) -> dict:
         'category': category_filter,
         'count': len(results),
         'results': results,
+    }
+
+
+# =============================================================================
+# Snapshot Diff (diff-modules)
+# =============================================================================
+
+
+def _sha256_file(path: Path) -> str | None:
+    """Return the sha256 hexdigest of ``path`` or None when the file is absent."""
+    if not path.is_file():
+        return None
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(65536), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _resolve_snapshot_dir(pre: str) -> Path:
+    """Resolve a ``--pre`` argument to a snapshot directory.
+
+    The argument may be either the snapshot root containing ``_project.json``
+    directly, or a project root whose ``.plan/project-architecture/`` subtree
+    holds the snapshot. The first shape that points at an existing
+    ``_project.json`` wins; callers handle the no-match case via
+    ``snapshot_not_found``.
+    """
+    base = Path(pre)
+    direct = base / FILE_PROJECT_META
+    if direct.is_file():
+        return base
+    nested = base / DATA_DIR / FILE_PROJECT_META
+    if nested.is_file():
+        return base / DATA_DIR
+    # Default to the direct shape so error reporting points at the simpler path.
+    return base
+
+
+def cmd_diff_modules(args) -> dict:
+    """CLI handler for the ``diff-modules`` reader.
+
+    Compares per-module ``derived.json`` shas between a snapshot directory
+    (``--pre``) and the current project's ``project-architecture/`` tree, and
+    classifies every module from the union of both module sets into one of
+    four buckets: ``added``, ``removed``, ``changed``, ``unchanged``.
+
+    Comparison surface is intentionally narrow — only ``derived.json`` shas
+    matter. Differences confined to ``enriched.json`` (LLM-curated fields)
+    never produce a ``changed`` classification.
+
+    Error contract: when the snapshot directory or its ``_project.json`` is
+    missing, returns ``status: error, error: snapshot_not_found, path: <pre>``.
+    """
+    pre_arg = args.pre
+    snapshot_dir = _resolve_snapshot_dir(pre_arg)
+    snapshot_meta_path = snapshot_dir / FILE_PROJECT_META
+
+    if not snapshot_meta_path.is_file():
+        return {
+            'status': 'error',
+            'error': 'snapshot_not_found',
+            'path': pre_arg,
+        }
+
+    try:
+        snapshot_meta = json.loads(snapshot_meta_path.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as e:
+        return {
+            'status': 'error',
+            'error': 'snapshot_not_found',
+            'path': pre_arg,
+            'detail': str(e),
+        }
+
+    snapshot_modules = set((snapshot_meta.get('modules') or {}).keys())
+
+    try:
+        current_modules = set(iter_modules(args.project_dir))
+    except DataNotFoundError:
+        return require_project_meta_result(args.project_dir)
+
+    added = sorted(current_modules - snapshot_modules)
+    removed = sorted(snapshot_modules - current_modules)
+
+    current_data_dir = Path(args.project_dir) / DATA_DIR
+
+    changed: list[str] = []
+    unchanged: list[str] = []
+    for name in sorted(snapshot_modules & current_modules):
+        snap_sha = _sha256_file(snapshot_dir / name / DIR_PER_MODULE_DERIVED)
+        cur_sha = _sha256_file(current_data_dir / name / DIR_PER_MODULE_DERIVED)
+        # When a per-module derived.json is missing on either side, treat the
+        # pair as changed — the index lists the module but the sha surface
+        # cannot certify equality.
+        if snap_sha is None or cur_sha is None or snap_sha != cur_sha:
+            changed.append(name)
+        else:
+            unchanged.append(name)
+
+    return {
+        'status': 'success',
+        'added': added,
+        'removed': removed,
+        'changed': changed,
+        'unchanged': unchanged,
     }

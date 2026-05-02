@@ -161,6 +161,25 @@ def main() -> int:
     )
     find_parser.add_argument('--category', help='Restrict search to a single category')
 
+    # diff-modules - Diff per-module derived.json files against a pre-snapshot
+    diff_modules_parser = subparsers.add_parser(
+        'diff-modules',
+        help=(
+            'Diff per-module derived.json files against a pre-snapshot directory. '
+            'Returns added/removed/changed/unchanged module name lists.'
+        ),
+        allow_abbrev=False,
+    )
+    diff_modules_parser.add_argument(
+        '--pre',
+        required=True,
+        help=(
+            'Path to the pre-snapshot directory (either a snapshot root '
+            'containing _project.json directly, or a project root whose '
+            '.plan/project-architecture/ subtree holds the snapshot)'
+        ),
+    )
+
     # =========================================================================
     # Enrich Commands (Write Enrichment)
     # =========================================================================
@@ -283,6 +302,7 @@ def main() -> int:
     # Import command handlers
     from _cmd_client import (
         cmd_commands,
+        cmd_diff_modules,
         cmd_files,
         cmd_find,
         cmd_graph,
@@ -332,6 +352,7 @@ def main() -> int:
         'files': cmd_files,
         'which-module': cmd_which_module,
         'find': cmd_find,
+        'diff-modules': cmd_diff_modules,
     }
 
     if args.command == 'enrich':
