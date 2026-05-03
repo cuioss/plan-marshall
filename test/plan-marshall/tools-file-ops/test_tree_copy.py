@@ -125,6 +125,49 @@ class TestCopyTreeSymlinkHandling:
         assert not (dst / 'dangling').exists()
         assert not (dst / 'dangling').is_symlink()
 
+    @pytest.mark.skipif(sys.platform == 'win32', reason='symlink semantics differ on Windows')
+    def test_directory_symlink_is_skipped_not_traversed(self, tmp_path):
+        """A symlink pointing at a directory MUST NOT be followed.
+
+        Regression for PR #317 review (gemini-code-assist, high priority): the
+        previous ``copy_function``-based filter only blocked file symlinks.
+        ``shutil.copytree`` decides whether to recurse into a directory entry
+        before invoking ``copy_function`` on its children, so a directory
+        symlink would be silently traversed and its target's contents copied
+        into ``dst`` — contradicting the documented "symlinks are skipped"
+        contract. The fix uses an ``ignore`` callable that filters both file
+        AND directory symlinks at the directory-listing level, which is the
+        only stage where copytree consults the filter for directory entries.
+        """
+        # External directory whose contents must NEVER appear under dst.
+        external = tmp_path / 'external'
+        external.mkdir()
+        (external / 'secret.txt').write_text('must-not-be-copied')
+        (external / 'nested').mkdir()
+        (external / 'nested' / 'deep.txt').write_text('also-must-not-be-copied')
+
+        src = tmp_path / 'src'
+        src.mkdir()
+        (src / 'real.txt').write_text('real-content')
+        # Directory symlink pointing at the external tree.
+        (src / 'linked-dir').symlink_to(external, target_is_directory=True)
+        dst = tmp_path / 'dst'
+
+        copy_tree(src, dst)
+
+        # Real file copied as expected.
+        assert (dst / 'real.txt').read_text() == 'real-content'
+        # Directory symlink itself must NOT be materialised — neither as a
+        # link nor as a directory copy.
+        assert not (dst / 'linked-dir').exists()
+        assert not (dst / 'linked-dir').is_symlink()
+        # Crucially: the symlink target's contents must NOT have been copied
+        # into dst under the symlink name. This is the regression assertion
+        # — without the ignore-callable fix this path would exist with the
+        # external file inside.
+        assert not (dst / 'linked-dir' / 'secret.txt').exists()
+        assert not (dst / 'linked-dir' / 'nested' / 'deep.txt').exists()
+
 
 class TestCopyTreeIdempotency:
     """``copy_tree`` is fail-loud, not silent-merge."""

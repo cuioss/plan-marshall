@@ -242,7 +242,7 @@ git -C {worktree_path} add .plan/project-architecture
 ```
 
 ```bash
-git -C {worktree_path} commit -m "chore(architecture): re-enrich {affected_modules_csv} after {plan-title}"
+git -C {worktree_path} commit -m "chore(architecture): re-enrich affected modules after {plan-title}"
 ```
 
 ```bash
@@ -424,7 +424,7 @@ switch tier_1:
     case "auto":
         architecture enrich --modules {csv} --project-dir {worktree_path}
         git -C {worktree_path} add .plan/project-architecture
-        git -C {worktree_path} commit -m "chore(architecture): re-enrich {csv} after {plan-title}"
+        git -C {worktree_path} commit -m "chore(architecture): re-enrich affected modules after {plan-title}"
         git -C {worktree_path} push
         mark-step-done detail="refreshed + re-enriched ({n} modules)"
 

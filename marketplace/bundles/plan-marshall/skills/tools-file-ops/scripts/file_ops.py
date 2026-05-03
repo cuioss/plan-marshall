@@ -786,22 +786,21 @@ def copy_tree(src: Path, dst: Path) -> None:
     # dst itself is created by copytree).
     dst_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # symlinks=False causes copytree to treat symlinks as regular files when
-    # follow_symlinks is True (default). To skip symlinks entirely, use a
-    # custom copy_function that no-ops on symlink sources.
-    def _copy_skip_symlinks(s: str, d: str, *, follow_symlinks: bool = True) -> str:
-        del follow_symlinks  # unused; symlinks are never followed here
-        if Path(s).is_symlink():
-            return d  # skip — do not copy the symlink
-        shutil.copy2(s, d, follow_symlinks=False)
-        return d
+    # shutil.copytree walks the source tree; symlinks=False would convert any
+    # symlink it visits into a copy of its target (following file symlinks AND
+    # recursing into directory symlinks). A copy_function-only filter cannot
+    # block directory symlinks because copytree decides whether to recurse
+    # before invoking copy_function on the directory's children. To skip
+    # symlinks entirely (file AND directory), filter them out at the directory
+    # listing level via the `ignore` callable so copytree never sees them.
+    def _ignore_symlinks(directory: str, names: list[str]) -> list[str]:
+        return [name for name in names if (Path(directory) / name).is_symlink()]
 
     shutil.copytree(
         src_path,
         dst_path,
         symlinks=False,
-        ignore=None,
-        copy_function=_copy_skip_symlinks,
+        ignore=_ignore_symlinks,
         ignore_dangling_symlinks=True,
         dirs_exist_ok=False,
     )
