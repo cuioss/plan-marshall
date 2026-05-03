@@ -468,22 +468,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 2: Superseded-lesson stub cleanup
 
-Prune redirect stubs (`.md` files with `status: superseded` frontmatter and a matching tombstone) that have aged out. Tombstones at `.tombstones/{id}.json` are preserved so id resolution survives.
+Prune redirect stubs (`.md` files with `status: superseded` frontmatter and a matching tombstone). Retention is hardcoded to `0` days so a freshly superseded lesson is pruned on the very next cleanup invocation; the workflow no longer reads `system.retention.lessons_superseded_days` from marshal.json. Tombstones at `.tombstones/{id}.json` are preserved so id resolution survives.
 
-**2a — Read retention threshold from system config:**
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  system retention get --field lessons_superseded_days
-```
-
-Record the returned `value` as `{retention_days}`. The default seeded by `marshall-steward` is `7`.
-
-**2b — Dry-run to enumerate candidates:**
+**2a — Dry-run to enumerate candidates:**
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons \
-  cleanup-superseded --retention-days {retention_days} --dry-run
+  cleanup-superseded --retention-days 0 --dry-run
 ```
 
 Parse `removed[]` from the TOON output. If the list is empty, log and finish:
@@ -491,14 +482,14 @@ Parse `removed[]` from the TOON output. If the list is empty, log and finish:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id global --level INFO \
-  --message "(plan-marshall:plan-marshall:cleanup) No superseded stubs to prune at retention={retention_days}d — skipping stub cleanup pass"
+  --message "(plan-marshall:plan-marshall:cleanup) No superseded stubs to prune — skipping stub cleanup pass"
 ```
 
-**2c — Confirm and prune:** When `removed[]` is non-empty, display the count and the list of candidate ids, then ask:
+**2b — Confirm and prune:** When `removed[]` is non-empty, display the count and the list of candidate ids, then ask:
 
 ```
 AskUserQuestion:
-  question: "Prune {count} superseded lesson stub(s) older than {retention_days} days? (Tombstones will be preserved.)"
+  question: "Prune {count} superseded lesson stub(s)? (Tombstones will be preserved.)"
   header: "Cleanup"
   options:
     - label: "Yes, prune"
@@ -512,7 +503,7 @@ AskUserQuestion:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons \
-  cleanup-superseded --retention-days {retention_days}
+  cleanup-superseded --retention-days 0
 ```
 
 Log the outcome via `manage-logging decision`:
@@ -520,7 +511,7 @@ Log the outcome via `manage-logging decision`:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id global --level INFO \
-  --message "(plan-marshall:plan-marshall:cleanup) Pruned {removed_count} superseded stub(s) at retention={retention_days}d; tombstones preserved"
+  --message "(plan-marshall:plan-marshall:cleanup) Pruned {removed_count} superseded stub(s); tombstones preserved"
 ```
 
 **On "No, keep"**, log the decline:
