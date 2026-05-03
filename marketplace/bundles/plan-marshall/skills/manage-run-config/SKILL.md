@@ -17,6 +17,7 @@ Run configuration handling for persistent command configuration storage.
 - Do not bypass initialization (run-config.json must exist before queries)
 - Timeout and warning operations use the noun-verb pattern (e.g., `timeout get`, `warning add`)
 - Cleanup operations use `cleanup` and `cleanup-status` subcommands
+- Architecture-refresh operations use the noun-verb pattern (`architecture-refresh get-tier-0`, `architecture-refresh set-tier-0`, etc.)
 
 ## Run Configuration Structure
 
@@ -36,6 +37,10 @@ Run configuration handling for persistent command configuration storage.
       "plugin_compatibility": [],
       "platform_specific": []
     }
+  },
+  "architecture_refresh": {
+    "tier_0": "enabled",
+    "tier_1": "prompt"
   },
   "ci": {
     "authenticated_tools": [],
@@ -59,6 +64,10 @@ See [standards/run-config-standard.md](standards/run-config-standard.md) for com
 | warning add | `plan-marshall:manage-run-config:run_config warning add` |
 | warning list | `plan-marshall:manage-run-config:run_config warning list` |
 | warning remove | `plan-marshall:manage-run-config:run_config warning remove` |
+| architecture-refresh get-tier-0 | `plan-marshall:manage-run-config:run_config architecture-refresh get-tier-0` |
+| architecture-refresh set-tier-0 | `plan-marshall:manage-run-config:run_config architecture-refresh set-tier-0` |
+| architecture-refresh get-tier-1 | `plan-marshall:manage-run-config:run_config architecture-refresh get-tier-1` |
+| architecture-refresh set-tier-1 | `plan-marshall:manage-run-config:run_config architecture-refresh set-tier-1` |
 | cleanup | `plan-marshall:manage-run-config:run_config cleanup` |
 | cleanup-status | `plan-marshall:manage-run-config:run_config cleanup-status` |
 
@@ -132,6 +141,30 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config warni
   --category transitive_dependency --pattern "jakarta.json-api"
 ```
 
+### architecture-refresh get-tier-0 / set-tier-0 / get-tier-1 / set-tier-1
+
+Manage the `architecture_refresh` tier knobs consumed by the `phase-6-finalize` `architecture-refresh` step. Defaults are returned when the section is absent — `init` does not need to materialise the section. Tier-0 controls the deterministic `architecture discover --force` step (default `enabled`); Tier-1 controls LLM re-enrichment (default `prompt`).
+
+```bash
+# Read current tier settings (defaults: tier_0=enabled, tier_1=prompt)
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config architecture-refresh get-tier-0
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config architecture-refresh get-tier-1
+
+# Disable the deterministic refresh entirely
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config architecture-refresh set-tier-0 \
+  --value disabled
+
+# Switch LLM re-enrichment to fully automatic (prompt|auto|disabled)
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config architecture-refresh set-tier-1 \
+  --value auto
+```
+
+Allowed values:
+- `tier_0`: `enabled`, `disabled`
+- `tier_1`: `prompt`, `auto`, `disabled`
+
+Invalid values surface the standard `status: error, error: invalid_value, allowed: [...]` contract.
+
 ### cleanup / cleanup-status
 
 Directory cleanup using retention settings from marshal.json.
@@ -153,7 +186,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config clean
 | Error Code | Cause |
 |------------|-------|
 | `key_not_found` | Configuration key doesn't exist |
-| `invalid_value` | Value fails type validation (e.g., non-numeric timeout) |
+| `invalid_value` | Value fails type/enum validation (e.g., non-numeric timeout, architecture-refresh enum mismatch) |
 | `not_initialized` | run-config.json missing (run `init` first) |
 | `invalid_category` | Warning category not in: transitive_dependency, plugin_compatibility, platform_specific |
 | `marshal_not_found` | marshal.json missing (cleanup needs retention settings) |
@@ -167,6 +200,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config clean
 | Client | Operation | Purpose |
 |--------|-----------|---------|
 | `marshall-steward` | init | Initialize run configuration during setup |
+| `marshall-steward` | architecture-refresh set-tier-0/1 | Persist user-selected tier knobs from setup/maintenance wizard |
 | Build skills | timeout set | Update timeouts after command execution |
 | Build skills | warning add | Register acceptable warning patterns |
 
@@ -176,6 +210,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config clean
 |--------|-----------|---------|
 | Build skills | timeout get | Read timeout values for command execution |
 | Build skills | warning list | Filter build warnings against accepted patterns |
+| `phase-6-finalize` architecture-refresh step | architecture-refresh get-tier-0/1 | Read tier knobs to decide deterministic refresh / LLM re-enrichment behaviour |
 | `manage-memories` cleanup | cleanup | Remove stale memory files using retention settings |
 
 ---

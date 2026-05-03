@@ -199,13 +199,33 @@ Then execute the workflow described in that file. Each reference file is loaded 
 
 | Reference | Purpose | Load When |
 |-----------|---------|-----------|
-| `wizard-flow.md` | First-run wizard steps 1-16 | mode=wizard or --wizard flag |
+| `wizard-flow.md` | First-run wizard steps 1-16 (includes architecture_refresh tier prompts at Step 13d) | mode=wizard or --wizard flag |
 | `menu-maintenance.md` | Regenerate executor, cleanup | Menu option 1 |
 | `menu-healthcheck.md` | Verify setup, diagnose issues | Menu option 2 |
-| `menu-configuration.md` | Build systems, skill domains | Menu option 3 |
+| `menu-configuration.md` | Build systems, skill domains, architecture refresh tier knobs | Menu option 3 |
 | `menu-recipes.md` | Built-in recipes available in the wizard | Linked from `menu-configuration.md` |
 | `shared-settings.md` | **DEPRECATED** — Plan phases, review gates, quality pipelines now delegate to `manage-config` | Retained for transition reference only |
 | `error-handling.md` | Error types and recovery | On error conditions |
+
+---
+
+## Architecture Refresh Tier Knobs
+
+The wizard and the maintenance Configuration submenu both expose two `architecture_refresh` tier knobs that drive the `phase-6-finalize` `architecture-refresh` step. The canonical schema, defaults, and value contract are owned by `plan-marshall:manage-run-config` (see `manage-run-config/standards/run-config-standard.md` and the `architecture-refresh get-tier-0/get-tier-1/set-tier-0/set-tier-1` subcommands documented in `manage-run-config/SKILL.md`).
+
+| Knob | Subcommand | Default | Allowed values |
+|------|------------|---------|----------------|
+| `architecture_refresh.tier_0` | `manage-run-config architecture-refresh set-tier-0 --value {value}` | `enabled` | `enabled`, `disabled` |
+| `architecture_refresh.tier_1` | `manage-run-config architecture-refresh set-tier-1 --value {value}` | `prompt` | `prompt`, `auto`, `disabled` |
+
+Surfaces inside this skill:
+
+| Surface | Reference | Section |
+|---------|-----------|---------|
+| First-run wizard | `references/wizard-flow.md` | Step 13d |
+| Maintenance menu (returning users) | `references/wizard-flow.md` | Step 13d (reached via Configuration → Full Reconfigure, which re-runs the wizard from Step 5 onwards) |
+
+Both surfaces share the same wizard-flow Step 13d question set, and both delegate persistence to the `manage-run-config architecture-refresh set-tier-*` subcommands — this skill never edits `run-config.json` directly.
 
 ---
 

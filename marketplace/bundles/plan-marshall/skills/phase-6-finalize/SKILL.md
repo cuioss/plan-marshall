@@ -142,6 +142,7 @@ Each step declares an `order: <int>` value in its authoritative source — front
 | `default:pre-submission-self-review` | `standards/pre-submission-self-review.md` | Pre-submission structural self-review (symmetric pairs, regex, wording, duplication) |
 | `default:commit-push` | `standards/commit-push.md` | Commit and push changes |
 | `default:create-pr` | `standards/create-pr.md` | Create pull request |
+| `default:architecture-refresh` | `standards/architecture-refresh.md` | Refresh architecture descriptors (tier-0 deterministic discover + diff, tier-1 LLM re-enrichment) |
 | `default:automated-review` | `standards/automated-review.md` | CI automated review |
 | `default:sonar-roundtrip` | `standards/sonar-roundtrip.md` | Sonar analysis roundtrip |
 | `default:knowledge-capture` | `standards/knowledge-capture.md` | Capture learnings to memory |
@@ -386,7 +387,7 @@ For each step reference:
 | `default:lessons-capture` | `plan-marshall:lessons-capture-agent` |
 
 **Inline-only built-in steps** (require user interaction or sequential dependency):
-- `commit-push` (git working directory state), `branch-cleanup` (AskUserQuestion), `review-knowledge` (AskUserQuestion batch gate — classification sub-calls dispatch to `plan-marshall:classify-knowledge-agent`, see `standards/review-knowledge.md` §3f), `record-metrics` (must run immediately before `archive-plan` on the still-live plan directory), `archive-plan` (must be last, moves plan files)
+- `commit-push` (git working directory state), `architecture-refresh` (AskUserQuestion for Tier-1 prompt mode; consumes `architecture-pre/` snapshot from phase-1-init Step 5d), `branch-cleanup` (AskUserQuestion), `review-knowledge` (AskUserQuestion batch gate — classification sub-calls dispatch to `plan-marshall:classify-knowledge-agent`, see `standards/review-knowledge.md` §3f), `record-metrics` (must run immediately before `archive-plan` on the still-live plan directory), `archive-plan` (must be last, moves plan files)
 
 Per-step agent `<usage>` totals are persisted on disk by `manage-metrics accumulate-agent-usage` (called from step 5b below). The on-disk file `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` survives context compaction and is read by `default:record-metrics` at `end-phase` time. Do NOT maintain a parallel tally in model context — the on-disk file is authoritative.
 
@@ -712,6 +713,7 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `standards/pre-submission-self-review.md` | `default:pre-submission-self-review` | Deterministic helper + LLM cognitive review for symmetric-pair / regex-overfit / wording / duplication defects (hard-fail) |
 | `standards/commit-push.md` | `default:commit-push` | Commit strategy, git status, workflow-integration-git delegation |
 | `standards/create-pr.md` | `default:create-pr` | PR existence check, body generation, CI pr create |
+| `standards/architecture-refresh.md` | `default:architecture-refresh` | Tier-0 deterministic `architecture discover --force` + `diff-modules --pre` driven `chore(architecture)` commit; Tier-1 LLM re-enrichment with `prompt`/`auto`/`disabled` modes; respects `architecture_refresh.tier_0` / `tier_1` run-config knobs and `change_type ∈ {bug_fix, verification}` shortcut |
 | `standards/automated-review.md` | `default:automated-review` | CI wait, review triage, loop-back on findings |
 | `standards/sonar-roundtrip.md` | `default:sonar-roundtrip` | Sonar quality gate, issue resolution |
 | `standards/knowledge-capture.md` | `default:knowledge-capture` | manage-memories save command |

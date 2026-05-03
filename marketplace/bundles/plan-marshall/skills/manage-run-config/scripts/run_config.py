@@ -27,6 +27,12 @@ SAFETY_MARGIN = 1.25  # Multiplier applied to persisted values on retrieval
 HIGHER_WEIGHT = 0.80  # Weight given to higher value during update
 MINIMUM_TIMEOUT_SECONDS = 120  # Floor for timeout values - prevents unreasonably short timeouts
 
+# Architecture-refresh enums and defaults
+ARCHITECTURE_REFRESH_TIER_0_VALUES = ('enabled', 'disabled')
+ARCHITECTURE_REFRESH_TIER_0_DEFAULT = 'enabled'
+ARCHITECTURE_REFRESH_TIER_1_VALUES = ('prompt', 'auto', 'disabled')
+ARCHITECTURE_REFRESH_TIER_1_DEFAULT = 'prompt'
+
 DEFAULT_STRUCTURE = {
     'version': 1,
     'commands': {},
@@ -406,6 +412,83 @@ def cmd_timeout_set(args: argparse.Namespace) -> dict:
 
 
 # =============================================================================
+# Architecture-Refresh Subcommands
+# =============================================================================
+
+
+def _invalid_value_error(value: str, allowed: tuple[str, ...]) -> dict:
+    """Build invalid_value error response with allowed enum values."""
+    return {
+        'status': 'error',
+        'error': 'invalid_value',
+        'allowed': list(allowed),
+        'message': f"Invalid value '{value}'. Allowed: {list(allowed)}",
+    }
+
+
+def _read_architecture_refresh_value(field: str, default: str) -> str:
+    """Read an architecture_refresh field with default fallback.
+
+    The architecture_refresh section is optional — defaults are applied when
+    the section is absent so init does not need to materialise it.
+    """
+    config = read_run_config(get_run_config_path())
+    section = config.get('architecture_refresh', {})
+    value = section.get(field, default)
+    return value if isinstance(value, str) else default
+
+
+def _write_architecture_refresh_value(field: str, value: str) -> None:
+    """Persist an architecture_refresh field, creating the section if needed."""
+    config_path = get_run_config_path()
+    config = read_run_config(config_path)
+    config.setdefault('architecture_refresh', {})[field] = value
+    _write_json_file(config_path, config)
+
+
+def cmd_architecture_refresh_get_tier_0(args: argparse.Namespace) -> dict:
+    """Get architecture_refresh.tier_0 (default 'enabled' when absent)."""
+    del args  # unused — fixed-shape verb
+    try:
+        value = _read_architecture_refresh_value('tier_0', ARCHITECTURE_REFRESH_TIER_0_DEFAULT)
+        return {'status': 'success', 'field': 'tier_0', 'value': value}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_architecture_refresh_set_tier_0(args: argparse.Namespace) -> dict:
+    """Set architecture_refresh.tier_0 with enum validation."""
+    try:
+        if args.value not in ARCHITECTURE_REFRESH_TIER_0_VALUES:
+            return _invalid_value_error(args.value, ARCHITECTURE_REFRESH_TIER_0_VALUES)
+        _write_architecture_refresh_value('tier_0', args.value)
+        return {'status': 'success', 'field': 'tier_0', 'value': args.value}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_architecture_refresh_get_tier_1(args: argparse.Namespace) -> dict:
+    """Get architecture_refresh.tier_1 (default 'prompt' when absent)."""
+    del args  # unused — fixed-shape verb
+    try:
+        value = _read_architecture_refresh_value('tier_1', ARCHITECTURE_REFRESH_TIER_1_DEFAULT)
+        return {'status': 'success', 'field': 'tier_1', 'value': value}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_architecture_refresh_set_tier_1(args: argparse.Namespace) -> dict:
+    """Set architecture_refresh.tier_1 with enum validation."""
+    try:
+        if args.value not in ARCHITECTURE_REFRESH_TIER_1_VALUES:
+            return _invalid_value_error(args.value, ARCHITECTURE_REFRESH_TIER_1_VALUES)
+        _write_architecture_refresh_value('tier_1', args.value)
+        return {'status': 'success', 'field': 'tier_1', 'value': args.value}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+# =============================================================================
 # Cleanup Subcommands (delegates to cleanup.py functions)
 # =============================================================================
 
@@ -462,6 +545,18 @@ Examples:
 
   # Remove warning pattern
   %(prog)s warning remove --category transitive_dependency --pattern "uses transitive dependency"
+
+  # Get architecture-refresh tier-0 setting (default: enabled)
+  %(prog)s architecture-refresh get-tier-0
+
+  # Set architecture-refresh tier-0 (enabled|disabled)
+  %(prog)s architecture-refresh set-tier-0 --value disabled
+
+  # Get architecture-refresh tier-1 setting (default: prompt)
+  %(prog)s architecture-refresh get-tier-1
+
+  # Set architecture-refresh tier-1 (prompt|auto|disabled)
+  %(prog)s architecture-refresh set-tier-1 --value auto
 
   # Clean .plan directories based on retention settings
   %(prog)s cleanup
@@ -542,6 +637,52 @@ Examples:
     p_warning_remove.add_argument('--build-system', default='maven', help='Build system (default: maven)')
     p_warning_remove.set_defaults(func=cmd_warning_remove)
 
+    # architecture-refresh command with subcommands
+    p_arch = subparsers.add_parser(
+        'architecture-refresh',
+        help='Manage architecture_refresh tier knobs',
+        allow_abbrev=False,
+    )
+    arch_subparsers = p_arch.add_subparsers(
+        dest='architecture_refresh_command', required=True, help='Architecture-refresh operation'
+    )
+
+    # architecture-refresh get-tier-0
+    p_arch_get_t0 = arch_subparsers.add_parser(
+        'get-tier-0', help='Get architecture_refresh.tier_0 value', allow_abbrev=False
+    )
+    p_arch_get_t0.set_defaults(func=cmd_architecture_refresh_get_tier_0)
+
+    # architecture-refresh set-tier-0
+    p_arch_set_t0 = arch_subparsers.add_parser(
+        'set-tier-0', help='Set architecture_refresh.tier_0 value', allow_abbrev=False
+    )
+    p_arch_set_t0.add_argument(
+        '--value',
+        required=True,
+        choices=list(ARCHITECTURE_REFRESH_TIER_0_VALUES),
+        help='Tier-0 value (enabled|disabled)',
+    )
+    p_arch_set_t0.set_defaults(func=cmd_architecture_refresh_set_tier_0)
+
+    # architecture-refresh get-tier-1
+    p_arch_get_t1 = arch_subparsers.add_parser(
+        'get-tier-1', help='Get architecture_refresh.tier_1 value', allow_abbrev=False
+    )
+    p_arch_get_t1.set_defaults(func=cmd_architecture_refresh_get_tier_1)
+
+    # architecture-refresh set-tier-1
+    p_arch_set_t1 = arch_subparsers.add_parser(
+        'set-tier-1', help='Set architecture_refresh.tier_1 value', allow_abbrev=False
+    )
+    p_arch_set_t1.add_argument(
+        '--value',
+        required=True,
+        choices=list(ARCHITECTURE_REFRESH_TIER_1_VALUES),
+        help='Tier-1 value (prompt|auto|disabled)',
+    )
+    p_arch_set_t1.set_defaults(func=cmd_architecture_refresh_set_tier_1)
+
     # cleanup command
     p_cleanup = subparsers.add_parser(
         'cleanup', help='Clean .plan directories based on retention settings', allow_abbrev=False
@@ -577,6 +718,12 @@ Examples:
     if args.command == 'warning':
         if not args.warning_command:
             p_warning.print_help()
+            return 1
+
+    # Handle architecture-refresh subcommand
+    if args.command == 'architecture-refresh':
+        if not args.architecture_refresh_command:
+            p_arch.print_help()
             return 1
 
     result = args.func(args)

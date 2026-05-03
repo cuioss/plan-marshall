@@ -353,6 +353,47 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **No prompt** — auto-suggest is silent metadata. The user can override on a subsequent run by passing `--recipe lesson_cleanup` (explicit) or by editing status metadata. The downstream phases read `plan_source` and `recipe_key` to decide whether to load the recipe path.
 
+### Step 5d: Snapshot architecture
+
+**Applicability**: Runs for every source type (`description`, `lesson`, `issue`, `recipe`). Captures the project's architecture descriptor at plan-init time so `phase-6-finalize` can compute the architectural delta produced by the plan via `manage-architecture diff-modules --pre`.
+
+**Probe — directory-tree presence (NOT single-file)**:
+
+Use the `Read` tool against `<project_root>/.plan/project-architecture/_project.json` to detect whether the architecture descriptor exists. If `_project.json` is present and non-empty, the directory tree is considered to exist. The directory-tree-presence anchor is robust across schema evolutions (legacy `derived-data.json` + `llm-enriched.json` and current `_project.json` + per-module dirs).
+
+**Greenfield branch**:
+
+If the probe shows the directory is missing or empty, log a `[STATUS]` work-log entry and skip the snapshot:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[STATUS] (plan-marshall:phase-1-init) Architecture snapshot skipped (greenfield project)"
+```
+
+Continue to Step 6.
+
+**Snapshot branch**:
+
+If the probe shows the directory exists, copy the entire `.plan/project-architecture/` tree into `.plan/local/plans/{plan_id}/architecture-pre/` via the `tools-file-ops` `copy_tree` helper:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-file-ops:file_ops \
+  copy-tree \
+  --src .plan/project-architecture \
+  --dst .plan/local/plans/{plan_id}/architecture-pre
+```
+
+The `architecture-pre/` directory is the input the finalize step's `manage-architecture diff-modules --pre` consumes. The destination MUST NOT pre-exist — `copy_tree` raises `FileExistsError` when it does. In normal flow `architecture-pre/` is created here for the first time; if the script fails with `FileExistsError`, abort the phase and surface the error (do NOT silently merge over a previous snapshot).
+
+After a successful snapshot, log the artifact:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[ARTIFACT] (plan-marshall:phase-1-init) Snapshotted architecture into architecture-pre/"
+```
+
 ### Step 6: Initialize References
 
 **IMPORTANT**: Get the branch name first, then pass it as a plain string. Do NOT use shell expansion `$(...)` in the command as it triggers permission prompts.

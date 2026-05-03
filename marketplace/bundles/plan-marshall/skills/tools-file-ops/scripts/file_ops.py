@@ -21,8 +21,10 @@ Usage:
     )
 """
 
+import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -738,3 +740,134 @@ def safe_main(main_fn: Any) -> Any:
             sys.exit(1)
 
     return wrapper
+
+
+def copy_tree(src: Path, dst: Path) -> None:
+    """Recursively copy ``src`` directory tree into ``dst``.
+
+    Used by ``phase-1-init`` to snapshot ``.plan/project-architecture/`` into
+    ``.plan/local/plans/{plan_id}/architecture-pre/`` so ``phase-6-finalize``
+    can compute the architectural delta produced by the plan via
+    ``manage-architecture diff-modules --pre``.
+
+    Behaviour:
+        - Recursive copy of every regular file in ``src`` into ``dst``.
+        - Symlinks are skipped (not followed) — the snapshot is a static
+          copy of the on-disk descriptor, never indirected through symlinks.
+        - Parent directories of ``dst`` are created on demand (``mkdir -p``).
+        - Raises ``FileExistsError`` when ``dst`` already exists. Callers MUST
+          either choose a fresh destination path or remove ``dst`` before
+          calling — this skill never silently merges over a previous snapshot.
+        - Implementation delegates to ``shutil.copytree`` with
+          ``symlinks=False`` (skip symlinks) and ``dirs_exist_ok=False``
+          (raise on existing destination).
+
+    Args:
+        src: Source directory to copy from. Must exist and be a directory.
+        dst: Destination directory. Must NOT exist; parent directories are
+            created automatically.
+
+    Raises:
+        FileNotFoundError: when ``src`` does not exist.
+        NotADirectoryError: when ``src`` exists but is not a directory.
+        FileExistsError: when ``dst`` already exists.
+    """
+    src_path = Path(src)
+    dst_path = Path(dst)
+
+    if not src_path.exists():
+        raise FileNotFoundError(f'copy_tree source does not exist: {src_path}')
+    if not src_path.is_dir():
+        raise NotADirectoryError(f'copy_tree source is not a directory: {src_path}')
+    if dst_path.exists():
+        raise FileExistsError(f'copy_tree destination already exists: {dst_path}')
+
+    # Ensure parent of dst exists (mkdir -p semantics for the parent only;
+    # dst itself is created by copytree).
+    dst_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # symlinks=False causes copytree to treat symlinks as regular files when
+    # follow_symlinks is True (default). To skip symlinks entirely, use a
+    # custom copy_function that no-ops on symlink sources.
+    def _copy_skip_symlinks(s: str, d: str, *, follow_symlinks: bool = True) -> str:
+        del follow_symlinks  # unused; symlinks are never followed here
+        if Path(s).is_symlink():
+            return d  # skip — do not copy the symlink
+        shutil.copy2(s, d, follow_symlinks=False)
+        return d
+
+    shutil.copytree(
+        src_path,
+        dst_path,
+        symlinks=False,
+        ignore=None,
+        copy_function=_copy_skip_symlinks,
+        ignore_dangling_symlinks=True,
+        dirs_exist_ok=False,
+    )
+
+
+def _cli_copy_tree(args: argparse.Namespace) -> int:
+    """CLI handler: ``file_ops copy-tree --src SRC --dst DST``.
+
+    Wraps :func:`copy_tree` for invocation via the marketplace executor
+    (e.g. from ``phase-1-init/SKILL.md``). Resolves ``src`` and ``dst`` to
+    absolute paths against the current working directory, then delegates to
+    the library function. Errors surface as the standard manage-* TOON
+    contract (``status: error``, ``error: <code>``, ``message: ...``).
+    """
+    src = Path(args.src).resolve()
+    dst = Path(args.dst).resolve()
+
+    try:
+        copy_tree(src, dst)
+    except FileNotFoundError as exc:
+        output_toon_error('src_not_found', str(exc), src=str(src), dst=str(dst))
+        return 1
+    except NotADirectoryError as exc:
+        output_toon_error('src_not_directory', str(exc), src=str(src), dst=str(dst))
+        return 1
+    except FileExistsError as exc:
+        output_toon_error('dst_already_exists', str(exc), src=str(src), dst=str(dst))
+        return 1
+
+    output_toon({
+        'status': 'success',
+        'operation': 'copy-tree',
+        'src': str(src),
+        'dst': str(dst),
+    })
+    return 0
+
+
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """Build the argparse parser for file_ops CLI subcommands."""
+    parser = argparse.ArgumentParser(
+        prog='file_ops',
+        description='File operations utility (CLI wrappers around library helpers).',
+        allow_abbrev=False,
+    )
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    cp = subparsers.add_parser(
+        'copy-tree',
+        help='Recursively copy a directory tree (symlinks skipped, '
+        'fails if destination exists).',
+        allow_abbrev=False,
+    )
+    cp.add_argument('--src', required=True, help='Source directory path.')
+    cp.add_argument('--dst', required=True, help='Destination directory path (must not exist).')
+    cp.set_defaults(handler=_cli_copy_tree)
+
+    return parser
+
+
+def _main() -> int:
+    """CLI entry-point. Dispatches to the selected subcommand handler."""
+    parser = _build_arg_parser()
+    args = parser.parse_args()
+    return int(args.handler(args))
+
+
+if __name__ == '__main__':
+    sys.exit(_main())

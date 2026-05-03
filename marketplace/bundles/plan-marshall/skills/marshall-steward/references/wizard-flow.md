@@ -614,6 +614,58 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture i
 
 Verify that all modules have responsibilities and key packages. Missing fields indicate areas needing attention.
 
+### Step 13d: Architecture Refresh Tier Knobs
+
+Configure how the `phase-6-finalize` `architecture-refresh` step behaves on every plan finalize. Both knobs persist to `run-config.json` via the `plan-marshall:manage-run-config` `architecture-refresh` subcommand group documented in `manage-run-config/SKILL.md`. Defaults match the user-locked decision from Phase D (`tier_0=enabled`, `tier_1=prompt`).
+
+This step is also the entry point reached when a returning user selects **Configuration → Full Reconfigure** from the maintenance menu, so the same prompts cover both first-run setup and ongoing maintenance.
+
+**Question 1 — Tier 0 (deterministic refresh)**:
+
+```
+AskUserQuestion:
+  question: "Refresh architecture data on every plan finalize?"
+  header: "Architecture Refresh — Tier 0"
+  options:
+    - label: "Enabled (recommended)"
+      description: "Run `architecture discover --force` and commit if any module diff is detected"
+    - label: "Disabled"
+      description: "Skip the deterministic refresh entirely"
+  multiSelect: false
+```
+
+Map the selection to a `tier_0` value (`Enabled (recommended)` → `enabled`; `Disabled` → `disabled`) and persist:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config \
+  architecture-refresh set-tier-0 --value {enabled|disabled}
+```
+
+**Question 2 — Tier 1 (LLM re-enrichment)**:
+
+```
+AskUserQuestion:
+  question: "When affected modules need LLM re-enrichment, what should the finalize step do?"
+  header: "Architecture Refresh — Tier 1"
+  options:
+    - label: "Prompt me each time (recommended)"
+      description: "AskUserQuestion fires when modules need re-enrichment so you can decide per-plan"
+    - label: "Re-enrich automatically"
+      description: "Run enrich Steps 5–8 per affected module, commit chore(architecture), push"
+    - label: "Skip — only commit deterministic refresh"
+      description: "Always skip Tier 1 and append a 'Skip — note in PR' line for affected modules"
+  multiSelect: false
+```
+
+Map the selection to a `tier_1` value (`Prompt me each time (recommended)` → `prompt`; `Re-enrich automatically` → `auto`; `Skip — only commit deterministic refresh` → `disabled`) and persist:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config \
+  architecture-refresh set-tier-1 --value {prompt|auto|disabled}
+```
+
+**Note**: `change_type ∈ {bug_fix, verification}` skips Tier 1 regardless of this setting (see `phase-6-finalize/standards/architecture-refresh.md`). Both knobs are read at finalize time via the `architecture-refresh get-tier-0` / `get-tier-1` subcommands; neither is materialised in `run-config.json` until the user explicitly sets a value, so default behaviour is preserved on fresh projects.
+
 ---
 
 ## Step 14: Detect CI Provider
