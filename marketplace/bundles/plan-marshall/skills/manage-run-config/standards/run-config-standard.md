@@ -37,6 +37,10 @@ The run configuration file stores:
       "plugin_compatibility": [],
       "platform_specific": []
     }
+  },
+  "architecture_refresh": {
+    "tier_0": "enabled",
+    "tier_1": "prompt"
   }
 }
 ```
@@ -53,6 +57,7 @@ The run configuration file stores:
 | Section | Purpose |
 |---------|---------|
 | maven | Maven build configurations |
+| architecture_refresh | Tier knobs consumed by the `phase-6-finalize` `architecture-refresh` step |
 
 ---
 
@@ -118,6 +123,48 @@ Maven acceptable warnings configuration.
 | transitive_dependency | Dependency-related warnings |
 | plugin_compatibility | Plugin compatibility warnings |
 | platform_specific | Platform-specific warnings |
+
+---
+
+## Architecture-Refresh Section
+
+The `architecture_refresh` section holds two enum knobs consumed by the `phase-6-finalize` `architecture-refresh` step. The section is optional — defaults are applied transparently when the section (or any individual field) is missing. `init` does not need to materialise the section for queries to succeed.
+
+### Schema
+
+| Field | Type | Allowed Values | Default | Description |
+|-------|------|----------------|---------|-------------|
+| `tier_0` | string (enum) | `enabled`, `disabled` | `enabled` | Controls the deterministic `architecture discover --force` + `diff-modules --pre` step. When `disabled`, the entire architecture-refresh finalize step exits early. |
+| `tier_1` | string (enum) | `prompt`, `auto`, `disabled` | `prompt` | Controls LLM re-enrichment after Tier 0 detects affected modules. `prompt` (default) asks the user via AskUserQuestion; `auto` runs re-enrichment unattended; `disabled` only commits the deterministic refresh and notes the module list in the PR body. |
+
+### Example — Section After `set-tier-0 --value disabled`
+
+After invoking `architecture-refresh set-tier-0 --value disabled` against a fresh project (no prior `architecture_refresh` section), the persisted JSON looks like:
+
+```json
+{
+  "version": 1,
+  "commands": {},
+  "architecture_refresh": {
+    "tier_0": "disabled"
+  }
+}
+```
+
+Notes:
+- `tier_1` is omitted because it was never set; subsequent `get-tier-1` calls return the default `prompt`.
+- `set-tier-1 --value auto` would extend the section to `{"tier_0": "disabled", "tier_1": "auto"}`.
+
+### Operations
+
+| Subcommand | Purpose |
+|------------|---------|
+| `architecture-refresh get-tier-0` | Read `tier_0` (returns `enabled` if section absent) |
+| `architecture-refresh set-tier-0 --value VALUE` | Persist `tier_0` after enum validation |
+| `architecture-refresh get-tier-1` | Read `tier_1` (returns `prompt` if section absent) |
+| `architecture-refresh set-tier-1 --value VALUE` | Persist `tier_1` after enum validation |
+
+Invalid `--value` arguments produce the standard `invalid_value` error response with an `allowed: [...]` list.
 
 ---
 
@@ -493,6 +540,10 @@ Retention defaults are defined in `manage-config/standards/data-model.md` under 
       "plugin_compatibility": [],
       "platform_specific": []
     }
+  },
+  "architecture_refresh": {
+    "tier_0": "enabled",
+    "tier_1": "prompt"
   }
 }
 ```
