@@ -59,7 +59,7 @@ DEFAULT_SYSTEM_RETENTION = {
     'logs_days': 1,
     'archived_plans_days': 5,
     'memory_days': 5,
-    'lessons_superseded_days': 7,
+    'lessons_superseded_days': 0,
     'temp_on_maintenance': True,
 }
 
