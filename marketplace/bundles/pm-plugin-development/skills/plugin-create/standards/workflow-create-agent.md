@@ -89,8 +89,8 @@ Track `questions_answered` counter.
 ## Step 4: Duplication Detection and Architecture Validation
 
 **Check for duplicates:**
-1. Use Glob to find all agents in target bundle
-2. Use Grep to search for similar names/descriptions
+1. Prefer `architecture files --module {bundle}` to enumerate the bundle's registered components when the marketplace's architecture inventory covers it; fall back to Glob for sub-component discovery (agents are component-level files inside the bundle, finer-grained than module-scoped queries).
+2. Use Grep as the documented fallback to search agent file contents for similar names/descriptions (content search inside the discovered files).
 3. If duplicates found:
    - Display: "Similar agents found: {list with descriptions}"
    - Present using `AskUserQuestion`:

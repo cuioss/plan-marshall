@@ -70,7 +70,7 @@ Track `questions_answered` counter.
 
 ## Step 4: Duplication Detection
 
-Same pattern, using Glob/Grep to find similar skills.
+Same pattern: prefer `architecture files --module {bundle}` for module-scoped enumeration of registered components; fall back to Glob/Grep for sub-component discovery and content-level name/description matching.
 
 ## Step 5: Create Skill Structure
 

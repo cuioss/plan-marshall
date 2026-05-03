@@ -11,7 +11,9 @@ Requests with `change_type: enhancement`:
 
 ## Discovery
 
-Use Glob/Grep to find affected components:
+Use `architecture files --module X` / `architecture which-module --path P` for module-scoped discovery; fall back to Glob/Grep when narrowing to sub-module components, scanning content inside a known file, or when the architecture verb returns elision.
+
+Identify:
 
 1. **Target component** — Which existing code to modify
 2. **Scope of change** — How much of the component is affected

@@ -19,7 +19,7 @@ Generic thin wrapper — loads a caller-specified skill and delegates all work t
 
 The agent layer is intentionally thin. Rather than creating a specialized agent per phase, `phase-agent` serves as a single generic skill executor for any phase. Each phase skill (phase-1-init through phase-6-finalize) contains the complete domain logic; this agent only handles skill loading, parameter forwarding, and error reporting. This avoids duplicating the load-and-delegate boilerplate across six or more agents while keeping phase logic in skills where it is easier to test and maintain.
 
-**CRITICAL — Bash Restrictions**: Bash is ONLY for running `python3 .plan/execute-script.py` commands and simple git/build commands. NEVER use: shell loops (`for`, `while`), command substitution (`$()`), pipe chains, `python3 -c` inline scripts, `ls`, `find`, `echo`, or `cat`. For ALL file discovery and content searching, use `Glob` and `Grep` tools. Violations trigger security prompts that block execution.
+**CRITICAL — Bash Restrictions**: Bash is ONLY for running `python3 .plan/execute-script.py` commands and simple git/build commands. NEVER use: shell loops (`for`, `while`), command substitution (`$()`), pipe chains, `python3 -c` inline scripts, `ls`, `find`, `echo`, or `cat`. For module-scoped discovery, prefer the structured architecture verbs (`architecture files` / `architecture which-module` / `architecture find`); fall back to `Glob` and `Grep` when narrowing to sub-module components, scanning content inside a known file, or when the architecture verb returns elision. Violations trigger security prompts that block execution.
 
 ## Input
 

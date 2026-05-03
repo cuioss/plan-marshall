@@ -26,7 +26,13 @@ If request provides stack trace or error message, extract file paths and error l
 
 ### Step 2: Targeted Search (No Full Inventory)
 
-Use targeted Glob search to find the specific component:
+Use the structured architecture inventory first to locate the component:
+
+```bash
+architecture find --pattern "*{component_name}*"
+```
+
+Fall back to a targeted `Glob` only when the architecture verb returns elision or when the component is finer-grained than module level (sub-module path patterns):
 
 ```bash
 Glob pattern: marketplace/bundles/**/{component_name}*
