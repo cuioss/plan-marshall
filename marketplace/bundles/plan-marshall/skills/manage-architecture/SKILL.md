@@ -38,6 +38,9 @@ scope: hybrid
 | `suggest-domains` | — | Suggest applicable skill domains for a module |
 | `info`, `module`, `modules`, `commands`, `resolve` | [client-api](standards/client-api.md) | Consumer queries |
 | `files`, `which-module`, `find` | [client-api](standards/client-api.md) | Files-inventory readers (categorised paths, reverse lookup, glob search) |
+| `graph`, `path`, `neighbors`, `impact` | [client-api](standards/client-api.md) | Dependency graph queries (full graph, shortest path, n-hop neighborhood, reverse-dep closure) |
+| `overview` | [client-api](standards/client-api.md) | Token-bounded markdown summary of the project architecture |
+| `diff-modules` | [client-api](standards/client-api.md) | Drift detection vs a pre-snapshot (added/removed/changed/unchanged buckets) |
 
 ---
 

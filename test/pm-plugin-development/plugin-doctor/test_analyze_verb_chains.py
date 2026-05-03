@@ -199,6 +199,38 @@ def test_build_subparser_tree_nested_three_levels(tmp_path):
     }
 
 
+def test_build_subparser_tree_registers_bare_add_parser_calls(tmp_path):
+    """Bare ``subparsers.add_parser('verb', ...)`` calls must register a verb.
+
+    Regression for lesson 2026-05-02-10-001: the analyzer historically
+    only walked ``ast.Assign`` statements, so a bare-Expr ``add_parser``
+    call (whose return value is discarded) was invisible to the verb-chain
+    scanner. Mixed-form scripts must register every verb regardless of
+    whether the call's result was bound to a variable.
+
+    Fixture exercises both forms — assigned (``a``) and bare (``b``) —
+    and asserts both verbs appear in the resulting tree.
+    """
+    # Arrange
+    script = tmp_path / 'mixed.py'
+    script.write_text(
+        'import argparse\n'
+        "parser = argparse.ArgumentParser(allow_abbrev=False)\n"
+        'subparsers = parser.add_subparsers()\n'
+        # Assigned form — historical happy path.
+        "p_a = subparsers.add_parser('a', allow_abbrev=False)\n"
+        # Bare form — driving lesson case. Result is discarded; the call
+        # must still register verb 'b' under the owning parser.
+        "subparsers.add_parser('b', allow_abbrev=False)\n",
+    )
+
+    # Act
+    tree = build_subparser_tree(script)
+
+    # Assert
+    assert tree == {'a': {}, 'b': {}}
+
+
 def test_build_subparser_tree_no_subparsers(tmp_path):
     """A script with only a bare ArgumentParser yields an empty tree."""
     # Arrange
@@ -214,6 +246,49 @@ def test_build_subparser_tree_no_subparsers(tmp_path):
 
     # Assert
     assert tree == {}
+
+
+def test_build_subparser_tree_real_architecture_script_includes_bare_verbs():
+    """End-to-end: real ``architecture.py`` exposes its bare-form verbs.
+
+    ``marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/
+    architecture.py`` registers ``derived`` and ``info`` via the bare
+    ``subparsers.add_parser('verb', ...)`` shape (no assignment target).
+    Per lesson 2026-05-02-10-001, both verbs must appear in the tree
+    returned by ``build_subparser_tree`` — historically they were
+    silently dropped.
+
+    This test also acts as a guard against future refactors of
+    ``architecture.py`` that might switch to the assigned form for
+    these specific verbs and accidentally make the regression test
+    above pass for the wrong reason.
+    """
+    # Arrange — locate the real script via the project layout. The test
+    # file lives at test/pm-plugin-development/plugin-doctor/, so four
+    # ``parent`` hops reach the project root (mirroring ``PROJECT_ROOT``
+    # at module top).
+    script_path = (
+        PROJECT_ROOT
+        / 'marketplace' / 'bundles' / 'plan-marshall'
+        / 'skills' / 'manage-architecture' / 'scripts' / 'architecture.py'
+    )
+    assert script_path.is_file(), (
+        f'Expected real architecture.py at {script_path}; project layout '
+        f'may have changed.'
+    )
+
+    # Act
+    tree = build_subparser_tree(script_path)
+
+    # Assert — both bare-form verbs are registered as top-level keys.
+    assert 'derived' in tree, (
+        f"Bare 'subparsers.add_parser(\"derived\", ...)' was not "
+        f'registered. Top-level verbs found: {sorted(tree)}'
+    )
+    assert 'info' in tree, (
+        f"Bare 'subparsers.add_parser(\"info\", ...)' was not "
+        f'registered. Top-level verbs found: {sorted(tree)}'
+    )
 
 
 def test_build_subparser_tree_syntax_error_returns_empty(tmp_path):

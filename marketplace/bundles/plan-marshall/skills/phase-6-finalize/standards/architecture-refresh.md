@@ -226,16 +226,36 @@ Continue to Step 5.
 
 #### `auto` — run re-enrichment without prompting
 
-Re-run the LLM enrichment pass against the affected modules. Use the canonical re-enrichment entry point (Steps 5–8 of the parent design's enrichment flow) via `manage-architecture`:
+Re-run the LLM enrichment pass against the affected modules. There is no batch verb — the LLM MUST iterate `affected_modules_csv` (the sorted, comma-separated module-name list captured from the diff buckets in 3c) and follow `manage-architecture/SKILL.md` Steps 5–8 for each module. Each iteration calls three per-verb subcommands; every call carries `--project-dir {worktree_path}`:
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  enrich --modules {affected_modules_csv} --project-dir {worktree_path}
+```
+for each module M in affected_modules_csv:
+    # Step 6 — write responsibility + purpose
+    python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+      enrich module --name M \
+      --responsibility "{1-3 sentence description}" \
+      --responsibility-reasoning "{source}" \
+      --purpose {purpose-value} \
+      --purpose-reasoning "{signal}" \
+      --project-dir {worktree_path}
+
+    # Step 7 — write 2-4 key packages (one call per package)
+    for each architecturally significant package P of M:
+        python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+          enrich package --module M --package P \
+          --description "{1-2 sentence description}" \
+          --project-dir {worktree_path}
+
+    # Step 8 — refresh skills-by-profile
+    python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+      enrich skills-by-profile --module M \
+      --reasoning "{why these profiles/skills apply}" \
+      --project-dir {worktree_path}
 ```
 
-`{affected_modules_csv}` is the sorted, comma-separated module-name list captured from the diff buckets in 3c. The enrich verb rewrites `enriched.json` for each named module without touching `derived.json`.
+There is no batch form of the enrich verb that accepts a comma-separated module list — only the per-module triplet (`enrich module` / `enrich package` / `enrich skills-by-profile`) is registered, and it rewrites `enriched.json` for one named module per call without touching `derived.json`. Follow the per-module signal analysis documented in `manage-architecture/SKILL.md` Steps 5–8 (purpose-value table, key-package selection, skills-by-profile resolution) to determine each command's arguments.
 
-After enrichment completes, stage and commit the updated `enriched.json` files:
+After enrichment completes for every module in `affected_modules_csv`, stage and commit the updated `enriched.json` files:
 
 ```bash
 git -C {worktree_path} add .plan/project-architecture
@@ -422,7 +442,12 @@ switch tier_1:
         mark-step-done detail="refreshed; re-enrichment deferred to PR note"
 
     case "auto":
-        architecture enrich --modules {csv} --project-dir {worktree_path}
+        for each module M in affected:
+            # manage-architecture/SKILL.md Steps 5-8, per module
+            architecture enrich module --name M --responsibility ... --purpose ... --project-dir {worktree_path}
+            for each architecturally significant package P of M:
+                architecture enrich package --module M --package P --description ... --project-dir {worktree_path}
+            architecture enrich skills-by-profile --module M --reasoning ... --project-dir {worktree_path}
         git -C {worktree_path} add .plan/project-architecture
         git -C {worktree_path} commit -m "chore(architecture): re-enrich affected modules after {plan-title}"
         git -C {worktree_path} push
@@ -433,6 +458,8 @@ switch tier_1:
             "Architecture re-enrichment recommended for: {csv}. Re-enrich now?",
             options=["Re-enrich now", "Skip — note in PR"])
         if answer == "Re-enrich now":
+            # Execute the auto branch above verbatim — iterate affected and call
+            # enrich module / enrich package / enrich skills-by-profile per module.
             execute auto branch above
         else:
             execute disabled branch above

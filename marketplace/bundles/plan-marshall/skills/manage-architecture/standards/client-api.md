@@ -386,7 +386,7 @@ architecture.py overview [--budget N]
 
 **Output**: markdown text (not TOON) consisting of, in priority order:
 
-1. **Project header** — name + description (from `llm-enriched.json`)
+1. **Project header** — name + description (from `_project.json`)
 2. **Modules** — table of `Module | Purpose | Responsibility`
 3. **Adjacency** — table of `Module | Internal Dependencies`
 4. **Skills by Profile** — per-module skill counts (omitted if no module has `skills_by_profile`)

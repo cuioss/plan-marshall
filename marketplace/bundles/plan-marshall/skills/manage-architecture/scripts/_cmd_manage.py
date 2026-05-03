@@ -536,7 +536,11 @@ def api_discover(project_dir: str = '.', force: bool = False) -> dict:
         module_tmp = tmp_dir / module_name
         module_tmp.mkdir(parents=True, exist_ok=True)
         _write_json(module_tmp / DIR_PER_MODULE_DERIVED, module_data)
-        _write_json(module_tmp / DIR_PER_MODULE_ENRICHED, _empty_module_enrichment())
+        # Preserve any prior enrichment so re-discovery never loses LLM-authored
+        # content; fall back to an empty stub on first-run discovery (driving
+        # lesson 2026-05-01-21-001).
+        existing = load_module_enriched_or_empty(module_name, project_dir)
+        _write_json(module_tmp / DIR_PER_MODULE_ENRICHED, existing or _empty_module_enrichment())
 
     # Atomically swap the staged tree into place.
     swap_data_dir(tmp_dir, project_dir)
