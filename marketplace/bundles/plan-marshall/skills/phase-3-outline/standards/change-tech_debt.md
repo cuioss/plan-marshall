@@ -12,7 +12,9 @@ Requests with `change_type: tech_debt`:
 
 ## Discovery
 
-Use Glob/Grep to find code matching the refactoring pattern:
+Use `architecture find --pattern P` for module-spanning patterns and `architecture files --module X` to enumerate a module's components; fall back to Glob/Grep for content-search inside an already-known file or when narrowing to sub-module components.
+
+Identify:
 
 1. **Target pattern** — What code pattern to change
 2. **Occurrences** — All files containing the pattern

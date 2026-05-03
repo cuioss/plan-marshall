@@ -88,7 +88,7 @@ Parse the JSON output to get:
 
    Validate that all `Skill:` directives across components resolve to existing skills:
 
-   a. Use Grep to find all `Skill:` directives across `marketplace/bundles/`:
+   a. `Skill:` directives are content tokens inside files, not first-class entries in the architecture inventory — Grep is the right tool here. Use it as the documented fallback for content-level cross-bundle scanning:
       ```
       Grep: pattern="Skill:\\s+[\\w-]+:[\\w-]+" path="marketplace/bundles" output_mode="content"
       ```

@@ -11,7 +11,9 @@ Requests with `change_type: feature`:
 
 ## Discovery
 
-Use Glob/Grep to understand the target area:
+Use `architecture files --module X` / `architecture which-module --path P` for module-scoped discovery and `architecture find --pattern P` to locate similar components across modules; fall back to Glob/Grep when narrowing to sub-module components, scanning content inside a known file, or when the architecture verb returns elision.
+
+Identify:
 
 1. **Existing patterns** — Find similar components to follow conventions
 2. **Target location** — Where new code should be created

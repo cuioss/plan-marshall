@@ -22,7 +22,7 @@ Based on the request, determine:
 4. **Success criteria** — What questions need answering
 
 Use appropriate tools:
-- **Code analysis**: Use Glob/Grep to find relevant files
+- **Code analysis**: Use `architecture files --module X` / `architecture which-module --path P` for module-scoped discovery; fall back to Glob/Grep when narrowing to sub-module components, scanning content inside a known file, or when the architecture verb returns elision
 - **Architecture**: Use Read to examine key files
 - **External research**: Document findings from domain knowledge
 

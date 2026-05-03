@@ -12,7 +12,9 @@ When an agent's frontmatter lists required tools, those tools MUST be available.
 
 | Operation | Use (no prompts) | Don't use (prompts) |
 |-----------|-----------------|---------------------|
-| Find files | `Glob` | `find`, `ls` |
+| Find files | `architecture files --module X` for module-scoped discovery; fall back to `Glob` for sub-module patterns or when the inventory returns elision | `find`, `ls` |
+| Identify owning module | `architecture which-module --path P` | `find`, manual path inspection |
+| Locate by name/pattern across modules | `architecture find --pattern P` first; fall back to `Glob`/`Grep` for sub-module or content-level searches | repository-wide `grep`, `rg` via Bash |
 | Check file exists | `Read` + error handling | `test -f`, `cat` |
 | Check directory exists | `Glob` | `test -d` |
 | Search content | `Grep` | `grep`, `rg` via Bash |

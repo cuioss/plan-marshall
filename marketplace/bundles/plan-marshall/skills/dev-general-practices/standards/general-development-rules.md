@@ -179,6 +179,37 @@ These rules apply to ALL development work in plan-marshall-governed repositories
 
 - **No `general-purpose` subagents inside plan-marshall phase work** — Never spawn `Agent(subagent_type="general-purpose")` for any work inside a phase (1-init through 6-finalize). Use `plan-marshall:phase-agent` with an explicit `skill=` argument, a dedicated named plan-marshall agent, or inline main-context execution. `general-purpose` has no plan-marshall enforcement context, has `*` tool access, and will violate workflow hard rules. Subagent rules propagate through the agent definition, not through the caller's `prompt` field. (Lesson: `2026-04-24-12-001`.)
 
+### Structured queries first
+
+**Rule:** Before using `Glob`/`Grep` for codebase navigation (file discovery, module identification, path resolution), consult `architecture files --module X`, `architecture which-module --path P`, or `architecture find --pattern P`. `Glob`/`Grep` is the fallback for sub-module component lookup and exceptional cases, not routine discovery.
+
+**Why this matters:**
+
+The architecture inventory is the project's structured truth: it knows which modules exist, which files belong to each module, and which symbols are exposed by each component. Routing module-scoped questions through it gives deterministic, scoped answers. `Glob`/`Grep` answer the same questions by string-matching across the entire worktree — they are unscoped, miss elision, and produce noisy results when patterns collide with unrelated files (test fixtures, vendored copies, generated output).
+
+**When the architecture verb is the right tool (first choice):**
+
+- **Module file enumeration** — "What files belong to module X?" → `architecture files --module X`
+- **Module identification** — "Which module owns this path?" → `architecture which-module --path P`
+- **Pattern lookup across modules** — "Where does symbol/flag/string `foo` live in the project's known surface?" → `architecture find --pattern '*foo*'`
+
+**When `Glob`/`Grep` remain the right fallback:**
+
+- **Sub-module component lookup** — Component-name patterns (e.g., `marketplace/bundles/**/{component_name}*`) when the architecture verb's granularity stops at module level
+- **Content search inside an already-known file** — Once you know the file, `Grep` is the right tool for "where in this file does X appear"
+- **Architecture verb returns elision** — When the inventory's compact representation hides the answer (`...`-style elision), drop to `Glob`/`Grep` for the literal scan
+- **Targets explicitly outside the inventory** — Generated artifacts, vendored copies, or files the architecture inventory deliberately excludes
+
+**Worked example:**
+
+> *Task: Find every script that reads `--audit-plan-id`.*
+>
+> **Architecture-first:** `architecture find --pattern '*audit-plan-id*'` returns the inventory of registered scripts that mention the flag. Scoped, deterministic, fast.
+>
+> **Glob-first (anti-pattern):** `Grep --pattern '\\-\\-audit-plan-id'` returns hits across all source, tests, fixtures, generated output, and historical lessons — a noisy result that requires a second filtering pass to recover the answer the architecture verb gave directly.
+
+If the architecture verb truly cannot answer (e.g., target is sub-module, target is outside the inventory, target requires content-level matching inside a specific file), `Glob`/`Grep` is the documented fallback and should be qualified as such in the surrounding instruction.
+
 ## Quick Reference
 
 ### Decision Matrix

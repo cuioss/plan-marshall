@@ -58,11 +58,15 @@ The `VAR=val cmd` shape (e.g., `PM_MARKETPLACE_ROOT=/abs/path python3 .plan/exec
 
 ### Bash: No file operations
 
-Never use Bash for file discovery or reading. Use Glob, Grep, Read instead.
+Never use Bash for file discovery or reading. Use the structured architecture inventory first (`architecture files --module X`, `architecture which-module --path P`, `architecture find --pattern P`); fall back to Glob, Grep, Read when narrowing to sub-module components, scanning content inside an already-known file, or when the architecture verb returns elision. See "Structured queries first" below for the full rule.
 
 ### Skill workflow: No improvisation
 
 Execute ONLY the commands documented in the loaded skill's workflow. Never add discovery steps, invent arguments, or skip documented steps.
+
+### Structured queries first
+
+Before reaching for `Glob` or `Grep` for codebase navigation (file discovery, module identification, path resolution), consult the structured architecture inventory via `architecture files --module X`, `architecture which-module --path P`, or `architecture find --pattern P`. `Glob`/`Grep` are the fallback for sub-module component lookup, content searches inside an already-known file, or when the architecture verb returns elision — not the routine first choice. See [`general-development-rules.md` § Structured queries first](standards/general-development-rules.md#structured-queries-first) for the full rule and a worked example.
 
 ### Git: always use `git -C {path}`, never `cd {path} && git ...`
 

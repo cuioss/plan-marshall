@@ -23,22 +23,22 @@ Scan the request narrative (`description` and `clarified_request` fields from re
 
 | Claim Type | Example | Verification Method |
 |------------|---------|---------------------|
-| File existence | "the file `path/to/foo.py` handles X" | `Glob` for the path |
-| Flag/option existence | "the `--bar` flag controls Y" | `Grep` for the flag in the referenced script or module |
-| API/function reference | "the `process()` method does Z" | `Grep` for the function definition |
+| File existence | "the file `path/to/foo.py` handles X" | `architecture which-module --path P` first; fall back to `Glob` for the path |
+| Flag/option existence | "the `--bar` flag controls Y" | `architecture find --pattern '*{flag}*'` first; fall back to `Grep` for the flag in the referenced script or module |
+| API/function reference | "the `process()` method does Z" | `architecture find --pattern '*{name}*'` first; fall back to `Grep` for the function definition |
 | Behavior description | "subcommand `add` ignores duplicates" | `Read` the relevant code section and verify logic |
 
 Extract at most **5 claims** per request. Prioritize claims that are load-bearing for the plan's intent -- a claim is load-bearing if the plan's proposed change depends on it being true.
 
 ## Verification Procedure
 
-For each extracted claim, perform **one targeted read or search** against the current codebase:
+For each extracted claim, probe the architecture inventory first; only fall back to a shell tool when the architecture verb cannot answer (e.g., sub-module component lookup, content-search inside a known file, or the verb returns elision):
 
-1. **File existence claims**: Use `Glob` to check the path exists. If the file has moved, use `Glob` with the filename to locate it.
+1. **File existence claims**: Use `architecture which-module --path P` to confirm the path is registered. Fall back to `Glob` when the file is sub-module-scoped or the architecture inventory returns elision.
 
-2. **Flag/option claims**: Use `Grep` to search for the flag name in the expected file or directory. Check that the flag is actively used (not commented out or removed).
+2. **Flag/option claims**: Use `architecture find --pattern '*{flag}*'` to locate references inside the project's structured inventory. Fall back to `Grep` when the literal flag name is not in the inventory or when verifying that the flag is actively used (not commented out or removed) inside a specific known file.
 
-3. **API/function claims**: Use `Grep` to find the function or class definition. Verify the signature matches what the narrative describes.
+3. **API/function claims**: Use `architecture find --pattern '*{name}*'` to find the definition. Fall back to `Grep` when the symbol is not surfaced by the inventory and verify the signature matches what the narrative describes.
 
 4. **Behavior claims**: Use `Read` to examine the relevant code section. Verify the described behavior matches the implementation.
 

@@ -125,7 +125,7 @@ For the complete claim extraction rules, verification procedure, and result hand
 ### Execute Verification
 
 1. Scan the request `description` and `clarified_request` for verifiable claims (at most 5, prioritized by load-bearing impact)
-2. For each claim, perform one targeted tool call (`Glob`, `Grep`, or `Read`) against the current codebase
+2. For each claim, probe the architecture inventory first (`architecture files --module X`, `architecture which-module --path P`, `architecture find --pattern P`) to confirm the claimed file/module/symbol exists. Only fall back to a targeted shell-tool call (`Glob`, `Grep`, or `Read`) when narrowing to sub-module components, scanning content inside an already-known file, or when the architecture verb returns elision.
 3. Classify each claim as Valid, Stale, Invalid, or Inconclusive
 
 ### Handle Results

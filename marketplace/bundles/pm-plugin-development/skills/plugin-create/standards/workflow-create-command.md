@@ -70,7 +70,7 @@ Track `questions_answered` counter.
 
 ## Step 4: Duplication Detection
 
-Same pattern as agent workflow, using Glob/Grep to find similar commands.
+Same pattern as agent workflow: prefer `architecture files --module {bundle}` for module-scoped enumeration of registered components; fall back to Glob/Grep for sub-component discovery and content-level name/description matching.
 
 ## Step 5: Generate Command File
 

@@ -106,7 +106,7 @@ Write to {output_file}
 
 ## Pattern 3: Search-Analyze-Report
 
-**Description**: Use Grep to find patterns, read matching files, analyze findings, generate structured output.
+**Description**: Probe the architecture inventory first (`architecture find --pattern P` for module-spanning lookups, `architecture files --module X` to enumerate a module's components); fall back to Grep for content-level pattern matches inside known files, then read matching files, analyze findings, and generate structured output.
 
 **When to Use**:
 - Codebase analysis

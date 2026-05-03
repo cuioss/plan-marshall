@@ -217,7 +217,7 @@ allowed-tools: [Glob, Read, Grep]
 ## WORKFLOW
 
 ### Step 1: Identify Analysis Scope (< 30 lines)
-1. Use Glob to find Java files
+1. Resolve the analysis scope via `architecture files --module {module}` for module-scoped Java sources; fall back to Glob for sub-module path patterns or when the architecture verb returns elision
 2. Read user request to determine focus area
 3. Identify module if multi-module project
 

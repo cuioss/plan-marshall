@@ -208,7 +208,7 @@ Apply throughout all subsequent steps:
 
 ### Workflow
 
-1. **Understand Context**: Read affected files (`step.target`) if they exist. Use `Grep` and `Glob` to find related components. Apply domain knowledge from loaded skills.
+1. **Understand Context**: Read affected files (`step.target`) if they exist. Use `architecture files --module {module}` to enumerate the module's components and `architecture which-module --path P` / `architecture find --pattern P` for module-spanning lookups; fall back to `Grep` for content-level searches inside known files and `Glob` for sub-module path patterns or when the architecture verb returns elision. Apply domain knowledge from loaded skills.
 2. **Plan Implementation**: For each step, determine changes needed, domain skill patterns to apply, modification order, and integration considerations.
 3. **Implement Changes**: For each step — create new files with `Write`, modify existing files with `Edit`. Apply domain patterns and maintain existing code style.
 4. **Mark Step Complete** (common step)
@@ -236,7 +236,7 @@ The auto-injection sub-step under Common Workflow → Step: Run Verification han
 
 ### Workflow
 
-1. **Understand Implementation Context**: Use `Grep` and `Glob` to find implementation files corresponding to each test file in steps. Read and examine them. Identify testable elements: public methods, edge cases, error conditions, input validation, integration points.
+1. **Understand Implementation Context**: Use `architecture files --module {module}` to enumerate the module's components and `architecture find --pattern '*{name}*'` for module-spanning lookups; fall back to `Grep` for content-level searches inside known files and `Glob` for sub-module path patterns or when the architecture verb returns elision. Read and examine the matched implementation files. Identify testable elements: public methods, edge cases, error conditions, input validation, integration points.
 2. **Plan Test Implementation**: For each step, determine test scenarios, test structure (unit vs integration per domain skills), assertions needed, setup/teardown requirements.
 3. **Implement Tests**: For each step — create new test files with `Write`, modify existing test files with `Edit`. Follow the AAA pattern (Arrange-Act-Assert). Include positive and negative test cases with descriptive names.
 4. **Mark Step Complete** (common step)

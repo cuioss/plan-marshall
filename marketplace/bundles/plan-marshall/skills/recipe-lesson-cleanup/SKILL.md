@@ -131,7 +131,7 @@ The recipe layer adds one constraint on top of the canonical patterns: the lesso
 
 **Sub-step a — Treat the lesson's recommended fix as a hypothesis.** Locate the lesson's "what to do" section. Common headings include `## Recommended Fix`, `## Recommended Follow-Up`, `## Solution / Action`, and `## Application`. Capture the recommendation verbatim as `hypothesis_fix` for each directive that survived Step 1b. A lesson with no such section skips this sub-step entirely — there is no hypothesis to challenge, and the directives stand as written.
 
-**Sub-step b — Re-derive the minimal correct change from the live tree.** For each surviving directive, read the surrounding code path on disk using `Glob`, `Grep`, and `Read`:
+**Sub-step b — Re-derive the minimal correct change from the live tree.** For each surviving directive, read the surrounding code path on disk using the architecture inventory first — `architecture files --module X` to enumerate the module's components, `architecture which-module --path P` and `architecture find --pattern P` for module-spanning lookups — and fall back to `Glob`, `Grep`, and `Read` only for sub-module component lookup, content searches inside an already-known file, or when the architecture verb returns elision:
 
 - Resolve every component the directive touches (skill notations, file paths, function names, scripts) in the live worktree.
 - Trace the actual current behavior — what the code does today, what it calls, what its callers expect.

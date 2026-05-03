@@ -33,7 +33,7 @@ Apply four review dimensions to the full corpus. Each finding needs: severity (h
 
 ### 3.1: Correctness and Completeness
 
-- **Stale content**: APIs, flags, classes, or script notations that are deprecated or renamed. Cross-check tool names, parameter names, and notations against actual files (Glob/Grep to verify existence).
+- **Stale content**: APIs, flags, classes, or script notations that are deprecated or renamed. Cross-check tool names, parameter names, and notations against actual files — probe the architecture inventory first (`architecture find --pattern P`, `architecture files --module X`); fall back to Glob/Grep to verify existence when the symbol is sub-module-scoped, the verb returns elision, or you are confirming a literal token inside a known file.
 - **Broken references**: File paths, skill names (`bundle:skill`), script notations (`bundle:skill:script`) pointing to non-existent targets. Verify with Glob.
 - **Incomplete guidance**: Rules stated positively ("do X") without the exception ("except when Y"). Patterns shown without failure modes. Workflows missing error/abort paths.
 - **Example quality**: Code examples that would fail if followed literally — missing imports, wrong method signatures, outdated syntax. Only flag copy-pasteable examples; conceptual illustrations are fine.

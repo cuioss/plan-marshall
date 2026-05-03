@@ -189,6 +189,7 @@ These rules apply to ALL work in this repository — ad-hoc tasks, plan executio
 - **CI operations: use abstraction layer** — All CI/Git provider operations (PRs, issues, CI status, reviews) MUST go through `plan-marshall:tools-integration-ci:ci` scripts. Never use `gh` or `glab` directly.
 - **Build commands: resolve via architecture** — Never hard-code `./pw`, `mvn`, `npm`, or `gradle`. Always resolve via `plan-marshall:manage-architecture:architecture resolve` first, then execute the returned `executable`.
 - **PR review: validate bot suggestions against plan intent** — Before accepting any automated review comment (gemini-code-assist, Copilot, Sonar bots, etc.), check it against the plan's stated intent and any driving lessons. If a suggestion contradicts the change's purpose (e.g., reintroducing the exact anti-pattern the plan was removing), reply with the rationale and resolve the thread — do NOT create a loop-back fix task.
+- **Structured queries first** — Before using Glob/Grep for codebase navigation (file discovery, module identification, path resolution), consult `architecture files --module X`, `architecture which-module --path P`, or `architecture find --pattern P`. Glob/Grep is the fallback for sub-module component lookup and exceptional cases, not routine discovery.
 
 ### Plugin Cache Sync
 

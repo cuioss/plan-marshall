@@ -32,7 +32,7 @@ Read references/content-quality-guide.md
 
 ## Phase 2: Inventory
 
-Use Glob and Read tools to inventory skill content:
+Skill-internal file inventory is finer-grained than module level — `architecture files --module X` returns the module's components, not the markdown files inside a single skill component. Use Glob and Read tools as the documented fallback for this sub-module enumeration:
 
 ```bash
 # List all markdown files in skill subdirectories
@@ -161,7 +161,7 @@ AskUserQuestion:
 
 ## Phase 6: Verify Links
 
-Use Grep and Read tools to verify references:
+Reference verification is content-level inspection inside an already-known file (SKILL.md). Use Grep and Read tools as the documented fallback for this content search:
 
 1. Extract all relative path references from SKILL.md (pattern: `Read `, `references/`, `scripts/`)
 2. For each reference, verify the target file exists using Glob
