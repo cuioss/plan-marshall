@@ -40,10 +40,12 @@ load_module_enriched_or_empty = _architecture_core.load_module_enriched_or_empty
 get_module_enriched_path = _architecture_core.get_module_enriched_path
 get_project_meta_path = _architecture_core.get_project_meta_path
 
+api_discover = _cmd_manage.api_discover
 api_get_derived = _cmd_manage.api_get_derived
 api_get_derived_module = _cmd_manage.api_get_derived_module
 api_init = _cmd_manage.api_init
 list_modules = _cmd_manage.list_modules
+save_module_enriched = _architecture_core.save_module_enriched
 
 
 # =============================================================================
@@ -190,6 +192,122 @@ def test_api_init_missing_project_meta_returns_error():
 
         assert result['status'] == 'error'
         assert 'discover' in result.get('error', '').lower()
+
+
+# =============================================================================
+# Tests for api_discover
+# =============================================================================
+
+
+def test_api_discover_preserves_enrichment(monkeypatch):
+    """api_discover(force=True) preserves curated enriched.json for known modules.
+
+    Regression test for lesson 2026-05-01-21-001: prior to the fix,
+    re-running ``architecture discover --force`` overwrote every module's
+    ``enriched.json`` with the empty stub, silently destroying LLM-authored
+    responsibility / key_packages / skills_by_profile content. The current
+    contract is: if a module already has an ``enriched.json`` (even one
+    surviving the tmp+swap because it was loaded BEFORE the swap), its
+    content must round-trip byte-for-byte through the discover run. New
+    modules — those with no prior enrichment — still receive the canonical
+    empty stub.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Seed an existing layout so api_discover's preservation branch has
+        # something to read from. The pre-seeded modules['module-a'] gets
+        # curated enrichment; 'module-c' is added later by the mocked
+        # discovery to exercise the fresh-module fallback.
+        create_test_project(tmpdir)
+
+        curated = {
+            'responsibility': 'Authoritative HTTP adapter for upstream auth',
+            'responsibility_reasoning': 'Derived from package layout and CDI scopes',
+            'purpose': 'Bridge OAuth provider responses into typed domain results',
+            'purpose_reasoning': 'Inferred from public API surface',
+            'key_packages': {
+                'com.example.a.adapter': {
+                    'role': 'Adapter layer',
+                    'highlights': ['HttpHandler', 'HttpResult'],
+                },
+            },
+            'internal_dependencies': ['module-b'],
+            'key_dependencies': ['org.example:dep1'],
+            'key_dependencies_reasoning': 'Pinned for reproducibility',
+            'skills_by_profile': {
+                'implementation': ['pm-dev-java-cui:cui-http'],
+                'module_testing': ['pm-dev-java:junit-core'],
+            },
+            'skills_by_profile_reasoning': 'Matches CUI HTTP testing standard',
+            'tips': ['Always wrap upstream calls in HttpResult'],
+            'insights': ['Provider responses fan out into 3 result types'],
+            'best_practices': ['Inject HttpHandler via constructor'],
+        }
+        save_module_enriched('module-a', curated, tmpdir)
+
+        # Sanity check: the curated content is on disk before discover runs.
+        assert load_module_enriched('module-a', tmpdir) == curated
+
+        # Replace the heavy discovery delegate with a deterministic stub that
+        # returns the same module-a (which has prior enrichment) plus a brand
+        # new module-c (which has none). The api_discover function imports
+        # extension_discovery lazily inside its body, so monkeypatching the
+        # already-loaded module is sufficient — no need to manipulate
+        # sys.modules.
+        import extension_discovery  # type: ignore[import-not-found]
+
+        def _fake_discover(_project_root):
+            return {
+                'modules': {
+                    'module-a': {
+                        'name': 'module-a',
+                        'build_systems': ['maven'],
+                        'paths': {'module': 'module-a'},
+                        'metadata': {},
+                        'packages': {},
+                        'dependencies': [],
+                        'stats': {},
+                        'commands': {},
+                    },
+                    'module-c': {
+                        'name': 'module-c',
+                        'build_systems': ['maven'],
+                        'paths': {'module': 'module-c'},
+                        'metadata': {},
+                        'packages': {},
+                        'dependencies': [],
+                        'stats': {},
+                        'commands': {},
+                    },
+                },
+                'extensions_used': ['pm-dev-java'],
+            }
+
+        monkeypatch.setattr(
+            extension_discovery, 'discover_project_modules', _fake_discover
+        )
+
+        result = api_discover(tmpdir, force=True)
+
+        assert result['status'] == 'success'
+        assert result['modules_discovered'] == 2
+
+        # Positive branch: module-a's curated enrichment survived the swap
+        # byte-for-byte. JSON round-trips dict equality, which is sufficient
+        # to prove no field was clobbered, reordered, or coerced.
+        assert load_module_enriched('module-a', tmpdir) == curated
+
+        # Negative branch: module-c had no prior enrichment, so it gets the
+        # canonical empty stub shape. This guards against the opposite
+        # regression — preservation accidentally skipping fresh modules.
+        fresh = load_module_enriched('module-c', tmpdir)
+        assert fresh['responsibility'] == ''
+        assert fresh['purpose'] == ''
+        assert fresh['key_packages'] == {}
+        assert fresh['skills_by_profile'] == {}
+        # Spot-check a few more empty-stub fields so a future shape change
+        # to _empty_module_enrichment fails this test loudly.
+        assert fresh['internal_dependencies'] == []
+        assert fresh['tips'] == []
 
 
 # =============================================================================

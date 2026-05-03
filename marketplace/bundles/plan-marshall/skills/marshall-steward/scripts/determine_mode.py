@@ -77,7 +77,7 @@ for _lib in ('ref-toon-format',):
 # Content checks applied to project documentation files.
 # Each check has a key, the files it applies to, and a substring marker
 # to search for (plain string match, not regex).
-CONTENT_CHECKS: list[dict[str, str | list[str]]] = [
+CONTENT_CHECKS: list[dict[str, str | int | list[str]]] = [
     {
         'key': 'plan_temp',
         'files': ['CLAUDE.md', 'agents.md'],
@@ -92,6 +92,11 @@ CONTENT_CHECKS: list[dict[str, str | list[str]]] = [
         'key': 'workflow_discipline',
         'files': ['CLAUDE.md'],
         'pattern': 'Workflow Discipline',
+        # When the section is present, also assert the bullet count matches
+        # the canonical block. Below the threshold, the check reports
+        # 'incomplete' (drift) instead of 'missing' (absent).
+        'min_bullets': 8,
+        'section_heading': 'Workflow Discipline (Hard Rules)',
     },
 ]
 
@@ -110,9 +115,25 @@ FIX_CONTENT: dict[str, str] = {
         '- Use proper tools (Edit, Read, Write) instead of shell commands (echo, cat)\n'
         '- Never use Bash for file operations (find, grep, cat, ls) — use Glob, Read, Grep tools instead\n'
     ),
+    # IMPORTANT: This block is the authoritative fix-content snapshot of the
+    # "Workflow Discipline (Hard Rules)" section in the canonical CLAUDE.md
+    # (see CLAUDE.md lines 185-192). It MUST stay byte-for-byte in sync with
+    # that section — phrasing, punctuation, em-dashes, and bullet ordering all
+    # matter. The drift self-test in
+    # ``test/plan-marshall/plan-marshall/test_determine_mode.py`` asserts
+    # literal equality between this string and the canonical bullets parsed
+    # out of CLAUDE.md, so any wording change here MUST be mirrored there
+    # (and vice versa). Do not "improve" individual bullets locally.
     'workflow_discipline': (
         '\n### Workflow Discipline (Hard Rules)\n'
         '\n'
+        'These rules apply to ALL work in this repository — ad-hoc tasks, plan execution, '
+        'and agent work alike. They exist because Claude regularly violates them despite '
+        'softer guidance.\n'
+        '\n'
+        '- **`.plan/` access: scripts only** — ALL `.plan/` file access MUST go through '
+        '`python3 .plan/execute-script.py` manage-* scripts. Never Read/Write/Edit `.plan/` '
+        "files directly unless a loaded skill's workflow explicitly documents it.\n"
         '- **Bash: one command per call** — Each Bash call must contain exactly ONE command. '
         'Never combine with `&&`, `;`, `&`, or newlines.\n'
         '- **Bash: no shell constructs** — No `for`/`while` loops, no `$()` substitution, '
@@ -121,6 +142,24 @@ FIX_CONTENT: dict[str, str] = {
         '- **Workflow steps: no improvisation** — When following a skill or workflow, '
         'execute ONLY the commands documented in it. Never add discovery steps, '
         'invent arguments, or skip documented steps.\n'
+        '- **CI operations: use abstraction layer** — All CI/Git provider operations '
+        '(PRs, issues, CI status, reviews) MUST go through '
+        '`plan-marshall:tools-integration-ci:ci` scripts. Never use `gh` or `glab` directly.\n'
+        '- **Build commands: resolve via architecture** — Never hard-code `./pw`, `mvn`, '
+        '`npm`, or `gradle`. Always resolve via '
+        '`plan-marshall:manage-architecture:architecture resolve` first, then execute the '
+        'returned `executable`.\n'
+        '- **PR review: validate bot suggestions against plan intent** — Before accepting '
+        'any automated review comment (gemini-code-assist, Copilot, Sonar bots, etc.), '
+        "check it against the plan's stated intent and any driving lessons. If a "
+        'suggestion contradicts the change\'s purpose (e.g., reintroducing the exact '
+        'anti-pattern the plan was removing), reply with the rationale and resolve the '
+        'thread — do NOT create a loop-back fix task.\n'
+        '- **Structured queries first** — Before using Glob/Grep for codebase navigation '
+        '(file discovery, module identification, path resolution), consult '
+        '`architecture files --module X`, `architecture which-module --path P`, or '
+        '`architecture find --pattern P`. Glob/Grep is the fallback for sub-module '
+        'component lookup and exceptional cases, not routine discovery.\n'
     ),
 }
 
@@ -201,6 +240,54 @@ def check_structure(plan_dir: Path) -> tuple[str, Path, int]:
     return 'exists', arch_dir, valid_count
 
 
+def count_section_bullets(content: str, section_heading: str) -> int:
+    """
+    Count top-level bulleted lines under a Markdown section heading.
+
+    Locates the line containing ``section_heading`` (matched as a substring,
+    so the heading-level prefix `##`/`###` does not need to be specified by
+    callers), then counts subsequent lines that begin with ``- `` until the
+    next Markdown heading line (`# `, `## `, `### `, etc.) or end-of-file.
+
+    Only first-level bullets count: continuation lines and nested items
+    (lines beginning with whitespace) are ignored.
+
+    Args:
+        content: Full text of the document.
+        section_heading: Substring that uniquely identifies the section
+            heading line (e.g., ``Workflow Discipline (Hard Rules)``).
+
+    Returns:
+        Number of top-level bullets found, or 0 when the section is absent.
+    """
+    lines = content.splitlines()
+    in_section = False
+    bullet_count = 0
+
+    for line in lines:
+        stripped = line.lstrip()
+        if not in_section:
+            # Find the section heading. Require it to be a heading line (#-prefixed)
+            # so we don't false-match the literal substring inside body prose.
+            if stripped.startswith('#') and section_heading in line:
+                in_section = True
+            continue
+
+        # We're inside the target section. Stop on the next heading line.
+        if stripped.startswith('#') and ' ' in stripped[: stripped.find(' ') + 1]:
+            # A heading line begins with one-or-more `#` followed by a space.
+            hashes = len(stripped) - len(stripped.lstrip('#'))
+            if hashes >= 1 and stripped[hashes : hashes + 1] == ' ':
+                break
+
+        # Count only top-level bullets: line begins with `- ` (no leading
+        # whitespace).
+        if line.startswith('- '):
+            bullet_count += 1
+
+    return bullet_count
+
+
 def check_docs(project_root: Path) -> tuple[str, list[dict[str, str]]]:
     """
     Check if project documentation files contain all required content.
@@ -208,11 +295,21 @@ def check_docs(project_root: Path) -> tuple[str, list[dict[str, str]]]:
     Checks multiple content patterns across documentation files.
     Each check has a key, target files, and a marker pattern.
 
+    For checks that declare ``min_bullets`` and ``section_heading`` (e.g., the
+    workflow_discipline check), additionally count bullets under the named
+    section. When the section is present but the bullet count is below
+    ``min_bullets``, surface an ``incomplete`` reason instead of the default
+    ``content_missing`` reason. When the section is absent altogether the
+    pattern check fires as before — drift detection only applies when the
+    section is present-but-short.
+
     Args:
         project_root: Path to the project root
 
     Returns:
-        Tuple of (status, list of missing check dicts with 'file' and 'check' keys)
+        Tuple of (status, list of missing check dicts with 'file', 'check',
+        and 'reason' keys; entries with ``reason='incomplete'`` also include
+        ``found`` and ``expected`` bullet counts)
     """
     missing: list[dict[str, str]] = []
 
@@ -220,14 +317,32 @@ def check_docs(project_root: Path) -> tuple[str, list[dict[str, str]]]:
         pattern = str(check['pattern'])
         files = check['files']
         assert isinstance(files, list)
+        min_bullets_raw = check.get('min_bullets')
+        section_heading_raw = check.get('section_heading')
         for file_name in files:
             file_path = project_root / str(file_name)
             if not file_path.exists():
                 continue  # Skip non-existent files — only check content in existing files
-            else:
-                content = file_path.read_text()
-                if pattern not in content:
-                    missing.append({'file': str(file_name), 'check': str(check['key']), 'reason': 'content_missing'})
+            content = file_path.read_text()
+            if pattern not in content:
+                missing.append({'file': str(file_name), 'check': str(check['key']), 'reason': 'content_missing'})
+                continue
+
+            # Pattern is present. If this check declares a bullet-count
+            # expectation, evaluate drift: section present-but-short ->
+            # 'incomplete'.
+            if isinstance(min_bullets_raw, int) and isinstance(section_heading_raw, str):
+                found = count_section_bullets(content, section_heading_raw)
+                if found < min_bullets_raw:
+                    missing.append(
+                        {
+                            'file': str(file_name),
+                            'check': str(check['key']),
+                            'reason': 'incomplete',
+                            'found': str(found),
+                            'expected': str(min_bullets_raw),
+                        }
+                    )
 
     if missing:
         return 'needs_update', missing
@@ -254,6 +369,13 @@ def fix_docs(project_root: Path) -> tuple[str, list[str]]:
 
     fixes: list[str] = []
     for entry in missing:
+        # Drift entries (section present-but-short) cannot be fixed by
+        # appending — that would create a duplicate section. Leave the file
+        # untouched and let the operator reconcile manually; the doctor
+        # message surfaced by cmd_check_docs guides the edit.
+        if entry.get('reason') == 'incomplete':
+            continue
+
         check_key = entry['check']
         file_name = entry['file']
         content_block = FIX_CONTENT.get(check_key)
@@ -309,6 +431,21 @@ def cmd_check_docs(args: argparse.Namespace) -> dict:
             checks_by_key[key].append(entry['file'])
         for key, files in checks_by_key.items():
             result[key] = ','.join(files)
+
+        # Surface human-readable doctor messages for 'incomplete' (drift)
+        # entries so callers can distinguish absent sections from
+        # present-but-short ones without re-parsing the structured payload.
+        messages: list[str] = []
+        for entry in missing:
+            if entry.get('reason') != 'incomplete':
+                continue
+            label = entry['check'].replace('_', ' ').title()
+            messages.append(
+                f"{label} section present but incomplete "
+                f"(found {entry.get('found', '?')} bullets, expected {entry.get('expected', '?')})"
+            )
+        if messages:
+            result['messages'] = ' | '.join(messages)
     return result
 
 

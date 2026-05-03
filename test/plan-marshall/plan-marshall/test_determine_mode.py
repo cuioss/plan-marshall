@@ -114,8 +114,22 @@ class TestCheckDocsSubcommand(ScriptTestCase):
     def test_ok_when_docs_have_all_patterns(self):
         """Should return ok when docs have all required content."""
         claude_md = self.temp_dir / 'CLAUDE.md'
+        # The Workflow Discipline section is checked for presence AND for
+        # bullet-count completeness (drift detection added in lesson
+        # 2026-05-03-17-001). A minimal fixture that satisfies the canonical
+        # 8-bullet contract keeps this happy-path test stable.
         claude_md.write_text(
-            '# Project\n\nUse `.plan/temp/` for temporary files.\n\nFor file operations use Glob, Read, Grep tools.\n\n### Workflow Discipline (Hard Rules)\n'
+            '# Project\n\nUse `.plan/temp/` for temporary files.\n\n'
+            'For file operations use Glob, Read, Grep tools.\n\n'
+            '### Workflow Discipline (Hard Rules)\n\n'
+            '- Rule one\n'
+            '- Rule two\n'
+            '- Rule three\n'
+            '- Rule four\n'
+            '- Rule five\n'
+            '- Rule six\n'
+            '- Rule seven\n'
+            '- Rule eight\n'
         )
 
         result = cmd_check_docs(Namespace(project_root=str(self.temp_dir)))
@@ -177,8 +191,20 @@ class TestCheckDocsSubcommand(ScriptTestCase):
 
     def test_mixed_files_one_ok_one_missing(self):
         """Should only list files that need updating."""
+        # The Workflow Discipline section needs at least 8 bullets to satisfy
+        # drift detection (lesson 2026-05-03-17-001).
         (self.temp_dir / 'CLAUDE.md').write_text(
-            'Use .plan/temp for temp files\nFor file operations use Glob, Read, Grep tools\n### Workflow Discipline\n'
+            'Use .plan/temp for temp files\n'
+            'For file operations use Glob, Read, Grep tools\n'
+            '### Workflow Discipline (Hard Rules)\n\n'
+            '- Rule one\n'
+            '- Rule two\n'
+            '- Rule three\n'
+            '- Rule four\n'
+            '- Rule five\n'
+            '- Rule six\n'
+            '- Rule seven\n'
+            '- Rule eight\n'
         )
         (self.temp_dir / 'agents.md').write_text('# Agents\n')
 
@@ -222,9 +248,20 @@ class TestFixDocsSubcommand(ScriptTestCase):
     def test_ok_when_docs_already_complete(self):
         """Should return ok when docs already have all required content."""
         claude_md = self.temp_dir / 'CLAUDE.md'
+        # Provide enough bullets to satisfy the drift threshold introduced by
+        # lesson 2026-05-03-17-001.
         claude_md.write_text(
             '# Project\n\nUse `.plan/temp/` for temporary files.\n\n'
-            'use Glob, Read, Grep tools.\n\n### Workflow Discipline (Hard Rules)\n'
+            'use Glob, Read, Grep tools.\n\n'
+            '### Workflow Discipline (Hard Rules)\n\n'
+            '- Rule one\n'
+            '- Rule two\n'
+            '- Rule three\n'
+            '- Rule four\n'
+            '- Rule five\n'
+            '- Rule six\n'
+            '- Rule seven\n'
+            '- Rule eight\n'
         )
         result = cmd_fix_docs(Namespace(project_root=str(self.temp_dir)))
         self.assertEqual(result['fix_status'], 'ok')
@@ -308,17 +345,30 @@ class TestFixDocsSubcommand(ScriptTestCase):
         self.assertEqual(status, 'ok')
         self.assertEqual(fixes, [])
 
-    def test_workflow_discipline_content_excludes_removed_rules(self):
-        """Workflow discipline should not contain removed rules."""
+    def test_workflow_discipline_content_includes_canonical_rules(self):
+        """
+        Workflow discipline FIX_CONTENT should include the full canonical
+        rule set from CLAUDE.md (lesson 2026-05-03-17-001 restored the
+        rules that an earlier reduction had stripped). This is a smoke
+        test — the authoritative drift assertion is in
+        ``test_workflow_discipline_fix_content_matches_claude_md``
+        (added by deliverable 5 task 8).
+        """
         claude_md = self.temp_dir / 'CLAUDE.md'
         claude_md.write_text('# Project\n\nUse .plan/temp.\nuse Glob, Read, Grep tools.\n')
 
         cmd_fix_docs(Namespace(project_root=str(self.temp_dir)))
         content = claude_md.read_text()
 
-        self.assertNotIn('scripts only', content)
-        self.assertNotIn('CI abstraction', content)
-        self.assertNotIn('architecture resolve', content)
+        # All eight canonical rules must be present in the appended block.
+        self.assertIn('`.plan/` access: scripts only', content)
+        self.assertIn('Bash: one command per call', content)
+        self.assertIn('Bash: no shell constructs', content)
+        self.assertIn('Workflow steps: no improvisation', content)
+        self.assertIn('CI operations: use abstraction layer', content)
+        self.assertIn('Build commands: resolve via architecture', content)
+        self.assertIn('PR review: validate bot suggestions against plan intent', content)
+        self.assertIn('Structured queries first', content)
 
 
 # =============================================================================

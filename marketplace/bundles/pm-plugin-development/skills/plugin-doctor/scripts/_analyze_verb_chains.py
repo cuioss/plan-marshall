@@ -324,6 +324,34 @@ def _collect_assignments(tree: ast.AST) -> list[ast.Assign]:
     return found
 
 
+def _collect_parser_statements(tree: ast.AST) -> list[ast.Assign | ast.Expr]:
+    """Return parser-relevant statements in deterministic source order.
+
+    Yields both ``ast.Assign`` nodes (the historical path — captures
+    ``parser = ArgumentParser(...)``, ``subparsers = parser.add_subparsers(...)``,
+    ``p_verb = subparsers.add_parser('verb', ...)``) AND bare ``ast.Expr``
+    nodes whose value is a ``.add_parser('verb', ...)`` ``ast.Call`` whose
+    result is discarded (lesson 2026-05-02-10-001 — bare-call form is
+    functionally equivalent to the assigned form when the parser needs no
+    further configuration).
+
+    Sorted by ``(lineno, col_offset)`` so a bare ``add_parser`` call that
+    appears between two assignments is processed in source order, ensuring
+    deterministic verb registration even across mixed call shapes.
+    """
+    found: list[ast.Assign | ast.Expr] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            found.append(node)
+            continue
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+            call = node.value
+            if _call_func_name(call) == 'add_parser':
+                found.append(node)
+    found.sort(key=lambda a: (a.lineno, a.col_offset))
+    return found
+
+
 def build_subparser_tree(script_path: Path) -> dict:
     """AST-walk ``script_path`` and return its registered subparser tree.
 
@@ -346,7 +374,11 @@ def build_subparser_tree(script_path: Path) -> dict:
     - ``<var>.add_subparsers(...)`` → marks ``<var>`` as the owner of a
       subparser group; the assigned target becomes a "subparsers" handle.
     - ``<subparsers_handle>.add_parser('name', ...)`` → registers child
-      verb ``name`` under ``<var>``.
+      verb ``name`` under ``<var>``. Both the assigned form
+      (``p_name = subparsers.add_parser('name', ...)``) and the bare
+      form (``subparsers.add_parser('name', ...)``) are recognised —
+      see lesson 2026-05-02-10-001; the bare form is functionally
+      equivalent when the returned parser needs no further configuration.
 
     Returns an empty dict for unreadable or unparseable files, or for
     scripts that do not use argparse subparsers.
@@ -368,7 +400,30 @@ def build_subparser_tree(script_path: Path) -> dict:
     # ``subparsers`` → ``parser``.
     subparsers_handles: dict[str, str] = {}
 
-    for assign in _collect_assignments(tree):
+    for stmt in _collect_parser_statements(tree):
+        # Bare-Expr ``.add_parser('verb', ...)`` whose result is discarded
+        # — lesson 2026-05-02-10-001. Functionally equivalent to the
+        # assigned form for parsers that take no further configuration.
+        if isinstance(stmt, ast.Expr):
+            call = stmt.value
+            assert isinstance(call, ast.Call)  # guaranteed by collector
+            bare_handle = _attr_receiver_name(call)
+            if bare_handle is None or bare_handle not in subparsers_handles:
+                continue
+            bare_verb = _first_string_arg(call)
+            if not bare_verb:
+                continue
+            bare_owner_var = subparsers_handles[bare_handle]
+            bare_owner = parsers.get(bare_owner_var)
+            if bare_owner is None:
+                continue
+            # No assignment target → register the child verb but don't
+            # bind a new parser variable (the result was discarded, so
+            # no further nesting can attach to it via the variable path).
+            bare_owner.children[bare_verb] = _ParserNode(var_name='')
+            continue
+
+        assign = stmt
         if not isinstance(assign.value, ast.Call):
             continue
         call = assign.value

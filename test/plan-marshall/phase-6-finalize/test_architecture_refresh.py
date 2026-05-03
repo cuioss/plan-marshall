@@ -670,8 +670,32 @@ class TestNarrativeContract:
         assert 'append-body' in standard_text
 
     def test_documents_enrich_call_in_auto_branch(self, standard_text: str):
+        """The `auto` branch enriches per-module, not via a batch invocation.
+
+        After Phase F the standard explicitly forbids the (never-registered)
+        `architecture enrich --modules {csv}` batch shape and instead
+        documents a per-module loop that calls the three registered enrich
+        subcommands. Pin every observable token of that contract so the
+        narrative cannot silently drift back to the batch form.
+        """
         assert 'architecture' in standard_text
-        assert 'enrich --modules' in standard_text
+        # The rewritten auto branch carries an explicit per-module loop.
+        assert 'for each module' in standard_text, (
+            'Standard must spell out the per-module iteration in the auto '
+            'branch — the batch `enrich --modules {csv}` shape is gone.'
+        )
+        # All three registered enrich subcommands must be cited.
+        assert 'architecture enrich module' in standard_text
+        assert 'architecture enrich package' in standard_text
+        assert 'architecture enrich skills-by-profile' in standard_text
+        # The legacy batch literal MUST NOT reappear in the standard — it
+        # named a verb that was never registered and prompted at least one
+        # historical mis-execution. Guard against re-introduction.
+        assert 'enrich --modules' not in standard_text, (
+            "Standard must NOT cite `architecture enrich --modules {csv}` — "
+            'this batch verb is not registered; the auto branch iterates '
+            'modules and calls the per-module enrich subcommands instead.'
+        )
 
     def test_documents_ask_user_question_prompt_options(
         self, standard_text: str,
