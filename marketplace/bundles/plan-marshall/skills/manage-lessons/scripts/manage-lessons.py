@@ -62,8 +62,9 @@ MAX_ID_ALLOCATION_RETRIES = 99
 
 # Hard fallback for ``cleanup-superseded --retention-days`` when neither the
 # CLI flag nor ``system.retention.lessons_superseded_days`` in marshal.json
-# yields an integer. Matches the default seeded into ``DEFAULT_SYSTEM_RETENTION``.
-DEFAULT_LESSONS_SUPERSEDED_DAYS = 7
+# yields an integer. Matches the default seeded into ``DEFAULT_SYSTEM_RETENTION``
+# (0 days — superseded stubs are pruned on the next cleanup invocation).
+DEFAULT_LESSONS_SUPERSEDED_DAYS = 0
 
 
 def get_lessons_dir() -> Path:
