@@ -54,13 +54,13 @@ See `standards/operations.md` for the complete set of dispatch pattern templates
 
 Each Bash tool call dispatched during execute must contain exactly ONE command. Never combine with newlines, `&`, `&&`, `;`, or inline env-var assignment of the form `VAR=val cmd`. The `VAR=val cmd` shape combines the assignment and the command into one shell argument, which trips the Claude Code permission UI and obscures the env-var contract by hiding the variable inside the command line rather than declaring it explicitly.
 
-**Anti-pattern**: `PM_MARKETPLACE_ROOT=/abs/path python3 .plan/execute-script.py ...`
+**Anti-pattern**: `MY_VAR=value python3 some_command.py ...`
 
 **Safe alternative (option A)** — Pass the value as a flag arg:
 
-`python3 .plan/execute-script.py ... --marketplace-root /abs/path`
+`python3 some_command.py ... --my-var value`
 
-**Safe alternative (option B)** — Set the env var in the executor invocation header (e.g., a separate `env PM_MARKETPLACE_ROOT=…` line, NOT inline) before launching the bash command, or define the value as a Python module-level constant lookup inside the script itself.
+**Safe alternative (option B)** — Set the env var in the command's invocation header (e.g., a separate `env MY_VAR=…` line, NOT inline) before launching the bash command, or define the value as a Python module-level constant lookup inside the script itself.
 
 See [`dev-general-practices` Hard Rules](../dev-general-practices/SKILL.md#bash-one-command-per-call) for the authoritative source.
 
