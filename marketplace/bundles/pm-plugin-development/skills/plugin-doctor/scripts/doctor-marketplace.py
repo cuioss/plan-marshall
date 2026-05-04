@@ -30,6 +30,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from _analyze_argument_naming import analyze_argument_naming
+from _analyze_test_conventions import (
+    analyze_subprocess_pythonpath,
+    analyze_unique_fixture_basenames,
+    analyze_validator_regex_vs_corpus,
+)
 from _cmd_apply import apply_single_fix, load_templates
 from _cmd_extension import validate_extension_contracts
 from _doctor_analysis import analyze_component, scan_argparse_safety
@@ -401,6 +406,74 @@ def cmd_quality_gate(args) -> dict:
     }
 
 
+def _load_validator_registry(registry_path: str | None) -> list[dict]:
+    """Load the Rule 3 validator registry from a JSON file, defaulting to empty.
+
+    The standard documents the registry schema in
+    `standards/doctor-test-conventions.md` (`## Rule 3 — Validator Registry`).
+    Until consumers populate the markdown table or pass an explicit JSON
+    file, the registry is empty and Rule 3 is a no-op.
+    """
+    if not registry_path:
+        return []
+    path = Path(registry_path)
+    if not path.is_file():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(data, list):
+        return []
+    cleaned: list[dict] = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        if not all(k in entry for k in ('validator_path', 'regex_constant', 'list_command')):
+            continue
+        cleaned.append(
+            {
+                'validator_path': str(entry['validator_path']),
+                'regex_constant': str(entry['regex_constant']),
+                'list_command': str(entry['list_command']),
+            }
+        )
+    return cleaned
+
+
+def cmd_test_conventions(args) -> dict:
+    """Run the test-tree convention rules across the configured test root.
+
+    See ``standards/doctor-test-conventions.md`` for rule definitions and
+    severity. Exits non-zero on any error finding (build-failing).
+    """
+    test_root = Path(getattr(args, 'test_root', None) or 'test').resolve()
+
+    all_issues: list[dict] = []
+    rule_summaries: list[dict] = []
+
+    rule1_findings = analyze_unique_fixture_basenames(test_root)
+    all_issues.extend(rule1_findings)
+    rule_summaries.append({'rule': 'unique-fixture-basenames', 'findings': len(rule1_findings)})
+
+    rule2_findings = analyze_subprocess_pythonpath(test_root)
+    all_issues.extend(rule2_findings)
+    rule_summaries.append({'rule': 'subprocess-pythonpath', 'findings': len(rule2_findings)})
+
+    registry = _load_validator_registry(getattr(args, 'registry', None))
+    rule3_findings = analyze_validator_regex_vs_corpus(registry)
+    all_issues.extend(rule3_findings)
+    rule_summaries.append({'rule': 'identifier-validator-corpus', 'findings': len(rule3_findings)})
+
+    return {
+        'status': 'fail' if all_issues else 'pass',
+        'test_root': str(test_root),
+        'total_issues': len(all_issues),
+        'rules_run': rule_summaries,
+        'issues': all_issues,
+    }
+
+
 def cmd_report(args) -> dict:
     """Generate comprehensive report for LLM review."""
     marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
@@ -585,6 +658,23 @@ Examples:
     p_quality_gate.add_argument('--marketplace-root', dest='marketplace_root', help=marketplace_root_help)
     p_quality_gate.set_defaults(func=cmd_quality_gate)
 
+    # test-conventions subcommand
+    p_test_conventions = subparsers.add_parser(
+        'test-conventions',
+        help='Run test-tree convention rules (exit 1 on findings)',
+        allow_abbrev=False,
+    )
+    p_test_conventions.add_argument(
+        '--test-root', dest='test_root', default='test', help='Path to the test tree (default: test/)'
+    )
+    p_test_conventions.add_argument(
+        '--registry',
+        dest='registry',
+        default=None,
+        help='Path to a JSON registry of (validator_path, regex_constant, list_command) entries for Rule 3',
+    )
+    p_test_conventions.set_defaults(func=cmd_test_conventions)
+
     # validate-contracts subcommand
     p_contracts = subparsers.add_parser(
         'validate-contracts', help='Validate extension point contract compliance', allow_abbrev=False
@@ -605,6 +695,8 @@ Examples:
     result = args.func(args)
     output_toon(result)
     if args.command == 'quality-gate' and result.get('status') == 'fail':
+        return 1
+    if args.command == 'test-conventions' and result.get('status') == 'fail':
         return 1
     if result.get('status') == 'error':
         return 1
