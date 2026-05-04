@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
 """Enumerate marketplace bundles and emit TOON bundle:version pairs.
 
-Reads `marketplace/bundles/*/.claude-plugin/plugin.json` relative to the
-current working directory and prints a TOON table consumable by Step 3 of
-`.claude/skills/sync-plugin-cache/SKILL.md` (parallel rsync calls).
+Reads `marketplace/bundles/*/.claude-plugin/plugin.json` from the configured
+source root (defaulting to the current working directory) and prints a TOON
+table consumable by Step 3 of `.claude/skills/sync-plugin-cache/SKILL.md`
+(parallel rsync calls).
 
 A missing or malformed manifest yields `version: unknown`, matching the
 fallback semantics of the original shell snippet this script replaces.
+
+The `--source-root PATH` flag points at an alternate marketplace tree (e.g.
+a worktree's `marketplace/bundles/` parent), used by the
+`--from-worktree` flow documented in the SKILL. When the flag is omitted,
+behaviour is identical to the prior cwd-relative scan.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -25,8 +32,25 @@ def _read_version(manifest: Path) -> str:
     return version if isinstance(version, str) and version else 'unknown'
 
 
-def main() -> int:
-    bundles_root = Path('marketplace/bundles')
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description='List marketplace bundles and their versions in TOON format.')
+    parser.add_argument(
+        '--source-root',
+        type=Path,
+        default=None,
+        metavar='PATH',
+        help=(
+            'Directory whose `marketplace/bundles/` subtree should be scanned. '
+            'When omitted, scan is rooted at cwd (legacy behaviour).'
+        ),
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv if argv is not None else sys.argv[1:])
+    base = args.source_root if args.source_root is not None else Path.cwd()
+    bundles_root = base / 'marketplace' / 'bundles'
     pairs: list[tuple[str, str]] = []
     if bundles_root.is_dir():
         for bundle_dir in sorted(p for p in bundles_root.iterdir() if p.is_dir()):

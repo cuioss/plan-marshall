@@ -86,7 +86,7 @@ Output this banner directly as text at command start (do NOT use Bash echo - out
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| generate-executor | `plan-marshall:tools-script-executor:generate_executor` | Executor generation |
+| generate-executor | `plan-marshall:tools-script-executor:generate_executor` | Executor generation. Both surfaces (wizard Step 4 and maintenance "Regenerate Executor") detect whether they are running inside a git worktree (path under `.claude/worktrees/`) and, when so, pass `--marketplace-root <worktree-absolute-path>` so the generated executor's script mappings resolve against the worktree's `marketplace/bundles/` instead of the main checkout or the plugin cache. |
 | manage-config | `plan-marshall:manage-config:manage-config` | Project-level marshal.json CRUD |
 | run_config | `plan-marshall:manage-run-config:run_config` | Clean temp, logs, archived-plans, memory |
 | ci_health | `plan-marshall:tools-integration-ci:ci_health` | CI provider detection |

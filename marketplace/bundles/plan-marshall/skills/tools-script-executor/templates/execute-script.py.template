@@ -46,6 +46,45 @@ SCRIPTS = {
     {{SCRIPT_MAPPINGS}}
 }
 
+# Runtime path-rewrite hook: when PM_MARKETPLACE_ROOT is set and points at a
+# marketplace tree that differs from the one embedded at generation time,
+# rewrite every SCRIPTS path via a pure prefix substitution. No glob, no walk
+# — just a string-prefix swap on the segment up to '/marketplace/bundles/'.
+# This lets an executor that was generated against one checkout (e.g. the
+# cache) resolve notations against another checkout (e.g. an isolated
+# worktree) without regenerating the executor file.
+#
+# When the env var is unset, the helper is never invoked and SCRIPTS plus
+# PYTHONPATH below are byte-identical to the un-hooked template behaviour.
+def _rewrite_scripts_for_env(env_root: str) -> None:
+    """Rewrite SCRIPTS values in-place when env_root differs from the embedded root.
+
+    Args:
+        env_root: Value of PM_MARKETPLACE_ROOT (the directory containing
+            ``marketplace/bundles``).
+    """
+    if not SCRIPTS:
+        return
+    marker = '/marketplace/bundles/'
+    first_path = next(iter(SCRIPTS.values()))
+    idx = first_path.find(marker)
+    if idx < 0:
+        return
+    embedded_root = first_path[:idx]
+    new_root = env_root.rstrip('/')
+    if embedded_root == new_root:
+        return
+    old_prefix = embedded_root + marker
+    new_prefix = new_root + marker
+    for notation, path in list(SCRIPTS.items()):
+        if path.startswith(old_prefix):
+            SCRIPTS[notation] = new_prefix + path[len(old_prefix):]
+
+
+_PM_MARKETPLACE_ROOT_ENV = os.environ.get('PM_MARKETPLACE_ROOT')
+if _PM_MARKETPLACE_ROOT_ENV:
+    _rewrite_scripts_for_env(_PM_MARKETPLACE_ROOT_ENV)
+
 # Build PYTHONPATH from all skill script directories and their subdirectories.
 # Includes directories discovered at generation time (covers library-only skills like
 # script-shared that have importable modules but no registered script notations).
