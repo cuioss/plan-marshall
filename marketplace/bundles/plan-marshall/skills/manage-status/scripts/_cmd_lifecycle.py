@@ -171,7 +171,13 @@ def cmd_transition(args: argparse.Namespace) -> dict | None:
         phases[completed_idx + 1]['status'] = PHASE_STATUS_IN_PROGRESS
         status['current_phase'] = next_phase
     else:
+        # Last phase completed — set the post-finalize sentinel so dormant
+        # consumers (phase-6-finalize SKILL.md "current_phase: complete"
+        # check, planning.md cleanup --filter complete) start matching.
+        # Mirrors cmd_archive's atomic-archive behavior so the two verbs
+        # produce the same end-state.
         next_phase = None
+        status['current_phase'] = 'complete'
 
     write_status(args.plan_id, status)
 
@@ -185,7 +191,14 @@ def cmd_transition(args: argparse.Namespace) -> dict | None:
 
 
 def cmd_archive(args: argparse.Namespace) -> dict:
-    """Archive a completed plan."""
+    """Archive a completed plan.
+
+    Atomically closes the active phase before moving the plan directory:
+    marks the active phase ``done``, and when every phase is done sets
+    ``current_phase = 'complete'``. Mirrors cmd_transition so an archived
+    status.json reflects a fully-closed plan instead of being frozen at the
+    last phase's in_progress state.
+    """
     require_valid_plan_id(args)
 
     plan_dir = get_plan_dir(args.plan_id)
@@ -199,6 +212,26 @@ def cmd_archive(args: argparse.Namespace) -> dict:
 
     if args.dry_run:
         return {'status': 'success', 'plan_id': args.plan_id, 'dry_run': True, 'would_archive_to': str(archive_path)}
+
+    # Atomic phase close: load status, mark the active phase done, set the
+    # post-finalize sentinel when all phases are complete, then write back
+    # to the live plan directory BEFORE the shutil.move. This guarantees the
+    # archived status.json reflects the closed state — historically this
+    # was attempted via a follow-up `transition --completed 6-finalize`
+    # call, but that always failed because shutil.move had already
+    # invalidated the live path.
+    status = require_status(args)
+    if status is not None:
+        phases = status.get('phases', [])
+        active_idx = next(
+            (i for i, p in enumerate(phases) if p.get('status') != PHASE_STATUS_DONE),
+            None,
+        )
+        if active_idx is not None:
+            phases[active_idx]['status'] = PHASE_STATUS_DONE
+        if all(p.get('status') == PHASE_STATUS_DONE for p in phases):
+            status['current_phase'] = 'complete'
+        write_status(args.plan_id, status)
 
     archive_dir.mkdir(parents=True, exist_ok=True)
     shutil.move(str(plan_dir), str(archive_path))
