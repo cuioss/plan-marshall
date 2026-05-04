@@ -44,6 +44,13 @@ plan_id: {plan_id}
 Returns next task with status pending or in_progress
 ```
 
+Immediately after `manage-tasks next` resolves a task, emit the canonical per-task start `[STEP]` work-log entry. Substitute `{N}` with the task number, `{title}` with the resolved task title, and `{profile}` with the task's profile (`implementation` | `module_testing` | `verification`):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-5-execute) Executing task {N}: {title} — profile={profile}"
+```
+
 ### Executing Checklist Items
 
 For each `- [ ]` item:
@@ -63,9 +70,18 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
   --outcome done
 ```
 
-### Artifact Emission at Task Completion
+### Task Completion Emission ([STEP] + [ARTIFACT])
 
-After all steps of a task are complete and verification has passed, but **before** the orchestrator calls `manage-tasks next` to advance to the following task, the orchestrator MUST emit one `[ARTIFACT]` work-log entry per changed path so that a plan-level audit can reconstruct which file system effects each task produced.
+After all steps of a task are complete and verification has passed, but **before** the orchestrator calls `manage-tasks next` to advance to the following task, the orchestrator MUST emit two work-log entries in this order:
+
+1. **Per-task completion `[STEP]`** — exactly one line summarizing the task. Substitute `{N}` with the task number, `{title}` with the task title, `{steps_done}` with the count of finalized steps, and `{steps_total}` with the task's total step count:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-5-execute) Completed task {N}: {title} — {steps_done}/{steps_total} steps"
+   ```
+
+2. **One `[ARTIFACT]` per changed path** — see procedure below. Together these entries let a plan-level audit reconstruct both the per-task progression and the file-system effects each task produced.
 
 **Baseline SHA**: Record the worktree's HEAD SHA the moment a task transitions to `in_progress` and persist it as `task_start_sha` in task metadata. This is the single source of truth for the task's starting point. Capture it with:
 
