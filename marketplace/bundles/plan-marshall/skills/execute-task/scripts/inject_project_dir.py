@@ -32,23 +32,23 @@ from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 _BUCKET_B_NOTATIONS: frozenset[str] = frozenset(
     {
-        "plan-marshall:build-maven:maven",
-        "plan-marshall:build-gradle:gradle",
-        "plan-marshall:build-npm:npm",
-        "plan-marshall:build-python:python_build",
-        "plan-marshall:tools-integration-ci:ci",
-        "plan-marshall:workflow-integration-git:git",
-        "plan-marshall:workflow-integration-sonar:sonar",
-        "plan-marshall:workflow-pr-doctor:pr-doctor",
+        'plan-marshall:build-maven:maven',
+        'plan-marshall:build-gradle:gradle',
+        'plan-marshall:build-npm:npm',
+        'plan-marshall:build-python:python_build',
+        'plan-marshall:tools-integration-ci:ci',
+        'plan-marshall:workflow-integration-git:git',
+        'plan-marshall:workflow-integration-sonar:sonar',
+        'plan-marshall:workflow-pr-doctor:pr-doctor',
     }
 )
 
 _EXECUTOR_MARKERS: tuple[str, ...] = (
-    ".plan/execute-script.py",
-    "execute-script.py",
+    '.plan/execute-script.py',
+    'execute-script.py',
 )
 
-_PROJECT_DIR_FLAG: str = "--project-dir"
+_PROJECT_DIR_FLAG: str = '--project-dir'
 
 
 def _find_notation_index(tokens: list[str]) -> int | None:
@@ -113,15 +113,11 @@ def inject_project_dir(command: str, worktree_path: str) -> tuple[str, bool]:
     # immediately after the notation; other subcommands (e.g., help) are
     # out-of-scope for project-dir forwarding.
     run_index = notation_index + 1
-    if run_index >= len(tokens) or tokens[run_index] != "run":
+    if run_index >= len(tokens) or tokens[run_index] != 'run':
         return command, False
 
     # Insert `--project-dir {worktree_path}` immediately after `run`.
-    rewritten_tokens = (
-        tokens[: run_index + 1]
-        + [_PROJECT_DIR_FLAG, worktree_path]
-        + tokens[run_index + 1 :]
-    )
+    rewritten_tokens = tokens[: run_index + 1] + [_PROJECT_DIR_FLAG, worktree_path] + tokens[run_index + 1 :]
     return shlex.join(rewritten_tokens), True
 
 
@@ -143,9 +139,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     print(
         serialize_toon(
             {
-                "status": "success",
-                "injected": injected,
-                "rewritten_command": rewritten,
+                'status': 'success',
+                'injected': injected,
+                'rewritten_command': rewritten,
             }
         )
     )
@@ -156,28 +152,28 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the argparse parser with a single `run` subcommand."""
     parser = argparse.ArgumentParser(
         description=(
-            "Forward --project-dir to Bucket B execute-script invocations. "
-            "Leaves Bucket A and non-executor commands unchanged."
+            'Forward --project-dir to Bucket B execute-script invocations. '
+            'Leaves Bucket A and non-executor commands unchanged.'
         ),
         allow_abbrev=False,
     )
-    subparsers = parser.add_subparsers(dest="command_name", required=True)
+    subparsers = parser.add_subparsers(dest='command_name', required=True)
 
     run_parser = subparsers.add_parser(
-        "run",
-        help="Rewrite a single command and print the result to stdout",
+        'run',
+        help='Rewrite a single command and print the result to stdout',
         allow_abbrev=False,
     )
     run_parser.add_argument(
-        "--command",
+        '--command',
         required=True,
-        help="The original shell command string to inspect and possibly rewrite",
+        help='The original shell command string to inspect and possibly rewrite',
     )
     run_parser.add_argument(
-        "--worktree-path",
+        '--worktree-path',
         required=True,
-        dest="worktree_path",
-        help="Absolute path to the active git worktree root",
+        dest='worktree_path',
+        help='Absolute path to the active git worktree root',
     )
     run_parser.set_defaults(func=cmd_run)
 
@@ -191,5 +187,5 @@ def main() -> int:
     return int(args.func(args))
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

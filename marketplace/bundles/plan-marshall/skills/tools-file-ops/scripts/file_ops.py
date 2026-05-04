@@ -138,8 +138,7 @@ def get_worktree_root() -> Path:
     root = git_main_checkout_root()
     if root is None:
         raise RuntimeError(
-            'get_worktree_root() requires a git repository; '
-            'no main checkout root could be resolved from cwd.'
+            'get_worktree_root() requires a git repository; no main checkout root could be resolved from cwd.'
         )
     return root / '.claude' / 'worktrees'
 
@@ -830,12 +829,14 @@ def _cli_copy_tree(args: argparse.Namespace) -> int:
         output_toon_error('dst_already_exists', str(exc), src=str(src), dst=str(dst))
         return 1
 
-    output_toon({
-        'status': 'success',
-        'operation': 'copy-tree',
-        'src': str(src),
-        'dst': str(dst),
-    })
+    output_toon(
+        {
+            'status': 'success',
+            'operation': 'copy-tree',
+            'src': str(src),
+            'dst': str(dst),
+        }
+    )
     return 0
 
 
@@ -850,8 +851,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
     cp = subparsers.add_parser(
         'copy-tree',
-        help='Recursively copy a directory tree (symlinks skipped, '
-        'fails if destination exists).',
+        help='Recursively copy a directory tree (symlinks skipped, fails if destination exists).',
         allow_abbrev=False,
     )
     cp.add_argument('--src', required=True, help='Source directory path.')

@@ -40,13 +40,13 @@ def _cache_base() -> Path | None:
         home = Path.home()
     except (OSError, RuntimeError):
         return None
-    return home / ".cache" / "plan-marshall" / "sessions"
+    return home / '.cache' / 'plan-marshall' / 'sessions'
 
 
 def _resolve_cwd() -> str:
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
+            ['git', 'rev-parse', '--show-toplevel'],
             capture_output=True,
             text=True,
             timeout=3,
@@ -62,7 +62,7 @@ def _resolve_cwd() -> str:
 
 def _read_text(path: Path) -> str | None:
     try:
-        raw = path.read_text(encoding="utf-8").strip()
+        raw = path.read_text(encoding='utf-8').strip()
     except (OSError, ValueError):
         return None
     return raw or None
@@ -71,24 +71,24 @@ def _read_text(path: Path) -> str | None:
 def cmd_current(_args: argparse.Namespace) -> int:
     base = _cache_base()
     if base is None:
-        output_toon_error("session_id_unavailable", "Home directory not resolvable")
+        output_toon_error('session_id_unavailable', 'Home directory not resolvable')
         return 0
 
     cwd = _resolve_cwd()
-    cwd_hash = hashlib.sha256(cwd.encode("utf-8")).hexdigest()
+    cwd_hash = hashlib.sha256(cwd.encode('utf-8')).hexdigest()
 
-    by_cwd = base / "by-cwd" / cwd_hash
+    by_cwd = base / 'by-cwd' / cwd_hash
     session_id = _read_text(by_cwd)
 
     if session_id is None:
-        current = base / "current"
+        current = base / 'current'
         session_id = _read_text(current)
 
     if session_id is None:
-        output_toon_error("session_id_unavailable", "No session_id cached for this cwd or singleton")
+        output_toon_error('session_id_unavailable', 'No session_id cached for this cwd or singleton')
         return 0
 
-    output_toon({"status": "success", "session_id": session_id})
+    output_toon({'status': 'success', 'session_id': session_id})
     return 0
 
 
@@ -97,67 +97,67 @@ def _projects_root() -> Path | None:
         home = Path.home()
     except (OSError, RuntimeError):
         return None
-    return home / ".claude" / "projects"
+    return home / '.claude' / 'projects'
 
 
 def _cwd_to_slug(cwd: str) -> str:
-    return cwd.replace("/", "-")
+    return cwd.replace('/', '-')
 
 
 def cmd_transcript_path(args: argparse.Namespace) -> int:
     session_id = args.session_id
     if not SESSION_ID_RE.match(session_id):
-        output_toon_error("invalid_session_id", f"session_id must match {SESSION_ID_RE.pattern}")
+        output_toon_error('invalid_session_id', f'session_id must match {SESSION_ID_RE.pattern}')
         return 0
 
     projects = _projects_root()
     if projects is None:
-        output_toon_error("transcript_not_found", "Home directory not resolvable")
+        output_toon_error('transcript_not_found', 'Home directory not resolvable')
         return 0
 
     cwd = _resolve_cwd()
     cwd_slug = _cwd_to_slug(cwd)
 
-    direct = projects / cwd_slug / f"{session_id}.jsonl"
+    direct = projects / cwd_slug / f'{session_id}.jsonl'
     if direct.is_file():
-        output_toon({"status": "success", "transcript_path": str(direct)})
+        output_toon({'status': 'success', 'transcript_path': str(direct)})
         return 0
 
     if projects.is_dir():
-        for match in projects.glob(f"*/{session_id}.jsonl"):
+        for match in projects.glob(f'*/{session_id}.jsonl'):
             if match.is_file():
-                output_toon({"status": "success", "transcript_path": str(match)})
+                output_toon({'status': 'success', 'transcript_path': str(match)})
                 return 0
 
-    output_toon_error("transcript_not_found", f"No transcript JSONL found for session_id {session_id}")
+    output_toon_error('transcript_not_found', f'No transcript JSONL found for session_id {session_id}')
     return 0
 
 
 @safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Resolve the active Claude Code session_id from the hook cache",
+        description='Resolve the active Claude Code session_id from the hook cache',
         allow_abbrev=False,
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest='command', required=True)
 
-    subparsers.add_parser("current", help="Return the current session_id", allow_abbrev=False)
+    subparsers.add_parser('current', help='Return the current session_id', allow_abbrev=False)
 
     transcript_parser = subparsers.add_parser(
-        "transcript-path",
-        help="Resolve the absolute path of a session transcript JSONL",
+        'transcript-path',
+        help='Resolve the absolute path of a session transcript JSONL',
         allow_abbrev=False,
     )
     add_session_id_arg(transcript_parser)
 
     args = parse_args_with_toon_errors(parser)
-    if args.command == "current":
+    if args.command == 'current':
         return cmd_current(args)
-    if args.command == "transcript-path":
+    if args.command == 'transcript-path':
         return cmd_transcript_path(args)
-    parser.error(f"Unknown command: {args.command}")
+    parser.error(f'Unknown command: {args.command}')
     return 2
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

@@ -14,7 +14,12 @@ from pathlib import Path
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-architecture' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-architecture'
+    / 'scripts'
 )
 
 
@@ -132,9 +137,7 @@ def test_enrich_project_with_reasoning_persists_reasoning():
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
-        enrich_project(
-            'Test project description', tmpdir, reasoning='Derived from README.md first paragraph'
-        )
+        enrich_project('Test project description', tmpdir, reasoning='Derived from README.md first paragraph')
 
         meta = load_project_meta(tmpdir)
         assert meta['description'] == 'Test project description'
@@ -285,9 +288,7 @@ def test_enrich_package_with_components():
         setup_test_project(tmpdir)
 
         components = ['ClaimValidator', 'JwtPipeline', 'ValidationResult']
-        result = enrich_package(
-            'module-a', 'com.example.core', 'Core components', tmpdir, components=components
-        )
+        result = enrich_package('module-a', 'com.example.core', 'Core components', tmpdir, components=components)
 
         assert result['status'] == 'success'
         assert result['components'] == components
@@ -303,9 +304,7 @@ def test_enrich_package_update_preserves_components():
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
 
-        enrich_package(
-            'module-a', 'com.example.core', 'Original', tmpdir, components=['Class1', 'Class2']
-        )
+        enrich_package('module-a', 'com.example.core', 'Original', tmpdir, components=['Class1', 'Class2'])
         enrich_package('module-a', 'com.example.core', 'Updated', tmpdir)
 
         enriched = load_module_enriched('module-a', tmpdir)
@@ -320,9 +319,7 @@ def test_enrich_package_update_components():
         setup_test_project(tmpdir)
 
         enrich_package('module-a', 'com.example.core', 'Desc', tmpdir, components=['Class1'])
-        enrich_package(
-            'module-a', 'com.example.core', 'Desc', tmpdir, components=['Class1', 'Class2', 'Class3']
-        )
+        enrich_package('module-a', 'com.example.core', 'Desc', tmpdir, components=['Class1', 'Class2', 'Class3'])
 
         enriched = load_module_enriched('module-a', tmpdir)
         pkg = enriched['key_packages']['com.example.core']
@@ -375,9 +372,7 @@ def test_enrich_skills_by_profile_with_reasoning():
         setup_test_project(tmpdir)
 
         skills_by_profile = {'implementation': ['pm-dev-java:java-core']}
-        enrich_skills_by_profile(
-            'module-a', skills_by_profile, tmpdir, reasoning='Pure Java library with no CDI'
-        )
+        enrich_skills_by_profile('module-a', skills_by_profile, tmpdir, reasoning='Pure Java library with no CDI')
 
         enriched = load_module_enriched('module-a', tmpdir)
         assert enriched['skills_by_profile_reasoning'] == 'Pure Java library with no CDI'
@@ -557,9 +552,7 @@ def test_enrich_dependencies_with_reasoning():
         setup_test_project(tmpdir)
 
         key_deps = ['de.cuioss:cui-java-tools']
-        enrich_dependencies(
-            'module-a', key_deps, None, tmpdir, reasoning='Core utilities used throughout the module'
-        )
+        enrich_dependencies('module-a', key_deps, None, tmpdir, reasoning='Core utilities used throughout the module')
 
         enriched = load_module_enriched('module-a', tmpdir)
         assert enriched['key_dependencies_reasoning'] == 'Core utilities used throughout the module'

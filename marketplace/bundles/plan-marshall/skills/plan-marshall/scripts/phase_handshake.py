@@ -43,16 +43,12 @@ def _build_parser() -> argparse.ArgumentParser:
     capture.add_argument('--override', action='store_true', help='Mark as override capture')
     capture.add_argument('--reason', help='Reason required when --override is set')
 
-    verify = subparsers.add_parser(
-        'verify', help='Verify invariants against a capture', allow_abbrev=False
-    )
+    verify = subparsers.add_parser('verify', help='Verify invariants against a capture', allow_abbrev=False)
     add_plan_id_arg(verify)
     add_phase_arg(verify)
     verify.add_argument('--strict', action='store_true', help='Exit 1 on drift')
 
-    listcmd = subparsers.add_parser(
-        'list', help='List all captured phases for a plan', allow_abbrev=False
-    )
+    listcmd = subparsers.add_parser('list', help='List all captured phases for a plan', allow_abbrev=False)
     add_plan_id_arg(listcmd)
 
     clear = subparsers.add_parser('clear', help='Remove a captured phase row', allow_abbrev=False)

@@ -13,16 +13,12 @@ from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 @safe_main
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description='Read-only project architecture queries', allow_abbrev=False
-    )
+    parser = argparse.ArgumentParser(description='Read-only project architecture queries', allow_abbrev=False)
     parser.add_argument('--project-dir', default='.', help='Project directory (default: current directory)')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # info - Project summary
-    subparsers.add_parser(
-        'info', help='Get project summary with metadata and module overview', allow_abbrev=False
-    )
+    subparsers.add_parser('info', help='Get project summary with metadata and module overview', allow_abbrev=False)
 
     # modules - List module names
     modules_parser = subparsers.add_parser('modules', help='List available module names', allow_abbrev=False)
@@ -51,15 +47,11 @@ def main() -> int:
     )
 
     # commands - List commands for module
-    commands_parser = subparsers.add_parser(
-        'commands', help='List available commands for a module', allow_abbrev=False
-    )
+    commands_parser = subparsers.add_parser('commands', help='List available commands for a module', allow_abbrev=False)
     commands_parser.add_argument('--name', help='Module name (default: root module)')
 
     # resolve - Resolve command to executable
-    resolve_parser = subparsers.add_parser(
-        'resolve', help='Resolve command to executable form', allow_abbrev=False
-    )
+    resolve_parser = subparsers.add_parser('resolve', help='Resolve command to executable form', allow_abbrev=False)
     resolve_parser.add_argument('--command', required=True, dest='resolve_command', help='Command name to resolve')
     resolve_parser.add_argument('--module', help='Module name (default: root module)')
 

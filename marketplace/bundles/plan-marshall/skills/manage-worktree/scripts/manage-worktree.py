@@ -330,9 +330,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_plan_id_arg(p_path)
     p_path.set_defaults(func=cmd_path)
 
-    p_create = sub.add_parser(
-        'create', help='Create worktree + feature branch + shim drop', allow_abbrev=False
-    )
+    p_create = sub.add_parser('create', help='Create worktree + feature branch + shim drop', allow_abbrev=False)
     add_plan_id_arg(p_create)
     p_create.add_argument('--branch', required=True, help='Feature branch name to create')
     p_create.add_argument('--base', help='Base ref for the new branch (default: current HEAD)')

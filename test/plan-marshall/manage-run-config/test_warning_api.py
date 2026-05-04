@@ -40,8 +40,9 @@ def test_warning_add_creates_entry():
 
         # Add a warning pattern
         result = cmd_warning_add(
-            Namespace(category='transitive_dependency', pattern='uses commons-logging via spring-core',
-                      build_system='maven')
+            Namespace(
+                category='transitive_dependency', pattern='uses commons-logging via spring-core', build_system='maven'
+            )
         )
 
         assert result['status'] == 'success', 'Should return success'
@@ -60,9 +61,7 @@ def test_warning_add_skips_duplicate():
         cmd_init(Namespace(force=False))
 
         # Add same pattern twice
-        cmd_warning_add(
-            Namespace(category='transitive_dependency', pattern='duplicate pattern', build_system='maven')
-        )
+        cmd_warning_add(Namespace(category='transitive_dependency', pattern='duplicate pattern', build_system='maven'))
         result = cmd_warning_add(
             Namespace(category='transitive_dependency', pattern='duplicate pattern', build_system='maven')
         )
@@ -76,9 +75,7 @@ def test_warning_add_invalid_category():
     with PlanContext() as _:
         cmd_init(Namespace(force=False))
 
-        result = cmd_warning_add(
-            Namespace(category='invalid_category', pattern='some pattern', build_system='maven')
-        )
+        result = cmd_warning_add(Namespace(category='invalid_category', pattern='some pattern', build_system='maven'))
 
         # cmd_warning_add returns error dict for invalid category
         assert result['status'] == 'error', 'Should reject invalid category'
@@ -111,9 +108,7 @@ def test_warning_list_single_category():
     with PlanContext() as _:
         cmd_init(Namespace(force=False))
 
-        cmd_warning_add(
-            Namespace(category='transitive_dependency', pattern='filtered pattern', build_system='maven')
-        )
+        cmd_warning_add(Namespace(category='transitive_dependency', pattern='filtered pattern', build_system='maven'))
 
         result = cmd_warning_list(Namespace(category='transitive_dependency', build_system='maven'))
 
@@ -143,9 +138,7 @@ def test_warning_remove_existing():
         cmd_init(Namespace(force=False))
 
         # Add then remove
-        cmd_warning_add(
-            Namespace(category='transitive_dependency', pattern='to be removed', build_system='maven')
-        )
+        cmd_warning_add(Namespace(category='transitive_dependency', pattern='to be removed', build_system='maven'))
         result = cmd_warning_remove(
             Namespace(category='transitive_dependency', pattern='to be removed', build_system='maven')
         )
@@ -183,9 +176,7 @@ def test_warning_add_with_build_system():
     with PlanContext() as ctx:
         cmd_init(Namespace(force=False))
 
-        result = cmd_warning_add(
-            Namespace(category='transitive_dependency', pattern='npm warning', build_system='npm')
-        )
+        result = cmd_warning_add(Namespace(category='transitive_dependency', pattern='npm warning', build_system='npm'))
 
         assert result['status'] == 'success'
 

@@ -83,11 +83,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
         existing_outcome = existing.get('outcome')
         existing_detail = existing.get('display_detail')
         existing_head = existing.get('head_at_completion')
-        if (
-            existing_outcome == outcome
-            and existing_detail == display_detail
-            and existing_head == head_at_completion
-        ):
+        if existing_outcome == outcome and existing_detail == display_detail and existing_head == head_at_completion:
             return {
                 'status': 'success',
                 'plan_id': args.plan_id,
@@ -98,9 +94,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
                 'head_at_completion': head_at_completion,
                 'changed': False,
             }
-        if existing_outcome == outcome and (
-            existing_detail != display_detail or existing_head != head_at_completion
-        ):
+        if existing_outcome == outcome and (existing_detail != display_detail or existing_head != head_at_completion):
             phase_entry[step] = new_entry
             write_status(args.plan_id, status)
             return {
@@ -157,9 +151,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
     }
 
 
-def _build_entry(
-    outcome: str, display_detail: str | None, head_at_completion: str | None
-) -> dict[str, Any]:
+def _build_entry(outcome: str, display_detail: str | None, head_at_completion: str | None) -> dict[str, Any]:
     """Build the phase_entry[step] dict, omitting head_at_completion when None.
 
     Legacy compatibility: callers that omit ``--head-at-completion`` produce

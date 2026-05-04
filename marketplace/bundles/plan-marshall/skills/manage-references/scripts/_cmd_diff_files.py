@@ -119,11 +119,7 @@ def cmd_diff_files(args) -> dict:
     ledger_set = set(ledger)
 
     files: list[str] = [path for path in ledger if path in live_set]
-    dropped = [
-        {'path': path, 'reason': 'not_in_working_tree'}
-        for path in ledger
-        if path not in live_set
-    ]
+    dropped = [{'path': path, 'reason': 'not_in_working_tree'} for path in ledger if path not in live_set]
     phantom = sorted(live_set - ledger_set)
 
     return {

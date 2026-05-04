@@ -127,6 +127,7 @@ This is a project-local command.
         )
 
         import os
+
         original_cwd = os.getcwd()
         try:
             os.chdir(self.temp_dir)
@@ -183,9 +184,7 @@ class TestDetectSuspicious(ScriptTestCase):
         settings_file = self.temp_dir / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(sudo:*)'], 'deny': [], 'ask': []}}))
 
-        result = cmd_detect_suspicious(
-            Namespace(scope=None, settings=str(settings_file), approved_file=None)
-        )
+        result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
 
         self.assertEqual(result['status'], 'success')
         self.assertIn('suspicious', result)
@@ -197,9 +196,7 @@ class TestDetectSuspicious(ScriptTestCase):
         settings_file = self.temp_dir / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Write(/etc/**)'], 'deny': [], 'ask': []}}))
 
-        result = cmd_detect_suspicious(
-            Namespace(scope=None, settings=str(settings_file), approved_file=None)
-        )
+        result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
 
         self.assertEqual(result['status'], 'success')
         suspicious_perms = [s['permission'] for s in result['suspicious']]
@@ -210,9 +207,7 @@ class TestDetectSuspicious(ScriptTestCase):
         settings_file = self.temp_dir / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(rm:-rf:*)'], 'deny': [], 'ask': []}}))
 
-        result = cmd_detect_suspicious(
-            Namespace(scope=None, settings=str(settings_file), approved_file=None)
-        )
+        result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
 
         self.assertEqual(result['status'], 'success')
         if result['suspicious']:
@@ -226,9 +221,7 @@ class TestDetectSuspicious(ScriptTestCase):
             json.dumps({'permissions': {'allow': ['Bash(dd:if=/dev/zero)'], 'deny': [], 'ask': []}})
         )
 
-        result = cmd_detect_suspicious(
-            Namespace(scope=None, settings=str(settings_file), approved_file=None)
-        )
+        result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
 
         self.assertEqual(result['status'], 'success')
         suspicious_perms = [s['permission'] for s in result['suspicious']]
@@ -239,9 +232,7 @@ class TestDetectSuspicious(ScriptTestCase):
         settings_file = self.temp_dir / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Write(//Users/**)'], 'deny': [], 'ask': []}}))
 
-        result = cmd_detect_suspicious(
-            Namespace(scope=None, settings=str(settings_file), approved_file=None)
-        )
+        result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
 
         self.assertEqual(result['status'], 'success')
         suspicious_perms = [s['permission'] for s in result['suspicious']]
@@ -256,9 +247,7 @@ class TestDetectSuspicious(ScriptTestCase):
             )
         )
 
-        result = cmd_detect_suspicious(
-            Namespace(scope=None, settings=str(settings_file), approved_file=None)
-        )
+        result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
 
         self.assertEqual(result['status'], 'success')
         self.assertEqual(len(result.get('suspicious', [])), 0)
@@ -268,9 +257,7 @@ class TestDetectSuspicious(ScriptTestCase):
         settings_file = self.temp_dir / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(env:*)'], 'deny': [], 'ask': []}}))
 
-        result = cmd_detect_suspicious(
-            Namespace(scope=None, settings=str(settings_file), approved_file=None)
-        )
+        result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
 
         self.assertEqual(result['status'], 'success')
         # env access may or may not be flagged depending on patterns
@@ -350,9 +337,7 @@ class TestDetectMissingProjectStepPermissions(ScriptTestCase):
         marshal = self._write_marshal({'phase-6-finalize': ['project:finalize-step-plugin-doctor']})
         settings = self._write_settings(['Edit(.plan/**)'])
 
-        result = cmd_detect_missing_project_step_permissions(
-            Namespace(marshal=marshal, settings=settings, scope=None)
-        )
+        result = cmd_detect_missing_project_step_permissions(Namespace(marshal=marshal, settings=settings, scope=None))
 
         self.assertEqual(result['status'], 'success')
         self.assertEqual(len(result['missing']), 1)
@@ -364,9 +349,7 @@ class TestDetectMissingProjectStepPermissions(ScriptTestCase):
         marshal = self._write_marshal({'phase-6-finalize': ['project:sync-plugin-cache']})
         settings = self._write_settings(['Skill(sync-plugin-cache)'])
 
-        result = cmd_detect_missing_project_step_permissions(
-            Namespace(marshal=marshal, settings=settings, scope=None)
-        )
+        result = cmd_detect_missing_project_step_permissions(Namespace(marshal=marshal, settings=settings, scope=None))
 
         self.assertEqual(result['status'], 'success')
         self.assertEqual(len(result['missing']), 0)
@@ -378,9 +361,7 @@ class TestDetectMissingProjectStepPermissions(ScriptTestCase):
         marshal = self._write_marshal({'phase-5-execute': ['project:verify-workflow']})
         settings = self._write_settings(['Skill(verify-workflow:*)'])
 
-        result = cmd_detect_missing_project_step_permissions(
-            Namespace(marshal=marshal, settings=settings, scope=None)
-        )
+        result = cmd_detect_missing_project_step_permissions(Namespace(marshal=marshal, settings=settings, scope=None))
 
         self.assertEqual(result['status'], 'success')
         self.assertEqual(len(result['missing']), 0)
@@ -391,9 +372,7 @@ class TestDetectMissingProjectStepPermissions(ScriptTestCase):
         marshal = self._write_marshal({'phase-6-finalize': ['default:commit-push', 'default:create-pr']})
         settings = self._write_settings([])
 
-        result = cmd_detect_missing_project_step_permissions(
-            Namespace(marshal=marshal, settings=settings, scope=None)
-        )
+        result = cmd_detect_missing_project_step_permissions(Namespace(marshal=marshal, settings=settings, scope=None))
 
         self.assertEqual(result['status'], 'success')
         self.assertEqual(len(result['missing']), 0)
@@ -402,15 +381,15 @@ class TestDetectMissingProjectStepPermissions(ScriptTestCase):
 
     def test_scans_both_phase5_and_phase6(self):
         """Detection aggregates project: steps across both phase-5-execute and phase-6-finalize."""
-        marshal = self._write_marshal({
-            'phase-5-execute': ['project:verify-workflow'],
-            'phase-6-finalize': ['project:finalize-step-plugin-doctor'],
-        })
+        marshal = self._write_marshal(
+            {
+                'phase-5-execute': ['project:verify-workflow'],
+                'phase-6-finalize': ['project:finalize-step-plugin-doctor'],
+            }
+        )
         settings = self._write_settings(['Skill(verify-workflow)'])
 
-        result = cmd_detect_missing_project_step_permissions(
-            Namespace(marshal=marshal, settings=settings, scope=None)
-        )
+        result = cmd_detect_missing_project_step_permissions(Namespace(marshal=marshal, settings=settings, scope=None))
 
         self.assertEqual(result['status'], 'success')
         self.assertEqual(result['summary']['project_steps_checked'], 2)

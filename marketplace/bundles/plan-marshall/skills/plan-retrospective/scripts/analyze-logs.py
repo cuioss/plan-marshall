@@ -80,7 +80,7 @@ def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | N
         if not archived_plan_path:
             raise ValueError('--archived-plan-path is required for archived mode')
         return Path(archived_plan_path)
-    raise ValueError(f"Unknown mode: {mode!r}")
+    raise ValueError(f'Unknown mode: {mode!r}')
 
 
 def resolve_logs_dir(mode: str, plan_id: str | None, archived_plan_path: str | None) -> Path:
@@ -246,13 +246,12 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     modified_files = read_modified_files(plan_dir)
     findings: list[dict[str, str]] = []
     if modified_files and artifact_entries == 0:
-        findings.append({
-            'severity': 'error',
-            'message': (
-                f'ARTIFACT entries missing: modified_files={len(modified_files)} '
-                f'but artifact_entries=0'
-            ),
-        })
+        findings.append(
+            {
+                'severity': 'error',
+                'message': (f'ARTIFACT entries missing: modified_files={len(modified_files)} but artifact_entries=0'),
+            }
+        )
 
     return {
         'status': 'success',
@@ -272,10 +271,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         'script_duration_p50_ms': round(percentile(duration_values, 50.0), 3),
         'script_duration_p95_ms': round(percentile(duration_values, 95.0), 3),
         'script_duration_max_ms': round(max(duration_values) if duration_values else 0.0, 3),
-        'slowest_scripts': [
-            {'notation': notation, 'duration_ms': round(ms, 3)}
-            for notation, ms in slowest
-        ],
+        'slowest_scripts': [{'notation': notation, 'duration_ms': round(ms, 3)} for notation, ms in slowest],
         'top_tags': top_n(tag_counter, 5),
         'top_error_tags': top_n(error_tags, 5),
         'findings': findings,

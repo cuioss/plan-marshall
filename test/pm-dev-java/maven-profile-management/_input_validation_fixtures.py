@@ -33,9 +33,7 @@ _HAPPY: dict[str, str] = {
 }
 
 
-MALFORMED_AXES: dict[str, list[tuple[str, str]]] = {
-    field: list(_BASE_MALFORMED) for field in _HAPPY
-}
+MALFORMED_AXES: dict[str, list[tuple[str, str]]] = {field: list(_BASE_MALFORMED) for field in _HAPPY}
 
 
 HAPPY_VALUES: dict[str, str] = dict(_HAPPY)
@@ -56,13 +54,9 @@ def assert_invalid_field(result: Any, expected_error: str) -> None:
         f'stderr={result.stderr!r}'
     )
     data = parse_toon_output(result.stdout)
-    assert data.get('status') == 'error', (
-        f'expected status=error, got {data.get("status")!r}\n'
-        f'stdout={result.stdout!r}'
-    )
+    assert data.get('status') == 'error', f'expected status=error, got {data.get("status")!r}\nstdout={result.stdout!r}'
     assert data.get('error') == expected_error, (
-        f'expected error={expected_error!r}, got {data.get("error")!r}\n'
-        f'stdout={result.stdout!r}'
+        f'expected error={expected_error!r}, got {data.get("error")!r}\nstdout={result.stdout!r}'
     )
 
 
@@ -79,6 +73,5 @@ def assert_not_invalid_field(result: Any, error_code: str) -> None:
         except Exception:
             return  # not parseable as TOON — definitely not the validator path
         assert data.get('error') != error_code, (
-            f'happy-path value triggered {error_code} unexpectedly\n'
-            f'stdout={result.stdout!r}'
+            f'happy-path value triggered {error_code} unexpectedly\nstdout={result.stdout!r}'
         )

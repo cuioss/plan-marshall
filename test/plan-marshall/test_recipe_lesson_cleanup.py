@@ -94,8 +94,7 @@ def derive_change_type(lesson_kind: str) -> str:
         return LESSON_KIND_TO_CHANGE_TYPE[lesson_kind]
     except KeyError:
         raise ValueError(
-            f"Lesson kind '{lesson_kind}' is not mapped — "
-            f'supported: {sorted(LESSON_KIND_TO_CHANGE_TYPE.keys())}'
+            f"Lesson kind '{lesson_kind}' is not mapped — supported: {sorted(LESSON_KIND_TO_CHANGE_TYPE.keys())}"
         ) from None
 
 
@@ -335,11 +334,7 @@ class TestAutoSuggestPredicate:
     @pytest.mark.parametrize('lang', sorted(_CODE_FENCE_LANGS))
     def test_does_not_fire_for_any_code_language_fence(self, lang):
         """Rule 1: every language in the disqualified set must trip the predicate."""
-        body = (
-            '## Directive\n\n'
-            'Update the foo.\n\n'
-            f'```{lang}\nsome code here\n```\n'
-        )
+        body = f'## Directive\n\nUpdate the foo.\n\n```{lang}\nsome code here\n```\n'
         assert is_doc_shaped(body) is False, f'lang={lang} should disqualify'
 
     @pytest.mark.parametrize('verb', _CODE_ACTION_VERBS)
@@ -374,7 +369,7 @@ class TestLessonKindMapping:
 
     def test_unknown_kind_raises_value_error(self):
         """Recipe Step 2 aborts with an explicit error on unknown kinds."""
-        with pytest.raises(ValueError, match="not mapped"):
+        with pytest.raises(ValueError, match='not mapped'):
             derive_change_type('feature')
 
     def test_kind_mapping_is_exhaustive(self):
@@ -437,8 +432,7 @@ class TestRecipePathEndToEnd:
             result = cmd_compose(ns)
             assert result is not None and result['status'] == 'success'
             assert result['rule_fired'] == 'recipe', (
-                f'lesson_kind={lesson_kind} should fire the recipe rule, '
-                f"not {result['rule_fired']!r}"
+                f'lesson_kind={lesson_kind} should fire the recipe rule, not {result["rule_fired"]!r}'
             )
 
             manifest = read_manifest(plan_id)
@@ -447,23 +441,17 @@ class TestRecipePathEndToEnd:
             # Phase 5 keeps the bounded verification set.
             assert manifest['phase_5']['early_terminate'] is False
             for step in manifest['phase_5']['verification_steps']:
-                assert step in {'quality-gate', 'module-tests'}, (
-                    f'unexpected Phase 5 step {step!r} for {lesson_kind}'
-                )
+                assert step in {'quality-gate', 'module-tests'}, f'unexpected Phase 5 step {step!r} for {lesson_kind}'
 
             # Phase 6 drops the heavy review steps per the recipe contract.
             phase_6 = manifest['phase_6']['steps']
             for stripped in ('automated-review', 'sonar-roundtrip', 'knowledge-capture'):
                 assert stripped not in phase_6, (
-                    f'recipe path must drop {stripped!r} from Phase 6 '
-                    f'(lesson_kind={lesson_kind})'
+                    f'recipe path must drop {stripped!r} from Phase 6 (lesson_kind={lesson_kind})'
                 )
             # And keeps the must-run steps from the recipe contract.
             for required in ('commit-push', 'lessons-capture'):
-                assert required in phase_6, (
-                    f'recipe path must keep {required!r} in Phase 6 '
-                    f'(lesson_kind={lesson_kind})'
-                )
+                assert required in phase_6, f'recipe path must keep {required!r} in Phase 6 (lesson_kind={lesson_kind})'
 
     def test_recipe_path_takes_precedence_over_surgical_rule(self):
         """When recipe_key is set, the recipe rule fires before the surgical rule.
@@ -487,8 +475,7 @@ class TestRecipePathEndToEnd:
             result = cmd_compose(ns)
             assert result is not None
             assert result['rule_fired'] == 'recipe', (
-                'recipe_key must take precedence over surgical_bug_fix; '
-                f"got {result['rule_fired']!r}"
+                f'recipe_key must take precedence over surgical_bug_fix; got {result["rule_fired"]!r}'
             )
 
     def test_surgical_scope_without_recipe_still_trims_for_bug_fix(self):

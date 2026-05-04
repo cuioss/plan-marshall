@@ -4,7 +4,6 @@
 Tests project discovery from settings.gradle files and build.gradle scanning.
 """
 
-
 # Tier 2 direct imports via importlib for uniform import style
 import importlib.util  # noqa: E402
 from pathlib import Path
@@ -13,7 +12,12 @@ import pytest
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'build-gradle' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'build-gradle'
+    / 'scripts'
 )
 
 

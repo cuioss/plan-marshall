@@ -429,10 +429,7 @@ def _snapshot_real_paths() -> list[str]:
     not exist).
     """
     try:
-        return sorted(
-            str(p.relative_to(_REAL_CREDENTIALS_DIR))
-            for p in _REAL_CREDENTIALS_DIR.rglob('*')
-        )
+        return sorted(str(p.relative_to(_REAL_CREDENTIALS_DIR)) for p in _REAL_CREDENTIALS_DIR.rglob('*'))
     except FileNotFoundError:
         return []
 
@@ -458,8 +455,8 @@ def _pollution_guard(request):
             f'Pollution guard: test {request.node.nodeid} leaked into real paths:\n  '
             f'Test mutated {_REAL_CREDENTIALS_DIR} '
             f'(listing {before_creds} -> {after_creds})'
-            '\n\nIsolate via plan_context + monkeypatch.setattr(\'_providers_core.CREDENTIALS_DIR\', ...), '
-            "or mark with @pytest.mark.allow_pollution if intentional."
+            "\n\nIsolate via plan_context + monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', ...), "
+            'or mark with @pytest.mark.allow_pollution if intentional.'
         )
 
 
@@ -502,6 +499,7 @@ def isolated_credentials(tmp_path, monkeypatch):
     """
     creds_dir = tmp_path / 'credentials'
     import _providers_core  # type: ignore[import-not-found]
+
     monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', creds_dir)
     monkeypatch.setenv('HOME', str(tmp_path))
     return creds_dir
@@ -532,6 +530,7 @@ def plan_context(tmp_path, monkeypatch):
     monkeypatch.setenv('PLAN_DIR_NAME', PLAN_DIR_NAME)
 
     import _config_core  # type: ignore[import-not-found]
+
     monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
     monkeypatch.setattr(_config_core, 'MARSHAL_PATH', tmp_path / 'marshal.json')
     monkeypatch.setattr(_config_core, 'RUN_CONFIG_PATH', tmp_path / 'run-configuration.json')
@@ -684,6 +683,7 @@ class PlanContext:
         # .plan/local/. Imported lazily to avoid top-level import cycles
         # during test bootstrap. Save originals for restoration in __exit__.
         import _config_core  # type: ignore[import-not-found]
+
         self._config_core_module = _config_core
         overrides = {
             'PLAN_BASE_DIR': self.fixture_dir,

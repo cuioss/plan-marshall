@@ -220,7 +220,7 @@ For codebase-wide changes requiring discovery and analysis.
 | Step | Purpose | Key Action |
 |------|---------|------------|
 | **9. Resolve Domain Skill** | Route to domain-specific or generic instructions | `resolve-outline-skill --domain {domain}`, then load `change-{change_type}.md` |
-| **10. Execute Workflow** | Run discovery, analysis, write solution | Follow change-type instructions, resolve verification commands, write `solution_outline.md` |
+| **10. Execute Workflow** | Run discovery, analysis, write solution | Follow change-type instructions, resolve verification commands, write `solution_outline.md`. Step 10 includes a consumer-sweep when the deliverable deletes/renames a public symbol — see [`consumer-sweep.md`](standards/consumer-sweep.md). |
 | **11. Q-Gate Verification** | Full quality verification (with surgical bypass) | Bypass when surgical+bug_fix/tech_debt/verification+1 deliverable; otherwise spawn `plan-marshall:q-gate-validation-agent` |
 
 **Step 10 may also refine `scope_estimate`**: After Complex Track discovery and deliverable composition, the concrete Affected files lists may narrow the actual scope. Phase-3-outline MAY downgrade `scope_estimate` (e.g., `multi_module` → `single_module`, or `single_module` → `surgical`) and persist via `manage-references set --field scope_estimate`. Refinement happens BEFORE Step 11 so the bypass rule sees the refined value.
@@ -432,6 +432,7 @@ qgate_pending_count: {0 if no findings}
 - [solution-outline-standard.md](../../manage-solution-outline/standards/solution-outline-standard.md) - Deliverable structure
 - [workflow-architecture](../../ref-workflow-architecture) - Workflow architecture overview
 - [outline-workflow-detail.md](standards/outline-workflow-detail.md) - Detailed track procedures (Q-Gate re-entry, recipe detection, change-type detection, Simple/Complex track steps)
+- [consumer-sweep.md](standards/consumer-sweep.md) - Outline-time procedure that enumerates cross-bundle consumers of deleted/renamed public symbols before deliverable finalization (mandatory when delete/rename language applies to a public symbol)
 
 ### Phase-boundary metric bookkeeping
 

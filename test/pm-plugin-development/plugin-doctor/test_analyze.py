@@ -25,7 +25,12 @@ import importlib.util  # noqa: E402
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'pm-plugin-development'
+    / 'skills'
+    / 'plugin-doctor'
+    / 'scripts'
 )
 
 
@@ -208,9 +213,7 @@ def test_structure_noun_suffix_flags_plurals(tmp_path):
 
 def test_structure_noun_suffix_passes_verb_first_name():
     """Verb-first skill directory names are not flagged."""
-    skill_dir = (
-        PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'execute-task'
-    )
+    skill_dir = PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'execute-task'
     if not skill_dir.exists():
         return  # Skip if not found (depends on rename tasks completing earlier)
 
@@ -797,9 +800,7 @@ def test_mark_step_done_non_bash_fence_no_false_positive():
         args = Namespace(file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('mark_step_done_violations', [])
-        assert violations == [], (
-            f'Non-bash fences and prose should not trigger mark-step-done rule, got {violations!r}'
-        )
+        assert violations == [], f'Non-bash fences and prose should not trigger mark-step-done rule, got {violations!r}'
     finally:
         temp_file.unlink()
 
@@ -1142,9 +1143,7 @@ def test_display_detail_subdoc_em_dash_surfaces_in_subdoc_analysis():
         issues = extract_issues_from_subdoc_analysis(subdoc_results, str(skill_dir))
 
         non_ascii_issues = [i for i in issues if i.get('type') == 'DISPLAY_DETAIL_NON_ASCII']
-        assert len(non_ascii_issues) == 1, (
-            f'Expected exactly one DISPLAY_DETAIL_NON_ASCII subdoc issue, got {issues!r}'
-        )
+        assert len(non_ascii_issues) == 1, f'Expected exactly one DISPLAY_DETAIL_NON_ASCII subdoc issue, got {issues!r}'
         issue = non_ascii_issues[0]
         assert issue['file'] == str(bad_doc)
         assert issue['severity'] == 'error'
@@ -1260,14 +1259,7 @@ def _write_canonical_forms_md(marketplace_root: Path, table_rows: list[str]) -> 
     separator and the next ``##`` section. Each row is wrapped in pipes by
     the caller (kept verbatim so callers control the exact format).
     """
-    target_dir = (
-        marketplace_root
-        / 'bundles'
-        / 'plan-marshall'
-        / 'skills'
-        / 'dev-general-practices'
-        / 'standards'
-    )
+    target_dir = marketplace_root / 'bundles' / 'plan-marshall' / 'skills' / 'dev-general-practices' / 'standards'
     target_dir.mkdir(parents=True, exist_ok=True)
     md_path = target_dir / 'argument-naming.md'
     body_lines = [

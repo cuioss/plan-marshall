@@ -53,9 +53,7 @@ _LOG_RE = re.compile(r'(?:(?<![\w-])gh(?:\s|\.)|(?<![\w-])glab\s)')
 # followed by a space, a quote, or a period — the shapes that represent
 # actual CLI invocations or module access. ``github_*`` identifiers and
 # docstrings like "see gh doc" are excluded by the flanking rules.
-_SOURCE_INVOKE_RE = re.compile(
-    r'''(?<![\w-])(gh|glab)(?=[\s'"\.])'''
-)
+_SOURCE_INVOKE_RE = re.compile(r"""(?<![\w-])(gh|glab)(?=[\s'"\.])""")
 
 # Diff scanner targets added lines in Python files. Removing / context lines
 # are ignored because we only care about what the plan introduced.
@@ -100,7 +98,7 @@ def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | N
         if not archived_plan_path:
             raise ValueError('--archived-plan-path is required for archived mode')
         return Path(archived_plan_path)
-    raise ValueError(f"Unknown mode: {mode!r}")
+    raise ValueError(f'Unknown mode: {mode!r}')
 
 
 def trim_snippet(line: str) -> str:
@@ -113,7 +111,7 @@ def trim_snippet(line: str) -> str:
     stripped = line.rstrip('\n').rstrip('\r').rstrip()
     if len(stripped) <= _SNIPPET_MAX:
         return stripped
-    return stripped[:_SNIPPET_MAX - 3] + '...'
+    return stripped[: _SNIPPET_MAX - 3] + '...'
 
 
 def is_comment_or_blank(line: str) -> bool:
@@ -150,20 +148,20 @@ def _scan_logs_for_leaks(plan_dir: Path) -> list[dict[str, Any]]:
         for idx, line in enumerate(text.splitlines(), start=1):
             if not _LOG_RE.search(line):
                 continue
-            findings.append({
-                'surface': 'log_leak',
-                'file': rel_path,
-                'line': idx,
-                'snippet': trim_snippet(line),
-                'category': 'log_leak',
-                'severity': 'error',
-            })
+            findings.append(
+                {
+                    'surface': 'log_leak',
+                    'file': rel_path,
+                    'line': idx,
+                    'snippet': trim_snippet(line),
+                    'category': 'log_leak',
+                    'severity': 'error',
+                }
+            )
     return findings
 
 
-def _git_diff_added_lines(
-    base: str, project_root: Path
-) -> list[tuple[str, int, str]]:
+def _git_diff_added_lines(base: str, project_root: Path) -> list[tuple[str, int, str]]:
     """Return ``(file, line_number, line_text)`` tuples for diff-added lines.
 
     ``line_number`` is the new-file 1-based line index. Binary files and
@@ -221,14 +219,16 @@ def _scan_diff_for_leaks(base: str, project_root: Path) -> list[dict[str, Any]]:
             continue
         if not _SOURCE_INVOKE_RE.search(line_text):
             continue
-        findings.append({
-            'surface': 'diff_leak',
-            'file': file_path,
-            'line': line_no,
-            'snippet': trim_snippet(f'+{line_text}'),
-            'category': 'diff_leak',
-            'severity': 'error',
-        })
+        findings.append(
+            {
+                'surface': 'diff_leak',
+                'file': file_path,
+                'line': line_no,
+                'snippet': trim_snippet(f'+{line_text}'),
+                'category': 'diff_leak',
+                'severity': 'error',
+            }
+        )
     return findings
 
 
@@ -354,14 +354,16 @@ def _scan_wrappers_for_tangle(project_root: Path) -> list[dict[str, Any]]:
                 continue
             if not any(_line_tangles_git(w) for w in window):
                 continue
-            findings.append({
-                'surface': 'wrapper_tangle',
-                'file': rel,
-                'line': idx + 1,
-                'snippet': trim_snippet(line),
-                'category': 'wrapper_tangle',
-                'severity': 'error',
-            })
+            findings.append(
+                {
+                    'surface': 'wrapper_tangle',
+                    'file': rel,
+                    'line': idx + 1,
+                    'snippet': trim_snippet(line),
+                    'category': 'wrapper_tangle',
+                    'severity': 'error',
+                }
+            )
     return findings
 
 
@@ -424,8 +426,7 @@ def main() -> int:
     )
     run_parser.add_argument(
         '--project-root',
-        help='Repository root for diff and wrapper scans. '
-             'Defaults to the current working directory.',
+        help='Repository root for diff and wrapper scans. Defaults to the current working directory.',
     )
     # Accepted for parity with other scripts that forward --audit-plan-id;
     # audit logging is handled by the executor, so the flag is a passthrough here.

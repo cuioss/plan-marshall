@@ -34,11 +34,13 @@ def run_configure(args) -> int:
 
     provider = find_provider_with_details(args.skill)
     if not provider:
-        output_toon({
-            'status': 'error',
-            'message': f'No credential extension found for skill: {args.skill}',
-            'available': [p['skill_name'] for p in providers],
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'message': f'No credential extension found for skill: {args.skill}',
+                'available': [p['skill_name'] for p in providers],
+            }
+        )
         return 0
 
     skill_name = provider['skill_name']
@@ -73,29 +75,31 @@ def run_configure(args) -> int:
         existing_auth = existing.get('auth_type', 'none') if existing else 'none'
         # URL is in marshal.json (preferred) or credential file (legacy fallback)
         existing_provider_config = read_provider_config(skill_name)
-        existing_url = existing_provider_config.get('url', '') or (
-            existing.get('url', '') if existing else ''
-        )
+        existing_url = existing_provider_config.get('url', '') or (existing.get('url', '') if existing else '')
 
         if existing_auth == auth_type and existing_url == url:
             if completeness['complete']:
-                output_toon({
-                    'status': 'exists_complete',
-                    'skill': skill_name,
-                    'scope': scope,
-                    'path': completeness['path'],
-                    'needs_editing': False,
-                })
+                output_toon(
+                    {
+                        'status': 'exists_complete',
+                        'skill': skill_name,
+                        'scope': scope,
+                        'path': completeness['path'],
+                        'needs_editing': False,
+                    }
+                )
                 return 0
             else:
-                output_toon({
-                    'status': 'exists_incomplete',
-                    'skill': skill_name,
-                    'scope': scope,
-                    'path': completeness['path'],
-                    'needs_editing': True,
-                    'placeholders': completeness['placeholders'],
-                })
+                output_toon(
+                    {
+                        'status': 'exists_incomplete',
+                        'skill': skill_name,
+                        'scope': scope,
+                        'path': completeness['path'],
+                        'needs_editing': True,
+                        'placeholders': completeness['placeholders'],
+                    }
+                )
                 return 0
         # auth_type or URL mismatch — fall through to reconfigure
 

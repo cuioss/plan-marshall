@@ -48,9 +48,7 @@ def _load_manage_worktree_module():
     ``import`` statement is not usable. ``importlib.util`` loads the
     file under the sanitized name ``manage_worktree_under_test``.
     """
-    spec = importlib.util.spec_from_file_location(
-        'manage_worktree_under_test', str(SCRIPT_PATH)
-    )
+    spec = importlib.util.spec_from_file_location('manage_worktree_under_test', str(SCRIPT_PATH))
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -87,11 +85,7 @@ def _init_git_repo(repo: Path) -> None:
     # into the main checkout and the worktree root itself are ignored.
     # Everything else under .plan/ (marshal.json, project-architecture/,
     # etc.) stays tracked.
-    (repo / '.gitignore').write_text(
-        '.plan/local\n'
-        '.plan/execute-script.py\n'
-        '.claude/worktrees/\n'
-    )
+    (repo / '.gitignore').write_text('.plan/local\n.plan/execute-script.py\n.claude/worktrees/\n')
     subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True)
     subprocess.run(['git', '-C', str(repo), 'commit', '-q', '-m', 'init'], check=True)
 
@@ -237,9 +231,7 @@ def test_ensure_worktree_plan_symlinks_refuses_real_local_dir(tmp_path, monkeypa
     ok, err = module._ensure_worktree_plan_symlinks(worktree)
 
     assert ok is False
-    assert '.plan/local' in err or str(real_local) in err, (
-        f'error must name the offending subpath, got: {err}'
-    )
+    assert '.plan/local' in err or str(real_local) in err, f'error must name the offending subpath, got: {err}'
     # User data must still be present — the guard must not delete it.
     assert (real_local / 'user-data.txt').read_text() == 'important\n'
     # And the main-checkout target must be untouched.

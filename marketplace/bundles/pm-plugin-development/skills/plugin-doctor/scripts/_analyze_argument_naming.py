@@ -115,9 +115,7 @@ _FLAG_TOKEN_RE = re.compile(r'(?<![A-Za-z0-9])--(?P<flag>[A-Za-z][A-Za-z0-9_\-]*
 #     | --- | --- | --- |
 #     | `manage-tasks` | ... | `manage-tasks read --plan-id {id} --task-number {n}` |
 _CANONICAL_FORMS_HEADING = re.compile(r'^##\s+Canonical Forms\s*$')
-_CANONICAL_FORMS_ROW = re.compile(
-    r'^\|[^|]*\|[^|]*\|\s*`(?P<form>[^`]+)`\s*\|\s*$'
-)
+_CANONICAL_FORMS_ROW = re.compile(r'^\|[^|]*\|[^|]*\|\s*`(?P<form>[^`]+)`\s*\|\s*$')
 
 # Notation regex restricted to the ``SCRIPTS = { ... }`` literal in the
 # executor module. Captures notation keys only — paths are ignored.
@@ -210,15 +208,7 @@ def _resolve_script_path(notation: str, marketplace_root: Path) -> Path | None:
     intentionally ignored so the analyzer remains independent of cache state.
     """
     bundle, skill, script = notation.split(':', 2)
-    candidate = (
-        marketplace_root
-        / 'bundles'
-        / bundle
-        / 'skills'
-        / skill
-        / 'scripts'
-        / f'{script}.py'
-    )
+    candidate = marketplace_root / 'bundles' / bundle / 'skills' / skill / 'scripts' / f'{script}.py'
     if candidate.is_file():
         return candidate
     # Some scripts live in nested script directories (e.g. shared/extension).
@@ -521,8 +511,7 @@ def scan_notation(
                     'severity': 'error',
                     'fixable': False,
                     'description': (
-                        f'Notation `{notation}` is not registered in the executor '
-                        f'(reason: {details["reason"]})'
+                        f'Notation `{notation}` is not registered in the executor (reason: {details["reason"]})'
                     ),
                     'details': details,
                 }
@@ -622,8 +611,7 @@ def scan_flag(
                         'severity': 'error',
                         'fixable': False,
                         'description': (
-                            f'Flag `--{flag}` not declared on `{inv.notation} {scope_label}` '
-                            f'(known: {sorted(allowed)})'
+                            f'Flag `--{flag}` not declared on `{inv.notation} {scope_label}` (known: {sorted(allowed)})'
                         ),
                         'details': {
                             'notation': inv.notation,
@@ -696,10 +684,7 @@ def _resolve_shorthand_to_notation(
     with their containing skill, e.g. ``architecture`` under ``manage-architecture``).
     Returns ``None`` if no match (or ambiguous match across bundles).
     """
-    matches = [
-        n for n in script_index
-        if n.endswith(f':{shorthand}') or n.split(':')[1] == shorthand
-    ]
+    matches = [n for n in script_index if n.endswith(f':{shorthand}') or n.split(':')[1] == shorthand]
     if len(matches) == 1:
         return matches[0]
     # If multiple, prefer the one whose third segment equals the shorthand
@@ -743,8 +728,7 @@ def scan_canonical_forms(
                     'severity': 'error',
                     'fixable': False,
                     'description': (
-                        f'Canonical Forms row references unknown script `{shorthand}` '
-                        '— no registered notation matches'
+                        f'Canonical Forms row references unknown script `{shorthand}` — no registered notation matches'
                     ),
                     'details': {
                         'shorthand': shorthand,

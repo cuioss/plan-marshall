@@ -99,9 +99,7 @@ def _rule_names(bullets: list[str]) -> list[str]:
     names: list[str] = []
     for bullet in bullets:
         match = _BULLET_RULE_NAME_RE.match(bullet)
-        assert match is not None, (
-            f"Bullet does not match canonical '- **name** —' shape: {bullet!r}"
-        )
+        assert match is not None, f"Bullet does not match canonical '- **name** —' shape: {bullet!r}"
         names.append(match.group('name'))
     return names
 
@@ -148,9 +146,7 @@ def test_rule_names_match_canonical():
     precise diff so the maintainer can see which side moved.
     """
     canonical_content = CLAUDE_MD_PATH.read_text(encoding='utf-8')
-    canonical_bullets = _extract_section_bullets(
-        canonical_content, 'Workflow Discipline (Hard Rules)'
-    )
+    canonical_bullets = _extract_section_bullets(canonical_content, 'Workflow Discipline (Hard Rules)')
     canonical_names = _rule_names(canonical_bullets)
 
     fix_content = FIX_CONTENT['workflow_discipline']
@@ -168,7 +164,7 @@ def test_rule_names_match_canonical():
         f'  Rules in CLAUDE.md but missing from FIX_CONTENT: {only_in_canonical}\n'
         f'  Rules in FIX_CONTENT but missing from CLAUDE.md: {only_in_fix}\n'
         '  Sync the two sides — see CLAUDE.md "Workflow Discipline (Hard Rules)" '
-        'and determine_mode.FIX_CONTENT[\'workflow_discipline\'].'
+        "and determine_mode.FIX_CONTENT['workflow_discipline']."
     )
 
 
@@ -181,9 +177,7 @@ def test_bullet_count_matches_canonical():
     bullets. This count-equality check closes that gap.
     """
     canonical_content = CLAUDE_MD_PATH.read_text(encoding='utf-8')
-    canonical_bullets = _extract_section_bullets(
-        canonical_content, 'Workflow Discipline (Hard Rules)'
-    )
+    canonical_bullets = _extract_section_bullets(canonical_content, 'Workflow Discipline (Hard Rules)')
 
     fix_content = FIX_CONTENT['workflow_discipline']
     fix_bullets = _extract_section_bullets(fix_content, 'Workflow Discipline (Hard Rules)')

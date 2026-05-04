@@ -78,9 +78,7 @@ def _gitlab_namespace(branch: str = 'feature/x') -> argparse.Namespace:
 def test_build_parser_registers_branch_delete():
     """`branch delete` must be registered and capture --remote-only + --branch."""
     parser, _, _, _, branch_sub = build_parser('test')
-    args = parser.parse_args(
-        ['branch', 'delete', '--remote-only', '--branch', 'feature/x']
-    )
+    args = parser.parse_args(['branch', 'delete', '--remote-only', '--branch', 'feature/x'])
     assert args.command == 'branch'
     assert args.branch_command == 'delete'
     assert args.branch == 'feature/x'
@@ -143,16 +141,12 @@ def test_github_branch_delete_success_http_204(monkeypatch):
     # The stub should have been asked to DELETE the heads ref for the branch.
     # The branch segment is URL-encoded (``/`` → ``%2F``) so names like
     # ``feature/x`` serialize as a single safe path segment.
-    assert captured == [
-        ['api', '-X', 'DELETE', 'repos/octo/repo/git/refs/heads/feature%2Fx']
-    ]
+    assert captured == [['api', '-X', 'DELETE', 'repos/octo/repo/git/refs/heads/feature%2Fx']]
 
 
 def test_github_branch_delete_already_gone_http_404(monkeypatch):
     """HTTP 404 (branch missing) maps to success with already_gone: true."""
-    run_gh_stub, _ = _make_github_run_stub(
-        returncode=1, stderr='gh: Not Found (HTTP 404)'
-    )
+    run_gh_stub, _ = _make_github_run_stub(returncode=1, stderr='gh: Not Found (HTTP 404)')
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
     monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
@@ -167,9 +161,7 @@ def test_github_branch_delete_already_gone_http_404(monkeypatch):
 
 def test_github_branch_delete_already_gone_http_422(monkeypatch):
     """HTTP 422 (ref already removed) also maps to success."""
-    run_gh_stub, _ = _make_github_run_stub(
-        returncode=1, stderr='gh: Reference does not exist (HTTP 422)'
-    )
+    run_gh_stub, _ = _make_github_run_stub(returncode=1, stderr='gh: Reference does not exist (HTTP 422)')
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
     monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
@@ -258,9 +250,7 @@ def test_gitlab_branch_delete_success_http_204(monkeypatch):
 
 def test_gitlab_branch_delete_already_gone_http_404(monkeypatch):
     """HTTP 404 maps to success with already_gone: true."""
-    run_glab_stub, _ = _make_gitlab_run_stub(
-        returncode=1, stderr='HTTP 404 Not Found'
-    )
+    run_glab_stub, _ = _make_gitlab_run_stub(returncode=1, stderr='HTTP 404 Not Found')
     monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
     monkeypatch.setattr(gitlab_ops, 'get_project_path', lambda: 'group/repo')
@@ -274,9 +264,7 @@ def test_gitlab_branch_delete_already_gone_http_404(monkeypatch):
 
 def test_gitlab_branch_delete_already_gone_http_422(monkeypatch):
     """HTTP 422 symmetric with GitHub — mapped to success."""
-    run_glab_stub, _ = _make_gitlab_run_stub(
-        returncode=1, stderr='HTTP 422 Unprocessable Entity'
-    )
+    run_glab_stub, _ = _make_gitlab_run_stub(returncode=1, stderr='HTTP 422 Unprocessable Entity')
     monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
     monkeypatch.setattr(gitlab_ops, 'get_project_path', lambda: 'group/repo')
@@ -289,9 +277,7 @@ def test_gitlab_branch_delete_already_gone_http_422(monkeypatch):
 
 def test_gitlab_branch_delete_other_http_error(monkeypatch):
     """Other HTTP errors surface as TOON error dicts."""
-    run_glab_stub, _ = _make_gitlab_run_stub(
-        returncode=1, stderr='HTTP 403 Forbidden'
-    )
+    run_glab_stub, _ = _make_gitlab_run_stub(returncode=1, stderr='HTTP 403 Forbidden')
     monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
     monkeypatch.setattr(gitlab_ops, 'get_project_path', lambda: 'group/repo')

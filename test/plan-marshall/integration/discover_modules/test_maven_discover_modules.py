@@ -366,9 +366,7 @@ def assert_files_inventory_schema(modules: list) -> list:
                 elif not isinstance(value.get('sample'), list):
                     errors.append(f'{name}.files.{category}: ``sample`` is not a list')
             else:
-                errors.append(
-                    f'{name}.files.{category}: unexpected value type {type(value).__name__}'
-                )
+                errors.append(f'{name}.files.{category}: unexpected value type {type(value).__name__}')
     return errors
 
 

@@ -13,14 +13,7 @@ from _fixtures import setup_archived_plan, setup_broken_plan, setup_live_plan  #
 
 from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
 
-SCRIPT_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-retrospective'
-    / 'scripts'
-    / 'analyze-logs.py'
-)
+SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'analyze-logs.py'
 
 
 # Direct import of analyze-logs.py (hyphenated filename → importlib). Used by
@@ -85,9 +78,7 @@ class TestFaultPaths:
 class TestArchivedMode:
     def test_archived_plan_path_reads_logs(self, tmp_path):
         archived = setup_archived_plan(tmp_path)
-        result = run_script(
-            SCRIPT_PATH, 'run', '--archived-plan-path', str(archived), '--mode', 'archived'
-        )
+        result = run_script(SCRIPT_PATH, 'run', '--archived-plan-path', str(archived), '--mode', 'archived')
         assert result.success, result.stderr
         data = result.toon()
         assert data['status'] == 'success'
@@ -157,12 +148,8 @@ class TestRegression:
         data = result.toon()
         assert int(data['counts']['artifact_entries']) >= 1
         findings = data.get('findings') or []
-        assert not any(
-            f.get('severity') == 'error' and 'ARTIFACT' in f.get('message', '')
-            for f in findings
-        ), (
-            f'Did not expect ARTIFACT-missing finding when work.log has '
-            f'ARTIFACT entries; got findings: {findings}'
+        assert not any(f.get('severity') == 'error' and 'ARTIFACT' in f.get('message', '') for f in findings), (
+            f'Did not expect ARTIFACT-missing finding when work.log has ARTIFACT entries; got findings: {findings}'
         )
 
     def test_modified_files_without_artifacts_emits_error_finding(self, tmp_path, monkeypatch):
@@ -170,9 +157,7 @@ class TestRegression:
         an error finding MUST be produced so the retrospective surfaces
         the gap between declared artifacts and log evidence.
         """
-        plan_id, plan_dir = setup_live_plan(
-            tmp_path, monkeypatch, plan_id='retro-artifact-missing'
-        )
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch, plan_id='retro-artifact-missing')
         # Overwrite work.log with entries that contain NO ARTIFACT tag,
         # using the production ``[ts] [LEVEL] [hash] [CATEGORY] ...`` shape.
         work_log = plan_dir / 'logs' / 'work.log'
@@ -189,10 +174,7 @@ class TestRegression:
         data = result.toon()
         assert int(data['counts']['artifact_entries']) == 0
         findings = data.get('findings') or []
-        assert any(
-            f.get('severity') == 'error' and 'ARTIFACT' in f.get('message', '')
-            for f in findings
-        ), (
+        assert any(f.get('severity') == 'error' and 'ARTIFACT' in f.get('message', '') for f in findings), (
             f'Expected an ARTIFACT-missing error finding when modified_files '
             f'is non-empty and artifact_entries == 0; got findings: {findings}'
         )
@@ -201,9 +183,7 @@ class TestRegression:
         """Case (c): modified_files empty AND artifact_entries == 0 →
         no finding. Nothing was declared, so there is nothing to flag.
         """
-        plan_id, plan_dir = setup_live_plan(
-            tmp_path, monkeypatch, plan_id='retro-artifact-nothing-declared'
-        )
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch, plan_id='retro-artifact-nothing-declared')
         # Clear modified_files and strip ARTIFACT entries from work.log.
         references_path = plan_dir / 'references.json'
         references = json.loads(references_path.read_text(encoding='utf-8'))
@@ -212,8 +192,7 @@ class TestRegression:
 
         work_log = plan_dir / 'logs' / 'work.log'
         work_log.write_text(
-            '[2026-04-17T10:00:00Z] [INFO] [aaaaaa] [STATUS] '
-            '(plan-marshall:phase-1-init) Starting\n',
+            '[2026-04-17T10:00:00Z] [INFO] [aaaaaa] [STATUS] (plan-marshall:phase-1-init) Starting\n',
             encoding='utf-8',
         )
 
@@ -222,12 +201,8 @@ class TestRegression:
         data = result.toon()
         assert int(data['counts']['artifact_entries']) == 0
         findings = data.get('findings') or []
-        assert not any(
-            f.get('severity') == 'error' and 'ARTIFACT' in f.get('message', '')
-            for f in findings
-        ), (
-            f'Did not expect ARTIFACT-missing finding when modified_files '
-            f'is empty; got findings: {findings}'
+        assert not any(f.get('severity') == 'error' and 'ARTIFACT' in f.get('message', '') for f in findings), (
+            f'Did not expect ARTIFACT-missing finding when modified_files is empty; got findings: {findings}'
         )
 
     def test_extract_tags_captures_category_behind_level_bracket(self):
@@ -237,12 +212,9 @@ class TestRegression:
         defeating the artifact_entries counter. Guards that regression.
         """
         lines = [
-            '[2026-04-18T12:00:00Z] [INFO] [abc123] [ARTIFACT] '
-            '(plan-marshall:phase-5-execute:3) Wrote foo.py',
-            '[2026-04-18T12:00:05Z] [INFO] [def456] [STATUS] '
-            '(plan-marshall:phase-5-execute) task 3 complete',
-            '[2026-04-18T12:00:10Z] [WARNING] [789aaa] [ARTIFACT] '
-            '(plan-marshall:phase-5-execute:4) Deleted bar.py',
+            '[2026-04-18T12:00:00Z] [INFO] [abc123] [ARTIFACT] (plan-marshall:phase-5-execute:3) Wrote foo.py',
+            '[2026-04-18T12:00:05Z] [INFO] [def456] [STATUS] (plan-marshall:phase-5-execute) task 3 complete',
+            '[2026-04-18T12:00:10Z] [WARNING] [789aaa] [ARTIFACT] (plan-marshall:phase-5-execute:4) Deleted bar.py',
         ]
         tags = _analyze_logs.extract_tags(lines)
         assert 'ARTIFACT' in tags, (
@@ -250,8 +222,7 @@ class TestRegression:
             f'[WARNING] precedes it in the same line; got tags: {tags}'
         )
         assert tags.count('ARTIFACT') == 2, (
-            f'extract_tags must count every [ARTIFACT] occurrence, not '
-            f'just one per line; got tags: {tags}'
+            f'extract_tags must count every [ARTIFACT] occurrence, not just one per line; got tags: {tags}'
         )
         assert tags.count('STATUS') == 1
         # Level tokens must NOT leak into the category stream.
@@ -291,10 +262,5 @@ class TestRegression:
         # the stderr WARN line MUST be present so operators notice.
         assert result == []
         captured = capsys.readouterr()
-        assert 'WARN' in captured.err, (
-            f'read_log on missing path must emit stderr WARN; got stderr: '
-            f'{captured.err!r}'
-        )
-        assert str(missing_path) in captured.err, (
-            'WARN line must include the missing path for operator debugging'
-        )
+        assert 'WARN' in captured.err, f'read_log on missing path must emit stderr WARN; got stderr: {captured.err!r}'
+        assert str(missing_path) in captured.err, 'WARN line must include the missing path for operator debugging'

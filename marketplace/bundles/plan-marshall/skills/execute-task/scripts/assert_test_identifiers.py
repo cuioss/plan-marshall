@@ -127,20 +127,16 @@ def assert_identifiers_in_log(
         return DiffResult(passed=True, found=(), missing=())
 
     if not log_path.exists():
-        raise FileNotFoundError(
-            f"module-test log not found: {log_path}"
-        )
+        raise FileNotFoundError(f'module-test log not found: {log_path}')
     if not log_path.is_file():
-        raise FileNotFoundError(
-            f"module-test log path is not a regular file: {log_path}"
-        )
+        raise FileNotFoundError(f'module-test log path is not a regular file: {log_path}')
 
     # Read the log into memory once. Module-test logs are typically small
     # (tens to hundreds of KB); the regex scan over a list of lines is both
     # faster and easier to reason about than a streaming scan, and it lets us
     # preserve input order cheaply. ``errors='replace'`` tolerates odd bytes
     # pytest occasionally emits without hiding IO errors.
-    with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+    with log_path.open('r', encoding='utf-8', errors='replace') as handle:
         lines = handle.readlines()
 
     found: list[str] = []
@@ -150,7 +146,7 @@ def assert_identifiers_in_log(
         # ``test_login`` does not false-match a line carrying only
         # ``test_login_failure``. pytest writes nodeid<whitespace>STATUS so the
         # anchor is always satisfied when the test was actually collected.
-        pattern = re.compile(rf"{re.escape(identifier)}(?:\s|$)")
+        pattern = re.compile(rf'{re.escape(identifier)}(?:\s|$)')
         if any(pattern.search(line) for line in lines):
             found.append(identifier)
         else:
@@ -171,20 +167,16 @@ def _load_identifiers(identifiers_path: Path) -> list[str]:
     the file does not affect the substring match.
     """
     if not identifiers_path.exists():
-        raise FileNotFoundError(
-            f"identifiers file not found: {identifiers_path}"
-        )
+        raise FileNotFoundError(f'identifiers file not found: {identifiers_path}')
     if not identifiers_path.is_file():
-        raise FileNotFoundError(
-            f"identifiers file path is not a regular file: {identifiers_path}"
-        )
+        raise FileNotFoundError(f'identifiers file path is not a regular file: {identifiers_path}')
 
-    with identifiers_path.open("r", encoding="utf-8") as handle:
+    with identifiers_path.open('r', encoding='utf-8') as handle:
         raw_lines = handle.readlines()
 
     identifiers: list[str] = []
     for raw in raw_lines:
-        stripped = raw.rstrip("\r\n").strip()
+        stripped = raw.rstrip('\r\n').strip()
         if stripped:
             identifiers.append(stripped)
     return identifiers
@@ -196,19 +188,19 @@ def _emit_toon(result: DiffResult) -> None:
     The shape is kept flat on purpose so the output is easy to diff and easy
     to parse with :func:`toon_parser.parse_toon` in tests.
     """
-    print("status: success")
-    print(f"passed: {'true' if result.passed else 'false'}")
-    print(f"found_count: {len(result.found)}")
-    print(f"missing_count: {len(result.missing)}")
+    print('status: success')
+    print(f'passed: {"true" if result.passed else "false"}')
+    print(f'found_count: {len(result.found)}')
+    print(f'missing_count: {len(result.missing)}')
     if result.missing:
-        print(f"missing[{len(result.missing)}]:")
+        print(f'missing[{len(result.missing)}]:')
         for identifier in result.missing:
-            print(f"  - {identifier}")
+            print(f'  - {identifier}')
     else:
         # Empty uniform array — keep the key present so downstream parsers
         # always see a stable schema. ``missing[0]:`` is the TOON idiom for
         # "this list exists and is empty".
-        print("missing[0]:")
+        print('missing[0]:')
 
 
 def _emit_toon_error(message: str) -> None:
@@ -217,11 +209,11 @@ def _emit_toon_error(message: str) -> None:
     Uses ``status: error`` (not ``success``) to signal that the assertion
     never ran — distinguishing a pass/fail outcome from a plumbing failure.
     """
-    print("status: error")
+    print('status: error')
     # Normalise newlines in the error message so multi-line exception text
     # never breaks the flat TOON shape.
-    flattened = message.replace("\n", " ").strip()
-    print(f"error: {flattened}")
+    flattened = message.replace('\n', ' ').strip()
+    print(f'error: {flattened}')
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -241,10 +233,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         _emit_toon_error(str(exc))
         return 2
     except PermissionError as exc:
-        _emit_toon_error(f"permission denied reading log: {exc}")
+        _emit_toon_error(f'permission denied reading log: {exc}')
         return 2
     except OSError as exc:
-        _emit_toon_error(f"IO error: {exc}")
+        _emit_toon_error(f'IO error: {exc}')
         return 2
 
     _emit_toon(result)
@@ -255,36 +247,30 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the argparse parser with a single ``run`` subcommand."""
     parser = argparse.ArgumentParser(
         description=(
-            "Assert that pytest node identifiers written by the current task "
-            "appear in the module-test log. Used by plan-marshall:execute-task "
-            "as a structural guardrail against silently-skipped tests."
+            'Assert that pytest node identifiers written by the current task '
+            'appear in the module-test log. Used by plan-marshall:execute-task '
+            'as a structural guardrail against silently-skipped tests.'
         ),
         allow_abbrev=False,
     )
-    subparsers = parser.add_subparsers(dest="command_name", required=True)
+    subparsers = parser.add_subparsers(dest='command_name', required=True)
 
     run_parser = subparsers.add_parser(
-        "run",
-        help=(
-            "Diff written identifiers against a module-test log and report "
-            "the outcome as TOON"
-        ),
+        'run',
+        help=('Diff written identifiers against a module-test log and report the outcome as TOON'),
         allow_abbrev=False,
     )
     run_parser.add_argument(
-        "--identifiers-file",
+        '--identifiers-file',
         required=True,
-        dest="identifiers_file",
-        help=(
-            "Path to a newline-delimited list of pytest node identifiers. "
-            "Blank lines are stripped."
-        ),
+        dest='identifiers_file',
+        help=('Path to a newline-delimited list of pytest node identifiers. Blank lines are stripped.'),
     )
     run_parser.add_argument(
-        "--log",
+        '--log',
         required=True,
-        dest="log",
-        help="Path to the module-test log file to search.",
+        dest='log',
+        help='Path to the module-test log file to search.',
     )
     run_parser.set_defaults(func=cmd_run)
 
@@ -298,5 +284,5 @@ def main() -> int:
     return int(args.func(args))
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

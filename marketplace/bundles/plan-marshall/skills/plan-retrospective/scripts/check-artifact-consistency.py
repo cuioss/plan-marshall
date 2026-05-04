@@ -70,7 +70,7 @@ def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | N
         if not archived_plan_path:
             raise ValueError('--archived-plan-path is required for archived mode')
         return Path(archived_plan_path)
-    raise ValueError(f"Unknown mode: {mode!r}")
+    raise ValueError(f'Unknown mode: {mode!r}')
 
 
 def check_solution_outline_sections(content: str) -> tuple[str, str]:
@@ -115,18 +115,20 @@ def extract_affected_files_per_deliverable(content: str) -> list[str]:
     return files
 
 
-def check_affected_files_recall(
-    solution_content: str, references_path: Path
-) -> tuple[str, str, dict[str, Any]]:
+def check_affected_files_recall(solution_content: str, references_path: Path) -> tuple[str, str, dict[str, Any]]:
     """Return ``(status, message, details)`` for the affected-files recall check."""
     declared = set(extract_affected_files_per_deliverable(solution_content))
     if not declared:
         return 'skip', 'No Affected files declared in solution outline', {'declared': 0}
 
     if not references_path.exists():
-        return 'fail', 'references.json missing — cannot compute recall', {
-            'declared': len(declared),
-        }
+        return (
+            'fail',
+            'references.json missing — cannot compute recall',
+            {
+                'declared': len(declared),
+            },
+        )
 
     try:
         refs = json.loads(references_path.read_text(encoding='utf-8'))
@@ -171,9 +173,7 @@ def check_affected_files_exact_match(
     return 'warn', 'Set mismatch', outline_only, references_only
 
 
-def check_task_deliverable_match(
-    deliverables: list[dict[str, str]], tasks_dir: Path
-) -> tuple[str, str]:
+def check_task_deliverable_match(deliverables: list[dict[str, str]], tasks_dir: Path) -> tuple[str, str]:
     """Return ``(status, message)`` for the task-deliverable alignment check."""
     if not deliverables:
         return 'skip', 'No deliverables declared'
@@ -214,11 +214,13 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
 
     solution_path = plan_dir / 'solution_outline.md'
     if not solution_path.exists():
-        checks.append({
-            'name': 'solution_outline_present',
-            'status': 'fail',
-            'message': 'solution_outline.md missing',
-        })
+        checks.append(
+            {
+                'name': 'solution_outline_present',
+                'status': 'fail',
+                'message': 'solution_outline.md missing',
+            }
+        )
         findings.append({'severity': 'error', 'message': 'solution_outline.md missing'})
         deliverables: list[dict[str, str]] = []
         solution_content = ''
@@ -242,9 +244,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
 
     # Affected-files recall
     references_path = plan_dir / 'references.json'
-    rec_status, rec_message, rec_details = check_affected_files_recall(
-        solution_content, references_path
-    )
+    rec_status, rec_message, rec_details = check_affected_files_recall(solution_content, references_path)
     checks.append({'name': 'affected_files_recall', 'status': rec_status, 'message': rec_message})
     details['affected_files_recall'] = rec_details
     if rec_status == 'fail':
@@ -286,24 +286,25 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     forwarded_to_manifest = False
     if manifest_present and exact_status == 'warn':
         forwarded_to_manifest = True
-        forwarded_message = (
-            f'{exact_message} — deferred to manifest aspect '
-            '(see check-manifest-consistency)'
+        forwarded_message = f'{exact_message} — deferred to manifest aspect (see check-manifest-consistency)'
+        checks.append(
+            {
+                'name': 'affected_files_exact_match',
+                'status': 'info',
+                'message': forwarded_message,
+            }
         )
-        checks.append({
-            'name': 'affected_files_exact_match',
-            'status': 'info',
-            'message': forwarded_message,
-        })
         # Surface as info rather than warning so the report renderer routes
         # the reader to the manifest section instead of double-counting drift.
         findings.append({'severity': 'info', 'message': forwarded_message})
     else:
-        checks.append({
-            'name': 'affected_files_exact_match',
-            'status': exact_status,
-            'message': exact_message,
-        })
+        checks.append(
+            {
+                'name': 'affected_files_exact_match',
+                'status': exact_status,
+                'message': exact_message,
+            }
+        )
         if exact_status == 'warn':
             findings.append({'severity': 'warning', 'message': exact_message})
 

@@ -21,8 +21,14 @@ LINK_VERIFY_FIXTURES = FIXTURES_DIR / 'link-verify'
 # Tier 2 direct imports - load cmd_* from sub-command modules
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'pm-documents' / 'skills' / 'ref-asciidoc' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'pm-documents'
+    / 'skills'
+    / 'ref-asciidoc'
+    / 'scripts'
 )
+
 
 # These modules have underscore names, so standard import via importlib works
 def _load_module(name, filename):
@@ -30,6 +36,7 @@ def _load_module(name, filename):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
 
 _stats_mod = _load_module('_cmd_stats', '_cmd_stats.py')
 _validate_mod = _load_module('_cmd_validate', '_cmd_validate.py')
@@ -83,7 +90,7 @@ def test_stats_help():
 def test_stats_console_format():
     """Test stats default console output produces dict with summary data."""
     result = cmd_stats(Namespace(command='stats', directory=str(FIXTURES_DIR), format='console', details=False))
-    assert result['status'] == 'success', f"Expected success status, got: {result.get('status')}"
+    assert result['status'] == 'success', f'Expected success status, got: {result.get("status")}'
     assert 'summary' in result, 'Stats output should contain summary'
 
 
@@ -120,15 +127,13 @@ def test_stats_nonexistent_dir():
 
 def test_validate_console_format():
     """Test validate default console output."""
-    result = cmd_validate(Namespace(command='validate', path=str(FIXTURES_DIR), format='console',
-                                    ignore_patterns=None))
+    result = cmd_validate(Namespace(command='validate', path=str(FIXTURES_DIR), format='console', ignore_patterns=None))
     assert result['status'] in ('success', 'non_compliant'), f'Unexpected status: {result["status"]}'
 
 
 def test_validate_json_format():
     """Test validate JSON output format."""
-    result = cmd_validate(Namespace(command='validate', path=str(FIXTURES_DIR), format='json',
-                                    ignore_patterns=None))
+    result = cmd_validate(Namespace(command='validate', path=str(FIXTURES_DIR), format='json', ignore_patterns=None))
     assert 'directory' in result, "JSON format didn't produce expected output"
 
 
@@ -150,8 +155,7 @@ Some text directly before list:
         f.write(content)
         temp_file = f.name
     try:
-        result = cmd_validate(Namespace(command='validate', path=temp_file, format='console',
-                                        ignore_patterns=None))
+        result = cmd_validate(Namespace(command='validate', path=temp_file, format='console', ignore_patterns=None))
         assert result['status'] == 'non_compliant' or 'blank' in str(result).lower(), (
             'Missing blank line should be detected'
         )
@@ -161,8 +165,9 @@ Some text directly before list:
 
 def test_validate_ignore_pattern():
     """Test validate ignore pattern flag."""
-    result = cmd_validate(Namespace(command='validate', path=str(FIXTURES_DIR), format='console',
-                                    ignore_patterns=['missing-*.adoc']))
+    result = cmd_validate(
+        Namespace(command='validate', path=str(FIXTURES_DIR), format='console', ignore_patterns=['missing-*.adoc'])
+    )
     assert result['status'] in ('success', 'non_compliant', 'error')
 
 
@@ -174,8 +179,9 @@ def test_validate_invalid_format_rejected():
 
 def test_validate_nonexistent_path():
     """Test validate handles nonexistent path."""
-    result = cmd_validate(Namespace(command='validate', path='/nonexistent/path', format='console',
-                                    ignore_patterns=None))
+    result = cmd_validate(
+        Namespace(command='validate', path='/nonexistent/path', format='console', ignore_patterns=None)
+    )
     assert result['status'] == 'error', 'Nonexistent path should produce error status'
 
 
@@ -186,36 +192,31 @@ def test_validate_nonexistent_path():
 
 def test_format_no_backup_flag():
     """Test format --no-backup flag prevents backup creation."""
-    result = cmd_format(Namespace(command='format', path=str(FIXTURES_DIR), fix_types=['lists'],
-                                  no_backup=True))
+    result = cmd_format(Namespace(command='format', path=str(FIXTURES_DIR), fix_types=['lists'], no_backup=True))
     assert result['status'] == 'success'
 
 
 def test_format_lists_type():
     """Test format -t lists fix type."""
-    result = cmd_format(Namespace(command='format', path=str(FIXTURES_DIR), fix_types=['lists'],
-                                  no_backup=True))
+    result = cmd_format(Namespace(command='format', path=str(FIXTURES_DIR), fix_types=['lists'], no_backup=True))
     assert result['status'] == 'success'
 
 
 def test_format_xref_type():
     """Test format -t xref fix type."""
-    result = cmd_format(Namespace(command='format', path=str(FIXTURES_DIR), fix_types=['xref'],
-                                  no_backup=True))
+    result = cmd_format(Namespace(command='format', path=str(FIXTURES_DIR), fix_types=['xref'], no_backup=True))
     assert result['status'] == 'success'
 
 
 def test_format_whitespace_type():
     """Test format -t whitespace fix type."""
-    result = cmd_format(Namespace(command='format', path=str(FIXTURES_DIR), fix_types=['whitespace'],
-                                  no_backup=True))
+    result = cmd_format(Namespace(command='format', path=str(FIXTURES_DIR), fix_types=['whitespace'], no_backup=True))
     assert result['status'] == 'success'
 
 
 def test_format_all_types():
     """Test format -t all fix type."""
-    result = cmd_format(Namespace(command='format', path=str(FIXTURES_DIR), fix_types=['all'],
-                                  no_backup=True))
+    result = cmd_format(Namespace(command='format', path=str(FIXTURES_DIR), fix_types=['all'], no_backup=True))
     assert result['status'] == 'success'
 
 
@@ -227,8 +228,7 @@ def test_format_invalid_type_rejected():
 
 def test_format_nonexistent_path():
     """Test format handles nonexistent path."""
-    result = cmd_format(Namespace(command='format', path='/nonexistent/path', fix_types=None,
-                                  no_backup=False))
+    result = cmd_format(Namespace(command='format', path='/nonexistent/path', fix_types=None, no_backup=False))
     assert result['status'] == 'error', 'Nonexistent path should produce error status'
 
 
@@ -242,8 +242,9 @@ def test_verify_links_single_file():
     empty_file = LINK_VERIFY_FIXTURES / 'empty.adoc'
     if not empty_file.exists():
         return  # Skip if fixture doesn't exist
-    result = cmd_verify_links(Namespace(command='verify-links', file=str(empty_file), directory=None,
-                                        recursive=False, report=None))
+    result = cmd_verify_links(
+        Namespace(command='verify-links', file=str(empty_file), directory=None, recursive=False, report=None)
+    )
     assert str(result.get('data', {}).get('files_processed', '')) == '1', 'Single file mode processes one file'
 
 
@@ -252,15 +253,17 @@ def test_verify_links_empty_file():
     empty_file = LINK_VERIFY_FIXTURES / 'empty.adoc'
     if not empty_file.exists():
         return  # Skip if fixture doesn't exist
-    result = cmd_verify_links(Namespace(command='verify-links', file=str(empty_file), directory=None,
-                                        recursive=False, report=None))
+    result = cmd_verify_links(
+        Namespace(command='verify-links', file=str(empty_file), directory=None, recursive=False, report=None)
+    )
     assert result['status'] in ('success', 'failure', 'error')
 
 
 def test_verify_links_file_not_found():
     """Test verify-links handles missing file."""
-    result = cmd_verify_links(Namespace(command='verify-links', file='/nonexistent/file.adoc',
-                                        directory=None, recursive=False, report=None))
+    result = cmd_verify_links(
+        Namespace(command='verify-links', file='/nonexistent/file.adoc', directory=None, recursive=False, report=None)
+    )
     assert result['status'] == 'error', 'Error when file does not exist'
 
 
@@ -269,8 +272,15 @@ def test_verify_links_both_file_and_directory():
     empty_file = LINK_VERIFY_FIXTURES / 'empty.adoc'
     if not empty_file.exists():
         return  # Skip if fixture doesn't exist
-    result = cmd_verify_links(Namespace(command='verify-links', file=str(empty_file),
-                                        directory=str(LINK_VERIFY_FIXTURES), recursive=False, report=None))
+    result = cmd_verify_links(
+        Namespace(
+            command='verify-links',
+            file=str(empty_file),
+            directory=str(LINK_VERIFY_FIXTURES),
+            recursive=False,
+            report=None,
+        )
+    )
     assert 'cannot specify both' in result.get('message', '').lower(), (
         'Error when both --file and --directory specified'
     )
@@ -297,8 +307,9 @@ def test_classify_links_with_files():
         output_file = Path(f.name)
 
     try:
-        result = cmd_classify_links(Namespace(command='classify-links', input=str(input_file),
-                                              output=str(output_file), pretty=True))
+        result = cmd_classify_links(
+            Namespace(command='classify-links', input=str(input_file), output=str(output_file), pretty=True)
+        )
         assert result['status'] == 'success'
         assert output_file.exists(), 'Classification completed'
         content = output_file.read_text()

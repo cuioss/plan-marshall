@@ -58,7 +58,7 @@ def _derive_provider_key(skill_name: str) -> str | None:
     name = skill_name.split(':')[-1] if ':' in skill_name else skill_name
     prefix = 'workflow-integration-'
     if name.startswith(prefix):
-        return name[len(prefix):]
+        return name[len(prefix) :]
     return None
 
 

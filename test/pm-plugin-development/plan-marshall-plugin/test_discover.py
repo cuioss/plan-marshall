@@ -53,9 +53,7 @@ _ARCH_SCRIPTS_DIR = (
 
 
 def _load_arch_core():
-    spec = importlib.util.spec_from_file_location(
-        '_architecture_core', _ARCH_SCRIPTS_DIR / '_architecture_core.py'
-    )
+    spec = importlib.util.spec_from_file_location('_architecture_core', _ARCH_SCRIPTS_DIR / '_architecture_core.py')
     mod = importlib.util.module_from_spec(spec)
     sys.modules['_architecture_core'] = mod
     spec.loader.exec_module(mod)

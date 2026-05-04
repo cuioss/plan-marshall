@@ -205,9 +205,7 @@ def test_end_phase_input_output_without_total():
     """end-phase accepts input/output tokens without total_tokens."""
     with PlanContext(plan_id='metrics-end-io-02') as ctx:
         cmd_start_phase(_ns_start_phase('metrics-end-io-02', '2-refine'))
-        result = cmd_end_phase(
-            _ns_end_phase('metrics-end-io-02', '2-refine', input_tokens=10000, output_tokens=2000)
-        )
+        result = cmd_end_phase(_ns_end_phase('metrics-end-io-02', '2-refine', input_tokens=10000, output_tokens=2000))
         assert result['status'] == 'success'
         assert 'total_tokens' not in result
 
@@ -427,12 +425,8 @@ class TestAccumulateAgentUsage:
     def test_phase_isolation(self):
         """5-execute and 6-finalize accumulators do not collide."""
         with PlanContext(plan_id='accum-iso') as ctx:
-            cmd_accumulate_agent_usage(
-                _ns_accumulate('accum-iso', '5-execute', total_tokens=1000, tool_uses=10)
-            )
-            cmd_accumulate_agent_usage(
-                _ns_accumulate('accum-iso', '6-finalize', total_tokens=2000, tool_uses=20)
-            )
+            cmd_accumulate_agent_usage(_ns_accumulate('accum-iso', '5-execute', total_tokens=1000, tool_uses=10))
+            cmd_accumulate_agent_usage(_ns_accumulate('accum-iso', '6-finalize', total_tokens=2000, tool_uses=20))
 
             five = (ctx.plan_dir / 'work' / 'metrics-accumulator-5-execute.toon').read_text()
             six = (ctx.plan_dir / 'work' / 'metrics-accumulator-6-finalize.toon').read_text()
@@ -444,9 +438,7 @@ class TestAccumulateAgentUsage:
     def test_invalid_phase_rejected(self):
         """Unknown phase names produce a structured error response."""
         with PlanContext(plan_id='accum-bad'):
-            result = cmd_accumulate_agent_usage(
-                _ns_accumulate('accum-bad', 'not-a-phase', total_tokens=1)
-            )
+            result = cmd_accumulate_agent_usage(_ns_accumulate('accum-bad', 'not-a-phase', total_tokens=1))
             assert result['status'] == 'error'
             assert result['error'] == 'invalid_phase'
 
@@ -476,9 +468,7 @@ class TestEndPhaseAccumulatorFallback:
         with PlanContext(plan_id='ep-fallback') as ctx:
             cmd_start_phase(_ns_start_phase('ep-fallback', '6-finalize'))
             cmd_accumulate_agent_usage(
-                _ns_accumulate(
-                    'ep-fallback', '6-finalize', total_tokens=5000, tool_uses=12, duration_ms=60000
-                )
+                _ns_accumulate('ep-fallback', '6-finalize', total_tokens=5000, tool_uses=12, duration_ms=60000)
             )
 
             result = cmd_end_phase(_ns_end_phase('ep-fallback', '6-finalize'))
@@ -513,9 +503,7 @@ class TestEndPhaseAccumulatorFallback:
         with PlanContext(plan_id='ep-partial') as ctx:
             cmd_start_phase(_ns_start_phase('ep-partial', '6-finalize'))
             cmd_accumulate_agent_usage(
-                _ns_accumulate(
-                    'ep-partial', '6-finalize', total_tokens=7777, tool_uses=20, duration_ms=4000
-                )
+                _ns_accumulate('ep-partial', '6-finalize', total_tokens=7777, tool_uses=20, duration_ms=4000)
             )
 
             # Pass only --total-tokens; --tool-uses / --duration-ms must come from accumulator.
@@ -585,7 +573,7 @@ def _main_context_entry(timestamp: str, input_tokens: int, output_tokens: int) -
     }
 
 
-_DETERMINISTIC_METRICS_TOON = '''plan_id: {plan_id}
+_DETERMINISTIC_METRICS_TOON = """plan_id: {plan_id}
 
 [5-execute]
   start_time: 2026-03-27T10:00:00+00:00
@@ -594,7 +582,7 @@ _DETERMINISTIC_METRICS_TOON = '''plan_id: {plan_id}
 [6-finalize]
   start_time: 2026-03-27T10:30:01+00:00
   end_time: 2026-03-27T11:00:00+00:00
-'''
+"""
 
 
 class TestEnrichSubagentAttribution:
@@ -666,5 +654,3 @@ class TestEnrichSubagentAttribution:
 
             metrics_after = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
             assert 'subagent_total_tokens' not in metrics_after
-
-

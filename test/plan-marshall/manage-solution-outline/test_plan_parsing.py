@@ -221,8 +221,7 @@ class TestParseDocumentSectionsRoundTrip:
 
         # Assert — slugified key present, un-slugified key absent.
         assert 'suggested_fix_two_options' in sections, (
-            f'Expected slugified key "suggested_fix_two_options" in sections; '
-            f'got keys {list(sections.keys())}'
+            f'Expected slugified key "suggested_fix_two_options" in sections; got keys {list(sections.keys())}'
         )
         assert 'suggested_fix_(two_options)' not in sections, (
             'Regression: un-slugified key "suggested_fix_(two_options)" present. '

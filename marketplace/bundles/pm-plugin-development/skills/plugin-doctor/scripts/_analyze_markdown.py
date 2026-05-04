@@ -531,7 +531,7 @@ def _extract_display_detail_value(invocation_text: str) -> str | None:
     if not match:
         return None
 
-    after = invocation_text[match.end():]
+    after = invocation_text[match.end() :]
     if not after:
         return None
 
@@ -603,9 +603,7 @@ def check_display_detail_violations(content: str) -> list:
                 elif ch == "'" and not in_double_quote:
                     in_single_quote = not in_single_quote
                 j += 1
-            line_continues = (
-                cmd_line.rstrip().endswith('\\') or in_double_quote or in_single_quote
-            )
+            line_continues = cmd_line.rstrip().endswith('\\') or in_double_quote or in_single_quote
             if not line_continues:
                 logical_commands.append(current_cmd)
                 current_cmd = []
@@ -627,17 +625,11 @@ def check_display_detail_violations(content: str) -> list:
             report_value = value if len(value) <= 80 else value[:77] + '...'
 
             if any(ord(ch) > 0x7F for ch in value):
-                violations.append(
-                    {'line': invocation_line, 'code': 'DISPLAY_DETAIL_NON_ASCII', 'value': report_value}
-                )
+                violations.append({'line': invocation_line, 'code': 'DISPLAY_DETAIL_NON_ASCII', 'value': report_value})
             if len(value) > 80:
-                violations.append(
-                    {'line': invocation_line, 'code': 'DISPLAY_DETAIL_TOO_LONG', 'value': report_value}
-                )
+                violations.append({'line': invocation_line, 'code': 'DISPLAY_DETAIL_TOO_LONG', 'value': report_value})
             if '\n' in value:
-                violations.append(
-                    {'line': invocation_line, 'code': 'DISPLAY_DETAIL_MULTILINE', 'value': report_value}
-                )
+                violations.append({'line': invocation_line, 'code': 'DISPLAY_DETAIL_MULTILINE', 'value': report_value})
             if value.endswith('.'):
                 violations.append(
                     {'line': invocation_line, 'code': 'DISPLAY_DETAIL_TRAILING_PERIOD', 'value': report_value}
@@ -693,10 +685,7 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
     # commands don't drive discovery via Glob from prose — restricting prevents
     # false positives in agent docs that legitimately list Glob as an allowed tool.
     resolver_gap_violations: list = []
-    if (
-        component_type in ('skill', 'subdoc')
-        and (file_path.endswith('SKILL.md') or '/standards/' in file_path)
-    ):
+    if component_type in ('skill', 'subdoc') and (file_path.endswith('SKILL.md') or '/standards/' in file_path):
         resolver_gap_violations = check_resolver_gap(content, file_path)
 
     # --display-detail ASCII contract validation (phase-6 finalize renderer)

@@ -814,10 +814,12 @@ def test_java_applies_to_module_with_dict_profiles():
         'name': 'my-module',
         'build_systems': ['maven'],
         'paths': {'module': 'my-module', 'sources': ['src/main/java'], 'tests': ['src/test/java']},
-        'metadata': {'profiles': [
-            {'id': 'pre-commit', 'canonical': 'quality-gate'},
-            {'id': 'coverage', 'canonical': 'coverage'},
-        ]},
+        'metadata': {
+            'profiles': [
+                {'id': 'pre-commit', 'canonical': 'quality-gate'},
+                {'id': 'coverage', 'canonical': 'coverage'},
+            ]
+        },
         'packages': {},
         'dependencies': [],
         'commands': {},
@@ -1017,10 +1019,15 @@ def test_plan_marshall_discovers_nested_npm_from_maven_modules():
         e2e_dir = root / 'e2e-playwright'
         e2e_dir.mkdir()
         import json
-        (e2e_dir / 'package.json').write_text(json.dumps({
-            'name': 'e2e-tests',
-            'scripts': {'test': 'playwright test'},
-        }))
+
+        (e2e_dir / 'package.json').write_text(
+            json.dumps(
+                {
+                    'name': 'e2e-tests',
+                    'scripts': {'test': 'playwright test'},
+                }
+            )
+        )
 
         # Simulate existing Maven-discovered modules (no npm at this path)
         existing_modules = [
@@ -1046,6 +1053,7 @@ def test_plan_marshall_no_nested_when_npm_already_present():
         pkg_dir = root / 'my-app'
         pkg_dir.mkdir()
         import json
+
         (pkg_dir / 'package.json').write_text(json.dumps({'name': 'my-app'}))
 
         # Both maven and npm already discovered at same path
@@ -1075,10 +1083,15 @@ def test_plan_marshall_nested_npm_uses_prefix():
         e2e_dir = root / 'e2e-playwright'
         e2e_dir.mkdir()
         import json
-        (e2e_dir / 'package.json').write_text(json.dumps({
-            'name': 'e2e-tests',
-            'scripts': {'test': 'playwright test'},
-        }))
+
+        (e2e_dir / 'package.json').write_text(
+            json.dumps(
+                {
+                    'name': 'e2e-tests',
+                    'scripts': {'test': 'playwright test'},
+                }
+            )
+        )
 
         existing_modules = [
             {

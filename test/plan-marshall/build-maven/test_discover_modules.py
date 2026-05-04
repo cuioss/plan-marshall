@@ -28,7 +28,12 @@ import importlib.util  # noqa: E402
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'build-maven' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'build-maven'
+    / 'scripts'
 )
 
 
@@ -470,8 +475,7 @@ def test_single_quality_gate_profile_no_conflict():
     """Test that a single quality-gate profile produces no conflict."""
     profiles = [{'id': 'pre-commit', 'canonical': 'quality-gate'}]
     commands = _build_commands(
-        module_name='my-module', packaging='jar', has_sources=True, has_tests=True,
-        profiles=profiles, relative_path='.'
+        module_name='my-module', packaging='jar', has_sources=True, has_tests=True, profiles=profiles, relative_path='.'
     )
     assert 'quality-gate' in commands
     assert 'pre-commit' in commands['quality-gate']
@@ -485,8 +489,7 @@ def test_two_quality_gate_profiles_first_wins():
         {'id': 'sonar', 'canonical': 'quality-gate'},
     ]
     commands = _build_commands(
-        module_name='my-module', packaging='jar', has_sources=True, has_tests=True,
-        profiles=profiles, relative_path='.'
+        module_name='my-module', packaging='jar', has_sources=True, has_tests=True, profiles=profiles, relative_path='.'
     )
     assert 'quality-gate' in commands
     assert 'pre-commit' in commands['quality-gate']
@@ -500,8 +503,7 @@ def test_two_quality_gate_profiles_report_conflict():
         {'id': 'sonar', 'canonical': 'quality-gate'},
     ]
     commands = _build_commands(
-        module_name='my-module', packaging='jar', has_sources=True, has_tests=True,
-        profiles=profiles, relative_path='.'
+        module_name='my-module', packaging='jar', has_sources=True, has_tests=True, profiles=profiles, relative_path='.'
     )
     assert 'conflicts' in commands
     assert 'quality-gate' in commands['conflicts']
@@ -515,8 +517,7 @@ def test_no_profile_conflict_for_different_canonicals():
         {'id': 'integration', 'canonical': 'integration-tests'},
     ]
     commands = _build_commands(
-        module_name='my-module', packaging='jar', has_sources=True, has_tests=True,
-        profiles=profiles, relative_path='.'
+        module_name='my-module', packaging='jar', has_sources=True, has_tests=True, profiles=profiles, relative_path='.'
     )
     assert 'conflicts' not in commands
 
@@ -534,8 +535,12 @@ def test_nested_module_uses_relative_path_for_pl():
     the artifact ID (benchmark-core) differs from the relative path.
     """
     commands = _build_commands(
-        module_name='benchmark-core', packaging='jar', has_sources=True, has_tests=True,
-        profiles=[], relative_path='benchmarking/benchmark-core'
+        module_name='benchmark-core',
+        packaging='jar',
+        has_sources=True,
+        has_tests=True,
+        profiles=[],
+        relative_path='benchmarking/benchmark-core',
     )
     # The -pl argument must use the relative path, not the artifact ID
     assert '-pl benchmarking/benchmark-core' in commands['compile']
@@ -545,19 +550,23 @@ def test_nested_module_uses_relative_path_for_pl():
 def test_nested_module_pl_in_all_commands():
     """Test that all commands for a nested module use the correct -pl path."""
     commands = _build_commands(
-        module_name='oauth-sheriff-quarkus', packaging='jar', has_sources=True, has_tests=True,
-        profiles=[], relative_path='oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus'
+        module_name='oauth-sheriff-quarkus',
+        packaging='jar',
+        has_sources=True,
+        has_tests=True,
+        profiles=[],
+        relative_path='oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus',
     )
     for cmd_name in ['clean', 'compile', 'verify', 'module-tests', 'quality-gate']:
-        assert '-pl oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus' in commands[cmd_name], \
+        assert '-pl oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus' in commands[cmd_name], (
             f'{cmd_name} should use relative_path for -pl'
+        )
 
 
 def test_root_module_has_no_pl_arg():
     """Test that root module commands do not include -pl argument."""
     commands = _build_commands(
-        module_name='parent-pom', packaging='jar', has_sources=True, has_tests=True,
-        profiles=[], relative_path='.'
+        module_name='parent-pom', packaging='jar', has_sources=True, has_tests=True, profiles=[], relative_path='.'
     )
     assert '-pl' not in commands['compile']
 

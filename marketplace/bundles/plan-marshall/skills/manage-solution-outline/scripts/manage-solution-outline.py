@@ -122,8 +122,7 @@ def validate_solution_structure(content: str) -> tuple[list[str], list[str], dic
             errors.append('Missing scope_estimate in Solution Metadata')
         elif scope_value not in SCOPE_ESTIMATE_VALUES:
             errors.append(
-                f"Invalid scope_estimate '{scope_value}' "
-                f"(must be one of: {', '.join(SCOPE_ESTIMATE_VALUES)})"
+                f"Invalid scope_estimate '{scope_value}' (must be one of: {', '.join(SCOPE_ESTIMATE_VALUES)})"
             )
         else:
             info['scope_estimate'] = scope_value

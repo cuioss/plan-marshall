@@ -50,9 +50,7 @@ from input_validation import (  # type: ignore[import-not-found]
 
 def build_parser() -> argparse.ArgumentParser:
     """Build argument parser with dynamic subparsers for document types."""
-    parser = argparse.ArgumentParser(
-        description='Manage typed documents within plan directories', allow_abbrev=False
-    )
+    parser = argparse.ArgumentParser(description='Manage typed documents within plan directories', allow_abbrev=False)
     subparsers = parser.add_subparsers(dest='doc_type', required=True, help='Document type or command')
 
     # Special command: list-types
@@ -67,9 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
         if not doc_def:
             continue
 
-        type_parser = subparsers.add_parser(
-            doc_type, help=f'Manage {doc_type} documents', allow_abbrev=False
-        )
+        type_parser = subparsers.add_parser(doc_type, help=f'Manage {doc_type} documents', allow_abbrev=False)
         type_subparsers = type_parser.add_subparsers(dest='verb', required=True, help='Operation')
 
         # Create
@@ -114,9 +110,7 @@ def build_parser() -> argparse.ArgumentParser:
         path_parser.set_defaults(func=lambda args, dt=doc_type: cmd_path(dt, args))
 
         # Exists
-        exists_parser = type_subparsers.add_parser(
-            'exists', help='Check if document exists', allow_abbrev=False
-        )
+        exists_parser = type_subparsers.add_parser('exists', help='Check if document exists', allow_abbrev=False)
         add_plan_id_arg(exists_parser)
         exists_parser.set_defaults(func=lambda args, dt=doc_type: cmd_exists(dt, args))
 

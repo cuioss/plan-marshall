@@ -87,7 +87,11 @@ def cmd_write(args: argparse.Namespace) -> dict:
     elif args.stdin:
         content = sys.stdin.read()
     else:
-        return {'status': 'error', 'error': 'missing_content', 'message': 'Must provide --content, --content-file, or --stdin'}
+        return {
+            'status': 'error',
+            'error': 'missing_content',
+            'message': 'Must provide --content, --content-file, or --stdin',
+        }
 
     if not content:
         return {'status': 'error', 'error': 'empty_content', 'message': 'Content cannot be empty'}
@@ -284,9 +288,7 @@ def cmd_discover(args: argparse.Namespace) -> dict:
 
 @safe_main
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description='Generic file I/O operations for plan directories', allow_abbrev=False
-    )
+    parser = argparse.ArgumentParser(description='Generic file I/O operations for plan directories', allow_abbrev=False)
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # read

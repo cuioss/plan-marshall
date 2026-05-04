@@ -23,7 +23,12 @@ from conftest import get_script_path, run_script
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills' / 'tools-marketplace-inventory' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'pm-plugin-development'
+    / 'skills'
+    / 'tools-marketplace-inventory'
+    / 'scripts'
 )
 
 

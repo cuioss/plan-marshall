@@ -24,9 +24,7 @@ import pytest
 from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
-SCRIPT_PATH = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-lessons' / 'scripts' / 'manage-lessons.py'
-)
+SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-lessons' / 'scripts' / 'manage-lessons.py'
 
 # Tier 2 direct imports - load hyphenated module via importlib
 _MANAGE_LESSONS_SCRIPT = str(SCRIPT_PATH)
@@ -358,9 +356,7 @@ Body.
         (lessons_dir / '2025-01-01-001.md').write_text(lesson_content)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_update(
-                Namespace(lesson_id='2025-01-01-001', component='new-component', category=None)
-            )
+            result = cmd_update(Namespace(lesson_id='2025-01-01-001', component='new-component', category=None))
 
         assert result['status'] == 'success'
         assert result['field'] == 'component'
@@ -376,9 +372,7 @@ Body.
         lessons_dir.mkdir(parents=True)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_update(
-                Namespace(lesson_id='nonexistent', component='x', category=None)
-            )
+            result = cmd_update(Namespace(lesson_id='nonexistent', component='x', category=None))
 
         assert result['status'] == 'error'
         assert result['error'] == 'not_found'
@@ -401,15 +395,7 @@ class TestCmdSetBody:
     ``{status, id, path, body_bytes_written}`` on success.
     """
 
-    _STUB_TEMPLATE = (
-        'id={lesson_id}\n'
-        'component=test-component\n'
-        'category=bug\n'
-        'created=2025-01-01\n'
-        '\n'
-        '# {title}\n'
-        '\n'
-    )
+    _STUB_TEMPLATE = 'id={lesson_id}\ncomponent=test-component\ncategory=bug\ncreated=2025-01-01\n\n# {title}\n\n'
 
     def _seed_stub(self, lessons_dir: Path, lesson_id: str, title: str = 'Stub Title') -> Path:
         """Create a fresh lesson stub mirroring the shape produced by ``cmd_add``."""
@@ -607,8 +593,10 @@ class TestCmdSetBody:
                 raise PermissionError('simulated read failure')
             return original_read_text(self, *args, **kwargs)
 
-        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}), \
-                patch.object(Path, 'read_text', _raising_read_text):
+        with (
+            patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}),
+            patch.object(Path, 'read_text', _raising_read_text),
+        ):
             result = cmd_set_body(
                 Namespace(
                     lesson_id='2025-01-01-02-001',
@@ -728,9 +716,7 @@ Body content here.
         source.write_text(lesson_content)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_convert_to_plan(
-                Namespace(lesson_id='2025-01-01-001', plan_id='my-plan')
-            )
+            result = cmd_convert_to_plan(Namespace(lesson_id='2025-01-01-001', plan_id='my-plan'))
 
         assert result['status'] == 'success'
         assert result['lesson_id'] == '2025-01-01-001'
@@ -750,9 +736,7 @@ Body content here.
         lessons_dir.mkdir(parents=True)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_convert_to_plan(
-                Namespace(lesson_id='nonexistent-id', plan_id='my-plan')
-            )
+            result = cmd_convert_to_plan(Namespace(lesson_id='nonexistent-id', plan_id='my-plan'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'not_found'
@@ -777,9 +761,7 @@ Body.
         assert not plan_dir.exists()
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_convert_to_plan(
-                Namespace(lesson_id='2025-01-01-001', plan_id='fresh-plan')
-            )
+            result = cmd_convert_to_plan(Namespace(lesson_id='2025-01-01-001', plan_id='fresh-plan'))
 
         assert result['status'] == 'success'
         assert plan_dir.exists()
@@ -789,16 +771,12 @@ Body.
         """Should reject identifiers containing path separators or traversal sequences."""
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
             for bad_id in ('../escape', 'sub/dir', 'back\\slash'):
-                result = cmd_convert_to_plan(
-                    Namespace(lesson_id=bad_id, plan_id='p')
-                )
+                result = cmd_convert_to_plan(Namespace(lesson_id=bad_id, plan_id='p'))
                 assert result['status'] == 'error'
                 assert result['error'] == 'invalid_id'
 
             for bad_plan in ('../escape', 'sub/dir', 'back\\slash'):
-                result = cmd_convert_to_plan(
-                    Namespace(lesson_id='good-id', plan_id=bad_plan)
-                )
+                result = cmd_convert_to_plan(Namespace(lesson_id='good-id', plan_id=bad_plan))
                 assert result['status'] == 'error'
                 assert result['error'] == 'invalid_id'
 
@@ -904,9 +882,7 @@ class TestGetNextIdHourAware:
         lessons_dir = tmp_path / 'lessons-learned'
         lessons_dir.mkdir(parents=True)
         legacy_path = lessons_dir / '2025-01-01-005.md'
-        legacy_content = (
-            'id=2025-01-01-005\ncomponent=x\ncategory=bug\ncreated=2025-01-01\n\n# legacy seed\n'
-        )
+        legacy_content = 'id=2025-01-01-005\ncomponent=x\ncategory=bug\ncreated=2025-01-01\n\n# legacy seed\n'
         legacy_path.write_text(legacy_content)
 
         frozen = real_datetime(2025, 1, 1, 3, 0, 0)
@@ -1020,8 +996,7 @@ class TestCollisionSafeAllocation:
         """
         path = lessons_dir / f'{lesson_id}.md'
         path.write_text(
-            f'id={lesson_id}\ncomponent=existing\ncategory=bug\ncreated=2025-01-01\n\n'
-            f'# {marker}\n',
+            f'id={lesson_id}\ncomponent=existing\ncategory=bug\ncreated=2025-01-01\n\n# {marker}\n',
             encoding='utf-8',
         )
         return path
@@ -1313,9 +1288,7 @@ class TestStatusFrontmatterOnAdd:
 # =============================================================================
 
 
-def _seed_lesson_with_status(
-    lessons_dir: Path, lesson_id: str, status: str | None, title: str
-) -> Path:
+def _seed_lesson_with_status(lessons_dir: Path, lesson_id: str, status: str | None, title: str) -> Path:
     """Write a minimal lesson file with optional ``status`` frontmatter."""
     metadata_lines = [
         f'id={lesson_id}',
@@ -1346,9 +1319,7 @@ class TestCmdListStatusFilter:
         self._seed_three_statuses(lessons_dir)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_list(
-                Namespace(component=None, category=None, status='active', full=False)
-            )
+            result = cmd_list(Namespace(component=None, category=None, status='active', full=False))
 
         assert result['status'] == 'success'
         listed_ids = {entry['id'] for entry in result['lessons']}
@@ -1363,9 +1334,7 @@ class TestCmdListStatusFilter:
         self._seed_three_statuses(lessons_dir)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_list(
-                Namespace(component=None, category=None, status='all', full=False)
-            )
+            result = cmd_list(Namespace(component=None, category=None, status='all', full=False))
 
         listed_ids = {entry['id'] for entry in result['lessons']}
         assert listed_ids == {
@@ -1381,9 +1350,7 @@ class TestCmdListStatusFilter:
         self._seed_three_statuses(lessons_dir)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_list(
-                Namespace(component=None, category=None, status='superseded', full=False)
-            )
+            result = cmd_list(Namespace(component=None, category=None, status='superseded', full=False))
 
         listed_ids = {entry['id'] for entry in result['lessons']}
         assert listed_ids == {'2025-01-01-01-002'}
@@ -1462,9 +1429,7 @@ class TestCmdRemove:
         lessons_dir.mkdir(parents=True)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_remove(
-                Namespace(lesson_id='nope', reason='gone', force=True)
-            )
+            result = cmd_remove(Namespace(lesson_id='nope', reason='gone', force=True))
 
         assert result['status'] == 'error'
         assert result['error'] == 'not_found'
@@ -1481,9 +1446,7 @@ class TestCmdRemove:
         monkeypatch.setattr(_mod, 'input', lambda: 'n', raising=False)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_remove(
-                Namespace(lesson_id='2025-01-01-01-001', reason='maybe', force=False)
-            )
+            result = cmd_remove(Namespace(lesson_id='2025-01-01-01-001', reason='maybe', force=False))
 
         assert result['status'] == 'cancelled'
         # File preserved.
@@ -1538,8 +1501,7 @@ class TestCmdSupersede:
         canonical_body = '# Canonical Lesson\n\nCanonical body content.\n'
         if with_consolidated_section:
             canonical_body = (
-                '# Canonical Lesson\n\nCanonical body content.\n\n'
-                '## Consolidated from\n\n- 2024-12-31-23-099\n'
+                '# Canonical Lesson\n\nCanonical body content.\n\n## Consolidated from\n\n- 2024-12-31-23-099\n'
             )
         canonical = lessons_dir / '2025-01-02-01-001.md'
         canonical.write_text(
@@ -1784,9 +1746,7 @@ class TestCmdSupersede:
         # rewrite it with the source's current title.
         assert 'Pre-existing Title' in canonical_after
 
-    def test_supersede_atomic_canonical_write_failure_leaves_source_intact(
-        self, tmp_path, monkeypatch
-    ):
+    def test_supersede_atomic_canonical_write_failure_leaves_source_intact(self, tmp_path, monkeypatch):
         """A failure during the canonical write leaves the source body and frontmatter unchanged."""
         lessons_dir = tmp_path / 'lessons-learned'
         lessons_dir.mkdir(parents=True)
@@ -1894,9 +1854,7 @@ class TestCmdCleanupSuperseded:
             f'# {title}\n\nSource body.\n',
             encoding='utf-8',
         )
-        cmd_supersede(
-            Namespace(lesson_id=lesson_id, by=canonical_id, reason='merged into canonical')
-        )
+        cmd_supersede(Namespace(lesson_id=lesson_id, by=canonical_id, reason='merged into canonical'))
         return source
 
     def test_cleanup_superseded_retention_filter_removes_only_old_stubs(self, tmp_path):
@@ -1910,12 +1868,11 @@ class TestCmdCleanupSuperseded:
 
             # Backdate the old stub past the 7-day cutoff.
             import os as _os
+
             old_mtime = old_stub.stat().st_mtime - (10 * 86400)
             _os.utime(old_stub, (old_mtime, old_mtime))
 
-            result = cmd_cleanup_superseded(
-                Namespace(lesson_id=None, retention_days=7, dry_run=False)
-            )
+            result = cmd_cleanup_superseded(Namespace(lesson_id=None, retention_days=7, dry_run=False))
 
         assert result['status'] == 'success'
         assert result['retention_days_effective'] == 7
@@ -1936,9 +1893,7 @@ class TestCmdCleanupSuperseded:
 
             # File is fresh (no mtime backdating); explicit-id mode should still remove it.
             result = cmd_cleanup_superseded(
-                Namespace(
-                    lesson_id=['2025-02-01-01-001'], retention_days=None, dry_run=False
-                )
+                Namespace(lesson_id=['2025-02-01-01-001'], retention_days=None, dry_run=False)
             )
 
         assert result['status'] == 'success'
@@ -1955,11 +1910,7 @@ class TestCmdCleanupSuperseded:
             tombstone_path = lessons_dir / '.tombstones' / '2025-03-01-01-001.json'
             tombstone_bytes_before = tombstone_path.read_bytes()
 
-            cmd_cleanup_superseded(
-                Namespace(
-                    lesson_id=['2025-03-01-01-001'], retention_days=None, dry_run=False
-                )
-            )
+            cmd_cleanup_superseded(Namespace(lesson_id=['2025-03-01-01-001'], retention_days=None, dry_run=False))
 
         assert tombstone_path.exists()
         assert tombstone_path.read_bytes() == tombstone_bytes_before
@@ -1973,14 +1924,10 @@ class TestCmdCleanupSuperseded:
             self._seed_superseded(lessons_dir, '2025-04-01-01-001')
 
             first = cmd_cleanup_superseded(
-                Namespace(
-                    lesson_id=['2025-04-01-01-001'], retention_days=None, dry_run=False
-                )
+                Namespace(lesson_id=['2025-04-01-01-001'], retention_days=None, dry_run=False)
             )
             second = cmd_cleanup_superseded(
-                Namespace(
-                    lesson_id=['2025-04-01-01-001'], retention_days=None, dry_run=False
-                )
+                Namespace(lesson_id=['2025-04-01-01-001'], retention_days=None, dry_run=False)
             )
 
         assert first['status'] == 'success'
@@ -2009,9 +1956,7 @@ class TestCmdCleanupSuperseded:
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
             result = cmd_cleanup_superseded(
-                Namespace(
-                    lesson_id=['2025-05-01-01-001'], retention_days=None, dry_run=False
-                )
+                Namespace(lesson_id=['2025-05-01-01-001'], retention_days=None, dry_run=False)
             )
 
         assert result['status'] == 'success'
@@ -2029,9 +1974,7 @@ class TestCmdCleanupSuperseded:
             stub = self._seed_superseded(lessons_dir, '2025-06-01-01-001')
 
             result = cmd_cleanup_superseded(
-                Namespace(
-                    lesson_id=['2025-06-01-01-001'], retention_days=None, dry_run=True
-                )
+                Namespace(lesson_id=['2025-06-01-01-001'], retention_days=None, dry_run=True)
             )
 
         assert result['status'] == 'success'

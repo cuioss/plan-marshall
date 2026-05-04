@@ -18,15 +18,7 @@ from pathlib import Path
 # Fixtures must materialize that file with the same TOON serialization the
 # production code path uses (file_ops.serialize_toon).
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_TOON_DIR = (
-    _PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-files'
-    / 'scripts'
-)
+_TOON_DIR = _PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-files' / 'scripts'
 if str(_TOON_DIR) not in sys.path:
     sys.path.insert(0, str(_TOON_DIR))
 
@@ -62,9 +54,7 @@ def write_handshakes(plan_dir: Path, plan_id: str, rows: list[dict]) -> Path:
     ``_handshake_store.save_rows`` writes the file in production.
     """
     plan_dir.mkdir(parents=True, exist_ok=True)
-    normalized = [
-        {field: row.get(field, '') for field in _HANDSHAKE_FIELDS} for row in rows
-    ]
+    normalized = [{field: row.get(field, '') for field in _HANDSHAKE_FIELDS} for row in rows]
     payload = {'plan_id': plan_id, 'handshakes': normalized}
     path = plan_dir / 'handshakes.toon'
     path.write_text(serialize_toon(payload) + '\n', encoding='utf-8')
@@ -158,12 +148,8 @@ def build_happy_plan_dir(plan_dir: Path) -> Path:
     """Populate ``plan_dir`` with a full happy-path plan layout."""
     plan_dir.mkdir(parents=True, exist_ok=True)
     (plan_dir / 'solution_outline.md').write_text(_HAPPY_OUTLINE, encoding='utf-8')
-    (plan_dir / 'references.json').write_text(
-        json.dumps(_HAPPY_REFERENCES), encoding='utf-8'
-    )
-    (plan_dir / 'status.json').write_text(
-        json.dumps(_HAPPY_STATUS), encoding='utf-8'
-    )
+    (plan_dir / 'references.json').write_text(json.dumps(_HAPPY_REFERENCES), encoding='utf-8')
+    (plan_dir / 'status.json').write_text(json.dumps(_HAPPY_STATUS), encoding='utf-8')
     # Phase-handshake captures now live in handshakes.toon (canonical storage
     # owned by plan-marshall:plan-marshall:phase_handshake). Mirrors the rows
     # the real cmd_capture would have written.
@@ -202,8 +188,7 @@ def build_happy_plan_dir(plan_dir: Path) -> Path:
         encoding='utf-8',
     )
     (logs_dir / 'decision.log').write_text(
-        '[2026-04-17T10:00:30Z] [INFO] [dddddd] '
-        '(plan-marshall:phase-3-outline) picked option A\n',
+        '[2026-04-17T10:00:30Z] [INFO] [dddddd] (plan-marshall:phase-3-outline) picked option A\n',
         encoding='utf-8',
     )
     # ``manage-logging`` emits to ``script-execution.log`` (not ``script.log``);
@@ -233,9 +218,7 @@ def build_broken_plan_dir(plan_dir: Path) -> Path:
         '# Solution: Broken\n\n## Summary\n\nBroken plan.\n',
         encoding='utf-8',
     )
-    (plan_dir / 'status.json').write_text(
-        json.dumps({'metadata': {}}), encoding='utf-8'
-    )
+    (plan_dir / 'status.json').write_text(json.dumps({'metadata': {}}), encoding='utf-8')
     return plan_dir
 
 

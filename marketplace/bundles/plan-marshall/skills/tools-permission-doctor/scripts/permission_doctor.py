@@ -435,7 +435,7 @@ def extract_project_steps(marshal_config: dict) -> list[dict]:
         steps = phase_config.get('steps', [])
         for step in steps:
             if isinstance(step, str) and step.startswith('project:'):
-                skill = step[len('project:'):]
+                skill = step[len('project:') :]
                 project_steps.append({'skill': skill, 'step': step, 'phase': phase})
 
     return project_steps
@@ -505,7 +505,9 @@ def cmd_detect_missing_project_step_permissions(args) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Permission doctor - read-only analysis for Claude Code settings', allow_abbrev=False)
+    parser = argparse.ArgumentParser(
+        description='Permission doctor - read-only analysis for Claude Code settings', allow_abbrev=False
+    )
     subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
     # detect-redundant subcommand
@@ -521,7 +523,9 @@ def main():
     p_red.set_defaults(func=cmd_detect_redundant)
 
     # detect-suspicious subcommand
-    p_sus = subparsers.add_parser('detect-suspicious', help='Detect suspicious permissions matching anti-patterns', allow_abbrev=False)
+    p_sus = subparsers.add_parser(
+        'detect-suspicious', help='Detect suspicious permissions matching anti-patterns', allow_abbrev=False
+    )
     p_sus_group = p_sus.add_mutually_exclusive_group(required=True)
     p_sus_group.add_argument('--settings', help='Path to settings file to analyze')
     p_sus_group.add_argument('--scope', choices=['global', 'project'], help='Target scope (auto-resolves path)')

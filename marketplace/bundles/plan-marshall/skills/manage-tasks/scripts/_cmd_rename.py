@@ -68,13 +68,15 @@ def _apply_mappings_to_tasks(plan_id: str, old_path: str, new_path: str) -> list
                 continue
             target = step.get('target', '')
             if target == old_path or target.startswith(old_path + '/'):
-                new_target = new_path + target[len(old_path):]
-                rewritten.append({
-                    'task': task['number'],
-                    'step': step['number'],
-                    'old_target': target,
-                    'new_target': new_target,
-                })
+                new_target = new_path + target[len(old_path) :]
+                rewritten.append(
+                    {
+                        'task': task['number'],
+                        'step': step['number'],
+                        'old_target': target,
+                        'new_target': new_target,
+                    }
+                )
                 step['target'] = new_target
                 changed = True
 
@@ -106,9 +108,10 @@ def cmd_rename_path(args) -> dict:
     rewritten = _apply_mappings_to_tasks(args.plan_id, old_path, new_path)
 
     log_entry(
-        'work', args.plan_id, 'INFO',
-        f'[MANAGE-TASKS] Recorded rename: {old_path} -> {new_path}, '
-        f'rewritten {len(rewritten)} step targets',
+        'work',
+        args.plan_id,
+        'INFO',
+        f'[MANAGE-TASKS] Recorded rename: {old_path} -> {new_path}, rewritten {len(rewritten)} step targets',
     )
 
     return {

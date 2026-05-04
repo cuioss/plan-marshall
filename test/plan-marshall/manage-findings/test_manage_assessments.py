@@ -19,7 +19,13 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E4
 # Tier 2 direct imports - load hyphenated module via importlib
 _MANAGE_FINDINGS_SCRIPT = str(
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-findings' / 'scripts' / 'manage-findings.py'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-findings'
+    / 'scripts'
+    / 'manage-findings.py'
 )
 _spec = importlib.util.spec_from_file_location('manage_findings', _MANAGE_FINDINGS_SCRIPT)
 _mod = importlib.util.module_from_spec(_spec)
@@ -82,11 +88,13 @@ def _clear_ns(plan_id='test-plan', agent=None):
 def test_assessment_add_basic():
     """Test adding a basic assessment."""
     with PlanContext():
-        result = cmd_assessment_add(_add_ns(
-            file_path='marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md',
-            certainty='CERTAIN_INCLUDE',
-            confidence=95,
-        ))
+        result = cmd_assessment_add(
+            _add_ns(
+                file_path='marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md',
+                certainty='CERTAIN_INCLUDE',
+                confidence=95,
+            )
+        )
         assert result['status'] == 'success'
         assert 'hash_id' in result
         assert result['file_path'] == 'marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md'
@@ -95,26 +103,30 @@ def test_assessment_add_basic():
 def test_assessment_add_with_options():
     """Test adding assessment with all options."""
     with PlanContext():
-        result = cmd_assessment_add(_add_ns(
-            file_path='path/to/file.md',
-            certainty='CERTAIN_EXCLUDE',
-            confidence=85,
-            agent='skill-analysis-agent',
-            detail='No relevant content found',
-            evidence='Checked ## Output section',
-        ))
+        result = cmd_assessment_add(
+            _add_ns(
+                file_path='path/to/file.md',
+                certainty='CERTAIN_EXCLUDE',
+                confidence=85,
+                agent='skill-analysis-agent',
+                detail='No relevant content found',
+                evidence='Checked ## Output section',
+            )
+        )
         assert result['status'] == 'success'
 
 
 def test_assessment_add_uncertain():
     """Test adding an uncertain assessment."""
     with PlanContext():
-        result = cmd_assessment_add(_add_ns(
-            file_path='path/to/ambiguous.md',
-            certainty='UNCERTAIN',
-            confidence=65,
-            detail='JSON found in workflow context - unclear if output spec',
-        ))
+        result = cmd_assessment_add(
+            _add_ns(
+                file_path='path/to/ambiguous.md',
+                certainty='UNCERTAIN',
+                confidence=65,
+                detail='JSON found in workflow context - unclear if output spec',
+            )
+        )
         assert result['status'] == 'success'
 
 
@@ -141,11 +153,13 @@ def test_assessment_add_invalid_certainty():
 def test_assessment_add_invalid_confidence():
     """Test that out-of-range confidence is rejected."""
     with PlanContext():
-        result = cmd_assessment_add(_add_ns(
-            file_path='path/to/file.md',
-            certainty='CERTAIN_INCLUDE',
-            confidence=150,
-        ))
+        result = cmd_assessment_add(
+            _add_ns(
+                file_path='path/to/file.md',
+                certainty='CERTAIN_INCLUDE',
+                confidence=150,
+            )
+        )
         assert result['status'] == 'error'
 
 
@@ -262,11 +276,13 @@ def test_assessment_clear_empty():
 def test_assessment_get():
     """Test getting a specific assessment."""
     with PlanContext():
-        add_result = cmd_assessment_add(_add_ns(
-            file_path='file.md',
-            certainty='CERTAIN_INCLUDE',
-            confidence=90,
-        ))
+        add_result = cmd_assessment_add(
+            _add_ns(
+                file_path='file.md',
+                certainty='CERTAIN_INCLUDE',
+                confidence=90,
+            )
+        )
         hash_id = str(add_result['hash_id'])
 
         result = cmd_assessment_get(_get_ns(hash_id=hash_id))

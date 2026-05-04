@@ -148,9 +148,7 @@ def load_project_meta(project_dir: str = '.') -> dict[str, Any]:
     """
     path = get_project_meta_path(project_dir)
     if not path.exists():
-        raise DataNotFoundError(
-            f"Project metadata not found. Run 'architecture.py discover' first. Expected: {path}"
-        )
+        raise DataNotFoundError(f"Project metadata not found. Run 'architecture.py discover' first. Expected: {path}")
     return _read_json(path)
 
 
@@ -170,8 +168,7 @@ def load_module_derived(module_name: str, project_dir: str = '.') -> dict[str, A
     path = get_module_derived_path(module_name, project_dir)
     if not path.exists():
         raise DataNotFoundError(
-            f"Derived data not found for module '{module_name}'. "
-            f"Run 'architecture.py discover' first. Expected: {path}"
+            f"Derived data not found for module '{module_name}'. Run 'architecture.py discover' first. Expected: {path}"
         )
     return _read_json(path)
 
@@ -192,8 +189,7 @@ def load_module_enriched(module_name: str, project_dir: str = '.') -> dict[str, 
     path = get_module_enriched_path(module_name, project_dir)
     if not path.exists():
         raise DataNotFoundError(
-            f"Enrichment data not found for module '{module_name}'. "
-            f"Run 'architecture.py init' first. Expected: {path}"
+            f"Enrichment data not found for module '{module_name}'. Run 'architecture.py init' first. Expected: {path}"
         )
     return _read_json(path)
 

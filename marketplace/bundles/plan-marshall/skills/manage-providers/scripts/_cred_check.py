@@ -21,28 +21,34 @@ def run_check(args) -> int:
     result = check_credential_completeness(skill, scope, project_name)
 
     if not result['exists']:
-        output_toon({
-            'status': 'not_found',
-            'skill': skill,
-            'scope': scope,
-            'message': f'No credentials found for {skill} (scope: {scope})',
-        })
+        output_toon(
+            {
+                'status': 'not_found',
+                'skill': skill,
+                'scope': scope,
+                'message': f'No credentials found for {skill} (scope: {scope})',
+            }
+        )
         return 0
 
     if result['complete']:
-        output_toon({
-            'status': 'complete',
-            'skill': skill,
-            'scope': scope,
-            'path': result['path'],
-        })
+        output_toon(
+            {
+                'status': 'complete',
+                'skill': skill,
+                'scope': scope,
+                'path': result['path'],
+            }
+        )
     else:
-        output_toon({
-            'status': 'incomplete',
-            'skill': skill,
-            'scope': scope,
-            'path': result['path'],
-            'placeholders': result['placeholders'],
-        })
+        output_toon(
+            {
+                'status': 'incomplete',
+                'skill': skill,
+                'scope': scope,
+                'path': result['path'],
+                'placeholders': result['placeholders'],
+            }
+        )
 
     return 0

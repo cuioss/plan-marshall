@@ -18,7 +18,13 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-files', 'manage-files.py'
 # Tier 2 direct imports - load hyphenated module via importlib
 _MANAGE_FILES_SCRIPT = str(
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-files' / 'scripts' / 'manage-files.py'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-files'
+    / 'scripts'
+    / 'manage-files.py'
 )
 _spec = importlib.util.spec_from_file_location('manage_files', _MANAGE_FILES_SCRIPT)
 _mod = importlib.util.module_from_spec(_spec)
@@ -93,9 +99,7 @@ class EmptyPlanContext:
 def test_write_file():
     """Test writing a file."""
     with PlanContext(plan_id='file-write') as ctx:
-        result = cmd_write(
-            Namespace(plan_id='file-write', file='task.md', content='# Task\nDo something', stdin=False)
-        )
+        result = cmd_write(Namespace(plan_id='file-write', file='task.md', content='# Task\nDo something', stdin=False))
         assert result['status'] == 'success'
         assert result['action'] == 'created'
         assert result['file'] == 'task.md'
@@ -315,9 +319,7 @@ def test_write_missing_content():
 def test_write_invalid_path():
     """Test write rejects path traversal."""
     with PlanContext(plan_id='file-write-escape'):
-        result = cmd_write(
-            Namespace(plan_id='file-write-escape', file='../escape.md', content='bad', stdin=False)
-        )
+        result = cmd_write(Namespace(plan_id='file-write-escape', file='../escape.md', content='bad', stdin=False))
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_path'
 
@@ -465,9 +467,7 @@ def test_discover_single_pattern_returns_sorted_absolute_paths(tmp_path):
     assert data['root'] == str(tmp_path.resolve())
     paths = data['paths']
     # Top-level *.py must match exactly a.py and b.py — sorted, absolute.
-    expected = sorted(
-        str(p.resolve()) for p in [tmp_path / 'a.py', tmp_path / 'b.py']
-    )
+    expected = sorted(str(p.resolve()) for p in [tmp_path / 'a.py', tmp_path / 'b.py'])
     assert paths == expected
     for path in paths:
         assert Path(path).is_absolute()

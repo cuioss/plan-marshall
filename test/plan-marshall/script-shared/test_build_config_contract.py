@@ -17,16 +17,11 @@ sys.modules.setdefault('run_config', MagicMock(timeout_get=MagicMock(return_valu
 # Tier 2 direct imports via importlib for uniform import style
 import importlib.util  # noqa: E402
 
-_BUNDLES_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
-)
+_BUNDLES_DIR = Path(__file__).parent.parent.parent.parent / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
 
 
 def _load_module(name, filename, skill):
-    spec = importlib.util.spec_from_file_location(
-        name, _BUNDLES_DIR / skill / 'scripts' / filename
-    )
+    spec = importlib.util.spec_from_file_location(name, _BUNDLES_DIR / skill / 'scripts' / filename)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod

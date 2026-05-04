@@ -48,22 +48,11 @@ from conftest import MARKETPLACE_ROOT  # type: ignore[import-not-found]
 # Standards-doc paths (authoritative narrative surface).
 # ---------------------------------------------------------------------------
 
-_PHASE_6_DIR = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-)
+_PHASE_6_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize'
 _PHASE_6_SKILL_MD = _PHASE_6_DIR / 'SKILL.md'
 _ARCHITECTURE_REFRESH_MD = _PHASE_6_DIR / 'standards' / 'architecture-refresh.md'
 _REQUIRED_STEPS_MD = _PHASE_6_DIR / 'standards' / 'required-steps.md'
-_PHASE_1_INIT_SKILL_MD = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-1-init'
-    / 'SKILL.md'
-)
+_PHASE_1_INIT_SKILL_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-1-init' / 'SKILL.md'
 
 # ---------------------------------------------------------------------------
 # Bring the live ``_parse_required_steps`` helper onto the import path so the
@@ -71,13 +60,7 @@ _PHASE_1_INIT_SKILL_MD = (
 # ``phase_steps_complete`` invariant uses at runtime.
 # ---------------------------------------------------------------------------
 
-_PHASE_HANDSHAKE_SCRIPTS_DIR = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-marshall'
-    / 'scripts'
-)
+_PHASE_HANDSHAKE_SCRIPTS_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'scripts'
 if str(_PHASE_HANDSHAKE_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_PHASE_HANDSHAKE_SCRIPTS_DIR))
 
@@ -156,9 +139,7 @@ def _decide_architecture_refresh(
                 'tier_0_committed': True,
                 'tier_1_action': 'skipped',
                 'affected_modules': affected,
-                'display_detail': (
-                    f'refreshed derived data ({len(affected)} modules)'
-                ),
+                'display_detail': (f'refreshed derived data ({len(affected)} modules)'),
             }
         # No tier-0 commit: empty diff or tier-0 disabled.
         if affected is _AFFECTED_UNKNOWN:
@@ -206,9 +187,7 @@ def _decide_architecture_refresh(
             'tier_0_committed': True,
             'tier_1_action': 'pr_note',
             'affected_modules': affected,
-            'display_detail': (
-                'refreshed; re-enrichment deferred to PR note'
-            ),
+            'display_detail': ('refreshed; re-enrichment deferred to PR note'),
         }
     if tier_1 == 'auto':
         return {
@@ -220,10 +199,7 @@ def _decide_architecture_refresh(
         }
     if tier_1 == 'prompt':
         if user_response is None:
-            raise ValueError(
-                'tier_1=prompt requires a user_response (Re-enrich now / '
-                'Skip — note in PR).'
-            )
+            raise ValueError('tier_1=prompt requires a user_response (Re-enrich now / Skip — note in PR).')
         if user_response == 'Re-enrich now':
             return {
                 'branch': 'E',
@@ -238,9 +214,7 @@ def _decide_architecture_refresh(
                 'tier_0_committed': True,
                 'tier_1_action': 'pr_note',
                 'affected_modules': affected,
-                'display_detail': (
-                    'refreshed; re-enrichment deferred to PR note'
-                ),
+                'display_detail': ('refreshed; re-enrichment deferred to PR note'),
             }
         raise ValueError(f'unknown user_response: {user_response!r}')
 
@@ -266,8 +240,7 @@ class TestGreenfieldHandling:
                     change_type='feature',
                 )
                 assert result['branch'] == 'A', (
-                    f'Greenfield must yield Branch A even with tier_0={tier_0} '
-                    f'tier_1={tier_1}, got {result}'
+                    f'Greenfield must yield Branch A even with tier_0={tier_0} tier_1={tier_1}, got {result}'
                 )
                 assert result['tier_0_committed'] is False
                 assert result['tier_1_action'] == 'skipped'
@@ -395,12 +368,8 @@ class TestTier0DisabledMatrix:
                 tier_1=tier_1,
                 change_type='feature',
             )
-            assert result['branch'] == 'B', (
-                f'Tier-0 disabled with tier_1={tier_1} must yield Branch B'
-            )
-            assert (
-                result['display_detail'] == 'tier-0 disabled; tier-1 skipped'
-            )
+            assert result['branch'] == 'B', f'Tier-0 disabled with tier_1={tier_1} must yield Branch B'
+            assert result['display_detail'] == 'tier-0 disabled; tier-1 skipped'
 
 
 # ===========================================================================
@@ -421,9 +390,7 @@ class TestTier1KnobDispatch:
         )
         assert result['branch'] == 'F'
         assert result['tier_1_action'] == 'pr_note'
-        assert (
-            result['display_detail'] == 'refreshed; re-enrichment deferred to PR note'
-        )
+        assert result['display_detail'] == 'refreshed; re-enrichment deferred to PR note'
 
     def test_tier_1_auto_yields_branch_e_enrich(self):
         result = _decide_architecture_refresh(
@@ -512,9 +479,7 @@ class TestChangeTypeShortcut:
         assert result['branch'] == 'D'
         assert result['tier_0_committed'] is True
         assert result['tier_1_action'] == 'skipped'
-        assert result['display_detail'] == (
-            'refreshed derived data (2 modules)'
-        )
+        assert result['display_detail'] == ('refreshed derived data (2 modules)')
 
     @pytest.mark.parametrize('change_type', ['bug_fix', 'verification'])
     def test_shortcut_without_drift_yields_branch_c(self, change_type: str):
@@ -531,7 +496,8 @@ class TestChangeTypeShortcut:
 
     @pytest.mark.parametrize('change_type', ['bug_fix', 'verification'])
     def test_shortcut_with_tier_0_disabled_yields_branch_b(
-        self, change_type: str,
+        self,
+        change_type: str,
     ):
         """Shortcut + tier-0 disabled still yields tier-0-disabled branch."""
         result = _decide_architecture_refresh(
@@ -553,9 +519,7 @@ class TestChangeTypeShortcut:
                 change_type=change_type,
                 diff_added=('mod-q',),
             )
-            assert result['branch'] == 'E', (
-                f'change_type={change_type!r} must run tier-1 with auto knob'
-            )
+            assert result['branch'] == 'E', f'change_type={change_type!r} must run tier-1 with auto knob'
 
 
 # ===========================================================================
@@ -578,8 +542,7 @@ class TestRequiredStepsRegistration:
         text = _REQUIRED_STEPS_MD.read_text(encoding='utf-8')
         assert '- architecture-refresh' in text
         assert '- default:architecture-refresh' not in text, (
-            'required-steps.md uses bare names; the dispatcher adds the '
-            'default: prefix at lookup time.'
+            'required-steps.md uses bare names; the dispatcher adds the default: prefix at lookup time.'
         )
 
     def test_required_steps_parser_handles_canonical_format(self):
@@ -615,12 +578,11 @@ class TestNarrativeContract:
         assert 'change_type' in standard_text
 
     def test_documents_architecture_pre_snapshot_dependency(
-        self, standard_text: str,
+        self,
+        standard_text: str,
     ):
         assert 'architecture-pre' in standard_text
-        assert 'phase-1-init' in standard_text, (
-            'Standard must cite the phase-1-init Step 5d snapshot producer'
-        )
+        assert 'phase-1-init' in standard_text, 'Standard must cite the phase-1-init Step 5d snapshot producer'
 
     # ----- Step 2: greenfield ----------------------------------------------
 
@@ -644,7 +606,8 @@ class TestNarrativeContract:
         assert 'no module structure changed' in standard_text
 
     def test_documents_non_empty_diff_commit_message_template(
-        self, standard_text: str,
+        self,
+        standard_text: str,
     ):
         assert 'chore(architecture): refresh derived data after' in standard_text
 
@@ -692,13 +655,14 @@ class TestNarrativeContract:
         # named a verb that was never registered and prompted at least one
         # historical mis-execution. Guard against re-introduction.
         assert 'enrich --modules' not in standard_text, (
-            "Standard must NOT cite `architecture enrich --modules {csv}` — "
+            'Standard must NOT cite `architecture enrich --modules {csv}` — '
             'this batch verb is not registered; the auto branch iterates '
             'modules and calls the per-module enrich subcommands instead.'
         )
 
     def test_documents_ask_user_question_prompt_options(
-        self, standard_text: str,
+        self,
+        standard_text: str,
     ):
         assert 'AskUserQuestion' in standard_text
         assert 'Re-enrich now' in standard_text
@@ -718,20 +682,19 @@ class TestNarrativeContract:
         ],
     )
     def test_documents_display_detail_template(
-        self, standard_text: str, template: str,
+        self,
+        standard_text: str,
+        template: str,
     ):
-        assert template in standard_text, (
-            f'Standard must document the display-detail template: {template!r}'
-        )
+        assert template in standard_text, f'Standard must document the display-detail template: {template!r}'
 
     def test_documents_six_branches_a_through_f(self, standard_text: str):
         for label in ('Branch A', 'Branch B', 'Branch C', 'Branch D', 'Branch E', 'Branch F'):
-            assert label in standard_text, (
-                f'Standard must label {label} for renderer audit'
-            )
+            assert label in standard_text, f'Standard must label {label} for renderer audit'
 
     def test_mark_step_done_uses_correct_phase_and_step(
-        self, standard_text: str,
+        self,
+        standard_text: str,
     ):
         """Every mark-step-done call MUST pass --phase 6-finalize --step architecture-refresh."""
         assert '--phase 6-finalize' in standard_text
@@ -747,9 +710,7 @@ class TestNarrativeContract:
             'git push',
             'enrich',
         ):
-            assert marker in standard_text, (
-                f'Error handling table must cover {marker!r}'
-            )
+            assert marker in standard_text, f'Error handling table must cover {marker!r}'
 
     # ----- Inline-execution contract ---------------------------------------
 
@@ -776,7 +737,6 @@ class TestNarrativeContract:
 
 
 class TestCrossReferences:
-
     @pytest.fixture(scope='class')
     def skill_md_text(self) -> str:
         return _PHASE_6_SKILL_MD.read_text(encoding='utf-8')
@@ -790,14 +750,16 @@ class TestCrossReferences:
         return _PHASE_1_INIT_SKILL_MD.read_text(encoding='utf-8')
 
     def test_skill_md_dispatch_table_routes_default_architecture_refresh(
-        self, skill_md_text: str,
+        self,
+        skill_md_text: str,
     ):
         """The SKILL.md dispatch table must resolve default:architecture-refresh."""
         assert 'default:architecture-refresh' in skill_md_text
         assert 'standards/architecture-refresh.md' in skill_md_text
 
     def test_skill_md_lists_architecture_refresh_in_inline_only_steps(
-        self, skill_md_text: str,
+        self,
+        skill_md_text: str,
     ):
         """Tier-1 prompt mode means architecture-refresh runs inline (no Task agent)."""
         # The SKILL.md declares "Inline-only built-in steps" and lists names.
@@ -813,13 +775,15 @@ class TestCrossReferences:
         )
 
     def test_skill_md_standards_table_lists_architecture_refresh_row(
-        self, skill_md_text: str,
+        self,
+        skill_md_text: str,
     ):
         """The standards-table at the bottom of SKILL.md must mention the doc."""
         assert 'standards/architecture-refresh.md' in skill_md_text
 
     def test_standard_frontmatter_declares_default_name(
-        self, standard_text: str,
+        self,
+        standard_text: str,
     ):
         """Frontmatter `name:` must match the dispatch token after the prefix."""
         assert 'name: default:architecture-refresh' in standard_text
@@ -830,19 +794,22 @@ class TestCrossReferences:
         assert 'order: 25' in standard_text
 
     def test_phase_1_init_produces_architecture_pre_snapshot(
-        self, phase_1_text: str,
+        self,
+        phase_1_text: str,
     ):
         """phase-1-init Step 5d must populate the input we consume."""
         assert 'architecture-pre' in phase_1_text
 
     def test_standard_cross_references_run_config_knobs(
-        self, standard_text: str,
+        self,
+        standard_text: str,
     ):
         """Cross-references section must cite manage-run-config as the knob source."""
         assert 'manage-run-config' in standard_text
 
     def test_standard_cross_references_required_steps(
-        self, standard_text: str,
+        self,
+        standard_text: str,
     ):
         """Cross-references must cite required-steps.md so the contract is discoverable."""
         assert 'required-steps.md' in standard_text
@@ -881,10 +848,7 @@ _MATRIX_CASES = [
 
 
 @pytest.mark.parametrize(
-    (
-        'snapshot_present, tier_0, tier_1, change_type, drift, '
-        'expected_branch, expected_detail_substring, user_response'
-    ),
+    ('snapshot_present, tier_0, tier_1, change_type, drift, expected_branch, expected_detail_substring, user_response'),
     _MATRIX_CASES,
 )
 def test_full_decision_matrix(
@@ -912,6 +876,5 @@ def test_full_decision_matrix(
         f'change_type={change_type} drift={drift} -> {result}'
     )
     assert expected_detail_substring in result['display_detail'], (
-        f'display_detail {result["display_detail"]!r} missing expected '
-        f'substring {expected_detail_substring!r}'
+        f'display_detail {result["display_detail"]!r} missing expected substring {expected_detail_substring!r}'
     )

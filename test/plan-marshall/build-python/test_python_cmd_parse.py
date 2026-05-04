@@ -18,7 +18,12 @@ from _build_parse import Issue, UnitTestSummary
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'build-python' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'build-python'
+    / 'scripts'
 )
 
 

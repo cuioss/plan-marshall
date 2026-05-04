@@ -63,13 +63,7 @@ _mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
 # SKILL.md path for narrative-contract assertions
 # ---------------------------------------------------------------------------
 
-_PHASE_6_SKILL_MD = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'SKILL.md'
-)
+_PHASE_6_SKILL_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'SKILL.md'
 
 
 def _compose_ns(
@@ -116,7 +110,8 @@ def _read_ns(plan_id: str) -> Namespace:
 
 
 def _derive_executor_dispatch(
-    manifest: dict, phase_steps_state: dict[str, dict] | None = None,
+    manifest: dict,
+    phase_steps_state: dict[str, dict] | None = None,
 ) -> list[str]:
     """Return the ordered list of step_ids the dispatcher would dispatch."""
     state = phase_steps_state or {}
@@ -146,9 +141,7 @@ class TestManifestApiContract:
             assert result is not None
             assert result['status'] == 'success'
             assert result['plan_id'] == 'p6-read-shape'
-            assert 'phase_6' in result, (
-                'phase-6-finalize Step 2 reads phase_6 — must be present in read output'
-            )
+            assert 'phase_6' in result, 'phase-6-finalize Step 2 reads phase_6 — must be present in read output'
             phase_6 = result['phase_6']
             assert isinstance(phase_6, dict)
             assert isinstance(phase_6.get('steps'), list)
@@ -161,7 +154,6 @@ class TestManifestApiContract:
 
 
 class TestExecutorDispatchScenarios:
-
     def test_listed_steps_fire_in_manifest_order(self):
         """Every step in manifest.phase_6.steps must dispatch, in order."""
         with PlanContext(plan_id='p6-full'):
@@ -198,9 +190,7 @@ class TestExecutorDispatchScenarios:
             manifest = read_manifest('p6-pruned')
             assert manifest is not None
             steps = manifest['phase_6']['steps']
-            assert 'automated-review' not in steps, (
-                'surgical bug_fix must prune automated-review from the manifest'
-            )
+            assert 'automated-review' not in steps, 'surgical bug_fix must prune automated-review from the manifest'
             assert 'sonar-roundtrip' not in steps
             assert 'knowledge-capture' not in steps
 
@@ -243,7 +233,6 @@ class TestExecutorDispatchScenarios:
 
 
 class TestResumableReentry:
-
     def test_done_step_skipped_on_reentry(self):
         """A step marked outcome=done MUST be skipped on the next dispatch."""
         with PlanContext(plan_id='p6-resume-done'):
@@ -258,12 +247,8 @@ class TestResumableReentry:
             }
             dispatched = _derive_executor_dispatch(manifest, state)
 
-            assert 'commit-push' not in dispatched, (
-                'done-marked commit-push must be skipped on re-entry'
-            )
-            assert 'create-pr' not in dispatched, (
-                'done-marked create-pr must be skipped on re-entry'
-            )
+            assert 'commit-push' not in dispatched, 'done-marked commit-push must be skipped on re-entry'
+            assert 'create-pr' not in dispatched, 'done-marked create-pr must be skipped on re-entry'
             # Steps with no prior record must still dispatch.
             for step_id in manifest['phase_6']['steps']:
                 if step_id not in state:
@@ -284,9 +269,7 @@ class TestResumableReentry:
             }
             dispatched = _derive_executor_dispatch(manifest, state)
 
-            assert 'sonar-roundtrip' in dispatched, (
-                'failed-marked sonar-roundtrip must be retried on re-entry'
-            )
+            assert 'sonar-roundtrip' in dispatched, 'failed-marked sonar-roundtrip must be retried on re-entry'
 
     def test_mixed_done_and_failed_state(self):
         """Mixed state: done-skipped, failed-retried, fresh-dispatched all
@@ -322,7 +305,6 @@ class TestResumableReentry:
 
 
 class TestLessonsCaptureUnconditional:
-
     def test_lessons_capture_fires_when_manifested(self):
         """Whenever lessons-capture is in manifest.phase_6.steps, the
         dispatcher MUST fire it on every Phase 6 entry. It is not gated on
@@ -350,9 +332,7 @@ class TestLessonsCaptureUnconditional:
                 'automated-review': {'outcome': 'failed', 'display_detail': 'timed out'},
             }
             dispatched = _derive_executor_dispatch(manifest, state)
-            assert 'lessons-capture' in dispatched, (
-                'lessons-capture must dispatch even when prior steps failed'
-            )
+            assert 'lessons-capture' in dispatched, 'lessons-capture must dispatch even when prior steps failed'
 
     def test_lessons_capture_present_in_surgical_bug_fix(self):
         """Even the slim surgical bug_fix manifest keeps lessons-capture."""
@@ -378,7 +358,6 @@ class TestLessonsCaptureUnconditional:
 
 
 class TestSkillMdManifestNarrative:
-
     @pytest.fixture(scope='class')
     def skill_md_text(self) -> str:
         return _PHASE_6_SKILL_MD.read_text(encoding='utf-8')
@@ -397,7 +376,7 @@ class TestSkillMdManifestNarrative:
         assert 'done' in skill_md_text.lower()
         assert 'failed' in skill_md_text.lower()
         # The skip-if-done and retry-if-failed wording must be explicit.
-        assert ('skip' in skill_md_text.lower() and 'retry' in skill_md_text.lower())
+        assert 'skip' in skill_md_text.lower() and 'retry' in skill_md_text.lower()
 
     def test_manifest_authority_documented(self, skill_md_text: str):
         """SKILL.md must declare the manifest as the single source of
@@ -416,4 +395,8 @@ class TestSkillMdManifestNarrative:
         text_lower = skill_md_text.lower()
         # The old 'Read finalize step list from marshal.json' phrasing should
         # be gone; the manifest is now the source.
-        assert 'manifest is the contract' in text_lower or 'manifest is the only valid source' in text_lower or 'authoritative' in text_lower
+        assert (
+            'manifest is the contract' in text_lower
+            or 'manifest is the only valid source' in text_lower
+            or 'authoritative' in text_lower
+        )

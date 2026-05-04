@@ -304,7 +304,9 @@ def cmd_list(args: argparse.Namespace) -> int:
 
         return 0
     except DataNotFoundError as e:
-        print(serialize_toon({'status': 'error', 'error': str(e), 'resolution': "Run 'architecture.py discover' first"}))
+        print(
+            serialize_toon({'status': 'error', 'error': str(e), 'resolution': "Run 'architecture.py discover' first"})
+        )
         return 0
     except Exception as e:
         print(serialize_toon({'status': 'error', 'error': str(e)}))
@@ -378,7 +380,9 @@ def main() -> int:
     subparsers.add_parser('unmatched', help='List unmatched profiles (NO-MATCH-FOUND)', allow_abbrev=False)
 
     # classify - Classify a single profile
-    classify_parser = subparsers.add_parser('classify', help='Classify a profile by pattern matching', allow_abbrev=False)
+    classify_parser = subparsers.add_parser(
+        'classify', help='Classify a profile by pattern matching', allow_abbrev=False
+    )
     classify_parser.add_argument('--profile-id', required=True, dest='profile_id', help='Profile ID to classify')
 
     # suggest - Suggest classifications for unmatched

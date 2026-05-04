@@ -38,8 +38,13 @@ from conftest import run_script  # noqa: E402
 # Path to the script for CLI subprocess tests
 SCRIPT_PATH = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
-    / 'execute-task' / 'scripts' / 'assert_test_identifiers.py'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'execute-task'
+    / 'scripts'
+    / 'assert_test_identifiers.py'
 )
 
 
@@ -290,7 +295,7 @@ def test_order_preservation_mixed_found_missing(tmp_path):
     # Arrange — 5 identifiers in a specific order
     written = [
         'test/plan-marshall/execute-task/test_foo.py::test_alpha',  # present
-        'test/plan-marshall/execute-task/test_foo.py::test_beta',   # missing
+        'test/plan-marshall/execute-task/test_foo.py::test_beta',  # missing
         'test/plan-marshall/execute-task/test_foo.py::test_gamma',  # present
         'test/plan-marshall/execute-task/test_foo.py::test_delta',  # missing
         'test/plan-marshall/execute-task/test_foo.py::test_epsilon',  # present
@@ -371,8 +376,10 @@ def test_cli_all_found_exit_zero(tmp_path):
     result = run_script(
         SCRIPT_PATH,
         'run',
-        '--identifiers-file', str(ids_path),
-        '--log', str(log_path),
+        '--identifiers-file',
+        str(ids_path),
+        '--log',
+        str(log_path),
         cwd=tmp_path,
     )
 
@@ -405,8 +412,10 @@ def test_cli_some_missing_exit_one(tmp_path):
     result = run_script(
         SCRIPT_PATH,
         'run',
-        '--identifiers-file', str(ids_path),
-        '--log', str(log_path),
+        '--identifiers-file',
+        str(ids_path),
+        '--log',
+        str(log_path),
         cwd=tmp_path,
     )
 
@@ -435,8 +444,10 @@ def test_cli_nonexistent_log_exit_two(tmp_path):
     result = run_script(
         SCRIPT_PATH,
         'run',
-        '--identifiers-file', str(ids_path),
-        '--log', str(missing_log),
+        '--identifiers-file',
+        str(ids_path),
+        '--log',
+        str(missing_log),
         cwd=tmp_path,
     )
 
@@ -460,8 +471,10 @@ def test_cli_nonexistent_identifiers_file_exit_two(tmp_path):
     result = run_script(
         SCRIPT_PATH,
         'run',
-        '--identifiers-file', str(missing_ids),
-        '--log', str(log_path),
+        '--identifiers-file',
+        str(missing_ids),
+        '--log',
+        str(log_path),
         cwd=tmp_path,
     )
 
@@ -494,8 +507,10 @@ def test_cli_blank_lines_in_identifiers_file_are_stripped(tmp_path):
     result = run_script(
         SCRIPT_PATH,
         'run',
-        '--identifiers-file', str(ids_path),
-        '--log', str(log_path),
+        '--identifiers-file',
+        str(ids_path),
+        '--log',
+        str(log_path),
         cwd=tmp_path,
     )
 
@@ -522,8 +537,10 @@ def test_cli_empty_identifiers_file_vacuous_pass(tmp_path):
     result = run_script(
         SCRIPT_PATH,
         'run',
-        '--identifiers-file', str(ids_path),
-        '--log', str(log_path),
+        '--identifiers-file',
+        str(ids_path),
+        '--log',
+        str(log_path),
         cwd=tmp_path,
     )
 
@@ -542,12 +559,16 @@ def test_cli_empty_identifiers_file_vacuous_pass(tmp_path):
         # All found → exit 0
         (
             ['test/plan-marshall/execute-task/test_foo.py::test_one'],
-            1, 0, 0,
+            1,
+            0,
+            0,
         ),
         # All missing → exit 1
         (
             ['test/plan-marshall/execute-task/test_foo.py::test_missing'],
-            0, 1, 1,
+            0,
+            1,
+            1,
         ),
     ],
 )
@@ -564,8 +585,10 @@ def test_cli_exit_code_matrix(tmp_path, identifiers, found_count, missing_count,
     result = run_script(
         SCRIPT_PATH,
         'run',
-        '--identifiers-file', str(ids_path),
-        '--log', str(log_path),
+        '--identifiers-file',
+        str(ids_path),
+        '--log',
+        str(log_path),
         cwd=tmp_path,
     )
 

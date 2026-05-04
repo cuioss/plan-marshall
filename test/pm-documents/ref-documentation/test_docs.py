@@ -19,7 +19,12 @@ FIXTURES_DIR = TEST_DIR / 'fixtures'
 # Tier 2 direct imports - load cmd_* from sub-command modules
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'pm-documents' / 'skills' / 'ref-documentation' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'pm-documents'
+    / 'skills'
+    / 'ref-documentation'
+    / 'scripts'
 )
 
 
@@ -77,22 +82,21 @@ def test_review_single_file():
     valid_file = FIXTURES_DIR / 'valid.adoc'
     if not valid_file.exists():
         return  # Skip if fixture doesn't exist
-    result = cmd_review(Namespace(command='review', file=str(valid_file), directory=None,
-                                  recursive=False, output=None))
+    result = cmd_review(Namespace(command='review', file=str(valid_file), directory=None, recursive=False, output=None))
     assert result['status'] == 'success', f'Review failed: {result}'
 
 
 def test_review_directory():
     """Test review analyzes directory."""
-    result = cmd_review(Namespace(command='review', file=None, directory=str(FIXTURES_DIR),
-                                  recursive=False, output=None))
+    result = cmd_review(
+        Namespace(command='review', file=None, directory=str(FIXTURES_DIR), recursive=False, output=None)
+    )
     assert result['status'] == 'success', f'Review directory failed: {result}'
 
 
 def test_review_missing_args():
     """Test review returns error when no file or directory given."""
-    result = cmd_review(Namespace(command='review', file=None, directory=None,
-                                  recursive=False, output=None))
+    result = cmd_review(Namespace(command='review', file=None, directory=None, recursive=False, output=None))
     assert result['status'] == 'error'
     assert 'missing_args' in result.get('error', '')
 
@@ -124,8 +128,11 @@ Used by thousands of companies worldwide.
         output_file = Path(f.name)
 
     try:
-        result = cmd_analyze_tone(Namespace(command='analyze-tone', file=str(sample_file),
-                                            directory=None, output=str(output_file), pretty=True))
+        result = cmd_analyze_tone(
+            Namespace(
+                command='analyze-tone', file=str(sample_file), directory=None, output=str(output_file), pretty=True
+            )
+        )
         assert result['status'] == 'success'
         assert output_file.exists(), 'Analysis completed'
         content = output_file.read_text()
@@ -144,14 +151,14 @@ def test_analyze_tone_directory():
 == Section
 Technical documentation content.
 """)
-        result = cmd_analyze_tone(Namespace(command='analyze-tone', file=None,
-                                            directory=str(temp_path), output=None, pretty=False))
+        result = cmd_analyze_tone(
+            Namespace(command='analyze-tone', file=None, directory=str(temp_path), output=None, pretty=False)
+        )
         assert result['status'] == 'success', 'Directory analysis works'
 
 
 def test_analyze_tone_missing_args():
     """Test analyze-tone returns error when no file or directory given."""
-    result = cmd_analyze_tone(Namespace(command='analyze-tone', file=None, directory=None,
-                                        output=None, pretty=False))
+    result = cmd_analyze_tone(Namespace(command='analyze-tone', file=None, directory=None, output=None, pretty=False))
     assert result['status'] == 'error'
     assert 'missing_args' in result.get('error', '')

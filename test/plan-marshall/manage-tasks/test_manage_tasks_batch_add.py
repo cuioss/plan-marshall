@@ -118,9 +118,7 @@ def test_batch_add_three_tasks_sequential_numbering():
         first = json.loads(files[0].read_text())
         assert first['number'] == 1
         assert first['title'] == 'First'
-        assert first['steps'] == [
-            {'number': 1, 'target': 'src/A.java', 'status': 'pending'}
-        ]
+        assert first['steps'] == [{'number': 1, 'target': 'src/A.java', 'status': 'pending'}]
 
 
 def test_batch_add_empty_array_is_noop():
@@ -227,9 +225,7 @@ def test_batch_add_invalid_json_errors():
 def test_batch_add_non_array_errors():
     """JSON object (not array) at top level -> error."""
     with PlanContext(plan_id='batch-non-array'):
-        result = cmd_batch_add(
-            _ns('batch-non-array', tasks_json=json.dumps({'foo': 'bar'}))
-        )
+        result = cmd_batch_add(_ns('batch-non-array', tasks_json=json.dumps({'foo': 'bar'})))
         assert result['status'] == 'error'
         assert 'JSON array' in result['message']
 
@@ -304,9 +300,7 @@ def test_batch_add_reads_tasks_from_file(tmp_path):
         tasks_path = tmp_path / 'tasks.json'
         tasks_path.write_text(json.dumps(entries), encoding='utf-8')
 
-        result = cmd_batch_add(
-            _ns('batch-file-happy', tasks_file=str(tasks_path))
-        )
+        result = cmd_batch_add(_ns('batch-file-happy', tasks_file=str(tasks_path)))
 
         assert result['status'] == 'success'
         assert result['tasks_created'] == 2
@@ -319,9 +313,7 @@ def test_batch_add_reads_tasks_from_file(tmp_path):
         assert [f.name for f in files] == ['TASK-001.json', 'TASK-002.json']
         first = json.loads(files[0].read_text())
         assert first['title'] == 'From File 1'
-        assert first['steps'] == [
-            {'number': 1, 'target': 'src/A.java', 'status': 'pending'}
-        ]
+        assert first['steps'] == [{'number': 1, 'target': 'src/A.java', 'status': 'pending'}]
 
 
 def test_batch_add_tasks_file_and_tasks_json_are_mutually_exclusive(tmp_path):
@@ -360,9 +352,7 @@ def test_batch_add_tasks_file_missing_returns_file_not_found():
     with PlanContext(plan_id='batch-file-missing') as ctx:
         missing_path = '/nonexistent/path/to/tasks.json'
 
-        result = cmd_batch_add(
-            _ns('batch-file-missing', tasks_file=missing_path)
-        )
+        result = cmd_batch_add(_ns('batch-file-missing', tasks_file=missing_path))
 
         assert result['status'] == 'error'
         assert result['error'] == 'file_not_found'

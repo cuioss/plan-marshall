@@ -62,13 +62,7 @@ _mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
 # SKILL.md path for narrative-contract assertions
 # ---------------------------------------------------------------------------
 
-_PHASE_5_SKILL_MD = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-5-execute'
-    / 'SKILL.md'
-)
+_PHASE_5_SKILL_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-5-execute' / 'SKILL.md'
 
 
 def _compose_ns(
@@ -139,9 +133,7 @@ class TestManifestApiContract:
             assert result is not None
             assert result['status'] == 'success'
             assert result['plan_id'] == 'p5-read-shape'
-            assert 'phase_5' in result, (
-                'phase-5-execute Step 2 reads phase_5 — must be present in read output'
-            )
+            assert 'phase_5' in result, 'phase-5-execute Step 2 reads phase_5 — must be present in read output'
             phase_5 = result['phase_5']
             assert isinstance(phase_5, dict)
             assert isinstance(phase_5.get('early_terminate'), bool)
@@ -194,10 +186,7 @@ class TestExecutorDispatchScenarios:
                 'module-tests',
                 'coverage',
                 'quality-gate',
-            ], (
-                'Full-list manifest must dispatch in declared order with one '
-                f'appended Step 11b sweep, got {dispatched}'
-            )
+            ], f'Full-list manifest must dispatch in declared order with one appended Step 11b sweep, got {dispatched}'
             # Defensive cross-check: the sweep is unconditional when the list
             # is non-empty, even though 'quality-gate' is already in the list.
             assert dispatched.count('quality-gate') == 2
@@ -292,10 +281,7 @@ class TestExecutorDispatchScenarios:
                 'module-tests',
                 'quality-gate',
                 'quality-gate',
-            ], (
-                'Step 11b sweep must append even when manifest list already '
-                f'ends with quality-gate, got {dispatched}'
-            )
+            ], f'Step 11b sweep must append even when manifest list already ends with quality-gate, got {dispatched}'
             assert dispatched.count('quality-gate') == 2
 
     def test_early_terminate_skips_entire_execute_loop(self):
@@ -343,9 +329,7 @@ class TestSkillMdManifestNarrative:
     def test_step_2_reads_execution_manifest(self, skill_md_text: str):
         """Step 2 must read the manifest via manage-execution-manifest read."""
         assert 'manage-execution-manifest' in skill_md_text
-        assert 'read --plan-id {plan_id}' in skill_md_text, (
-            'Step 2 must include the canonical manifest read invocation'
-        )
+        assert 'read --plan-id {plan_id}' in skill_md_text, 'Step 2 must include the canonical manifest read invocation'
 
     def test_early_terminate_short_circuit_documented(self, skill_md_text: str):
         """Step 2 must document the early_terminate → phase-6 short-circuit."""
@@ -356,9 +340,7 @@ class TestSkillMdManifestNarrative:
 
     def test_step_11b_final_quality_sweep_documented(self, skill_md_text: str):
         """Step 11b must document the single canonical quality-gate sweep."""
-        assert 'Step 11b' in skill_md_text, (
-            'Step 11b "Final Quality Sweep" must be documented in SKILL.md'
-        )
+        assert 'Step 11b' in skill_md_text, 'Step 11b "Final Quality Sweep" must be documented in SKILL.md'
         assert 'Final Quality Sweep' in skill_md_text or 'quality sweep' in skill_md_text.lower()
         # The sweep must be conditional on verification_steps being non-empty.
         assert 'verification_steps' in skill_md_text

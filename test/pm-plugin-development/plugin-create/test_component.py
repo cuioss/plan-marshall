@@ -61,6 +61,7 @@ def test_generate_agent_tools_comma_separated():
     data = cmd_generate(args)
 
     import re
+
     content = data.get('frontmatter', '')
     has_comma_separated = re.search(r'tools: [A-Za-z]+(, [A-Za-z]+)*', content) is not None
     has_array_syntax = '[' in content

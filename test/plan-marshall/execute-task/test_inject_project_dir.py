@@ -22,8 +22,13 @@ from conftest import run_script  # noqa: E402
 # Path to the script for CLI subprocess tests
 SCRIPT_PATH = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
-    / 'execute-task' / 'scripts' / 'inject_project_dir.py'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'execute-task'
+    / 'scripts'
+    / 'inject_project_dir.py'
 )
 
 # Worktree path used across tests
@@ -59,10 +64,7 @@ BUCKET_A_NOTATIONS = [
 def test_injects_project_dir_for_each_bucket_b_notation(notation):
     """Bucket B notation without --project-dir gets the flag injected after run."""
     # Arrange
-    command = (
-        f'python3 .plan/execute-script.py {notation} run '
-        f'--command-args "verify"'
-    )
+    command = f'python3 .plan/execute-script.py {notation} run --command-args "verify"'
 
     # Act
     rewritten, injected = inject_project_dir(command, WORKTREE)
@@ -123,10 +125,7 @@ def test_no_double_injection_with_different_project_dir_value():
 def test_bucket_a_manage_commands_pass_through(notation):
     """Bucket A manage-* notations MUST NOT receive --project-dir."""
     # Arrange
-    command = (
-        f'python3 .plan/execute-script.py {notation} list '
-        '--plan-id my-plan'
-    )
+    command = f'python3 .plan/execute-script.py {notation} list --plan-id my-plan'
 
     # Act
     rewritten, injected = inject_project_dir(command, WORKTREE)
@@ -145,10 +144,7 @@ def test_bucket_a_manage_commands_pass_through(notation):
 def test_unknown_notation_passes_through():
     """A notation not in the Bucket B whitelist is returned unchanged."""
     # Arrange
-    command = (
-        'python3 .plan/execute-script.py plan-marshall:some-future-script:thing '
-        'run --command-args "foo"'
-    )
+    command = 'python3 .plan/execute-script.py plan-marshall:some-future-script:thing run --command-args "foo"'
 
     # Act
     rewritten, injected = inject_project_dir(command, WORKTREE)
@@ -161,10 +157,7 @@ def test_unknown_notation_passes_through():
 def test_unknown_bundle_notation_passes_through():
     """A non-plan-marshall notation is returned unchanged."""
     # Arrange
-    command = (
-        'python3 .plan/execute-script.py pm-dev-java:java-core:compile '
-        'run --command-args "compile"'
-    )
+    command = 'python3 .plan/execute-script.py pm-dev-java:java-core:compile run --command-args "compile"'
 
     # Act
     rewritten, injected = inject_project_dir(command, WORKTREE)
@@ -230,10 +223,7 @@ def test_command_args_payload_preserved_on_injection():
 def test_command_args_passthrough_preserved_verbatim():
     """On pass-through (Bucket A), the command string is byte-identical."""
     # Arrange
-    command = (
-        'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks '
-        'get --plan-id foo --task 3'
-    )
+    command = 'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get --plan-id foo --task 3'
 
     # Act
     rewritten, injected = inject_project_dir(command, WORKTREE)
@@ -271,10 +261,7 @@ def test_whitespace_only_command_returns_false():
 def test_malformed_quoting_returns_false():
     """A command with unbalanced quotes passes through without raising."""
     # Arrange — unbalanced single quote trips shlex.split
-    command = (
-        "python3 .plan/execute-script.py plan-marshall:build-python:python_build "
-        "run --command-args 'module-tests"
-    )
+    command = "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args 'module-tests"
 
     # Act — must NOT raise
     rewritten, injected = inject_project_dir(command, WORKTREE)
@@ -300,10 +287,7 @@ def test_executor_without_notation_returns_false():
 def test_executor_with_notation_but_no_run_subcommand_passes_through():
     """Bucket B notation without `run` subcommand is not rewritten."""
     # Arrange — `help` instead of `run`
-    command = (
-        'python3 .plan/execute-script.py plan-marshall:build-python:python_build '
-        'help'
-    )
+    command = 'python3 .plan/execute-script.py plan-marshall:build-python:python_build help'
 
     # Act
     rewritten, injected = inject_project_dir(command, WORKTREE)
@@ -333,8 +317,7 @@ def test_cli_entrypoint_emits_toon_on_injection(tmp_path):
     """CLI emits TOON with injected=true and the rewritten command on injection."""
     # Arrange
     command = (
-        'python3 .plan/execute-script.py plan-marshall:build-python:python_build '
-        'run --command-args "module-tests"'
+        'python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests"'
     )
     expected_rewritten, injected = inject_project_dir(command, WORKTREE)
     assert injected is True  # sanity — the scenario should trigger injection
@@ -343,8 +326,10 @@ def test_cli_entrypoint_emits_toon_on_injection(tmp_path):
     result = run_script(
         SCRIPT_PATH,
         'run',
-        '--command', command,
-        '--worktree-path', WORKTREE,
+        '--command',
+        command,
+        '--worktree-path',
+        WORKTREE,
         cwd=tmp_path,
     )
 
@@ -359,10 +344,7 @@ def test_cli_entrypoint_emits_toon_on_injection(tmp_path):
 def test_cli_entrypoint_emits_toon_on_passthrough(tmp_path):
     """CLI pass-through (Bucket A) emits injected=false with original command."""
     # Arrange
-    command = (
-        'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks '
-        'get --plan-id my-plan --task 1'
-    )
+    command = 'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get --plan-id my-plan --task 1'
     expected_rewritten, injected = inject_project_dir(command, WORKTREE)
     assert injected is False  # sanity — Bucket A must not trigger injection
 
@@ -370,8 +352,10 @@ def test_cli_entrypoint_emits_toon_on_passthrough(tmp_path):
     result = run_script(
         SCRIPT_PATH,
         'run',
-        '--command', command,
-        '--worktree-path', WORKTREE,
+        '--command',
+        command,
+        '--worktree-path',
+        WORKTREE,
         cwd=tmp_path,
     )
 
@@ -394,8 +378,10 @@ def test_cli_entrypoint_emits_toon_on_non_executor(tmp_path):
     result = run_script(
         SCRIPT_PATH,
         'run',
-        '--command', command,
-        '--worktree-path', WORKTREE,
+        '--command',
+        command,
+        '--worktree-path',
+        WORKTREE,
         cwd=tmp_path,
     )
 

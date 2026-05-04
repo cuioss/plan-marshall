@@ -69,6 +69,8 @@ def cmd_add(ns):
     if not text.strip():
         return _add_task_empty(ns.plan_id)
     return _add_task(ns.plan_id, text)
+
+
 cmd_read, cmd_list, cmd_next = _query.cmd_read, _query.cmd_list, _query.cmd_next
 cmd_exists = _query.cmd_exists
 cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile = (
