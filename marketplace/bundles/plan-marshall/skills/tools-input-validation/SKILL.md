@@ -26,7 +26,7 @@ user-invocable: false
 
 - Canonical regex constants for the full identifier vocabulary (single source of truth)
 - Plan ID validation (kebab-case format)
-- Lesson, session, task, component, hash, memory, phase, field, module, package, domain, and resource-name validators
+- Lesson, session, task, component, hash, phase, field, module, package, domain, and resource-name validators
 - Relative path validation (rejects absolute paths and traversal)
 - Enum membership validation
 - Skill notation validation (bundle:skill format)
@@ -205,12 +205,11 @@ message: Plan ID contains invalid characters: bad!!id
 |------------|-------|---------|-----------------|
 | `plan_id` | `^[a-z][a-z0-9-]*$` | `add_plan_id_arg` | Adopted across all 32 swept scripts (Wave A/B/C) |
 | `lesson_id` | `^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]+$` | `add_lesson_id_arg` | Adopted: `manage-lessons` (with `action='append'`), `phase-1-init` |
-| `session_id` | `^[A-Za-z0-9_-]{1,128}$` | `add_session_id_arg` | Adopted: `manage_session`, `manage-memories`, `manage-metrics`, `compile-report` |
+| `session_id` | `^[A-Za-z0-9_-]{1,128}$` | `add_session_id_arg` | Adopted: `manage_session`, `manage-metrics`, `compile-report` |
 | `task_number` | `^[0-9]+$` | `add_task_number_arg` | Adopted: `manage-tasks` (post-validate int coercion) |
 | `task_id` | `^TASK-[0-9]+$` | `add_task_id_arg` | Adopted: `manage-tasks` (legacy id form) |
 | `component` | `^[a-z0-9-]+(:[a-z0-9-]+)*$` | `add_component_arg` | Adopted: `manage-lessons`, `manage-findings`, `sonar_rest` |
 | `hash_id` | `^[a-f0-9]{4,}$` | `add_hash_id_arg` | Adopted: `manage-findings` (assessment / qgate) |
-| `memory_id` | `^[a-z0-9_-]+$` | `add_memory_id_arg` | Adopted: `manage-memories` |
 | `phase_id` | `^[1-6]-(init\|refine\|outline\|plan\|execute\|finalize)$` | `add_phase_arg` | Adopted: `phase_handshake`, `manage-logging`, `manage-metrics`, `manage_status` |
 | `field_name` | `^[a-z][a-z0-9_]*$` | `add_field_arg` | Adopted: `manage-config`, `manage-references`, `manage-run-config`, `manage_status`, `manage-interface` |
 | `module_name` | `^[a-z][a-z0-9_-]*$` | `add_module_arg` | Adopted: `architecture`, `manage-findings`, `profiles` |

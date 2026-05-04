@@ -211,7 +211,6 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config clean
 | Build skills | timeout get | Read timeout values for command execution |
 | Build skills | warning list | Filter build warnings against accepted patterns |
 | `phase-6-finalize` architecture-refresh step | architecture-refresh get-tier-0/1 | Read tier knobs to decide deterministic refresh / LLM re-enrichment behaviour |
-| `manage-memories` cleanup | cleanup | Remove stale memory files using retention settings |
 
 ---
 
@@ -219,4 +218,3 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config clean
 
 - `manage-config` — Project-level marshal.json configuration (provides retention settings)
 - `manage-lessons` — Complementary global persistence (lessons learned)
-- `manage-memories` — Complementary global persistence (session context)

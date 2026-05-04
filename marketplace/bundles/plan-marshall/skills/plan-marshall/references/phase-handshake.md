@@ -143,7 +143,6 @@ The phase skill MUST either call `manage-status mark-step-done` for each unrecor
 - archive-plan
 - branch-cleanup
 - validation
-- knowledge-capture
 - lessons-capture
 ```
 

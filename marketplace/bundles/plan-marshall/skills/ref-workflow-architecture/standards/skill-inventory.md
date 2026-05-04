@@ -1,6 +1,6 @@
 # Skill Inventory
 
-Complete inventory of all 49 skills in the plan-marshall bundle. Skills are either **registered** (listed in `plugin.json`, loaded by the skill system) or **script-only** (invoked exclusively via 3-part executor notation, never loaded as LLM context by the skill system).
+Complete inventory of all 48 skills in the plan-marshall bundle. Skills are either **registered** (listed in `plugin.json`, loaded by the skill system) or **script-only** (invoked exclusively via 3-part executor notation, never loaded as LLM context by the skill system).
 
 See [glossary.md](glossary.md) for term definitions.
 
@@ -25,16 +25,15 @@ Per the plugin.json registration convention documented in `frontmatter-standards
 | phase-3-outline | yes | Two-track solution outline creation (simple/complex) |
 | phase-4-plan | yes | Task planning from deliverables with skill resolution |
 | phase-5-execute | yes | Task execution with verification |
-| phase-6-finalize | yes | Commit, push, PR, review, Sonar, knowledge capture |
+| phase-6-finalize | yes | Commit, push, PR, review, Sonar, lessons capture |
 
-## Data Layer — manage-* Skills (14 total, 6 registered)
+## Data Layer — manage-* Skills (13 total, 5 registered)
 
 | Skill | Registered | Scope | Purpose |
 |-------|-----------|-------|---------|
 | manage-architecture | yes | hybrid | Project module discovery and LLM enrichment |
 | manage-findings | yes | plan | Findings, Q-Gate findings, assessments (JSONL) |
 | manage-lessons | yes | global | Lessons learned with global scope |
-| manage-memories | yes | global | Memory layer for persistent session storage |
 | manage-run-config | yes | hybrid | Per-execution transient command configuration |
 | manage-tasks | yes | plan | Implementation tasks with sequential sub-steps |
 | manage-config | script-only | hybrid | Project-level marshal.json configuration |

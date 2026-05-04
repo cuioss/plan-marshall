@@ -33,7 +33,7 @@ This bundle provides **core infrastructure** organized into functional areas:
 | **Extension API** | `extension-api`, `manage-architecture` |
 | **Utilities** | `logging`, `script-executor`, `file-operations-base` |
 | **Standards** | `general-development-rules`, `diagnostic-patterns`, `toon-usage` |
-| **Memory** | `manage-memories`, `lessons-learned` |
+| **Lessons** | `manage-lessons` |
 | **CI** | `tools-integration-ci` |
 
 ### Agents (1)
@@ -62,4 +62,4 @@ The `script-executor` skill generates `.plan/execute-script.py` with embedded sc
 
 ### TOON Format
 
-The `toon-usage` skill documents the Tab-separated Object Notation format used for agent communication and memory persistence.
+The `toon-usage` skill documents the Tab-separated Object Notation format used for agent communication and persistent storage.

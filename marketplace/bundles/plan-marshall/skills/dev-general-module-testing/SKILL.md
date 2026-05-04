@@ -56,5 +56,5 @@ def test_discount_applied_for_premium_user():
 
 | Standard | Purpose |
 |----------|---------|
-| testing-methodology.md | AAA pattern, test structure, naming, organization, property-based testing, test doubles, determinism |
+| testing-methodology.md | AAA pattern, test structure, naming, organization, property-based testing, test doubles, determinism, foundation-utility CLI testing (cross-references plugin-doctor test-conventions rules) |
 | testing-coverage.md | Coverage requirements, corner cases, boundary testing |

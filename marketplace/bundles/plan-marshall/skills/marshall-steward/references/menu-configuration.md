@@ -233,8 +233,6 @@ AskUserQuestion:
       description: "Create pull request"
     - label: "default:automated-review"
       description: "CI automated review"
-    - label: "default:knowledge-capture (Recommended)"
-      description: "Capture learnings to memory"
     - label: "default:lessons-capture (Recommended)"
       description: "Record lessons learned"
     - label: "plan-marshall:plan-retrospective (Opt-in)"

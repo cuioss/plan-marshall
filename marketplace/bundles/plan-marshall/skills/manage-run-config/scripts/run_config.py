@@ -680,7 +680,7 @@ Examples:
     p_cleanup.add_argument('--dry-run', action='store_true', help='Show what would be deleted without deleting')
     p_cleanup.add_argument(
         '--target',
-        choices=['all', 'temp', 'logs', 'archived-plans', 'memory'],
+        choices=['all', 'temp', 'logs', 'archived-plans'],
         default='all',
         help='Clean specific target only (default: all)',
     )

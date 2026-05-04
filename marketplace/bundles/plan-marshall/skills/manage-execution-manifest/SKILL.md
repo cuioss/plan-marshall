@@ -48,7 +48,6 @@ phase_6:
     - create-pr
     - automated-review
     - sonar-roundtrip
-    - knowledge-capture
     - lessons-capture
     - branch-cleanup
     - archive-plan
@@ -62,7 +61,7 @@ phase_6:
 | `plan_id` | string | Plan identifier (echo) |
 | `phase_5.early_terminate` | bool | If `true`, Phase 5 transitions directly to Phase 6 without running tasks (analysis-only plans with empty affected_files) |
 | `phase_5.verification_steps` | list[string] | Ordered list of Phase 5 verification step IDs (e.g., `quality-gate`, `module-tests`, `coverage`). Empty list means no verification needed (e.g., docs-only plans) |
-| `phase_6.steps` | list[string] | Ordered list of Phase 6 finalize step IDs to dispatch. Subset of the canonical step set: `commit-push`, `create-pr`, `automated-review`, `sonar-roundtrip`, `knowledge-capture`, `lessons-capture`, `branch-cleanup`, `archive-plan`, `record-metrics`, `review-knowledge`, `lessons-integration` |
+| `phase_6.steps` | list[string] | Ordered list of Phase 6 finalize step IDs to dispatch. Subset of the canonical step set: `commit-push`, `create-pr`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `branch-cleanup`, `archive-plan`, `record-metrics`, `lessons-integration` |
 
 ---
 
@@ -95,7 +94,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 - `--recipe-key` (optional): If the plan was generated via a recipe (e.g., `lesson_cleanup`)
 - `--affected-files-count` (optional, default 0): Count of affected files surfaced by the outline; used by the `early_terminate` rule
 - `--phase-5-steps` (optional): Comma-separated candidate Phase 5 verification step IDs from `marshal.json` (e.g., `quality-gate,module-tests,coverage`). The decision matrix selects a subset. If omitted, defaults to `quality-gate,module-tests`.
-- `--phase-6-steps` (optional): Comma-separated candidate Phase 6 finalize step IDs from `marshal.json` (e.g., `commit-push,create-pr,automated-review,sonar-roundtrip,knowledge-capture,lessons-capture,branch-cleanup,archive-plan`). The decision matrix selects a subset. If omitted, defaults to the full canonical set.
+- `--phase-6-steps` (optional): Comma-separated candidate Phase 6 finalize step IDs from `marshal.json` (e.g., `commit-push,create-pr,automated-review,sonar-roundtrip,lessons-capture,branch-cleanup,archive-plan`). The decision matrix selects a subset. If omitted, defaults to the full canonical set.
 
 **Output** (TOON):
 ```toon

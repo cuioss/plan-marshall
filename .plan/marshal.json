@@ -34,7 +34,6 @@
         "default:commit-push",
         "default:create-pr",
         "default:automated-review",
-        "default:knowledge-capture",
         "default:lessons-capture",
         "project:finalize-step-plugin-doctor",
         "default:branch-cleanup",
@@ -115,7 +114,6 @@
     "retention": {
       "logs_days": 1,
       "archived_plans_days": 5,
-      "memory_days": 5,
       "temp_on_maintenance": true
     }
   },

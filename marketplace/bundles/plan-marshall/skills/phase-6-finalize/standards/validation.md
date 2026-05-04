@@ -46,9 +46,8 @@ Per-step validation criteria below apply when the corresponding step appears in 
 - Handle Sonar quality gate via workflow-integration-sonar
 - Per-agent timeout 15 min — on expiry, dispatcher records `outcome=failed` and continues
 
-## Knowledge and Lessons (when `knowledge-capture` / `lessons-capture` are in the manifest)
+## Lessons (when `lessons-capture` is in the manifest)
 
-- Capture significant patterns via manage-memories (advisory, non-blocking)
 - Capture lessons learned via manage-lessons (advisory, non-blocking)
 - Per-agent timeout 5 min — on expiry, dispatcher records `outcome=failed` and continues
 
@@ -100,7 +99,6 @@ actions:
   pr: {created #{number}|skipped}
   automated_review: {completed|skipped|loop_back}
   sonar: {passed|skipped|loop_back}
-  knowledge_capture: {done|skipped}
   lessons_capture: {done|skipped}
   archive: {done|skipped}
   branch_cleanup: {done|skipped|declined}

@@ -34,7 +34,7 @@ Phase 6 is a pure executor of the per-plan execution manifest. The manifest is c
 │   │       (no record)    -> dispatch           │                     │
 │   │    b. Dispatch under per-agent timeout:    │                     │
 │   │       sonar / automated-review : 15 min    │                     │
-│   │       knowledge / lessons      :  5 min    │                     │
+│   │       lessons                  :  5 min    │                     │
 │   │       inline-only              : no wrap   │                     │
 │   │    c. On timeout: log ERROR,               │                     │
 │   │       mark step failed, CONTINUE           │                     │
@@ -65,7 +65,6 @@ Agent-suitable steps (Task-dispatched) run under a per-agent budget enforced by 
 |------|--------|-----------|
 | `sonar-roundtrip`    | 15 min (900 s) | Full Sonar gate roundtrip + optional fix-task creation |
 | `automated-review`   | 15 min (900 s) | CI wait + review-bot buffer + comment triage |
-| `knowledge-capture`  |  5 min (300 s) | Bounded `manage-memories save` workflow |
 | `lessons-capture`    |  5 min (300 s) | Bounded `manage-lessons add` + Write workflow |
 | All other steps      | none           | Inline-only or no explicit budget |
 

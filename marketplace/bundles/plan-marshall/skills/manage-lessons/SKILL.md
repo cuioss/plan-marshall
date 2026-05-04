@@ -409,5 +409,4 @@ created_from: error_context
 ## Related
 
 - `manage-findings` — Findings promoted to lessons at 6-finalize
-- `manage-memories` — Complementary global persistence (session context)
 - `manage-run-config` — Complementary global persistence (execution state)

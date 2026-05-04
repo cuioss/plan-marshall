@@ -68,9 +68,6 @@ _SONAR_ROUNDTRIP_MD = (
 _LESSONS_CAPTURE_MD = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'lessons-capture.md'
 )
-_KNOWLEDGE_CAPTURE_MD = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'knowledge-capture.md'
-)
 
 
 def _compose_ns(plan_id: str) -> Namespace:
@@ -94,7 +91,6 @@ def _compose_ns(plan_id: str) -> Namespace:
 PER_AGENT_BUDGET_SECONDS = {
     'sonar-roundtrip': 900,
     'automated-review': 900,
-    'knowledge-capture': 300,
     'lessons-capture': 300,
 }
 
@@ -165,10 +161,6 @@ class TestBudgetContract:
         assert 'automated-review' in skill_md_text
         assert '15 min' in skill_md_text or '900' in skill_md_text
 
-    def test_knowledge_capture_5min_budget_documented(self, skill_md_text: str):
-        assert 'knowledge-capture' in skill_md_text
-        assert '5 min' in skill_md_text or '300' in skill_md_text
-
     def test_lessons_capture_5min_budget_documented(self, skill_md_text: str):
         assert 'lessons-capture' in skill_md_text
         assert '5 min' in skill_md_text or '300' in skill_md_text
@@ -210,10 +202,6 @@ class TestStandardsTimeoutContract:
 
     def test_lessons_capture_doc_documents_5min_budget(self):
         text = _LESSONS_CAPTURE_MD.read_text(encoding='utf-8')
-        assert '5 min' in text or '300' in text
-
-    def test_knowledge_capture_doc_documents_5min_budget(self):
-        text = _KNOWLEDGE_CAPTURE_MD.read_text(encoding='utf-8')
         assert '5 min' in text or '300' in text
 
 
@@ -298,7 +286,6 @@ class TestHungAgentSimulation:
             durations = {
                 'sonar-roundtrip': 100,
                 'automated-review': 200,
-                'knowledge-capture': 50,
                 'lessons-capture': 30,
             }
             _, final_state = _simulate_dispatch_with_timeout(
