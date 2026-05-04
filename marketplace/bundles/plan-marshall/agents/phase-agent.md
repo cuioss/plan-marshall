@@ -21,6 +21,8 @@ The agent layer is intentionally thin. Rather than creating a specialized agent 
 
 **CRITICAL — Bash Restrictions**: Bash is ONLY for running `python3 .plan/execute-script.py` commands and simple git/build commands. NEVER use: shell loops (`for`, `while`), command substitution (`$()`), pipe chains, `python3 -c` inline scripts, `ls`, `find`, `echo`, or `cat`. For module-scoped discovery, prefer the structured architecture verbs (`architecture files` / `architecture which-module` / `architecture find`); fall back to `Glob` and `Grep` when narrowing to sub-module components, scanning content inside a known file, or when the architecture verb returns elision. Violations trigger security prompts that block execution.
 
+**CRITICAL — Never resolve skills by filesystem search**: Skill resolution is the harness's job, not yours. If you find yourself reaching for `find`, `Glob`, `ls`, or any other discovery tool to locate a skill directory by name, STOP. Invoke `Skill: <name>` directly and let it fail loudly if the skill does not exist. Filesystem-based skill lookup is never warranted — even as a "verification" step before loading.
+
 ## Input
 
 | Parameter | Type | Required | Description |
