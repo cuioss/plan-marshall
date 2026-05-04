@@ -67,7 +67,10 @@ class TestVerifySystemAuth:
         save_credential(skill, data, 'global')
 
         with monkeypatch.context() as m:
-            m.setattr('_cred_verify.find_provider_with_details', lambda s: mock_provider if s == mock_provider['skill_name'] else None)
+            m.setattr(
+                '_cred_verify.find_provider_with_details',
+                lambda s: mock_provider if s == mock_provider['skill_name'] else None,
+            )
             m.setattr('_cred_verify.output_toon', mock_output)
             run_verify(MockArgs())
 
@@ -109,7 +112,10 @@ class TestVerifySystemAuth:
         save_credential(skill, data, 'global')
 
         with monkeypatch.context() as m:
-            m.setattr('_cred_verify.find_provider_with_details', lambda s: mock_provider if s == mock_provider['skill_name'] else None)
+            m.setattr(
+                '_cred_verify.find_provider_with_details',
+                lambda s: mock_provider if s == mock_provider['skill_name'] else None,
+            )
             m.setattr('_cred_verify.output_toon', mock_output)
             run_verify(MockArgs())
 
@@ -188,7 +194,10 @@ class TestVerifySystemAuth:
         save_credential(skill, data, 'global')
 
         with monkeypatch.context() as m:
-            m.setattr('_cred_verify.find_provider_with_details', lambda s: mock_provider if s == mock_provider['skill_name'] else None)
+            m.setattr(
+                '_cred_verify.find_provider_with_details',
+                lambda s: mock_provider if s == mock_provider['skill_name'] else None,
+            )
             m.setattr('_cred_verify.get_authenticated_client', mock_get_client)
             m.setattr('_cred_verify.output_toon', lambda d: None)
             run_verify(MockArgs())

@@ -42,9 +42,7 @@ from conftest import MARKETPLACE_ROOT, PlanContext
 # Step 13 invokes via the executor.
 # -----------------------------------------------------------------------------
 
-_REFS_SCRIPTS_DIR = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-references' / 'scripts'
-)
+_REFS_SCRIPTS_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-references' / 'scripts'
 
 
 def _load_module(name: str, filename: str):
@@ -272,8 +270,7 @@ def test_scope_estimate_derivation_rules(mapping: dict, expected: str) -> None:
     """
     actual = derive_scope_estimate(**mapping)
     assert actual == expected, (
-        f'Derivation rule mismatch for module_mapping={mapping!r}: '
-        f'expected {expected!r}, got {actual!r}'
+        f'Derivation rule mismatch for module_mapping={mapping!r}: expected {expected!r}, got {actual!r}'
     )
     assert actual in _VALID_ENUM, f'Derived value {actual!r} outside allowed enum {_VALID_ENUM!r}'
 
@@ -343,9 +340,7 @@ def test_scope_estimate_overwrite_records_previous() -> None:
             )
         )
         cmd_set(Namespace(plan_id=plan_id, field='scope_estimate', value='single_module'))
-        overwrite = cmd_set(
-            Namespace(plan_id=plan_id, field='scope_estimate', value='surgical')
-        )
+        overwrite = cmd_set(Namespace(plan_id=plan_id, field='scope_estimate', value='surgical'))
 
         assert overwrite['status'] == 'success'
         assert overwrite['value'] == 'surgical'
@@ -367,12 +362,7 @@ def test_scope_estimate_overwrite_records_previous() -> None:
 
 
 _DETAIL_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-2-refine'
-    / 'standards'
-    / 'refine-workflow-detail.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-2-refine' / 'standards' / 'refine-workflow-detail.md'
 )
 
 
@@ -403,13 +393,7 @@ def test_standards_doc_documents_enum_and_persistence_call() -> None:
 def test_skill_md_documents_enum_and_persistence_call() -> None:
     """SKILL.md must reference the canonical enum and the persistence call so
     the entry-point summary stays consistent with the detail doc."""
-    skill_path = (
-        MARKETPLACE_ROOT
-        / 'plan-marshall'
-        / 'skills'
-        / 'phase-2-refine'
-        / 'SKILL.md'
-    )
+    skill_path = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-2-refine' / 'SKILL.md'
     text = skill_path.read_text(encoding='utf-8')
 
     for enum_value in _VALID_ENUM:

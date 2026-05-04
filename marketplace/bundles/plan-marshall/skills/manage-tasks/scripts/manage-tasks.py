@@ -44,6 +44,22 @@ Add flow (path-allocate pattern — no content crosses the shell boundary):
 
   3. python3 manage-tasks.py commit-add --plan-id my-plan [--slot my-slot]
      → reads the file, validates it, creates TASK-NNN.json, deletes the scratch
+
+Validation: Lesson-ID References (commit-add and batch-add)
+-----------------------------------------------------------
+Both write paths (``commit-add`` and ``batch-add``) scan each task's
+``title`` and ``description`` for lesson-ID-shaped tokens
+(``YYYY-MM-DD-HH-N+``) using ``scan_lesson_id_tokens`` from
+``tools-input-validation``, then verify every token against the live
+``manage-lessons`` inventory via ``verify_lesson_ids_exist``. On ANY
+unresolved ID the entire write is aborted atomically — no ``TASK-NNN.json``
+file is created. The error response carries
+``status: error / validation_error: lesson_id_not_found / unresolved_ids:
+<list> / task_index: <N>`` so the caller can correct the plan before
+re-attempting. The lesson inventory is the single source of truth — neither
+write path auto-rewrites descriptions nor downgrades the failure to a
+warning. See lesson 2026-05-03-21-002 for the rationale (plan-author was
+emitting tasks that named lesson IDs that did not exist in the inventory).
 """
 
 import argparse
@@ -211,16 +227,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_next.add_argument('--ignore-deps', action='store_true', help='Ignore dependency constraints')
 
     # tasks-by-domain
-    p_by_domain = subparsers.add_parser(
-        'tasks-by-domain', help='List tasks filtered by domain', allow_abbrev=False
-    )
+    p_by_domain = subparsers.add_parser('tasks-by-domain', help='List tasks filtered by domain', allow_abbrev=False)
     add_plan_id_arg(p_by_domain)
     add_domain_arg(p_by_domain)
 
     # tasks-by-profile
-    p_by_profile = subparsers.add_parser(
-        'tasks-by-profile', help='List tasks filtered by profile', allow_abbrev=False
-    )
+    p_by_profile = subparsers.add_parser('tasks-by-profile', help='List tasks filtered by profile', allow_abbrev=False)
     add_plan_id_arg(p_by_profile)
     p_by_profile.add_argument(
         '--profile', required=True, help='Profile to filter by (e.g., implementation, module_testing)'
@@ -250,17 +262,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_add_step.add_argument('--after', type=int, help='Insert after this step number')
 
     # remove-step
-    p_remove_step = subparsers.add_parser(
-        'remove-step', help='Remove a step from a task', allow_abbrev=False
-    )
+    p_remove_step = subparsers.add_parser('remove-step', help='Remove a step from a task', allow_abbrev=False)
     add_plan_id_arg(p_remove_step)
     add_task_number_arg(p_remove_step)
     p_remove_step.add_argument('--step', required=True, type=int, help='Step number')
 
     # rename-path
-    p_rename = subparsers.add_parser(
-        'rename-path', help='Record a path rename mapping', allow_abbrev=False
-    )
+    p_rename = subparsers.add_parser('rename-path', help='Record a path rename mapping', allow_abbrev=False)
     add_plan_id_arg(p_rename)
     p_rename.add_argument('--old-path', required=True, help='Original path before rename')
     p_rename.add_argument('--new-path', required=True, help='New path after rename')

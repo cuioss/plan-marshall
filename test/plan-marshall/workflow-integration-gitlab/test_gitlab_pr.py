@@ -28,7 +28,6 @@ get_current_pr_number = gitlab_pr.get_current_pr_number
 triage_comment = gitlab_pr.triage_comment
 
 
-
 class TestGitLabPRTriage(unittest.TestCase):
     """Test GitLab pr.py triage via direct import."""
 
@@ -109,9 +108,7 @@ class TestGitLabPRProjectDirPlumbing(unittest.TestCase):
         saved_cwd = ci_base.get_default_cwd()
         try:
             ci_base.set_default_cwd(None)
-            comment = json.dumps(
-                {'id': 'P1', 'body': 'LGTM', 'path': None, 'line': None, 'author': 'a'}
-            )
+            comment = json.dumps({'id': 'P1', 'body': 'LGTM', 'path': None, 'line': None, 'author': 'a'})
             sys.argv = [
                 'gitlab_pr.py',
                 '--project-dir',
@@ -137,9 +134,7 @@ class TestGitLabPRProjectDirPlumbing(unittest.TestCase):
         saved_cwd = ci_base.get_default_cwd()
         try:
             ci_base.set_default_cwd(None)
-            comment = json.dumps(
-                {'id': 'P2', 'body': 'ok', 'path': None, 'line': None, 'author': 'a'}
-            )
+            comment = json.dumps({'id': 'P2', 'body': 'ok', 'path': None, 'line': None, 'author': 'a'})
             sys.argv = [
                 'gitlab_pr.py',
                 '--project-dir=/tmp/worktree-glpr2',

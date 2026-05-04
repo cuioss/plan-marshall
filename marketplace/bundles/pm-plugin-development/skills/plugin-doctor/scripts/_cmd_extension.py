@@ -671,8 +671,9 @@ def _has_section(file_path: Path, section_heading: str) -> bool:
     return f'## {section_heading}' in content
 
 
-def validate_extension_contracts(marketplace_root: Path, extension_type: str | None = None,
-                                  skill_filter: str | None = None) -> dict[str, Any]:
+def validate_extension_contracts(
+    marketplace_root: Path, extension_type: str | None = None, skill_filter: str | None = None
+) -> dict[str, Any]:
     """Validate extension point contract compliance across all implementors.
 
     Rules:
@@ -759,17 +760,21 @@ def validate_extension_contracts(marketplace_root: Path, extension_type: str | N
             try:
                 content = impl_path.read_text(encoding='utf-8')
                 if 'def get_provider_declarations' not in content:
-                    impl_errors.append({
-                        'skill': str(impl_path.relative_to(bundles_path)),
-                        'rule': 'EC-50',
-                        'message': "Missing 'get_provider_declarations()' function",
-                    })
+                    impl_errors.append(
+                        {
+                            'skill': str(impl_path.relative_to(bundles_path)),
+                            'rule': 'EC-50',
+                            'message': "Missing 'get_provider_declarations()' function",
+                        }
+                    )
             except OSError:
-                impl_errors.append({
-                    'skill': str(impl_path),
-                    'rule': 'EC-50',
-                    'message': 'Cannot read provider extension file',
-                })
+                impl_errors.append(
+                    {
+                        'skill': str(impl_path),
+                        'rule': 'EC-50',
+                        'message': 'Cannot read provider extension file',
+                    }
+                )
         else:
             # Parse frontmatter
             fm = _parse_frontmatter(impl_path)
@@ -779,40 +784,48 @@ def validate_extension_contracts(marketplace_root: Path, extension_type: str | N
 
             # EC-01: implements field present
             if 'implements' not in fm:
-                impl_errors.append({
-                    'skill': skill_ref,
-                    'rule': 'EC-01',
-                    'message': "Missing 'implements' field in frontmatter",
-                })
+                impl_errors.append(
+                    {
+                        'skill': skill_ref,
+                        'rule': 'EC-01',
+                        'message': "Missing 'implements' field in frontmatter",
+                    }
+                )
             else:
                 impl_value = fm['implements']
 
                 # EC-03: format check
                 if ':' not in impl_value or '/' not in impl_value:
-                    impl_errors.append({
-                        'skill': skill_ref,
-                        'rule': 'EC-03',
-                        'message': f"Invalid implements format: '{impl_value}' (expected bundle:skill/path)",
-                    })
+                    impl_errors.append(
+                        {
+                            'skill': skill_ref,
+                            'rule': 'EC-03',
+                            'message': f"Invalid implements format: '{impl_value}' (expected bundle:skill/path)",
+                        }
+                    )
                 else:
                     # EC-02: target file exists
                     ref_bundle, ref_path = impl_value.split(':', 1)
                     target_path = bundles_path / ref_bundle / 'skills' / (ref_path + '.md')
                     if not target_path.exists():
-                        impl_errors.append({
-                            'skill': skill_ref,
-                            'rule': 'EC-02',
-                            'message': f"Implements target not found: {impl_value}",
-                        })
+                        impl_errors.append(
+                            {
+                                'skill': skill_ref,
+                                'rule': 'EC-02',
+                                'message': f'Implements target not found: {impl_value}',
+                            }
+                        )
                     else:
                         # EC-04: contract doc has required sections
                         for section in ['Parameters', 'Pre-Conditions', 'Post-Conditions']:
                             if not _has_section(target_path, section):
-                                impl_errors.append({
-                                    'skill': skill_ref,
-                                    'rule': 'EC-04',
-                                    'message': f"Contract doc missing '## {section}' section",
-                                })
+                                impl_errors.append(
+                                    {
+                                        'skill': skill_ref,
+                                        'rule': 'EC-04',
+                                        'message': f"Contract doc missing '## {section}' section",
+                                    }
+                                )
 
             # Type-specific checks
             if ext_type == 'triage':
@@ -852,21 +865,25 @@ def validate_extension_contracts(marketplace_root: Path, extension_type: str | N
                                 if found:
                                     break
                     if not found:
-                        impl_errors.append({
-                            'skill': skill_ref,
-                            'rule': rule_id,
-                            'message': f"Missing suppression/severity/accept content (checked '{patterns[0]}')",
-                        })
+                        impl_errors.append(
+                            {
+                                'skill': skill_ref,
+                                'rule': rule_id,
+                                'message': f"Missing suppression/severity/accept content (checked '{patterns[0]}')",
+                            }
+                        )
 
             elif ext_type == 'outline':
                 # EC-20: standards/change-types.md exists
                 change_types_path = impl_path.parent / 'standards' / 'change-types.md'
                 if not change_types_path.exists():
-                    impl_errors.append({
-                        'skill': skill_ref,
-                        'rule': 'EC-20',
-                        'message': "Missing 'standards/change-types.md' file",
-                    })
+                    impl_errors.append(
+                        {
+                            'skill': skill_ref,
+                            'rule': 'EC-20',
+                            'message': "Missing 'standards/change-types.md' file",
+                        }
+                    )
 
             elif ext_type == 'build':
                 # EC-40: check for ExecuteConfig reference
@@ -883,11 +900,13 @@ def validate_extension_contracts(marketplace_root: Path, extension_type: str | N
                         except OSError:
                             pass
                 if not has_execute_config:
-                    impl_errors.append({
-                        'skill': skill_ref,
-                        'rule': 'EC-40',
-                        'message': "No ExecuteConfig usage found in scripts",
-                    })
+                    impl_errors.append(
+                        {
+                            'skill': skill_ref,
+                            'rule': 'EC-40',
+                            'message': 'No ExecuteConfig usage found in scripts',
+                        }
+                    )
 
         if impl_errors:
             failed += 1

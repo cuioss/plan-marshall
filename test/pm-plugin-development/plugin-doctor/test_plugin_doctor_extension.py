@@ -19,7 +19,12 @@ import importlib.util  # noqa: E402
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'pm-plugin-development'
+    / 'skills'
+    / 'plugin-doctor'
+    / 'scripts'
 )
 
 
@@ -374,9 +379,7 @@ def test_contract_validation_real_marketplace():
     result = validate_extension_contracts(marketplace_path)
 
     assert result['total_checked'] >= 17, f'Expected at least 17 implementors, got {result["total_checked"]}'
-    assert result['failed'] == 0, (
-        f'All implementors should pass: {result["errors"]}'
-    )
+    assert result['failed'] == 0, f'All implementors should pass: {result["errors"]}'
 
 
 def test_contract_validation_filter_by_type():

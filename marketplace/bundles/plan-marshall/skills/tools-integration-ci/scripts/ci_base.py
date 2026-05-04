@@ -29,6 +29,7 @@ from typing import Any
 # and ``toon_parser`` are importable without the caller having to set up 4
 # separate PYTHONPATH entries.
 
+
 def _ensure_sibling_skill_paths() -> None:
     """Add sibling skill script directories to sys.path if not already present.
 
@@ -36,8 +37,8 @@ def _ensure_sibling_skill_paths() -> None:
     up to the ``skills/`` directory and adds the script directories for
     ``tools-file-ops`` and ``ref-toon-format``.
     """
-    scripts_dir = Path(__file__).resolve().parent          # .../tools-integration-ci/scripts
-    skills_dir = scripts_dir.parent.parent                 # .../skills
+    scripts_dir = Path(__file__).resolve().parent  # .../tools-integration-ci/scripts
+    skills_dir = scripts_dir.parent.parent  # .../skills
 
     sibling_dirs = [
         skills_dir / 'tools-file-ops' / 'scripts',
@@ -48,6 +49,7 @@ def _ensure_sibling_skill_paths() -> None:
         d_str = str(d)
         if d.is_dir() and d_str not in sys.path:
             sys.path.insert(0, d_str)
+
 
 _ensure_sibling_skill_paths()
 
@@ -90,9 +92,7 @@ def _resolve_body_slot(slot: str | None) -> str:
     if slot is None or slot == '':
         return 'default'
     if not _BODY_SLOT_RE.match(slot):
-        raise ValueError(
-            f"Invalid slot '{slot}': must match [a-z0-9][a-z0-9-]{{0,63}}"
-        )
+        raise ValueError(f"Invalid slot '{slot}': must match [a-z0-9][a-z0-9-]{{0,63}}")
     return slot
 
 
@@ -104,9 +104,7 @@ def get_body_path(plan_id: str, kind: str, slot: str | None = None) -> Path:
     parent directory, then write content with their native Write/Edit tools.
     """
     if kind not in VALID_BODY_KINDS:
-        raise ValueError(
-            f"Invalid body kind '{kind}'. Valid kinds: {sorted(VALID_BODY_KINDS)}"
-        )
+        raise ValueError(f"Invalid body kind '{kind}'. Valid kinds: {sorted(VALID_BODY_KINDS)}")
     resolved_slot = _resolve_body_slot(slot)
     return get_plan_dir(plan_id) / 'work' / 'ci-bodies' / f'{kind}-{resolved_slot}.md'
 
@@ -225,6 +223,7 @@ def add_body_consumer_args(subparser: argparse.ArgumentParser) -> None:
         help='Optional body slot identifier matching the prior prepare-body call (default: "default")',
     )
 
+
 # Shared defaults for CI polling operations
 DEFAULT_CI_TIMEOUT = 300  # seconds
 DEFAULT_CI_INTERVAL = 30  # seconds
@@ -262,6 +261,7 @@ def extract_project_dir(argv: list[str]) -> tuple[str | None, list[str]]:
     consumed = False
     i = 0
     import sys as _sys
+
     while i < len(argv):
         token = argv[i]
         if not consumed and token == '--project-dir':
@@ -522,7 +522,9 @@ def build_parser(
     )
 
     # pr update-branch — accepts either --pr-number or --head (validated by handler)
-    pr_update_branch = pr_sub.add_parser('update-branch', help='Update PR branch with base branch changes', allow_abbrev=False)
+    pr_update_branch = pr_sub.add_parser(
+        'update-branch', help='Update PR branch with base branch changes', allow_abbrev=False
+    )
     pr_update_branch.add_argument('--pr-number', type=int, help='PR number')
     add_head_arg(pr_update_branch)
 
@@ -690,7 +692,7 @@ def build_parser(
         '--mode',
         choices=['present', 'absent'],
         default='present',
-        help="Wait for label to be present (default) or absent",
+        help='Wait for label to be present (default) or absent',
     )
     issue_wait_label.add_argument(
         '--timeout',

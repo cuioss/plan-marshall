@@ -78,9 +78,7 @@ def main() -> int:
     set_phase_parser.set_defaults(func=cmd_set_phase)
 
     # update-phase
-    update_phase_parser = subparsers.add_parser(
-        'update-phase', help='Update phase status', allow_abbrev=False
-    )
+    update_phase_parser = subparsers.add_parser('update-phase', help='Update phase status', allow_abbrev=False)
     add_plan_id_arg(update_phase_parser)
     add_phase_arg(update_phase_parser)
     update_phase_parser.add_argument(
@@ -94,9 +92,7 @@ def main() -> int:
     progress_parser.set_defaults(func=cmd_progress)
 
     # metadata
-    metadata_parser = subparsers.add_parser(
-        'metadata', help='Get or set metadata fields', allow_abbrev=False
-    )
+    metadata_parser = subparsers.add_parser('metadata', help='Get or set metadata fields', allow_abbrev=False)
     add_plan_id_arg(metadata_parser)
     metadata_parser.add_argument('--get', action='store_true', help='Get metadata field')
     metadata_parser.add_argument('--set', action='store_true', help='Set metadata field')
@@ -105,9 +101,7 @@ def main() -> int:
     metadata_parser.set_defaults(func=cmd_metadata)
 
     # get-context
-    get_context_parser = subparsers.add_parser(
-        'get-context', help='Get combined status context', allow_abbrev=False
-    )
+    get_context_parser = subparsers.add_parser('get-context', help='Get combined status context', allow_abbrev=False)
     add_plan_id_arg(get_context_parser)
     get_context_parser.set_defaults(func=cmd_get_context)
 
@@ -117,9 +111,7 @@ def main() -> int:
     list_parser.set_defaults(func=cmd_list)
 
     # transition
-    transition_parser = subparsers.add_parser(
-        'transition', help='Transition to next phase', allow_abbrev=False
-    )
+    transition_parser = subparsers.add_parser('transition', help='Transition to next phase', allow_abbrev=False)
     add_plan_id_arg(transition_parser)
     transition_parser.add_argument('--completed', required=True, help='Completed phase')
     transition_parser.set_defaults(func=cmd_transition)
@@ -145,9 +137,7 @@ def main() -> int:
     routing_context_parser.set_defaults(func=cmd_get_routing_context)
 
     # delete-plan
-    delete_plan_parser = subparsers.add_parser(
-        'delete-plan', help='Delete entire plan directory', allow_abbrev=False
-    )
+    delete_plan_parser = subparsers.add_parser('delete-plan', help='Delete entire plan directory', allow_abbrev=False)
     add_plan_id_arg(delete_plan_parser)
     delete_plan_parser.set_defaults(func=cmd_delete_plan)
 
@@ -160,12 +150,8 @@ def main() -> int:
     add_plan_id_arg(mark_step_parser)
     add_phase_arg(mark_step_parser)
     mark_step_parser.add_argument('--step', required=True, help='Step identifier within the phase')
-    mark_step_parser.add_argument(
-        '--outcome', required=True, choices=['done', 'skipped'], help='Step outcome'
-    )
-    mark_step_parser.add_argument(
-        '--force', action='store_true', help='Overwrite an existing conflicting outcome'
-    )
+    mark_step_parser.add_argument('--outcome', required=True, choices=['done', 'skipped'], help='Step outcome')
+    mark_step_parser.add_argument('--force', action='store_true', help='Overwrite an existing conflicting outcome')
     mark_step_parser.add_argument(
         '--display-detail',
         default=None,
@@ -184,9 +170,7 @@ def main() -> int:
     mark_step_parser.set_defaults(func=cmd_mark_step_done)
 
     # self-test
-    self_test_parser = subparsers.add_parser(
-        'self-test', help='Verify manage-status health', allow_abbrev=False
-    )
+    self_test_parser = subparsers.add_parser('self-test', help='Verify manage-status health', allow_abbrev=False)
     self_test_parser.set_defaults(func=cmd_self_test)
 
     args = parse_args_with_toon_errors(parser)

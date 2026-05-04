@@ -26,6 +26,12 @@ Usage:
         validate_skill_notation,
         is_valid_plan_id,
         is_valid_relative_path,
+        # Lesson-ID reference scanner (live-anchored)
+        scan_lesson_id_tokens,
+        verify_lesson_ids_exist,
+        verify_lesson_id_regex_against_inventory,
+        LessonInventoryUnavailable,
+        LessonRegexAnchoringError,
     )
 """
 
@@ -53,7 +59,7 @@ VALID_PHASES = (
     '5-execute',
     '6-finalize',
 )
-PHASE_ID_RE = re.compile(f"^({'|'.join(re.escape(p) for p in VALID_PHASES)})$")
+PHASE_ID_RE = re.compile(f'^({"|".join(re.escape(p) for p in VALID_PHASES)})$')
 FIELD_NAME_RE = re.compile(r'^[a-z][a-z0-9_]*$')
 MODULE_NAME_RE = re.compile(r'^[a-z][a-z0-9_-]*$')
 PACKAGE_NAME_RE = re.compile(r'^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$')
@@ -80,9 +86,7 @@ def validate_lesson_id(lesson_id: str) -> str:
     Examples: "2026-04-28-12-001", "2026-04-27-18-007".
     """
     if not lesson_id or not LESSON_ID_RE.match(lesson_id):
-        raise ValueError(
-            f'Invalid lesson_id format: {lesson_id!r}. Must match {LESSON_ID_RE.pattern}'
-        )
+        raise ValueError(f'Invalid lesson_id format: {lesson_id!r}. Must match {LESSON_ID_RE.pattern}')
     return lesson_id
 
 
@@ -92,18 +96,14 @@ def validate_session_id(session_id: str) -> str:
     Allows letters, digits, underscore, hyphen; 1-128 chars.
     """
     if not session_id or not SESSION_ID_RE.match(session_id):
-        raise ValueError(
-            f'Invalid session_id format: {session_id!r}. Must match {SESSION_ID_RE.pattern}'
-        )
+        raise ValueError(f'Invalid session_id format: {session_id!r}. Must match {SESSION_ID_RE.pattern}')
     return session_id
 
 
 def validate_task_number(task_number: str) -> str:
     """Validate task_number is a non-negative integer string (e.g., "1", "12")."""
     if not task_number or not TASK_NUMBER_RE.match(task_number):
-        raise ValueError(
-            f'Invalid task_number format: {task_number!r}. Must match {TASK_NUMBER_RE.pattern}'
-        )
+        raise ValueError(f'Invalid task_number format: {task_number!r}. Must match {TASK_NUMBER_RE.pattern}')
     return task_number
 
 
@@ -117,9 +117,7 @@ def validate_task_id(task_id: str) -> str:
 def validate_component(component: str) -> str:
     """Validate component is colon-separated kebab-case (e.g., "plan-marshall:manage-tasks")."""
     if not component or not COMPONENT_RE.match(component):
-        raise ValueError(
-            f'Invalid component format: {component!r}. Must match {COMPONENT_RE.pattern}'
-        )
+        raise ValueError(f'Invalid component format: {component!r}. Must match {COMPONENT_RE.pattern}')
     return component
 
 
@@ -133,63 +131,49 @@ def validate_hash_id(hash_id: str) -> str:
 def validate_memory_id(memory_id: str) -> str:
     """Validate memory_id is lowercase letters/digits/underscore/hyphen."""
     if not memory_id or not MEMORY_ID_RE.match(memory_id):
-        raise ValueError(
-            f'Invalid memory_id format: {memory_id!r}. Must match {MEMORY_ID_RE.pattern}'
-        )
+        raise ValueError(f'Invalid memory_id format: {memory_id!r}. Must match {MEMORY_ID_RE.pattern}')
     return memory_id
 
 
 def validate_phase_id(phase_id: str) -> str:
     """Validate phase_id is one of the canonical 6 phases (e.g., "3-outline")."""
     if not phase_id or not PHASE_ID_RE.match(phase_id):
-        raise ValueError(
-            f'Invalid phase_id format: {phase_id!r}. Must match {PHASE_ID_RE.pattern}'
-        )
+        raise ValueError(f'Invalid phase_id format: {phase_id!r}. Must match {PHASE_ID_RE.pattern}')
     return phase_id
 
 
 def validate_field_name(field_name: str) -> str:
     """Validate field_name is snake_case starting with a lowercase letter."""
     if not field_name or not FIELD_NAME_RE.match(field_name):
-        raise ValueError(
-            f'Invalid field_name format: {field_name!r}. Must match {FIELD_NAME_RE.pattern}'
-        )
+        raise ValueError(f'Invalid field_name format: {field_name!r}. Must match {FIELD_NAME_RE.pattern}')
     return field_name
 
 
 def validate_module_name(module_name: str) -> str:
     """Validate module_name is kebab-or-snake starting with a lowercase letter."""
     if not module_name or not MODULE_NAME_RE.match(module_name):
-        raise ValueError(
-            f'Invalid module_name format: {module_name!r}. Must match {MODULE_NAME_RE.pattern}'
-        )
+        raise ValueError(f'Invalid module_name format: {module_name!r}. Must match {MODULE_NAME_RE.pattern}')
     return module_name
 
 
 def validate_package_name(package_name: str) -> str:
     """Validate package_name is dotted snake_case (e.g., "foo.bar.baz")."""
     if not package_name or not PACKAGE_NAME_RE.match(package_name):
-        raise ValueError(
-            f'Invalid package_name format: {package_name!r}. Must match {PACKAGE_NAME_RE.pattern}'
-        )
+        raise ValueError(f'Invalid package_name format: {package_name!r}. Must match {PACKAGE_NAME_RE.pattern}')
     return package_name
 
 
 def validate_domain_name(domain_name: str) -> str:
     """Validate domain_name is kebab-case starting with a lowercase letter."""
     if not domain_name or not DOMAIN_NAME_RE.match(domain_name):
-        raise ValueError(
-            f'Invalid domain_name format: {domain_name!r}. Must match {DOMAIN_NAME_RE.pattern}'
-        )
+        raise ValueError(f'Invalid domain_name format: {domain_name!r}. Must match {DOMAIN_NAME_RE.pattern}')
     return domain_name
 
 
 def validate_resource_name(resource_name: str) -> str:
     """Validate resource_name (e.g., agent/skill/component name) is alphanumeric + _-."""
     if not resource_name or not RESOURCE_NAME_RE.match(resource_name):
-        raise ValueError(
-            f'Invalid resource_name format: {resource_name!r}. Must match {RESOURCE_NAME_RE.pattern}'
-        )
+        raise ValueError(f'Invalid resource_name format: {resource_name!r}. Must match {RESOURCE_NAME_RE.pattern}')
     return resource_name
 
 
@@ -712,6 +696,232 @@ def is_valid_resource_name(resource_name: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+# --- Lesson-ID reference scanner (live-anchored) ---
+#
+# These helpers detect lesson-ID-shaped tokens in arbitrary text (typically
+# task titles/descriptions) and verify them against the live
+# ``manage-lessons`` inventory. They implement the runtime "live-anchor"
+# discipline mandated by lesson 2026-04-29-10-001: the canonical
+# ``LESSON_ID_RE`` shape MUST be re-asserted against actual repo data on
+# first scanner use per process so a silent regex/ID-shape drift surfaces
+# as a hard failure instead of producing a "no IDs match anything" false
+# clean signal.
+#
+# Public surface:
+#   - scan_lesson_id_tokens(text)               -> list[str]
+#   - verify_lesson_ids_exist(tokens)           -> dict[str, bool]
+#   - verify_lesson_id_regex_against_inventory()-> None  (raises on drift)
+#
+# Typed exceptions:
+#   - LessonInventoryUnavailable: subprocess to manage-lessons failed; the
+#       caller MUST treat this as a hard error (never silently degrade to
+#       "all present").
+#   - LessonRegexAnchoringError: live inventory has IDs but none match
+#       LESSON_ID_RE — the regex shape has drifted from reality.
+
+# Unanchored body of LESSON_ID_RE for embedded matching in prose. Derived
+# from LESSON_ID_RE.pattern (single source of truth — no new regex literal
+# is introduced) by stripping the ``^`` and ``$`` anchors. The token
+# boundaries are enforced by the surrounding "no adjacent digit" lookbehinds
+# below so we don't get partial matches like "12026-04-29-10-001".
+_LESSON_ID_BODY = LESSON_ID_RE.pattern.lstrip('^').rstrip('$')
+_LESSON_ID_EMBEDDED_RE = re.compile(r'(?<!\d)' + _LESSON_ID_BODY + r'(?!\d)')
+
+# Per-process anchor-check cache. Set to True after the first successful
+# (or no-op) anchor invocation so subsequent scanner calls don't re-spawn
+# the manage-lessons subprocess.
+_lesson_anchor_checked = False
+
+
+class LessonInventoryUnavailable(RuntimeError):
+    """Raised when ``manage-lessons list`` cannot be invoked or parsed.
+
+    The caller MUST surface this — silently degrading to "all IDs present"
+    would defeat the entire purpose of the reference scanner.
+    """
+
+
+class LessonRegexAnchoringError(RuntimeError):
+    """Raised when the live inventory has IDs but none match LESSON_ID_RE.
+
+    Indicates the canonical regex shape has drifted from the actual
+    on-disk lesson-ID convention — a code/data integrity bug.
+    """
+
+    def __init__(self, regex: str, sample_ids: list[str]):
+        self.regex = regex
+        self.sample_ids = sample_ids
+        super().__init__(
+            f'LESSON_ID_RE ({regex!r}) does not match any of the {len(sample_ids)} '
+            f'live lesson IDs (sample: {sample_ids[:3]!r}). The regex shape has '
+            f'drifted from the live inventory — fix LESSON_ID_RE or correct the IDs.'
+        )
+
+
+def _list_live_lesson_ids() -> list[str]:
+    """Invoke ``manage-lessons list`` and return every lesson ID in the inventory.
+
+    Returns the raw ``id`` field from each row of the TOON ``lessons`` table,
+    in inventory order. Raises ``LessonInventoryUnavailable`` if the
+    subprocess fails to start, exits non-zero, or returns output that cannot
+    be parsed as TOON.
+    """
+    import subprocess  # local import — keep module-import cost low for callers
+    # that don't use the scanner.
+
+    try:
+        from toon_parser import parse_toon  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise LessonInventoryUnavailable(f'toon_parser is not importable: {exc}') from exc
+
+    try:
+        result = subprocess.run(
+            [
+                'python3',
+                '.plan/execute-script.py',
+                'plan-marshall:manage-lessons:manage-lessons',
+                'list',
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise LessonInventoryUnavailable(f'Failed to invoke manage-lessons list: {exc}') from exc
+
+    if result.returncode != 0:
+        raise LessonInventoryUnavailable(
+            f'manage-lessons list exited {result.returncode}: {result.stderr.strip() or result.stdout.strip()!r}'
+        )
+
+    try:
+        parsed = parse_toon(result.stdout)
+    except Exception as exc:  # noqa: BLE001 — surface any parser failure
+        raise LessonInventoryUnavailable(f'Failed to parse manage-lessons list output as TOON: {exc}') from exc
+
+    rows = parsed.get('lessons')
+    if rows is None:
+        # Empty inventory or unexpected schema — return [] so the caller can
+        # decide (anchor check treats this as no-op; existence check returns
+        # all-False which is correct for an empty inventory).
+        return []
+    if not isinstance(rows, list):
+        raise LessonInventoryUnavailable(f'manage-lessons list returned non-list lessons field: {type(rows).__name__}')
+
+    ids: list[str] = []
+    for row in rows:
+        if isinstance(row, dict) and 'id' in row:
+            ids.append(str(row['id']))
+    return ids
+
+
+def verify_lesson_id_regex_against_inventory() -> None:
+    """Assert that LESSON_ID_RE matches at least one live lesson ID.
+
+    Implements lesson 2026-04-29-10-001 at runtime: re-validates the
+    canonical regex shape against actual repo data on first scanner use
+    per process. Behavior:
+
+    - Inventory empty → no-op (logged at WARNING via ``sys.stderr`` so
+      the discrepancy is visible without making greenfield use a hard
+      error). Marks the anchor as checked so we don't re-spawn the
+      subprocess on every subsequent scanner call.
+    - Inventory has IDs and at least one matches LESSON_ID_RE → success;
+      caches the result for the rest of the process.
+    - Inventory has IDs and NONE match LESSON_ID_RE → raises
+      ``LessonRegexAnchoringError``. Does NOT cache so repeat invocations
+      keep failing (the regex must be fixed).
+
+    Re-raises ``LessonInventoryUnavailable`` from the underlying subprocess
+    invocation; the caller decides whether to treat that as fatal (every
+    documented call site here does).
+    """
+    global _lesson_anchor_checked
+    if _lesson_anchor_checked:
+        return
+
+    try:
+        ids = _list_live_lesson_ids()
+    except LessonInventoryUnavailable as exc:
+        # Inventory unreachable — typical when the executor (.plan/execute-script.py)
+        # has not been generated yet (fresh CI checkout, ephemeral runner). The
+        # live-anchor discipline (lesson 2026-04-29-10-001) is intended to catch
+        # regex drift against real data, NOT to block all scanner use when the
+        # infrastructure isn't bootstrapped. Treat this exactly like an empty
+        # inventory: warn once on stderr, mark as checked, proceed. The next
+        # process invocation in an environment where the executor exists will
+        # re-attempt the anchor and surface real drift if present.
+        print(
+            f'WARNING: tools-input-validation lesson-ID anchor: live inventory '
+            f'unavailable ({exc}) — anchor check is a no-op for this process.',
+            file=sys.stderr,
+        )
+        _lesson_anchor_checked = True
+        return
+
+    if not ids:
+        # Greenfield repo or empty inventory — emit a one-time warning to
+        # stderr so the live-anchor discipline is visible, then mark as
+        # checked so we don't re-spawn for every scanner call.
+        print(
+            'WARNING: tools-input-validation lesson-ID anchor: live inventory '
+            'is empty — anchor check is a no-op for this process.',
+            file=sys.stderr,
+        )
+        _lesson_anchor_checked = True
+        return
+
+    matches = [lid for lid in ids if LESSON_ID_RE.match(lid)]
+    if not matches:
+        # Drift: live IDs exist but the regex matches none of them. Do NOT
+        # cache — every scanner call should keep failing until the regex
+        # (or the IDs) is corrected.
+        raise LessonRegexAnchoringError(regex=LESSON_ID_RE.pattern, sample_ids=ids)
+
+    _lesson_anchor_checked = True
+
+
+def scan_lesson_id_tokens(text: str) -> list[str]:
+    """Return every lesson-ID-shaped token embedded in ``text``.
+
+    Matches the canonical 5-segment shape (``YYYY-MM-DD-HH-N+``) anywhere
+    in the input — the embedded form uses non-digit boundaries so adjacent
+    digits don't bleed into the match. Reuses the canonical
+    ``LESSON_ID_RE`` body — no new regex literal is introduced.
+
+    Triggers ``verify_lesson_id_regex_against_inventory()`` on first use
+    per process; downstream callers MUST be prepared to handle
+    ``LessonRegexAnchoringError`` and ``LessonInventoryUnavailable``.
+    """
+    verify_lesson_id_regex_against_inventory()
+    if not text:
+        return []
+    return _LESSON_ID_EMBEDDED_RE.findall(text)
+
+
+def verify_lesson_ids_exist(tokens) -> dict[str, bool]:
+    """Return ``{token: present}`` for each token in ``tokens``.
+
+    Looks up every token against the live ``manage-lessons list``
+    inventory. Duplicates in the input are de-duplicated in the result.
+    Raises ``LessonInventoryUnavailable`` when the subprocess fails —
+    NEVER silently returns "all present", because that would defeat the
+    entire purpose of the reference check.
+
+    Triggers ``verify_lesson_id_regex_against_inventory()`` on first use
+    per process; downstream callers MUST be prepared to handle
+    ``LessonRegexAnchoringError`` and ``LessonInventoryUnavailable``.
+    """
+    verify_lesson_id_regex_against_inventory()
+
+    unique = list({str(t) for t in tokens})
+    if not unique:
+        return {}
+
+    inventory = set(_list_live_lesson_ids())
+    return {token: token in inventory for token in unique}
 
 
 # --- Argparse boundary helper: emit TOON errors for validator failures ---

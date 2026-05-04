@@ -20,6 +20,8 @@ Identify:
 2. **Occurrences** — All files containing the pattern
 3. **Dependencies** — Code that depends on affected code
 
+> **Mandatory for delete/rename refactors**: When the request removes or renames a public symbol (function, class, constant, skill notation), run the consumer sweep documented in [`consumer-sweep.md`](consumer-sweep.md) before finalizing each deliverable's `Affected files` list. Tech-debt deliverables are the most common source of cross-bundle consumer breakage and the sweep is the single highest-value outline-time check for this change type.
+
 Log findings:
 
 ```bash

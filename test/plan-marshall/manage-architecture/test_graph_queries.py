@@ -18,7 +18,12 @@ from conftest import get_script_path, run_script  # type: ignore[import-not-foun
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-architecture' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-architecture'
+    / 'scripts'
 )
 
 
@@ -432,9 +437,7 @@ def test_argparse_wiring_path_subcommand():
 def test_argparse_wiring_neighbors_subcommand_with_depth():
     with tempfile.TemporaryDirectory() as tmpdir:
         _create_fan_out_graph(tmpdir)
-        result = run_script(
-            SCRIPT_PATH, '--project-dir', tmpdir, 'neighbors', '--module', 'hub', '--depth', '1'
-        )
+        result = run_script(SCRIPT_PATH, '--project-dir', tmpdir, 'neighbors', '--module', 'hub', '--depth', '1')
         assert result.returncode == 0, result.stderr
         data = result.toon()
         assert data['status'] == 'success'

@@ -20,17 +20,10 @@ from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
 # collect-fragments + compile-report pipeline end-to-end. The fixture lives
 # under version control so regressions in fragment key naming, bundle
 # mode-propagation, or section rendering are caught deterministically.
-_STRIPPED_ARCHIVE_FIXTURE = (
-    Path(__file__).parent / 'fixtures' / 'archived-plan'
-)
+_STRIPPED_ARCHIVE_FIXTURE = Path(__file__).parent / 'fixtures' / 'archived-plan'
 
 _COLLECT_FRAGMENTS_SCRIPT = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-retrospective'
-    / 'scripts'
-    / 'collect-fragments.py'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'collect-fragments.py'
 )
 
 # Mapping from committed fragment filename (``fragment-{slug}.toon``) to the
@@ -51,14 +44,7 @@ _FRAGMENT_TO_ASPECT = {
     'fragment-script-failure-analysis.toon': 'script-failure-analysis',
 }
 
-SCRIPT_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-retrospective'
-    / 'scripts'
-    / 'compile-report.py'
-)
+SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'compile-report.py'
 
 # Direct import of compile-report.py (hyphenated filename → importlib). This
 # gives the cleanup tests access to cmd_run and Path.unlink from the same
@@ -109,18 +95,20 @@ def _write_fragments(tmp_path: Path, with_failure_aspects: bool = False) -> Path
         '  aspect: lessons_proposal',
     ]
     if with_failure_aspects:
-        lines.extend([
-            'script-failure-analysis:',
-            '  status: success',
-            '  aspect: script_failure_analysis',
-            '  failures[1]{notation,exit_code}:',
-            '    plan-marshall:foo:bar,1',
-            'permission-prompt-analysis:',
-            '  status: success',
-            '  aspect: permission_prompt_analysis',
-            '  prompts[1]{tool,resource}:',
-            '    Bash,some-command',
-        ])
+        lines.extend(
+            [
+                'script-failure-analysis:',
+                '  status: success',
+                '  aspect: script_failure_analysis',
+                '  failures[1]{notation,exit_code}:',
+                '    plan-marshall:foo:bar,1',
+                'permission-prompt-analysis:',
+                '  status: success',
+                '  aspect: permission_prompt_analysis',
+                '  prompts[1]{tool,resource}:',
+                '    Bash,some-command',
+            ]
+        )
     fragments_file = tmp_path / 'fragments.toon'
     fragments_file.write_text('\n'.join(lines) + '\n', encoding='utf-8')
     return fragments_file
@@ -290,9 +278,7 @@ class TestStrippedArchiveIntegration:
         work_dir = archived / 'work'
         for fragment_name, aspect in _FRAGMENT_TO_ASPECT.items():
             fragment_path = work_dir / fragment_name
-            assert fragment_path.exists(), (
-                f'Fixture drift: missing fragment file {fragment_path}'
-            )
+            assert fragment_path.exists(), f'Fixture drift: missing fragment file {fragment_path}'
             result_add = run_script(
                 _COLLECT_FRAGMENTS_SCRIPT,
                 'add',
@@ -305,9 +291,7 @@ class TestStrippedArchiveIntegration:
                 '--fragment-file',
                 str(fragment_path),
             )
-            assert result_add.success, (
-                f'add failed for aspect={aspect}: {result_add.stderr}'
-            )
+            assert result_add.success, f'add failed for aspect={aspect}: {result_add.stderr}'
 
         # Act 3: finalize — returns the bundle path compile-report consumes.
         result_finalize = run_script(
@@ -357,24 +341,18 @@ class TestStrippedArchiveIntegration:
                 'Proposed Lessons',
             }
             missing = expected_headings - set(sections_written)
-            assert not missing, (
-                f'Sections missing from report: {sorted(missing)} '
-                f'(omitted={sections_omitted})'
-            )
+            assert not missing, f'Sections missing from report: {sorted(missing)} (omitted={sections_omitted})'
 
             # Assert: the rendered markdown carries real content for every
             # section, not the ``_No data provided._`` placeholder that
             # ``render_section_body`` emits when a fragment is missing.
             content = output_path.read_text(encoding='utf-8')
             assert '_No data provided._' not in content, (
-                'Every registered section must render with real fragment '
-                'data on the production-shape archive fixture.'
+                'Every registered section must render with real fragment data on the production-shape archive fixture.'
             )
             # Sanity: each non-executive section heading appears in the body.
             for heading in expected_headings:
-                assert f'## {heading}' in content, (
-                    f'Expected heading "## {heading}" not found in report'
-                )
+                assert f'## {heading}' in content, f'Expected heading "## {heading}" not found in report'
         finally:
             # compile-report auto-deletes the bundle on success but may
             # leave it behind on failure — clean up so we never leak into
@@ -584,4 +562,3 @@ class TestFragmentBundleCleanup:
         assert 'WARN' in captured.err
         assert 'failed to delete fragments bundle' in captured.err
         assert str(fragments) in captured.err
-

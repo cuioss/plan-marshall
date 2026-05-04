@@ -58,44 +58,18 @@ _mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
 # Standards-doc paths for narrative-contract assertions
 # ---------------------------------------------------------------------------
 
-_PHASE_6_SKILL_MD = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'SKILL.md'
-)
+_PHASE_6_SKILL_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'SKILL.md'
 _AUTOMATED_REVIEW_MD = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'standards'
-    / 'automated-review.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'automated-review.md'
 )
 _SONAR_ROUNDTRIP_MD = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'standards'
-    / 'sonar-roundtrip.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'sonar-roundtrip.md'
 )
 _LESSONS_CAPTURE_MD = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'standards'
-    / 'lessons-capture.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'lessons-capture.md'
 )
 _KNOWLEDGE_CAPTURE_MD = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'standards'
-    / 'knowledge-capture.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'knowledge-capture.md'
 )
 
 
@@ -177,7 +151,6 @@ def _simulate_dispatch_with_timeout(
 
 
 class TestBudgetContract:
-
     @pytest.fixture(scope='class')
     def skill_md_text(self) -> str:
         return _PHASE_6_SKILL_MD.read_text(encoding='utf-8')
@@ -201,15 +174,14 @@ class TestBudgetContract:
         assert '5 min' in skill_md_text or '300' in skill_md_text
 
     def test_timeout_failed_outcome_and_continuation_documented(
-        self, skill_md_text: str,
+        self,
+        skill_md_text: str,
     ):
         """SKILL.md must explicitly say: on timeout -> mark failed + continue."""
         text_lower = skill_md_text.lower()
         assert 'timeout' in text_lower or 'timed out' in text_lower
         assert 'failed' in text_lower
-        assert 'continue' in text_lower, (
-            'Timeout contract must document continuation (no abort)'
-        )
+        assert 'continue' in text_lower, 'Timeout contract must document continuation (no abort)'
 
 
 # ===========================================================================
@@ -218,7 +190,6 @@ class TestBudgetContract:
 
 
 class TestStandardsTimeoutContract:
-
     def test_automated_review_doc_documents_timeout_contract(self):
         text = _AUTOMATED_REVIEW_MD.read_text(encoding='utf-8')
         text_lower = text.lower()
@@ -252,7 +223,6 @@ class TestStandardsTimeoutContract:
 
 
 class TestHungAgentSimulation:
-
     def test_hung_sonar_marks_failed_and_continues(self):
         """A simulated hung sonar-roundtrip (16 min > 15 min budget) yields
         outcome=failed and the dispatcher continues with subsequent steps."""
@@ -265,7 +235,8 @@ class TestHungAgentSimulation:
                 'sonar-roundtrip': 901,  # one second over the 900s budget
             }
             dispatched, final_state = _simulate_dispatch_with_timeout(
-                manifest, durations,
+                manifest,
+                durations,
             )
 
             assert 'sonar-roundtrip' in dispatched
@@ -276,9 +247,7 @@ class TestHungAgentSimulation:
             steps = manifest['phase_6']['steps']
             sonar_idx = steps.index('sonar-roundtrip')
             for later in steps[sonar_idx + 1 :]:
-                assert later in dispatched, (
-                    f'{later} must still dispatch after sonar timeout (continuation)'
-                )
+                assert later in dispatched, f'{later} must still dispatch after sonar timeout (continuation)'
 
     def test_hung_automated_review_marks_failed_and_continues(self):
         with PlanContext(plan_id='p6-timeout-review'):
@@ -288,7 +257,8 @@ class TestHungAgentSimulation:
 
             durations = {'automated-review': 1500}
             dispatched, final_state = _simulate_dispatch_with_timeout(
-                manifest, durations,
+                manifest,
+                durations,
             )
 
             assert final_state['automated-review']['outcome'] == 'failed'
@@ -308,7 +278,8 @@ class TestHungAgentSimulation:
 
             durations = {'lessons-capture': 360}  # > 300s budget
             dispatched, final_state = _simulate_dispatch_with_timeout(
-                manifest, durations,
+                manifest,
+                durations,
             )
 
             assert final_state['lessons-capture']['outcome'] == 'failed'
@@ -331,7 +302,8 @@ class TestHungAgentSimulation:
                 'lessons-capture': 30,
             }
             _, final_state = _simulate_dispatch_with_timeout(
-                manifest, durations,
+                manifest,
+                durations,
             )
             # Every step that ran finished done.
             for _step_id, record in final_state.items():
@@ -344,7 +316,6 @@ class TestHungAgentSimulation:
 
 
 class TestTimeoutRetryOnReentry:
-
     def test_failed_timeout_step_retried_on_next_entry(self):
         """A step left at outcome=failed by a timeout MUST be retried on the
         next Phase 6 entry (one fresh attempt per invocation)."""
@@ -355,7 +326,8 @@ class TestTimeoutRetryOnReentry:
 
             # First entry: sonar-roundtrip times out.
             first_dispatch, first_state = _simulate_dispatch_with_timeout(
-                manifest, {'sonar-roundtrip': 901},
+                manifest,
+                {'sonar-roundtrip': 901},
             )
             assert first_state['sonar-roundtrip']['outcome'] == 'failed'
 
@@ -371,9 +343,7 @@ class TestTimeoutRetryOnReentry:
             assert 'sonar-roundtrip' in second_dispatch
             for step_id, record in first_state.items():
                 if record['outcome'] == 'done':
-                    assert step_id not in second_dispatch, (
-                        f'done-marked {step_id} must not re-dispatch on re-entry'
-                    )
+                    assert step_id not in second_dispatch, f'done-marked {step_id} must not re-dispatch on re-entry'
             # And on the retry it succeeds.
             assert second_state['sonar-roundtrip']['outcome'] == 'done'
 
@@ -384,7 +354,6 @@ class TestTimeoutRetryOnReentry:
 
 
 class TestLessonsCaptureUnconditional:
-
     def test_lessons_capture_fires_even_when_sonar_timed_out(self):
         """A sonar timeout must NOT prevent lessons-capture from dispatching
         on the same Phase 6 invocation — lessons-capture is unconditional
@@ -396,10 +365,9 @@ class TestLessonsCaptureUnconditional:
             assert 'lessons-capture' in manifest['phase_6']['steps']
 
             dispatched, final_state = _simulate_dispatch_with_timeout(
-                manifest, {'sonar-roundtrip': 901},
+                manifest,
+                {'sonar-roundtrip': 901},
             )
 
-            assert 'lessons-capture' in dispatched, (
-                'lessons-capture must dispatch even after a sonar timeout'
-            )
+            assert 'lessons-capture' in dispatched, 'lessons-capture must dispatch even after a sonar timeout'
             assert final_state['sonar-roundtrip']['outcome'] == 'failed'

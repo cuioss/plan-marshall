@@ -39,8 +39,13 @@ MARKETPLACE_ROOT = PROJECT_ROOT / 'marketplace' / 'bundles'
 # the subprocess overhead of a full doctor-marketplace.py invocation.
 _DOCTOR_SHARED_PATH = (
     PROJECT_ROOT
-    / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills'
-    / 'plugin-doctor' / 'scripts' / '_doctor_shared.py'
+    / 'marketplace'
+    / 'bundles'
+    / 'pm-plugin-development'
+    / 'skills'
+    / 'plugin-doctor'
+    / 'scripts'
+    / '_doctor_shared.py'
 )
 
 
@@ -459,9 +464,7 @@ def test_report_to_custom_dir():
     output_dir = tempfile.mkdtemp()
 
     try:
-        result = run_script(
-            SCRIPT_PATH, 'report', '--bundles', first_bundle, '--output', output_dir
-        )
+        result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle, '--output', output_dir)
         assert result.returncode == 0, f'Report failed: {result.stderr}'
 
         json_files = list(Path(output_dir).glob('*-report.json'))
@@ -552,7 +555,15 @@ def test_fixture_scan():
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
-        result = run_script(SCRIPT_PATH, 'scan', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
+        result = run_script(
+            SCRIPT_PATH,
+            'scan',
+            env_overrides={
+                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
+                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
+                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
+            },
+        )
         assert result.returncode == 0, f'Scan failed: {result.stderr}'
 
         data = parse_output(result)
@@ -568,7 +579,15 @@ def test_fixture_analyze_finds_issues():
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
+        result = run_script(
+            SCRIPT_PATH,
+            'analyze',
+            env_overrides={
+                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
+                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
+                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
+            },
+        )
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -584,7 +603,16 @@ def test_fixture_fix_dry_run():
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
-        result = run_script(SCRIPT_PATH, 'fix', '--dry-run', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
+        result = run_script(
+            SCRIPT_PATH,
+            'fix',
+            '--dry-run',
+            env_overrides={
+                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
+                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
+                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
+            },
+        )
         assert result.returncode == 0, f'Fix dry-run failed: {result.stderr}'
 
         data = parse_output(result)
@@ -599,7 +627,15 @@ def test_fixture_report():
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
-        result = run_script(SCRIPT_PATH, 'report', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
+        result = run_script(
+            SCRIPT_PATH,
+            'report',
+            env_overrides={
+                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
+                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
+                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
+            },
+        )
         assert result.returncode == 0, f'Report failed: {result.stderr}'
 
         response = parse_output(result)
@@ -656,7 +692,17 @@ Read `references/guide.md` for standards.
 """)
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
+        result = run_script(
+            SCRIPT_PATH,
+            'analyze',
+            '--type',
+            'skills',
+            env_overrides={
+                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
+                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
+                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
+            },
+        )
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -707,7 +753,17 @@ Read `references/bloated-guide.md` for standards.
 """)
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
+        result = run_script(
+            SCRIPT_PATH,
+            'analyze',
+            '--type',
+            'skills',
+            env_overrides={
+                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
+                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
+                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
+            },
+        )
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -732,7 +788,17 @@ def test_fixture_analyze_no_subdoc_for_normal_files():
     (skill_refs_dir / 'small-guide.md').write_text('# Small Guide\n\nJust a few lines.\n')
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
+        result = run_script(
+            SCRIPT_PATH,
+            'analyze',
+            '--type',
+            'skills',
+            env_overrides={
+                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
+                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
+                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
+            },
+        )
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -761,7 +827,17 @@ def test_fixture_analyze_detects_subdoc_hardcoded_path():
     )
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
+        result = run_script(
+            SCRIPT_PATH,
+            'analyze',
+            '--type',
+            'skills',
+            env_overrides={
+                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
+                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
+                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
+            },
+        )
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -789,7 +865,15 @@ def test_fixture_analyze_detects_rule_11():
     )
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
+        result = run_script(
+            SCRIPT_PATH,
+            'analyze',
+            env_overrides={
+                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
+                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
+                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
+            },
+        )
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -816,7 +900,15 @@ def test_fixture_analyze_no_rule_11_with_skill():
     )
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
+        result = run_script(
+            SCRIPT_PATH,
+            'analyze',
+            env_overrides={
+                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
+                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
+                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
+            },
+        )
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -839,7 +931,15 @@ def test_fixture_analyze_no_rule_11_without_tools():
     )
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
+        result = run_script(
+            SCRIPT_PATH,
+            'analyze',
+            env_overrides={
+                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
+                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
+                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
+            },
+        )
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -874,7 +974,17 @@ This skill provides testing capabilities.
 """)
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
+        result = run_script(
+            SCRIPT_PATH,
+            'analyze',
+            '--type',
+            'skills',
+            env_overrides={
+                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
+                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
+                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
+            },
+        )
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -1047,9 +1157,7 @@ def test_marketplace_root_flag_overrides_default(tmp_path, monkeypatch):
     resolved = find_marketplace_root(marketplace_root_override=str(fake_marketplace))
 
     # Assert
-    assert resolved == fake_marketplace / 'bundles', (
-        f'Expected {fake_marketplace / "bundles"}, got {resolved}'
-    )
+    assert resolved == fake_marketplace / 'bundles', f'Expected {fake_marketplace / "bundles"}, got {resolved}'
 
 
 def test_marketplace_root_flag_takes_precedence_over_env_var(tmp_path, monkeypatch):
@@ -1071,12 +1179,8 @@ def test_marketplace_root_flag_takes_precedence_over_env_var(tmp_path, monkeypat
     resolved = find_marketplace_root(marketplace_root_override=str(arg_marketplace))
 
     # Assert: function-arg path wins, env var path is ignored.
-    assert resolved == arg_marketplace / 'bundles', (
-        f'Function-arg override should win, got {resolved}'
-    )
-    assert resolved != env_marketplace / 'bundles', (
-        'Env var path must NOT win when function-arg override is provided'
-    )
+    assert resolved == arg_marketplace / 'bundles', f'Function-arg override should win, got {resolved}'
+    assert resolved != env_marketplace / 'bundles', 'Env var path must NOT win when function-arg override is provided'
 
 
 def test_marketplace_root_invalid_path_errors_clearly(tmp_path, monkeypatch):
@@ -1098,9 +1202,7 @@ def test_marketplace_root_invalid_path_errors_clearly(tmp_path, monkeypatch):
 
     msg = str(exc_info.value)
     assert 'bundles' in msg, f'Error message should mention bundles/, got: {msg}'
-    assert str(tmp_path) in msg, (
-        f'Error message should reference the offending path {tmp_path}, got: {msg}'
-    )
+    assert str(tmp_path) in msg, f'Error message should reference the offending path {tmp_path}, got: {msg}'
     # The message must clarify that the override is meant to be the parent
     # of bundles/, not bundles/ itself — this is what callers need to fix.
     assert 'marketplace root' in msg or 'parent of bundles' in msg, (
@@ -1195,7 +1297,7 @@ def test_quality_gate_clean_fixture_passes(tmp_path):
     assert result.returncode == 0, f'Expected exit 0 on clean fixture, got {result.returncode}: {result.stderr}'
 
     data = parse_output(result)
-    assert data['status'] == 'pass', f"Expected status: pass on clean fixture, got: {data}"
+    assert data['status'] == 'pass', f'Expected status: pass on clean fixture, got: {data}'
     assert data['total_issues'] == 0, f'Clean fixture should have zero issues, got {data["total_issues"]}'
     assert 'rules_run' in data, 'Output should enumerate rules_run for transparency'
 
@@ -1217,7 +1319,7 @@ def test_quality_gate_argparse_violation_fails(tmp_path):
     )
 
     data = parse_output(result)
-    assert data['status'] == 'fail', f"Expected status: fail on violation fixture, got: {data}"
+    assert data['status'] == 'fail', f'Expected status: fail on violation fixture, got: {data}'
     assert data['total_issues'] >= 1, 'Should report at least one finding'
 
 

@@ -17,7 +17,12 @@ import pytest
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-architecture' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-architecture'
+    / 'scripts'
 )
 
 
@@ -320,7 +325,7 @@ def test_enrich_all_extension_exception_captured(monkeypatch):
         assert result['status'] == 'success'
         assert result['errors'], 'Expected at least one captured error'
         assert any('raising-bundle' in str(err) for err in result['errors']), (
-            f"Expected bundle name in errors, got: {result['errors']}"
+            f'Expected bundle name in errors, got: {result["errors"]}'
         )
         assert result['modules_enriched'] == []
         assert result['pairs_applied'] == 0

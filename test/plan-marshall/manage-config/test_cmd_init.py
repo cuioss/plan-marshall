@@ -16,7 +16,12 @@ from test_helpers import SCRIPT_PATH, create_marshal_json
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-config'
+    / 'scripts'
 )
 
 
@@ -43,7 +48,6 @@ from conftest import PlanContext, run_script  # noqa: E402
 def test_init_creates_marshal_json(monkeypatch):
     """Test init creates marshal.json with defaults."""
     with PlanContext() as ctx:
-
         result = cmd_init(Namespace(force=False))
 
         assert result['status'] == 'success'
@@ -87,7 +91,6 @@ def test_init_force_overwrites(monkeypatch):
 def test_init_creates_parent_directory(monkeypatch):
     """Test init creates .plan directory if missing."""
     with PlanContext() as ctx:
-
         result = cmd_init(Namespace(force=False))
 
         assert result['status'] == 'success'
@@ -97,7 +100,6 @@ def test_init_creates_parent_directory(monkeypatch):
 def test_init_preserves_system_domain(monkeypatch):
     """Test init includes system domain in defaults."""
     with PlanContext() as ctx:
-
         result = cmd_init(Namespace(force=False))
 
         assert result['status'] == 'success'
@@ -114,7 +116,6 @@ def test_init_no_build_systems_key(monkeypatch):
     not persisted in marshal.json.
     """
     with PlanContext() as ctx:
-
         result = cmd_init(Namespace(force=False))
 
         assert result['status'] == 'success'
@@ -131,7 +132,6 @@ def test_init_no_extension_defaults_key(monkeypatch):
     so it does not need to be in the init defaults.
     """
     with PlanContext() as ctx:
-
         result = cmd_init(Namespace(force=False))
 
         assert result['status'] == 'success'
@@ -147,7 +147,6 @@ def test_init_key_ordering(monkeypatch):
     Canonical order: plan, skill_domains, system
     """
     with PlanContext() as ctx:
-
         result = cmd_init(Namespace(force=False))
 
         assert result['status'] == 'success'
@@ -171,7 +170,6 @@ def test_init_key_ordering(monkeypatch):
 def test_init_includes_verification_in_phase_5_execute(monkeypatch):
     """Test init creates marshal.json with verification config in phase-5-execute."""
     with PlanContext() as ctx:
-
         result = cmd_init(Namespace(force=False))
         assert result['status'] == 'success'
 
@@ -187,7 +185,6 @@ def test_init_includes_verification_in_phase_5_execute(monkeypatch):
 def test_init_includes_phase_6_finalize(monkeypatch):
     """Test init creates marshal.json with plan.phase-6-finalize section."""
     with PlanContext() as ctx:
-
         result = cmd_init(Namespace(force=False))
         assert result['status'] == 'success'
 
@@ -206,16 +203,13 @@ def test_init_includes_phase_6_finalize(monkeypatch):
         # because archive moves the plan directory and would leave metrics nowhere to write.
         record_idx = finalize['steps'].index('default:record-metrics')
         archive_idx = finalize['steps'].index('default:archive-plan')
-        assert record_idx + 1 == archive_idx, (
-            'default:record-metrics must immediately precede default:archive-plan'
-        )
+        assert record_idx + 1 == archive_idx, 'default:record-metrics must immediately precede default:archive-plan'
         assert '1_commit_push' not in finalize, 'Old boolean keys should not exist'
 
 
 def test_init_includes_phase_1_init(monkeypatch):
     """Test init creates marshal.json with plan.phase-1-init section."""
     with PlanContext() as ctx:
-
         result = cmd_init(Namespace(force=False))
         assert result['status'] == 'success'
 
@@ -229,7 +223,6 @@ def test_init_includes_phase_1_init(monkeypatch):
 def test_init_no_top_level_verification(monkeypatch):
     """Test init does NOT create top-level verification key."""
     with PlanContext() as ctx:
-
         result = cmd_init(Namespace(force=False))
         assert result['status'] == 'success'
 
@@ -241,7 +234,6 @@ def test_init_no_top_level_verification(monkeypatch):
 def test_init_no_top_level_finalize(monkeypatch):
     """Test init does NOT create top-level finalize key."""
     with PlanContext() as ctx:
-
         result = cmd_init(Namespace(force=False))
         assert result['status'] == 'success'
 
@@ -253,7 +245,6 @@ def test_init_no_top_level_finalize(monkeypatch):
 def test_init_no_plan_defaults(monkeypatch):
     """Test init does NOT create plan.defaults key."""
     with PlanContext() as ctx:
-
         result = cmd_init(Namespace(force=False))
         assert result['status'] == 'success'
 

@@ -19,9 +19,7 @@ from input_validation import (  # type: ignore[import-not-found]
 
 @safe_main
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description='Architecture analysis and enrichment operations', allow_abbrev=False
-    )
+    parser = argparse.ArgumentParser(description='Architecture analysis and enrichment operations', allow_abbrev=False)
     parser.add_argument('--project-dir', default='.', help='Project directory (default: current directory)')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
@@ -146,9 +144,7 @@ def main() -> int:
     )
 
     # commands - List commands for module
-    commands_parser = subparsers.add_parser(
-        'commands', help='List available commands for a module', allow_abbrev=False
-    )
+    commands_parser = subparsers.add_parser('commands', help='List available commands for a module', allow_abbrev=False)
     add_module_arg(commands_parser, required=False)
 
     # resolve - Resolve command to executable

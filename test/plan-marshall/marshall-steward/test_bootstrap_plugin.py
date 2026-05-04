@@ -101,37 +101,32 @@ def _run_without_marketplace_pythonpath(script_path: Path, *args: str) -> 'subpr
     env.pop('PYTHONPATH', None)
     return subprocess.run(
         [sys.executable, str(script_path)] + list(args),
-        capture_output=True, text=True, env=env, timeout=30,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
     )
 
 
 def test_bootstrap_plugin_imports_without_executor_pythonpath():
     """bootstrap_plugin.py must resolve its own imports without executor PYTHONPATH."""
     result = _run_without_marketplace_pythonpath(SCRIPT_PATH, 'get-root')
-    assert result.returncode == 0, (
-        f'bootstrap_plugin.py failed without PYTHONPATH:\n{result.stderr}'
-    )
+    assert result.returncode == 0, f'bootstrap_plugin.py failed without PYTHONPATH:\n{result.stderr}'
 
 
 def test_determine_mode_imports_without_executor_pythonpath():
     """determine_mode.py must resolve its own imports without executor PYTHONPATH."""
     script = _SCRIPTS_DIR / 'determine_mode.py'
     result = _run_without_marketplace_pythonpath(script, 'mode')
-    assert result.returncode in (0, 1), (
-        f'determine_mode.py failed without PYTHONPATH:\n{result.stderr}'
-    )
-    assert 'ModuleNotFoundError' not in result.stderr, (
-        f'determine_mode.py has unresolved imports:\n{result.stderr}'
-    )
+    assert result.returncode in (0, 1), f'determine_mode.py failed without PYTHONPATH:\n{result.stderr}'
+    assert 'ModuleNotFoundError' not in result.stderr, f'determine_mode.py has unresolved imports:\n{result.stderr}'
 
 
 def test_gitignore_setup_imports_without_executor_pythonpath():
     """gitignore_setup.py must resolve its own imports without executor PYTHONPATH."""
     script = _SCRIPTS_DIR / 'gitignore_setup.py'
     result = _run_without_marketplace_pythonpath(script, '--dry-run')
-    assert result.returncode == 0, (
-        f'gitignore_setup.py failed without PYTHONPATH:\n{result.stderr}'
-    )
+    assert result.returncode == 0, f'gitignore_setup.py failed without PYTHONPATH:\n{result.stderr}'
 
 
 # =============================================================================

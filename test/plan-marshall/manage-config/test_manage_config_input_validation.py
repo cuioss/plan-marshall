@@ -41,17 +41,13 @@ def test_skill_domains_get_rejects_invalid_domain(axis, bad_value):
 @pytest.mark.parametrize('axis,bad_value', MALFORMED_AXES['field'])
 def test_plan_phase_get_rejects_invalid_field(axis, bad_value):
     """``manage-config plan phase-1-init get --field <bad>`` → invalid_field TOON."""
-    result = run_script(
-        SCRIPT_PATH, 'plan', 'phase-1-init', 'get', '--field', bad_value
-    )
+    result = run_script(SCRIPT_PATH, 'plan', 'phase-1-init', 'get', '--field', bad_value)
     assert_invalid_field(result, 'invalid_field')
 
 
 def test_skill_domains_get_accepts_canonical_domain():
     """Canonical ``--domain`` value passes validator (downstream may still error)."""
-    result = run_script(
-        SCRIPT_PATH, 'skill-domains', 'get', '--domain', HAPPY_VALUES['domain']
-    )
+    result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', HAPPY_VALUES['domain'])
     assert result.returncode == 0
     if result.stdout.strip():
         from toon_parser import parse_toon  # type: ignore[import-not-found]

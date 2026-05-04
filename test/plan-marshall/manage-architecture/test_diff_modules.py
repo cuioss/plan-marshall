@@ -18,10 +18,7 @@ from argparse import Namespace
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).parent.parent.parent.parent
-_SCRIPTS_DIR = (
-    _REPO_ROOT
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-architecture' / 'scripts'
-)
+_SCRIPTS_DIR = _REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-architecture' / 'scripts'
 
 
 def _load_module(name: str, filename: str):

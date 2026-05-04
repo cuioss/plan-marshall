@@ -36,13 +36,19 @@ class TestGetProjectName:
         """Project names must not contain path traversal characters."""
         marshal = tmp_path / '.plan' / 'marshal.json'
         marshal.parent.mkdir(parents=True)
-        marshal.write_text(json.dumps({
-            'providers': [{
-                'skill_name': 'workflow-integration-github',
-                'auth_type': 'system',
-                'repo_url': 'https://github.com/org/my../repo!name',
-            }],
-        }))
+        marshal.write_text(
+            json.dumps(
+                {
+                    'providers': [
+                        {
+                            'skill_name': 'workflow-integration-github',
+                            'auth_type': 'system',
+                            'repo_url': 'https://github.com/org/my../repo!name',
+                        }
+                    ],
+                }
+            )
+        )
         monkeypatch.chdir(tmp_path)
         name = get_project_name()
         # Name should only contain safe characters
@@ -262,13 +268,19 @@ class TestProviderConfig:
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
         marshal = plan_dir / 'marshal.json'
-        marshal.write_text(json.dumps({
-            'providers': [{
-                'skill_name': 'workflow-integration-github',
-                'auth_type': 'system',
-                'repo_url': 'https://github.com/org/repo',
-            }],
-        }))
+        marshal.write_text(
+            json.dumps(
+                {
+                    'providers': [
+                        {
+                            'skill_name': 'workflow-integration-github',
+                            'auth_type': 'system',
+                            'repo_url': 'https://github.com/org/repo',
+                        }
+                    ],
+                }
+            )
+        )
 
         write_provider_config('test-skill', {'url': 'https://api.example.com'})
 
@@ -416,6 +428,7 @@ class TestGetAuthenticatedClientSystem:
         save_credential(skill, data, 'global')
         # Write URL to marshal.json provider config
         from _providers_core import write_provider_config  # type: ignore[import-not-found]
+
         write_provider_config(skill, {'url': 'https://api.example.com'})
 
         client = get_authenticated_client(skill)

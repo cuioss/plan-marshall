@@ -315,6 +315,12 @@ For each deliverable whose title contains a compound word whose head morpheme is
 
 Without the gloss, a downstream agent could read `review-knowledge` as "subject one's knowledge to review" rather than the intended "consult existing knowledge before acting". The gloss fixes the head-morpheme ambiguity at the source.
 
+#### Consumer sweep for delete/rename deliverables
+
+**Mandatory** before finalizing any deliverable whose `Change per file`, `Refactoring`, or title text contains delete/rename language applied to a public symbol. See [`consumer-sweep.md`](consumer-sweep.md) for the full trigger heuristic, sweep procedure (`architecture find` first, grep fallback for sub-module references), and output format.
+
+The sweep ensures every cross-bundle consumer of the deleted/renamed symbol becomes an explicit entry under the deliverable's `**Affected files:**` list before the outline is written. Run the sweep BEFORE resolving verification commands and writing the deliverable to `solution_outline.md`. When the trigger heuristic does not fire, skip silently (no log entry required).
+
 **Resolve verification command** for each deliverable before writing:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
@@ -455,6 +461,12 @@ Follow the loaded change-type instructions from Step 9b. These instructions defi
 - Discovery approach (inventory scan, targeted search, direct mapping)
 - Analysis logic (component assessment, scope determination)
 - Deliverable structure (type-specific metadata and sections)
+
+#### 10a-bis: Consumer sweep for delete/rename deliverables
+
+**Mandatory** for every deliverable composed in Step 10a whose `Change per file`, `Refactoring`, or title text contains delete/rename language applied to a public symbol. See [`consumer-sweep.md`](consumer-sweep.md) for the full trigger heuristic, sweep procedure (`architecture find` first, grep fallback for sub-module references), output format, and the worked `load_derived_data` example.
+
+The sweep ensures every cross-bundle consumer of the deleted/renamed symbol becomes an explicit entry under the deliverable's `**Affected files:**` list. Run the sweep BEFORE Step 10b (Resolve Verification Commands) and Step 10c (Write Solution Outline) — the sweep's output feeds both the verification command resolution and the written deliverable. When the trigger heuristic does not fire for a deliverable, skip silently for that deliverable (no log entry required).
 
 #### 10b: Resolve Verification Commands
 

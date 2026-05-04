@@ -262,6 +262,7 @@ def _prepare_thread_reply_body(tmp_path, monkeypatch, body_text='Fixed it', plan
         BODY_KIND_PR_THREAD_REPLY,
         get_body_path,
     )
+
     path = get_body_path(plan_id, BODY_KIND_PR_THREAD_REPLY)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body_text, encoding='utf-8')
@@ -308,15 +309,11 @@ def test_pr_thread_reply_uses_thread_reply_mutation(monkeypatch, tmp_path):
     # Assert mutation and variables
     reply_call = next((q, v) for q, v in graphql_calls if 'addPullRequestReviewThreadReply' in q)
     assert 'addPullRequestReviewThreadReply' in reply_call[0]
-    assert set(reply_call[1].keys()) == {'threadId', 'body'}, (
-        f'Unexpected variables: {reply_call[1].keys()}'
-    )
+    assert set(reply_call[1].keys()) == {'threadId', 'body'}, f'Unexpected variables: {reply_call[1].keys()}'
     assert 'prId' not in reply_call[1]
     assert 'inReplyTo' not in reply_call[1]
     # Assert NO gh pr view call
-    assert not any(c[:2] == ['pr', 'view'] for c in gh_calls), (
-        f'Unexpected gh pr view call: {gh_calls}'
-    )
+    assert not any(c[:2] == ['pr', 'view'] for c in gh_calls), f'Unexpected gh pr view call: {gh_calls}'
 
 
 def test_pr_thread_reply_fails_when_pending_review_remains(monkeypatch, tmp_path):
@@ -384,11 +381,7 @@ def test_pr_submit_review_calls_submit_mutation(monkeypatch):
         captured['variables'] = variables
         return (
             0,
-            {
-                'submitPullRequestReview': {
-                    'pullRequestReview': {'id': 'PRR_xyz', 'state': 'COMMENTED'}
-                }
-            },
+            {'submitPullRequestReview': {'pullRequestReview': {'id': 'PRR_xyz', 'state': 'COMMENTED'}}},
             '',
         )
 

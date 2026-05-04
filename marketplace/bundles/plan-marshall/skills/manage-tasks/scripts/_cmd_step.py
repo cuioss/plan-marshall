@@ -78,11 +78,15 @@ def cmd_finalize_step(args) -> dict:
 
     # Logging
     if all_terminal and has_failed:
-        log_entry('work', args.plan_id, 'WARNING', f'[MANAGE-TASKS] TASK-{args.task_number:03d} failed (has failed steps)')
+        log_entry(
+            'work', args.plan_id, 'WARNING', f'[MANAGE-TASKS] TASK-{args.task_number:03d} failed (has failed steps)'
+        )
     elif all_terminal:
         log_entry('work', args.plan_id, 'INFO', f'[MANAGE-TASKS] Completed TASK-{args.task_number:03d}')
     else:
-        log_entry('work', args.plan_id, 'INFO', f'[MANAGE-TASKS] TASK-{args.task_number:03d} step {args.step} {args.outcome}')
+        log_entry(
+            'work', args.plan_id, 'INFO', f'[MANAGE-TASKS] TASK-{args.task_number:03d} step {args.step} {args.outcome}'
+        )
 
     # Calculate progress
     completed, total = calculate_progress(task)

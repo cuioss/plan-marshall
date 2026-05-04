@@ -20,7 +20,13 @@ SCRIPT_PATH = get_script_path('pm-documents', 'manage-adr', 'manage-adr.py')
 # Tier 2 direct imports - load hyphenated module via importlib
 _MANAGE_ADR_SCRIPT = str(
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'pm-documents' / 'skills' / 'manage-adr' / 'scripts' / 'manage-adr.py'
+    / 'marketplace'
+    / 'bundles'
+    / 'pm-documents'
+    / 'skills'
+    / 'manage-adr'
+    / 'scripts'
+    / 'manage-adr.py'
 )
 _spec = importlib.util.spec_from_file_location('manage_adr', _MANAGE_ADR_SCRIPT)
 _mod = importlib.util.module_from_spec(_spec)
@@ -184,8 +190,9 @@ class TestManageAdr(unittest.TestCase):
 
     def test_cli_invalid_status(self):
         """Test creating ADR with invalid status via CLI (argparse rejection)."""
-        result = run_script(SCRIPT_PATH, 'create', '--title', 'Invalid Status', '--status', 'InvalidStatus',
-                            cwd=self.temp_dir)
+        result = run_script(
+            SCRIPT_PATH, 'create', '--title', 'Invalid Status', '--status', 'InvalidStatus', cwd=self.temp_dir
+        )
         # argparse will reject invalid choices with exit code 2
         self.assertNotEqual(result.returncode, 0)
         # Error message is in stderr from argparse

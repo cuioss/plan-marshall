@@ -306,14 +306,20 @@ def test_verify_all_with_marshal_json():
     """Test verify-all succeeds and does NOT write config['ci']."""
     with PlanContext(plan_id='test-verify-all-success') as ctx:
         marshal_path = ctx.fixture_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps({
-            'version': 1,
-            'providers': [{
-                'skill_name': 'plan-marshall:workflow-integration-github',
-                'category': 'ci',
-                'verify_command': 'gh auth status',
-            }],
-        }))
+        marshal_path.write_text(
+            json.dumps(
+                {
+                    'version': 1,
+                    'providers': [
+                        {
+                            'skill_name': 'plan-marshall:workflow-integration-github',
+                            'category': 'ci',
+                            'verify_command': 'gh auth status',
+                        }
+                    ],
+                }
+            )
+        )
 
         result = run_script(SCRIPT_PATH, 'verify-all')
         assert result.success, f'Script failed: {result.stderr}'
@@ -328,15 +334,21 @@ def test_verify_all_leaves_providers_intact():
     """Test verify-all leaves providers[] untouched (single source of truth)."""
     with PlanContext(plan_id='test-verify-all-intact') as ctx:
         marshal_path = ctx.fixture_dir / 'marshal.json'
-        original_providers = [{
-            'skill_name': 'plan-marshall:workflow-integration-github',
-            'category': 'ci',
-            'verify_command': 'gh auth status',
-        }]
-        marshal_path.write_text(json.dumps({
-            'version': 1,
-            'providers': original_providers,
-        }))
+        original_providers = [
+            {
+                'skill_name': 'plan-marshall:workflow-integration-github',
+                'category': 'ci',
+                'verify_command': 'gh auth status',
+            }
+        ]
+        marshal_path.write_text(
+            json.dumps(
+                {
+                    'version': 1,
+                    'providers': original_providers,
+                }
+            )
+        )
 
         result = run_script(SCRIPT_PATH, 'verify-all')
         assert result.success, f'Script failed: {result.stderr}'

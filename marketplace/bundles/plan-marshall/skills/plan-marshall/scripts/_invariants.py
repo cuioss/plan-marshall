@@ -58,10 +58,7 @@ class PhaseStepsIncomplete(Exception):
             parts.append(f'not_done={not_done}')
         if self.legacy_format:
             parts.append(f'legacy_format={self.legacy_format}')
-        super().__init__(
-            f'phase_steps_complete failed for phase {phase!r}: '
-            + ', '.join(parts)
-        )
+        super().__init__(f'phase_steps_complete failed for phase {phase!r}: ' + ', '.join(parts))
 
 
 class TaskGraphInvalid(Exception):
@@ -88,9 +85,7 @@ class TaskGraphInvalid(Exception):
             parts.append(f'cycle={cycle}')
         if dangling:
             parts.append(f'dangling={dangling}')
-        super().__init__(
-            'task_graph_valid failed: ' + ', '.join(parts)
-        )
+        super().__init__('task_graph_valid failed: ' + ', '.join(parts))
 
 
 AppliesFn = Callable[[str, dict[str, Any]], bool]
@@ -98,6 +93,7 @@ CaptureFn = Callable[[str, dict[str, Any], str], Any]
 
 
 # --- helpers --------------------------------------------------------------
+
 
 def _repo_root() -> Path:
     """Main git checkout root inferred from the plan-marshall base directory.
@@ -155,6 +151,7 @@ def _hash_dict(payload: Any) -> str:
 
 # --- phase required-steps resolution -------------------------------------
 
+
 def _resolve_required_steps_path(phase: str) -> Path | None:
     """Return the ``required-steps.md`` path for a phase skill, if present.
 
@@ -168,14 +165,7 @@ def _resolve_required_steps_path(phase: str) -> Path | None:
     bundles = find_marketplace_path()
     if bundles is None:
         return None
-    candidate = (
-        bundles
-        / 'plan-marshall'
-        / 'skills'
-        / f'phase-{phase}'
-        / 'standards'
-        / 'required-steps.md'
-    )
+    candidate = bundles / 'plan-marshall' / 'skills' / f'phase-{phase}' / 'standards' / 'required-steps.md'
     return candidate if candidate.is_file() else None
 
 
@@ -211,6 +201,7 @@ def _parse_required_steps(path: Path) -> list[str]:
 
 
 # --- capture functions ---------------------------------------------------
+
 
 def _capture_main_sha(_plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
     return git_head(_repo_root())
@@ -330,7 +321,7 @@ def _normalize_task_ref(raw: Any) -> int | None:
     if isinstance(raw, str):
         text = raw.strip()
         if text.startswith('TASK-'):
-            text = text[len('TASK-'):]
+            text = text[len('TASK-') :]
         if text.isdigit():
             return int(text)
     return None
@@ -512,6 +503,10 @@ def _capture_pending_tasks_count(plan_id: str, _metadata: dict[str, Any], _phase
 
 
 def _capture_qgate_open_count(plan_id: str, _metadata: dict[str, Any], phase: str) -> Any:
+    if phase == '1-init':
+        # Q-Gate findings are scoped to phases 2-refine onward; manage-findings
+        # rejects --phase 1-init, so short-circuit to a trivially-zero result.
+        return 0
     stdout = _run_script(
         [
             'plan-marshall:manage-findings:manage-findings',

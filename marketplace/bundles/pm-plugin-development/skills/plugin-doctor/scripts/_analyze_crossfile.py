@@ -379,7 +379,11 @@ def cmd_cross_file(args) -> dict:
         return {'status': 'error', 'error': 'not_found', 'message': f'Skill path not found: {args.skill_path}'}
 
     if not skill_path.is_dir():
-        return {'status': 'error', 'error': 'not_directory', 'message': f'Skill path is not a directory: {args.skill_path}'}
+        return {
+            'status': 'error',
+            'error': 'not_directory',
+            'message': f'Skill path is not a directory: {args.skill_path}',
+        }
 
     try:
         result = analyze_cross_file(skill_path, args.similarity_threshold)

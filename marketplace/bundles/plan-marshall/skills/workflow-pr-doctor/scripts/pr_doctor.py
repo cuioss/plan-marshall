@@ -89,6 +89,7 @@ def run_child_cmd(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess:
     forwarded = forward_project_dir(cmd)
     return subprocess.run(forwarded, **kwargs)  # noqa: S603
 
+
 # ============================================================================
 # CONFIGURATION (loaded from pr-doctor-config.json)
 # ============================================================================

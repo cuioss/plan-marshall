@@ -213,7 +213,7 @@ def cmd_add(args) -> dict:
     if args.permission in allow_list:
         result['success'] = True
         result['action'] = 'already_exists'
-        result.setdefault("status", "success")
+        result.setdefault('status', 'success')
         return result
 
     allow_list.append(args.permission)
@@ -246,7 +246,7 @@ def cmd_remove(args) -> dict:
     if args.permission not in allow_list:
         result['success'] = True
         result['action'] = 'not_found'
-        result.setdefault("status", "success")
+        result.setdefault('status', 'success')
         return result
 
     allow_list.remove(args.permission)
@@ -816,7 +816,7 @@ def cmd_generate_wildcards(args) -> dict:
                 'wildcards_generated': 0,
             },
         }
-        result.setdefault("status", "success")
+        result.setdefault('status', 'success')
         return result
 
     skill_wildcards = generate_skill_wildcards(bundles)
@@ -875,7 +875,7 @@ def cmd_ensure_executor(args) -> dict:
     if EXECUTOR_PERMISSION in allow_list:
         result['action'] = 'already_exists'
         result['success'] = True
-        result.setdefault("status", "success")
+        result.setdefault('status', 'success')
         return result
 
     if not args.dry_run:
@@ -927,7 +927,7 @@ def cmd_cleanup_scripts(args) -> dict:
     if not individual_scripts and not broad_python:
         result['action'] = 'nothing_to_remove'
         result['success'] = True
-        result.setdefault("status", "success")
+        result.setdefault('status', 'success')
         return result
 
     if not args.dry_run:
@@ -1021,7 +1021,9 @@ def cmd_migrate_executor(args) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Permission fix - write operations for Claude Code settings', allow_abbrev=False)
+    parser = argparse.ArgumentParser(
+        description='Permission fix - write operations for Claude Code settings', allow_abbrev=False
+    )
     subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
     # apply-fixes subcommand
@@ -1057,7 +1059,9 @@ def main():
     p_ens.set_defaults(func=cmd_ensure)
 
     # consolidate subcommand
-    p_con = subparsers.add_parser('consolidate', help='Consolidate timestamped permissions with wildcards', allow_abbrev=False)
+    p_con = subparsers.add_parser(
+        'consolidate', help='Consolidate timestamped permissions with wildcards', allow_abbrev=False
+    )
     p_con_group = p_con.add_mutually_exclusive_group(required=True)
     p_con_group.add_argument('--settings', help='Path to settings file to analyze and modify')
     p_con_group.add_argument('--scope', choices=['global', 'project'], help='Target scope (auto-resolves path)')
@@ -1065,7 +1069,9 @@ def main():
     p_con.set_defaults(func=cmd_consolidate)
 
     # ensure-wildcards subcommand
-    p_ewc = subparsers.add_parser('ensure-wildcards', help='Ensure marketplace wildcards exist in settings', allow_abbrev=False)
+    p_ewc = subparsers.add_parser(
+        'ensure-wildcards', help='Ensure marketplace wildcards exist in settings', allow_abbrev=False
+    )
     p_ewc.add_argument('--settings', required=True, help='Path to settings file to update')
     p_ewc.add_argument('--marketplace-json', required=True, help='Path to marketplace.json file')
     p_ewc.add_argument('--dry-run', action='store_true', help='Preview changes without modifying files')
@@ -1083,7 +1089,9 @@ def main():
     p_apps.set_defaults(func=cmd_apply_project_step_permissions)
 
     # generate-wildcards subcommand
-    p_gen = subparsers.add_parser('generate-wildcards', help='Generate permission wildcards from marketplace inventory', allow_abbrev=False)
+    p_gen = subparsers.add_parser(
+        'generate-wildcards', help='Generate permission wildcards from marketplace inventory', allow_abbrev=False
+    )
     p_gen_group = p_gen.add_mutually_exclusive_group()
     p_gen_group.add_argument('--marketplace-dir', help='Marketplace directory to scan (reads plugin.json files)')
     p_gen_group.add_argument('--input', '-i', help='Input JSON file (default: stdin)')
@@ -1098,7 +1106,9 @@ def main():
     p_exe.set_defaults(func=cmd_ensure_executor)
 
     # cleanup-scripts subcommand
-    p_cln = subparsers.add_parser('cleanup-scripts', help='Remove redundant individual script permissions', allow_abbrev=False)
+    p_cln = subparsers.add_parser(
+        'cleanup-scripts', help='Remove redundant individual script permissions', allow_abbrev=False
+    )
     p_cln.add_argument(
         '--target', default='global', choices=['global', 'project'], help='Target settings file (default: global)'
     )
@@ -1107,7 +1117,9 @@ def main():
     p_cln.set_defaults(func=cmd_cleanup_scripts)
 
     # migrate-executor subcommand
-    p_mig = subparsers.add_parser('migrate-executor', help='Full migration to executor-only permission pattern', allow_abbrev=False)
+    p_mig = subparsers.add_parser(
+        'migrate-executor', help='Full migration to executor-only permission pattern', allow_abbrev=False
+    )
     p_mig.add_argument(
         '--target', default='global', choices=['global', 'project'], help='Target settings file (default: global)'
     )

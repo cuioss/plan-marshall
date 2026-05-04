@@ -56,26 +56,12 @@ class TestIterAddedLines:
         assert added == [('foo.py', 2, 'inserted')]
 
     def test_skips_removed_lines(self):
-        diff = (
-            '+++ b/bar.py\n'
-            '@@ -1,2 +1,2 @@\n'
-            '-removed_line\n'
-            '+added_line\n'
-            ' kept_line\n'
-        )
+        diff = '+++ b/bar.py\n@@ -1,2 +1,2 @@\n-removed_line\n+added_line\n kept_line\n'
         added = _iter_added_lines(diff)
         assert added == [('bar.py', 1, 'added_line')]
 
     def test_handles_multiple_files(self):
-        diff = (
-            '+++ b/a.py\n'
-            '@@ -0,0 +1,1 @@\n'
-            '+from_a\n'
-            'diff --git a/b.py b/b.py\n'
-            '+++ b/b.py\n'
-            '@@ -0,0 +1,1 @@\n'
-            '+from_b\n'
-        )
+        diff = '+++ b/a.py\n@@ -0,0 +1,1 @@\n+from_a\ndiff --git a/b.py b/b.py\n+++ b/b.py\n@@ -0,0 +1,1 @@\n+from_b\n'
         added = _iter_added_lines(diff)
         assert added == [('a.py', 1, 'from_a'), ('b.py', 1, 'from_b')]
 
@@ -130,9 +116,7 @@ class TestDetectUserFacingStrings:
     def test_detects_argparse_help(self):
         added = [('foo.py', 5, '    parser.add_argument("--foo", help="Set the foo flag")')]
         out = _detect_user_facing_strings(added)
-        assert any(
-            e['context'] == 'argparse_help' and 'Set the foo flag' in e['text'] for e in out
-        )
+        assert any(e['context'] == 'argparse_help' and 'Set the foo flag' in e['text'] for e in out)
 
     def test_detects_argparse_description(self):
         added = [('foo.py', 5, 'parser = argparse.ArgumentParser(description="Tool to do X")')]
@@ -142,16 +126,12 @@ class TestDetectUserFacingStrings:
     def test_detects_raise_message(self):
         added = [('foo.py', 5, '    raise ValueError("bad input shape")')]
         out = _detect_user_facing_strings(added)
-        assert any(
-            e['context'] == 'raise_message' and 'bad input shape' in e['text'] for e in out
-        )
+        assert any(e['context'] == 'raise_message' and 'bad input shape' in e['text'] for e in out)
 
     def test_detects_markdown_heading(self):
         added = [('doc.md', 3, '## Section Two')]
         out = _detect_user_facing_strings(added)
-        assert out == [
-            {'file': 'doc.md', 'line': 3, 'context': 'markdown_heading', 'text': 'Section Two'}
-        ]
+        assert out == [{'file': 'doc.md', 'line': 3, 'context': 'markdown_heading', 'text': 'Section Two'}]
 
     def test_detects_markdown_bullet(self):
         added = [('doc.md', 5, '- bullet item one')]
@@ -177,15 +157,7 @@ class TestDetectMarkdownSections:
         # Set up post-image markdown with parent/child structure.
         md = tmp_path / 'docs' / 'guide.md'
         md.parent.mkdir()
-        md.write_text(
-            '# Top\n'
-            '\n'
-            '## Section A\n'
-            '\n'
-            '## Section B\n'
-            '\n'
-            '## Section C\n'
-        )
+        md.write_text('# Top\n\n## Section A\n\n## Section B\n\n## Section C\n')
         # Pretend Section B (line 5) was added.
         added = [('docs/guide.md', 5, '## Section B')]
         out = _detect_markdown_sections(added, tmp_path)

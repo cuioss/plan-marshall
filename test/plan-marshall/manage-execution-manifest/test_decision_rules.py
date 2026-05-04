@@ -193,10 +193,7 @@ class TestBotEnforcementGuard:
             assert result['status'] == 'success'
             steps = result_phase_6_steps(result)
             # Guard appends `default:automated-review` (canonical prefixed form).
-            bare_step_names = {
-                s[len('default:'):] if s.startswith('default:') else s
-                for s in steps
-            }
+            bare_step_names = {s[len('default:') :] if s.startswith('default:') else s for s in steps}
             assert 'automated-review' in bare_step_names
 
     def test_remediates_for_gitlab_when_automated_review_missing(self):
@@ -211,10 +208,7 @@ class TestBotEnforcementGuard:
             assert result is not None
             assert result['status'] == 'success'
             steps = result_phase_6_steps(result)
-            bare_step_names = {
-                s[len('default:'):] if s.startswith('default:') else s
-                for s in steps
-            }
+            bare_step_names = {s[len('default:') :] if s.startswith('default:') else s for s in steps}
             assert 'automated-review' in bare_step_names
 
     def test_no_op_when_automated_review_present(self):

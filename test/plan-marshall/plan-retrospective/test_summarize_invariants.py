@@ -26,12 +26,7 @@ from _fixtures import (  # noqa: E402
 from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
 
 SCRIPT_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-retrospective'
-    / 'scripts'
-    / 'summarize-invariants.py'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'summarize-invariants.py'
 )
 
 
@@ -67,9 +62,7 @@ class TestHappyPath:
         init_phase = next(p for p in data['phases'] if p['phase'] == '1-init')
         assert 'main_sha' in init_phase['invariants_present']
 
-    def test_full_handshakes_produces_no_phase_handshake_findings(
-        self, tmp_path, monkeypatch
-    ):
+    def test_full_handshakes_produces_no_phase_handshake_findings(self, tmp_path, monkeypatch):
         """A fully-populated handshakes.toon must yield zero ``phase_handshake`` findings.
 
         Positive case: the canonical missing-data warning
@@ -82,14 +75,8 @@ class TestHappyPath:
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         assert result.success, result.stderr
         data = result.toon()
-        bulk = [
-            f for f in data['findings']
-            if f.get('invariant') == 'phase_handshake'
-        ]
-        assert bulk == [], (
-            f'fully-populated handshakes.toon must not produce phase_handshake '
-            f'findings, got {bulk}'
-        )
+        bulk = [f for f in data['findings'] if f.get('invariant') == 'phase_handshake']
+        assert bulk == [], f'fully-populated handshakes.toon must not produce phase_handshake findings, got {bulk}'
 
 
 class TestFaultInjection:
@@ -104,9 +91,7 @@ class TestFaultInjection:
         assert result.success, result.stderr
         data = result.toon()
         messages = [f.get('message', '') for f in data['findings']]
-        assert 'No handshakes.toon found' in messages, (
-            f'expected canonical warning, got messages: {messages}'
-        )
+        assert 'No handshakes.toon found' in messages, f'expected canonical warning, got messages: {messages}'
 
     def test_handshakes_toon_deleted_emits_warning(self, tmp_path, monkeypatch):
         """If the handshakes file is deleted post-setup, the warning fires.
@@ -145,10 +130,7 @@ class TestFaultInjection:
         phase_names = [p['phase'] for p in data['phases']]
         assert phase_names == ['1-init', '6-finalize'], phase_names
         # No bulk missing-data warning when handshakes.toon is present.
-        bulk = [
-            f for f in data['findings']
-            if f.get('invariant') == 'phase_handshake'
-        ]
+        bulk = [f for f in data['findings'] if f.get('invariant') == 'phase_handshake']
         assert bulk == [], bulk
 
 
@@ -196,9 +178,7 @@ class TestDriftDetection:
 
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         data = result.toon()
-        assert not any(
-            d.get('invariant') == 'pending_tasks_count' for d in data['drift']
-        ), data['drift']
+        assert not any(d.get('invariant') == 'pending_tasks_count' for d in data['drift']), data['drift']
 
 
 class TestExpectedInvariants:
@@ -230,9 +210,7 @@ class TestExpectedInvariants:
 class TestArchivedMode:
     def test_archived_plan_summary(self, tmp_path):
         archived = setup_archived_plan(tmp_path)
-        result = run_script(
-            SCRIPT_PATH, 'run', '--archived-plan-path', str(archived), '--mode', 'archived'
-        )
+        result = run_script(SCRIPT_PATH, 'run', '--archived-plan-path', str(archived), '--mode', 'archived')
         assert result.success, result.stderr
         data = result.toon()
         assert data['status'] == 'success'

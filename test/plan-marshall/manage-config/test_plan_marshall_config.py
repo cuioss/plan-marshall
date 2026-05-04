@@ -24,7 +24,12 @@ from test_helpers import (
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-config'
+    / 'scripts'
 )
 
 
@@ -59,7 +64,6 @@ from conftest import PlanContext, run_script  # noqa: E402
 def test_init_creates_marshal_json(monkeypatch):
     """Test init creates marshal.json with defaults."""
     with PlanContext() as ctx:
-
         result = cmd_init(Namespace(force=False))
 
         assert result['status'] == 'success'
@@ -138,14 +142,10 @@ def test_plan_phase_5_execute_set_rebase_strategy_invalid_rejected(monkeypatch):
             )
         )
 
-        assert result['status'] == 'error', (
-            f"Invalid rebase_strategy must be rejected; got {result}"
-        )
+        assert result['status'] == 'error', f'Invalid rebase_strategy must be rejected; got {result}'
 
         # Verify default was not overwritten on disk
-        verify = cmd_plan(
-            Namespace(sub_noun='phase-5-execute', verb='get', field='rebase_strategy')
-        )
+        verify = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='get', field='rebase_strategy'))
         assert verify['status'] == 'success'
         assert verify['value'] == 'merge'
 
@@ -168,9 +168,7 @@ def test_plan_phase_5_execute_set_rebase_strategy_valid_accepted(monkeypatch):
         assert result['value'] == 'rebase'
 
         # Verify persisted
-        verify = cmd_plan(
-            Namespace(sub_noun='phase-5-execute', verb='get', field='rebase_strategy')
-        )
+        verify = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='get', field='rebase_strategy'))
         assert verify['value'] == 'rebase'
 
 
@@ -434,6 +432,7 @@ def test_validate_domain_invariants_overlap_raises():
     """Validation raises ValueError when defaults and optionals overlap."""
     domain = {'defaults': ['plan-marshall:dev-general-practices'], 'optionals': ['plan-marshall:dev-general-practices']}
     import pytest
+
     with pytest.raises(ValueError, match='must not appear in both defaults and optionals'):
         _config_defaults.validate_domain_invariants(domain)
 
@@ -461,8 +460,7 @@ def test_dev_general_practices_not_in_system_domain():
     system = _config_defaults.DEFAULT_SYSTEM_DOMAIN
     all_skills = system.get('defaults', []) + system.get('optionals', [])
     assert 'plan-marshall:dev-general-practices' not in all_skills, (
-        'dev-general-practices should not be in system domain — '
-        'loaded explicitly by each phase skill and agent'
+        'dev-general-practices should not be in system domain — loaded explicitly by each phase skill and agent'
     )
 
 

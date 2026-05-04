@@ -25,9 +25,7 @@ import manage_session  # type: ignore[import-not-found]  # noqa: E402
 
 from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
 
-SCRIPT_PATH = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'scripts' / 'manage_session.py'
-)
+SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'scripts' / 'manage_session.py'
 
 
 def _seed_by_cwd(home: Path, cwd: str, session_id: str) -> Path:

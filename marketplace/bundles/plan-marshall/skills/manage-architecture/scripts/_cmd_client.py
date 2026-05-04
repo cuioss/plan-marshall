@@ -79,9 +79,7 @@ def get_project_info(project_dir: str = '.') -> dict[str, Any]:
 
         enriched = load_module_enriched_or_empty(name, project_dir)
         paths = derived.get('paths', {})
-        module_overview.append(
-            {'name': name, 'path': paths.get('module', ''), 'purpose': enriched.get('purpose', '')}
-        )
+        module_overview.append({'name': name, 'path': paths.get('module', ''), 'purpose': enriched.get('purpose', '')})
 
     return {
         'project': {'name': meta.get('name', ''), 'description': meta.get('description', '')},
@@ -1082,7 +1080,6 @@ def cmd_impact(args) -> dict:
         return error_result_module_not_found(args.module, modules)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
-
 
 
 # =============================================================================

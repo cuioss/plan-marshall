@@ -38,9 +38,7 @@ import pytest
 # test_argparse_safety.py).
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 _SCRIPTS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills'
-    / 'plugin-doctor' / 'scripts'
+    PROJECT_ROOT / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'scripts'
 )
 
 
@@ -103,14 +101,12 @@ def _flat_subparsers_script(verbs: list[str]) -> str:
     """Produce an argparse script source with a single level of subparsers."""
     lines = [
         'import argparse',
-        "parser = argparse.ArgumentParser(allow_abbrev=False)",
-        "subparsers = parser.add_subparsers()",
+        'parser = argparse.ArgumentParser(allow_abbrev=False)',
+        'subparsers = parser.add_subparsers()',
     ]
     for verb in verbs:
         safe_var = verb.replace('-', '_')
-        lines.append(
-            f"p_{safe_var} = subparsers.add_parser({verb!r}, allow_abbrev=False)"
-        )
+        lines.append(f'p_{safe_var} = subparsers.add_parser({verb!r}, allow_abbrev=False)')
     return '\n'.join(lines) + '\n'
 
 
@@ -124,12 +120,12 @@ def _request_clarify_script() -> str:
     """
     return (
         'import argparse\n'
-        "parser = argparse.ArgumentParser(allow_abbrev=False)\n"
+        'parser = argparse.ArgumentParser(allow_abbrev=False)\n'
         'subparsers = parser.add_subparsers()\n'
         "p_request = subparsers.add_parser('request', allow_abbrev=False)\n"
         'request_subs = p_request.add_subparsers()\n'
         "p_request_read = request_subs.add_parser('read', allow_abbrev=False)\n"
-        "p_request_mark = request_subs.add_parser("
+        'p_request_mark = request_subs.add_parser('
         "'mark-clarified', allow_abbrev=False)\n"
         "p_refresh = subparsers.add_parser('refresh', allow_abbrev=False)\n"
     )
@@ -143,7 +139,7 @@ def _deep_subparsers_script() -> str:
     """
     return (
         'import argparse\n'
-        "parser = argparse.ArgumentParser(allow_abbrev=False)\n"
+        'parser = argparse.ArgumentParser(allow_abbrev=False)\n'
         'subparsers = parser.add_subparsers()\n'
         "p_alpha = subparsers.add_parser('alpha', allow_abbrev=False)\n"
         "p_leaf = subparsers.add_parser('leaf', allow_abbrev=False)\n"
@@ -215,7 +211,7 @@ def test_build_subparser_tree_registers_bare_add_parser_calls(tmp_path):
     script = tmp_path / 'mixed.py'
     script.write_text(
         'import argparse\n'
-        "parser = argparse.ArgumentParser(allow_abbrev=False)\n"
+        'parser = argparse.ArgumentParser(allow_abbrev=False)\n'
         'subparsers = parser.add_subparsers()\n'
         # Assigned form — historical happy path.
         "p_a = subparsers.add_parser('a', allow_abbrev=False)\n"
@@ -236,9 +232,7 @@ def test_build_subparser_tree_no_subparsers(tmp_path):
     # Arrange
     script = tmp_path / 'bare.py'
     script.write_text(
-        'import argparse\n'
-        "parser = argparse.ArgumentParser(allow_abbrev=False)\n"
-        "parser.add_argument('--flag')\n",
+        "import argparse\nparser = argparse.ArgumentParser(allow_abbrev=False)\nparser.add_argument('--flag')\n",
     )
 
     # Act
@@ -269,25 +263,25 @@ def test_build_subparser_tree_real_architecture_script_includes_bare_verbs():
     # at module top).
     script_path = (
         PROJECT_ROOT
-        / 'marketplace' / 'bundles' / 'plan-marshall'
-        / 'skills' / 'manage-architecture' / 'scripts' / 'architecture.py'
+        / 'marketplace'
+        / 'bundles'
+        / 'plan-marshall'
+        / 'skills'
+        / 'manage-architecture'
+        / 'scripts'
+        / 'architecture.py'
     )
-    assert script_path.is_file(), (
-        f'Expected real architecture.py at {script_path}; project layout '
-        f'may have changed.'
-    )
+    assert script_path.is_file(), f'Expected real architecture.py at {script_path}; project layout may have changed.'
 
     # Act
     tree = build_subparser_tree(script_path)
 
     # Assert — both bare-form verbs are registered as top-level keys.
     assert 'derived' in tree, (
-        f"Bare 'subparsers.add_parser(\"derived\", ...)' was not "
-        f'registered. Top-level verbs found: {sorted(tree)}'
+        f'Bare \'subparsers.add_parser("derived", ...)\' was not registered. Top-level verbs found: {sorted(tree)}'
     )
     assert 'info' in tree, (
-        f"Bare 'subparsers.add_parser(\"info\", ...)' was not "
-        f'registered. Top-level verbs found: {sorted(tree)}'
+        f'Bare \'subparsers.add_parser("info", ...)\' was not registered. Top-level verbs found: {sorted(tree)}'
     )
 
 
@@ -433,9 +427,7 @@ def test_extract_invocations_basic(tmp_path):
     assert inv.skill == 'manage-plan-documents'
     assert inv.script == 'manage-plan-documents'
     assert inv.verb_chain == ('request', 'read')
-    assert inv.script_notation == (
-        'plan-marshall:manage-plan-documents:manage-plan-documents'
-    )
+    assert inv.script_notation == ('plan-marshall:manage-plan-documents:manage-plan-documents')
 
 
 def test_extract_invocations_ignore_marker_suppresses(tmp_path):
@@ -444,10 +436,7 @@ def test_extract_invocations_ignore_marker_suppresses(tmp_path):
     md = tmp_path / 'SKILL.md'
     md.write_text(
         'Doc text.\n'
-        '<!-- doctor-ignore: verb-check -->\n'
-        + _bash_fence(
-            'python3 .plan/execute-script.py a:b:c clarify --flag'
-        )
+        '<!-- doctor-ignore: verb-check -->\n' + _bash_fence('python3 .plan/execute-script.py a:b:c clarify --flag')
     )
 
     # Act
@@ -462,10 +451,7 @@ def test_extract_invocations_ignore_marker_tolerates_blank_line(tmp_path):
     # Arrange
     md = tmp_path / 'SKILL.md'
     md.write_text(
-        '<!-- doctor-ignore: verb-check -->\n'
-        '   \n'
-        '\n'
-        + _bash_fence('python3 .plan/execute-script.py a:b:c verb')
+        '<!-- doctor-ignore: verb-check -->\n   \n\n' + _bash_fence('python3 .plan/execute-script.py a:b:c verb')
     )
 
     # Act
@@ -479,11 +465,7 @@ def test_extract_invocations_skips_non_bash_fence(tmp_path):
     """Python-tagged fences are not scanned."""
     # Arrange
     md = tmp_path / 'SKILL.md'
-    md.write_text(
-        '```python\n'
-        'python3 .plan/execute-script.py a:b:c verb\n'
-        '```\n'
-    )
+    md.write_text('```python\npython3 .plan/execute-script.py a:b:c verb\n```\n')
 
     # Act
     invocations = extract_invocations(md)
@@ -496,9 +478,7 @@ def test_extract_invocations_skips_non_invocation_bash(tmp_path):
     """Bash fences without the executor invocation are safely ignored."""
     # Arrange
     md = tmp_path / 'SKILL.md'
-    md.write_text(
-        _bash_fence('ls -la\necho hello\n')
-    )
+    md.write_text(_bash_fence('ls -la\necho hello\n'))
 
     # Act
     invocations = extract_invocations(md)
@@ -511,13 +491,7 @@ def test_extract_invocations_multiline_continuation(tmp_path):
     """Backslash continuations join into a single logical invocation."""
     # Arrange
     md = tmp_path / 'SKILL.md'
-    md.write_text(
-        _bash_fence(
-            'python3 .plan/execute-script.py a:b:c verb sub-verb \\\n'
-            '  --plan-id foo \\\n'
-            '  --flag'
-        )
-    )
+    md.write_text(_bash_fence('python3 .plan/execute-script.py a:b:c verb sub-verb \\\n  --plan-id foo \\\n  --flag'))
 
     # Act
     invocations = extract_invocations(md)
@@ -531,11 +505,7 @@ def test_extract_invocations_stops_chain_at_flag(tmp_path):
     """A flag terminates verb-chain accumulation."""
     # Arrange
     md = tmp_path / 'SKILL.md'
-    md.write_text(
-        _bash_fence(
-            'python3 .plan/execute-script.py a:b:c read --plan-id foo'
-        )
-    )
+    md.write_text(_bash_fence('python3 .plan/execute-script.py a:b:c read --plan-id foo'))
 
     # Act
     invocations = extract_invocations(md)
@@ -599,10 +569,7 @@ def test_analyze_unknown_top_level_verb(tmp_path):
 
     caller_skill = _make_skill(bundles, 'plan-marshall', 'phase-3-outline')
     (caller_skill / 'SKILL.md').write_text(
-        _bash_fence(
-            'python3 .plan/execute-script.py '
-            'plan-marshall:manage-status:manage-status bogusverb --flag'
-        )
+        _bash_fence('python3 .plan/execute-script.py plan-marshall:manage-status:manage-status bogusverb --flag')
     )
 
     # Act
@@ -612,9 +579,7 @@ def test_analyze_unknown_top_level_verb(tmp_path):
     assert len(findings) == 1
     finding = findings[0]
     assert finding['rule_id'] == RULE_ID
-    assert finding['script_notation'] == (
-        'plan-marshall:manage-status:manage-status'
-    )
+    assert finding['script_notation'] == ('plan-marshall:manage-status:manage-status')
     assert finding['verb_chain'] == ['bogusverb']
     assert finding['first_unknown_segment'] == 'bogusverb'
     assert finding['file'] == str(caller_skill / 'SKILL.md')
@@ -664,9 +629,7 @@ def test_analyze_honors_ignore_marker(tmp_path):
     (caller_skill / 'SKILL.md').write_text(
         '<!-- doctor-ignore: verb-check -->\n'
         + _bash_fence(
-            'python3 .plan/execute-script.py '
-            'plan-marshall:manage-plan-documents:manage-plan-documents '
-            'request clarify'
+            'python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request clarify'
         )
     )
 
@@ -741,10 +704,7 @@ def test_analyze_nested_three_levels_happy_path(tmp_path):
 
     caller_skill = _make_skill(bundles, 'pm', 'caller-skill')
     (caller_skill / 'SKILL.md').write_text(
-        _bash_fence(
-            'python3 .plan/execute-script.py pm:deep-skill:deep-script '
-            'alpha beta gamma --flag'
-        )
+        _bash_fence('python3 .plan/execute-script.py pm:deep-skill:deep-script alpha beta gamma --flag')
     )
 
     # Act
@@ -763,10 +723,7 @@ def test_analyze_nested_three_levels_unknown_leaf(tmp_path):
 
     caller_skill = _make_skill(bundles, 'pm', 'caller-skill')
     (caller_skill / 'SKILL.md').write_text(
-        _bash_fence(
-            'python3 .plan/execute-script.py pm:deep-skill:deep-script '
-            'alpha beta stale'
-        )
+        _bash_fence('python3 .plan/execute-script.py pm:deep-skill:deep-script alpha beta stale')
     )
 
     # Act
@@ -797,10 +754,7 @@ def test_analyze_scans_skill_md_and_standards_only(tmp_path):
 
     caller_skill = _make_skill(bundles, 'pm', 'caller-skill')
 
-    drifted_body = _bash_fence(
-        'python3 .plan/execute-script.py pm:target-skill:target-script '
-        'request clarify'
-    )
+    drifted_body = _bash_fence('python3 .plan/execute-script.py pm:target-skill:target-script request clarify')
 
     (caller_skill / 'SKILL.md').write_text(drifted_body)
 
@@ -824,11 +778,9 @@ def test_analyze_scans_skill_md_and_standards_only(tmp_path):
     findings = analyze_verb_chains(caller_skill)
 
     # Assert
-    flagged_files = {Path(f['file']).relative_to(caller_skill).as_posix()
-                     for f in findings}
+    flagged_files = {Path(f['file']).relative_to(caller_skill).as_posix() for f in findings}
     assert flagged_files == {'SKILL.md', 'standards/s1.md'}, (
-        f'Expected only SKILL.md + standards/s1.md to be scanned, got '
-        f'{flagged_files}'
+        f'Expected only SKILL.md + standards/s1.md to be scanned, got {flagged_files}'
     )
 
 
@@ -838,10 +790,7 @@ def test_analyze_skips_unresolvable_notation(tmp_path):
     bundles = _make_marketplace(tmp_path)
     caller_skill = _make_skill(bundles, 'pm', 'caller-skill')
     (caller_skill / 'SKILL.md').write_text(
-        _bash_fence(
-            'python3 .plan/execute-script.py '
-            'ghost-bundle:ghost-skill:ghost-script request clarify'
-        )
+        _bash_fence('python3 .plan/execute-script.py ghost-bundle:ghost-skill:ghost-script request clarify')
     )
 
     # Act
@@ -856,9 +805,7 @@ def test_analyze_missing_marketplace_root_returns_empty(tmp_path):
     # Arrange
     orphan_skill = tmp_path / 'orphan'
     orphan_skill.mkdir()
-    (orphan_skill / 'SKILL.md').write_text(
-        _bash_fence('python3 .plan/execute-script.py a:b:c verb')
-    )
+    (orphan_skill / 'SKILL.md').write_text(_bash_fence('python3 .plan/execute-script.py a:b:c verb'))
 
     # Act
     findings = analyze_verb_chains(orphan_skill)
@@ -895,10 +842,7 @@ def test_finding_shape_contract(tmp_path):
 
     caller_skill = _make_skill(bundles, 'pm', 'caller-skill')
     (caller_skill / 'SKILL.md').write_text(
-        _bash_fence(
-            'python3 .plan/execute-script.py pm:target-skill:target-script '
-            'request clarify'
-        )
+        _bash_fence('python3 .plan/execute-script.py pm:target-skill:target-script request clarify')
     )
 
     # Act
@@ -908,8 +852,12 @@ def test_finding_shape_contract(tmp_path):
     assert len(findings) == 1
     finding = findings[0]
     expected_keys = {
-        'rule_id', 'file', 'line', 'script_notation',
-        'verb_chain', 'first_unknown_segment',
+        'rule_id',
+        'file',
+        'line',
+        'script_notation',
+        'verb_chain',
+        'first_unknown_segment',
     }
     assert set(finding.keys()) == expected_keys
     assert isinstance(finding['rule_id'], str)

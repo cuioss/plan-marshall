@@ -197,7 +197,11 @@ def cmd_get_root(args: argparse.Namespace) -> dict:
     if plugin_root:
         return {'status': 'success', 'plugin_root': str(plugin_root), 'source': source}
     else:
-        return {'status': 'error', 'error': 'Plugin root not found', 'hint': 'Ensure plan-marshall plugin is installed via Claude Code'}
+        return {
+            'status': 'error',
+            'error': 'Plugin root not found',
+            'hint': 'Ensure plan-marshall plugin is installed via Claude Code',
+        }
 
 
 def cmd_resolve(args: argparse.Namespace) -> dict:
@@ -217,9 +221,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict:
 
 @safe_main
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description='Bootstrap script for plugin root detection', allow_abbrev=False
-    )
+    parser = argparse.ArgumentParser(description='Bootstrap script for plugin root detection', allow_abbrev=False)
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # get-root subcommand
@@ -227,9 +229,7 @@ def main() -> int:
     root_parser.add_argument('--refresh', action='store_true', help='Force re-detection even if cached')
 
     # resolve subcommand
-    resolve_parser = subparsers.add_parser(
-        'resolve', help='Resolve a path relative to a bundle', allow_abbrev=False
-    )
+    resolve_parser = subparsers.add_parser('resolve', help='Resolve a path relative to a bundle', allow_abbrev=False)
     resolve_parser.add_argument('--bundle', required=True, help="Bundle name (e.g., 'plan-marshall')")
     resolve_parser.add_argument('--path', required=True, help='Path relative to bundle root')
 

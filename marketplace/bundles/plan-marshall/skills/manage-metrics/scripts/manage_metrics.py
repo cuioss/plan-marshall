@@ -629,10 +629,7 @@ def _attribute_subagent_usage(
     if matching_phase is None:
         return False
 
-    fields = {
-        match.group(1): int(match.group(2))
-        for match in USAGE_FIELD_RE.finditer(body)
-    }
+    fields = {match.group(1): int(match.group(2)) for match in USAGE_FIELD_RE.finditer(body)}
     bucket = per_phase.setdefault(
         matching_phase,
         {'total_tokens': 0, 'tool_uses': 0, 'duration_ms': 0, 'samples': 0},
@@ -744,9 +741,7 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
                     if not payload or '<usage>' not in payload:
                         continue
                     for tag_match in USAGE_TAG_RE.finditer(payload):
-                        if _attribute_subagent_usage(
-                            timestamp, windows, tag_match.group(1), per_phase_subagent
-                        ):
+                        if _attribute_subagent_usage(timestamp, windows, tag_match.group(1), per_phase_subagent):
                             subagent_calls_attributed += 1
     except OSError:
         return {
@@ -789,9 +784,7 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
 
 @safe_main
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description='Plan metrics collection and reporting', allow_abbrev=False
-    )
+    parser = argparse.ArgumentParser(description='Plan metrics collection and reporting', allow_abbrev=False)
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # start-phase
@@ -814,9 +807,7 @@ def main() -> int:
     ep.set_defaults(func=cmd_end_phase)
 
     # generate
-    gp = subparsers.add_parser(
-        'generate', help='Generate metrics.md from collected data', allow_abbrev=False
-    )
+    gp = subparsers.add_parser('generate', help='Generate metrics.md from collected data', allow_abbrev=False)
     add_plan_id_arg(gp)
     gp.set_defaults(func=cmd_generate)
 
@@ -837,15 +828,11 @@ def main() -> int:
     add_plan_id_arg(pb)
     pb.add_argument('--prev-phase', required=True, help='Phase name being closed (e.g. 1-init)')
     pb.add_argument('--next-phase', required=True, help='Phase name being entered (e.g. 2-refine)')
-    pb.add_argument(
-        '--total-tokens', type=int, default=None, help='Total tokens forwarded to end-phase (optional)'
-    )
+    pb.add_argument('--total-tokens', type=int, default=None, help='Total tokens forwarded to end-phase (optional)')
     pb.add_argument(
         '--duration-ms', type=int, default=None, help='Agent duration (ms) forwarded to end-phase (optional)'
     )
-    pb.add_argument(
-        '--tool-uses', type=int, default=None, help='Tool use count forwarded to end-phase (optional)'
-    )
+    pb.add_argument('--tool-uses', type=int, default=None, help='Tool use count forwarded to end-phase (optional)')
     pb.set_defaults(func=cmd_phase_boundary)
 
     # accumulate-agent-usage
@@ -854,7 +841,7 @@ def main() -> int:
         help='Persist running per-phase totals of subagent <usage> data',
         description=(
             'Add the supplied --total-tokens / --tool-uses / --duration-ms '
-            "values to the per-phase accumulator file at "
+            'values to the per-phase accumulator file at '
             'work/metrics-accumulator-{phase}.toon, incrementing the samples '
             'counter. Initialises the file when absent and is idempotent across '
             'successive calls. cmd_end_phase / cmd_phase_boundary read this '
@@ -865,21 +852,13 @@ def main() -> int:
     )
     add_plan_id_arg(acc)
     add_phase_arg(acc)
-    acc.add_argument(
-        '--total-tokens', type=int, default=None, help='Subagent total_tokens to add to the running total'
-    )
-    acc.add_argument(
-        '--tool-uses', type=int, default=None, help='Subagent tool_uses to add to the running total'
-    )
-    acc.add_argument(
-        '--duration-ms', type=int, default=None, help='Subagent duration_ms to add to the running total'
-    )
+    acc.add_argument('--total-tokens', type=int, default=None, help='Subagent total_tokens to add to the running total')
+    acc.add_argument('--tool-uses', type=int, default=None, help='Subagent tool_uses to add to the running total')
+    acc.add_argument('--duration-ms', type=int, default=None, help='Subagent duration_ms to add to the running total')
     acc.set_defaults(func=cmd_accumulate_agent_usage)
 
     # enrich
-    enr = subparsers.add_parser(
-        'enrich', help='Enrich metrics from JSONL transcript', allow_abbrev=False
-    )
+    enr = subparsers.add_parser('enrich', help='Enrich metrics from JSONL transcript', allow_abbrev=False)
     add_plan_id_arg(enr)
     add_session_id_arg(enr)
     enr.set_defaults(func=cmd_enrich)

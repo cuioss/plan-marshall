@@ -298,17 +298,13 @@ def main() -> int:
     q_resolve_parser.set_defaults(func=cmd_qgate_resolve)
 
     # qgate clear
-    q_clear_parser = qgate_sub.add_parser(
-        'clear', help='Clear Q-Gate findings for a phase', allow_abbrev=False
-    )
+    q_clear_parser = qgate_sub.add_parser('clear', help='Clear Q-Gate findings for a phase', allow_abbrev=False)
     add_plan_id_arg(q_clear_parser)
     add_phase_arg(q_clear_parser, choices=QGATE_PHASES)
     q_clear_parser.set_defaults(func=cmd_qgate_clear)
 
     # --- Assessment commands ---
-    assessment_parser = subparsers.add_parser(
-        'assessment', help='Manage component assessments', allow_abbrev=False
-    )
+    assessment_parser = subparsers.add_parser('assessment', help='Manage component assessments', allow_abbrev=False)
     assessment_sub = assessment_parser.add_subparsers(dest='action', required=True)
 
     # assessment add

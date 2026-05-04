@@ -10,11 +10,16 @@ from _analyze_shared import check_yaml_validity, extract_frontmatter, remove_cod
 # must not end with any of these — see pm-plugin-development:plugin-architecture
 # references/skill-design.md "Skill Naming Convention".
 RESERVED_NOUN_SUFFIXES = (
-    '-executor', '-executors',
-    '-manager', '-managers',
-    '-runner', '-runners',
-    '-handler', '-handlers',
-    '-orchestrator', '-orchestrators',
+    '-executor',
+    '-executors',
+    '-manager',
+    '-managers',
+    '-runner',
+    '-runners',
+    '-handler',
+    '-handlers',
+    '-orchestrator',
+    '-orchestrators',
 )
 
 

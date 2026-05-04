@@ -58,12 +58,7 @@ import _invariants as inv  # noqa: E402
 from toon_parser import parse_toon  # noqa: E402
 
 SUMMARIZE_SCRIPT = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-retrospective'
-    / 'scripts'
-    / 'summarize-invariants.py'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'summarize-invariants.py'
 )
 
 STATUS_SCRIPT = get_script_path('plan-marshall', 'manage-status', 'manage_status.py')
@@ -234,9 +229,7 @@ def _create_plan(plan_id: str, title: str = 'E2E Handshake') -> None:
 
 
 def _transition(plan_id: str, completed_phase: str) -> dict:
-    result = run_script(
-        STATUS_SCRIPT, 'transition', '--plan-id', plan_id, '--completed', completed_phase
-    )
+    result = run_script(STATUS_SCRIPT, 'transition', '--plan-id', plan_id, '--completed', completed_phase)
     assert result.success, f'manage-status transition failed: {result.stderr}'
     return parse_toon(result.stdout)
 
@@ -246,9 +239,7 @@ def _transition(plan_id: str, completed_phase: str) -> dict:
 # =============================================================================
 
 
-def test_lifecycle_captures_handshakes_for_all_phases(
-    stub_handshake_run_script, stub_load_status_metadata
-) -> None:
+def test_lifecycle_captures_handshakes_for_all_phases(stub_handshake_run_script, stub_load_status_metadata) -> None:
     """Driving the orchestrator-shape sequence populates one row per phase.
 
     Iterates the five inter-phase boundaries (``1-init`` → ``2-refine`` …
@@ -281,9 +272,7 @@ def test_lifecycle_captures_handshakes_for_all_phases(
 
             if prev_phase is not None:
                 ver = cmds.cmd_verify(_verify_args(plan_id, prev_phase))
-                assert ver['status'] == 'ok', (
-                    f'verify {prev_phase} returned {ver["status"]}: {ver}'
-                )
+                assert ver['status'] == 'ok', f'verify {prev_phase} returned {ver["status"]}: {ver}'
             prev_phase = phase
 
         # Inspect handshakes.toon directly via the context's plan_dir.
@@ -292,9 +281,7 @@ def test_lifecycle_captures_handshakes_for_all_phases(
         assert handshakes_path.exists(), 'handshakes.toon must be written'
         parsed = parse_toon(handshakes_path.read_text(encoding='utf-8'))
         rows = parsed.get('handshakes') or []
-        assert len(rows) == 5, (
-            f'expected 5 handshake rows, got {len(rows)}: {rows}'
-        )
+        assert len(rows) == 5, f'expected 5 handshake rows, got {len(rows)}: {rows}'
 
         captured_phases = [r['phase'] for r in rows]
         assert captured_phases == capture_phases, captured_phases
@@ -303,8 +290,7 @@ def test_lifecycle_captures_handshakes_for_all_phases(
             for invariant in _NON_NULL_CORE_INVARIANTS:
                 value = row.get(invariant)
                 assert value not in (None, ''), (
-                    f'phase {row["phase"]} missing non-null invariant '
-                    f'{invariant}: row={row}'
+                    f'phase {row["phase"]} missing non-null invariant {invariant}: row={row}'
                 )
 
 
@@ -331,12 +317,8 @@ def test_lifecycle_summarize_invariants_zero_warnings_live_mode(
         assert result.success, result.stderr
         data = result.toon()
 
-        bulk = [
-            f for f in data['findings'] if f.get('invariant') == 'phase_handshake'
-        ]
-        assert bulk == [], (
-            f'live mode must not produce phase_handshake findings, got {bulk}'
-        )
+        bulk = [f for f in data['findings'] if f.get('invariant') == 'phase_handshake']
+        assert bulk == [], f'live mode must not produce phase_handshake findings, got {bulk}'
 
 
 def test_lifecycle_summarize_invariants_zero_warnings_archived_mode(
@@ -375,12 +357,8 @@ def test_lifecycle_summarize_invariants_zero_warnings_archived_mode(
     )
     assert result.success, result.stderr
     data = result.toon()
-    bulk = [
-        f for f in data['findings'] if f.get('invariant') == 'phase_handshake'
-    ]
-    assert bulk == [], (
-        f'archived mode must not produce phase_handshake findings, got {bulk}'
-    )
+    bulk = [f for f in data['findings'] if f.get('invariant') == 'phase_handshake']
+    assert bulk == [], f'archived mode must not produce phase_handshake findings, got {bulk}'
 
 
 def test_regression_missing_handshakes_warns() -> None:
@@ -397,13 +375,9 @@ def test_regression_missing_handshakes_warns() -> None:
         # Deliberately do NOT call cmds.cmd_capture — handshakes.toon stays
         # absent.
 
-        result = run_script(
-            SUMMARIZE_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live'
-        )
+        result = run_script(SUMMARIZE_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live')
         assert result.success, result.stderr
         data = result.toon()
 
         messages = [f.get('message', '') for f in data['findings']]
-        assert 'No handshakes.toon found' in messages, (
-            f'expected canonical warning, got messages: {messages}'
-        )
+        assert 'No handshakes.toon found' in messages, f'expected canonical warning, got messages: {messages}'

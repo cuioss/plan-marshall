@@ -194,9 +194,7 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('pr_create', err)
 
-    body, err_dict = read_and_consume_body(
-        args.plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None)
-    )
+    body, err_dict = read_and_consume_body(args.plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
     if err_dict:
         return make_error('pr_create', err_dict.get('message', 'body not prepared'))
 
@@ -214,9 +212,7 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
     if returncode != 0:
         return make_error('pr_create', 'Failed to create MR', stderr.strip())
 
-    delete_consumed_body(
-        args.plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None)
-    )
+    delete_consumed_body(args.plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
 
     # Parse the URL from output (glab mr create outputs the URL)
     mr_url = stdout.strip()
@@ -366,9 +362,7 @@ def cmd_pr_reply(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('pr_reply', err)
 
-    body, err_dict = read_and_consume_body(
-        args.plan_id, BODY_KIND_PR_REPLY, getattr(args, 'slot', None)
-    )
+    body, err_dict = read_and_consume_body(args.plan_id, BODY_KIND_PR_REPLY, getattr(args, 'slot', None))
     if err_dict or body is None:
         return make_error('pr_reply', (err_dict or {}).get('message', 'body not prepared'))
 
@@ -377,9 +371,7 @@ def cmd_pr_reply(args: argparse.Namespace) -> dict:
     if returncode != 0:
         return make_error('pr_reply', 'Failed to post note', stderr.strip())
 
-    delete_consumed_body(
-        args.plan_id, BODY_KIND_PR_REPLY, getattr(args, 'slot', None)
-    )
+    delete_consumed_body(args.plan_id, BODY_KIND_PR_REPLY, getattr(args, 'slot', None))
     return {
         'status': 'success',
         'operation': 'pr_reply',
@@ -422,9 +414,7 @@ def cmd_pr_thread_reply(args: argparse.Namespace) -> dict:
     if not project_path:
         return make_error('pr_thread_reply', 'Could not determine project path')
 
-    body, err_dict = read_and_consume_body(
-        args.plan_id, BODY_KIND_PR_THREAD_REPLY, getattr(args, 'slot', None)
-    )
+    body, err_dict = read_and_consume_body(args.plan_id, BODY_KIND_PR_THREAD_REPLY, getattr(args, 'slot', None))
     if err_dict:
         return make_error('pr_thread_reply', err_dict.get('message', 'body not prepared'))
 
@@ -437,9 +427,7 @@ def cmd_pr_thread_reply(args: argparse.Namespace) -> dict:
     if returncode != 0:
         return make_error('pr_thread_reply', f'Failed to reply to thread: {stderr.strip()}')
 
-    delete_consumed_body(
-        args.plan_id, BODY_KIND_PR_THREAD_REPLY, getattr(args, 'slot', None)
-    )
+    delete_consumed_body(args.plan_id, BODY_KIND_PR_THREAD_REPLY, getattr(args, 'slot', None))
 
     return {
         'status': 'success',
@@ -791,9 +779,7 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
     jobs = last_data.get('jobs', [])
     # ci_wait already tracks its own poll duration — use it as the clamp ceiling
     # so an out-of-range aggregate is substituted with the actual poll time.
-    check_dicts, total_elapsed = format_checks_toon(
-        jobs, duration_ceiling=result['duration_sec']
-    )
+    check_dicts, total_elapsed = format_checks_toon(jobs, duration_ceiling=result['duration_sec'])
 
     if result['timed_out']:
         error_data: dict[str, Any] = {
@@ -978,9 +964,7 @@ def cmd_issue_create(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('issue_create', err)
 
-    body, err_dict = read_and_consume_body(
-        args.plan_id, BODY_KIND_ISSUE_CREATE, getattr(args, 'slot', None)
-    )
+    body, err_dict = read_and_consume_body(args.plan_id, BODY_KIND_ISSUE_CREATE, getattr(args, 'slot', None))
     if err_dict:
         return make_error('issue_create', err_dict.get('message', 'body not prepared'))
 
@@ -994,9 +978,7 @@ def cmd_issue_create(args: argparse.Namespace) -> dict:
     if returncode != 0:
         return make_error('issue_create', 'Failed to create issue', stderr.strip())
 
-    delete_consumed_body(
-        args.plan_id, BODY_KIND_ISSUE_CREATE, getattr(args, 'slot', None)
-    )
+    delete_consumed_body(args.plan_id, BODY_KIND_ISSUE_CREATE, getattr(args, 'slot', None))
 
     # Parse the URL from output
     issue_url = stdout.strip()
@@ -1125,16 +1107,14 @@ def cmd_pr_merge(args: argparse.Namespace) -> dict:
         mr_view = view_pr_data(head=iid)
         if mr_view.get('status') != 'success':
             result['branch_delete_error'] = (
-                f"Merge succeeded but could not resolve source branch for delete: "
-                f"{mr_view.get('error', 'pr_view failed')}"
+                f'Merge succeeded but could not resolve source branch for delete: '
+                f'{mr_view.get("error", "pr_view failed")}'
             )
             return result
 
         source_branch = mr_view.get('head_branch') or ''
         if not source_branch:
-            result['branch_delete_error'] = (
-                'Merge succeeded but pr_view returned empty source_branch'
-            )
+            result['branch_delete_error'] = 'Merge succeeded but pr_view returned empty source_branch'
             return result
 
         # Invoke the branch_delete handler with a synthesized argparse.Namespace.
@@ -1280,9 +1260,7 @@ def cmd_pr_edit(args: argparse.Namespace) -> dict:
 
     result: dict = make_pr_number_handler('pr_edit', lambda a: glab_args, run_glab, check_auth)(args)
     if body and result.get('status') == 'success':
-        delete_consumed_body(
-            args.plan_id, BODY_KIND_PR_EDIT, getattr(args, 'slot', None)
-        )
+        delete_consumed_body(args.plan_id, BODY_KIND_PR_EDIT, getattr(args, 'slot', None))
     return result
 
 
@@ -1294,11 +1272,7 @@ def _cmd_pr_prepare_body(args: argparse.Namespace) -> dict:
 
 def _cmd_pr_prepare_comment(args: argparse.Namespace) -> dict:
     """Allocate a scratch path for an MR comment (reply or thread-reply)."""
-    kind = (
-        BODY_KIND_PR_THREAD_REPLY
-        if getattr(args, 'prepare_for', 'reply') == 'thread-reply'
-        else BODY_KIND_PR_REPLY
-    )
+    kind = BODY_KIND_PR_THREAD_REPLY if getattr(args, 'prepare_for', 'reply') == 'thread-reply' else BODY_KIND_PR_REPLY
     return prepare_body(args.plan_id, kind, getattr(args, 'slot', None))
 
 
@@ -1323,9 +1297,7 @@ def _fetch_issue_state_and_labels(issue_number: int) -> tuple[bool, Any]:
     handler shape. Labels are returned verbatim (GitLab exposes them as a
     direct string array).
     """
-    returncode, stdout, stderr = run_glab(
-        ['issue', 'view', str(issue_number), '--output', 'json']
-    )
+    returncode, stdout, stderr = run_glab(['issue', 'view', str(issue_number), '--output', 'json'])
     if returncode != 0:
         return False, {
             'error': f'Failed to view issue {issue_number}',

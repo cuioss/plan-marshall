@@ -182,7 +182,7 @@ For each deliverable D:
     IF D.profiles != [verification]:
       Log warning (see above)
     D.profiles = [verification]
-  1. Query architecture: module --name {D.module}
+  1. Query architecture: module --module {D.module}
   For each profile P in D.profiles:
     IF P = verification:
       2v. Skip skill resolution (no architecture query needed)
@@ -205,7 +205,7 @@ For each deliverable D:
 **Query architecture**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  module --name {deliverable.module} \
+  module --module {deliverable.module} \
   --audit-plan-id {plan_id}
 ```
 
@@ -297,6 +297,41 @@ To prevent compound-word mis-interpretation (e.g. `review-knowledge` being descr
    **Worked example** (from source lesson `2026-04-17-20-001`): A deliverable body specifies task-ordering values `order: 990 / 1000` in its Change per file section. The canonical violation is a task description that paraphrases these as `order: 90 / 100` — a "regularization" from the four-digit spacing (`990`/`1000`) down to a two-digit spacing (`90`/`100`). The description MUST instead carry the literal tokens `order: 990 / 1000` verbatim. This same rule applies whenever the outline supplies specific numeric or flag-shaped data: copy the tokens exactly as written, do not "improve" them.
 
 **CRITICAL — Shell Metacharacter Sanitization**: Before writing values into the TOON task file, strip all markdown backticks (`` ` ``) from title, description, criteria, and step values. Backticks are shell metacharacters (command substitution) that trigger permission prompts if they later reach a shell. They are markdown formatting artifacts not needed in TOON task data. Replace `` `foo` `` with `foo` (plain text).
+
+### Validation: Lesson-ID References
+
+**Shape constraint** — A lesson ID is a five-segment token of the form `YYYY-MM-DD-HH-N+` (e.g., `2026-05-03-21-002`). The canonical regex is `LESSON_ID_RE` in `tools-input-validation` and is the single source of truth for the shape; this section never re-defines or re-spells the pattern.
+
+**At-write-time enforcement** — Every task whose `title` or `description` contains a lesson-ID-shaped token MUST resolve that token against the live `manage-lessons` inventory before the task file is written. Enforcement lives in the write paths of `manage-tasks` (`commit-add` and `batch-add`), so neither phase-4-plan nor any other plan-author surface can bypass it by writing through the script:
+
+1. The handler calls `scan_lesson_id_tokens(title + ' ' + description)` from `tools-input-validation` to extract every embedded lesson-ID token.
+2. The handler calls `verify_lesson_ids_exist(tokens)` to check each token against the live `manage-lessons list` inventory (the same inventory the runtime live-anchor discipline uses — see lesson 2026-04-29-10-001).
+3. On ANY unresolved token, the entire write batch is aborted atomically — no `TASK-NNN.json` file is created, the on-disk state is untouched, and the response is the error payload described below.
+4. The handler does NOT auto-rewrite descriptions to drop the offending IDs and does NOT downgrade the failure to a soft warning. A reference miss is a hard error so the plan can be corrected before execution.
+
+**Failure mode** — On an unresolved reference, both `commit-add` and `batch-add` return the canonical TOON error payload:
+
+```toon
+status: error
+error: validation_error
+validation_error: lesson_id_not_found
+unresolved_ids[N]:
+  - 2026-05-03-21-002
+  - 2026-05-03-22-001
+task_index: 0
+message: "Task references lesson IDs that do not exist in the live manage-lessons inventory: ['2026-05-03-21-002', '2026-05-03-22-001']. ..."
+```
+
+`task_index` is the zero-based index of the offending task in the batch (`0` for `commit-add`, which always writes a single task). `unresolved_ids` carries the deduplicated, sorted list of unresolved tokens.
+
+**Recovery procedure** — When a write fails with `validation_error: lesson_id_not_found`:
+
+1. Inspect `unresolved_ids` in the error payload to identify which lesson IDs are unknown to the inventory.
+2. Decide per ID: either (a) **create the lesson** via `manage-lessons add` if the reference was meant to point to a real (but not-yet-allocated) lesson, or (b) **drop the ID from the task description** and reword the narrative as a query against the live inventory (e.g., "archive any lessons matching component=X and category=resolved") so the task does not depend on a phantom ID.
+3. Re-stage the corrected task batch (re-write the `tasks-batch.json` staging file) and re-invoke `batch-add --tasks-file PATH`. The atomic-write contract guarantees the previous failed attempt left no on-disk state behind, so the retry starts from a clean tasks directory.
+4. NEVER bypass the validation by editing `TASK-NNN.json` files directly or by passing `--no-validate`-style flags — no such bypass exists, and the validation is the only point in the plan lifecycle that catches lesson-ID drift before tasks reach phase-5-execute.
+
+This validation operationalises lesson 2026-05-03-21-002: the plan-author surface (this phase) was emitting tasks that named lesson IDs that did not exist in the inventory, and the at-execute-time signal was a silent no-op (`archived: 0`) that did not surface the discrepancy. Pushing the check into the write paths of `manage-tasks` means the discrepancy surfaces at task-author time as a hard, structured error — the same point in the lifecycle where the operator can still correct it cheaply.
 
 Compose every task record for this phase invocation into one JSON array, then persist them atomically via the path-allocate flow. Each entry mirrors the TOON task schema:
 
@@ -628,7 +663,7 @@ Skills are resolved from architecture based on `module` + `profile`:
 
 | Scenario | Behavior |
 |----------|----------|
-| Single profile | Query `architecture.module --name {module}`, extract `skills_by_profile.{profile}` |
+| Single profile | Query `architecture.module --module {module}`, extract `skills_by_profile.{profile}` |
 | Multiple profiles | Create one task per profile, each with its own resolved skills |
 | `verification` profile | Skip architecture query — no skills needed, use verification commands as steps |
 | Module not in architecture | Error - module must exist in project architecture |
@@ -669,7 +704,7 @@ If deliverable metadata incomplete:
 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Read deliverables (list-deliverables, read)
-- `plan-marshall:manage-architecture:architecture` - Query module skills (module --name {module}) and resolve commands (resolve --command {cmd} --module {module}). Uses `--audit-plan-id`, NOT `--plan-id`.
+- `plan-marshall:manage-architecture:architecture` - Query module skills (module --module {module}) and resolve commands (resolve --command {cmd} --module {module}). Uses `--audit-plan-id`, NOT `--plan-id`.
 - `plan-marshall:manage-tasks:manage-tasks` - Create tasks atomically via `batch-add --tasks-file PATH` (preferred for multi-task creation in this phase, where `PATH` is staged via `manage-files write` to `.plan/local/plans/{plan_id}/work/tasks-batch.json`). Single ad-hoc adds may use the path-allocate flow (`prepare-add` → Write TOON → `commit-add`).
 - `plan-marshall:manage-files:manage-files` - Stage the batch JSON array (via `write --file work/tasks-batch.json`) so the payload never crosses the shell argument boundary.
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)

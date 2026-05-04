@@ -22,24 +22,16 @@ Findings have severity=error and fixable=False, matching the
 codebase. Each finding carries ``rule_id``, ``file``, ``line``, plus
 rule-specific ``details`` keys (notation/subcommand/flag/etc.).
 
-Gating mechanism
-----------------
-This rule cluster is GATED OFF by default and is only activated when the
-caller explicitly opts in via the ``PM_ARGUMENT_NAMING_ENABLED`` env var
-set to a truthy value (``1``, ``true``, ``yes``, case-insensitive). The
-gating is documented as a transitional period: it allows the rule cluster
-to land before the ``--task`` → ``--task-number`` and architecture-flag
-renames have swept the live codebase. Once those renames complete, the
-gate can be flipped on and (eventually) removed.
-
-The gate is implemented in the public entry point ``analyze_argument_naming``;
-when disabled, the function returns an empty list immediately. Tests
-exercise the analyzer directly against synthetic fixture trees, bypassing
-the gate via ``PM_ARGUMENT_NAMING_ENABLED=1``.
+Activation
+----------
+This rule cluster is unconditionally active across all marketplace markdown.
+See lesson ``2026-04-29-23-002`` for the rationale (three recurrences of
+stale-flag drift in skill workflows within ~3 days drove the move from a
+gated transitional period to default-on enforcement).
 
 Public API
 ----------
-- ``analyze_argument_naming(marketplace_root)``: gated entry point — returns
+- ``analyze_argument_naming(marketplace_root)``: entry point — returns
   findings for the four rule IDs combined.
 - ``scan_notation(marketplace_root, registered_notations)``: detects
   ``ARGUMENT_NAMING_NOTATION_INVALID``.
@@ -67,7 +59,6 @@ Rule IDs registered
 from __future__ import annotations
 
 import ast
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -80,13 +71,6 @@ RULE_NOTATION_INVALID = 'ARGUMENT_NAMING_NOTATION_INVALID'
 RULE_SUBCOMMAND_UNKNOWN = 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN'
 RULE_FLAG_UNKNOWN = 'ARGUMENT_NAMING_FLAG_UNKNOWN'
 RULE_CANONICAL_FORMS_DRIFT = 'ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT'
-
-# Env-var that gates the entire cluster. When unset or falsy, the public
-# entry point ``analyze_argument_naming`` returns an empty list.
-GATE_ENV_VAR = 'PM_ARGUMENT_NAMING_ENABLED'
-
-# Truthy values for the gate. Comparison is lower-case.
-_TRUTHY = frozenset({'1', 'true', 'yes', 'on'})
 
 
 # =============================================================================
@@ -115,9 +99,7 @@ _FLAG_TOKEN_RE = re.compile(r'(?<![A-Za-z0-9])--(?P<flag>[A-Za-z][A-Za-z0-9_\-]*
 #     | --- | --- | --- |
 #     | `manage-tasks` | ... | `manage-tasks read --plan-id {id} --task-number {n}` |
 _CANONICAL_FORMS_HEADING = re.compile(r'^##\s+Canonical Forms\s*$')
-_CANONICAL_FORMS_ROW = re.compile(
-    r'^\|[^|]*\|[^|]*\|\s*`(?P<form>[^`]+)`\s*\|\s*$'
-)
+_CANONICAL_FORMS_ROW = re.compile(r'^\|[^|]*\|[^|]*\|\s*`(?P<form>[^`]+)`\s*\|\s*$')
 
 # Notation regex restricted to the ``SCRIPTS = { ... }`` literal in the
 # executor module. Captures notation keys only — paths are ignored.
@@ -156,17 +138,6 @@ class _ScriptEntry:
 
     subcommands: dict[str, set[str]]
     root_flags: set[str]
-
-
-# =============================================================================
-# Gating helper
-# =============================================================================
-
-
-def _is_gate_enabled() -> bool:
-    """Return ``True`` when the cluster gate env-var is set to a truthy value."""
-    raw = os.environ.get(GATE_ENV_VAR, '').strip().lower()
-    return raw in _TRUTHY
 
 
 # =============================================================================
@@ -210,15 +181,7 @@ def _resolve_script_path(notation: str, marketplace_root: Path) -> Path | None:
     intentionally ignored so the analyzer remains independent of cache state.
     """
     bundle, skill, script = notation.split(':', 2)
-    candidate = (
-        marketplace_root
-        / 'bundles'
-        / bundle
-        / 'skills'
-        / skill
-        / 'scripts'
-        / f'{script}.py'
-    )
+    candidate = marketplace_root / 'bundles' / bundle / 'skills' / skill / 'scripts' / f'{script}.py'
     if candidate.is_file():
         return candidate
     # Some scripts live in nested script directories (e.g. shared/extension).
@@ -521,8 +484,7 @@ def scan_notation(
                     'severity': 'error',
                     'fixable': False,
                     'description': (
-                        f'Notation `{notation}` is not registered in the executor '
-                        f'(reason: {details["reason"]})'
+                        f'Notation `{notation}` is not registered in the executor (reason: {details["reason"]})'
                     ),
                     'details': details,
                 }
@@ -622,8 +584,7 @@ def scan_flag(
                         'severity': 'error',
                         'fixable': False,
                         'description': (
-                            f'Flag `--{flag}` not declared on `{inv.notation} {scope_label}` '
-                            f'(known: {sorted(allowed)})'
+                            f'Flag `--{flag}` not declared on `{inv.notation} {scope_label}` (known: {sorted(allowed)})'
                         ),
                         'details': {
                             'notation': inv.notation,
@@ -696,10 +657,7 @@ def _resolve_shorthand_to_notation(
     with their containing skill, e.g. ``architecture`` under ``manage-architecture``).
     Returns ``None`` if no match (or ambiguous match across bundles).
     """
-    matches = [
-        n for n in script_index
-        if n.endswith(f':{shorthand}') or n.split(':')[1] == shorthand
-    ]
+    matches = [n for n in script_index if n.endswith(f':{shorthand}') or n.split(':')[1] == shorthand]
     if len(matches) == 1:
         return matches[0]
     # If multiple, prefer the one whose third segment equals the shorthand
@@ -743,8 +701,7 @@ def scan_canonical_forms(
                     'severity': 'error',
                     'fixable': False,
                     'description': (
-                        f'Canonical Forms row references unknown script `{shorthand}` '
-                        '— no registered notation matches'
+                        f'Canonical Forms row references unknown script `{shorthand}` — no registered notation matches'
                     ),
                     'details': {
                         'shorthand': shorthand,
@@ -827,15 +784,12 @@ def scan_canonical_forms(
 def analyze_argument_naming(marketplace_root: Path) -> list[dict]:
     """Run the full argument-naming rule cluster against ``marketplace_root``.
 
-    Gated by ``PM_ARGUMENT_NAMING_ENABLED``. When disabled (default), returns
-    an empty list immediately so existing module-tests are unaffected.
+    Unconditionally active. See lesson ``2026-04-29-23-002`` for the rationale
+    behind moving from a gated transitional period to default-on enforcement.
 
     Returns a flat list of finding dicts (one per detected drift). Use
     ``rule_id`` to differentiate rule clusters.
     """
-    if not _is_gate_enabled():
-        return []
-
     executor_path = marketplace_root.parent / '.plan' / 'execute-script.py'
     registered = load_registered_notations(executor_path)
     if not registered:

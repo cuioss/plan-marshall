@@ -50,9 +50,8 @@ def validate_domain_invariants(domain: dict) -> None:
     optionals = set(domain.get('optionals', []))
     overlap = defaults & optionals
     if overlap:
-        raise ValueError(
-            f"Skills must not appear in both defaults and optionals: {sorted(overlap)}"
-        )
+        raise ValueError(f'Skills must not appear in both defaults and optionals: {sorted(overlap)}')
+
 
 # System retention defaults
 DEFAULT_SYSTEM_RETENTION = {
@@ -107,9 +106,7 @@ def validate_rebase_strategy(value: str) -> None:
         ValueError: If ``value`` is not in :data:`VALID_REBASE_STRATEGIES`.
     """
     if value not in VALID_REBASE_STRATEGIES:
-        raise ValueError(
-            f"Invalid rebase_strategy '{value}'. Allowed: {list(VALID_REBASE_STRATEGIES)}"
-        )
+        raise ValueError(f"Invalid rebase_strategy '{value}'. Allowed: {list(VALID_REBASE_STRATEGIES)}")
 
 
 DEFAULT_PLAN_EXECUTE = {

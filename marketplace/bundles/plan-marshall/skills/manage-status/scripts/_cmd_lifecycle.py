@@ -106,7 +106,11 @@ def _collect_modified_files(plan_id: str, status: dict, base_branch: str) -> lis
     try:
         diff_result = subprocess.run(diff_cmd, capture_output=True, text=True, check=True, timeout=30)  # noqa: S603
         untracked_result = subprocess.run(
-            untracked_cmd, capture_output=True, text=True, check=True, timeout=30,  # noqa: S603
+            untracked_cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,  # noqa: S603
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
         return None

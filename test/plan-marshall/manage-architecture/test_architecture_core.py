@@ -22,7 +22,12 @@ from file_ops import format_toon_value
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-architecture' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-architecture'
+    / 'scripts'
 )
 
 
@@ -454,9 +459,7 @@ def test_merge_module_data_missing_derived_raises():
     """merge_module_data raises DataNotFoundError when derived.json is gone."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # _project.json present but module's derived.json absent (lists 'gone').
-        save_project_meta(
-            {'name': 'p', 'modules': {'gone': {}}, 'extensions_used': []}, tmpdir
-        )
+        save_project_meta({'name': 'p', 'modules': {'gone': {}}, 'extensions_used': []}, tmpdir)
         try:
             merge_module_data('gone', tmpdir)
             assert False, 'Should have raised DataNotFoundError'

@@ -91,6 +91,106 @@ Import `input_validation` module in Python scripts that:
 - **Input**: `file_path` string
 - **Output**: `True` if valid, `False` otherwise
 
+## Lesson-ID Reference Scanner (Live-Anchored)
+
+These helpers detect lesson-ID-shaped tokens embedded in arbitrary prose
+(typically task titles and descriptions) and verify them against the live
+`manage-lessons` inventory. They are the single source of truth for
+"is this a real lesson ID?" checks across the bundle, used by
+`manage-tasks` (at-write-time validation) and `plan-doctor` (post-hoc
+plan diagnostics).
+
+All three helpers reuse the canonical `LESSON_ID_RE` constant — no new
+regex literal is introduced. The embedded scanner uses an unanchored
+derivative (`_LESSON_ID_EMBEDDED_RE`) of the same pattern with non-digit
+boundary lookarounds so adjacent digits don't bleed into a match.
+
+### Live-Anchor Discipline
+
+Per lesson `2026-04-29-10-001`, the canonical regex shape is asserted
+against actual repo data at runtime — not only in the test suite. On
+first invocation per process, `scan_lesson_id_tokens` and
+`verify_lesson_ids_exist` call `verify_lesson_id_regex_against_inventory`,
+which:
+
+- Spawns `manage-lessons list` and parses the TOON inventory.
+- If the inventory has IDs and at least one matches `LESSON_ID_RE`,
+  caches success for the rest of the process.
+- If the inventory is empty (greenfield repo or wiped state), emits a
+  one-time WARNING to `stderr` and treats the anchor as a no-op so
+  greenfield use isn't a hard error.
+- If the inventory has IDs but NONE match `LESSON_ID_RE`, raises
+  `LessonRegexAnchoringError` with the regex pattern and a sample of the
+  unmatched IDs. The cache is NOT set, so every subsequent scanner call
+  keeps failing until the regex (or the IDs) is corrected. This is the
+  failure mode that exists precisely because regex-vs-inventory drift can
+  otherwise produce a silent "no IDs match anything" false-clean signal.
+
+### Public API
+
+**8. scan_lesson_id_tokens(text: str) -> list[str]**
+- **Purpose**: Return every lesson-ID-shaped token embedded in `text`.
+- **Input**: arbitrary `text` (e.g., a task title + description).
+- **Output**: list of matching tokens in order of appearance.
+- **Raises**: `LessonRegexAnchoringError`, `LessonInventoryUnavailable`
+  via the first-use anchor check.
+
+**9. verify_lesson_ids_exist(tokens: Iterable[str]) -> dict[str, bool]**
+- **Purpose**: Return `{token: present}` for each token by lookup against
+  the live `manage-lessons` inventory. Duplicates de-duplicated.
+- **Input**: iterable of candidate lesson-ID tokens.
+- **Output**: dict mapping each unique token to `True` if found in the
+  live inventory, `False` otherwise.
+- **Raises**: `LessonInventoryUnavailable` when the subprocess fails —
+  NEVER silently returns "all present". Also `LessonRegexAnchoringError`
+  via the first-use anchor check.
+
+**10. verify_lesson_id_regex_against_inventory() -> None**
+- **Purpose**: Runtime live-anchor check (see "Live-Anchor Discipline"
+  above). Idempotent within a process.
+- **Output**: `None` on success or empty-inventory no-op.
+- **Raises**: `LessonRegexAnchoringError` when live IDs exist but none
+  match `LESSON_ID_RE`; `LessonInventoryUnavailable` on subprocess
+  failure.
+
+### Typed Exceptions
+
+**`LessonInventoryUnavailable(RuntimeError)`** — raised whenever
+`manage-lessons list` cannot be invoked, exits non-zero, or returns
+output the TOON parser rejects. Callers MUST surface this; silently
+degrading to "all present" defeats the entire purpose of the scanner.
+
+**`LessonRegexAnchoringError(RuntimeError)`** — raised when the live
+inventory contains IDs but none of them match `LESSON_ID_RE`. Carries
+`regex` (the pattern that failed to anchor) and `sample_ids` (a slice of
+the unmatched IDs) for diagnostics.
+
+### Usage
+
+```python
+from input_validation import (
+    LessonInventoryUnavailable,
+    LessonRegexAnchoringError,
+    scan_lesson_id_tokens,
+    verify_lesson_ids_exist,
+)
+
+text = "Per lesson 2026-04-29-10-001, anchor regex against live inventory."
+try:
+    tokens = scan_lesson_id_tokens(text)
+    presence = verify_lesson_ids_exist(tokens)
+    missing = [tok for tok, ok in presence.items() if not ok]
+    if missing:
+        raise ValueError(f"Unresolved lesson IDs: {missing}")
+except LessonRegexAnchoringError as exc:
+    # Hard fail — the regex shape has drifted from the inventory.
+    raise
+except LessonInventoryUnavailable as exc:
+    # Hard fail — inventory unreachable; do not silently pretend
+    # everything is present.
+    raise
+```
+
 ## Error Responses
 
 ```toon

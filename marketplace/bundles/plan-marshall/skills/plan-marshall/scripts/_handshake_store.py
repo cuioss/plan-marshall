@@ -55,9 +55,7 @@ def save_rows(plan_id: str, rows: list[dict[str, Any]]) -> None:
     """Write all rows for ``plan_id`` using the canonical field order."""
     path = handshake_path(plan_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    normalized = [
-        {field: row.get(field, '') for field in HANDSHAKE_FIELDS} for row in rows
-    ]
+    normalized = [{field: row.get(field, '') for field in HANDSHAKE_FIELDS} for row in rows]
     payload = {'plan_id': plan_id, 'handshakes': normalized}
     path.write_text(serialize_toon(payload) + '\n')
 

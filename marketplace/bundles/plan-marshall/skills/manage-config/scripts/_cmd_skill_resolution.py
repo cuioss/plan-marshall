@@ -274,9 +274,7 @@ def cmd_resolve_execute_task_skill(args) -> dict:
     execute_task_skills = system_config.get('execute_task_skills', {})
 
     if not execute_task_skills:
-        return error_exit(
-            'No execute_task_skills configured. Run configure-execute-task-skills first.'
-        )
+        return error_exit('No execute_task_skills configured. Run configure-execute-task-skills first.')
 
     if profile not in execute_task_skills:
         available = sorted(execute_task_skills.keys())
@@ -445,9 +443,7 @@ def _discover_all_finalize_steps() -> list[dict]:
     # Source 1: Built-in steps — read order from standards/{name}.md frontmatter
     for step_name in BUILT_IN_FINALIZE_STEPS:
         bare = step_name.split(':', 1)[1] if ':' in step_name else step_name
-        standards_path = (
-            BUNDLES_DIR / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / f'{bare}.md'
-        )
+        standards_path = BUNDLES_DIR / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / f'{bare}.md'
         all_steps.append(
             {
                 'name': step_name,

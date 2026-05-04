@@ -18,8 +18,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 _SCRIPTS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'scripts'
+    PROJECT_ROOT / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'scripts'
 )
 
 
@@ -53,8 +52,7 @@ def test_argumentparser_missing_flag_flagged(tmp_path):
     script = _write_script(
         tmp_path,
         'my_script.py',
-        "import argparse\n"
-        "parser = argparse.ArgumentParser(description='x')\n",
+        "import argparse\nparser = argparse.ArgumentParser(description='x')\n",
     )
     findings = _scan_file_for_argparse_safety(script)
     assert len(findings) == 1
@@ -72,8 +70,7 @@ def test_argumentparser_with_flag_not_flagged(tmp_path):
     script = _write_script(
         tmp_path,
         'my_script.py',
-        "import argparse\n"
-        "parser = argparse.ArgumentParser(description='x', allow_abbrev=False)\n",
+        "import argparse\nparser = argparse.ArgumentParser(description='x', allow_abbrev=False)\n",
     )
     findings = _scan_file_for_argparse_safety(script)
     assert findings == []
@@ -84,9 +81,9 @@ def test_add_parser_missing_flag_flagged(tmp_path):
     script = _write_script(
         tmp_path,
         'my_script.py',
-        "import argparse\n"
-        "parser = argparse.ArgumentParser(allow_abbrev=False)\n"
-        "subparsers = parser.add_subparsers()\n"
+        'import argparse\n'
+        'parser = argparse.ArgumentParser(allow_abbrev=False)\n'
+        'subparsers = parser.add_subparsers()\n'
         "p_a = subparsers.add_parser('a', help='A')\n",
     )
     findings = _scan_file_for_argparse_safety(script)
@@ -100,9 +97,9 @@ def test_add_parser_with_flag_not_flagged(tmp_path):
     script = _write_script(
         tmp_path,
         'my_script.py',
-        "import argparse\n"
-        "parser = argparse.ArgumentParser(allow_abbrev=False)\n"
-        "subparsers = parser.add_subparsers()\n"
+        'import argparse\n'
+        'parser = argparse.ArgumentParser(allow_abbrev=False)\n'
+        'subparsers = parser.add_subparsers()\n'
         "p_a = subparsers.add_parser('a', help='A', allow_abbrev=False)\n",
     )
     findings = _scan_file_for_argparse_safety(script)
@@ -114,8 +111,7 @@ def test_allow_abbrev_true_is_flagged(tmp_path):
     script = _write_script(
         tmp_path,
         'my_script.py',
-        "import argparse\n"
-        "parser = argparse.ArgumentParser(allow_abbrev=True)\n",
+        'import argparse\nparser = argparse.ArgumentParser(allow_abbrev=True)\n',
     )
     findings = _scan_file_for_argparse_safety(script)
     assert len(findings) == 1
@@ -126,10 +122,10 @@ def test_multiple_violations_in_one_file(tmp_path):
     script = _write_script(
         tmp_path,
         'multi.py',
-        "import argparse\n"
-        "a = argparse.ArgumentParser()\n"
-        "b = argparse.ArgumentParser(allow_abbrev=False)\n"
-        "subs = b.add_subparsers()\n"
+        'import argparse\n'
+        'a = argparse.ArgumentParser()\n'
+        'b = argparse.ArgumentParser(allow_abbrev=False)\n'
+        'subs = b.add_subparsers()\n'
         "c = subs.add_parser('c')\n"
         "d = subs.add_parser('d', allow_abbrev=False)\n",
     )
@@ -143,8 +139,7 @@ def test_bare_constructor_call_matches(tmp_path):
     script = _write_script(
         tmp_path,
         'bare.py',
-        "from argparse import ArgumentParser\n"
-        "parser = ArgumentParser(description='x')\n",
+        "from argparse import ArgumentParser\nparser = ArgumentParser(description='x')\n",
     )
     findings = _scan_file_for_argparse_safety(script)
     assert len(findings) == 1
@@ -163,9 +158,7 @@ def test_unrelated_parser_names_not_flagged(tmp_path):
     script = _write_script(
         tmp_path,
         'other.py',
-        "class MyCustomThing:\n"
-        "    pass\n"
-        "x = MyCustomThing()\n",
+        'class MyCustomThing:\n    pass\nx = MyCustomThing()\n',
     )
     findings = _scan_file_for_argparse_safety(script)
     assert findings == []
@@ -214,35 +207,20 @@ def test_scan_argparse_safety_on_fixture(tmp_path):
     scripts_dir.mkdir(parents=True)
 
     # Bad: missing flag
-    (scripts_dir / 'bad.py').write_text(
-        "import argparse\n"
-        "parser = argparse.ArgumentParser()\n"
-    )
+    (scripts_dir / 'bad.py').write_text('import argparse\nparser = argparse.ArgumentParser()\n')
     # Good: has flag
-    (scripts_dir / 'good.py').write_text(
-        "import argparse\n"
-        "parser = argparse.ArgumentParser(allow_abbrev=False)\n"
-    )
+    (scripts_dir / 'good.py').write_text('import argparse\nparser = argparse.ArgumentParser(allow_abbrev=False)\n')
     # Test file: MUST be excluded even if missing the flag
-    (scripts_dir / 'test_excluded.py').write_text(
-        "import argparse\n"
-        "parser = argparse.ArgumentParser()\n"
-    )
+    (scripts_dir / 'test_excluded.py').write_text('import argparse\nparser = argparse.ArgumentParser()\n')
     # Test directory: MUST be excluded
     test_dir = scripts_dir / 'test'
     test_dir.mkdir()
-    (test_dir / 'nested.py').write_text(
-        "import argparse\n"
-        "parser = argparse.ArgumentParser()\n"
-    )
+    (test_dir / 'nested.py').write_text('import argparse\nparser = argparse.ArgumentParser()\n')
 
     # Adapter tree alongside bundles/
     adapters_dir = tmp_path / 'marketplace' / 'adapters'
     adapters_dir.mkdir()
-    (adapters_dir / 'adapter_bad.py').write_text(
-        "import argparse\n"
-        "parser = argparse.ArgumentParser()\n"
-    )
+    (adapters_dir / 'adapter_bad.py').write_text('import argparse\nparser = argparse.ArgumentParser()\n')
 
     findings = scan_argparse_safety(marketplace_root)
     flagged_files = {Path(f['file']).name for f in findings}
@@ -263,6 +241,5 @@ def test_real_marketplace_has_zero_findings():
     findings = scan_argparse_safety(real_marketplace_root)
     assert findings == [], (
         f'Expected zero argparse_safety findings in retrofitted marketplace, '
-        f'got {len(findings)}: '
-        + '; '.join(f"{f['file']}:{f['line']}" for f in findings[:10])
+        f'got {len(findings)}: ' + '; '.join(f'{f["file"]}:{f["line"]}' for f in findings[:10])
     )

@@ -5,7 +5,6 @@ Tests the configure command with placeholder-based secret entry
 and the check command for credential completeness.
 """
 
-
 import pytest
 
 from conftest import get_script_path, run_script
@@ -35,7 +34,10 @@ class TestConfigureCLI:
     def test_configure_no_providers_fails(self, tmp_path):
         """Configure fails gracefully when no providers exist."""
         result = run_script(
-            SCRIPT_PATH, 'configure', '--skill', 'nonexistent',
+            SCRIPT_PATH,
+            'configure',
+            '--skill',
+            'nonexistent',
         )
         assert result.returncode == 0
 
@@ -73,8 +75,9 @@ class TestListProviders:
         monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
 
         # Activate git provider (minimum valid selection)
-        persist = run_script(SCRIPT_PATH, 'discover-and-persist',
-                             '--providers', 'plan-marshall:workflow-integration-git')
+        persist = run_script(
+            SCRIPT_PATH, 'discover-and-persist', '--providers', 'plan-marshall:workflow-integration-git'
+        )
         assert persist.returncode == 0, f'Persist failed: {persist.stdout}'
         result = run_script(SCRIPT_PATH, 'list-providers')
         assert result.returncode == 0
@@ -97,12 +100,14 @@ class TestListProviders:
         # Discovery-only mode: scans bundle script directories for *_provider.py files
         discover = run_script(SCRIPT_PATH, 'discover-and-persist')
         assert discover.returncode == 0
-        assert 'workflow-integration-sonar' in discover.stdout, (
-            f'Sonar not discovered. Found: {discover.stdout}'
-        )
+        assert 'workflow-integration-sonar' in discover.stdout, f'Sonar not discovered. Found: {discover.stdout}'
         # Activate and persist (must include version-control provider for validation)
-        persist = run_script(SCRIPT_PATH, 'discover-and-persist',
-                             '--providers', 'plan-marshall:workflow-integration-git,plan-marshall:workflow-integration-sonar')
+        persist = run_script(
+            SCRIPT_PATH,
+            'discover-and-persist',
+            '--providers',
+            'plan-marshall:workflow-integration-git,plan-marshall:workflow-integration-sonar',
+        )
         assert persist.returncode == 0, f'Persist failed: {persist.stdout}'
         result = run_script(SCRIPT_PATH, 'list-providers')
         assert result.returncode == 0
@@ -147,8 +152,10 @@ class TestCheckCLI:
     def test_check_not_found(self, tmp_path):
         """Check returns not_found for unconfigured skill."""
         result = run_script(
-            SCRIPT_PATH, 'check',
-            '--skill', 'nonexistent-skill-for-test',
+            SCRIPT_PATH,
+            'check',
+            '--skill',
+            'nonexistent-skill-for-test',
         )
         assert result.returncode == 0
         assert 'not_found' in result.stdout
@@ -258,9 +265,7 @@ class TestConfigureAuthTypeValidation:
 
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
-        (plan_dir / 'marshal.json').write_text(
-            _json.dumps({'providers': [_SONAR_PROVIDER]})
-        )
+        (plan_dir / 'marshal.json').write_text(_json.dumps({'providers': [_SONAR_PROVIDER]}))
         monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
         creds_dir = tmp_path / 'creds'
         creds_dir.mkdir()
@@ -272,9 +277,12 @@ class TestConfigureAuthTypeValidation:
     def test_configure_accepts_any_auth_type_without_declared(self):
         """Configure accepts any auth_type when provider has no declared auth_type."""
         result = run_script(
-            SCRIPT_PATH, 'configure',
-            '--skill', 'plan-marshall:workflow-integration-sonar',
-            '--auth-type', 'none',
+            SCRIPT_PATH,
+            'configure',
+            '--skill',
+            'plan-marshall:workflow-integration-sonar',
+            '--auth-type',
+            'none',
             env_overrides=self._creds_env,
         )
         assert result.returncode == 0
@@ -284,9 +292,12 @@ class TestConfigureAuthTypeValidation:
         """Configure accepts auth_type that matches provider's declared auth_type."""
         skill = 'plan-marshall:workflow-integration-sonar'
         result = run_script(
-            SCRIPT_PATH, 'configure',
-            '--skill', skill,
-            '--auth-type', 'token',
+            SCRIPT_PATH,
+            'configure',
+            '--skill',
+            skill,
+            '--auth-type',
+            'token',
             env_overrides=self._creds_env,
         )
         assert result.returncode == 0
@@ -294,9 +305,12 @@ class TestConfigureAuthTypeValidation:
     def test_configure_accepts_basic_without_declared_auth(self):
         """Configure accepts basic auth when provider has no declared auth_type."""
         result = run_script(
-            SCRIPT_PATH, 'configure',
-            '--skill', 'plan-marshall:workflow-integration-sonar',
-            '--auth-type', 'basic',
+            SCRIPT_PATH,
+            'configure',
+            '--skill',
+            'plan-marshall:workflow-integration-sonar',
+            '--auth-type',
+            'basic',
             env_overrides=self._creds_env,
         )
         assert result.returncode == 0
@@ -327,10 +341,14 @@ class TestConfigureMarshalJsonSeparation:
 
         skill = 'plan-marshall:workflow-integration-sonar'
         result = run_script(
-            SCRIPT_PATH, 'configure',
-            '--skill', skill,
-            '--auth-type', 'token',
-            '--url', 'https://sonarcloud.io',
+            SCRIPT_PATH,
+            'configure',
+            '--skill',
+            skill,
+            '--auth-type',
+            'token',
+            '--url',
+            'https://sonarcloud.io',
             env_overrides={'PLAN_MARSHALL_CREDENTIALS_DIR': str(creds_dir)},
         )
         assert result.returncode == 0
@@ -365,10 +383,15 @@ class TestConfigureMarshalJsonSeparation:
 
         skill = 'plan-marshall:workflow-integration-sonar'
         result = run_script(
-            SCRIPT_PATH, 'configure',
-            '--skill', skill,
-            '--auth-type', 'token',
-            '--extra', 'organization=my-org', 'project_key=my-project',
+            SCRIPT_PATH,
+            'configure',
+            '--skill',
+            skill,
+            '--auth-type',
+            'token',
+            '--extra',
+            'organization=my-org',
+            'project_key=my-project',
             env_overrides={'PLAN_MARSHALL_CREDENTIALS_DIR': str(creds_dir)},
         )
         assert result.returncode == 0
@@ -414,10 +437,14 @@ class TestConfigureAuthTypeMismatch:
         save_credential(skill, data, 'global')
 
         result = run_script(
-            SCRIPT_PATH, 'configure',
-            '--skill', skill,
-            '--url', 'https://sonarcloud.io',
-            '--auth-type', 'token',
+            SCRIPT_PATH,
+            'configure',
+            '--skill',
+            skill,
+            '--url',
+            'https://sonarcloud.io',
+            '--auth-type',
+            'token',
             cwd=tmp_path,
             env_overrides={'PLAN_MARSHALL_CREDENTIALS_DIR': str(creds_dir)},
         )
@@ -476,7 +503,10 @@ class TestConfigureSystemAuth:
             extra = None
 
         monkeypatch.setattr('_cred_configure.load_declared_providers', lambda: [mock_provider])
-        monkeypatch.setattr('_cred_configure.find_provider_with_details', lambda s: mock_provider if s == mock_provider['skill_name'] else None)
+        monkeypatch.setattr(
+            '_cred_configure.find_provider_with_details',
+            lambda s: mock_provider if s == mock_provider['skill_name'] else None,
+        )
         run_configure(MockArgs())
 
         loaded = load_credential('test-system-provider', 'global')
@@ -519,7 +549,10 @@ class TestConfigureSystemAuth:
             extra = None
 
         monkeypatch.setattr('_cred_configure.load_declared_providers', lambda: [mock_provider])
-        monkeypatch.setattr('_cred_configure.find_provider_with_details', lambda s: mock_provider if s == mock_provider['skill_name'] else None)
+        monkeypatch.setattr(
+            '_cred_configure.find_provider_with_details',
+            lambda s: mock_provider if s == mock_provider['skill_name'] else None,
+        )
         ret = run_configure(MockArgs())
 
         assert ret == 0
@@ -559,7 +592,10 @@ class TestConfigureSystemAuth:
             captured_output.update(data)
 
         monkeypatch.setattr('_cred_configure.load_declared_providers', lambda: [mock_provider])
-        monkeypatch.setattr('_cred_configure.find_provider_with_details', lambda s: mock_provider if s == mock_provider['skill_name'] else None)
+        monkeypatch.setattr(
+            '_cred_configure.find_provider_with_details',
+            lambda s: mock_provider if s == mock_provider['skill_name'] else None,
+        )
         monkeypatch.setattr('_cred_configure.output_toon', mock_output)
         run_configure(MockArgs())
 

@@ -47,6 +47,12 @@ from _tasks_core import (
     validate_steps_are_file_paths,
 )
 from file_ops import atomic_write_file  # type: ignore[import-not-found]
+from input_validation import (  # type: ignore[import-not-found]
+    LessonInventoryUnavailable,
+    LessonRegexAnchoringError,
+    scan_lesson_id_tokens,
+    verify_lesson_ids_exist,
+)
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
 _PENDING_DIR_NAME = 'pending-tasks'
@@ -63,15 +69,70 @@ def _resolve_slot(slot: str | None) -> str:
     if slot is None or slot == '':
         return 'default'
     if not _SLOT_RE.match(slot):
-        raise ValueError(
-            f"Invalid slot '{slot}': must match [a-z0-9][a-z0-9-]{{0,63}}"
-        )
+        raise ValueError(f"Invalid slot '{slot}': must match [a-z0-9][a-z0-9-]{{0,63}}")
     return slot
 
 
 def _pending_path(plan_id: str, slot: str):
     """Return the scratch file path for a given plan_id + slot."""
     return _get_pending_dir(plan_id) / f'{slot}.toon'
+
+
+def _lesson_id_validation_error(unresolved_ids: list[str], task_index: int) -> dict:
+    """Build the canonical TOON error payload for a lesson-ID reference miss.
+
+    The payload extends the standard ``output_error`` shape with three
+    extra fields so the caller can pinpoint which task in a batch failed
+    and which IDs need to be created (or removed from the description):
+
+      - ``validation_error: lesson_id_not_found`` — typed code distinct
+        from the generic ``error: error`` so callers can branch on it
+        without string-matching the message.
+      - ``unresolved_ids: [<id>, ...]`` — every unresolved token from
+        title + description (deduplicated).
+      - ``task_index: <N>`` — zero-based index of the offending task in
+        the batch (``0`` for the single ``commit-add`` flow).
+
+    The atomic-write contract is preserved by callers: this helper only
+    builds the error dict; the caller is responsible for returning it
+    BEFORE any file is written so the on-disk state stays untouched.
+    """
+    sorted_ids = sorted(set(unresolved_ids))
+    message = (
+        f'Task references lesson IDs that do not exist in the live '
+        f'manage-lessons inventory: {sorted_ids}. Either create the '
+        f'lessons first via `manage-lessons add` or remove the references '
+        f'from the task title/description before re-attempting the write.'
+    )
+    return {
+        'status': 'error',
+        'error': 'validation_error',
+        'validation_error': 'lesson_id_not_found',
+        'unresolved_ids': sorted_ids,
+        'task_index': task_index,
+        'message': message,
+    }
+
+
+def _scan_unresolved_lesson_ids(title: str, description: str) -> list[str]:
+    """Return the deduplicated list of lesson-ID tokens cited in title or
+    description that DO NOT resolve against the live manage-lessons inventory.
+
+    Returns an empty list when no lesson-ID-shaped tokens are present (the
+    common case) — this short-circuits the inventory subprocess call so
+    plans that never mention lessons pay zero validation cost.
+
+    Re-raises ``LessonInventoryUnavailable`` and ``LessonRegexAnchoringError``
+    from the underlying scanner. The caller MUST surface those as hard
+    errors — silently degrading to "all present" would defeat the entire
+    purpose of the reference check (per lesson 2026-05-03-21-002).
+    """
+    haystack = f'{title or ""} {description or ""}'
+    tokens = scan_lesson_id_tokens(haystack)
+    if not tokens:
+        return []
+    presence = verify_lesson_ids_exist(tokens)
+    return [tok for tok, present in presence.items() if not present]
 
 
 def cmd_prepare_add(args) -> dict:
@@ -121,14 +182,24 @@ def cmd_commit_add(args) -> dict:
 
     content = path.read_text(encoding='utf-8')
     if not content.strip():
-        return output_error(
-            f"Prepared task file is empty: {path}. Write the TOON definition before commit-add."
-        )
+        return output_error(f'Prepared task file is empty: {path}. Write the TOON definition before commit-add.')
 
     try:
         parsed = parse_stdin_task(content)
     except ValueError as e:
         return output_error(str(e))
+
+    # Lesson-ID reference validation (atomic — runs BEFORE any file write).
+    # See lesson 2026-05-03-21-002: tasks that cite lesson IDs MUST resolve
+    # against the live manage-lessons inventory at write time. A miss aborts
+    # the entire write — no TASK-NNN.json is created and the scratch file
+    # is preserved so the caller can correct the description and retry.
+    try:
+        unresolved = _scan_unresolved_lesson_ids(parsed['title'], parsed['description'])
+    except (LessonInventoryUnavailable, LessonRegexAnchoringError) as e:
+        return output_error(f'Lesson-ID reference validation failed: {e}', error_code='validation_error')
+    if unresolved:
+        return _lesson_id_validation_error(unresolved, task_index=0)
 
     task_dir = get_tasks_dir(args.plan_id)
 
@@ -257,9 +328,7 @@ def _validate_batch_entry(entry: dict, index: int) -> dict:
         depends_on = []
         for dep in raw_depends_on:
             if not isinstance(dep, str):
-                raise ValueError(
-                    f'batch entry [{index}]: depends_on entries must be strings (e.g. "TASK-1")'
-                )
+                raise ValueError(f'batch entry [{index}]: depends_on entries must be strings (e.g. "TASK-1")')
             if dep.lower() == 'none' or not dep.strip():
                 continue
             if dep.startswith('TASK-'):
@@ -268,13 +337,10 @@ def _validate_batch_entry(entry: dict, index: int) -> dict:
                 depends_on.append(f'TASK-{int(dep)}')
             else:
                 raise ValueError(
-                    f'batch entry [{index}]: invalid depends_on entry: {dep!r} '
-                    f"(expected 'TASK-N', integer, or 'none')"
+                    f"batch entry [{index}]: invalid depends_on entry: {dep!r} (expected 'TASK-N', integer, or 'none')"
                 )
     else:
-        raise ValueError(
-            f'batch entry [{index}]: depends_on must be an array, a comma-separated string, or "none"'
-        )
+        raise ValueError(f'batch entry [{index}]: depends_on must be an array, a comma-separated string, or "none"')
 
     raw_verification = entry.get('verification', {})
     if not isinstance(raw_verification, dict):
@@ -308,8 +374,7 @@ def _validate_batch_entry(entry: dict, index: int) -> dict:
         step_errors, _ = validate_steps_are_file_paths(steps)
         if step_errors:
             raise ValueError(
-                f'batch entry [{index}]: task contract violation - steps must be file paths:\n'
-                + '\n'.join(step_errors)
+                f'batch entry [{index}]: task contract violation - steps must be file paths:\n' + '\n'.join(step_errors)
             )
 
     if deliverable == 0 and origin_raw != 'holistic':
@@ -390,9 +455,7 @@ def cmd_batch_add(args) -> dict:
         return output_error(f'Invalid JSON for batch-add: {e.msg} at line {e.lineno} col {e.colno}')
 
     if not isinstance(parsed_payload, list):
-        return output_error(
-            f'batch-add expects a JSON array of task records, got {type(parsed_payload).__name__}'
-        )
+        return output_error(f'batch-add expects a JSON array of task records, got {type(parsed_payload).__name__}')
 
     # Empty array is a documented no-op (lets callers compose the array
     # programmatically without special-casing the zero-task path).
@@ -414,6 +477,24 @@ def cmd_batch_add(args) -> dict:
             # Atomic semantics: nothing has been written yet, so rejecting
             # here leaves the on-disk state untouched.
             return output_error(str(e))
+
+    # Lesson-ID reference validation across the whole batch (atomic — runs
+    # BEFORE any file write). See lesson 2026-05-03-21-002: tasks that cite
+    # lesson IDs MUST resolve against the live manage-lessons inventory at
+    # write time. The first task with an unresolved ID aborts the ENTIRE
+    # batch — no TASK-NNN.json is created and the on-disk state is untouched.
+    # The error payload includes ``task_index`` so the caller can correct the
+    # offending entry without re-running the rest of the validation manually.
+    for i, parsed in enumerate(normalized):
+        try:
+            unresolved = _scan_unresolved_lesson_ids(parsed['title'], parsed['description'])
+        except (LessonInventoryUnavailable, LessonRegexAnchoringError) as e:
+            return output_error(
+                f'Lesson-ID reference validation failed for batch entry [{i}]: {e}',
+                error_code='validation_error',
+            )
+        if unresolved:
+            return _lesson_id_validation_error(unresolved, task_index=i)
 
     # Persist atomically: assign sequential numbers up front, then write each
     # file. Filename collisions are impossible because get_next_number() is

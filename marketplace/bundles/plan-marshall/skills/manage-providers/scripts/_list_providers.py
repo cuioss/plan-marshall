@@ -84,7 +84,9 @@ def _get_git_remote_url() -> str:
     try:
         result = subprocess.run(
             ['git', 'remote', 'get-url', 'origin'],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return result.stdout.strip() if result.returncode == 0 else ''
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -152,9 +154,7 @@ def _validate_provider_selection(
     # version-control: exactly 1 required
     vc_providers = by_category.get('version-control', [])
     if len(vc_providers) == 0:
-        errors.append(
-            'Category version-control: exactly 1 provider required but none selected'
-        )
+        errors.append('Category version-control: exactly 1 provider required but none selected')
     elif len(vc_providers) > 1:
         errors.append(
             f'Category version-control: exactly 1 provider required but '
@@ -165,8 +165,7 @@ def _validate_provider_selection(
     ci_providers = by_category.get('ci', [])
     if len(ci_providers) > 1:
         errors.append(
-            f'Category ci: at most 1 provider allowed but '
-            f'{len(ci_providers)} selected: {", ".join(ci_providers)}'
+            f'Category ci: at most 1 provider allowed but {len(ci_providers)} selected: {", ".join(ci_providers)}'
         )
 
     # other: no constraints
@@ -184,19 +183,25 @@ def run_discover_and_persist(args) -> int:
     require_initialized()
     providers = _scan_for_providers()
 
-    selected_names = [n.strip() for n in args.providers.split(',') if n.strip()] if getattr(args, 'providers', None) is not None else None
+    selected_names = (
+        [n.strip() for n in args.providers.split(',') if n.strip()]
+        if getattr(args, 'providers', None) is not None
+        else None
+    )
 
     if selected_names is None:
         # Discovery-only mode: output what was found, don't persist
-        output_toon({
-            'status': 'success',
-            'action': 'discover',
-            'count': len(providers),
-            'providers': [
-                {'skill_name': p.get('skill_name', ''), 'display_name': p.get('display_name', '')}
-                for p in providers
-            ],
-        })
+        output_toon(
+            {
+                'status': 'success',
+                'action': 'discover',
+                'count': len(providers),
+                'providers': [
+                    {'skill_name': p.get('skill_name', ''), 'display_name': p.get('display_name', '')}
+                    for p in providers
+                ],
+            }
+        )
         return 0
 
     # Activation mode: persist only selected providers (deduplicate by skill_name)
@@ -214,17 +219,17 @@ def run_discover_and_persist(args) -> int:
     # Validate category cardinality before persisting
     validation_errors = _validate_provider_selection(providers, selected_names)
     if validation_errors:
-        output_toon({
-            'status': 'error',
-            'action': 'discover-and-persist',
-            'validation_errors': validation_errors,
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'action': 'discover-and-persist',
+                'validation_errors': validation_errors,
+            }
+        )
         return 1
 
     config = load_config()
-    config['providers'] = [
-        _build_persisted_entry(p) for p in activated
-    ]
+    config['providers'] = [_build_persisted_entry(p) for p in activated]
     save_config(config)
 
     result: dict[str, Any] = {
@@ -312,12 +317,14 @@ def run_find_by_category(args) -> int:
     require_initialized()
     results = find_by_category(args.category)
 
-    output_toon({
-        'status': 'success',
-        'category': args.category,
-        'count': len(results),
-        'providers': results,
-    })
+    output_toon(
+        {
+            'status': 'success',
+            'category': args.category,
+            'count': len(results),
+            'providers': results,
+        }
+    )
     return 0
 
 
@@ -342,9 +349,11 @@ def run_list_providers(args) -> int:
         for p in providers
     ]
 
-    output_toon({
-        'status': 'success',
-        'count': len(providers),
-        'providers': formatted,
-    })
+    output_toon(
+        {
+            'status': 'success',
+            'count': len(providers),
+            'providers': formatted,
+        }
+    )
     return 0

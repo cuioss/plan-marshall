@@ -21,7 +21,12 @@ from _build_shared import get_bash_timeout  # noqa: E402
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'build-npm' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'build-npm'
+    / 'scripts'
 )
 
 

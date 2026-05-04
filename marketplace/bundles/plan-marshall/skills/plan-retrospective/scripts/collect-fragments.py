@@ -86,9 +86,7 @@ def _resolve_plan_dir(mode: str, plan_id: str, archived_plan_path: str | None) -
     if mode == 'archived':
         if archived_plan_path:
             return Path(archived_plan_path).resolve()
-        return (
-            Path(tempfile.gettempdir()) / _ARCHIVED_TMP_SUBDIR / f'plan-{plan_id}'
-        ).resolve()
+        return (Path(tempfile.gettempdir()) / _ARCHIVED_TMP_SUBDIR / f'plan-{plan_id}').resolve()
     raise ValueError(f'Unknown mode: {mode!r}')
 
 
@@ -214,10 +212,7 @@ def _read_mode_from_bundle(bundle: dict[str, Any], bundle_path: Path) -> str:
     """
     meta = bundle.get(_META_KEY)
     if not isinstance(meta, dict) or 'mode' not in meta:
-        raise ValueError(
-            f'Bundle missing _meta.mode — was it created by a compatible '
-            f'init? bundle_path={bundle_path}'
-        )
+        raise ValueError(f'Bundle missing _meta.mode — was it created by a compatible init? bundle_path={bundle_path}')
     return str(meta['mode'])
 
 
@@ -256,9 +251,7 @@ def cmd_add(args: argparse.Namespace) -> dict[str, Any]:
     if not aspect:
         raise ValueError('--aspect is required')
     if aspect.startswith('_'):
-        raise ValueError(
-            'Reserved aspect key: keys starting with "_" are internal metadata'
-        )
+        raise ValueError('Reserved aspect key: keys starting with "_" are internal metadata')
 
     bundle_path = _locate_bundle(args)
     bundle = _read_bundle(bundle_path)
@@ -270,8 +263,7 @@ def cmd_add(args: argparse.Namespace) -> dict[str, Any]:
     expected_path = resolve_bundle_path(mode, args.plan_id, args.archived_plan_path)
     if bundle_path.resolve() != expected_path.resolve():
         raise ValueError(
-            f'Bundle path mismatch: found at {bundle_path} but _meta.mode='
-            f'{mode!r} resolves to {expected_path}'
+            f'Bundle path mismatch: found at {bundle_path} but _meta.mode={mode!r} resolves to {expected_path}'
         )
 
     already_present = aspect in bundle

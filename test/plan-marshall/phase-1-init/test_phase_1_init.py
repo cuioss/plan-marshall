@@ -67,9 +67,7 @@ class TestPhase1InitLessonMoveContract:
         source.write_text(lesson_content)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_convert_to_plan(
-                Namespace(lesson_id=lesson_id, plan_id=plan_id)
-            )
+            result = cmd_convert_to_plan(Namespace(lesson_id=lesson_id, plan_id=plan_id))
 
         # Contract assertion 1: success status with echoed identifiers
         assert result['status'] == 'success'
@@ -84,9 +82,7 @@ class TestPhase1InitLessonMoveContract:
 
         # Contract assertion 3: destination at canonical path with preserved content
         destination = tmp_path / 'plans' / plan_id / f'lesson-{lesson_id}.md'
-        assert destination.exists(), (
-            f'phase-1-init expects the moved file at plans/{plan_id}/lesson-{lesson_id}.md'
-        )
+        assert destination.exists(), f'phase-1-init expects the moved file at plans/{plan_id}/lesson-{lesson_id}.md'
         assert destination.read_text() == lesson_content
 
 

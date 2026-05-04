@@ -120,9 +120,7 @@ def test_mark_step_persists_display_detail():
     plan_id = 'mark-step-detail'
     with PlanContext(plan_id=plan_id):
         _make_plan(plan_id)
-        result = cmd_mark_step_done(
-            _args(plan_id, '1-init', 'step-a', 'done', display_detail='my detail')
-        )
+        result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='my detail'))
 
         assert result['status'] == 'success'
         assert result['changed'] is True
@@ -157,16 +155,12 @@ def test_mark_step_done_idempotent_on_identical_outcome_and_detail():
     plan_id = 'mark-step-idempotent'
     with PlanContext(plan_id=plan_id):
         _make_plan(plan_id)
-        cmd_mark_step_done(
-            _args(plan_id, '1-init', 'step-a', 'done', display_detail='detail-a')
-        )
+        cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='detail-a'))
 
         persisted_before = read_status(plan_id)
         updated_before = persisted_before['updated']
 
-        second = cmd_mark_step_done(
-            _args(plan_id, '1-init', 'step-a', 'done', display_detail='detail-a')
-        )
+        second = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='detail-a'))
 
         assert second['status'] == 'success'
         assert second['changed'] is False
@@ -186,13 +180,9 @@ def test_mark_step_detail_only_update_rewrites_entry():
     plan_id = 'mark-step-detail-update'
     with PlanContext(plan_id=plan_id):
         _make_plan(plan_id)
-        cmd_mark_step_done(
-            _args(plan_id, '1-init', 'step-a', 'done', display_detail='a')
-        )
+        cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='a'))
 
-        second = cmd_mark_step_done(
-            _args(plan_id, '1-init', 'step-a', 'done', display_detail='b')
-        )
+        second = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='b'))
 
         assert second['status'] == 'success'
         assert second['changed'] is True
@@ -218,9 +208,7 @@ def test_mark_step_conflict_without_force():
     plan_id = 'mark-step-conflict'
     with PlanContext(plan_id=plan_id):
         _make_plan(plan_id)
-        cmd_mark_step_done(
-            _args(plan_id, '1-init', 'step-a', 'done', display_detail='keep')
-        )
+        cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='keep'))
 
         result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'skipped'))
 
@@ -244,13 +232,9 @@ def test_mark_step_force_overwrites():
     plan_id = 'mark-step-force'
     with PlanContext(plan_id=plan_id):
         _make_plan(plan_id)
-        cmd_mark_step_done(
-            _args(plan_id, '1-init', 'step-a', 'done', display_detail='old')
-        )
+        cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='old'))
 
-        result = cmd_mark_step_done(
-            _args(plan_id, '1-init', 'step-a', 'skipped', force=True, display_detail='new')
-        )
+        result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'skipped', force=True, display_detail='new'))
 
         assert result['status'] == 'success'
         assert result['changed'] is True
@@ -280,9 +264,7 @@ def test_mark_step_rejects_legacy_bare_string_entry():
         status.setdefault('metadata', {})['phase_steps'] = {'1-init': {'step-a': 'done'}}
         write_status(plan_id, status)
 
-        result = cmd_mark_step_done(
-            _args(plan_id, '1-init', 'step-a', 'done', display_detail='ignored')
-        )
+        result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='ignored'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'legacy_string_entry'
@@ -308,9 +290,7 @@ def test_mark_step_multi_phase_and_multi_step():
 
         cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done'))
         cmd_mark_step_done(_args(plan_id, '1-init', 'step-b', 'skipped'))
-        cmd_mark_step_done(
-            _args(plan_id, '2-refine', 'clarify', 'done', display_detail='clarified')
-        )
+        cmd_mark_step_done(_args(plan_id, '2-refine', 'clarify', 'done', display_detail='clarified'))
         cmd_mark_step_done(_args(plan_id, '3-outline', 'draft', 'done'))
 
         persisted = read_status(plan_id)
@@ -516,9 +496,7 @@ def test_mark_step_omits_head_at_completion_key_when_flag_absent():
     plan_id = 'mark-step-head-omitted'
     with PlanContext(plan_id=plan_id):
         _make_plan(plan_id)
-        result = cmd_mark_step_done(
-            _args(plan_id, '1-init', 'step-a', 'done', display_detail='legacy')
-        )
+        result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='legacy'))
 
         assert result['status'] == 'success'
         assert result['changed'] is True

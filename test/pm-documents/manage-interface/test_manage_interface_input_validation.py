@@ -36,9 +36,12 @@ def test_update_rejects_invalid_field(axis, bad_value):
     result = run_script(
         SCRIPT_PATH,
         'update',
-        '--number', '1',
-        '--field', bad_value,
-        '--value', 'irrelevant',
+        '--number',
+        '1',
+        '--field',
+        bad_value,
+        '--value',
+        'irrelevant',
     )
     assert_invalid_field(result, 'invalid_field')
 
@@ -52,8 +55,11 @@ def test_update_accepts_canonical_field():
     result = run_script(
         SCRIPT_PATH,
         'update',
-        '--number', '1',
-        '--field', HAPPY_VALUES['field'],
-        '--value', 'irrelevant',
+        '--number',
+        '1',
+        '--field',
+        HAPPY_VALUES['field'],
+        '--value',
+        'irrelevant',
     )
     assert_not_invalid_field(result, 'invalid_field')

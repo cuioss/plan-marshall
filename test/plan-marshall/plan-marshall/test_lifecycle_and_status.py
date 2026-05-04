@@ -4,7 +4,6 @@
 Tests plan discovery, transitions, archiving, and routing (formerly manage-lifecycle).
 """
 
-
 from conftest import PlanContext, get_script_path, run_script
 
 # Get script paths

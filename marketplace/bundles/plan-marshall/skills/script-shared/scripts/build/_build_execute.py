@@ -95,6 +95,7 @@ def has_wrapper(project_root: Path, unix_wrapper: str, windows_wrapper: str) -> 
         return (project_root / windows_wrapper).exists()
     return (project_root / unix_wrapper).exists()
 
+
 # Minimum timeout floor (seconds) — prevents adaptive learning from producing
 # dangerously short timeouts (e.g., a warm cache run teaching 5s that then
 # fails on a cold start).

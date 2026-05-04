@@ -25,9 +25,7 @@ import set_terminal_title  # type: ignore[import-not-found]  # noqa: E402
 
 from conftest import MARKETPLACE_ROOT  # noqa: E402
 
-SCRIPT_PATH = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'scripts' / 'set_terminal_title.py'
-)
+SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'scripts' / 'set_terminal_title.py'
 
 
 def _expected_paths(home: Path, cwd: str) -> tuple[Path, Path]:

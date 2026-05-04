@@ -60,9 +60,11 @@ def run_list(args) -> int:
 
     entries.sort(key=lambda e: (e['scope'], e['skill']))
 
-    output_toon({
-        'status': 'success',
-        'count': len(entries),
-        'credentials': entries,
-    })
+    output_toon(
+        {
+            'status': 'success',
+            'count': len(entries),
+            'credentials': entries,
+        }
+    )
     return 0

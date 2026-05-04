@@ -17,7 +17,12 @@ from test_helpers import SCRIPT_PATH, create_marshal_json, create_nested_marshal
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-config'
+    / 'scripts'
 )
 
 
@@ -195,9 +200,12 @@ def test_resolve_workflow_skill_extension_plugin_dev(monkeypatch):
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
-        result = cmd_resolve_workflow_skill_extension(Namespace(
-            domain='plan-marshall-plugin-dev', type='outline',
-        ))
+        result = cmd_resolve_workflow_skill_extension(
+            Namespace(
+                domain='plan-marshall-plugin-dev',
+                type='outline',
+            )
+        )
 
         assert result['status'] == 'success'
         assert result['extension'] == 'pm-plugin-development:ext-outline-workflow'
@@ -432,6 +440,7 @@ def test_list_finalize_steps_other_project_skills_remain_after_built_ins(tmp_pat
 
 def test_list_finalize_steps_extension_steps_come_last(tmp_path):
     """Extension-contributed steps appear after all built-in and project steps."""
+
     class _FakeExtModule:
         @staticmethod
         def provides_finalize_steps():
@@ -461,8 +470,7 @@ def test_list_finalize_steps_extension_steps_come_last(tmp_path):
         if step['source'] == 'extension':
             continue
         assert idx < ext_idx, (
-            f'Non-extension step {step["name"]!r} at {idx} must come before extension step '
-            f'at {ext_idx}'
+            f'Non-extension step {step["name"]!r} at {idx} must come before extension step at {ext_idx}'
         )
     # And the extension entry carries source=extension
     assert steps[ext_idx]['source'] == 'extension'
@@ -552,9 +560,7 @@ def test_list_finalize_steps_project_skill_without_order_returns_none(tmp_path):
     """Project finalize-step-* skill without `order` frontmatter exposes order: None."""
     skill_dir = tmp_path / '.claude' / 'skills' / 'finalize-step-bare'
     skill_dir.mkdir(parents=True)
-    (skill_dir / 'SKILL.md').write_text(
-        '---\nname: finalize-step-bare\ndescription: Bare\n---\n\n# Bare\n'
-    )
+    (skill_dir / 'SKILL.md').write_text('---\nname: finalize-step-bare\ndescription: Bare\n---\n\n# Bare\n')
 
     with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):
         steps = _run_discovery_in_cwd(tmp_path)
@@ -565,6 +571,7 @@ def test_list_finalize_steps_project_skill_without_order_returns_none(tmp_path):
 
 def test_list_finalize_steps_extension_order_from_return_dict(tmp_path):
     """Extension-contributed finalize steps propagate the `order` field from the return dict."""
+
     class _FakeExtModule:
         @staticmethod
         def provides_finalize_steps():
@@ -621,8 +628,7 @@ def test_default_config_excludes_optional_bundle_finalize_steps():
 
     for optional_ref in _config_defaults.OPTIONAL_BUNDLE_FINALIZE_STEPS:
         assert optional_ref not in finalize_steps, (
-            f'Optional bundle step {optional_ref!r} must not be in default finalize steps '
-            f'(found in {finalize_steps})'
+            f'Optional bundle step {optional_ref!r} must not be in default finalize steps (found in {finalize_steps})'
         )
     # Sanity check: retrospective must be one of the opt-in entries
     assert 'plan-marshall:plan-retrospective' in _config_defaults.OPTIONAL_BUNDLE_FINALIZE_STEPS
@@ -639,9 +645,7 @@ def test_list_finalize_steps_optional_bundle_order_from_frontmatter(tmp_path):
         steps = _run_discovery_in_cwd(tmp_path)
 
     retro = next(s for s in steps if s['name'] == 'plan-marshall:plan-retrospective')
-    assert retro['order'] == 995, (
-        f'Expected order=995 from SKILL.md frontmatter, got {retro["order"]!r}'
-    )
+    assert retro['order'] == 995, f'Expected order=995 from SKILL.md frontmatter, got {retro["order"]!r}'
 
 
 def test_list_finalize_steps_optional_bundle_description_populated(tmp_path):
@@ -667,9 +671,7 @@ def test_list_finalize_steps_optional_bundle_description_populated(tmp_path):
     # retrospective step; the Source 4 path also accepts the frontmatter
     # description parsed from SKILL.md. Both are acceptable outcomes — the
     # only regression we guard against is the bare-notation sentinel.
-    fallback = _config_defaults.OPTIONAL_BUNDLE_FINALIZE_STEP_DESCRIPTIONS[
-        'plan-marshall:plan-retrospective'
-    ]
+    fallback = _config_defaults.OPTIONAL_BUNDLE_FINALIZE_STEP_DESCRIPTIONS['plan-marshall:plan-retrospective']
     assert description != 'plan-marshall:plan-retrospective'
     # Sanity check: description is meaningfully longer than the bare notation.
     assert len(description) > len('plan-marshall:plan-retrospective'), (
@@ -686,6 +688,7 @@ def test_list_finalize_steps_optional_bundle_precedes_extensions(tmp_path):
     _discover_all_finalize_steps() would break marshall-steward's assumption
     that extensions come last.
     """
+
     class _FakeExtModule:
         @staticmethod
         def provides_finalize_steps():
@@ -704,15 +707,12 @@ def test_list_finalize_steps_optional_bundle_precedes_extensions(tmp_path):
 
     retro_idx = names.index('plan-marshall:plan-retrospective')
     ext_idx = names.index('ext:finalize-step-from-extension')
-    assert retro_idx < ext_idx, (
-        f'Opt-in bundle step (idx {retro_idx}) must precede extension step (idx {ext_idx})'
-    )
+    assert retro_idx < ext_idx, f'Opt-in bundle step (idx {retro_idx}) must precede extension step (idx {ext_idx})'
     # Every extension entry must appear after the retrospective entry
     for idx, step in enumerate(steps):
         if step['source'] == 'extension':
             assert idx > retro_idx, (
-                f'Extension step {step["name"]!r} at {idx} must come after bundle-optional '
-                f'retrospective at {retro_idx}'
+                f'Extension step {step["name"]!r} at {idx} must come after bundle-optional retrospective at {retro_idx}'
             )
 
 

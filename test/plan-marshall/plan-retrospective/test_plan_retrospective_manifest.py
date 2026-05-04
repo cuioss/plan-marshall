@@ -17,21 +17,11 @@ from _fixtures import build_happy_plan_dir  # noqa: E402
 from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
 
 MANIFEST_SCRIPT = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-retrospective'
-    / 'scripts'
-    / 'check-manifest-consistency.py'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'check-manifest-consistency.py'
 )
 
 ARTIFACT_SCRIPT = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-retrospective'
-    / 'scripts'
-    / 'check-artifact-consistency.py'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'check-artifact-consistency.py'
 )
 
 
@@ -89,59 +79,67 @@ def _serialize_manifest(body: dict) -> str:
 
 
 def _manifest_default() -> str:
-    return _serialize_manifest({
-        'manifest_version': 1,
-        'plan_id': 'manifest-plan',
-        'phase_5': {
-            'early_terminate': False,
-            'verification_steps': ['quality-gate', 'module-tests'],
-        },
-        'phase_6': {
-            'steps': ['commit-push', 'create-pr', 'branch-cleanup'],
-        },
-    })
+    return _serialize_manifest(
+        {
+            'manifest_version': 1,
+            'plan_id': 'manifest-plan',
+            'phase_5': {
+                'early_terminate': False,
+                'verification_steps': ['quality-gate', 'module-tests'],
+            },
+            'phase_6': {
+                'steps': ['commit-push', 'create-pr', 'branch-cleanup'],
+            },
+        }
+    )
 
 
 def _manifest_docs_only() -> str:
-    return _serialize_manifest({
-        'manifest_version': 1,
-        'plan_id': 'manifest-plan',
-        'phase_5': {
-            'early_terminate': False,
-            'verification_steps': [],
-        },
-        'phase_6': {
-            'steps': ['commit-push', 'create-pr'],
-        },
-    })
+    return _serialize_manifest(
+        {
+            'manifest_version': 1,
+            'plan_id': 'manifest-plan',
+            'phase_5': {
+                'early_terminate': False,
+                'verification_steps': [],
+            },
+            'phase_6': {
+                'steps': ['commit-push', 'create-pr'],
+            },
+        }
+    )
 
 
 def _manifest_early_terminate() -> str:
-    return _serialize_manifest({
-        'manifest_version': 1,
-        'plan_id': 'manifest-plan',
-        'phase_5': {
-            'early_terminate': True,
-            'verification_steps': [],
-        },
-        'phase_6': {
-            'steps': ['knowledge-capture', 'archive-plan'],
-        },
-    })
+    return _serialize_manifest(
+        {
+            'manifest_version': 1,
+            'plan_id': 'manifest-plan',
+            'phase_5': {
+                'early_terminate': True,
+                'verification_steps': [],
+            },
+            'phase_6': {
+                'steps': ['knowledge-capture', 'archive-plan'],
+            },
+        }
+    )
 
 
 def _manifest_tests_only() -> str:
-    return _serialize_manifest({
-        'manifest_version': 1,
-        'plan_id': 'manifest-plan',
-        'phase_5': {
-            'early_terminate': False,
-            'verification_steps': ['module-tests'],
-        },
-        'phase_6': {
-            'steps': ['commit-push', 'create-pr'],
-        },
-    })
+    return _serialize_manifest(
+        {
+            'manifest_version': 1,
+            'plan_id': 'manifest-plan',
+            'phase_5': {
+                'early_terminate': False,
+                'verification_steps': ['module-tests'],
+            },
+            'phase_6': {
+                'steps': ['commit-push', 'create-pr'],
+            },
+        }
+    )
 
 
 def _check_by_name(checks: list, name: str) -> dict | None:
@@ -167,18 +165,20 @@ class TestNoManifest:
     """Without execution.toon the script emits a skipped fragment."""
 
     def test_legacy_plan_emits_skipped_fragment(self, tmp_path, monkeypatch):
-        plan_id, _ = _setup_plan_with_manifest(
-            tmp_path, monkeypatch, manifest_body='', plan_id='legacy-plan'
-        )
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body='', plan_id='legacy-plan')
         # Remove the manifest written by the helper to simulate legacy plans.
         (tmp_path / 'base' / 'plans' / plan_id / 'execution.toon').unlink()
         diff = _write_diff(tmp_path, [])
 
         result = run_script(
-            MANIFEST_SCRIPT, 'run',
-            '--plan-id', plan_id,
-            '--mode', 'live',
-            '--diff-file', str(diff),
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
         )
         assert result.success, result.stderr
         data = result.toon()
@@ -195,9 +195,7 @@ class TestNoManifest:
 
 class TestDocsOnlyRule:
     def test_pass_when_diff_is_pure_docs(self, tmp_path, monkeypatch):
-        plan_id, _ = _setup_plan_with_manifest(
-            tmp_path, monkeypatch, manifest_body=_manifest_docs_only()
-        )
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_docs_only())
         diff = _write_diff(
             tmp_path,
             [
@@ -208,10 +206,14 @@ class TestDocsOnlyRule:
             ],
         )
         result = run_script(
-            MANIFEST_SCRIPT, 'run',
-            '--plan-id', plan_id,
-            '--mode', 'live',
-            '--diff-file', str(diff),
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
         )
         assert result.success, result.stderr
         data = result.toon()
@@ -222,18 +224,20 @@ class TestDocsOnlyRule:
         assert _finding_by_code(data['findings'], 'docs_only_diff_violation') is None
 
     def test_fail_when_diff_contains_python_source(self, tmp_path, monkeypatch):
-        plan_id, _ = _setup_plan_with_manifest(
-            tmp_path, monkeypatch, manifest_body=_manifest_docs_only()
-        )
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_docs_only())
         diff = _write_diff(
             tmp_path,
             ['docs/intro.md', 'src/foo/bar.py'],
         )
         result = run_script(
-            MANIFEST_SCRIPT, 'run',
-            '--plan-id', plan_id,
-            '--mode', 'live',
-            '--diff-file', str(diff),
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
         )
         assert result.success, result.stderr
         data = result.toon()
@@ -246,15 +250,17 @@ class TestDocsOnlyRule:
         assert 'src/foo/bar.py' in finding['culprits']
 
     def test_skip_when_manifest_has_verification_steps(self, tmp_path, monkeypatch):
-        plan_id, _ = _setup_plan_with_manifest(
-            tmp_path, monkeypatch, manifest_body=_manifest_default()
-        )
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_default())
         diff = _write_diff(tmp_path, ['src/foo/bar.py'])
         result = run_script(
-            MANIFEST_SCRIPT, 'run',
-            '--plan-id', plan_id,
-            '--mode', 'live',
-            '--diff-file', str(diff),
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
         )
         data = result.toon()
         check = _check_by_name(data['checks'], 'docs_only_diff')
@@ -269,15 +275,17 @@ class TestDocsOnlyRule:
 
 class TestEarlyTerminateRule:
     def test_pass_when_diff_is_empty(self, tmp_path, monkeypatch):
-        plan_id, _ = _setup_plan_with_manifest(
-            tmp_path, monkeypatch, manifest_body=_manifest_early_terminate()
-        )
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_early_terminate())
         diff = _write_diff(tmp_path, [])
         result = run_script(
-            MANIFEST_SCRIPT, 'run',
-            '--plan-id', plan_id,
-            '--mode', 'live',
-            '--diff-file', str(diff),
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
         )
         data = result.toon()
         check = _check_by_name(data['checks'], 'early_terminate_diff')
@@ -285,9 +293,7 @@ class TestEarlyTerminateRule:
         assert check['status'] == 'pass'
 
     def test_pass_when_only_bookkeeping_changes(self, tmp_path, monkeypatch):
-        plan_id, _ = _setup_plan_with_manifest(
-            tmp_path, monkeypatch, manifest_body=_manifest_early_terminate()
-        )
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_early_terminate())
         diff = _write_diff(
             tmp_path,
             [
@@ -297,10 +303,14 @@ class TestEarlyTerminateRule:
             ],
         )
         result = run_script(
-            MANIFEST_SCRIPT, 'run',
-            '--plan-id', plan_id,
-            '--mode', 'live',
-            '--diff-file', str(diff),
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
         )
         data = result.toon()
         # All three diff entries should be filtered out as bookkeeping.
@@ -310,15 +320,17 @@ class TestEarlyTerminateRule:
         assert check['status'] == 'pass'
 
     def test_fail_when_implementation_files_present(self, tmp_path, monkeypatch):
-        plan_id, _ = _setup_plan_with_manifest(
-            tmp_path, monkeypatch, manifest_body=_manifest_early_terminate()
-        )
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_early_terminate())
         diff = _write_diff(tmp_path, ['src/foo/bar.py'])
         result = run_script(
-            MANIFEST_SCRIPT, 'run',
-            '--plan-id', plan_id,
-            '--mode', 'live',
-            '--diff-file', str(diff),
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
         )
         data = result.toon()
         check = _check_by_name(data['checks'], 'early_terminate_diff')
@@ -335,9 +347,7 @@ class TestEarlyTerminateRule:
 
 class TestTestsOnlyRule:
     def test_pass_when_only_test_files(self, tmp_path, monkeypatch):
-        plan_id, _ = _setup_plan_with_manifest(
-            tmp_path, monkeypatch, manifest_body=_manifest_tests_only()
-        )
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_tests_only())
         diff = _write_diff(
             tmp_path,
             [
@@ -349,10 +359,14 @@ class TestTestsOnlyRule:
             ],
         )
         result = run_script(
-            MANIFEST_SCRIPT, 'run',
-            '--plan-id', plan_id,
-            '--mode', 'live',
-            '--diff-file', str(diff),
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
         )
         data = result.toon()
         check = _check_by_name(data['checks'], 'tests_only_diff')
@@ -360,18 +374,20 @@ class TestTestsOnlyRule:
         assert check['status'] == 'pass'
 
     def test_fail_when_production_code_present(self, tmp_path, monkeypatch):
-        plan_id, _ = _setup_plan_with_manifest(
-            tmp_path, monkeypatch, manifest_body=_manifest_tests_only()
-        )
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_tests_only())
         diff = _write_diff(
             tmp_path,
             ['test/foo/test_bar.py', 'src/main/foo/bar.py'],
         )
         result = run_script(
-            MANIFEST_SCRIPT, 'run',
-            '--plan-id', plan_id,
-            '--mode', 'live',
-            '--diff-file', str(diff),
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
         )
         data = result.toon()
         check = _check_by_name(data['checks'], 'tests_only_diff')
@@ -389,15 +405,17 @@ class TestTestsOnlyRule:
 
 class TestBranchCleanupRule:
     def test_pass_when_branch_cleanup_paired_with_changes(self, tmp_path, monkeypatch):
-        plan_id, _ = _setup_plan_with_manifest(
-            tmp_path, monkeypatch, manifest_body=_manifest_default()
-        )
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_default())
         diff = _write_diff(tmp_path, ['src/foo/bar.py'])
         result = run_script(
-            MANIFEST_SCRIPT, 'run',
-            '--plan-id', plan_id,
-            '--mode', 'live',
-            '--diff-file', str(diff),
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
         )
         data = result.toon()
         check = _check_by_name(data['checks'], 'branch_cleanup_changes')
@@ -405,15 +423,17 @@ class TestBranchCleanupRule:
         assert check['status'] == 'pass'
 
     def test_fail_when_branch_cleanup_without_changes(self, tmp_path, monkeypatch):
-        plan_id, _ = _setup_plan_with_manifest(
-            tmp_path, monkeypatch, manifest_body=_manifest_default()
-        )
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_default())
         diff = _write_diff(tmp_path, [])
         result = run_script(
-            MANIFEST_SCRIPT, 'run',
-            '--plan-id', plan_id,
-            '--mode', 'live',
-            '--diff-file', str(diff),
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
         )
         data = result.toon()
         check = _check_by_name(data['checks'], 'branch_cleanup_changes')
@@ -424,15 +444,17 @@ class TestBranchCleanupRule:
         assert finding['severity'] == 'info'
 
     def test_skip_when_branch_cleanup_absent(self, tmp_path, monkeypatch):
-        plan_id, _ = _setup_plan_with_manifest(
-            tmp_path, monkeypatch, manifest_body=_manifest_early_terminate()
-        )
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_early_terminate())
         diff = _write_diff(tmp_path, [])
         result = run_script(
-            MANIFEST_SCRIPT, 'run',
-            '--plan-id', plan_id,
-            '--mode', 'live',
-            '--diff-file', str(diff),
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
         )
         data = result.toon()
         check = _check_by_name(data['checks'], 'branch_cleanup_changes')
@@ -447,15 +469,17 @@ class TestBranchCleanupRule:
 
 class TestManifestVersionRule:
     def test_pass_for_known_version(self, tmp_path, monkeypatch):
-        plan_id, _ = _setup_plan_with_manifest(
-            tmp_path, monkeypatch, manifest_body=_manifest_default()
-        )
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_default())
         diff = _write_diff(tmp_path, ['src/foo/bar.py'])
         result = run_script(
-            MANIFEST_SCRIPT, 'run',
-            '--plan-id', plan_id,
-            '--mode', 'live',
-            '--diff-file', str(diff),
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
         )
         data = result.toon()
         check = _check_by_name(data['checks'], 'manifest_version_recognized')
@@ -466,15 +490,17 @@ class TestManifestVersionRule:
         # Replace the version line precisely. Replacing the bare ``1`` would
         # also rewrite list counts in the surrounding TOON header.
         body = _manifest_default().replace('manifest_version: 1\n', 'manifest_version: 99\n')
-        plan_id, _ = _setup_plan_with_manifest(
-            tmp_path, monkeypatch, manifest_body=body
-        )
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=body)
         diff = _write_diff(tmp_path, [])
         result = run_script(
-            MANIFEST_SCRIPT, 'run',
-            '--plan-id', plan_id,
-            '--mode', 'live',
-            '--diff-file', str(diff),
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
         )
         data = result.toon()
         check = _check_by_name(data['checks'], 'manifest_version_recognized')
@@ -496,20 +522,24 @@ class TestDecisionLogSurfacing:
             '[2026-04-17T10:00:00Z] [INFO] [aaaa] '
             '(plan-marshall:manage-execution-manifest:compose) Rule default fired — early_terminate=False',
             # Unrelated decision lines must NOT be surfaced.
-            '[2026-04-17T10:00:01Z] [INFO] [bbbb] '
-            '(plan-marshall:phase-3-outline) picked option A',
+            '[2026-04-17T10:00:01Z] [INFO] [bbbb] (plan-marshall:phase-3-outline) picked option A',
         ]
         plan_id, _ = _setup_plan_with_manifest(
-            tmp_path, monkeypatch,
+            tmp_path,
+            monkeypatch,
             manifest_body=_manifest_default(),
             decision_lines=decision_lines,
         )
         diff = _write_diff(tmp_path, ['src/foo/bar.py'])
         result = run_script(
-            MANIFEST_SCRIPT, 'run',
-            '--plan-id', plan_id,
-            '--mode', 'live',
-            '--diff-file', str(diff),
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
         )
         data = result.toon()
         entries = data['decision_log_entries']
@@ -537,6 +567,7 @@ class TestArtifactConsistencyManifestForward:
         build_happy_plan_dir(plan_dir)
         # Trim references.json so outline > references → warn.
         import json as _json  # local alias to avoid module-level pollution
+
         (plan_dir / 'references.json').write_text(
             _json.dumps({'modified_files': ['src/foo.py'], 'domains': []}),
             encoding='utf-8',
@@ -545,9 +576,12 @@ class TestArtifactConsistencyManifestForward:
         monkeypatch.setenv('PLAN_BASE_DIR', str(base))
 
         result = run_script(
-            ARTIFACT_SCRIPT, 'run',
-            '--plan-id', 'forward-plan',
-            '--mode', 'live',
+            ARTIFACT_SCRIPT,
+            'run',
+            '--plan-id',
+            'forward-plan',
+            '--mode',
+            'live',
         )
         assert result.success, result.stderr
         data = result.toon()
@@ -577,6 +611,7 @@ class TestArtifactConsistencyManifestForward:
         plan_dir = base / 'plans' / 'legacy-warn'
         build_happy_plan_dir(plan_dir)
         import json as _json
+
         (plan_dir / 'references.json').write_text(
             _json.dumps({'modified_files': ['src/foo.py'], 'domains': []}),
             encoding='utf-8',
@@ -585,9 +620,12 @@ class TestArtifactConsistencyManifestForward:
         monkeypatch.setenv('PLAN_BASE_DIR', str(base))
 
         result = run_script(
-            ARTIFACT_SCRIPT, 'run',
-            '--plan-id', 'legacy-warn',
-            '--mode', 'live',
+            ARTIFACT_SCRIPT,
+            'run',
+            '--plan-id',
+            'legacy-warn',
+            '--mode',
+            'live',
         )
         assert result.success, result.stderr
         data = result.toon()

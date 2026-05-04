@@ -68,6 +68,14 @@ Execute ONLY the commands documented in the loaded skill's workflow. Never add d
 
 Before reaching for `Glob` or `Grep` for codebase navigation (file discovery, module identification, path resolution), consult the structured architecture inventory via `architecture files --module X`, `architecture which-module --path P`, or `architecture find --pattern P`. `Glob`/`Grep` are the fallback for sub-module component lookup, content searches inside an already-known file, or when the architecture verb returns elision — not the routine first choice. See [`general-development-rules.md` § Structured queries first](standards/general-development-rules.md#structured-queries-first) for the full rule and a worked example.
 
+### Never invent script subcommands
+
+When issuing `python3 .plan/execute-script.py {notation} {subcmd} ...` calls, quote the subcommand and flag names verbatim from the executor mappings or the script's `--help` output. Never extrapolate plausible-sounding verbs (`add-fix-task`, `read-context`, `tail`, `--filter-status`, `--tail`) from surrounding workflow prose. Plausible names that match the workflow's narrative but not the actual argparse declaration produce silent `exit_code: 2` failures that bypass the script body and corrupt downstream behaviour.
+
+**Why:** Lesson `2026-04-29-23-002` documents three recurrences in ~3 days (`lesson-2026-04-29-08-003`, `phase-a-arch-split`, `phase-c1-diff-modules`) where skill workflows and orchestrators referenced renamed/removed CLI shapes. Each recurrence produced multiple `wrong_parameters` argparse rejections that the calling workflow swallowed silently. The same failure mode hit phase skills, the retrospective orchestrator, and the execute-task fix-and-retry path — confirming the failure is structural, not specific to any one skill.
+
+**How to apply:** When in doubt, invoke the script with `--help` first (`python3 .plan/execute-script.py {notation} --help` and `python3 .plan/execute-script.py {notation} {subcmd} --help`), or grep `.plan/execute-script.py`'s embedded `SCRIPTS = { ... }` mapping. The `ARGUMENT_NAMING_*` plugin-doctor rule cluster (unconditionally active per lesson `2026-04-29-23-002`) catches drift at edit time as the structural guard against this class of failure.
+
 ### Git: always use `git -C {path}`, never `cd {path} && git ...`
 
 Every repo-targeted git command MUST use the `git -C {path} <subcommand>` form. The compound form `cd {path} && git <subcommand>` is forbidden — even when the target path is a worktree absolute path that the model already has in context.

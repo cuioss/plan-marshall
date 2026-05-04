@@ -24,7 +24,8 @@ def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
         allow_abbrev=False,
-        description='Documentation content quality operations', formatter_class=argparse.RawDescriptionHelpFormatter
+        description='Documentation content quality operations',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
@@ -37,7 +38,9 @@ def main():
     review_parser.set_defaults(func=cmd_review)
 
     # analyze-tone subcommand
-    tone_parser = subparsers.add_parser('analyze-tone', help='Detect promotional language and missing sources', allow_abbrev=False)
+    tone_parser = subparsers.add_parser(
+        'analyze-tone', help='Detect promotional language and missing sources', allow_abbrev=False
+    )
     tone_parser.add_argument('--file', type=str, help='Single file to analyze')
     tone_parser.add_argument('--directory', type=str, help='Directory to analyze')
     tone_parser.add_argument('--output', type=str, help='Output JSON file')

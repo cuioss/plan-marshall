@@ -198,11 +198,7 @@ def _classify_marketplace(rel_from_module: str, basename: str) -> str | None:
     parts = rel_from_module.split('/')
 
     # skills/<skill>/SKILL.md
-    if (
-        len(parts) >= 3
-        and parts[0] == 'skills'
-        and basename == 'SKILL.md'
-    ):
+    if len(parts) >= 3 and parts[0] == 'skills' and basename == 'SKILL.md':
         return 'skill'
 
     # skills/<skill>/scripts/**/*.{py,sh}
@@ -215,12 +211,7 @@ def _classify_marketplace(rel_from_module: str, basename: str) -> str | None:
         return 'script'
 
     # skills/<skill>/standards/**/*.md
-    if (
-        len(parts) >= 4
-        and parts[0] == 'skills'
-        and parts[2] == 'standards'
-        and basename.endswith('.md')
-    ):
+    if len(parts) >= 4 and parts[0] == 'skills' and parts[2] == 'standards' and basename.endswith('.md'):
         return 'standard'
 
     # skills/<skill>/templates/**/*
@@ -575,9 +566,7 @@ def api_init(project_dir: str = '.', check: bool = False, force: bool = False) -
             module_names = iter_modules(project_dir)
         except DataNotFoundError as e:
             return {'status': 'error', 'error': str(e)}
-        present = sum(
-            1 for name in module_names if get_module_enriched_path(name, project_dir).exists()
-        )
+        present = sum(1 for name in module_names if get_module_enriched_path(name, project_dir).exists())
         return {
             'status': 'exists',
             'file': str(project_meta_path),

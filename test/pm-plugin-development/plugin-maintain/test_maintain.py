@@ -23,7 +23,12 @@ import importlib.util  # noqa: E402
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills' / 'plugin-maintain' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'pm-plugin-development'
+    / 'skills'
+    / 'plugin-maintain'
+    / 'scripts'
 )
 
 

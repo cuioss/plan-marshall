@@ -67,7 +67,12 @@ python_build = _load_python_build()
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'build-python' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'build-python'
+    / 'scripts'
 )
 
 
@@ -350,9 +355,7 @@ def _load_root_build():
     return module
 
 
-_DOCTOR_MARKETPLACE_SUFFIX = (
-    'pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py'
-)
+_DOCTOR_MARKETPLACE_SUFFIX = 'pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py'
 
 
 def _is_doctor_marketplace_cmd(cmd: list[str]) -> bool:
@@ -377,9 +380,7 @@ def test_quality_gate_full_tree_invokes_plugin_doctor():
 
     assert exit_code == 0
     plugin_doctor_calls = [cmd for cmd in invocations if _is_doctor_marketplace_cmd(cmd)]
-    assert len(plugin_doctor_calls) == 1, (
-        f'Expected exactly one plugin-doctor invocation, got: {invocations}'
-    )
+    assert len(plugin_doctor_calls) == 1, f'Expected exactly one plugin-doctor invocation, got: {invocations}'
     cmd = plugin_doctor_calls[0]
     assert cmd[0] == 'python3'
     assert 'quality-gate' in cmd, f'Expected quality-gate subcommand, got: {cmd}'

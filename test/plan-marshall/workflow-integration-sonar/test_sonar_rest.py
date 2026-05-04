@@ -87,9 +87,7 @@ class TestSonarSearchLogic:
 
             captured = StringIO()
             with patch('sys.stdout', captured):
-                result = mod.cmd_search(Namespace(
-                    project='my-project', pr=None, severities=None, types=None
-                ))
+                result = mod.cmd_search(Namespace(project='my-project', pr=None, severities=None, types=None))
 
             assert result == 0
             output = captured.getvalue()

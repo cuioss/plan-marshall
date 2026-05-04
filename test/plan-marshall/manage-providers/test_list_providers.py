@@ -17,7 +17,12 @@ import conftest  # noqa: F401
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-providers' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-providers'
+    / 'scripts'
 )
 
 
@@ -92,10 +97,7 @@ class TestScanForProviders:
         provider_dir = tmp_path / 'providers'
         provider_dir.mkdir()
         provider_file = provider_dir / 'dup_provider.py'
-        provider_file.write_text(
-            'def get_provider_declarations():\n'
-            '    return [{"skill_name": "dup-skill"}]\n'
-        )
+        provider_file.write_text('def get_provider_declarations():\n    return [{"skill_name": "dup-skill"}]\n')
         _mock_collect_and_base(monkeypatch, [str(provider_dir), str(provider_dir)])
         result = _scan_for_providers()
         assert len(result) == 1
@@ -125,12 +127,10 @@ class TestScanForProviders:
         dir_a.mkdir()
         dir_b.mkdir()
         (dir_a / 'alpha_provider.py').write_text(
-            'def get_provider_declarations():\n'
-            '    return [{"skill_name": "alpha"}]\n'
+            'def get_provider_declarations():\n    return [{"skill_name": "alpha"}]\n'
         )
         (dir_b / 'beta_provider.py').write_text(
-            'def get_provider_declarations():\n'
-            '    return [{"skill_name": "beta"}]\n'
+            'def get_provider_declarations():\n    return [{"skill_name": "beta"}]\n'
         )
         _mock_collect_and_base(monkeypatch, [str(dir_a), str(dir_b)])
         result = _scan_for_providers()
@@ -206,11 +206,14 @@ class TestValidateProviderSelection:
             _make_provider('plan-marshall:workflow-integration-github', 'ci'),
             _make_provider('plan-marshall:workflow-integration-sonar', 'other'),
         ]
-        errors = _validate_provider_selection(providers, [
-            'plan-marshall:workflow-integration-git',
-            'plan-marshall:workflow-integration-github',
-            'plan-marshall:workflow-integration-sonar',
-        ])
+        errors = _validate_provider_selection(
+            providers,
+            [
+                'plan-marshall:workflow-integration-git',
+                'plan-marshall:workflow-integration-github',
+                'plan-marshall:workflow-integration-sonar',
+            ],
+        )
         assert errors == []
 
     def test_valid_git_and_ci_only(self):
@@ -219,10 +222,13 @@ class TestValidateProviderSelection:
             _make_provider('plan-marshall:workflow-integration-git', 'version-control'),
             _make_provider('plan-marshall:workflow-integration-github', 'ci'),
         ]
-        errors = _validate_provider_selection(providers, [
-            'plan-marshall:workflow-integration-git',
-            'plan-marshall:workflow-integration-github',
-        ])
+        errors = _validate_provider_selection(
+            providers,
+            [
+                'plan-marshall:workflow-integration-git',
+                'plan-marshall:workflow-integration-github',
+            ],
+        )
         assert errors == []
 
     def test_valid_git_only(self):
@@ -231,9 +237,12 @@ class TestValidateProviderSelection:
             _make_provider('plan-marshall:workflow-integration-git', 'version-control'),
             _make_provider('plan-marshall:workflow-integration-github', 'ci'),
         ]
-        errors = _validate_provider_selection(providers, [
-            'plan-marshall:workflow-integration-git',
-        ])
+        errors = _validate_provider_selection(
+            providers,
+            [
+                'plan-marshall:workflow-integration-git',
+            ],
+        )
         assert errors == []
 
     def test_missing_version_control(self):
@@ -242,9 +251,12 @@ class TestValidateProviderSelection:
             _make_provider('plan-marshall:workflow-integration-git', 'version-control'),
             _make_provider('plan-marshall:workflow-integration-github', 'ci'),
         ]
-        errors = _validate_provider_selection(providers, [
-            'plan-marshall:workflow-integration-github',
-        ])
+        errors = _validate_provider_selection(
+            providers,
+            [
+                'plan-marshall:workflow-integration-github',
+            ],
+        )
         assert len(errors) == 1
         assert 'version-control' in errors[0]
 
@@ -255,11 +267,14 @@ class TestValidateProviderSelection:
             _make_provider('plan-marshall:workflow-integration-github', 'ci'),
             _make_provider('plan-marshall:workflow-integration-gitlab', 'ci'),
         ]
-        errors = _validate_provider_selection(providers, [
-            'plan-marshall:workflow-integration-git',
-            'plan-marshall:workflow-integration-github',
-            'plan-marshall:workflow-integration-gitlab',
-        ])
+        errors = _validate_provider_selection(
+            providers,
+            [
+                'plan-marshall:workflow-integration-git',
+                'plan-marshall:workflow-integration-github',
+                'plan-marshall:workflow-integration-gitlab',
+            ],
+        )
         assert len(errors) == 1
         assert 'ci' in errors[0]
 
@@ -272,7 +287,8 @@ class TestValidateProviderSelection:
             _make_provider('plan-marshall:custom-tool', 'other'),
         ]
         errors = _validate_provider_selection(
-            providers, [
+            providers,
+            [
                 'plan-marshall:workflow-integration-git',
                 'plan-marshall:workflow-integration-github',
                 'plan-marshall:workflow-integration-sonar',
@@ -445,10 +461,14 @@ class TestRunDiscoverAndPersist:
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
         marshal_path = plan_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps({
-            'skill_domains': {'java': {}},
-            'custom_key': 'preserved',
-        }))
+        marshal_path.write_text(
+            json.dumps(
+                {
+                    'skill_domains': {'java': {}},
+                    'custom_key': 'preserved',
+                }
+            )
+        )
 
         _config_core.PLAN_BASE_DIR = tmp_path
         _config_core.MARSHAL_PATH = marshal_path
@@ -476,15 +496,19 @@ class TestRunListProviders:
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
         marshal_path = plan_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps({
-            'providers': [
+        marshal_path.write_text(
+            json.dumps(
                 {
-                    'skill_name': 'plan-marshall:workflow-integration-git',
-                    'category': 'version-control',
-                    'verify_command': 'git --version',
-                },
-            ],
-        }))
+                    'providers': [
+                        {
+                            'skill_name': 'plan-marshall:workflow-integration-git',
+                            'category': 'version-control',
+                            'verify_command': 'git --version',
+                        },
+                    ],
+                }
+            )
+        )
 
         _config_core.PLAN_BASE_DIR = tmp_path
         _config_core.MARSHAL_PATH = marshal_path
@@ -519,17 +543,21 @@ class TestRunListProviders:
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
         marshal_path = plan_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps({
-            'providers': [
+        marshal_path.write_text(
+            json.dumps(
                 {
-                    'skill_name': 'plan-marshall:workflow-integration-sonar',
-                    'category': 'other',
-                    'verify_command': 'sonar --version',
-                    'url': 'https://sonarcloud.io',
-                    'description': 'SonarCloud code analysis',
-                },
-            ],
-        }))
+                    'providers': [
+                        {
+                            'skill_name': 'plan-marshall:workflow-integration-sonar',
+                            'category': 'other',
+                            'verify_command': 'sonar --version',
+                            'url': 'https://sonarcloud.io',
+                            'description': 'SonarCloud code analysis',
+                        },
+                    ],
+                }
+            )
+        )
 
         _config_core.PLAN_BASE_DIR = tmp_path
         _config_core.MARSHAL_PATH = marshal_path
@@ -562,13 +590,17 @@ class TestFindByCategory:
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
         marshal_path = plan_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps({
-            'providers': [
-                {'skill_name': 'git', 'category': 'version-control'},
-                {'skill_name': 'github', 'category': 'ci'},
-                {'skill_name': 'sonar', 'category': 'other'},
-            ],
-        }))
+        marshal_path.write_text(
+            json.dumps(
+                {
+                    'providers': [
+                        {'skill_name': 'git', 'category': 'version-control'},
+                        {'skill_name': 'github', 'category': 'ci'},
+                        {'skill_name': 'sonar', 'category': 'other'},
+                    ],
+                }
+            )
+        )
         _config_core.PLAN_BASE_DIR = tmp_path
         _config_core.MARSHAL_PATH = marshal_path
 
@@ -583,11 +615,15 @@ class TestFindByCategory:
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
         marshal_path = plan_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps({
-            'providers': [
-                {'skill_name': 'git', 'category': 'version-control'},
-            ],
-        }))
+        marshal_path.write_text(
+            json.dumps(
+                {
+                    'providers': [
+                        {'skill_name': 'git', 'category': 'version-control'},
+                    ],
+                }
+            )
+        )
         _config_core.PLAN_BASE_DIR = tmp_path
         _config_core.MARSHAL_PATH = marshal_path
 
@@ -615,11 +651,15 @@ class TestFindByCategory:
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
         marshal_path = plan_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps({
-            'providers': [
-                {'skill_name': 'github', 'category': 'ci'},
-            ],
-        }))
+        marshal_path.write_text(
+            json.dumps(
+                {
+                    'providers': [
+                        {'skill_name': 'github', 'category': 'ci'},
+                    ],
+                }
+            )
+        )
         _config_core.PLAN_BASE_DIR = tmp_path
         _config_core.MARSHAL_PATH = marshal_path
 

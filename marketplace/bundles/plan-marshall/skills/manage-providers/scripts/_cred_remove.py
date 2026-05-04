@@ -19,19 +19,23 @@ def run_remove(args) -> int:
     removed = remove_credential(skill, scope, project_name)
 
     if removed:
-        output_toon({
-            'status': 'success',
-            'skill': skill,
-            'scope': scope,
-            'action': 'removed',
-        })
+        output_toon(
+            {
+                'status': 'success',
+                'skill': skill,
+                'scope': scope,
+                'action': 'removed',
+            }
+        )
     else:
-        output_toon({
-            'status': 'success',
-            'skill': skill,
-            'scope': scope,
-            'action': 'not_found',
-            'message': f'No credential file found for {skill} (scope: {scope})',
-        })
+        output_toon(
+            {
+                'status': 'success',
+                'skill': skill,
+                'scope': scope,
+                'action': 'not_found',
+                'message': f'No credential file found for {skill} (scope: {scope})',
+            }
+        )
 
     return 0

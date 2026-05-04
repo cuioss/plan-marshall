@@ -225,12 +225,8 @@ def test_compute_total_elapsed_mixed_real_and_zero_picks_real_earliest():
     early = (now - timedelta(seconds=300)).isoformat()
     late = (now - timedelta(seconds=60)).isoformat()
     # Order intentionally shuffled with zero-time and None interspersed.
-    result = compute_total_elapsed(
-        [late, _GO_ZERO, None, early, _GO_ZERO], now
-    )
-    assert 299 <= result <= 301, (
-        f'Expected ~300s (earliest real) but got {result}s'
-    )
+    result = compute_total_elapsed([late, _GO_ZERO, None, early, _GO_ZERO], now)
+    assert 299 <= result <= 301, f'Expected ~300s (earliest real) but got {result}s'
 
 
 def test_compute_total_elapsed_parse_failures_skipped():
@@ -375,9 +371,7 @@ def test_pr_create_parser_accepts_head_flag():
     sub = parser.add_subparsers(dest='cmd')
     add_pr_create_args(sub)
 
-    args = parser.parse_args(
-        ['create', '--title', 'T', '--plan-id', 'my-plan', '--head', 'feature/x']
-    )
+    args = parser.parse_args(['create', '--title', 'T', '--plan-id', 'my-plan', '--head', 'feature/x'])
     assert args.head == 'feature/x'
 
     # Still optional — works without --head, but --plan-id is now required
@@ -394,13 +388,9 @@ def test_pr_create_parser_rejects_body_and_body_file():
 
     # Legacy body flags must raise SystemExit (unknown arg → argparse error)
     with pytest.raises(SystemExit):
-        parser.parse_args(
-            ['create', '--title', 'T', '--plan-id', 'p', '--body', 'X']
-        )
+        parser.parse_args(['create', '--title', 'T', '--plan-id', 'p', '--body', 'X'])
     with pytest.raises(SystemExit):
-        parser.parse_args(
-            ['create', '--title', 'T', '--plan-id', 'p', '--body-file', '/tmp/x']
-        )
+        parser.parse_args(['create', '--title', 'T', '--plan-id', 'p', '--body-file', '/tmp/x'])
 
 
 def test_pr_create_parser_requires_plan_id():
@@ -418,9 +408,7 @@ def test_pr_create_parser_accepts_slot():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest='cmd')
     add_pr_create_args(sub)
-    args = parser.parse_args(
-        ['create', '--title', 'T', '--plan-id', 'p', '--slot', 'pr-body']
-    )
+    args = parser.parse_args(['create', '--title', 'T', '--plan-id', 'p', '--slot', 'pr-body'])
     assert args.slot == 'pr-body'
 
 
@@ -474,9 +462,7 @@ def test_build_parser_registers_pr_prepare_body():
     assert args.plan_id == 'my-plan'
     assert args.prepare_for == 'create'  # default
 
-    args = parser.parse_args(
-        ['pr', 'prepare-body', '--plan-id', 'my-plan', '--for', 'edit', '--slot', 'update']
-    )
+    args = parser.parse_args(['pr', 'prepare-body', '--plan-id', 'my-plan', '--for', 'edit', '--slot', 'update'])
     assert args.prepare_for == 'edit'
     assert args.slot == 'update'
 
@@ -491,9 +477,7 @@ def test_build_parser_registers_pr_prepare_comment():
     assert args.pr_command == 'prepare-comment'
     assert args.prepare_for == 'reply'
 
-    args = parser.parse_args(
-        ['pr', 'prepare-comment', '--plan-id', 'my-plan', '--for', 'thread-reply']
-    )
+    args = parser.parse_args(['pr', 'prepare-comment', '--plan-id', 'my-plan', '--for', 'thread-reply'])
     assert args.prepare_for == 'thread-reply'
 
 
@@ -514,9 +498,7 @@ def test_build_parser_registers_issue_prepare_body():
 def test_pr_reply_rejects_body_flag():
     parser, _, _, _, _ = build_parser('test')
     with pytest.raises(SystemExit):
-        parser.parse_args(
-            ['pr', 'reply', '--pr-number', '1', '--plan-id', 'p', '--body', 'X']
-        )
+        parser.parse_args(['pr', 'reply', '--pr-number', '1', '--plan-id', 'p', '--body', 'X'])
 
 
 def test_pr_thread_reply_rejects_body_flag():
@@ -541,17 +523,13 @@ def test_pr_thread_reply_rejects_body_flag():
 def test_pr_edit_rejects_body_flag():
     parser, _, _, _, _ = build_parser('test')
     with pytest.raises(SystemExit):
-        parser.parse_args(
-            ['pr', 'edit', '--pr-number', '1', '--plan-id', 'p', '--body', 'X']
-        )
+        parser.parse_args(['pr', 'edit', '--pr-number', '1', '--plan-id', 'p', '--body', 'X'])
 
 
 def test_issue_create_rejects_body_flag():
     parser, _, _, _, _ = build_parser('test')
     with pytest.raises(SystemExit):
-        parser.parse_args(
-            ['issue', 'create', '--title', 'T', '--plan-id', 'p', '--body', 'X']
-        )
+        parser.parse_args(['issue', 'create', '--title', 'T', '--plan-id', 'p', '--body', 'X'])
 
 
 def test_consumers_require_plan_id():
@@ -603,6 +581,7 @@ def test_prepare_body_creates_parent_directory(plan_base_env):
     assert result['exists'] is False
     # Parent directory was created so the caller can write immediately
     from pathlib import Path as _P
+
     assert _P(result['path']).parent.exists()
 
 
@@ -610,6 +589,7 @@ def test_prepare_body_reports_exists_flag(plan_base_env):
     result = prepare_body('my-plan', BODY_KIND_PR_REPLY)
     path = result['path']
     from pathlib import Path as _P
+
     _P(path).write_text('existing content', encoding='utf-8')
     result2 = prepare_body('my-plan', BODY_KIND_PR_REPLY)
     assert result2['exists'] is True
@@ -624,6 +604,7 @@ def test_prepare_body_rejects_invalid_slot(plan_base_env):
 def test_read_and_consume_body_returns_content(plan_base_env):
     prep = prepare_body('my-plan', BODY_KIND_ISSUE_CREATE)
     from pathlib import Path as _P
+
     _P(prep['path']).write_text('Issue description body', encoding='utf-8')
 
     content, err = read_and_consume_body('my-plan', BODY_KIND_ISSUE_CREATE)
@@ -641,6 +622,7 @@ def test_read_and_consume_body_missing_file(plan_base_env):
 def test_read_and_consume_body_empty_file(plan_base_env):
     prep = prepare_body('my-plan', BODY_KIND_PR_REPLY)
     from pathlib import Path as _P
+
     _P(prep['path']).write_text('   \n  ', encoding='utf-8')
     content, err = read_and_consume_body('my-plan', BODY_KIND_PR_REPLY)
     assert content is None
@@ -648,9 +630,7 @@ def test_read_and_consume_body_empty_file(plan_base_env):
 
 
 def test_read_and_consume_body_optional_missing(plan_base_env):
-    content, err = read_and_consume_body(
-        'my-plan', BODY_KIND_PR_EDIT, required=False
-    )
+    content, err = read_and_consume_body('my-plan', BODY_KIND_PR_EDIT, required=False)
     assert err is None
     assert content == ''
 
@@ -664,6 +644,7 @@ def test_read_and_consume_body_requires_plan_id(plan_base_env):
 def test_delete_consumed_body_removes_file(plan_base_env):
     prep = prepare_body('my-plan', BODY_KIND_PR_THREAD_REPLY)
     from pathlib import Path as _P
+
     _P(prep['path']).write_text('body', encoding='utf-8')
     assert _P(prep['path']).exists()
 
@@ -729,9 +710,7 @@ def test_run_cli_forwards_explicit_cwd(_capture_subprocess_run, _reset_default_c
     assert call['cmd'] == ['gh', 'pr', 'list']
 
 
-def test_run_cli_uses_default_cwd_when_not_passed(
-    _capture_subprocess_run, _reset_default_cwd
-):
+def test_run_cli_uses_default_cwd_when_not_passed(_capture_subprocess_run, _reset_default_cwd):
     """When no cwd= is passed, run_cli must fall back to _DEFAULT_CWD."""
     set_default_cwd('/tmp/from-default')
     run_cli('gh', ['pr', 'view'])
@@ -745,9 +724,7 @@ def test_run_cli_defaults_cwd_to_none(_capture_subprocess_run, _reset_default_cw
     assert _capture_subprocess_run[0]['cwd'] is None
 
 
-def test_run_cli_explicit_cwd_overrides_default(
-    _capture_subprocess_run, _reset_default_cwd
-):
+def test_run_cli_explicit_cwd_overrides_default(_capture_subprocess_run, _reset_default_cwd):
     """Explicit cwd= must win over the process-global default."""
     set_default_cwd('/tmp/from-default')
     run_cli('gh', ['pr', 'view'], cwd='/tmp/explicit')
@@ -762,9 +739,7 @@ def test_set_default_cwd_round_trip(_reset_default_cwd):
     assert get_default_cwd() is None
 
 
-def test_run_cli_handles_file_not_found_without_touching_cwd(
-    monkeypatch, _reset_default_cwd
-):
+def test_run_cli_handles_file_not_found_without_touching_cwd(monkeypatch, _reset_default_cwd):
     """When the CLI binary is missing, run_cli must still return gracefully."""
 
     def raising_run(cmd, **kwargs):
@@ -786,9 +761,7 @@ def test_run_cli_handles_file_not_found_without_touching_cwd(
 def test_ci_wait_for_status_flip_registered():
     """`ci wait-for-status-flip` subcommand must be registered under the ci subparser."""
     parser, _, _, _, _ = build_parser('test')
-    args = parser.parse_args(
-        ['ci', 'wait-for-status-flip', '--pr-number', '42']
-    )
+    args = parser.parse_args(['ci', 'wait-for-status-flip', '--pr-number', '42'])
     assert args.command == 'ci'
     assert args.ci_command == 'wait-for-status-flip'
     assert args.pr_number == 42
@@ -804,9 +777,7 @@ def test_ci_wait_for_status_flip_requires_pr_number():
 def test_ci_wait_for_status_flip_defaults():
     """--timeout and --interval default to module constants; --expected defaults to 'any'."""
     parser, _, _, _, _ = build_parser('test')
-    args = parser.parse_args(
-        ['ci', 'wait-for-status-flip', '--pr-number', '7']
-    )
+    args = parser.parse_args(['ci', 'wait-for-status-flip', '--pr-number', '7'])
     assert args.timeout == DEFAULT_CI_TIMEOUT
     assert args.interval == DEFAULT_CI_INTERVAL
     assert args.expected == 'any'
@@ -835,9 +806,7 @@ def test_ci_wait_for_status_flip_accepts_custom_timeout_and_interval():
 def test_ci_wait_for_status_flip_accepts_valid_expected_values(expected):
     """--expected accepts success, failure, and any."""
     parser, _, _, _, _ = build_parser('test')
-    args = parser.parse_args(
-        ['ci', 'wait-for-status-flip', '--pr-number', '7', '--expected', expected]
-    )
+    args = parser.parse_args(['ci', 'wait-for-status-flip', '--pr-number', '7', '--expected', expected])
     assert args.expected == expected
 
 
@@ -865,9 +834,7 @@ def test_ci_wait_for_status_flip_rejects_invalid_expected_value():
 def test_issue_wait_for_close_registered():
     """`issue wait-for-close` subcommand must be registered under the issue subparser."""
     parser, _, _, _, _ = build_parser('test')
-    args = parser.parse_args(
-        ['issue', 'wait-for-close', '--issue-number', '99']
-    )
+    args = parser.parse_args(['issue', 'wait-for-close', '--issue-number', '99'])
     assert args.command == 'issue'
     assert args.issue_command == 'wait-for-close'
     assert args.issue_number == 99
@@ -883,9 +850,7 @@ def test_issue_wait_for_close_requires_issue_number():
 def test_issue_wait_for_close_defaults():
     """--timeout and --interval default to module constants."""
     parser, _, _, _, _ = build_parser('test')
-    args = parser.parse_args(
-        ['issue', 'wait-for-close', '--issue-number', '99']
-    )
+    args = parser.parse_args(['issue', 'wait-for-close', '--issue-number', '99'])
     assert args.timeout == DEFAULT_CI_TIMEOUT
     assert args.interval == DEFAULT_CI_INTERVAL
 
@@ -944,9 +909,7 @@ def test_issue_wait_for_label_requires_label():
     """`issue wait-for-label` must exit when --label is omitted."""
     parser, _, _, _, _ = build_parser('test')
     with pytest.raises(SystemExit):
-        parser.parse_args(
-            ['issue', 'wait-for-label', '--issue-number', '99']
-        )
+        parser.parse_args(['issue', 'wait-for-label', '--issue-number', '99'])
 
 
 def test_issue_wait_for_label_defaults():

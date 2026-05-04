@@ -204,8 +204,7 @@ def cmd_verify_links(args) -> dict:
             'script',
             'global',
             'INFO',
-            f'[DOCS-LINKS] Found {len(broken)} broken links, {len(violations)} format violations'
-            f' in {len(files)} files',
+            f'[DOCS-LINKS] Found {len(broken)} broken links, {len(violations)} format violations in {len(files)} files',
         )
 
     result = {

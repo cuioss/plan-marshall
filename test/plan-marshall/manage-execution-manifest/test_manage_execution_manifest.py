@@ -295,8 +295,7 @@ def test_rule_1_early_terminate_analysis_with_prefixed_candidates():
         # No `default:`-prefixed entries survive anywhere in the manifest.
         assert not any(s.startswith('default:') for s in steps)
         # Heavy steps that would have leaked through pre-fix are absent.
-        for excluded in ('commit-push', 'create-pr', 'automated-review',
-                         'pre-push-quality-gate', 'branch-cleanup'):
+        for excluded in ('commit-push', 'create-pr', 'automated-review', 'pre-push-quality-gate', 'branch-cleanup'):
             assert excluded not in steps
 
 
@@ -426,8 +425,7 @@ def test_rule_6_verification_no_files_with_prefixed_candidates():
         # Boundary normalization strips `default:` at intake — output is bare.
         assert set(steps) == {'knowledge-capture', 'lessons-capture', 'archive-plan'}
         assert not any(s.startswith('default:') for s in steps)
-        for excluded in ('commit-push', 'create-pr', 'automated-review',
-                         'pre-push-quality-gate', 'branch-cleanup'):
+        for excluded in ('commit-push', 'create-pr', 'automated-review', 'pre-push-quality-gate', 'branch-cleanup'):
             assert excluded not in steps
 
 
@@ -440,8 +438,14 @@ def test_prefix_normalization_no_op_for_bare_candidates():
     unchanged, so the cascade-rule layer sees and emits the same bare strings.
     """
     bare = (
-        'commit-push', 'create-pr', 'automated-review', 'sonar-roundtrip',
-        'knowledge-capture', 'lessons-capture', 'branch-cleanup', 'archive-plan',
+        'commit-push',
+        'create-pr',
+        'automated-review',
+        'sonar-roundtrip',
+        'knowledge-capture',
+        'lessons-capture',
+        'branch-cleanup',
+        'archive-plan',
     )
     with PlanContext(plan_id='prefix-noop-bare'):
         result = cmd_compose(
@@ -508,8 +512,8 @@ def test_boundary_normalization_strips_prefix_for_all_downstream_consumers():
         'default:archive-plan',
     ]
     mixed_phase_5 = [
-        'default:quality-gate',     # prefixed
-        'module-tests',             # bare
+        'default:quality-gate',  # prefixed
+        'module-tests',  # bare
     ]
     with PlanContext(plan_id='boundary-mixed') as ctx:
         # Use a Row 7 (default) shape so the cascade-rule output preserves
@@ -549,9 +553,13 @@ def test_boundary_normalization_strips_prefix_for_all_downstream_consumers():
         # Every Phase-6 default-domain entry from the input survives as a bare
         # string after Row 7 (no cascade-rule subtractions on the default rule).
         for bare_default in (
-            'commit-push', 'create-pr', 'automated-review',
-            'knowledge-capture', 'lessons-capture',
-            'branch-cleanup', 'archive-plan',
+            'commit-push',
+            'create-pr',
+            'automated-review',
+            'knowledge-capture',
+            'lessons-capture',
+            'branch-cleanup',
+            'archive-plan',
         ):
             assert bare_default in phase_6_steps, (
                 f'expected bare {bare_default!r} in phase_6 but got: {phase_6_steps!r}'
@@ -613,9 +621,9 @@ def test_bundle_self_modification_inserts_early_sync_before_first_agent_step():
         # Early occurrence sits immediately before the first agent-dispatched
         # step. Steps are bare after normalization.
         first_agent_idx = next(
-            i for i, s in enumerate(steps)
-            if s in ('create-pr', 'automated-review',
-                     'knowledge-capture', 'lessons-capture')
+            i
+            for i, s in enumerate(steps)
+            if s in ('create-pr', 'automated-review', 'knowledge-capture', 'lessons-capture')
         )
         assert first_agent_idx >= 1
         assert steps[first_agent_idx - 1] == 'project:finalize-step-sync-plugin-cache'
@@ -629,7 +637,10 @@ def test_bundle_self_modification_inserts_early_sync_before_first_agent_step():
     'modified_path,expected_glob_surface',
     [
         ('marketplace/bundles/plan-marshall/commands/marshal.md', 'commands'),
-        ('marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py', 'skills'),
+        (
+            'marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py',
+            'skills',
+        ),
         ('marketplace/bundles/pm-dev-java/agents/some-agent.md', 'agents-other-bundle'),
     ],
 )
@@ -687,9 +698,7 @@ def test_bundle_self_modification_skipped_for_non_bundle_paths():
     with PlanContext(plan_id='bundle-self-mod-non-bundle') as ctx:
         assert ctx.plan_dir is not None
         (ctx.plan_dir / 'references.json').write_text(
-            '{"modified_files": ['
-            '"test/plan-marshall/manage-references/test_x.py", '
-            '"doc/build-structure.adoc"]}',
+            '{"modified_files": ["test/plan-marshall/manage-references/test_x.py", "doc/build-structure.adoc"]}',
             encoding='utf-8',
         )
         result = cmd_compose(
@@ -860,7 +869,7 @@ def test_bundle_self_modification_detects_sonar_roundtrip_as_agent_step():
     """
     prefixed = [
         'default:commit-push',
-        'default:sonar-roundtrip',     # earliest agent-dispatched
+        'default:sonar-roundtrip',  # earliest agent-dispatched
         'default:create-pr',
         'default:archive-plan',
     ]
@@ -1024,9 +1033,7 @@ def test_bundle_self_modification_regression_references_driven_path(monkeypatch)
     bundle_self_modification message (with bare step names).
     """
     captured = _capture_decision_messages(monkeypatch)
-    bundle_script = (
-        'marketplace/bundles/plan-marshall/skills/foo/scripts/bar.py'
-    )
+    bundle_script = 'marketplace/bundles/plan-marshall/skills/foo/scripts/bar.py'
     with PlanContext(plan_id='bsm-regression-references') as ctx:
         assert ctx.plan_dir is not None
         (ctx.plan_dir / 'references.json').write_text(
@@ -1084,9 +1091,7 @@ def test_bundle_self_modification_regression_outline_fallback_path(monkeypatch):
     canonical decision log message.
     """
     captured = _capture_decision_messages(monkeypatch)
-    bundle_script = (
-        'marketplace/bundles/plan-marshall/skills/foo/scripts/bar.py'
-    )
+    bundle_script = 'marketplace/bundles/plan-marshall/skills/foo/scripts/bar.py'
     with PlanContext(plan_id='bsm-regression-outline') as ctx:
         assert ctx.plan_dir is not None
         # references.json present but with BOTH fields empty — mirrors the
@@ -1151,12 +1156,14 @@ def test_bundle_self_modification_regression_negative_control(monkeypatch):
         assert ctx.plan_dir is not None
         # Only non-bundle paths.
         (ctx.plan_dir / 'references.json').write_text(
-            json.dumps({
-                'affected_files': [
-                    'doc/build-structure.adoc',
-                    'test/plan-marshall/manage-references/test_x.py',
-                ],
-            }),
+            json.dumps(
+                {
+                    'affected_files': [
+                        'doc/build-structure.adoc',
+                        'test/plan-marshall/manage-references/test_x.py',
+                    ],
+                }
+            ),
             encoding='utf-8',
         )
         # Outline also lists only non-bundle paths so the fallback cannot
@@ -1186,9 +1193,9 @@ def test_bundle_self_modification_regression_negative_control(monkeypatch):
         assert steps.count('project:finalize-step-sync-plugin-cache') == 1
 
         # No bundle_self_modification message in the decision log.
-        assert not any(
-            'Rule bundle_self_modification fired' in m for m in captured
-        ), f'Did not expect bundle_self_modification decision log entry; got: {captured}'
+        assert not any('Rule bundle_self_modification fired' in m for m in captured), (
+            f'Did not expect bundle_self_modification decision log entry; got: {captured}'
+        )
 
 
 def test_agent_dispatched_steps_matcher_with_prefixed_input(monkeypatch):
@@ -1213,7 +1220,7 @@ def test_agent_dispatched_steps_matcher_with_prefixed_input(monkeypatch):
     captured = _capture_decision_messages(monkeypatch)
     prefixed = [
         'default:commit-push',
-        'default:create-pr',           # earliest agent-dispatched (bare: create-pr)
+        'default:create-pr',  # earliest agent-dispatched (bare: create-pr)
         'default:automated-review',
         'default:knowledge-capture',
         'default:lessons-capture',
@@ -1225,11 +1232,13 @@ def test_agent_dispatched_steps_matcher_with_prefixed_input(monkeypatch):
         assert ctx.plan_dir is not None
         # bundle_self_modification trigger — bundle source path in affected_files.
         (ctx.plan_dir / 'references.json').write_text(
-            json.dumps({
-                'affected_files': [
-                    'marketplace/bundles/plan-marshall/skills/foo/SKILL.md',
-                ],
-            }),
+            json.dumps(
+                {
+                    'affected_files': [
+                        'marketplace/bundles/plan-marshall/skills/foo/SKILL.md',
+                    ],
+                }
+            ),
             encoding='utf-8',
         )
         result = cmd_compose(
@@ -1260,9 +1269,7 @@ def test_agent_dispatched_steps_matcher_with_prefixed_input(monkeypatch):
         assert steps[create_pr_idx - 1] == 'project:finalize-step-sync-plugin-cache'
 
         # Output is fully bare — no `default:` prefix leaked through.
-        assert not any(s.startswith('default:') for s in steps), (
-            f'phase_6 leaked `default:`-prefixed entry: {steps!r}'
-        )
+        assert not any(s.startswith('default:') for s in steps), f'phase_6 leaked `default:`-prefixed entry: {steps!r}'
 
         # Canonical decision-log message emitted with bare step names.
         assert any(
@@ -1371,11 +1378,14 @@ def test_validate_unknown_phase_5_step_flagged():
 # =============================================================================
 
 
-@pytest.mark.parametrize('field,value,error_code', [
-    ('change_type', 'unknown_type', 'invalid_change_type'),
-    ('scope_estimate', 'massive', 'invalid_scope_estimate'),
-    ('track', 'twisty', 'invalid_track'),
-])
+@pytest.mark.parametrize(
+    'field,value,error_code',
+    [
+        ('change_type', 'unknown_type', 'invalid_change_type'),
+        ('scope_estimate', 'massive', 'invalid_scope_estimate'),
+        ('track', 'twisty', 'invalid_track'),
+    ],
+)
 def test_compose_rejects_invalid_enum_values(field, value, error_code):
     with PlanContext(plan_id='val-enum'):
         kwargs = {field: value}
@@ -1723,17 +1733,11 @@ def test_commit_strategy_none_decision_log_message_matches_contract():
         _mem._emit_decision_log = original_emit
 
     # Expect at least the omission entry; the rule-fired entry is also emitted.
-    omission_entries = [
-        (pid, msg) for pid, msg in captured
-        if 'commit-push omitted' in msg
-    ]
+    omission_entries = [(pid, msg) for pid, msg in captured if 'commit-push omitted' in msg]
     assert len(omission_entries) == 1, f'expected one omission entry, got {captured!r}'
     pid, msg = omission_entries[0]
     assert pid == 'matrix-cs-msg'
-    assert msg == (
-        '(plan-marshall:manage-execution-manifest:compose) '
-        'commit-push omitted — commit_strategy=none'
-    )
+    assert msg == ('(plan-marshall:manage-execution-manifest:compose) commit-push omitted — commit_strategy=none')
 
 
 def test_commit_strategy_default_does_not_emit_omission_log():
@@ -1849,16 +1853,18 @@ def test_commit_strategy_none_with_prefixed_input_drops_commit_push_and_pre_push
         assert 'pre-push-quality-gate' not in steps
 
         # Output is bare — no `default:` prefix anywhere.
-        assert not any(s.startswith('default:') for s in steps), (
-            f'phase_6 leaked `default:`-prefixed entry: {steps!r}'
-        )
+        assert not any(s.startswith('default:') for s in steps), f'phase_6 leaked `default:`-prefixed entry: {steps!r}'
 
         # Other steps from the input survive as bare strings.
-        for kept in ('create-pr', 'automated-review', 'knowledge-capture',
-                     'lessons-capture', 'branch-cleanup', 'archive-plan'):
-            assert kept in steps, (
-                f'expected bare {kept!r} in phase_6 but got: {steps!r}'
-            )
+        for kept in (
+            'create-pr',
+            'automated-review',
+            'knowledge-capture',
+            'lessons-capture',
+            'branch-cleanup',
+            'archive-plan',
+        ):
+            assert kept in steps, f'expected bare {kept!r} in phase_6 but got: {steps!r}'
 
 
 # =============================================================================
@@ -1871,11 +1877,16 @@ def test_cli_compose_then_read_roundtrip():
         result = run_script(
             SCRIPT_PATH,
             'compose',
-            '--plan-id', 'cli-rt',
-            '--change-type', 'feature',
-            '--track', 'complex',
-            '--scope-estimate', 'multi_module',
-            '--affected-files-count', '10',
+            '--plan-id',
+            'cli-rt',
+            '--change-type',
+            'feature',
+            '--track',
+            'complex',
+            '--scope-estimate',
+            'multi_module',
+            '--affected-files-count',
+            '10',
         )
         assert result.success, f'compose failed: stderr={result.stderr!r}'
         compose_data = result.toon()
@@ -1893,10 +1904,14 @@ def test_cli_compose_invalid_change_type_emits_toon_error():
         result = run_script(
             SCRIPT_PATH,
             'compose',
-            '--plan-id', 'cli-bad',
-            '--change-type', 'nonsense',
-            '--track', 'simple',
-            '--scope-estimate', 'surgical',
+            '--plan-id',
+            'cli-bad',
+            '--change-type',
+            'nonsense',
+            '--track',
+            'simple',
+            '--scope-estimate',
+            'surgical',
         )
         # Script exits 0 on validation errors (TOON contract); error in stdout.
         assert result.returncode == 0
@@ -1911,14 +1926,22 @@ def test_cli_compose_with_all_optional_flags_roundtrips():
         result = run_script(
             SCRIPT_PATH,
             'compose',
-            '--plan-id', 'cli-allflags',
-            '--change-type', 'tech_debt',
-            '--track', 'simple',
-            '--scope-estimate', 'surgical',
-            '--recipe-key', 'lesson_cleanup',
-            '--affected-files-count', '2',
-            '--phase-5-steps', 'quality-gate,module-tests',
-            '--phase-6-steps', 'commit-push,create-pr,branch-cleanup',
+            '--plan-id',
+            'cli-allflags',
+            '--change-type',
+            'tech_debt',
+            '--track',
+            'simple',
+            '--scope-estimate',
+            'surgical',
+            '--recipe-key',
+            'lesson_cleanup',
+            '--affected-files-count',
+            '2',
+            '--phase-5-steps',
+            'quality-gate,module-tests',
+            '--phase-6-steps',
+            'commit-push,create-pr,branch-cleanup',
         )
         assert result.success, f'compose failed: stderr={result.stderr!r}'
         data = result.toon()
@@ -1932,19 +1955,26 @@ def test_cli_validate_happy_path():
         compose = run_script(
             SCRIPT_PATH,
             'compose',
-            '--plan-id', 'cli-val-ok',
-            '--change-type', 'feature',
-            '--track', 'complex',
-            '--scope-estimate', 'multi_module',
+            '--plan-id',
+            'cli-val-ok',
+            '--change-type',
+            'feature',
+            '--track',
+            'complex',
+            '--scope-estimate',
+            'multi_module',
         )
         assert compose.success
 
         result = run_script(
             SCRIPT_PATH,
             'validate',
-            '--plan-id', 'cli-val-ok',
-            '--phase-5-steps', 'quality-gate,module-tests',
-            '--phase-6-steps', ','.join(DEFAULT_PHASE_6_STEPS),
+            '--plan-id',
+            'cli-val-ok',
+            '--phase-5-steps',
+            'quality-gate,module-tests',
+            '--phase-6-steps',
+            ','.join(DEFAULT_PHASE_6_STEPS),
         )
         assert result.success
         data = result.toon()
@@ -1959,11 +1989,16 @@ def test_cli_compose_commit_strategy_none_omits_commit_push():
         result = run_script(
             SCRIPT_PATH,
             'compose',
-            '--plan-id', 'cli-cs-none',
-            '--change-type', 'feature',
-            '--track', 'complex',
-            '--scope-estimate', 'multi_module',
-            '--commit-strategy', 'none',
+            '--plan-id',
+            'cli-cs-none',
+            '--change-type',
+            'feature',
+            '--track',
+            'complex',
+            '--scope-estimate',
+            'multi_module',
+            '--commit-strategy',
+            'none',
         )
         assert result.success, f'compose failed: stderr={result.stderr!r}'
         compose_data = result.toon()
@@ -1993,8 +2028,9 @@ def test_cli_read_missing_manifest_emits_toon_error():
 # =============================================================================
 
 
-def _write_marshal(ctx: PlanContext, *, activation_globs: list[str] | None = None,
-                   include_pre_push_key: bool = True) -> None:
+def _write_marshal(
+    ctx: PlanContext, *, activation_globs: list[str] | None = None, include_pre_push_key: bool = True
+) -> None:
     """Write a marshal.json with the given activation_globs configuration.
 
     When ``include_pre_push_key`` is False, the ``pre_push_quality_gate`` key is
@@ -2339,8 +2375,7 @@ class TestPrePushQualityGatePreFilter:
             assert omit_idx is not None, f'omission line missing in {messages!r}'
             assert rule_idx is not None, f'rule line missing in {messages!r}'
             assert omit_idx < rule_idx, (
-                f'pre-filter omission line must precede rule line; '
-                f'got omit_idx={omit_idx}, rule_idx={rule_idx}'
+                f'pre-filter omission line must precede rule line; got omit_idx={omit_idx}, rule_idx={rule_idx}'
             )
 
             # Rule line reflects filtered phase_6.steps (no pre-push-quality-gate).
@@ -2381,9 +2416,7 @@ class TestPrePushQualityGatePreFilter:
         ]
         with PlanContext(plan_id=plan_id) as ctx:
             _write_marshal(ctx, activation_globs=[])
-            _write_references(
-                ctx, ['marketplace/bundles/plan-marshall/skills/foo.py']
-            )
+            _write_references(ctx, ['marketplace/bundles/plan-marshall/skills/foo.py'])
 
             captured, original = self._capture_decision_log()
             try:
@@ -2555,16 +2588,12 @@ class TestBotEnforcementGuardRemediation:
         return captured, original
 
     @classmethod
-    def _remediation_messages(
-        cls, captured: list[tuple[str, str]], provider: str
-    ) -> list[tuple[str, str]]:
+    def _remediation_messages(cls, captured: list[tuple[str, str]], provider: str) -> list[tuple[str, str]]:
         line = _REMEDIATION_LINE_TEMPLATE.format(provider=provider)
         return [entry for entry in captured if entry[1] == line]
 
     @staticmethod
-    def _compose_row_5(
-        plan_id: str, change_type: str, *, prefixed_candidates: bool
-    ) -> dict:
+    def _compose_row_5(plan_id: str, change_type: str, *, prefixed_candidates: bool) -> dict:
         """Compose a Row 5 manifest with default-prefixed or bare candidates.
 
         Both shapes are exercised because phase_6_candidates can arrive prefixed
@@ -2598,18 +2627,13 @@ class TestBotEnforcementGuardRemediation:
     ) -> None:
         # Plan IDs must be kebab-case — convert change_type's underscore to hyphen.
         change_type_kebab = change_type.replace('_', '-')
-        plan_id = (
-            f'guard-remediate-{provider}-{change_type_kebab}-'
-            f'{"prefixed" if prefixed_candidates else "bare"}'
-        )
+        plan_id = f'guard-remediate-{provider}-{change_type_kebab}-{"prefixed" if prefixed_candidates else "bare"}'
         with PlanContext(plan_id=plan_id) as ctx:
             _write_marshal_with_ci(ctx, provider=provider)
 
             captured, original = self._capture_decision_log()
             try:
-                result = self._compose_row_5(
-                    plan_id, change_type, prefixed_candidates=prefixed_candidates
-                )
+                result = self._compose_row_5(plan_id, change_type, prefixed_candidates=prefixed_candidates)
             finally:
                 _mem._emit_decision_log = original
 
@@ -2624,10 +2648,7 @@ class TestBotEnforcementGuardRemediation:
             # (b) automated-review is back in phase_6.steps after remediation.
             #     Guard appends `default:automated-review`; tests assert via
             #     prefix-aware membership so both candidate shapes pass.
-            bare_step_names = {
-                s[len('default:'):] if s.startswith('default:') else s
-                for s in steps
-            }
+            bare_step_names = {s[len('default:') :] if s.startswith('default:') else s for s in steps}
             assert 'automated-review' in bare_step_names
 
             # (c) Row 5's other subtractions are still dropped — only
@@ -2647,41 +2668,29 @@ class TestBotEnforcementGuardRemediation:
 
     def test_github_surgical_bug_fix_remediates_with_default_candidates(self):
         """Row 5 surgical_bug_fix + ci.provider=github (bare candidates) → remediation."""
-        self._assert_remediation(
-            'github', 'bug_fix', 'surgical_bug_fix', prefixed_candidates=False
-        )
+        self._assert_remediation('github', 'bug_fix', 'surgical_bug_fix', prefixed_candidates=False)
 
     def test_gitlab_surgical_bug_fix_remediates_with_default_candidates(self):
         """Row 5 surgical_bug_fix + ci.provider=gitlab (bare candidates) → remediation."""
-        self._assert_remediation(
-            'gitlab', 'bug_fix', 'surgical_bug_fix', prefixed_candidates=False
-        )
+        self._assert_remediation('gitlab', 'bug_fix', 'surgical_bug_fix', prefixed_candidates=False)
 
     def test_github_surgical_bug_fix_remediates_with_prefixed_candidates(self):
         """Row 5 surgical_bug_fix + ci.provider=github (default:-prefixed candidates) → remediation."""
-        self._assert_remediation(
-            'github', 'bug_fix', 'surgical_bug_fix', prefixed_candidates=True
-        )
+        self._assert_remediation('github', 'bug_fix', 'surgical_bug_fix', prefixed_candidates=True)
 
     # --- Row 5 surgical_tech_debt variants ---
 
     def test_github_surgical_tech_debt_remediates_with_default_candidates(self):
         """Row 5 surgical_tech_debt + ci.provider=github (bare candidates) → remediation."""
-        self._assert_remediation(
-            'github', 'tech_debt', 'surgical_tech_debt', prefixed_candidates=False
-        )
+        self._assert_remediation('github', 'tech_debt', 'surgical_tech_debt', prefixed_candidates=False)
 
     def test_gitlab_surgical_tech_debt_remediates_with_default_candidates(self):
         """Row 5 surgical_tech_debt + ci.provider=gitlab (bare candidates) → remediation."""
-        self._assert_remediation(
-            'gitlab', 'tech_debt', 'surgical_tech_debt', prefixed_candidates=False
-        )
+        self._assert_remediation('gitlab', 'tech_debt', 'surgical_tech_debt', prefixed_candidates=False)
 
     def test_github_surgical_tech_debt_remediates_with_prefixed_candidates(self):
         """Row 5 surgical_tech_debt + ci.provider=github (default:-prefixed candidates) → remediation."""
-        self._assert_remediation(
-            'github', 'tech_debt', 'surgical_tech_debt', prefixed_candidates=True
-        )
+        self._assert_remediation('github', 'tech_debt', 'surgical_tech_debt', prefixed_candidates=True)
 
     # --- Guard is a no-op when automated-review already present ---
 
@@ -2753,9 +2762,7 @@ class TestAutomatedReviewPlacement:
         ``automated-review`` so the validator's earliest-anchor scan returns
         precisely the parametrized name.
         """
-        return ','.join(
-            ['commit-push', 'create-pr', 'lessons-capture', anchor, 'automated-review']
-        )
+        return ','.join(['commit-push', 'create-pr', 'lessons-capture', anchor, 'automated-review'])
 
     def test_compose_rejects_automated_review_after_archive_plan(self):
         """Misplaced ``automated-review`` after ``archive-plan`` → bot_enforcement_violation."""
@@ -2777,9 +2784,7 @@ class TestAutomatedReviewPlacement:
             )
 
             assert result is not None
-            assert result['status'] == 'error', (
-                f'expected error status, got {result!r}'
-            )
+            assert result['status'] == 'error', f'expected error status, got {result!r}'
             assert result['error'] == 'bot_enforcement_violation'
             # Diagnostic must name BOTH step identifiers so downstream auditing
             # can pinpoint the ordering breach without re-deriving it.
@@ -2792,9 +2797,7 @@ class TestAutomatedReviewPlacement:
         'anchor',
         ['record-metrics', 'branch-cleanup', 'plan-marshall:plan-retrospective'],
     )
-    def test_compose_rejects_automated_review_after_other_plan_mutating_steps(
-        self, anchor: str
-    ):
+    def test_compose_rejects_automated_review_after_other_plan_mutating_steps(self, anchor: str):
         """Misplaced ``automated-review`` after each remaining anchor → bot_enforcement_violation.
 
         Parametrized over the three plan-mutating anchors NOT covered by the
@@ -2821,9 +2824,7 @@ class TestAutomatedReviewPlacement:
             )
 
             assert result is not None
-            assert result['status'] == 'error', (
-                f'expected error status for anchor={anchor!r}, got {result!r}'
-            )
+            assert result['status'] == 'error', f'expected error status for anchor={anchor!r}, got {result!r}'
             assert result['error'] == 'bot_enforcement_violation'
             assert 'automated-review' in result['message']
             assert anchor in result['message']
