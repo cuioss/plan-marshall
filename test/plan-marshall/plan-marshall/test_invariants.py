@@ -754,3 +754,53 @@ def test_pending_tasks_count_registry_tuple_present() -> None:
     assert capture_fn is inv._capture_pending_tasks_count
     # Always-applicable: every phase should record the queue size.
     assert applies_fn('any-plan', {}) is True
+
+
+# =============================================================================
+# _capture_qgate_open_count: phase 1-init short-circuit
+# =============================================================================
+
+
+def test_capture_qgate_open_count_short_circuits_for_1_init(monkeypatch: pytest.MonkeyPatch) -> None:
+    """At phase '1-init' the helper returns 0 without invoking _run_script.
+
+    Q-Gate findings are scoped to phases 2-refine onward; manage-findings
+    rejects --phase 1-init via argparse. The short-circuit eliminates the
+    spurious subprocess call and the resulting [ERROR] log entries.
+    """
+    calls: list[list[str]] = []
+
+    def _spy_run_script(args: list[str]) -> None:
+        calls.append(args)
+        return None
+
+    monkeypatch.setattr(inv, '_run_script', _spy_run_script)
+
+    result = inv._capture_qgate_open_count('any-plan', {}, '1-init')
+
+    assert result == 0, f'Expected 0 for 1-init, got {result!r}'
+    assert calls == [], f'_run_script must not be called for 1-init, got {calls!r}'
+
+
+@pytest.mark.parametrize(
+    'phase',
+    ['2-refine', '3-outline', '4-plan', '5-execute', '6-finalize'],
+)
+def test_capture_qgate_open_count_invokes_script_for_other_phases(
+    monkeypatch: pytest.MonkeyPatch, phase: str
+) -> None:
+    """For phases 2-refine through 6-finalize the helper invokes _run_script."""
+    calls: list[list[str]] = []
+
+    def _spy_run_script(args: list[str]) -> str:
+        calls.append(args)
+        return 'status: success\nfiltered_count: 0\n'
+
+    monkeypatch.setattr(inv, '_run_script', _spy_run_script)
+
+    result = inv._capture_qgate_open_count('any-plan', {}, phase)
+
+    assert len(calls) == 1, f'Expected exactly one _run_script call for {phase}, got {calls!r}'
+    assert '--phase' in calls[0]
+    assert phase in calls[0]
+    assert result == 0

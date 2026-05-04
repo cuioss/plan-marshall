@@ -599,7 +599,7 @@ Before invoking `manage-status transition --completed 5-execute` (see **Phase Tr
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-     decision --plan-id {plan_id} --level WARN \
+     decision --plan-id {plan_id} --level WARNING \
      --message "(plan-marshall:phase-5-execute) Pending-tasks guard overridden via --force — transitioning with {count} pending task(s): {ids}"
    ```
 
