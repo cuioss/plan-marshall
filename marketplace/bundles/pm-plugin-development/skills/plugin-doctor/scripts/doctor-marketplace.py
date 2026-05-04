@@ -447,7 +447,13 @@ def cmd_test_conventions(args) -> dict:
     See ``standards/doctor-test-conventions.md`` for rule definitions and
     severity. Exits non-zero on any error finding (build-failing).
     """
-    test_root = Path(getattr(args, 'test_root', None) or 'test').resolve()
+    marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
+    if not marketplace_root:
+        return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
+
+    project_root = marketplace_root.parent
+    test_root_arg = getattr(args, 'test_root', None)
+    test_root = Path(test_root_arg).resolve() if test_root_arg else (project_root / 'test').resolve()
 
     all_issues: list[dict] = []
     rule_summaries: list[dict] = []
@@ -461,7 +467,7 @@ def cmd_test_conventions(args) -> dict:
     rule_summaries.append({'rule': 'subprocess-pythonpath', 'findings': len(rule2_findings)})
 
     registry = _load_validator_registry(getattr(args, 'registry', None))
-    rule3_findings = analyze_validator_regex_vs_corpus(registry)
+    rule3_findings = analyze_validator_regex_vs_corpus(registry, project_root=project_root)
     all_issues.extend(rule3_findings)
     rule_summaries.append({'rule': 'identifier-validator-corpus', 'findings': len(rule3_findings)})
 
@@ -673,6 +679,7 @@ Examples:
         default=None,
         help='Path to a JSON registry of (validator_path, regex_constant, list_command) entries for Rule 3',
     )
+    p_test_conventions.add_argument('--marketplace-root', dest='marketplace_root', help=marketplace_root_help)
     p_test_conventions.set_defaults(func=cmd_test_conventions)
 
     # validate-contracts subcommand
