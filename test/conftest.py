@@ -50,6 +50,66 @@ collect_ignore = [
 
 
 # =============================================================================
+# Executor Bootstrap (CI session setup)
+# =============================================================================
+
+def _ensure_executor_present() -> None:
+    """Generate ``.plan/execute-script.py`` if missing.
+
+    The executor is gitignored, so a fresh checkout (CI runner, ephemeral
+    container) doesn't have it. Several script-under-test invocations
+    (e.g., ``tools-input-validation``'s lesson-ID anchor) subprocess to
+    ``python3 .plan/execute-script.py ...`` and fail without it. Local
+    developer environments have it from prior ``/marshall-steward`` runs;
+    CI needs it bootstrapped at session start.
+
+    Idempotent: re-runs are no-ops if the executor is already present.
+    """
+    executor_path = PROJECT_ROOT / PLAN_DIR_NAME / 'execute-script.py'
+    if executor_path.exists():
+        return
+
+    generator = (
+        MARKETPLACE_ROOT
+        / 'plan-marshall'
+        / 'skills'
+        / 'tools-script-executor'
+        / 'scripts'
+        / 'generate_executor.py'
+    )
+    if not generator.exists():
+        # Generator script missing — surface a clear message instead of a
+        # cryptic FileNotFoundError downstream. Tests that depend on the
+        # executor will still fail loudly.
+        print(
+            f'WARNING: conftest could not bootstrap executor — generator missing at {generator}',
+            file=sys.stderr,
+        )
+        return
+
+    try:
+        subprocess.run(
+            ['python3', str(generator), 'generate'],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=120,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        # Failure here is non-fatal at conftest-import time. Tests that
+        # genuinely need the executor will fail with their own diagnostics;
+        # tests that don't need it (the majority) keep running.
+        print(
+            f'WARNING: conftest executor bootstrap failed: {exc}',
+            file=sys.stderr,
+        )
+
+
+_ensure_executor_present()
+
+
+# =============================================================================
 # Cross-Skill Import Setup (mirrors executor PYTHONPATH)
 # =============================================================================
 

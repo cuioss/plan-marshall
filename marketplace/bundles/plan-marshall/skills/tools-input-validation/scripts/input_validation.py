@@ -842,7 +842,25 @@ def verify_lesson_id_regex_against_inventory() -> None:
     if _lesson_anchor_checked:
         return
 
-    ids = _list_live_lesson_ids()
+    try:
+        ids = _list_live_lesson_ids()
+    except LessonInventoryUnavailable as exc:
+        # Inventory unreachable — typical when the executor (.plan/execute-script.py)
+        # has not been generated yet (fresh CI checkout, ephemeral runner). The
+        # live-anchor discipline (lesson 2026-04-29-10-001) is intended to catch
+        # regex drift against real data, NOT to block all scanner use when the
+        # infrastructure isn't bootstrapped. Treat this exactly like an empty
+        # inventory: warn once on stderr, mark as checked, proceed. The next
+        # process invocation in an environment where the executor exists will
+        # re-attempt the anchor and surface real drift if present.
+        print(
+            f'WARNING: tools-input-validation lesson-ID anchor: live inventory '
+            f'unavailable ({exc}) — anchor check is a no-op for this process.',
+            file=sys.stderr,
+        )
+        _lesson_anchor_checked = True
+        return
+
     if not ids:
         # Greenfield repo or empty inventory — emit a one-time warning to
         # stderr so the live-anchor discipline is visible, then mark as

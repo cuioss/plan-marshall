@@ -232,16 +232,27 @@ class TestScanLessonIdTokens:
         with pytest.raises(LessonRegexAnchoringError):
             scan_lesson_id_tokens('lesson 2026-04-29-10-001 here')
 
-    def test_inventory_unavailable_propagates(self, monkeypatch):
+    def test_inventory_unavailable_degrades_with_warning(self, monkeypatch, capsys):
+        """When the inventory subprocess is unavailable (e.g., fresh CI checkout
+        with no .plan/execute-script.py), the scanner anchor degrades to a
+        warning + no-op rather than raising, so callers that don't strictly
+        need the live anchor check can still proceed."""
+
         # Arrange
         def _raise():
             raise LessonInventoryUnavailable('subprocess died')
 
         monkeypatch.setattr(_iv, '_list_live_lesson_ids', _raise)
 
-        # Act / Assert
-        with pytest.raises(LessonInventoryUnavailable):
-            scan_lesson_id_tokens('lesson 2026-04-29-10-001 here')
+        # Act — the scanner runs successfully because the anchor degraded.
+        result = scan_lesson_id_tokens('lesson 2026-04-29-10-001 here')
+
+        # Assert — the regex still matches (anchor's no-op preserves scanner
+        # functionality) AND the warning was emitted to stderr.
+        assert result == ['2026-04-29-10-001']
+        captured = capsys.readouterr()
+        assert 'live inventory unavailable' in captured.err
+        assert 'subprocess died' in captured.err
 
 
 # =============================================================================
@@ -452,18 +463,29 @@ class TestVerifyLessonIdRegexAgainstInventory:
         # Assert — only the first call hit the helper; subsequent calls used cache.
         assert call_count['n'] == 1
 
-    def test_inventory_unavailable_propagates(self, monkeypatch):
+    def test_inventory_unavailable_degrades_with_warning(self, monkeypatch, capsys):
+        """When _list_live_lesson_ids raises LessonInventoryUnavailable
+        (typical on a fresh CI checkout with no .plan/execute-script.py),
+        the anchor degrades: warns on stderr, marks itself as checked, and
+        returns. The scanner must remain functional even when the live-data
+        check can't run, so downstream callers don't crash on bootstrap
+        environments."""
+
         # Arrange
         def _raise():
             raise LessonInventoryUnavailable('subprocess unavailable')
 
         monkeypatch.setattr(_iv, '_list_live_lesson_ids', _raise)
 
-        # Act / Assert
-        with pytest.raises(LessonInventoryUnavailable):
-            verify_lesson_id_regex_against_inventory()
-        # Cache must NOT flip on failure.
-        assert _iv._lesson_anchor_checked is False
+        # Act — anchor returns normally instead of raising.
+        verify_lesson_id_regex_against_inventory()
+
+        # Assert — warning emitted AND cache flipped (so subsequent calls
+        # don't keep re-spawning the doomed subprocess).
+        captured = capsys.readouterr()
+        assert 'live inventory unavailable' in captured.err
+        assert 'subprocess unavailable' in captured.err
+        assert _iv._lesson_anchor_checked is True
 
 
 # =============================================================================
