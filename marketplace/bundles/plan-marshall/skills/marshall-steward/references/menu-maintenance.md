@@ -144,6 +144,7 @@ Configurable via marshal.json:
 | `logs_days` | 1 | Delete logs older than N days |
 | `archived_plans_days` | 5 | Delete archived plans older than N days |
 | `memory_days` | 5 | Delete memory files older than N days |
+| `lessons_superseded_days` | 0 | Delete superseded lesson stubs older than N days; tombstones at `.tombstones/{id}.json` are preserved |
 | `temp_on_maintenance` | true | Clean temp directory on maintenance |
 
 ### Configure Retention
