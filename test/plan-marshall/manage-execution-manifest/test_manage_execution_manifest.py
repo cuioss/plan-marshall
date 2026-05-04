@@ -2725,6 +2725,109 @@ class TestBotEnforcementGuardRemediation:
             assert 'automated-review' in manifest['phase_6']['steps']
             assert self._remediation_messages(captured, 'github') == []
 
+    def test_github_default_rule_with_prefixed_candidates_keeps_automated_review_bare_without_violation(self):
+        """Regression: prefixed phase_6 candidates on GitHub CI must not trip the guard.
+
+        Lesson ``2026-04-28-10-001`` originally reported that prefixed inputs
+        (``default:automated-review`` and friends) raised
+        ``bot_enforcement_violation`` because the guard's bare-name membership
+        check at line 829 of ``manage-execution-manifest.py`` did not see the
+        prefixed entry. The defect was fixed by two upstream changes:
+
+        1. PR #303 (``0362bcaf``) converted ``_apply_bot_enforcement_guard``
+           from assertion-style to remediation-style, so the
+           ``bot_enforcement_violation`` error branch is unreachable on the
+           composition-time path.
+        2. PR #305 (``a5231b8b``) added boundary normalization at
+           ``cmd_compose`` lines 976-977 — every leading ``default:`` is
+           stripped from ``phase_6_candidates`` once at intake, so by the time
+           the guard's ``'automated-review' in phase_6_steps`` membership
+           check runs, every entry is already bare.
+
+        This test pins both fixes by feeding a fully-prefixed candidate list
+        (``_PREFIXED_PHASE_6`` — every entry carries ``default:``, including
+        ``default:automated-review``) on a GitHub-CI plan with a Row 7
+        (default) shape. Row 7 preserves the candidates verbatim modulo
+        boundary normalization, so any regression of either fix shows up here:
+
+        - If boundary normalization at lines 976-977 is removed, the guard's
+          bare-name membership check fails to find ``automated-review``, the
+          guard appends a duplicate, and the `assert exactly-one` below trips.
+        - If ``_strip_default_prefix`` at line 118 is neutered, the same
+          duplicate-append path fires.
+        - If a future contributor reverts the guard from remediation back to
+          assertion, ``status`` becomes ``error`` and the
+          ``bot_enforcement_violation`` assertion below trips.
+        - If ``automated-review`` is mispositioned (e.g., after
+          ``archive-plan``), the placement validator emits its own
+          ``bot_enforcement_violation`` and the same assertion catches it.
+        """
+        plan_id = 'guard-noop-github-default-prefixed'
+        with PlanContext(plan_id=plan_id) as ctx:
+            _write_marshal_with_ci(ctx, provider='github')
+
+            captured, original = self._capture_decision_log()
+            try:
+                result = cmd_compose(
+                    _compose_ns(
+                        plan_id=plan_id,
+                        change_type='feature',
+                        scope_estimate='multi_module',
+                        affected_files_count=10,
+                        # Fully-prefixed candidate list — boundary normalization
+                        # at cmd_compose intake must strip every `default:` once
+                        # so the guard sees bare names.
+                        phase_6_steps=','.join(_PREFIXED_PHASE_6),
+                    )
+                )
+            finally:
+                _mem._emit_decision_log = original
+
+            # (a) Composition succeeds — the lesson's original symptom
+            #     (``bot_enforcement_violation`` on prefixed inputs) does not
+            #     reproduce.
+            assert result is not None
+            assert result['status'] == 'success', (
+                f'expected success on GitHub CI + prefixed candidates, '
+                f'got error: {result!r}'
+            )
+            assert result['rule_fired'] == 'default'
+
+            manifest = read_manifest(plan_id)
+            assert manifest is not None
+            steps = manifest['phase_6']['steps']
+
+            # (b) No `default:`-prefixed entry survives anywhere — boundary
+            #     normalization is the only sanctioned strip site.
+            assert not any(s.startswith('default:') for s in steps), (
+                f'phase_6 leaked `default:`-prefixed entry: {steps!r}'
+            )
+
+            # (c) Exactly one bare ``automated-review`` entry — the guard's
+            #     membership check did not double-add it.
+            assert steps.count('automated-review') == 1, (
+                f'expected exactly one automated-review entry, '
+                f'got {steps.count("automated-review")}: {steps!r}'
+            )
+
+            # (d) ``automated-review`` precedes every plan-mutating anchor.
+            #     Mirrors ``_validate_automated_review_placement``'s contract.
+            review_index = steps.index('automated-review')
+            for anchor in ('archive-plan', 'record-metrics', 'branch-cleanup'):
+                if anchor in steps:
+                    assert steps.index(anchor) > review_index, (
+                        f'automated-review (index {review_index}) must precede '
+                        f'plan-mutating anchor {anchor!r} (index {steps.index(anchor)}): '
+                        f'{steps!r}'
+                    )
+
+            # (e) Guard did not need to remediate — automated-review was
+            #     present after boundary normalization, so no remediation log.
+            assert self._remediation_messages(captured, 'github') == [], (
+                f'expected no remediation log entries, got: '
+                f'{[m for _, m in captured]!r}'
+            )
+
 
 # =============================================================================
 # Compose-time placement validator (lesson 2026-04-28-13-002)
