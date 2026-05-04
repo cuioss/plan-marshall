@@ -596,6 +596,20 @@ Task: plan-marshall:q-gate-validation-agent
 - No false positives (files that shouldn't be changed)
 - No missing coverage (files that should be changed but aren't)
 
+##### Validator activation reference (phase-3-outline)
+
+The agent applies the following mechanical validators automatically when invoked from this phase. Each validator is documented in `q-gate-validation-agent.md` with its activation condition, detection logic, finding emission template, and positive/negative examples. The activation is dispatched by the agent based on phase context — phase-3-outline does not pass validator names; the agent reads `phase: 3-outline` from the audit and runs the applicable subset.
+
+| Validator (q-gate-validation-agent §) | Artifact consumed | Finding `--source` |
+|---------------------------------------|-------------------|--------------------|
+| Consumer Sweep Completeness (§ 2.9) — shipped by PR #323 | `solution_outline.md`, worktree grep results | `qgate` (legacy unscoped source — preserved for backwards compatibility) |
+| Argparse Validator (§ 2.10) | `solution_outline.md` (every embedded `python3 .plan/execute-script.py ...` invocation), live `--help` output of each cited script | `qgate-argparse` |
+| Tier-Delta Validator (§ 2.13) | `solution_outline.md` (tiered/variant section pairs and their delta tables) | `qgate-tier-delta` |
+
+The remaining validators (`module-mapping`, `scope-criterion`, `narrative-vs-code`) are scoped to other phases (4-plan or 2-refine) and do NOT activate when the agent is invoked from phase-3-outline. See `q-gate-validation-agent.md` for their canonical activation conditions.
+
+Findings emitted by these validators flow into the same `qgate_pending_count` aggregate as the existing checks (Sections 2.1–2.7 and the missing-coverage sweep), so the orchestrator's existing 3-iteration auto-loop handles re-entry uniformly regardless of which validator emitted the finding.
+
 **Q-Gate writes**:
 - `artifacts/findings.jsonl` - Any triage findings
 - `logs/decision.log` - Q-Gate verification results

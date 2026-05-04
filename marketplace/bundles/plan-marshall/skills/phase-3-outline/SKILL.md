@@ -221,7 +221,7 @@ For codebase-wide changes requiring discovery and analysis.
 |------|---------|------------|
 | **9. Resolve Domain Skill** | Route to domain-specific or generic instructions | `resolve-outline-skill --domain {domain}`, then load `change-{change_type}.md` |
 | **10. Execute Workflow** | Run discovery, analysis, write solution | Follow change-type instructions, resolve verification commands, write `solution_outline.md`. Step 10 includes a consumer-sweep when the deliverable deletes/renames a public symbol — see [`consumer-sweep.md`](standards/consumer-sweep.md). |
-| **11. Q-Gate Verification** | Full quality verification (with surgical bypass) | Bypass when surgical+bug_fix/tech_debt/verification+1 deliverable; otherwise spawn `plan-marshall:q-gate-validation-agent` |
+| **11. Q-Gate Verification** | Full quality verification (with surgical bypass) | Bypass when surgical+bug_fix/tech_debt/verification+1 deliverable; otherwise spawn `plan-marshall:q-gate-validation-agent` (runs phase-3-applicable validators: existing checks 2.1-2.7, consumer-sweep §2.9, **argparse-validator §2.10**, **tier-delta-validator §2.13**) |
 
 **Step 10 may also refine `scope_estimate`**: After Complex Track discovery and deliverable composition, the concrete Affected files lists may narrow the actual scope. Phase-3-outline MAY downgrade `scope_estimate` (e.g., `multi_module` → `single_module`, or `single_module` → `surgical`) and persist via `manage-references set --field scope_estimate`. Refinement happens BEFORE Step 11 so the bypass rule sees the refined value.
 
