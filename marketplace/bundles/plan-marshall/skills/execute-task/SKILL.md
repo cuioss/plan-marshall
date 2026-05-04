@@ -27,6 +27,7 @@ Skill: plan-marshall:dev-general-practices
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
 - Never bypass the manage-tasks next/finalize-step loop — if parallelization is needed, it must happen at the TASK level, not at the STEP level within a task
+- A task in `implementation` or `module_testing` profile MUST NOT be marked `done` until the resolved canonical command (`quality-gate` or `verify` respectively) exits cleanly. Module-tests passing alone is necessary but not sufficient — mypy and ruff must also pass.
 
 ---
 
@@ -130,7 +131,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   --audit-plan-id {plan_id}
 ```
 
-Where `{resolve_command}` depends on profile: `implementation` → `compile`, `module_testing` → `module-tests`. Verification profile uses commands from task steps directly.
+Where `{resolve_command}` depends on profile: `implementation` → `quality-gate`, `module_testing` → `verify`. Verification profile uses commands from task steps directly.
 
 ### Step: Handle Verification Results
 
@@ -212,7 +213,7 @@ Apply throughout all subsequent steps:
 2. **Plan Implementation**: For each step, determine changes needed, domain skill patterns to apply, modification order, and integration considerations.
 3. **Implement Changes**: For each step — create new files with `Write`, modify existing files with `Edit`. Apply domain patterns and maintain existing code style.
 4. **Mark Step Complete** (common step)
-5. **Run Verification** — resolve command: `compile` (compilability only — full tests belong to module_testing)
+5. **Run Verification** — resolve command: `quality-gate` (static analysis — mypy + ruff on production sources; full tests belong to module_testing)
 6. **Handle Verification Results** — fix scope: production code
 7. **Record Lessons**, **Return Results**
 
@@ -240,7 +241,7 @@ The auto-injection sub-step under Common Workflow → Step: Run Verification han
 2. **Plan Test Implementation**: For each step, determine test scenarios, test structure (unit vs integration per domain skills), assertions needed, setup/teardown requirements.
 3. **Implement Tests**: For each step — create new test files with `Write`, modify existing test files with `Edit`. Follow the AAA pattern (Arrange-Act-Assert). Include positive and negative test cases with descriptive names.
 4. **Mark Step Complete** (common step)
-5. **Run Verification** — resolve command: `module-tests` (full test suite for the module)
+5. **Run Verification** — resolve command: `verify` (full verify pipeline for the module — quality-gate + module-tests)
 6. **Handle Verification Results**:
 
    **Sub-step: Diff written test identifiers against the module-test log**
