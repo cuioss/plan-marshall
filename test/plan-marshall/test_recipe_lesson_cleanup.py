@@ -386,7 +386,7 @@ class TestLessonKindMapping:
 #
 #   Phase 5: quality-gate (and module-tests when present in the candidates)
 #   Phase 6: commit-push, create-pr, lessons-capture, branch-cleanup, archive-plan
-#            (drops automated-review, sonar-roundtrip, knowledge-capture)
+#            (drops automated-review, sonar-roundtrip)
 #
 # When ``recipe_key`` is set, the recipe rule (rule 2) fires for ALL three
 # derived change_types — bug_fix / enhancement / tech_debt — because the
@@ -411,8 +411,8 @@ class TestRecipePathEndToEnd:
         """End-to-end: recipe inputs → manifest with the documented slim shape.
 
         Asserts the success criterion from solution-outline deliverable 7:
-        the manifest excludes automated-review, sonar-roundtrip, and
-        knowledge-capture (per surgical/recipe rules) for each lesson kind.
+        the manifest excludes automated-review and sonar-roundtrip (per
+        surgical/recipe rules) for each lesson kind.
         """
         # Sanity: derive_change_type produces the expected change_type.
         assert derive_change_type(lesson_kind) == change_type
@@ -445,7 +445,7 @@ class TestRecipePathEndToEnd:
 
             # Phase 6 drops the heavy review steps per the recipe contract.
             phase_6 = manifest['phase_6']['steps']
-            for stripped in ('automated-review', 'sonar-roundtrip', 'knowledge-capture'):
+            for stripped in ('automated-review', 'sonar-roundtrip'):
                 assert stripped not in phase_6, (
                     f'recipe path must drop {stripped!r} from Phase 6 (lesson_kind={lesson_kind})'
                 )
@@ -503,7 +503,7 @@ class TestRecipePathEndToEnd:
             assert result['rule_fired'] == 'surgical_bug_fix'
             manifest = read_manifest('recipe-surgical-failsafe')
             assert manifest is not None
-            for stripped in ('automated-review', 'sonar-roundtrip', 'knowledge-capture'):
+            for stripped in ('automated-review', 'sonar-roundtrip'):
                 assert stripped not in manifest['phase_6']['steps']
 
     def test_surgical_scope_without_recipe_still_trims_for_tech_debt(self):
@@ -525,5 +525,5 @@ class TestRecipePathEndToEnd:
             assert result['rule_fired'] == 'surgical_tech_debt'
             manifest = read_manifest('recipe-surgical-failsafe-td')
             assert manifest is not None
-            for stripped in ('automated-review', 'sonar-roundtrip', 'knowledge-capture'):
+            for stripped in ('automated-review', 'sonar-roundtrip'):
                 assert stripped not in manifest['phase_6']['steps']

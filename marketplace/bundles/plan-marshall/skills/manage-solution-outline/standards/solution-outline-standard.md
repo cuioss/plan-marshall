@@ -281,10 +281,10 @@ For the exact fill-in-the-blank structure, see:
 
 **Consumption**: phase-4-plan copies this gloss verbatim into every derived `task.description` header (after the verbatim title quote).
 
-**Example** (for deliverable title `review-knowledge`):
+**Example** (for deliverable title `check-coverage`):
 
 ```
-**Intent gloss:** Review knowledge captured by prior plans (lessons-learned and memories) against this plan's changes.
+**Intent gloss:** Check module test coverage produced by this plan against the configured threshold.
 ```
 
 ### Domain Values

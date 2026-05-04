@@ -264,7 +264,6 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     "retention": {
       "logs_days": 1,
       "archived_plans_days": 5,
-      "memory_days": 5,
       "temp_on_maintenance": true
     }
   },
@@ -288,7 +287,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "review_bot_buffer_seconds": 180,
       "steps": [
         "commit_push", "create_pr", "automated_review",
-        "sonar_roundtrip", "knowledge_capture", "lessons_capture",
+        "sonar_roundtrip", "lessons_capture",
         "branch_cleanup", "archive"
       ]
     }

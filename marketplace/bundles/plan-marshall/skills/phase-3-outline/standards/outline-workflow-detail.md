@@ -295,10 +295,10 @@ Use template from `plan-marshall:manage-solution-outline/templates/deliverable-t
 
 For each deliverable whose title contains a compound word whose head morpheme is a common planning-domain verb (review, check, validate, approve, merge, …), author a single-sentence `**Intent gloss:**` (≤15 words) that restates the deliverable's goal using the tail morpheme's meaning. This gloss is copied verbatim into every derived task.description by phase-4-plan, preventing compound-word mis-interpretation.
 
-**Worked example** — deliverable titled with compound head verb `review`:
+**Worked example** — deliverable titled with compound head verb `check`:
 
 ```markdown
-### 1. Add review-knowledge step to phase-6-finalize
+### 1. Add check-coverage step to phase-6-finalize
 
 **Metadata:**
 - change_type: feature
@@ -307,13 +307,13 @@ For each deliverable whose title contains a compound word whose head morpheme is
 - module: plan-marshall
 - depends: none
 
-**Intent gloss:** Review knowledge captured by prior plans (lessons-learned and memories) against this plan's changes.
+**Intent gloss:** Check module test coverage produced by this plan against the configured threshold.
 
 **Profiles:**
 - implementation
 ```
 
-Without the gloss, a downstream agent could read `review-knowledge` as "subject one's knowledge to review" rather than the intended "consult existing knowledge before acting". The gloss fixes the head-morpheme ambiguity at the source.
+Without the gloss, a downstream agent could read `check-coverage` as "verify a check has been written for coverage" rather than the intended "inspect coverage results before acting". The gloss fixes the head-morpheme ambiguity at the source.
 
 #### Consumer sweep for delete/rename deliverables
 

@@ -272,11 +272,11 @@ the same phase invocation.
 
 ### Description Anchoring Contract
 
-To prevent compound-word mis-interpretation (e.g. `review-knowledge` being described as PR/CI review hygiene), phase-4-plan MUST anchor every `task.description` to literal tokens from the parent deliverable:
+To prevent compound-word mis-interpretation (e.g. `check-coverage` being described as PR/CI review hygiene), phase-4-plan MUST anchor every `task.description` to literal tokens from the parent deliverable:
 
-1. **Verbatim title quote (mitigation 1)**: The `description` value MUST begin with the exact deliverable title in single quotes, followed by a comma (or a period if an intent gloss follows per mitigation 2). Example for a deliverable titled `review-knowledge`:
+1. **Verbatim title quote (mitigation 1)**: The `description` value MUST begin with the exact deliverable title in single quotes, followed by a comma (or a period if an intent gloss follows per mitigation 2). Example for a deliverable titled `check-coverage`:
 
-   description: 'review-knowledge', which reviews prior-plan knowledge against this plan's changes.
+   description: 'check-coverage', which checks module test coverage against this plan's changes.
 
    This forces compound-word tokens to survive description generation as a single unit.
 
@@ -284,7 +284,7 @@ To prevent compound-word mis-interpretation (e.g. `review-knowledge` being descr
 
    Combined example when both are present:
 
-   description: 'review-knowledge'. Review knowledge captured by prior plans (lessons-learned and memories) against this plan's changes. <additional task-specific detail>.
+   description: 'check-coverage'. Check module test coverage against this plan's changes. <additional task-specific detail>.
 
 3. **Structural-token preservation (mitigation 3)**: Any structural token appearing in the parent deliverable body MUST be preserved verbatim in `task.description`. Structural tokens are:
 

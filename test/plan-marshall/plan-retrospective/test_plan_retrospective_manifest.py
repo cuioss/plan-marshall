@@ -120,7 +120,7 @@ def _manifest_early_terminate() -> str:
                 'verification_steps': [],
             },
             'phase_6': {
-                'steps': ['knowledge-capture', 'archive-plan'],
+                'steps': ['lessons-capture', 'archive-plan'],
             },
         }
     )
