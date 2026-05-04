@@ -426,7 +426,13 @@ def test_cli_save_roundtrip():
         try:
             result = run_script(
                 SCRIPT_PATH,
-                'save', '--category', 'context', '--identifier', 'cli-test', '--content', '{"cli": true}',
+                'save',
+                '--category',
+                'context',
+                '--identifier',
+                'cli-test',
+                '--content',
+                '{"cli": true}',
             )
             data = parse_output(result.stdout)
             assert data.get('success') is True, 'CLI save should succeed'

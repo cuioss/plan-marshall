@@ -17,29 +17,26 @@ from pathlib import Path
 
 ALLOWED_CONFTESTS: frozenset[str] = frozenset(
     {
-        "test/conftest.py",
-        "test/adapters/conftest.py",
+        'test/conftest.py',
+        'test/adapters/conftest.py',
     }
 )
 
 
 def test_no_unsanctioned_conftest_files() -> None:
     project_root = Path(__file__).resolve().parent.parent
-    test_dir = project_root / "test"
+    test_dir = project_root / 'test'
 
-    discovered = {
-        conftest.relative_to(project_root).as_posix()
-        for conftest in test_dir.rglob("conftest.py")
-    }
+    discovered = {conftest.relative_to(project_root).as_posix() for conftest in test_dir.rglob('conftest.py')}
 
     offenders = discovered - ALLOWED_CONFTESTS
 
     assert not offenders, (
-        "Unsanctioned conftest.py files found:\n"
-        + "\n".join(f"  - {path}" for path in sorted(offenders))
+        'Unsanctioned conftest.py files found:\n'
+        + '\n'.join(f'  - {path}' for path in sorted(offenders))
         + "\n\nRename to '_fixtures.py' per plan-marshall:dev-general-module-testing"
-        " / pm-dev-python:pytest-testing guidance. Sibling conftest.py files leak"
-        " fixtures across unrelated modules; explicit imports from _fixtures.py"
-        " keep fixture scope intentional.\n\nAllowed conftest.py locations:\n"
-        + "\n".join(f"  - {path}" for path in sorted(ALLOWED_CONFTESTS))
+        ' / pm-dev-python:pytest-testing guidance. Sibling conftest.py files leak'
+        ' fixtures across unrelated modules; explicit imports from _fixtures.py'
+        ' keep fixture scope intentional.\n\nAllowed conftest.py locations:\n'
+        + '\n'.join(f'  - {path}' for path in sorted(ALLOWED_CONFTESTS))
     )

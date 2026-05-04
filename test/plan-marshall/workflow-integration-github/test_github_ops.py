@@ -45,6 +45,7 @@ def _prepare_pr_create_body(tmp_path, monkeypatch, body_text='B', plan_id='p'):
     """Seed PLAN_BASE_DIR with a prepared pr-create body scratch file."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     from ci_base import BODY_KIND_PR_CREATE, get_body_path  # type: ignore[import-not-found]
+
     path = get_body_path(plan_id, BODY_KIND_PR_CREATE)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body_text, encoding='utf-8')
@@ -57,9 +58,7 @@ def test_pr_create_forwards_head_flag(monkeypatch, tmp_path):
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
 
     plan_id = _prepare_pr_create_body(tmp_path, monkeypatch)
-    ns = argparse.Namespace(
-        title='T', plan_id=plan_id, slot=None, base=None, draft=False, head='feature/x'
-    )
+    ns = argparse.Namespace(title='T', plan_id=plan_id, slot=None, base=None, draft=False, head='feature/x')
     result = github_ops.cmd_pr_create(ns)
 
     assert result['status'] == 'success', result
@@ -72,9 +71,7 @@ def test_pr_create_omits_head_when_unset(monkeypatch, tmp_path):
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
 
     plan_id = _prepare_pr_create_body(tmp_path, monkeypatch)
-    ns = argparse.Namespace(
-        title='T', plan_id=plan_id, slot=None, base=None, draft=False, head=None
-    )
+    ns = argparse.Namespace(title='T', plan_id=plan_id, slot=None, base=None, draft=False, head=None)
     result = github_ops.cmd_pr_create(ns)
 
     assert result['status'] == 'success', result
@@ -109,9 +106,7 @@ def test_pr_merge_with_head(monkeypatch):
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
 
-    ns = argparse.Namespace(
-        pr_number=None, head='feature/x', strategy='merge', delete_branch=False
-    )
+    ns = argparse.Namespace(pr_number=None, head='feature/x', strategy='merge', delete_branch=False)
     result = github_ops.cmd_pr_merge(ns)
 
     assert result['status'] == 'success', result
@@ -137,9 +132,7 @@ def test_pr_merge_dual_flag_rejected(monkeypatch):
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
 
-    ns = argparse.Namespace(
-        pr_number=42, head='feature/x', strategy='merge', delete_branch=False
-    )
+    ns = argparse.Namespace(pr_number=42, head='feature/x', strategy='merge', delete_branch=False)
     result = github_ops.cmd_pr_merge(ns)
 
     assert result['status'] == 'error'
@@ -567,18 +560,14 @@ def test_format_checks_toon_skips_go_zero_timestamps():
     real_rows = [r for r in rows if r['status'] == 'SUCCESS']
 
     # (b) SKIPPED row has NO elapsed_sec key — TOON treats absent as null.
-    assert 'elapsed_sec' not in skipped_row, (
-        f"SKIPPED row must omit elapsed_sec; got {skipped_row!r}"
-    )
+    assert 'elapsed_sec' not in skipped_row, f'SKIPPED row must omit elapsed_sec; got {skipped_row!r}'
 
     # (c) Real-timestamped rows expose non-negative integer elapsed_sec.
     assert len(real_rows) == 2
     for r in real_rows:
         assert 'elapsed_sec' in r, f'Real row missing elapsed_sec: {r!r}'
         assert isinstance(r['elapsed_sec'], int)
-        assert r['elapsed_sec'] >= 0, (
-            f"Real row elapsed_sec must be non-negative; got {r!r}"
-        )
+        assert r['elapsed_sec'] >= 0, f'Real row elapsed_sec must be non-negative; got {r!r}'
 
 
 def test_format_checks_toon_clamps_runaway_aggregate(monkeypatch, capsys):
@@ -591,9 +580,7 @@ def test_format_checks_toon_clamps_runaway_aggregate(monkeypatch, capsys):
     import ci_base  # type: ignore[import-not-found]
 
     # Simulate the pre-fix bug: compute_total_elapsed returns runaway value.
-    monkeypatch.setattr(
-        github_ops, 'compute_total_elapsed', lambda values, now: 63_870_000_000
-    )
+    monkeypatch.setattr(github_ops, 'compute_total_elapsed', lambda values, now: 63_870_000_000)
 
     checks = [
         {
@@ -609,18 +596,12 @@ def test_format_checks_toon_clamps_runaway_aggregate(monkeypatch, capsys):
 
     # ci_status path: duration_ceiling=0 → clamp substitutes 0.
     rows, total_elapsed = github_ops.format_checks_toon(checks, duration_ceiling=0)
-    assert total_elapsed == 0, (
-        f'Expected runaway aggregate to clamp to 0, got {total_elapsed}'
-    )
+    assert total_elapsed == 0, f'Expected runaway aggregate to clamp to 0, got {total_elapsed}'
     captured = capsys.readouterr()
-    assert 'out of range' in captured.err, (
-        'Expected stderr warning when clamp engages'
-    )
+    assert 'out of range' in captured.err, 'Expected stderr warning when clamp engages'
 
     # ci_wait path: duration_ceiling=42 → clamp substitutes 42.
-    _, total_elapsed_wait = github_ops.format_checks_toon(
-        checks, duration_ceiling=42
-    )
+    _, total_elapsed_wait = github_ops.format_checks_toon(checks, duration_ceiling=42)
     assert total_elapsed_wait == 42
 
     # Ensure ci_base import survives the patching (sanity).

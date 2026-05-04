@@ -391,9 +391,7 @@ class TestSonarProjectDirNoop(unittest.TestCase):
                 'message': 'm',
             }
         )
-        stdout, stderr, code = run_sonar_script(
-            ['--project-dir', '/tmp/sonar-wt', 'triage', '--issue', issue]
-        )
+        stdout, stderr, code = run_sonar_script(['--project-dir', '/tmp/sonar-wt', 'triage', '--issue', issue])
         self.assertEqual(code, 0, f'stderr={stderr}')
         self.assertIn('status', stdout)
 
@@ -410,9 +408,7 @@ class TestSonarProjectDirNoop(unittest.TestCase):
                 'message': 'm',
             }
         )
-        stdout, stderr, code = run_sonar_script(
-            ['--project-dir=/tmp/sonar-wt2', 'triage', '--issue', issue]
-        )
+        stdout, stderr, code = run_sonar_script(['--project-dir=/tmp/sonar-wt2', 'triage', '--issue', issue])
         self.assertEqual(code, 0, f'stderr={stderr}')
 
     def test_project_dir_not_visible_to_argparse(self):
@@ -430,9 +426,7 @@ class TestSonarProjectDirNoop(unittest.TestCase):
                 'message': 'm',
             }
         )
-        stdout, stderr, code = run_sonar_script(
-            ['--project-dir', '/nonexistent/path', 'triage', '--issue', issue]
-        )
+        stdout, stderr, code = run_sonar_script(['--project-dir', '/nonexistent/path', 'triage', '--issue', issue])
         self.assertEqual(code, 0, f'stderr={stderr}')
         self.assertNotIn('unrecognized arguments', stderr)
 

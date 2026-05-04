@@ -60,8 +60,7 @@ from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa
 # Use .plan/* (not .plan/) to allow exceptions - .plan/ ignores entire directory
 GITIGNORE_COMMENT = '# Planning system (managed by /marshall-steward)'
 GITIGNORE_LOCAL_COMMENT = (
-    '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
-    '— managed by plan-marshall)'
+    '# Runtime state (plans, run-configuration, lessons-learned, memory, logs — managed by plan-marshall)'
 )
 GITIGNORE_PLAN_DIR = '.plan/*'
 GITIGNORE_MARSHAL_EXCEPTION = '!.plan/marshal.json'
@@ -199,9 +198,7 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description='Configure .gitignore for planning system', allow_abbrev=False
-    )
+    parser = argparse.ArgumentParser(description='Configure .gitignore for planning system', allow_abbrev=False)
     parser.add_argument(
         '--project-root', type=str, default='.', help='Project root directory (default: current directory)'
     )

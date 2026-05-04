@@ -17,7 +17,12 @@ from test_helpers import SCRIPT_PATH, create_marshal_json
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-config'
+    / 'scripts'
 )
 
 
@@ -73,9 +78,7 @@ def test_system_retention_set_boolean(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = cmd_system(
-            Namespace(sub_noun='retention', verb='set', field='temp_on_maintenance', value='false')
-        )
+        result = cmd_system(Namespace(sub_noun='retention', verb='set', field='temp_on_maintenance', value='false'))
 
         assert result['status'] == 'success'
         assert result['value'] is False

@@ -45,10 +45,12 @@ def run_ensure_denied(args) -> int:
             save_settings,
         )
     except ImportError:
-        output_toon({
-            'status': 'error',
-            'message': 'permission_common not available (missing from PYTHONPATH)',
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'message': 'permission_common not available (missing from PYTHONPATH)',
+            }
+        )
         return 0
 
     # Verify credentials directory permissions first
@@ -56,8 +58,7 @@ def run_ensure_denied(args) -> int:
         current_mode = CREDENTIALS_DIR.stat().st_mode & 0o777
         if current_mode != 0o700:
             print(
-                f'WARNING: Credentials directory has permissions {oct(current_mode)}, '
-                f'expected 0o700. Fixing...',
+                f'WARNING: Credentials directory has permissions {oct(current_mode)}, expected 0o700. Fixing...',
                 file=sys.stderr,
             )
             os.chmod(str(CREDENTIALS_DIR), 0o700)
@@ -77,11 +78,13 @@ def run_ensure_denied(args) -> int:
         settings.setdefault('permissions', {})['deny'] = deny_list
         save_settings(str(settings_path), settings)
 
-    output_toon({
-        'status': 'success',
-        'target': target,
-        'rules_added': len(added),
-        'rules_existing': len(DENY_RULES) - len(added),
-        'total_deny_rules': len(deny_list),
-    })
+    output_toon(
+        {
+            'status': 'success',
+            'target': target,
+            'rules_added': len(added),
+            'rules_existing': len(DENY_RULES) - len(added),
+            'total_deny_rules': len(deny_list),
+        }
+    )
     return 0

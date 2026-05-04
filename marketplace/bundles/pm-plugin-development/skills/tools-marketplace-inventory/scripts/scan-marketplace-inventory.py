@@ -684,7 +684,9 @@ def write_file_output(output: dict, output_dir: Path, custom_output: str = '', f
 
 @safe_main
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Scan marketplace directories and return structured inventory', allow_abbrev=False)
+    parser = argparse.ArgumentParser(
+        description='Scan marketplace directories and return structured inventory', allow_abbrev=False
+    )
     parser.add_argument(
         '--scope',
         choices=['auto', 'marketplace', 'global', 'project', 'plugin-cache'],
@@ -757,7 +759,14 @@ def main() -> int:
 
     # Content filtering requires paths - enforce --include-descriptions or --full
     if (content_include or content_exclude) and not (args.include_descriptions or args.full):
-        print(serialize_toon({'status': 'error', 'error': '--content-pattern/--content-exclude require --include-descriptions or --full'}))
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': '--content-pattern/--content-exclude require --include-descriptions or --full',
+                }
+            )
+        )
         return 0
 
     # Parse bundle filter

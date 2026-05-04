@@ -253,6 +253,81 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Worked example (lesson 2026-04-18-05-002)**: Plan `plan-retrospective-opt-in-audit` Deliverable 4 listed every file under `.claude/skills/verify-workflow/` for deletion. Pattern A run against the worktree produced `test/verify-workflow/conftest.py:12` loading `scripts/verify-structure.py` via `spec_from_file_location`. `test/verify-workflow/` was not listed as an affected file of any deliverable in the outline, so the suppression rule did not apply and a Q-Gate finding would now be emitted — blocking phase-3-outline until the outline adds `test/verify-workflow/` to the deletion deliverable (or adds a follow-up deliverable that removes it). With this check in place, task 10 (holistic `module-tests`) would never have hit the `FileNotFoundError` at pytest collection time.
 
+#### 2.9 Consumer Sweep Completeness Check
+
+Verify that deliverables which delete or rename a public symbol have enumerated every cross-bundle consumer in `Affected files`. This check enforces the outline-time consumer sweep documented in [`consumer-sweep.md`](../skills/phase-3-outline/standards/consumer-sweep.md) at Q-Gate time, catching deliverables that skipped the sweep or applied it incompletely.
+
+**Trigger condition** — Activates when the deliverable's `Change per file`, `Refactoring`, or title text matches the same delete/rename heuristic from `consumer-sweep.md` § 1 applied to a public symbol:
+
+| Pattern class | Match indicators |
+|---------------|------------------|
+| Delete language | `delete`, `remove`, `drop`, `git rm`, `eliminate`, `purge` |
+| Rename language | `rename`, `replaced by`, `migrate from X to Y`, `renamed to` |
+| Replacement language | `replace X with Y`, `swap X for Y` (when X is a public module-level symbol) |
+
+The trigger applies only to module-level public symbols (top-level functions, classes, constants, exported skill notations, `Skill:` loader directives). It does NOT fire for local variables, private symbols (leading `_`), file-level renames that do not change a public symbol, or documentation-only edits.
+
+**Extraction**: When the trigger fires, extract the affected public symbol(s) from the deliverable text. For function-level renames like "replace `load_derived_data` with `iter_modules`", extract the old symbol (`load_derived_data`) — that is the symbol whose consumers must appear in `Affected files`.
+
+**Sweep at Q-Gate time** — Re-run the consumer-sweep grep step against the worktree to materialize the expected consumer set:
+
+```bash
+grep -rn "{symbol}" marketplace/bundles/
+```
+
+Each grep is a separate Bash invocation (one command per call). Collect every `{consumer_path}` from the matches, discard `__pycache__` paths, and discard the symbol's own owning module file (which is in scope by definition).
+
+**Failure modes**:
+
+**(a) Trigger language present AND `Affected files` is empty**:
+
+```
+FAIL with finding:
+  title: "Q-Gate: consumer_sweep_completeness — empty affected_files for delete/rename deliverable {N}"
+  detail: "Deliverable {N} deletes/renames public symbol {symbol} but lists no Affected files. The consumer sweep documented in consumer-sweep.md is mandatory for delete/rename deliverables. Re-run the sweep and enumerate every consumer."
+```
+
+**(b) Trigger language present AND every entry in `Affected files` is under the same bundle as the symbol's owning module (no cross-bundle entries) AND the worktree grep would return cross-bundle hits**:
+
+```
+FAIL with finding (one per unenumerated consumer):
+  title: "Q-Gate: consumer_sweep_completeness — unenumerated cross-bundle consumer of {symbol} in deliverable {N}"
+  detail: "Deliverable {N} deletes/renames {symbol} but Affected files only references the owning bundle. Cross-bundle consumer at {consumer_path}:{line} would break when {symbol} is removed. Add {consumer_path} to Affected files (with explicit migration text in Change per file) or add a follow-up deliverable that updates it."
+  file_path: "{consumer_path}"
+```
+
+The owning-bundle determination uses the `marketplace/bundles/{bundle}/` path segment of the symbol's first match. Same-bundle entries in `Affected files` are sufficient when ALL grep matches are under that same bundle — cross-bundle hits trigger the failure.
+
+**Pass criteria** (silent — no finding emitted):
+- Trigger language is absent (deliverable does not delete or rename a public symbol), OR
+- Trigger language is present AND `Affected files` includes at least one cross-bundle consumer that matches the worktree grep results, OR
+- Trigger language is present AND the worktree grep returns no cross-bundle hits (the deletion is genuinely contained within the owning bundle).
+
+**FLAG format** — For each unenumerated cross-bundle consumer (failure mode b), record one finding via `manage-findings qgate add`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate add --plan-id {plan_id} --phase 3-outline --source qgate --type triage \
+  --title "Q-Gate: consumer_sweep_completeness — unenumerated cross-bundle consumer of {symbol} in deliverable {N}" \
+  --detail "Deliverable {N} deletes/renames {symbol} but Affected files does not include {consumer_path}:{line}. Re-run the consumer sweep documented in consumer-sweep.md and enumerate every cross-bundle consumer." \
+  --file-path "{consumer_path}" \
+  --audit-plan-id {plan_id}
+```
+
+For failure mode (a) — empty `Affected files` — emit a single finding without `--file-path`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate add --plan-id {plan_id} --phase 3-outline --source qgate --type triage \
+  --title "Q-Gate: consumer_sweep_completeness — empty affected_files for delete/rename deliverable {N}" \
+  --detail "Deliverable {N} deletes/renames public symbol {symbol} but lists no Affected files. The consumer sweep documented in consumer-sweep.md is mandatory for delete/rename deliverables." \
+  --audit-plan-id {plan_id}
+```
+
+**Cross-references**:
+- [`consumer-sweep.md`](../skills/phase-3-outline/standards/consumer-sweep.md) — outline-time procedure this check enforces
+- Driving lesson: `2026-04-30-23-001` (TASK-9 scope expanded silently — pm-dev-java profiles.py needed migration to per-module layout)
+
 ---
 
 ### Step 5: Check Missing Coverage
@@ -386,6 +461,7 @@ qgate_pending_count: {count}
 | Architecture | Module/domain valid | Invalid module or domain |
 | File Existence | All affected file paths exist on disk | Path not found or wrong convention |
 | Profile Overlap | No redundant test coverage across deliverables | Test deliverable duplicates module_testing scope |
+| Consumer Sweep Completeness | Cross-bundle consumers of deleted/renamed public symbols enumerated in Affected files | Trigger language present AND (empty affected_files OR no cross-bundle entries when grep returns cross-bundle hits) |
 | Missing Coverage | All assessed files in deliverables | Assessed files missing |
 
 ---

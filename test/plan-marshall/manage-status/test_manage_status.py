@@ -537,9 +537,7 @@ def test_transition_5_execute_preserves_modified_files_when_diff_empty(monkeypat
 
         # Act: stub the git collection to return empty, then transition.
         monkeypatch.setattr(_lifecycle, '_collect_modified_files', lambda *args, **kwargs: [])
-        result = cmd_transition(
-            Namespace(plan_id='transition-guard-preserve', completed='5-execute')
-        )
+        result = cmd_transition(Namespace(plan_id='transition-guard-preserve', completed='5-execute'))
 
         # Assert: transition succeeded AND the modified_files guard preserved
         # the pre-populated list despite the empty diff.
@@ -562,12 +560,8 @@ def test_transition_5_execute_replaces_modified_files_when_diff_nonempty(monkeyp
         _seed_execute_phase_plan(ctx, 'transition-guard-replace', ['a', 'b', 'c'])
 
         # Act: stub the git collection to return ['x','y'], then transition.
-        monkeypatch.setattr(
-            _lifecycle, '_collect_modified_files', lambda *args, **kwargs: ['x', 'y']
-        )
-        result = cmd_transition(
-            Namespace(plan_id='transition-guard-replace', completed='5-execute')
-        )
+        monkeypatch.setattr(_lifecycle, '_collect_modified_files', lambda *args, **kwargs: ['x', 'y'])
+        result = cmd_transition(Namespace(plan_id='transition-guard-replace', completed='5-execute'))
 
         # Assert: transition succeeded AND the modified_files was replaced
         # with the new diff contents (not appended, not preserved).

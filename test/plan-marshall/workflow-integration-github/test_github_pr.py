@@ -268,9 +268,7 @@ class TestPRProjectDirPlumbing(unittest.TestCase):
         saved_cwd = ci_base.get_default_cwd()
         try:
             ci_base.set_default_cwd(None)
-            comment = json.dumps(
-                {'id': 'P1', 'body': 'LGTM', 'path': None, 'line': None, 'author': 'a'}
-            )
+            comment = json.dumps({'id': 'P1', 'body': 'LGTM', 'path': None, 'line': None, 'author': 'a'})
             sys.argv = [
                 'github_pr.py',
                 '--project-dir',
@@ -296,9 +294,7 @@ class TestPRProjectDirPlumbing(unittest.TestCase):
         saved_cwd = ci_base.get_default_cwd()
         try:
             ci_base.set_default_cwd(None)
-            comment = json.dumps(
-                {'id': 'P2', 'body': 'ok', 'path': None, 'line': None, 'author': 'a'}
-            )
+            comment = json.dumps({'id': 'P2', 'body': 'ok', 'path': None, 'line': None, 'author': 'a'})
             sys.argv = [
                 'github_pr.py',
                 '--project-dir=/tmp/worktree-pr2',

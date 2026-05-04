@@ -18,12 +18,7 @@ from _fixtures import (  # noqa: E402
 from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
 
 SCRIPT_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-retrospective'
-    / 'scripts'
-    / 'check-artifact-consistency.py'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'check-artifact-consistency.py'
 )
 
 
@@ -134,9 +129,7 @@ class TestFaultInjection:
 class TestArchivedMode:
     def test_archived_plan_checks_pass(self, tmp_path):
         archived = setup_archived_plan(tmp_path)
-        result = run_script(
-            SCRIPT_PATH, 'run', '--archived-plan-path', str(archived), '--mode', 'archived'
-        )
+        result = run_script(SCRIPT_PATH, 'run', '--archived-plan-path', str(archived), '--mode', 'archived')
         assert result.success, result.stderr
         data = result.toon()
         assert data['status'] == 'success'
@@ -247,9 +240,7 @@ def _setup_exact_match_plan(
     # Overwrite outline with a variant whose deliverable count matches the
     # default tasks fixture (a single deliverable) so task_deliverable_match
     # does not go red and drown out the check under test.
-    (plan_dir / 'solution_outline.md').write_text(
-        _outline_with_affected_files(outline_files), encoding='utf-8'
-    )
+    (plan_dir / 'solution_outline.md').write_text(_outline_with_affected_files(outline_files), encoding='utf-8')
     # Trim tasks to a single deliverable to match the outline above.
     tasks_dir = plan_dir / 'tasks'
     for leftover in tasks_dir.glob('TASK-*.json'):
@@ -294,8 +285,7 @@ class TestAffectedFilesExactMatch:
         data = result.toon()
 
         assert 'affected_files_exact_match' in data, (
-            'affected_files_exact_match must be a top-level TOON key, '
-            'peer to affected_files_recall'
+            'affected_files_exact_match must be a top-level TOON key, peer to affected_files_recall'
         )
         exact = data['affected_files_exact_match']
         assert exact['status'] == 'pass'

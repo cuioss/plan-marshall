@@ -30,12 +30,7 @@ from _fixtures import setup_broken_plan, setup_live_plan  # noqa: E402
 from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
 
 SCRIPT_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-retrospective'
-    / 'scripts'
-    / 'direct-gh-glab-usage.py'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'direct-gh-glab-usage.py'
 )
 
 
@@ -60,11 +55,15 @@ def _init_git_repo(repo_dir: Path) -> None:
     }
     subprocess.run(
         ['git', 'init', '-q', '-b', 'main', str(repo_dir)],
-        check=True, capture_output=True, env={**env},
+        check=True,
+        capture_output=True,
+        env={**env},
     )
     subprocess.run(
         ['git', '-C', str(repo_dir), 'commit', '--allow-empty', '-q', '-m', 'init'],
-        check=True, capture_output=True, env={**env},
+        check=True,
+        capture_output=True,
+        env={**env},
     )
 
 
@@ -85,15 +84,21 @@ def _commit_file(repo_dir: Path, rel_path: str, content: str) -> None:
     file_path.write_text(content, encoding='utf-8')
     subprocess.run(
         ['git', '-C', str(repo_dir), 'checkout', '-q', '-b', 'feature'],
-        check=False, capture_output=True, env={**env},
+        check=False,
+        capture_output=True,
+        env={**env},
     )
     subprocess.run(
         ['git', '-C', str(repo_dir), 'add', rel_path],
-        check=True, capture_output=True, env={**env},
+        check=True,
+        capture_output=True,
+        env={**env},
     )
     subprocess.run(
         ['git', '-C', str(repo_dir), 'commit', '-q', '-m', f'add {rel_path}'],
-        check=True, capture_output=True, env={**env},
+        check=True,
+        capture_output=True,
+        env={**env},
     )
 
 
@@ -121,24 +126,27 @@ class TestLogLeaks:
         # line already uses production shape `[ts] [LEVEL] [hash] [CAT] (caller) msg`.
         work_log = plan_dir / 'logs' / 'work.log'
         work_log.write_text(
-            work_log.read_text(encoding='utf-8')
-            + '[2026-04-17T10:03:00Z] [INFO] [999999] [STATUS] '
-              '(plan-marshall:phase-6-finalize) ran gh pr view 42\n',
+            work_log.read_text(encoding='utf-8') + '[2026-04-17T10:03:00Z] [INFO] [999999] [STATUS] '
+            '(plan-marshall:phase-6-finalize) ran gh pr view 42\n',
             encoding='utf-8',
         )
 
         result = run_script(
-            SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live',
-            '--project-root', str(tmp_path),
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--project-root',
+            str(tmp_path),
         )
         assert result.success, result.stderr
         data = result.toon()
 
         assert data['aspect'] == 'direct-gh-glab-usage'
         log_findings = [f for f in data['findings'] if f['surface'] == 'log_leak']
-        assert len(log_findings) >= 1, (
-            'Expected at least one log_leak finding for "gh pr view" in work.log'
-        )
+        assert len(log_findings) >= 1, 'Expected at least one log_leak finding for "gh pr view" in work.log'
         assert any('work.log' in f['file'] for f in log_findings)
         assert any('gh pr view' in f['snippet'] for f in log_findings)
 
@@ -147,15 +155,20 @@ class TestLogLeaks:
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch, plan_id='retro-ghglab-glab')
         script_log = plan_dir / 'logs' / 'script-execution.log'
         script_log.write_text(
-            script_log.read_text(encoding='utf-8')
-            + '[2026-04-17T10:04:00Z] [INFO] [aaaaa1] '
-              'direct call: glab mr view 17 (0.20s)\n',
+            script_log.read_text(encoding='utf-8') + '[2026-04-17T10:04:00Z] [INFO] [aaaaa1] '
+            'direct call: glab mr view 17 (0.20s)\n',
             encoding='utf-8',
         )
 
         result = run_script(
-            SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live',
-            '--project-root', str(tmp_path),
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--project-root',
+            str(tmp_path),
         )
         assert result.success, result.stderr
         data = result.toon()
@@ -183,15 +196,20 @@ class TestLogLeaks:
         (plan_dir / 'logs' / 'script-execution.log').write_text('', encoding='utf-8')
 
         result = run_script(
-            SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live',
-            '--project-root', str(tmp_path),
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--project-root',
+            str(tmp_path),
         )
         assert result.success, result.stderr
         data = result.toon()
         log_findings = [f for f in data['findings'] if f['surface'] == 'log_leak']
         assert log_findings == [], (
-            f'Expected no log_leak findings for github.com/github_pr substrings, '
-            f'got: {log_findings}'
+            f'Expected no log_leak findings for github.com/github_pr substrings, got: {log_findings}'
         )
 
 
@@ -213,24 +231,30 @@ class TestDiffLeaks:
         _commit_file(
             repo_dir,
             'src/leaky.py',
-            'import subprocess\n'
-            'def pull():\n'
-            "    subprocess.run(['gh', 'pr', 'view', '42'])\n",
+            "import subprocess\ndef pull():\n    subprocess.run(['gh', 'pr', 'view', '42'])\n",
         )
 
         result = run_script(
-            SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live',
-            '--project-root', str(repo_dir), '--base', 'main',
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--project-root',
+            str(repo_dir),
+            '--base',
+            'main',
         )
         assert result.success, result.stderr
         data = result.toon()
         diff_findings = [f for f in data['findings'] if f['surface'] == 'diff_leak']
         assert len(diff_findings) >= 1, (
-            f"Expected at least one diff_leak finding for added gh call; got "
-            f"{diff_findings}. Full findings: {data['findings']}"
+            f'Expected at least one diff_leak finding for added gh call; got '
+            f'{diff_findings}. Full findings: {data["findings"]}'
         )
         assert any('leaky.py' in f['file'] for f in diff_findings)
-        assert any("gh" in f['snippet'] for f in diff_findings)
+        assert any('gh' in f['snippet'] for f in diff_findings)
 
     def test_gh_in_comment_not_flagged_as_diff_leak(self, tmp_path, monkeypatch):
         """Case (d): a Python comment mentioning ``gh`` must NOT trip the
@@ -242,23 +266,25 @@ class TestDiffLeaks:
         _commit_file(
             repo_dir,
             'src/clean.py',
-            'import subprocess\n'
-            '# TODO: stop using gh directly here\n'
-            'def pull():\n'
-            '    pass\n',
+            'import subprocess\n# TODO: stop using gh directly here\ndef pull():\n    pass\n',
         )
 
         result = run_script(
-            SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live',
-            '--project-root', str(repo_dir), '--base', 'main',
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--project-root',
+            str(repo_dir),
+            '--base',
+            'main',
         )
         assert result.success, result.stderr
         data = result.toon()
         diff_findings = [f for f in data['findings'] if f['surface'] == 'diff_leak']
-        assert diff_findings == [], (
-            f'Expected no diff_leak finding for comment-only gh mention, got: '
-            f'{diff_findings}'
-        )
+        assert diff_findings == [], f'Expected no diff_leak finding for comment-only gh mention, got: {diff_findings}'
 
 
 # ---------------------------------------------------------------------------
@@ -277,15 +303,10 @@ class TestWrapperTangle:
         is a wrapper tangle — CLI name and mutation token appear in the same
         multi-line args window, so the wrapper scanner flags it.
         """
-        plan_id, _ = setup_broken_plan(
-            tmp_path, monkeypatch, plan_id='retro-ghglab-tangle'
-        )
+        plan_id, _ = setup_broken_plan(tmp_path, monkeypatch, plan_id='retro-ghglab-tangle')
         # Build a project-root layout that matches one of the three dirs the
         # scanner walks. We choose the github wrapper directory.
-        wrapper_rel = (
-            'marketplace/bundles/plan-marshall/skills/'
-            'workflow-integration-github/scripts/leaky_wrapper.py'
-        )
+        wrapper_rel = 'marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/leaky_wrapper.py'
         _write_wrapper(
             tmp_path,
             wrapper_rel,
@@ -298,8 +319,14 @@ class TestWrapperTangle:
         )
 
         result = run_script(
-            SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live',
-            '--project-root', str(tmp_path),
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--project-root',
+            str(tmp_path),
         )
         assert result.success, result.stderr
         data = result.toon()
@@ -312,13 +339,8 @@ class TestWrapperTangle:
 
     def test_positive_glab_plus_checkout(self, tmp_path, monkeypatch):
         """Case (c, glab variant): ``checkout`` is a mutation token too."""
-        plan_id, _ = setup_broken_plan(
-            tmp_path, monkeypatch, plan_id='retro-ghglab-glab-tangle'
-        )
-        wrapper_rel = (
-            'marketplace/bundles/plan-marshall/skills/'
-            'workflow-integration-gitlab/scripts/leaky_glab.py'
-        )
+        plan_id, _ = setup_broken_plan(tmp_path, monkeypatch, plan_id='retro-ghglab-glab-tangle')
+        wrapper_rel = 'marketplace/bundles/plan-marshall/skills/workflow-integration-gitlab/scripts/leaky_glab.py'
         _write_wrapper(
             tmp_path,
             wrapper_rel,
@@ -329,15 +351,20 @@ class TestWrapperTangle:
         )
 
         result = run_script(
-            SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live',
-            '--project-root', str(tmp_path),
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--project-root',
+            str(tmp_path),
         )
         assert result.success, result.stderr
         data = result.toon()
         tangles = [f for f in data['findings'] if f['surface'] == 'wrapper_tangle']
         assert any('leaky_glab.py' in f['file'] for f in tangles), (
-            f'Expected wrapper_tangle finding for glab+checkout call; '
-            f'got {tangles}'
+            f'Expected wrapper_tangle finding for glab+checkout call; got {tangles}'
         )
 
     def test_positive_gh_plus_list_style_branch_dash_d(self, tmp_path, monkeypatch):
@@ -350,13 +377,8 @@ class TestWrapperTangle:
         with spaces and missed list-style invocations entirely. Token-aware
         matching handles both shapes.
         """
-        plan_id, _ = setup_broken_plan(
-            tmp_path, monkeypatch, plan_id='retro-ghglab-listdash'
-        )
-        wrapper_rel = (
-            'marketplace/bundles/plan-marshall/skills/'
-            'workflow-integration-github/scripts/list_dash_leak.py'
-        )
+        plan_id, _ = setup_broken_plan(tmp_path, monkeypatch, plan_id='retro-ghglab-listdash')
+        wrapper_rel = 'marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/list_dash_leak.py'
         _write_wrapper(
             tmp_path,
             wrapper_rel,
@@ -368,15 +390,20 @@ class TestWrapperTangle:
         )
 
         result = run_script(
-            SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live',
-            '--project-root', str(tmp_path),
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--project-root',
+            str(tmp_path),
         )
         assert result.success, result.stderr
         data = result.toon()
         tangles = [f for f in data['findings'] if f['surface'] == 'wrapper_tangle']
         assert any('list_dash_leak.py' in f['file'] for f in tangles), (
-            f'Expected wrapper_tangle finding for gh + list-style branch -d call; '
-            f'got {tangles}'
+            f'Expected wrapper_tangle finding for gh + list-style branch -d call; got {tangles}'
         )
 
     def test_positive_run_gh_wrapper_plus_delete_branch(self, tmp_path, monkeypatch):
@@ -389,13 +416,8 @@ class TestWrapperTangle:
         otherwise the leak hides behind the wrapper and the heuristic
         misses its primary target.
         """
-        plan_id, _ = setup_broken_plan(
-            tmp_path, monkeypatch, plan_id='retro-ghglab-rungh'
-        )
-        wrapper_rel = (
-            'marketplace/bundles/plan-marshall/skills/'
-            'workflow-integration-github/scripts/run_gh_leak.py'
-        )
+        plan_id, _ = setup_broken_plan(tmp_path, monkeypatch, plan_id='retro-ghglab-rungh')
+        wrapper_rel = 'marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/run_gh_leak.py'
         _write_wrapper(
             tmp_path,
             wrapper_rel,
@@ -407,32 +429,30 @@ class TestWrapperTangle:
         )
 
         result = run_script(
-            SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live',
-            '--project-root', str(tmp_path),
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--project-root',
+            str(tmp_path),
         )
         assert result.success, result.stderr
         data = result.toon()
         tangles = [f for f in data['findings'] if f['surface'] == 'wrapper_tangle']
         assert any('run_gh_leak.py' in f['file'] for f in tangles), (
-            f'Expected wrapper_tangle finding for run_gh + --delete-branch call; '
-            f'got {tangles}'
+            f'Expected wrapper_tangle finding for run_gh + --delete-branch call; got {tangles}'
         )
 
-    def test_positive_run_glab_wrapper_plus_remove_source_branch(
-        self, tmp_path, monkeypatch
-    ):
+    def test_positive_run_glab_wrapper_plus_remove_source_branch(self, tmp_path, monkeypatch):
         """Symmetric coverage for the GitLab wrapper:
         ``run_glab(['mr', 'merge', '--remove-source-branch'])`` must surface
         as a wrapper tangle even though no ``subprocess.`` literal appears
         in the call site.
         """
-        plan_id, _ = setup_broken_plan(
-            tmp_path, monkeypatch, plan_id='retro-ghglab-runglab'
-        )
-        wrapper_rel = (
-            'marketplace/bundles/plan-marshall/skills/'
-            'workflow-integration-gitlab/scripts/run_glab_leak.py'
-        )
+        plan_id, _ = setup_broken_plan(tmp_path, monkeypatch, plan_id='retro-ghglab-runglab')
+        wrapper_rel = 'marketplace/bundles/plan-marshall/skills/workflow-integration-gitlab/scripts/run_glab_leak.py'
         _write_wrapper(
             tmp_path,
             wrapper_rel,
@@ -444,15 +464,20 @@ class TestWrapperTangle:
         )
 
         result = run_script(
-            SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live',
-            '--project-root', str(tmp_path),
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--project-root',
+            str(tmp_path),
         )
         assert result.success, result.stderr
         data = result.toon()
         tangles = [f for f in data['findings'] if f['surface'] == 'wrapper_tangle']
         assert any('run_glab_leak.py' in f['file'] for f in tangles), (
-            f'Expected wrapper_tangle finding for run_glab + --remove-source-branch '
-            f'call; got {tangles}'
+            f'Expected wrapper_tangle finding for run_glab + --remove-source-branch call; got {tangles}'
         )
 
     def test_negative_branch_delete_identifier_not_flagged(self, tmp_path, monkeypatch):
@@ -461,12 +486,9 @@ class TestWrapperTangle:
         ``branch -d`` mutation token. Anchored matching prevents the false
         positive that motivated the gemini-code-assist review comment.
         """
-        plan_id, _ = setup_broken_plan(
-            tmp_path, monkeypatch, plan_id='retro-ghglab-branchid'
-        )
+        plan_id, _ = setup_broken_plan(tmp_path, monkeypatch, plan_id='retro-ghglab-branchid')
         wrapper_rel = (
-            'marketplace/bundles/plan-marshall/skills/'
-            'workflow-integration-github/scripts/branch_delete_caller.py'
+            'marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/branch_delete_caller.py'
         )
         _write_wrapper(
             tmp_path,
@@ -479,8 +501,14 @@ class TestWrapperTangle:
         )
 
         result = run_script(
-            SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live',
-            '--project-root', str(tmp_path),
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--project-root',
+            str(tmp_path),
         )
         assert result.success, result.stderr
         data = result.toon()
@@ -495,13 +523,8 @@ class TestWrapperTangle:
         is a class-A remote-only call — the wrapper-tangle heuristic MUST NOT
         trip. Documents the intentional scope of the abstraction-leak check.
         """
-        plan_id, _ = setup_broken_plan(
-            tmp_path, monkeypatch, plan_id='retro-ghglab-remote-only'
-        )
-        wrapper_rel = (
-            'marketplace/bundles/plan-marshall/skills/'
-            'tools-integration-ci/scripts/remote_only.py'
-        )
+        plan_id, _ = setup_broken_plan(tmp_path, monkeypatch, plan_id='retro-ghglab-remote-only')
+        wrapper_rel = 'marketplace/bundles/plan-marshall/skills/tools-integration-ci/scripts/remote_only.py'
         _write_wrapper(
             tmp_path,
             wrapper_rel,
@@ -512,8 +535,14 @@ class TestWrapperTangle:
         )
 
         result = run_script(
-            SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live',
-            '--project-root', str(tmp_path),
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--project-root',
+            str(tmp_path),
         )
         assert result.success, result.stderr
         data = result.toon()
@@ -535,23 +564,17 @@ class TestAggregateContract:
 
     def test_counts_by_surface_reflect_findings(self, tmp_path, monkeypatch):
         """All three counters must appear and equal the findings actually emitted."""
-        plan_id, plan_dir = setup_live_plan(
-            tmp_path, monkeypatch, plan_id='retro-ghglab-aggregate'
-        )
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch, plan_id='retro-ghglab-aggregate')
         # One log leak.
         work_log = plan_dir / 'logs' / 'work.log'
         work_log.write_text(
-            '[2026-04-17T12:00:00Z] [INFO] [abcabc] [STATUS] '
-            '(plan-marshall:phase-6-finalize) ran gh pr list\n',
+            '[2026-04-17T12:00:00Z] [INFO] [abcabc] [STATUS] (plan-marshall:phase-6-finalize) ran gh pr list\n',
             encoding='utf-8',
         )
         (plan_dir / 'logs' / 'script-execution.log').write_text('', encoding='utf-8')
 
         # One wrapper tangle.
-        wrapper_rel = (
-            'marketplace/bundles/plan-marshall/skills/'
-            'workflow-integration-github/scripts/aggregate_leak.py'
-        )
+        wrapper_rel = 'marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/aggregate_leak.py'
         _write_wrapper(
             tmp_path,
             wrapper_rel,
@@ -562,8 +585,14 @@ class TestAggregateContract:
         )
 
         result = run_script(
-            SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live',
-            '--project-root', str(tmp_path),
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--project-root',
+            str(tmp_path),
         )
         assert result.success, result.stderr
         data = result.toon()

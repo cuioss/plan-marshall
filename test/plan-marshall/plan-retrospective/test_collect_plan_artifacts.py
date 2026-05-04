@@ -13,12 +13,7 @@ from _fixtures import setup_archived_plan, setup_live_plan  # noqa: E402
 from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
 
 SCRIPT_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-retrospective'
-    / 'scripts'
-    / 'collect-plan-artifacts.py'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'collect-plan-artifacts.py'
 )
 
 
@@ -55,9 +50,7 @@ class TestArchivedMode:
 
     def test_archived_path_resolved_directly(self, tmp_path):
         archived = setup_archived_plan(tmp_path)
-        result = run_script(
-            SCRIPT_PATH, 'run', '--archived-plan-path', str(archived), '--mode', 'archived'
-        )
+        result = run_script(SCRIPT_PATH, 'run', '--archived-plan-path', str(archived), '--mode', 'archived')
         assert result.success, result.stderr
         data = result.toon()
         assert data['status'] == 'success'

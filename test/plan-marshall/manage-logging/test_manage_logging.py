@@ -22,7 +22,13 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-logging', 'manage-logging
 # Tier 2 direct imports - load hyphenated module via importlib
 _MANAGE_LOGGING_SCRIPT = str(
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-logging' / 'scripts' / 'manage-logging.py'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-logging'
+    / 'scripts'
+    / 'manage-logging.py'
 )
 _spec = importlib.util.spec_from_file_location('manage_logging', _MANAGE_LOGGING_SCRIPT)
 _mod = importlib.util.module_from_spec(_spec)
@@ -58,8 +64,9 @@ def test_script_success():
 
     with PlanContext(plan_id='log-script-success') as ctx:
         result = handle_write(
-            Namespace(log_type='script', plan_id='log-script-success', level='INFO',
-                      message='test:skill:script add (0.15s)')
+            Namespace(
+                log_type='script', plan_id='log-script-success', level='INFO', message='test:skill:script add (0.15s)'
+            )
         )
         assert result is None, 'handle_write returns None on success'
 
@@ -74,8 +81,9 @@ def test_script_error():
     """Test script type logs ERROR entry."""
     with PlanContext(plan_id='log-script-error') as ctx:
         result = handle_write(
-            Namespace(log_type='script', plan_id='log-script-error', level='ERROR',
-                      message='test:skill:script add failed')
+            Namespace(
+                log_type='script', plan_id='log-script-error', level='ERROR', message='test:skill:script add failed'
+            )
         )
         assert result is None, 'handle_write returns None on success'
 
@@ -92,8 +100,9 @@ def test_work_info():
     """Test work type logs INFO entry."""
     with PlanContext(plan_id='log-work-info') as ctx:
         result = handle_write(
-            Namespace(log_type='work', plan_id='log-work-info', level='INFO',
-                      message='Created deliverable: auth module')
+            Namespace(
+                log_type='work', plan_id='log-work-info', level='INFO', message='Created deliverable: auth module'
+            )
         )
         assert result is None, 'handle_write returns None on success'
 
@@ -106,8 +115,7 @@ def test_work_warn():
     """Test work type logs WARNING entry."""
     with PlanContext(plan_id='log-work-warn') as ctx:
         result = handle_write(
-            Namespace(log_type='work', plan_id='log-work-warn', level='WARNING',
-                      message='Skipped validation step')
+            Namespace(log_type='work', plan_id='log-work-warn', level='WARNING', message='Skipped validation step')
         )
         assert result is None, 'handle_write returns None on success'
 
@@ -182,8 +190,7 @@ def test_read_script_log():
     with PlanContext(plan_id='log-read-script'):
         # Write script log entry
         handle_write(
-            Namespace(log_type='script', plan_id='log-read-script', level='INFO',
-                      message='test:skill:script (0.1s)')
+            Namespace(log_type='script', plan_id='log-read-script', level='INFO', message='test:skill:script (0.1s)')
         )
 
         # Read it back
@@ -201,18 +208,14 @@ def test_separator_writes_blank_line():
     """Test separator subcommand appends a blank line to the log."""
     with PlanContext(plan_id='log-separator') as ctx:
         # Write an entry first
-        handle_write(
-            Namespace(log_type='work', plan_id='log-separator', level='INFO', message='Before separator')
-        )
+        handle_write(Namespace(log_type='work', plan_id='log-separator', level='INFO', message='Before separator'))
 
         # Add separator
         result = handle_separator(Namespace(type='work', plan_id='log-separator'))
         assert result is None, 'handle_separator returns None'
 
         # Write another entry after
-        handle_write(
-            Namespace(log_type='work', plan_id='log-separator', level='INFO', message='After separator')
-        )
+        handle_write(Namespace(log_type='work', plan_id='log-separator', level='INFO', message='After separator'))
 
         # Verify blank line exists between entries
         log_content = read_log_file(ctx.plan_dir, 'work')
@@ -226,9 +229,7 @@ def test_separator_default_type():
     """Test separator defaults to work log type."""
     with PlanContext(plan_id='log-separator-default') as ctx:
         # Write an entry
-        handle_write(
-            Namespace(log_type='work', plan_id='log-separator-default', level='INFO', message='Test entry')
-        )
+        handle_write(Namespace(log_type='work', plan_id='log-separator-default', level='INFO', message='Test entry'))
 
         # Add separator without --type (default is work)
         result = handle_separator(Namespace(type='work', plan_id='log-separator-default'))

@@ -170,9 +170,7 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
         return make_error('pr_create', err)
 
     # Resolve body via the path-allocate body store
-    body, err_dict = read_and_consume_body(
-        args.plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None)
-    )
+    body, err_dict = read_and_consume_body(args.plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
     if err_dict:
         return make_error('pr_create', err_dict.get('message', 'body not prepared'))
 
@@ -191,9 +189,7 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
         return make_error('pr_create', 'Failed to create PR', stderr.strip())
 
     # Delete the consumed scratch body — success only
-    delete_consumed_body(
-        args.plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None)
-    )
+    delete_consumed_body(args.plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
 
     # Parse the URL from output (gh pr create outputs the URL)
     pr_url = stdout.strip()
@@ -347,9 +343,7 @@ def cmd_pr_reply(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('pr_reply', err)
 
-    body, err_dict = read_and_consume_body(
-        args.plan_id, BODY_KIND_PR_REPLY, getattr(args, 'slot', None)
-    )
+    body, err_dict = read_and_consume_body(args.plan_id, BODY_KIND_PR_REPLY, getattr(args, 'slot', None))
     if err_dict or body is None:
         return make_error('pr_reply', (err_dict or {}).get('message', 'body not prepared'))
 
@@ -358,9 +352,7 @@ def cmd_pr_reply(args: argparse.Namespace) -> dict:
     if returncode != 0:
         return make_error('pr_reply', 'Failed to post comment', stderr.strip())
 
-    delete_consumed_body(
-        args.plan_id, BODY_KIND_PR_REPLY, getattr(args, 'slot', None)
-    )
+    delete_consumed_body(args.plan_id, BODY_KIND_PR_REPLY, getattr(args, 'slot', None))
     return {
         'status': 'success',
         'operation': 'pr_reply',
@@ -450,9 +442,7 @@ def cmd_pr_thread_reply(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('pr_thread_reply', err)
 
-    body, err_dict = read_and_consume_body(
-        args.plan_id, BODY_KIND_PR_THREAD_REPLY, getattr(args, 'slot', None)
-    )
+    body, err_dict = read_and_consume_body(args.plan_id, BODY_KIND_PR_THREAD_REPLY, getattr(args, 'slot', None))
     if err_dict:
         return make_error('pr_thread_reply', err_dict.get('message', 'body not prepared'))
 
@@ -463,9 +453,7 @@ def cmd_pr_thread_reply(args: argparse.Namespace) -> dict:
     if returncode != 0 or data is None:
         return make_error('pr_thread_reply', f'Failed to reply to thread: {err}')
 
-    delete_consumed_body(
-        args.plan_id, BODY_KIND_PR_THREAD_REPLY, getattr(args, 'slot', None)
-    )
+    delete_consumed_body(args.plan_id, BODY_KIND_PR_THREAD_REPLY, getattr(args, 'slot', None))
 
     # Post-call regression check: a successful addPullRequestReviewThreadReply
     # must not leave a PENDING review owned by the current viewer. If it does,
@@ -499,10 +487,7 @@ def cmd_pr_thread_reply(args: argparse.Namespace) -> dict:
     except (KeyError, TypeError):
         pending_nodes = []
 
-    stuck = [
-        n for n in pending_nodes
-        if (n.get('author') or {}).get('login') == viewer_login
-    ]
+    stuck = [n for n in pending_nodes if (n.get('author') or {}).get('login') == viewer_login]
     if stuck:
         stuck_ids = ', '.join(n.get('id', '<unknown>') for n in stuck)
         return make_error(
@@ -885,8 +870,8 @@ def cmd_pr_merge(args: argparse.Namespace) -> dict:
         pr_view = view_pr_data(head=identifier)
         if pr_view.get('status') != 'success':
             result['branch_delete_error'] = (
-                f"Merge succeeded but could not resolve head branch for delete: "
-                f"{pr_view.get('error', 'pr_view failed')}"
+                f'Merge succeeded but could not resolve head branch for delete: '
+                f'{pr_view.get("error", "pr_view failed")}'
             )
             return result
 
@@ -899,9 +884,7 @@ def cmd_pr_merge(args: argparse.Namespace) -> dict:
         delete_args = argparse.Namespace(branch=head_branch)
         delete_result = cmd_branch_delete(delete_args)
         if delete_result.get('status') != 'success':
-            result['branch_delete_error'] = delete_result.get(
-                'error', f'Failed to delete remote branch {head_branch}'
-            )
+            result['branch_delete_error'] = delete_result.get('error', f'Failed to delete remote branch {head_branch}')
             return result
 
         result['branch_deleted'] = head_branch
@@ -1065,9 +1048,7 @@ def cmd_pr_edit(args: argparse.Namespace) -> dict:
 
     result: dict = make_pr_number_handler('pr_edit', lambda a: gh_args, run_gh, check_auth)(args)
     if body and result.get('status') == 'success':
-        delete_consumed_body(
-            args.plan_id, BODY_KIND_PR_EDIT, getattr(args, 'slot', None)
-        )
+        delete_consumed_body(args.plan_id, BODY_KIND_PR_EDIT, getattr(args, 'slot', None))
     return result
 
 
@@ -1208,9 +1189,7 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
     checks = result['last_data'].get('checks', [])
     # ci_wait already tracks its own poll duration — use it as the clamp ceiling
     # so an out-of-range aggregate is substituted with the actual poll time.
-    check_dicts, total_elapsed = format_checks_toon(
-        checks, duration_ceiling=result['duration_sec']
-    )
+    check_dicts, total_elapsed = format_checks_toon(checks, duration_ceiling=result['duration_sec'])
 
     if result['timed_out']:
         error_data: dict[str, Any] = {
@@ -1378,9 +1357,7 @@ def cmd_issue_create(args: argparse.Namespace) -> dict:
         return make_error('issue_create', err)
 
     # Consume the prepared issue body
-    body, err_dict = read_and_consume_body(
-        args.plan_id, BODY_KIND_ISSUE_CREATE, getattr(args, 'slot', None)
-    )
+    body, err_dict = read_and_consume_body(args.plan_id, BODY_KIND_ISSUE_CREATE, getattr(args, 'slot', None))
     if err_dict:
         return make_error('issue_create', err_dict.get('message', 'body not prepared'))
 
@@ -1394,9 +1371,7 @@ def cmd_issue_create(args: argparse.Namespace) -> dict:
     if returncode != 0:
         return make_error('issue_create', 'Failed to create issue', stderr.strip())
 
-    delete_consumed_body(
-        args.plan_id, BODY_KIND_ISSUE_CREATE, getattr(args, 'slot', None)
-    )
+    delete_consumed_body(args.plan_id, BODY_KIND_ISSUE_CREATE, getattr(args, 'slot', None))
 
     # Parse the URL from output
     issue_url = stdout.strip()
@@ -1491,9 +1466,7 @@ def _fetch_issue_state_and_labels(issue_number: int) -> tuple[bool, Any]:
     success, or ``(False, {'error': ..., 'context': ...})`` so callers can
     propagate the error dict through ``poll_until``.
     """
-    returncode, stdout, stderr = run_gh(
-        ['issue', 'view', str(issue_number), '--json', 'state,labels']
-    )
+    returncode, stdout, stderr = run_gh(['issue', 'view', str(issue_number), '--json', 'state,labels'])
     if returncode != 0:
         return False, {
             'error': f'Failed to view issue {issue_number}',
@@ -1633,11 +1606,7 @@ def _cmd_pr_prepare_body(args: argparse.Namespace) -> dict:
 
 def _cmd_pr_prepare_comment(args: argparse.Namespace) -> dict:
     """Allocate a scratch path for a PR comment (reply or thread-reply)."""
-    kind = (
-        BODY_KIND_PR_THREAD_REPLY
-        if getattr(args, 'prepare_for', 'reply') == 'thread-reply'
-        else BODY_KIND_PR_REPLY
-    )
+    kind = BODY_KIND_PR_THREAD_REPLY if getattr(args, 'prepare_for', 'reply') == 'thread-reply' else BODY_KIND_PR_REPLY
     return prepare_body(args.plan_id, kind, getattr(args, 'slot', None))
 
 

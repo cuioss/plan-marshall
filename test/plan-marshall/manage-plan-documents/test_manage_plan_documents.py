@@ -33,7 +33,12 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E4
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-plan-documents' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-plan-documents'
+    / 'scripts'
 )
 
 
@@ -657,7 +662,8 @@ def test_read_section_returns_clarified_when_present_after_direct_edit():
         # Step 2: caller edits the file directly (no content crosses the shell)
         existing = target.read_text(encoding='utf-8')
         target.write_text(
-            existing + '\n## Clarifications\n\nQ: What? A: This.\n\n## Clarified Request\n\nClarified version of the request\n',
+            existing
+            + '\n## Clarifications\n\nQ: What? A: This.\n\n## Clarified Request\n\nClarified version of the request\n',
             encoding='utf-8',
         )
 
@@ -921,9 +927,7 @@ def test_cli_request_mark_clarified_subcommand():
             'description',
         )
         target = ctx.plan_dir / 'request.md'
-        target.write_text(
-            target.read_text() + '\n## Clarified Request\n\nClarified text\n'
-        )
+        target.write_text(target.read_text() + '\n## Clarified Request\n\nClarified text\n')
         result = run_script(
             SCRIPT_PATH,
             'request',

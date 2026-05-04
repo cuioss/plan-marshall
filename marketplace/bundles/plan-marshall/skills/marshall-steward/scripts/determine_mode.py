@@ -152,7 +152,7 @@ FIX_CONTENT: dict[str, str] = {
         '- **PR review: validate bot suggestions against plan intent** — Before accepting '
         'any automated review comment (gemini-code-assist, Copilot, Sonar bots, etc.), '
         "check it against the plan's stated intent and any driving lessons. If a "
-        'suggestion contradicts the change\'s purpose (e.g., reintroducing the exact '
+        "suggestion contradicts the change's purpose (e.g., reintroducing the exact "
         'anti-pattern the plan was removing), reply with the rationale and resolve the '
         'thread — do NOT create a loop-back fix task.\n'
         '- **Structured queries first** — Before using Glob/Grep for codebase navigation '
@@ -441,8 +441,8 @@ def cmd_check_docs(args: argparse.Namespace) -> dict:
                 continue
             label = entry['check'].replace('_', ' ').title()
             messages.append(
-                f"{label} section present but incomplete "
-                f"(found {entry.get('found', '?')} bullets, expected {entry.get('expected', '?')})"
+                f'{label} section present but incomplete '
+                f'(found {entry.get("found", "?")} bullets, expected {entry.get("expected", "?")})'
             )
         if messages:
             result['messages'] = ' | '.join(messages)

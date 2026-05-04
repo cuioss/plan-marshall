@@ -335,9 +335,7 @@ def _build_project_architecture_fixture(root: Path) -> None:
     ``derived.json`` and ``enriched.json``.
     """
     root.mkdir(parents=True, exist_ok=True)
-    (root / '_project.json').write_text(
-        json.dumps({'modules': ['plan-marshall', 'pm-dev-java']}, indent=2)
-    )
+    (root / '_project.json').write_text(json.dumps({'modules': ['plan-marshall', 'pm-dev-java']}, indent=2))
     for module in ('plan-marshall', 'pm-dev-java'):
         mod_dir = root / module
         mod_dir.mkdir()
@@ -373,9 +371,7 @@ class TestPhase1InitSnapshotIntegration:
         copy_tree(src, dst)
 
         # Top-level _project.json.
-        assert json.loads((dst / '_project.json').read_text()) == {
-            'modules': ['plan-marshall', 'pm-dev-java']
-        }
+        assert json.loads((dst / '_project.json').read_text()) == {'modules': ['plan-marshall', 'pm-dev-java']}
         # Per-module derived.json + enriched.json.
         for module in ('plan-marshall', 'pm-dev-java'):
             derived = json.loads((dst / module / 'derived.json').read_text())

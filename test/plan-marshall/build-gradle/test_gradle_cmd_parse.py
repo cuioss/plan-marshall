@@ -14,7 +14,12 @@ from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummar
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'build-gradle' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'build-gradle'
+    / 'scripts'
 )
 
 

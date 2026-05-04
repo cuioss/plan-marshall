@@ -185,20 +185,14 @@ def main() -> int:
 
     sd_sub.add_parser('detect', help='Auto-detect domains from project files', allow_abbrev=False)
 
-    sd_sub.add_parser(
-        'get-available', help='Get available domains based on detected build systems', allow_abbrev=False
-    )
+    sd_sub.add_parser('get-available', help='Get available domains based on detected build systems', allow_abbrev=False)
 
     sd_configure = sd_sub.add_parser('configure', help='Configure selected domains', allow_abbrev=False)
     sd_configure.add_argument('--domains', required=True, help='Comma-separated domain names to enable')
 
-    sd_sub.add_parser(
-        'discover-project', help='Discover project-level skills from .claude/skills/', allow_abbrev=False
-    )
+    sd_sub.add_parser('discover-project', help='Discover project-level skills from .claude/skills/', allow_abbrev=False)
 
-    sd_attach = sd_sub.add_parser(
-        'attach-project', help='Attach project-level skills to a domain', allow_abbrev=False
-    )
+    sd_attach = sd_sub.add_parser('attach-project', help='Attach project-level skills to a domain', allow_abbrev=False)
     add_domain_arg(sd_attach)
     sd_attach.add_argument('--skills', required=True, help='Comma-separated project:skill notations')
 
@@ -206,15 +200,11 @@ def main() -> int:
     sd_ap = sd_sub.add_parser('active-profiles', help='Manage active profile configuration', allow_abbrev=False)
     sd_ap_sub = sd_ap.add_subparsers(dest='ap_verb', help='Active profiles operation')
 
-    sd_ap_set = sd_ap_sub.add_parser(
-        'set', help='Set active profiles (global or per-domain)', allow_abbrev=False
-    )
+    sd_ap_set = sd_ap_sub.add_parser('set', help='Set active profiles (global or per-domain)', allow_abbrev=False)
     sd_ap_set.add_argument('--profiles', required=True, help='Comma-separated profile names')
     add_domain_arg(sd_ap_set, required=False)
 
-    sd_ap_remove = sd_ap_sub.add_parser(
-        'remove', help='Remove active profiles config', allow_abbrev=False
-    )
+    sd_ap_remove = sd_ap_sub.add_parser('remove', help='Remove active profiles config', allow_abbrev=False)
     add_domain_arg(sd_ap_remove, required=False)
 
     # --- system ---
@@ -242,17 +232,13 @@ def main() -> int:
     _add_phase_subparser(plan_sub, 'phase-6-finalize', 'Finalize phase settings', has_scalar=True, has_list_steps=True)
 
     # --- ext-defaults ---
-    p_ext = subparsers.add_parser(
-        'ext-defaults', help='Manage extension defaults (shared config)', allow_abbrev=False
-    )
+    p_ext = subparsers.add_parser('ext-defaults', help='Manage extension defaults (shared config)', allow_abbrev=False)
     ext_sub = p_ext.add_subparsers(dest='verb', required=True, help='Operation')
 
     ext_get = ext_sub.add_parser('get', help='Get extension default value', allow_abbrev=False)
     ext_get.add_argument('--key', required=True, help='Key to retrieve')
 
-    ext_set = ext_sub.add_parser(
-        'set', help='Set extension default value (always overwrites)', allow_abbrev=False
-    )
+    ext_set = ext_sub.add_parser('set', help='Set extension default value (always overwrites)', allow_abbrev=False)
     ext_set.add_argument('--key', required=True, help='Key to set')
     ext_set.add_argument('--value', required=True, help='Value (JSON or string)')
 
@@ -309,18 +295,14 @@ def main() -> int:
     p_rte.add_argument('--profile', required=True, help='Profile name (e.g., implementation, module_testing)')
 
     # --- list-recipes ---
-    subparsers.add_parser(
-        'list-recipes', help='List all available recipes from configured domains', allow_abbrev=False
-    )
+    subparsers.add_parser('list-recipes', help='List all available recipes from configured domains', allow_abbrev=False)
 
     # --- resolve-recipe ---
     p_rr = subparsers.add_parser('resolve-recipe', help='Resolve a specific recipe by key', allow_abbrev=False)
     p_rr.add_argument('--recipe', required=True, help='Recipe key (e.g., refactor-to-standards)')
 
     # --- resolve-outline-skill ---
-    p_ros = subparsers.add_parser(
-        'resolve-outline-skill', help='Resolve outline skill for domain', allow_abbrev=False
-    )
+    p_ros = subparsers.add_parser('resolve-outline-skill', help='Resolve outline skill for domain', allow_abbrev=False)
     add_domain_arg(p_ros)
 
     # --- list-finalize-steps ---

@@ -10,7 +10,13 @@ from pathlib import Path
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts' / 'build'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'script-shared'
+    / 'scripts'
+    / 'build'
 )
 
 

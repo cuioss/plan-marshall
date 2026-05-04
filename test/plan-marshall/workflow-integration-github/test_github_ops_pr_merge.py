@@ -117,9 +117,7 @@ def _merge_ns(*, delete_branch: bool, pr_number: int | None = 42, head: str | No
 def _assert_no_delete_branch_flag(captured_calls: list[list[str]]) -> None:
     """No ``--delete-branch`` may appear in ANY captured gh invocation."""
     for call in captured_calls:
-        assert '--delete-branch' not in call, (
-            f"cmd_pr_merge leaked --delete-branch into gh args: {call}"
-        )
+        assert '--delete-branch' not in call, f'cmd_pr_merge leaked --delete-branch into gh args: {call}'
 
 
 # ---------------------------------------------------------------------------
@@ -131,9 +129,7 @@ def test_pr_merge_delete_branch_happy_path(monkeypatch):
     _install_common(monkeypatch)
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
-    monkeypatch.setattr(
-        github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload()
-    )
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
 
     result = github_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
 
@@ -167,9 +163,7 @@ def test_pr_merge_delete_branch_already_gone_422(monkeypatch):
     _install_common(monkeypatch)
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='gone')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
-    monkeypatch.setattr(
-        github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload()
-    )
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
 
     result = github_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
 
@@ -186,9 +180,7 @@ def test_pr_merge_delete_branch_already_gone_404(monkeypatch):
     _install_common(monkeypatch)
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='notfound')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
-    monkeypatch.setattr(
-        github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload()
-    )
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
 
     result = github_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
 
@@ -210,9 +202,7 @@ def test_pr_merge_delete_branch_api_error_produces_compound_result(monkeypatch):
     _install_common(monkeypatch)
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='error')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
-    monkeypatch.setattr(
-        github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload()
-    )
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
 
     result = github_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
 
@@ -250,9 +240,7 @@ def test_pr_merge_merge_failure_skips_branch_delete(monkeypatch):
     # Only the merge call should have been made — no REST DELETE.
     delete_calls = [c for c in captured if c[:3] == ['api', '-X', 'DELETE']]
     assert delete_calls == [], delete_calls
-    assert pr_view_calls['count'] == 0, (
-        'pr view must not be consulted when the merge itself fails'
-    )
+    assert pr_view_calls['count'] == 0, 'pr view must not be consulted when the merge itself fails'
 
     _assert_no_delete_branch_flag(captured)
 
@@ -287,9 +275,7 @@ def test_pr_merge_without_delete_branch_leaves_branch_untouched(monkeypatch):
     # No REST DELETE, no pr view — this is a pure merge.
     delete_calls = [c for c in captured if c[:3] == ['api', '-X', 'DELETE']]
     assert delete_calls == [], delete_calls
-    assert pr_view_calls['count'] == 0, (
-        'pr view must not be consulted when --delete-branch is absent'
-    )
+    assert pr_view_calls['count'] == 0, 'pr view must not be consulted when --delete-branch is absent'
 
     _assert_no_delete_branch_flag(captured)
 
@@ -317,9 +303,7 @@ def test_pr_merge_delete_branch_does_not_touch_local_git(monkeypatch):
     _install_common(monkeypatch)
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
-    monkeypatch.setattr(
-        github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload()
-    )
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
 
     # Trip-wire: if cmd_pr_merge ever shells out to git, the regression is
     # back. We patch the two most likely entry points to raise immediately.
@@ -327,8 +311,7 @@ def test_pr_merge_delete_branch_does_not_touch_local_git(monkeypatch):
 
     def forbidden_subprocess_run(*a, **kw):  # pragma: no cover — guard only
         raise AssertionError(
-            'cmd_pr_merge must not invoke subprocess.run during merge + delete; '
-            f'args={a!r} kwargs={kw!r}'
+            f'cmd_pr_merge must not invoke subprocess.run during merge + delete; args={a!r} kwargs={kw!r}'
         )
 
     monkeypatch.setattr(_subprocess, 'run', forbidden_subprocess_run)

@@ -19,7 +19,12 @@ from test_helpers import SCRIPT_PATH, create_marshal_json, create_nested_marshal
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-config'
+    / 'scripts'
 )
 
 
@@ -104,12 +109,14 @@ def test_skill_domains_add(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(
-            verb='add',
-            domain='python',
-            defaults='pm-dev-python:cui-python-core',
-            optionals=None,
-        ))
+        result = cmd_skill_domains(
+            Namespace(
+                verb='add',
+                domain='python',
+                defaults='pm-dev-python:cui-python-core',
+                optionals=None,
+            )
+        )
 
         assert result['status'] == 'success'
 
@@ -123,11 +130,13 @@ def test_skill_domains_validate(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(
-            verb='validate',
-            domain='java',
-            skill='pm-dev-java:java-core',
-        ))
+        result = cmd_skill_domains(
+            Namespace(
+                verb='validate',
+                domain='java',
+                skill='pm-dev-java:java-core',
+            )
+        )
 
         assert result['status'] == 'success'
         assert result['valid'] is True
@@ -139,15 +148,23 @@ def test_skill_domains_validate_returns_location(monkeypatch):
         create_marshal_json(ctx.fixture_dir)
 
         # Skill in defaults
-        result_defaults = cmd_skill_domains(Namespace(
-            verb='validate', domain='java', skill='pm-dev-java:java-core',
-        ))
+        result_defaults = cmd_skill_domains(
+            Namespace(
+                verb='validate',
+                domain='java',
+                skill='pm-dev-java:java-core',
+            )
+        )
         assert result_defaults['in_defaults'] is True
 
         # Skill in optionals
-        result_optionals = cmd_skill_domains(Namespace(
-            verb='validate', domain='java', skill='pm-dev-java:java-cdi',
-        ))
+        result_optionals = cmd_skill_domains(
+            Namespace(
+                verb='validate',
+                domain='java',
+                skill='pm-dev-java:java-cdi',
+            )
+        )
         assert result_optionals['in_optionals'] is True
 
 
@@ -156,9 +173,13 @@ def test_skill_domains_validate_invalid_skill(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(
-            verb='validate', domain='java', skill='pm-dev-java:invalid-skill',
-        ))
+        result = cmd_skill_domains(
+            Namespace(
+                verb='validate',
+                domain='java',
+                skill='pm-dev-java:invalid-skill',
+            )
+        )
 
         assert result['status'] == 'success'
         assert result['valid'] is False
@@ -370,12 +391,14 @@ def test_set_extensions(monkeypatch):
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(
-            verb='set-extensions',
-            domain='java',
-            type='triage',
-            skill='pm-dev-java:new-triage',
-        ))
+        result = cmd_skill_domains(
+            Namespace(
+                verb='set-extensions',
+                domain='java',
+                type='triage',
+                skill='pm-dev-java:new-triage',
+            )
+        )
 
         assert result['status'] == 'success'
         assert result['type'] == 'triage'
@@ -549,13 +572,15 @@ def test_set_with_profile_returns_error(monkeypatch):
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(
-            verb='set',
-            domain='java',
-            profile='quality',
-            defaults='pm-dev-java:new-skill',
-            optionals=None,
-        ))
+        result = cmd_skill_domains(
+            Namespace(
+                verb='set',
+                domain='java',
+                profile='quality',
+                defaults='pm-dev-java:new-skill',
+                optionals=None,
+            )
+        )
 
         assert result['status'] == 'error'
 
@@ -733,11 +758,13 @@ def test_attach_project_to_domain(monkeypatch):
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(
-            verb='attach-project',
-            domain='java',
-            skills='project:my-custom-skill',
-        ))
+        result = cmd_skill_domains(
+            Namespace(
+                verb='attach-project',
+                domain='java',
+                skills='project:my-custom-skill',
+            )
+        )
 
         assert result['status'] == 'success'
         assert 'project:my-custom-skill' in result['project_skills']
@@ -753,11 +780,13 @@ def test_attach_project_to_system_domain(monkeypatch):
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(
-            verb='attach-project',
-            domain='system',
-            skills='project:cross-domain-skill',
-        ))
+        result = cmd_skill_domains(
+            Namespace(
+                verb='attach-project',
+                domain='system',
+                skills='project:cross-domain-skill',
+            )
+        )
 
         assert result['status'] == 'success'
 
@@ -771,11 +800,13 @@ def test_attach_project_rejects_invalid_notation(monkeypatch):
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(
-            verb='attach-project',
-            domain='java',
-            skills='pm-dev-java:invalid-notation',
-        ))
+        result = cmd_skill_domains(
+            Namespace(
+                verb='attach-project',
+                domain='java',
+                skills='pm-dev-java:invalid-notation',
+            )
+        )
 
         assert result['status'] == 'error'
 
@@ -785,11 +816,13 @@ def test_attach_project_rejects_unknown_domain(monkeypatch):
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(
-            verb='attach-project',
-            domain='nonexistent',
-            skills='project:some-skill',
-        ))
+        result = cmd_skill_domains(
+            Namespace(
+                verb='attach-project',
+                domain='nonexistent',
+                skills='project:some-skill',
+            )
+        )
 
         assert result['status'] == 'error'
 
@@ -1050,9 +1083,7 @@ def test_list_verify_steps_project_skill_without_order_returns_none(tmp_path):
     """Project verify-step-* skill without `order` frontmatter exposes order: None."""
     skill_dir = tmp_path / '.claude' / 'skills' / 'verify-step-bare'
     skill_dir.mkdir(parents=True)
-    (skill_dir / 'SKILL.md').write_text(
-        '---\nname: verify-step-bare\ndescription: Bare\n---\n\n# Bare\n'
-    )
+    (skill_dir / 'SKILL.md').write_text('---\nname: verify-step-bare\ndescription: Bare\n---\n\n# Bare\n')
 
     with patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]):
         steps = _run_verify_discovery_in_cwd(tmp_path)
@@ -1063,6 +1094,7 @@ def test_list_verify_steps_project_skill_without_order_returns_none(tmp_path):
 
 def test_list_verify_steps_extension_order_from_return_dict(tmp_path):
     """Extension-contributed verify steps propagate the `order` field from the return dict."""
+
     class _FakeExtModule:
         @staticmethod
         def provides_verify_steps():

@@ -113,11 +113,7 @@ def test_phase_boundary_optional_token_args_omitted():
     """phase-boundary works with no token/duration/tool-uses flags (main-context phase)."""
     with PlanContext(plan_id='boundary-no-tokens') as ctx:
         cmd_start_phase(_ns_start_phase('boundary-no-tokens', '2-refine'))
-        result = cmd_phase_boundary(
-            _ns_boundary(
-                'boundary-no-tokens', prev_phase='2-refine', next_phase='3-outline'
-            )
-        )
+        result = cmd_phase_boundary(_ns_boundary('boundary-no-tokens', prev_phase='2-refine', next_phase='3-outline'))
         assert result['status'] == 'success'
         # No prev_total_tokens since not provided
         assert 'prev_total_tokens' not in result
@@ -137,11 +133,7 @@ def test_phase_boundary_without_prev_start_records_end_only():
     """phase-boundary tolerates a previous phase with no recorded start (no duration)."""
     with PlanContext(plan_id='boundary-no-start'):
         # No start-phase called for 1-init
-        result = cmd_phase_boundary(
-            _ns_boundary(
-                'boundary-no-start', prev_phase='1-init', next_phase='2-refine'
-            )
-        )
+        result = cmd_phase_boundary(_ns_boundary('boundary-no-start', prev_phase='1-init', next_phase='2-refine'))
         assert result['status'] == 'success'
         # No prev_duration_seconds in the result since start_time was missing
         assert 'prev_duration_seconds' not in result
@@ -155,9 +147,7 @@ def test_phase_boundary_without_prev_start_records_end_only():
 def test_phase_boundary_invalid_prev_phase_rejected():
     """Invalid prev-phase name returns invalid_phase error."""
     with PlanContext(plan_id='boundary-bad-prev'):
-        result = cmd_phase_boundary(
-            _ns_boundary('boundary-bad-prev', prev_phase='nope', next_phase='2-refine')
-        )
+        result = cmd_phase_boundary(_ns_boundary('boundary-bad-prev', prev_phase='nope', next_phase='2-refine'))
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_phase'
         assert 'prev_phase' in result['message']
@@ -166,9 +156,7 @@ def test_phase_boundary_invalid_prev_phase_rejected():
 def test_phase_boundary_invalid_next_phase_rejected():
     """Invalid next-phase name returns invalid_phase error."""
     with PlanContext(plan_id='boundary-bad-next'):
-        result = cmd_phase_boundary(
-            _ns_boundary('boundary-bad-next', prev_phase='1-init', next_phase='nope')
-        )
+        result = cmd_phase_boundary(_ns_boundary('boundary-bad-next', prev_phase='1-init', next_phase='nope'))
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_phase'
         assert 'next_phase' in result['message']

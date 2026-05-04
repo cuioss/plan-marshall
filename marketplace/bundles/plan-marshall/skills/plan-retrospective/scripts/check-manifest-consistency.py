@@ -79,7 +79,7 @@ def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | N
         if not archived_plan_path:
             raise ValueError('--archived-plan-path is required for archived mode')
         return Path(archived_plan_path)
-    raise ValueError(f"Unknown mode: {mode!r}")
+    raise ValueError(f'Unknown mode: {mode!r}')
 
 
 # =============================================================================
@@ -226,18 +226,13 @@ def _make_finding(
 def evaluate_manifest_version(manifest: dict[str, Any]) -> tuple[dict[str, str], dict[str, Any] | None]:
     actual = manifest.get('manifest_version')
     if actual == KNOWN_MANIFEST_VERSION:
-        return _make_check(
-            'manifest_version_recognized', 'pass', f'manifest_version={actual} recognized'
-        ), None
+        return _make_check('manifest_version_recognized', 'pass', f'manifest_version={actual} recognized'), None
     finding = _make_finding(
         'error',
         'manifest_version_unknown',
-        f'manifest_version={actual!r} not recognized by check-manifest-consistency '
-        f'(expected {KNOWN_MANIFEST_VERSION})',
+        f'manifest_version={actual!r} not recognized by check-manifest-consistency (expected {KNOWN_MANIFEST_VERSION})',
     )
-    return _make_check(
-        'manifest_version_recognized', 'fail', finding['message']
-    ), finding
+    return _make_check('manifest_version_recognized', 'fail', finding['message']), finding
 
 
 def evaluate_docs_only(
@@ -249,15 +244,13 @@ def evaluate_docs_only(
     early = bool(phase_5.get('early_terminate', False))
     if not isinstance(steps, list) or steps or early:
         return _make_check(
-            'docs_only_diff', 'skip',
-            'rule M1 not applicable — verification_steps non-empty or early_terminate=true'
+            'docs_only_diff', 'skip', 'rule M1 not applicable — verification_steps non-empty or early_terminate=true'
         ), None
 
     culprits = sorted(p for p in filtered_files if not is_docs_path(p))
     if not culprits:
         return _make_check(
-            'docs_only_diff', 'pass',
-            f'all {len(filtered_files)} non-bookkeeping diff entries are docs-shaped'
+            'docs_only_diff', 'pass', f'all {len(filtered_files)} non-bookkeeping diff entries are docs-shaped'
         ), None
 
     preview = culprits[:_CULPRITS_PREVIEW]
@@ -277,14 +270,10 @@ def evaluate_early_terminate(
     phase_5 = manifest.get('phase_5', {}) if isinstance(manifest.get('phase_5'), dict) else {}
     early = bool(phase_5.get('early_terminate', False))
     if not early:
-        return _make_check(
-            'early_terminate_diff', 'skip', 'rule M2 not applicable — early_terminate=false'
-        ), None
+        return _make_check('early_terminate_diff', 'skip', 'rule M2 not applicable — early_terminate=false'), None
 
     if not filtered_files:
-        return _make_check(
-            'early_terminate_diff', 'pass', 'early_terminate=true and diff is empty'
-        ), None
+        return _make_check('early_terminate_diff', 'pass', 'early_terminate=true and diff is empty'), None
 
     culprits = sorted(filtered_files)
     preview = culprits[:_CULPRITS_PREVIEW]
@@ -305,17 +294,13 @@ def evaluate_tests_only(
     steps = phase_5.get('verification_steps', [])
     if not isinstance(steps, list) or steps != ['module-tests']:
         return _make_check(
-            'tests_only_diff', 'skip',
-            'rule M3 not applicable — verification_steps != ["module-tests"]'
+            'tests_only_diff', 'skip', 'rule M3 not applicable — verification_steps != ["module-tests"]'
         ), None
 
-    culprits = sorted(
-        p for p in filtered_files if not is_test_path(p) and not is_docs_path(p)
-    )
+    culprits = sorted(p for p in filtered_files if not is_test_path(p) and not is_docs_path(p))
     if not culprits:
         return _make_check(
-            'tests_only_diff', 'pass',
-            f'all {len(filtered_files)} non-bookkeeping diff entries are tests or docs'
+            'tests_only_diff', 'pass', f'all {len(filtered_files)} non-bookkeeping diff entries are tests or docs'
         ), None
 
     preview = culprits[:_CULPRITS_PREVIEW]
@@ -336,14 +321,12 @@ def evaluate_branch_cleanup(
     steps = phase_6.get('steps', [])
     if not isinstance(steps, list) or 'branch-cleanup' not in steps:
         return _make_check(
-            'branch_cleanup_changes', 'skip',
-            'rule M4 not applicable — branch-cleanup not in phase_6.steps'
+            'branch_cleanup_changes', 'skip', 'rule M4 not applicable — branch-cleanup not in phase_6.steps'
         ), None
 
     if filtered_files:
         return _make_check(
-            'branch_cleanup_changes', 'pass',
-            f'branch-cleanup paired with {len(filtered_files)} changed file(s)'
+            'branch_cleanup_changes', 'pass', f'branch-cleanup paired with {len(filtered_files)} changed file(s)'
         ), None
 
     finding = _make_finding(

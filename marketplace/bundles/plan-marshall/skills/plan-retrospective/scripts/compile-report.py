@@ -70,7 +70,7 @@ def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | N
         if not archived_plan_path:
             raise ValueError('--archived-plan-path is required for archived mode')
         return Path(archived_plan_path)
-    raise ValueError(f"Unknown mode: {mode!r}")
+    raise ValueError(f'Unknown mode: {mode!r}')
 
 
 def resolve_output_path(mode: str, plan_dir: Path) -> Path:
@@ -135,6 +135,7 @@ def render_section_body(fragment: Any) -> str:
     ``message`` fields where appropriate.
     """
     import json
+
     if fragment is None:
         return '_No data provided._\n'
     if not isinstance(fragment, dict):
@@ -231,9 +232,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     fragments = load_fragments(Path(args.fragments_file))
     plan_id = args.plan_id or plan_dir.name
 
-    content, written, omitted = build_document(
-        plan_id, args.mode, plan_dir, args.session_id, fragments
-    )
+    content, written, omitted = build_document(plan_id, args.mode, plan_dir, args.session_id, fragments)
 
     output_path = resolve_output_path(args.mode, plan_dir)
     output_path.write_text(content, encoding='utf-8')

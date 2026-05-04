@@ -164,7 +164,7 @@ def extract_issues_from_verb_chain_analysis(findings: list[dict]) -> list[dict]:
                 'fixable': False,
                 'description': (
                     f'Stale script verb `{unknown}` referenced for `{notation}` — '
-                    'update prose to match the script\'s registered subparsers '
+                    "update prose to match the script's registered subparsers "
                     '(prose-verb-chain-consistency)'
                 ),
                 'script_notation': notation,

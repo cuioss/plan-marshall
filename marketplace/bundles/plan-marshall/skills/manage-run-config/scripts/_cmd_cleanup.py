@@ -53,7 +53,13 @@ def get_retention_settings() -> dict | None:
         dict with retention settings, or None if not found (TOON error already output).
     """
     if not MARSHAL_JSON.exists():
-        output_toon({'status': 'error', 'error': 'file_not_found', 'message': 'marshal.json not found. Run command /marshall-steward first'})
+        output_toon(
+            {
+                'status': 'error',
+                'error': 'file_not_found',
+                'message': 'marshal.json not found. Run command /marshall-steward first',
+            }
+        )
         return None
 
     try:
@@ -63,7 +69,13 @@ def get_retention_settings() -> dict | None:
         return None
 
     if 'system' not in config or 'retention' not in config['system']:
-        output_toon({'status': 'error', 'error': 'missing_config', 'message': 'system.retention not configured. Run command /marshall-steward first'})
+        output_toon(
+            {
+                'status': 'error',
+                'error': 'missing_config',
+                'message': 'system.retention not configured. Run command /marshall-steward first',
+            }
+        )
         return None
 
     retention: dict = config['system']['retention']

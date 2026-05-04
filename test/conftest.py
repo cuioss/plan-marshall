@@ -50,6 +50,66 @@ collect_ignore = [
 
 
 # =============================================================================
+# Executor Bootstrap (CI session setup)
+# =============================================================================
+
+def _ensure_executor_present() -> None:
+    """Generate ``.plan/execute-script.py`` if missing.
+
+    The executor is gitignored, so a fresh checkout (CI runner, ephemeral
+    container) doesn't have it. Several script-under-test invocations
+    (e.g., ``tools-input-validation``'s lesson-ID anchor) subprocess to
+    ``python3 .plan/execute-script.py ...`` and fail without it. Local
+    developer environments have it from prior ``/marshall-steward`` runs;
+    CI needs it bootstrapped at session start.
+
+    Idempotent: re-runs are no-ops if the executor is already present.
+    """
+    executor_path = PROJECT_ROOT / PLAN_DIR_NAME / 'execute-script.py'
+    if executor_path.exists():
+        return
+
+    generator = (
+        MARKETPLACE_ROOT
+        / 'plan-marshall'
+        / 'skills'
+        / 'tools-script-executor'
+        / 'scripts'
+        / 'generate_executor.py'
+    )
+    if not generator.exists():
+        # Generator script missing — surface a clear message instead of a
+        # cryptic FileNotFoundError downstream. Tests that depend on the
+        # executor will still fail loudly.
+        print(
+            f'WARNING: conftest could not bootstrap executor — generator missing at {generator}',
+            file=sys.stderr,
+        )
+        return
+
+    try:
+        subprocess.run(
+            ['python3', str(generator), 'generate'],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=120,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        # Failure here is non-fatal at conftest-import time. Tests that
+        # genuinely need the executor will fail with their own diagnostics;
+        # tests that don't need it (the majority) keep running.
+        print(
+            f'WARNING: conftest executor bootstrap failed: {exc}',
+            file=sys.stderr,
+        )
+
+
+_ensure_executor_present()
+
+
+# =============================================================================
 # Cross-Skill Import Setup (mirrors executor PYTHONPATH)
 # =============================================================================
 
@@ -429,10 +489,7 @@ def _snapshot_real_paths() -> list[str]:
     not exist).
     """
     try:
-        return sorted(
-            str(p.relative_to(_REAL_CREDENTIALS_DIR))
-            for p in _REAL_CREDENTIALS_DIR.rglob('*')
-        )
+        return sorted(str(p.relative_to(_REAL_CREDENTIALS_DIR)) for p in _REAL_CREDENTIALS_DIR.rglob('*'))
     except FileNotFoundError:
         return []
 
@@ -458,8 +515,8 @@ def _pollution_guard(request):
             f'Pollution guard: test {request.node.nodeid} leaked into real paths:\n  '
             f'Test mutated {_REAL_CREDENTIALS_DIR} '
             f'(listing {before_creds} -> {after_creds})'
-            '\n\nIsolate via plan_context + monkeypatch.setattr(\'_providers_core.CREDENTIALS_DIR\', ...), '
-            "or mark with @pytest.mark.allow_pollution if intentional."
+            "\n\nIsolate via plan_context + monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', ...), "
+            'or mark with @pytest.mark.allow_pollution if intentional.'
         )
 
 
@@ -502,6 +559,7 @@ def isolated_credentials(tmp_path, monkeypatch):
     """
     creds_dir = tmp_path / 'credentials'
     import _providers_core  # type: ignore[import-not-found]
+
     monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', creds_dir)
     monkeypatch.setenv('HOME', str(tmp_path))
     return creds_dir
@@ -532,6 +590,7 @@ def plan_context(tmp_path, monkeypatch):
     monkeypatch.setenv('PLAN_DIR_NAME', PLAN_DIR_NAME)
 
     import _config_core  # type: ignore[import-not-found]
+
     monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
     monkeypatch.setattr(_config_core, 'MARSHAL_PATH', tmp_path / 'marshal.json')
     monkeypatch.setattr(_config_core, 'RUN_CONFIG_PATH', tmp_path / 'run-configuration.json')
@@ -684,6 +743,7 @@ class PlanContext:
         # .plan/local/. Imported lazily to avoid top-level import cycles
         # during test bootstrap. Save originals for restoration in __exit__.
         import _config_core  # type: ignore[import-not-found]
+
         self._config_core_module = _config_core
         overrides = {
             'PLAN_BASE_DIR': self.fixture_dir,

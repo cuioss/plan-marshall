@@ -75,6 +75,7 @@ for _category in ('code_change', 'explain', 'ignore'):
 # FETCH-COMMENTS SUBCOMMAND (Provider-Agnostic via direct import)
 # ============================================================================
 
+
 def get_current_pr_number() -> int | None:
     """Get PR number for current branch via GitHub's view_pr_data()."""
     result = _github.view_pr_data()

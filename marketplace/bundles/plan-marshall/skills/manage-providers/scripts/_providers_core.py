@@ -122,8 +122,7 @@ def get_project_name() -> str:
     return _PROJECT_NAME_PATTERN.sub('', name)
 
 
-def resolve_credential_path(skill: str, scope: str = 'global',
-                            project_name: str | None = None) -> Path:
+def resolve_credential_path(skill: str, scope: str = 'global', project_name: str | None = None) -> Path:
     """Resolve credential file path with symlink protection.
 
     Args:
@@ -157,8 +156,7 @@ def resolve_credential_path(skill: str, scope: str = 'global',
     return path
 
 
-def ensure_credentials_dir(scope: str = 'global',
-                           project_name: str | None = None) -> Path:
+def ensure_credentials_dir(scope: str = 'global', project_name: str | None = None) -> Path:
     """Ensure credentials directory exists with correct permissions.
 
     Creates ~/.plan-marshall-credentials/ with chmod 700.
@@ -183,8 +181,7 @@ def ensure_credentials_dir(scope: str = 'global',
 # === Credential File I/O ===
 
 
-def load_credential(skill: str, scope: str = 'global',
-                    project_name: str | None = None) -> dict | None:
+def load_credential(skill: str, scope: str = 'global', project_name: str | None = None) -> dict | None:
     """Load credential from file.
 
     Resolution order for scope='auto': project-scoped first, then global.
@@ -213,8 +210,7 @@ def load_credential(skill: str, scope: str = 'global',
         return None
 
 
-def save_credential(skill: str, data: dict, scope: str = 'global',
-                    project_name: str | None = None) -> Path:
+def save_credential(skill: str, data: dict, scope: str = 'global', project_name: str | None = None) -> Path:
     """Save credential to file with atomic creation and correct permissions.
 
     Uses os.open() with O_WRONLY|O_CREAT|O_TRUNC and mode 0o600 to
@@ -245,8 +241,7 @@ def save_credential(skill: str, data: dict, scope: str = 'global',
     return path
 
 
-def remove_credential(skill: str, scope: str = 'global',
-                      project_name: str | None = None) -> bool:
+def remove_credential(skill: str, scope: str = 'global', project_name: str | None = None) -> bool:
     """Remove credential file.
 
     Returns:
@@ -262,8 +257,7 @@ def remove_credential(skill: str, scope: str = 'global',
         return False
 
 
-def check_credential_completeness(skill: str, scope: str = 'global',
-                                   project_name: str | None = None) -> dict:
+def check_credential_completeness(skill: str, scope: str = 'global', project_name: str | None = None) -> dict:
     """Check if a credential file exists and has all secrets filled in.
 
     Returns:
@@ -282,10 +276,7 @@ def check_credential_completeness(skill: str, scope: str = 'global',
         return {'exists': True, 'complete': False, 'path': str(path), 'placeholders': []}
 
     placeholder_values = set(SECRET_PLACEHOLDERS.values())
-    found_placeholders = [
-        key for key, val in data.items()
-        if isinstance(val, str) and val in placeholder_values
-    ]
+    found_placeholders = [key for key, val in data.items() if isinstance(val, str) and val in placeholder_values]
 
     # Also check for missing or empty required fields based on auth type
     auth_type = data.get('auth_type', 'none')
@@ -306,8 +297,7 @@ def check_credential_completeness(skill: str, scope: str = 'global',
     }
 
 
-def touch_verified_at(skill: str, scope: str = 'global',
-                      project_name: str | None = None) -> None:
+def touch_verified_at(skill: str, scope: str = 'global', project_name: str | None = None) -> None:
     """Update verified_at timestamp inside the credential file itself.
 
     Loads the credential JSON, sets verified_at to the current UTC timestamp,
@@ -369,18 +359,14 @@ class RestClient:
     DEFAULT_TIMEOUT = 30
     MAX_RETRIES = 3
     USER_AGENT = 'plan-marshall-rest/1.0'
-    _SENSITIVE_PATTERN = re.compile(
-        r'(token|bearer|password|secret|key)["\s:=]+\S+', re.IGNORECASE
-    )
+    _SENSITIVE_PATTERN = re.compile(r'(token|bearer|password|secret|key)["\s:=]+\S+', re.IGNORECASE)
 
     def __init__(self, base_url: str, headers: dict):
         parsed = urllib.parse.urlparse(base_url)
         self.scheme = parsed.scheme
 
         # Security: reject HTTP when auth headers are present
-        if self.scheme != 'https' and any(
-            k.lower() == 'authorization' for k in headers
-        ):
+        if self.scheme != 'https' and any(k.lower() == 'authorization' for k in headers):
             raise ValueError('HTTPS required when authentication is configured')
 
         self.host = parsed.hostname or 'localhost'
@@ -400,13 +386,15 @@ class RestClient:
         if self._conn is None:
             if self.scheme == 'https':
                 self._conn = http.client.HTTPSConnection(
-                    self.host, self.port,
+                    self.host,
+                    self.port,
                     context=self._ssl_context,
                     timeout=self.DEFAULT_TIMEOUT,
                 )
             else:
                 self._conn = http.client.HTTPConnection(
-                    self.host, self.port,
+                    self.host,
+                    self.port,
                     timeout=self.DEFAULT_TIMEOUT,
                 )
         return self._conn
@@ -426,8 +414,7 @@ class RestClient:
         """Redact potential credentials from error response bodies."""
         return RestClient._SENSITIVE_PATTERN.sub('[REDACTED]', body)
 
-    def request(self, method: str, path: str, params: dict | None = None,
-                body: dict | None = None) -> dict:
+    def request(self, method: str, path: str, params: dict | None = None, body: dict | None = None) -> dict:
         """Make authenticated request with retry on 429/5xx.
 
         Security: all exceptions are caught and re-raised without
@@ -453,7 +440,7 @@ class RestClient:
 
                 if resp.status == 429 or resp.status >= 500:
                     retry_after = resp.getheader('Retry-After')
-                    delay = int(retry_after) if retry_after else (2 ** attempt)
+                    delay = int(retry_after) if retry_after else (2**attempt)
                     if attempt < self.MAX_RETRIES - 1:
                         time.sleep(delay)
                         self._close_connection()
@@ -474,12 +461,10 @@ class RestClient:
                 last_error = str(e)
                 self._close_connection()
                 if attempt < self.MAX_RETRIES - 1:
-                    time.sleep(2 ** attempt)
+                    time.sleep(2**attempt)
                     continue
                 # Re-raise without original context to prevent _headers leakage
-                raise RestClientError(
-                    0, f'Connection failed after {self.MAX_RETRIES} attempts: {last_error}'
-                ) from None
+                raise RestClientError(0, f'Connection failed after {self.MAX_RETRIES} attempts: {last_error}') from None
 
         return {}  # Unreachable, satisfies type checker
 
@@ -499,8 +484,7 @@ class RestClient:
 # === Authenticated Client Factory ===
 
 
-def get_authenticated_client(skill_name: str,
-                             project_name: str | None = None) -> RestClient:
+def get_authenticated_client(skill_name: str, project_name: str | None = None) -> RestClient:
     """Return a pre-configured RestClient with auth headers injected.
 
     This is the primary API for consuming scripts. Credentials stay
@@ -521,8 +505,7 @@ def get_authenticated_client(skill_name: str,
         credential = load_credential(skill_name, 'auto', project_name)
         if not credential:
             raise FileNotFoundError(
-                f'No credentials configured for {skill_name}. '
-                f'Run: credentials configure --skill {skill_name}'
+                f'No credentials configured for {skill_name}. Run: credentials configure --skill {skill_name}'
             )
 
         # Read URL from marshal.json provider config (preferred) or credential file (fallback)
@@ -548,6 +531,7 @@ def get_authenticated_client(skill_name: str,
             headers[header_name] = template.format(token=token)
         elif auth_type == 'basic':
             import base64
+
             username = credential.get('username', '')
             password = credential.get('password', '')
             if not username:
@@ -583,9 +567,7 @@ def get_authenticated_client(skill_name: str,
         raise
     except Exception:
         # Generic catch: never expose credential content in error messages
-        raise ValueError(
-            f'Failed to load credentials for {skill_name}'
-        ) from None
+        raise ValueError(f'Failed to load credentials for {skill_name}') from None
 
 
 def verify_system_auth(provider: dict[str, Any]) -> dict[str, Any]:
@@ -616,6 +598,7 @@ def verify_system_auth(provider: dict[str, Any]) -> dict[str, Any]:
 
     try:
         import shlex
+
         result = subprocess.run(
             shlex.split(verify_command),
             capture_output=True,

@@ -201,18 +201,14 @@ def test_ci_router_set_default_cwd_is_ci_base_function():
 
 def test_extract_project_dir_space_form():
     """`--project-dir PATH` must be consumed and stripped from argv."""
-    project_dir, remaining = ci_module.extract_project_dir(
-        ['--project-dir', '/tmp/wt', 'pr', 'view']
-    )
+    project_dir, remaining = ci_module.extract_project_dir(['--project-dir', '/tmp/wt', 'pr', 'view'])
     assert project_dir == '/tmp/wt'
     assert remaining == ['pr', 'view']
 
 
 def test_extract_project_dir_equals_form():
     """`--project-dir=PATH` must be consumed and stripped from argv."""
-    project_dir, remaining = ci_module.extract_project_dir(
-        ['--project-dir=/tmp/wt', 'pr', 'view']
-    )
+    project_dir, remaining = ci_module.extract_project_dir(['--project-dir=/tmp/wt', 'pr', 'view'])
     assert project_dir == '/tmp/wt'
     assert remaining == ['pr', 'view']
 
@@ -253,9 +249,7 @@ def test_extract_project_dir_after_subcommand():
     # The pre-parse is position-agnostic: it scans the full argv. This documents
     # the current contract so downstream changes that try to enforce positional
     # constraints must update this test.
-    project_dir, remaining = ci_module.extract_project_dir(
-        ['pr', '--project-dir', '/tmp/wt', 'view']
-    )
+    project_dir, remaining = ci_module.extract_project_dir(['pr', '--project-dir', '/tmp/wt', 'view'])
     assert project_dir == '/tmp/wt'
     assert remaining == ['pr', 'view']
 
@@ -287,9 +281,7 @@ def test_router_accepts_project_dir_with_unconfigured_provider(tmp_path):
     plan_dir.mkdir()
     (plan_dir / 'marshal.json').write_text(json.dumps({'providers': []}))
 
-    result = run_script(
-        SCRIPT_PATH, '--project-dir', str(tmp_path), cwd=tmp_path
-    )
+    result = run_script(SCRIPT_PATH, '--project-dir', str(tmp_path), cwd=tmp_path)
     assert result.success
     assert 'not configured' in result.stdout
 

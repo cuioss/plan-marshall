@@ -252,8 +252,7 @@ def discover_available_domains(project_root: Path | None = None) -> dict:
                             # Domain-only extensions don't override discover_modules()
                             # but define applies_to_module() — check against build-discovered modules
                             domain_entry['applicable'] = any(
-                                module.applies_to_module(m).get('applicable', False)
-                                for m in discovered_modules
+                                module.applies_to_module(m).get('applicable', False) for m in discovered_modules
                             )
                         else:
                             domain_entry['applicable'] = False
@@ -429,9 +428,7 @@ def _discover_all_verify_steps() -> list[dict]:
     # Source 1: Built-in steps — read order from standards/{name}.md frontmatter
     for step_name in BUILT_IN_VERIFY_STEPS:
         bare = step_name.split(':', 1)[1] if ':' in step_name else step_name
-        standards_path = (
-            BUNDLES_DIR / 'plan-marshall' / 'skills' / 'phase-5-execute' / 'standards' / f'{bare}.md'
-        )
+        standards_path = BUNDLES_DIR / 'plan-marshall' / 'skills' / 'phase-5-execute' / 'standards' / f'{bare}.md'
         all_steps.append(
             {
                 'name': step_name,

@@ -69,9 +69,7 @@ def test_dispatch_issue_wait_for_label_registered():
 
 
 def _flip_ci_status_args(*, expected='any', timeout=5, interval=0):
-    return argparse.Namespace(
-        pr_number=42, timeout=timeout, interval=interval, expected=expected
-    )
+    return argparse.Namespace(pr_number=42, timeout=timeout, interval=interval, expected=expected)
 
 
 def test_ci_wait_for_status_flip_auth_failure_short_circuits(monkeypatch):
@@ -137,9 +135,7 @@ def test_ci_wait_for_status_flip_times_out_when_status_never_changes(monkeypatch
 
     monkeypatch.setattr(gitlab_ops, '_fetch_pr_overall_ci_status', fake_fetch)
 
-    result = gitlab_ops.cmd_ci_wait_for_status_flip(
-        _flip_ci_status_args(timeout=1, interval=0)
-    )
+    result = gitlab_ops.cmd_ci_wait_for_status_flip(_flip_ci_status_args(timeout=1, interval=0))
 
     assert result['status'] == 'success', result
     assert result['timed_out'] is True
@@ -162,9 +158,7 @@ def test_ci_wait_for_status_flip_expected_success_rejects_failure(monkeypatch):
 
     monkeypatch.setattr(gitlab_ops, '_fetch_pr_overall_ci_status', fake_fetch)
 
-    result = gitlab_ops.cmd_ci_wait_for_status_flip(
-        _flip_ci_status_args(expected='success', timeout=1, interval=0)
-    )
+    result = gitlab_ops.cmd_ci_wait_for_status_flip(_flip_ci_status_args(expected='success', timeout=1, interval=0))
 
     assert result['status'] == 'success', result
     # Fresh differs from baseline but is_complete_fn rejects because
@@ -189,9 +183,7 @@ def test_ci_wait_for_status_flip_expected_any_accepts_success(monkeypatch):
 
     monkeypatch.setattr(gitlab_ops, '_fetch_pr_overall_ci_status', fake_fetch)
 
-    result = gitlab_ops.cmd_ci_wait_for_status_flip(
-        _flip_ci_status_args(expected='any')
-    )
+    result = gitlab_ops.cmd_ci_wait_for_status_flip(_flip_ci_status_args(expected='any'))
 
     assert result['status'] == 'success', result
     assert result['timed_out'] is False
@@ -213,9 +205,7 @@ def test_ci_wait_for_status_flip_expected_any_accepts_failure(monkeypatch):
 
     monkeypatch.setattr(gitlab_ops, '_fetch_pr_overall_ci_status', fake_fetch)
 
-    result = gitlab_ops.cmd_ci_wait_for_status_flip(
-        _flip_ci_status_args(expected='any')
-    )
+    result = gitlab_ops.cmd_ci_wait_for_status_flip(_flip_ci_status_args(expected='any'))
 
     assert result['status'] == 'success', result
     assert result['timed_out'] is False
@@ -292,9 +282,7 @@ def test_issue_wait_for_close_times_out_when_state_never_changes(monkeypatch):
 
     monkeypatch.setattr(gitlab_ops, '_fetch_issue_state_and_labels', fake_fetch)
 
-    result = gitlab_ops.cmd_issue_wait_for_close(
-        _wait_for_close_args(timeout=1, interval=0)
-    )
+    result = gitlab_ops.cmd_issue_wait_for_close(_wait_for_close_args(timeout=1, interval=0))
 
     assert result['status'] == 'success', result
     assert result['timed_out'] is True
@@ -402,9 +390,7 @@ def test_issue_wait_for_label_times_out_when_label_state_never_changes(monkeypat
 
     monkeypatch.setattr(gitlab_ops, '_fetch_issue_state_and_labels', fake_fetch)
 
-    result = gitlab_ops.cmd_issue_wait_for_label(
-        _wait_for_label_args(mode='present', timeout=1, interval=0)
-    )
+    result = gitlab_ops.cmd_issue_wait_for_label(_wait_for_label_args(mode='present', timeout=1, interval=0))
 
     assert result['status'] == 'success', result
     assert result['timed_out'] is True

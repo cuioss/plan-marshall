@@ -43,7 +43,12 @@ cmd_get_module_context = _mod.cmd_get_module_context
 # sys.path so a normal import resolves the module.
 _ARCH_SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-architecture' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-architecture'
+    / 'scripts'
 )
 _arch_spec = importlib.util.spec_from_file_location(
     '_architecture_core_test_module', str(_ARCH_SCRIPTS_DIR / '_architecture_core.py')

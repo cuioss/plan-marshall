@@ -13,9 +13,7 @@ from __future__ import annotations
 
 import re
 
-_SCRIPT_ADDITION_PATTERN = re.compile(
-    r'^marketplace/bundles/[^/]+/skills/[^/]+/scripts/[^/]+\.py$'
-)
+_SCRIPT_ADDITION_PATTERN = re.compile(r'^marketplace/bundles/[^/]+/skills/[^/]+/scripts/[^/]+\.py$')
 
 
 def filter_marketplace_scripts(modified_files: list[str]) -> list[str]:

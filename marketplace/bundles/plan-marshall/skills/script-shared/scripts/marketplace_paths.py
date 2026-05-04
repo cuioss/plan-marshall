@@ -159,10 +159,7 @@ def get_base_path(scope: str = 'auto') -> Path:
         marketplace = find_marketplace_path()
         if marketplace:
             return marketplace
-        raise FileNotFoundError(
-            f'{MARKETPLACE_BUNDLES_PATH} not found. '
-            f'Run from marketplace repo root.'
-        )
+        raise FileNotFoundError(f'{MARKETPLACE_BUNDLES_PATH} not found. Run from marketplace repo root.')
 
     if scope == 'cache-first':
         cache = get_plugin_cache_path()

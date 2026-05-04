@@ -232,16 +232,14 @@ def extract_invocations(markdown_path: Path) -> list[Invocation]:
             continue
 
         # Walk the fenced content, honoring backslash line continuations.
-        block_lines = lines[fence_idx + 1:close_idx]
+        block_lines = lines[fence_idx + 1 : close_idx]
         inner_idx = 0
         while inner_idx < len(block_lines):
             raw = block_lines[inner_idx]
             match = _INVOCATION_RE.match(raw)
             if match:
                 rest = match.group('rest') or ''
-                joined_rest, last_consumed_inner = _strip_line_continuation(
-                    rest, block_lines, inner_idx
-                )
+                joined_rest, last_consumed_inner = _strip_line_continuation(rest, block_lines, inner_idx)
                 chain = _extract_verb_chain(joined_rest)
                 invocations.append(
                     Invocation(
@@ -593,15 +591,7 @@ def _resolve_notation(
     notation itself may be invalid (a separate concern handled by
     ``validate.py references``).
     """
-    candidate = (
-        marketplace_root
-        / 'bundles'
-        / bundle
-        / 'skills'
-        / skill
-        / 'scripts'
-        / f'{script}.py'
-    )
+    candidate = marketplace_root / 'bundles' / bundle / 'skills' / skill / 'scripts' / f'{script}.py'
     if candidate.is_file():
         return candidate
     return None
@@ -657,9 +647,7 @@ def analyze_verb_chains(skill_dir: Path) -> list[dict]:
 
     for md_path in _markdown_targets(skill_dir):
         for inv in extract_invocations(md_path):
-            script_path = _resolve_notation(
-                inv.bundle, inv.skill, inv.script, marketplace_root
-            )
+            script_path = _resolve_notation(inv.bundle, inv.skill, inv.script, marketplace_root)
             if script_path is None:
                 continue
 

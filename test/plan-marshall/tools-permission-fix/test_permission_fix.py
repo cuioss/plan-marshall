@@ -368,9 +368,7 @@ class TestGenerateWildcards(ScriptTestCase):
         inventory_file = self.temp_dir / 'inventory.json'
         inventory_file.write_text(
             json.dumps(
-                {
-                    'bundles': [{'name': 'test-bundle', 'skills': [{'name': 'skill1'}], 'commands': [{'name': 'cmd1'}]}]
-                }
+                {'bundles': [{'name': 'test-bundle', 'skills': [{'name': 'skill1'}], 'commands': [{'name': 'cmd1'}]}]}
             )
         )
 
@@ -426,12 +424,14 @@ class TestScanMarketplaceDir(ScriptTestCase):
 
     def test_scans_bundles_with_skills_and_commands(self):
         """Should discover skills and commands from plugin.json files."""
-        mkt_dir = self._create_marketplace({
-            'my-bundle': {
-                'skills': ['./skills/skill-a', './skills/skill-b'],
-                'commands': ['./commands/cmd-x.md'],
-            },
-        })
+        mkt_dir = self._create_marketplace(
+            {
+                'my-bundle': {
+                    'skills': ['./skills/skill-a', './skills/skill-b'],
+                    'commands': ['./commands/cmd-x.md'],
+                },
+            }
+        )
 
         result = scan_marketplace_dir(mkt_dir)
 
@@ -470,16 +470,18 @@ class TestScanMarketplaceDir(ScriptTestCase):
 
     def test_statistics_counts(self):
         """Should compute correct statistics from scanned bundles."""
-        mkt_dir = self._create_marketplace({
-            'bundle-a': {
-                'skills': ['./skills/s1', './skills/s2'],
-                'commands': ['./commands/c1.md'],
-            },
-            'bundle-b': {
-                'skills': ['./skills/s3'],
-                'commands': [],
-            },
-        })
+        mkt_dir = self._create_marketplace(
+            {
+                'bundle-a': {
+                    'skills': ['./skills/s1', './skills/s2'],
+                    'commands': ['./commands/c1.md'],
+                },
+                'bundle-b': {
+                    'skills': ['./skills/s3'],
+                    'commands': [],
+                },
+            }
+        )
 
         result = scan_marketplace_dir(mkt_dir)
 
@@ -490,16 +492,18 @@ class TestScanMarketplaceDir(ScriptTestCase):
 
     def test_generate_wildcards_from_marketplace_dir(self):
         """generate-wildcards --marketplace-dir should produce wildcards."""
-        mkt_dir = self._create_marketplace({
-            'plan-marshall': {
-                'skills': ['./skills/manage-status'],
-                'commands': ['./commands/plan-manage.md'],
-            },
-            'pm-dev-java': {
-                'skills': ['./skills/java-core'],
-                'commands': [],
-            },
-        })
+        mkt_dir = self._create_marketplace(
+            {
+                'plan-marshall': {
+                    'skills': ['./skills/manage-status'],
+                    'commands': ['./commands/plan-manage.md'],
+                },
+                'pm-dev-java': {
+                    'skills': ['./skills/java-core'],
+                    'commands': [],
+                },
+            }
+        )
 
         result = cmd_generate_wildcards(Namespace(marketplace_dir=mkt_dir, input=None))
 
@@ -965,9 +969,7 @@ class TestApplyProjectStepPermissions(ScriptTestCase):
         settings = self._write_settings(['Edit(.plan/**)'])
         original = self._read_settings(settings)
 
-        result = cmd_apply_project_step_permissions(
-            Namespace(marshal=marshal, settings=settings, dry_run=True)
-        )
+        result = cmd_apply_project_step_permissions(Namespace(marshal=marshal, settings=settings, dry_run=True))
 
         self.assertEqual(result['status'], 'success')
         self.assertEqual(result['added'], ['Skill(finalize-step-plugin-doctor)'])
@@ -979,9 +981,7 @@ class TestApplyProjectStepPermissions(ScriptTestCase):
         marshal = self._write_marshal({'phase-6-finalize': ['project:finalize-step-plugin-doctor']})
         settings = self._write_settings(['Edit(.plan/**)', 'Bash(git:*)'])
 
-        result = cmd_apply_project_step_permissions(
-            Namespace(marshal=marshal, settings=settings, dry_run=False)
-        )
+        result = cmd_apply_project_step_permissions(Namespace(marshal=marshal, settings=settings, dry_run=False))
 
         self.assertEqual(result['status'], 'success')
         self.assertTrue(result['applied'])
@@ -995,9 +995,7 @@ class TestApplyProjectStepPermissions(ScriptTestCase):
         settings = self._write_settings([])
 
         cmd_apply_project_step_permissions(Namespace(marshal=marshal, settings=settings, dry_run=False))
-        result = cmd_apply_project_step_permissions(
-            Namespace(marshal=marshal, settings=settings, dry_run=False)
-        )
+        result = cmd_apply_project_step_permissions(Namespace(marshal=marshal, settings=settings, dry_run=False))
 
         self.assertEqual(result['status'], 'success')
         self.assertEqual(result['added'], [])
@@ -1010,9 +1008,7 @@ class TestApplyProjectStepPermissions(ScriptTestCase):
         marshal = self._write_marshal({'phase-5-execute': ['project:verify-workflow']})
         settings = self._write_settings(['Skill(verify-workflow:*)'])
 
-        result = cmd_apply_project_step_permissions(
-            Namespace(marshal=marshal, settings=settings, dry_run=False)
-        )
+        result = cmd_apply_project_step_permissions(Namespace(marshal=marshal, settings=settings, dry_run=False))
 
         self.assertEqual(result['status'], 'success')
         self.assertEqual(result['added'], [])
@@ -1039,8 +1035,9 @@ def test_permission_fix_imports_without_executor_pythonpath():
     env.pop('PYTHONPATH', None)
     result = subprocess.run(
         [sys.executable, str(SCRIPT_PATH), '--help'],
-        capture_output=True, text=True, env=env, timeout=30,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
     )
-    assert result.returncode == 0, (
-        f'permission_fix.py failed without PYTHONPATH:\n{result.stderr}'
-    )
+    assert result.returncode == 0, f'permission_fix.py failed without PYTHONPATH:\n{result.stderr}'

@@ -95,11 +95,7 @@ def qgate_bypass(
     if plan_source == 'recipe':
         return False
 
-    return (
-        scope_estimate == 'surgical'
-        and change_type in _BYPASS_CHANGE_TYPES
-        and deliverable_count == 1
-    )
+    return scope_estimate == 'surgical' and change_type in _BYPASS_CHANGE_TYPES and deliverable_count == 1
 
 
 # -----------------------------------------------------------------------------
@@ -192,10 +188,7 @@ def test_qgate_bypass_predicate(inputs: dict, expected: bool) -> None:
     never for multi-deliverable plans, never for non-surgical scopes.
     """
     actual = qgate_bypass(**inputs)
-    assert actual is expected, (
-        f'Bypass predicate mismatch for inputs={inputs!r}: '
-        f'expected {expected}, got {actual}'
-    )
+    assert actual is expected, f'Bypass predicate mismatch for inputs={inputs!r}: expected {expected}, got {actual}'
 
 
 # -----------------------------------------------------------------------------
@@ -284,8 +277,7 @@ def test_only_three_change_types_enable_bypass_for_surgical_single_deliverable()
         if qgate_bypass(scope_estimate='surgical', change_type=ct, deliverable_count=1):
             enabling.add(ct)
     assert enabling == set(_BYPASS_CHANGE_TYPES), (
-        f'Expected bypass to fire for exactly {sorted(_BYPASS_CHANGE_TYPES)}, '
-        f'observed {sorted(enabling)}.'
+        f'Expected bypass to fire for exactly {sorted(_BYPASS_CHANGE_TYPES)}, observed {sorted(enabling)}.'
     )
 
 
@@ -300,12 +292,7 @@ def test_no_non_surgical_scope_enables_bypass() -> None:
     for scope in _NON_SURGICAL_SCOPES:
         for ct in list(_BYPASS_CHANGE_TYPES) + list(_NON_BYPASS_CHANGE_TYPES):
             for count in (0, 1, 2, 5):
-                assert (
-                    qgate_bypass(
-                        scope_estimate=scope, change_type=ct, deliverable_count=count
-                    )
-                    is False
-                ), (
+                assert qgate_bypass(scope_estimate=scope, change_type=ct, deliverable_count=count) is False, (
                     f'Non-surgical scope {scope!r} must never trigger bypass '
                     f'(change_type={ct!r}, deliverable_count={count}).'
                 )
@@ -319,14 +306,8 @@ def test_deliverable_count_must_be_exactly_one() -> None:
     """
     for count in (0, 2, 3, 10):
         for ct in _BYPASS_CHANGE_TYPES:
-            assert (
-                qgate_bypass(
-                    scope_estimate='surgical', change_type=ct, deliverable_count=count
-                )
-                is False
-            ), (
-                f'deliverable_count={count} must not trigger bypass '
-                f'(change_type={ct!r}).'
+            assert qgate_bypass(scope_estimate='surgical', change_type=ct, deliverable_count=count) is False, (
+                f'deliverable_count={count} must not trigger bypass (change_type={ct!r}).'
             )
 
 
@@ -337,21 +318,10 @@ def test_deliverable_count_must_be_exactly_one() -> None:
 # -----------------------------------------------------------------------------
 
 
-_SKILL_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-3-outline'
-    / 'SKILL.md'
-)
+_SKILL_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-3-outline' / 'SKILL.md'
 
 _DETAIL_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-3-outline'
-    / 'standards'
-    / 'outline-workflow-detail.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-3-outline' / 'standards' / 'outline-workflow-detail.md'
 )
 
 
@@ -381,8 +351,7 @@ def test_skill_md_documents_bypass_rule() -> None:
     # The predicate must reference scope_estimate == surgical and 1 deliverable.
     assert 'surgical' in text, 'SKILL.md missing scope_estimate=surgical predicate'
     assert 'deliverable_count == 1' in text or '1 deliverable' in text, (
-        'SKILL.md must document the deliverable_count == 1 / "1 deliverable" '
-        'constraint in the bypass predicate.'
+        'SKILL.md must document the deliverable_count == 1 / "1 deliverable" constraint in the bypass predicate.'
     )
 
     # Both Step 8 (Simple Track) and Step 11 (Complex Track) must reference
@@ -401,9 +370,7 @@ def test_detail_doc_documents_bypass_rule_and_examples() -> None:
     text = _DETAIL_PATH.read_text(encoding='utf-8')
 
     # Log prefix.
-    assert _LOG_PREFIX in text, (
-        f'Detail doc missing the bypass log prefix {_LOG_PREFIX!r}.'
-    )
+    assert _LOG_PREFIX in text, f'Detail doc missing the bypass log prefix {_LOG_PREFIX!r}.'
 
     # Every bypass-eligible change_type must be enumerated.
     for ct in _BYPASS_CHANGE_TYPES:
@@ -414,22 +381,17 @@ def test_detail_doc_documents_bypass_rule_and_examples() -> None:
     # deliverable's stated requirement.
     for ct in _NON_BYPASS_CHANGE_TYPES:
         assert ct in text, (
-            f'Detail doc missing change_type {ct!r} in the worked-examples table '
-            f'(must show when bypass does NOT fire).'
+            f'Detail doc missing change_type {ct!r} in the worked-examples table (must show when bypass does NOT fire).'
         )
 
     # Every non-surgical scope_estimate value must appear in the worked-examples
     # table showing when the scope check excludes bypass.
     for scope in _NON_SURGICAL_SCOPES:
-        assert scope in text, (
-            f'Detail doc missing scope_estimate value {scope!r} in the '
-            f'worked-examples table.'
-        )
+        assert scope in text, f'Detail doc missing scope_estimate value {scope!r} in the worked-examples table.'
 
     # The predicate must reference both Q-Gate dispatch sites.
     assert 'Step 8' in text and 'Step 11' in text, (
-        'Detail doc must reference both Step 8 and Step 11 so the rule is '
-        'anchored to both Q-Gate dispatch sites.'
+        'Detail doc must reference both Step 8 and Step 11 so the rule is anchored to both Q-Gate dispatch sites.'
     )
 
     # Recipe-source short-circuit must remain explicitly cross-referenced —
@@ -449,10 +411,7 @@ def test_test_file_lives_at_expected_path() -> None:
     workflow-scope-adaptive-execution solution outline.
     """
     here = Path(__file__).resolve()
-    expected_suffix = Path(
-        'test/plan-marshall/phase-3-outline/test_phase_3_outline_qgate_bypass.py'
-    )
+    expected_suffix = Path('test/plan-marshall/phase-3-outline/test_phase_3_outline_qgate_bypass.py')
     assert str(here).endswith(str(expected_suffix)), (
-        f'Test file moved from expected path. Got {here}, '
-        f'expected suffix {expected_suffix}.'
+        f'Test file moved from expected path. Got {here}, expected suffix {expected_suffix}.'
     )

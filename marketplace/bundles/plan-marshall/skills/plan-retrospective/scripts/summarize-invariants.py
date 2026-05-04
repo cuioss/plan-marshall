@@ -49,13 +49,15 @@ _CORE_INVARIANTS = (
 _WORKTREE_INVARIANTS = ('worktree_sha', 'worktree_dirty')
 
 # Columns in handshakes.toon that are row-level metadata, not invariant values.
-_NON_INVARIANT_COLUMNS = frozenset({
-    'phase',
-    'captured_at',
-    'worktree_applicable',
-    'override',
-    'override_reason',
-})
+_NON_INVARIANT_COLUMNS = frozenset(
+    {
+        'phase',
+        'captured_at',
+        'worktree_applicable',
+        'override',
+        'override_reason',
+    }
+)
 
 HANDSHAKE_FILE = 'handshakes.toon'
 
@@ -69,7 +71,7 @@ def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | N
         if not archived_plan_path:
             raise ValueError('--archived-plan-path is required for archived mode')
         return Path(archived_plan_path)
-    raise ValueError(f"Unknown mode: {mode!r}")
+    raise ValueError(f'Unknown mode: {mode!r}')
 
 
 def load_status_metadata(plan_dir: Path) -> dict[str, Any]:
@@ -175,12 +177,14 @@ def detect_drift(phase_map: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
             if value is None or value == '':
                 continue
             if prev_phase is not None and prev_value != value:
-                drift.append({
-                    'invariant': invariant,
-                    'from_phase': prev_phase,
-                    'to_phase': phase,
-                    'detail': f'{prev_value!s} -> {value!s}',
-                })
+                drift.append(
+                    {
+                        'invariant': invariant,
+                        'from_phase': prev_phase,
+                        'to_phase': phase,
+                        'detail': f'{prev_value!s} -> {value!s}',
+                    }
+                )
             prev_phase = phase
             prev_value = value
     return drift
@@ -196,11 +200,13 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     findings: list[dict[str, str]] = []
 
     if rows is None or not rows:
-        findings.append({
-            'severity': 'warning',
-            'invariant': 'phase_handshake',
-            'message': 'No handshakes.toon found',
-        })
+        findings.append(
+            {
+                'severity': 'warning',
+                'invariant': 'phase_handshake',
+                'message': 'No handshakes.toon found',
+            }
+        )
         phase_map: dict[str, dict[str, Any]] = {}
     else:
         phase_map = project_rows_to_phase_map(rows)
@@ -208,28 +214,34 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     for phase, values in phase_map.items():
         present = sorted(k for k, v in values.items() if v not in (None, ''))
         missing = sorted(set(expected) - set(present))
-        phases_out.append({
-            'phase': phase,
-            'invariants_present': present,
-            'invariants_missing': missing,
-        })
+        phases_out.append(
+            {
+                'phase': phase,
+                'invariants_present': present,
+                'invariants_missing': missing,
+            }
+        )
         for invariant in missing:
             # Worktree-only invariants missing on non-worktree plans are
             # filtered out by ``expected``; anything that survives is a real
             # gap.
-            findings.append({
-                'severity': 'error',
-                'invariant': invariant,
-                'message': f'Phase {phase} missing invariant {invariant}',
-            })
+            findings.append(
+                {
+                    'severity': 'error',
+                    'invariant': invariant,
+                    'message': f'Phase {phase} missing invariant {invariant}',
+                }
+            )
 
     drift = detect_drift(phase_map)
     for entry in drift:
-        findings.append({
-            'severity': 'warning',
-            'invariant': entry['invariant'],
-            'message': f'{entry["invariant"]} drift {entry["from_phase"]} -> {entry["to_phase"]}: {entry["detail"]}',
-        })
+        findings.append(
+            {
+                'severity': 'warning',
+                'invariant': entry['invariant'],
+                'message': f'{entry["invariant"]} drift {entry["from_phase"]} -> {entry["to_phase"]}: {entry["detail"]}',
+            }
+        )
 
     return {
         'status': 'success',

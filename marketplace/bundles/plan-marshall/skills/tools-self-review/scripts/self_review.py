@@ -47,26 +47,20 @@ _FILE_HEADER = re.compile(r'^\+\+\+ b/(.+)$')
 
 # Regex/glob detection
 _RE_CALL = re.compile(
-    r"\bre\.(?:compile|match|search|findall|sub|fullmatch|finditer)"
+    r'\bre\.(?:compile|match|search|findall|sub|fullmatch|finditer)'
     r"\s*\(\s*(?:r|f|rf|fr)?(['\"])(.+?)\1"
 )
 # fnmatch's pattern is the SECOND positional arg (path is first); accept any
 # string literal inside the call's argument list — first quoted run wins.
-_FNMATCH_CALL = re.compile(
-    r"\bfnmatch\.(?:fnmatch|filter)\s*\([^)]*?(['\"])([^'\"]*)\1"
-)
+_FNMATCH_CALL = re.compile(r"\bfnmatch\.(?:fnmatch|filter)\s*\([^)]*?(['\"])([^'\"]*)\1")
 _RAW_REGEX_LITERAL = re.compile(r"\br(['\"])([^'\"]*[\^$.*+?\[\](){}|\\][^'\"]*)\1")
 
 # User-facing string detection
 _DEF_OR_CLASS = re.compile(r'^\s*(def|class)\s+\w+')
 _TRIPLE_QUOTE = re.compile(r"""^\s*(['"]{3})(.*)$""")
 _PRINT_CALL = re.compile(r"\bprint\s*\(\s*(?:r|f|rf|fr)?(['\"])(.*?)\1")
-_ARGPARSE_FIELD = re.compile(
-    r"\b(description|help|epilog)\s*=\s*(?:r|f|rf|fr)?(['\"])(.*?)\2"
-)
-_RAISE_MESSAGE = re.compile(
-    r"\braise\s+\w+(?:Error|Exception)\s*\(\s*(?:r|f|rf|fr)?(['\"])(.*?)\1"
-)
+_ARGPARSE_FIELD = re.compile(r"\b(description|help|epilog)\s*=\s*(?:r|f|rf|fr)?(['\"])(.*?)\2")
+_RAISE_MESSAGE = re.compile(r"\braise\s+\w+(?:Error|Exception)\s*\(\s*(?:r|f|rf|fr)?(['\"])(.*?)\1")
 _MD_HEADING = re.compile(r'^(#{1,6})\s+(.+?)\s*$')
 _MD_BULLET = re.compile(r'^\s*[-*]\s+(.+?)\s*$')
 
@@ -314,9 +308,7 @@ def _detect_user_facing_strings(added: list[tuple[str, int, str]]) -> list[dict[
     return out
 
 
-def _detect_markdown_sections(
-    added: list[tuple[str, int, str]], project_dir: Path
-) -> list[dict[str, Any]]:
+def _detect_markdown_sections(added: list[tuple[str, int, str]], project_dir: Path) -> list[dict[str, Any]]:
     """Emit one entry per added/edited heading, with sibling list (peer headings under same parent)."""
     md_files: dict[str, set[int]] = {}
     for path, lineno, content in added:
@@ -341,9 +333,7 @@ def _detect_markdown_sections(
             while ancestor_stack and ancestor_stack[-1][0] >= depth:
                 ancestor_stack.pop()
             parent = ancestor_stack[-1][1] if ancestor_stack else ''
-            headings.append(
-                {'line': idx, 'depth': depth, 'heading': text, 'parent': parent}
-            )
+            headings.append({'line': idx, 'depth': depth, 'heading': text, 'parent': parent})
             ancestor_stack.append((depth, text))
         # For each edited heading, gather siblings under same parent at same depth.
         for h in headings:
@@ -352,9 +342,7 @@ def _detect_markdown_sections(
             siblings = [
                 other['heading']
                 for other in headings
-                if other is not h
-                and other['depth'] == h['depth']
-                and other['parent'] == h['parent']
+                if other is not h and other['depth'] == h['depth'] and other['parent'] == h['parent']
             ]
             out.append(
                 {
@@ -482,14 +470,11 @@ def _detect_contract_sources(
                     }
                 )
 
-        for path, fmt in _collect_schema_bearing_within_radius(
-            modified_path, project_dir, radius
-        ):
+        for path, fmt in _collect_schema_bearing_within_radius(modified_path, project_dir, radius):
             schema_seen.setdefault(path, fmt)
 
     schema_entries = [
-        {'file': str(p.relative_to(project_dir)), 'format': fmt}
-        for p, fmt in sorted(schema_seen.items())
+        {'file': str(p.relative_to(project_dir)), 'format': fmt} for p, fmt in sorted(schema_seen.items())
     ]
     return contract_entries, schema_entries
 
@@ -576,9 +561,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
     user_facing = _detect_user_facing_strings(added)
     md_sections = _detect_markdown_sections(added, project_dir)
     sym_pairs = _detect_symmetric_pairs(added)
-    contract_sources, schema_bearing = _detect_contract_sources(
-        modified_files, project_dir, args.contract_radius
-    )
+    contract_sources, schema_bearing = _detect_contract_sources(modified_files, project_dir, args.contract_radius)
 
     output = {
         'status': 'success',

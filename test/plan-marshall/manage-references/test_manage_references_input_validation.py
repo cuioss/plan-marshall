@@ -15,9 +15,7 @@ from _input_validation_fixtures import (  # type: ignore[import-not-found]
 
 from conftest import get_script_path, run_script  # type: ignore[import-not-found]
 
-SCRIPT_PATH = get_script_path(
-    'plan-marshall', 'manage-references', 'manage-references.py'
-)
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-references', 'manage-references.py')
 
 
 # =============================================================================

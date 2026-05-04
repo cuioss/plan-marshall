@@ -46,9 +46,7 @@ def test_get_tier_0_default_when_section_missing_in_existing_config():
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir
         plan_dir.mkdir(parents=True, exist_ok=True)
-        (plan_dir / 'run-configuration.json').write_text(
-            json.dumps({'version': 1, 'commands': {}})
-        )
+        (plan_dir / 'run-configuration.json').write_text(json.dumps({'version': 1, 'commands': {}}))
 
         result = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-0')
 
@@ -90,9 +88,7 @@ def test_set_tier_0_round_trip():
         plan_dir = ctx.fixture_dir
         plan_dir.mkdir(parents=True, exist_ok=True)
 
-        set_result = run_script(
-            SCRIPT_PATH, 'architecture-refresh', 'set-tier-0', '--value', 'disabled'
-        )
+        set_result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-0', '--value', 'disabled')
         assert set_result.success, f'set should succeed: {set_result.stderr}'
         set_data = set_result.toon()
         assert set_data.get('status') == 'success'
@@ -114,13 +110,9 @@ def test_set_tier_0_creates_section_when_absent():
     with PlanContext() as ctx:
         plan_dir = ctx.fixture_dir
         plan_dir.mkdir(parents=True, exist_ok=True)
-        (plan_dir / 'run-configuration.json').write_text(
-            json.dumps({'version': 1, 'commands': {}})
-        )
+        (plan_dir / 'run-configuration.json').write_text(json.dumps({'version': 1, 'commands': {}}))
 
-        result = run_script(
-            SCRIPT_PATH, 'architecture-refresh', 'set-tier-0', '--value', 'enabled'
-        )
+        result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-0', '--value', 'enabled')
 
         assert result.success, f'Should succeed: {result.stderr}'
         config = json.loads((plan_dir / 'run-configuration.json').read_text())
@@ -133,9 +125,7 @@ def test_set_tier_0_rejects_unknown_value():
     with PlanContext() as ctx:
         ctx.fixture_dir.mkdir(parents=True, exist_ok=True)
 
-        result = run_script(
-            SCRIPT_PATH, 'architecture-refresh', 'set-tier-0', '--value', 'maybe'
-        )
+        result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-0', '--value', 'maybe')
 
         # argparse choices=… rejects with non-zero exit
         assert result.returncode != 0, 'Unknown value should be rejected by argparse'
@@ -192,9 +182,7 @@ def test_set_tier_1_round_trip():
         plan_dir = ctx.fixture_dir
         plan_dir.mkdir(parents=True, exist_ok=True)
 
-        set_result = run_script(
-            SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'auto'
-        )
+        set_result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'auto')
         assert set_result.success, f'set should succeed: {set_result.stderr}'
         set_data = set_result.toon()
         assert set_data.get('status') == 'success'
@@ -217,9 +205,7 @@ def test_set_tier_1_accepts_disabled():
         plan_dir = ctx.fixture_dir
         plan_dir.mkdir(parents=True, exist_ok=True)
 
-        result = run_script(
-            SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'disabled'
-        )
+        result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'disabled')
 
         assert result.success, f'Should succeed: {result.stderr}'
         config = json.loads((plan_dir / 'run-configuration.json').read_text())
@@ -231,9 +217,7 @@ def test_set_tier_1_rejects_unknown_value():
     with PlanContext() as ctx:
         ctx.fixture_dir.mkdir(parents=True, exist_ok=True)
 
-        result = run_script(
-            SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'enabled'
-        )
+        result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'enabled')
 
         # tier_1 does not allow 'enabled' (only tier_0 does)
         assert result.returncode != 0, 'Unknown value should be rejected by argparse'
@@ -244,9 +228,7 @@ def test_set_tier_1_rejects_garbage_value():
     with PlanContext() as ctx:
         ctx.fixture_dir.mkdir(parents=True, exist_ok=True)
 
-        result = run_script(
-            SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'sometimes'
-        )
+        result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'sometimes')
 
         assert result.returncode != 0
 
@@ -262,12 +244,8 @@ def test_tier_0_and_tier_1_persist_independently():
         plan_dir = ctx.fixture_dir
         plan_dir.mkdir(parents=True, exist_ok=True)
 
-        run_script(
-            SCRIPT_PATH, 'architecture-refresh', 'set-tier-0', '--value', 'disabled'
-        )
-        run_script(
-            SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'auto'
-        )
+        run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-0', '--value', 'disabled')
+        run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'auto')
 
         config = json.loads((plan_dir / 'run-configuration.json').read_text())
         assert config['architecture_refresh']['tier_0'] == 'disabled'
@@ -341,9 +319,7 @@ def test_architecture_refresh_help():
 
 def test_architecture_refresh_set_tier_0_help_lists_choices():
     """set-tier-0 help advertises the (enabled|disabled) value choices."""
-    result = run_script(
-        SCRIPT_PATH, 'architecture-refresh', 'set-tier-0', '--help'
-    )
+    result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-0', '--help')
     assert result.success, f'Should succeed: {result.stderr}'
     assert '--value' in result.stdout
     assert 'enabled' in result.stdout
@@ -352,9 +328,7 @@ def test_architecture_refresh_set_tier_0_help_lists_choices():
 
 def test_architecture_refresh_set_tier_1_help_lists_choices():
     """set-tier-1 help advertises the (prompt|auto|disabled) value choices."""
-    result = run_script(
-        SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--help'
-    )
+    result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--help')
     assert result.success, f'Should succeed: {result.stderr}'
     assert '--value' in result.stdout
     assert 'prompt' in result.stdout

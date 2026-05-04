@@ -378,13 +378,15 @@ def cmd_quality_gate(args) -> dict:
     contract_result = validate_extension_contracts(marketplace_root.parent)
     contract_errors = contract_result.get('errors', [])
     for err in contract_errors:
-        all_issues.append({
-            'type': 'extension_contract',
-            'rule': err.get('rule', ''),
-            'file': err.get('file', ''),
-            'message': err.get('message', ''),
-            'severity': 'error',
-        })
+        all_issues.append(
+            {
+                'type': 'extension_contract',
+                'rule': err.get('rule', ''),
+                'file': err.get('file', ''),
+                'message': err.get('message', ''),
+                'severity': 'error',
+            }
+        )
     rule_summaries.append({'rule': 'validate_extension_contracts', 'findings': len(contract_errors)})
 
     naming_findings = analyze_argument_naming(marketplace_root)
@@ -544,7 +546,9 @@ Examples:
     p_scan = subparsers.add_parser('scan', help='Scan marketplace components', allow_abbrev=False)
     scan_source = p_scan.add_mutually_exclusive_group()
     scan_source.add_argument('--bundles', help='Comma-separated list of bundle names to scan')
-    scan_source.add_argument('--paths', nargs='+', help='Explicit component paths to scan (mutually exclusive with --bundles)')
+    scan_source.add_argument(
+        '--paths', nargs='+', help='Explicit component paths to scan (mutually exclusive with --bundles)'
+    )
     p_scan.add_argument('--marketplace-root', dest='marketplace_root', help=marketplace_root_help)
     p_scan.set_defaults(func=cmd_scan)
 
@@ -582,8 +586,12 @@ Examples:
     p_quality_gate.set_defaults(func=cmd_quality_gate)
 
     # validate-contracts subcommand
-    p_contracts = subparsers.add_parser('validate-contracts', help='Validate extension point contract compliance', allow_abbrev=False)
-    p_contracts.add_argument('--extension-type', help='Filter by extension type (triage,outline,recipe,build,credential)')
+    p_contracts = subparsers.add_parser(
+        'validate-contracts', help='Validate extension point contract compliance', allow_abbrev=False
+    )
+    p_contracts.add_argument(
+        '--extension-type', help='Filter by extension type (triage,outline,recipe,build,credential)'
+    )
     p_contracts.add_argument('--skill', help='Filter by specific skill (bundle:skill or skill-name)')
     p_contracts.add_argument('--marketplace-root', dest='marketplace_root', help=marketplace_root_help)
     p_contracts.set_defaults(func=cmd_validate_contracts)

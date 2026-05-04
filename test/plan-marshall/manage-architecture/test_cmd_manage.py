@@ -15,7 +15,12 @@ from pathlib import Path
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-architecture' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-architecture'
+    / 'scripts'
 )
 
 
@@ -282,9 +287,7 @@ def test_api_discover_preserves_enrichment(monkeypatch):
                 'extensions_used': ['pm-dev-java'],
             }
 
-        monkeypatch.setattr(
-            extension_discovery, 'discover_project_modules', _fake_discover
-        )
+        monkeypatch.setattr(extension_discovery, 'discover_project_modules', _fake_discover)
 
         result = api_discover(tmpdir, force=True)
 

@@ -187,7 +187,7 @@ def test_help_output():
     assert 'drift' in result.stdout, "Missing 'drift' in help"
     assert 'paths' in result.stdout, "Missing 'paths' in help"
     assert 'cleanup' in result.stdout, "Missing 'cleanup' in help"
-    assert 'write-shim' not in result.stdout, "write-shim subcommand must be removed"
+    assert 'write-shim' not in result.stdout, 'write-shim subcommand must be removed'
 
 
 def test_executor_path_is_tracked_config_dir(monkeypatch, tmp_path):
@@ -206,8 +206,7 @@ def test_executor_path_is_tracked_config_dir(monkeypatch, tmp_path):
 def test_module_has_no_legacy_shim_symbols():
     """Removed symbols should be gone — guards against accidental reintroduction."""
     module = load_module()
-    for symbol in ('SHIM_TEMPLATE', 'SHIM_PATH', 'SHIM_DIR', 'write_shim',
-                   'cmd_write_shim', 'detect_legacy_drift'):
+    for symbol in ('SHIM_TEMPLATE', 'SHIM_PATH', 'SHIM_DIR', 'write_shim', 'cmd_write_shim', 'detect_legacy_drift'):
         assert not hasattr(module, symbol), f'Legacy symbol {symbol!r} must be removed'
 
 
@@ -569,8 +568,9 @@ def test_generate_executor_imports_without_executor_pythonpath():
     env.pop('PYTHONPATH', None)
     result = subprocess.run(
         [sys.executable, str(GENERATE_SCRIPT), '--help'],
-        capture_output=True, text=True, env=env, timeout=30,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
     )
-    assert result.returncode == 0, (
-        f'generate_executor.py failed without PYTHONPATH:\n{result.stderr}'
-    )
+    assert result.returncode == 0, f'generate_executor.py failed without PYTHONPATH:\n{result.stderr}'

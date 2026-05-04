@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Tests for schema_validation.py shared module."""
 
-
 from schema_validation import (  # type: ignore[import-not-found]I001
     validate_assessment,
     validate_finding,

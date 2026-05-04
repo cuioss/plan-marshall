@@ -114,9 +114,7 @@ def set_body(
                 'status': 'error',
                 'id': lesson_id,
                 'error': 'file_not_found',
-                'message': (
-                    f'Body source path does not exist or is not a regular file: {file_path}'
-                ),
+                'message': (f'Body source path does not exist or is not a regular file: {file_path}'),
             }
         try:
             body = source.read_text(encoding='utf-8')
@@ -139,8 +137,7 @@ def set_body(
             'id': lesson_id,
             'error': 'malformed_lesson',
             'message': (
-                f'Lesson {lesson_id} is missing a frontmatter header or H1 title; '
-                'cannot safely overwrite body'
+                f'Lesson {lesson_id} is missing a frontmatter header or H1 title; cannot safely overwrite body'
             ),
         }
 

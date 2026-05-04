@@ -48,7 +48,9 @@ def main():
     stats_parser.set_defaults(func=cmd_stats)
 
     # validate subcommand
-    validate_parser = subparsers.add_parser('validate', help='Validate AsciiDoc files for compliance', allow_abbrev=False)
+    validate_parser = subparsers.add_parser(
+        'validate', help='Validate AsciiDoc files for compliance', allow_abbrev=False
+    )
     validate_parser.add_argument('--path', default='standards', help='File or directory to check')
     validate_parser.add_argument(
         '-f', '--format', dest='format', default='console', choices=['console', 'json'], help='Output format'
@@ -79,7 +81,9 @@ def main():
     links_parser.set_defaults(func=cmd_verify_links)
 
     # classify-links subcommand
-    classify_parser = subparsers.add_parser('classify-links', help='Classify broken links to reduce false positives', allow_abbrev=False)
+    classify_parser = subparsers.add_parser(
+        'classify-links', help='Classify broken links to reduce false positives', allow_abbrev=False
+    )
     classify_parser.add_argument('--input', type=str, help='Input JSON file')
     classify_parser.add_argument('--output', type=str, help='Output JSON file')
     classify_parser.add_argument('--pretty', action='store_true', help='Pretty-print JSON')

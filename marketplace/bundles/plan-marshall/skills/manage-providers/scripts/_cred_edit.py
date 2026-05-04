@@ -27,10 +27,12 @@ def run_edit(args) -> int:
 
     existing = load_credential(skill, scope, project_name)
     if not existing:
-        output_toon({
-            'status': 'error',
-            'message': f'No credentials found for {skill} (scope: {scope})',
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'message': f'No credentials found for {skill} (scope: {scope})',
+            }
+        )
         return 0
 
     # Update non-secret fields from CLI args, keep existing otherwise
@@ -48,13 +50,15 @@ def run_edit(args) -> int:
 
     completeness = check_credential_completeness(skill, scope, project_name)
 
-    output_toon({
-        'status': 'success',
-        'skill': skill,
-        'scope': scope,
-        'action': 'edited',
-        'path': str(path),
-        'needs_editing': not completeness['complete'],
-        'placeholders': completeness.get('placeholders', []),
-    })
+    output_toon(
+        {
+            'status': 'success',
+            'skill': skill,
+            'scope': scope,
+            'action': 'edited',
+            'path': str(path),
+            'needs_editing': not completeness['complete'],
+            'placeholders': completeness.get('placeholders', []),
+        }
+    )
     return 0

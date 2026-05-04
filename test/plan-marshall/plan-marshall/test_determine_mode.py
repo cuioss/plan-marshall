@@ -270,9 +270,7 @@ class TestFixDocsSubcommand(ScriptTestCase):
     def test_fixes_missing_plan_temp_in_claude_md(self):
         """Should append plan_temp content to CLAUDE.md."""
         claude_md = self.temp_dir / 'CLAUDE.md'
-        claude_md.write_text(
-            '# Project\n\nuse Glob, Read, Grep tools.\n\n### Workflow Discipline (Hard Rules)\n'
-        )
+        claude_md.write_text('# Project\n\nuse Glob, Read, Grep tools.\n\n### Workflow Discipline (Hard Rules)\n')
         result = cmd_fix_docs(Namespace(project_root=str(self.temp_dir)))
         self.assertEqual(result['fix_status'], 'fixed')
         self.assertIn('plan_temp:CLAUDE.md', result['fixes'])

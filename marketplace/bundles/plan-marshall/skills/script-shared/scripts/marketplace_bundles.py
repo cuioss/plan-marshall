@@ -145,8 +145,7 @@ def resolve_bundles_root(script_file: Path) -> Path:
                 return ancestor
     chain = '\n  '.join(str(p) for p in walked)
     raise RuntimeError(
-        f"resolve_bundles_root: could not locate a 'plan-marshall' bundle "
-        f"above {start}. Walked parents:\n  {chain}"
+        f"resolve_bundles_root: could not locate a 'plan-marshall' bundle above {start}. Walked parents:\n  {chain}"
     )
 
 
@@ -180,7 +179,7 @@ def resolve_skills_root(script_file: Path) -> Path:
     chain = '\n  '.join(str(p) for p in walked)
     raise RuntimeError(
         f"resolve_skills_root: could not locate a 'skills' directory inside "
-        f"a bundle above {start}. Walked parents:\n  {chain}"
+        f'a bundle above {start}. Walked parents:\n  {chain}'
     )
 
 

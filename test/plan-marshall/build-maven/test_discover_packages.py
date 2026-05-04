@@ -7,7 +7,6 @@ per package, excluding package-info.java and sub-package files.
 Uses the shared discover_packages() from extension-api (_build_discover).
 """
 
-
 from pathlib import Path
 
 # Direct imports - conftest sets up PYTHONPATH

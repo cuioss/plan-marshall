@@ -429,7 +429,9 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # analyze subcommand
-    analyze_parser = subparsers.add_parser('analyze', help='Analyze JavaScript files for JSDoc compliance violations', allow_abbrev=False)
+    analyze_parser = subparsers.add_parser(
+        'analyze', help='Analyze JavaScript files for JSDoc compliance violations', allow_abbrev=False
+    )
     group = analyze_parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--directory', help='Directory to scan for JavaScript files')
     group.add_argument('--file', help='Single JavaScript file to analyze')

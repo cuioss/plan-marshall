@@ -189,9 +189,7 @@ def _next_sequential_id(current_id: str) -> str:
     return f'{prefix}-{seq + 1:03d}'
 
 
-def _allocate_and_write_scaffold(
-    metadata_factory: Callable[[str], dict], title: str, body: str = ''
-) -> dict:
+def _allocate_and_write_scaffold(metadata_factory: Callable[[str], dict], title: str, body: str = '') -> dict:
     """Allocate a fresh lesson id and exclusively create its file.
 
     Uses ``open(path, 'x')`` (kernel-enforced O_CREAT|O_EXCL) so a concurrent
@@ -305,7 +303,7 @@ def _append_consolidated_from(canonical_id: str, source_id: str) -> None:
         pattern = r'(## Consolidated from\n+(?:- .*\n)*)'
         match = re.search(pattern, body)
         if match:
-            new_body = body[: match.end()].rstrip() + f'\n{bullet}\n' + body[match.end():]
+            new_body = body[: match.end()].rstrip() + f'\n{bullet}\n' + body[match.end() :]
         else:
             # Section header without bullets — append a bullet block after it.
             new_body = body.replace(section_marker, f'{section_marker}\n\n{bullet}\n', 1)
@@ -417,7 +415,12 @@ def cmd_update(args: argparse.Namespace) -> dict:
     metadata, title, body = read_lesson(args.lesson_id)
 
     if not metadata:
-        return {'status': 'error', 'id': args.lesson_id, 'error': 'not_found', 'message': f'Lesson {args.lesson_id} not found'}
+        return {
+            'status': 'error',
+            'id': args.lesson_id,
+            'error': 'not_found',
+            'message': f'Lesson {args.lesson_id} not found',
+        }
 
     field = None
     value = None
@@ -454,7 +457,12 @@ def cmd_get(args: argparse.Namespace) -> dict:
     metadata, title, body = read_lesson(args.lesson_id)
 
     if not metadata:
-        return {'status': 'error', 'id': args.lesson_id, 'error': 'not_found', 'message': f'Lesson {args.lesson_id} not found'}
+        return {
+            'status': 'error',
+            'id': args.lesson_id,
+            'error': 'not_found',
+            'message': f'Lesson {args.lesson_id} not found',
+        }
 
     result = {
         'status': 'success',
@@ -534,9 +542,7 @@ def cmd_convert_to_plan(args: argparse.Namespace) -> dict:
     The lesson is renamed to lesson-{id}.md inside .plan/local/plans/{plan_id}/.
     Errors if the source lesson does not exist.
     """
-    if any(sep in args.lesson_id for sep in ('/', '\\', '..')) or any(
-        sep in args.plan_id for sep in ('/', '\\', '..')
-    ):
+    if any(sep in args.lesson_id for sep in ('/', '\\', '..')) or any(sep in args.plan_id for sep in ('/', '\\', '..')):
         return {
             'status': 'error',
             'error': 'invalid_id',
@@ -731,18 +737,14 @@ def cmd_supersede(args: argparse.Namespace) -> dict:
             'message': f'Canonical lesson {args.by} not found',
         }
 
-    tombstone_path = _write_tombstone(
-        args.lesson_id, args.reason, status='superseded', superseded_by=args.by
-    )
+    tombstone_path = _write_tombstone(args.lesson_id, args.reason, status='superseded', superseded_by=args.by)
 
     # Mutate canonical first so the source body is preserved in the canonical
     # before its on-disk form is destroyed. If either canonical write raises,
     # the source remains intact and callers can retry; both helpers are
     # idempotent so the retry will not double-append.
     _append_consolidated_from(args.by, args.lesson_id)
-    merged_bytes = _merge_consolidated_lesson_body(
-        args.by, args.lesson_id, title, metadata, body
-    )
+    merged_bytes = _merge_consolidated_lesson_body(args.by, args.lesson_id, title, metadata, body)
 
     new_metadata = dict(metadata)
     new_metadata['status'] = 'superseded'
@@ -973,9 +975,7 @@ def main() -> int:
     set_body_parser.set_defaults(func=cmd_set_body)
 
     # from-error
-    from_error_parser = subparsers.add_parser(
-        'from-error', help='Create from error context', allow_abbrev=False
-    )
+    from_error_parser = subparsers.add_parser('from-error', help='Create from error context', allow_abbrev=False)
     from_error_parser.add_argument('--context', required=True, help='JSON error context')
     from_error_parser.set_defaults(func=cmd_from_error)
 
@@ -987,9 +987,7 @@ def main() -> int:
     )
     add_lesson_id_arg(remove_parser)
     remove_parser.add_argument('--reason', required=True, help='Removal reason (recorded in tombstone and audit log)')
-    remove_parser.add_argument(
-        '--force', action='store_true', help='Skip the interactive confirmation prompt'
-    )
+    remove_parser.add_argument('--force', action='store_true', help='Skip the interactive confirmation prompt')
     remove_parser.set_defaults(func=cmd_remove)
 
     # supersede
@@ -1000,7 +998,9 @@ def main() -> int:
     )
     add_lesson_id_arg(supersede_parser)
     supersede_parser.add_argument('--by', required=True, help='Canonical lesson ID that absorbs the source')
-    supersede_parser.add_argument('--reason', required=True, help='Supersede reason (recorded in tombstone and audit log)')
+    supersede_parser.add_argument(
+        '--reason', required=True, help='Supersede reason (recorded in tombstone and audit log)'
+    )
     supersede_parser.set_defaults(func=cmd_supersede)
 
     # cleanup-superseded

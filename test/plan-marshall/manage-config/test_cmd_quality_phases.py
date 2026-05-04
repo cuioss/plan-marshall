@@ -17,7 +17,12 @@ from test_helpers import SCRIPT_PATH, create_marshal_json
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-config'
+    / 'scripts'
 )
 
 
@@ -74,18 +79,22 @@ def test_execute_set_steps(monkeypatch):
         create_marshal_json(ctx.fixture_dir)
 
         # Persist an override for the non-discoverable extension step so set-steps can resolve its order.
-        cmd_plan(Namespace(
-            sub_noun='phase-5-execute',
-            verb='set-step-order-override',
-            step='pm-documents:doc-verify',
-            order=500,
-        ))
+        cmd_plan(
+            Namespace(
+                sub_noun='phase-5-execute',
+                verb='set-step-order-override',
+                step='pm-documents:doc-verify',
+                order=500,
+            )
+        )
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-5-execute',
-            verb='set-steps',
-            steps='pm-documents:doc-verify,default:quality_check,default:build_verify',
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-5-execute',
+                verb='set-steps',
+                steps='pm-documents:doc-verify,default:quality_check,default:build_verify',
+            )
+        )
 
         assert result['status'] == 'success'
 
@@ -103,19 +112,23 @@ def test_execute_add_step(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        cmd_plan(Namespace(
-            sub_noun='phase-5-execute',
-            verb='set-step-order-override',
-            step='pm-documents:doc-verify',
-            order=500,
-        ))
+        cmd_plan(
+            Namespace(
+                sub_noun='phase-5-execute',
+                verb='set-step-order-override',
+                step='pm-documents:doc-verify',
+                order=500,
+            )
+        )
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-5-execute',
-            verb='add-step',
-            step='pm-documents:doc-verify',
-            position=None,
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-5-execute',
+                verb='add-step',
+                step='pm-documents:doc-verify',
+                position=None,
+            )
+        )
 
         assert result['status'] == 'success'
 
@@ -131,11 +144,13 @@ def test_execute_remove_step(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-5-execute',
-            verb='remove-step',
-            step='default:quality_check',
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-5-execute',
+                verb='remove-step',
+                step='default:quality_check',
+            )
+        )
 
         assert result['status'] == 'success'
 
@@ -150,11 +165,13 @@ def test_execute_verify_get_field(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-5-execute',
-            verb='get',
-            field='verification_max_iterations',
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-5-execute',
+                verb='get',
+                field='verification_max_iterations',
+            )
+        )
 
         assert result['status'] == 'success'
         assert result['value'] == 5
@@ -165,12 +182,14 @@ def test_execute_add_step_duplicate(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-5-execute',
-            verb='add-step',
-            step='default:quality_check',
-            position=None,
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-5-execute',
+                verb='add-step',
+                step='default:quality_check',
+                position=None,
+            )
+        )
 
         assert result['status'] == 'error'
         assert 'default:quality_check' in result['error']
@@ -181,11 +200,13 @@ def test_execute_remove_step_not_found(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-5-execute',
-            verb='remove-step',
-            step='nonexistent',
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-5-execute',
+                verb='remove-step',
+                step='nonexistent',
+            )
+        )
 
         assert result['status'] == 'error'
         assert 'nonexistent' in result['error']
@@ -214,11 +235,13 @@ def test_finalize_set_steps(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-6-finalize',
-            verb='set-steps',
-            steps='default:commit-push,default:create-pr,default:archive-plan',
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-6-finalize',
+                verb='set-steps',
+                steps='default:commit-push,default:create-pr,default:archive-plan',
+            )
+        )
 
         assert result['status'] == 'success'
 
@@ -242,19 +265,23 @@ def test_finalize_add_step(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        cmd_plan(Namespace(
-            sub_noun='phase-6-finalize',
-            verb='set-step-order-override',
-            step='pm-dev-java:java-post-pr',
-            order=75,
-        ))
+        cmd_plan(
+            Namespace(
+                sub_noun='phase-6-finalize',
+                verb='set-step-order-override',
+                step='pm-dev-java:java-post-pr',
+                order=75,
+            )
+        )
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-6-finalize',
-            verb='add-step',
-            step='pm-dev-java:java-post-pr',
-            position=None,
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-6-finalize',
+                verb='add-step',
+                step='pm-dev-java:java-post-pr',
+                position=None,
+            )
+        )
 
         assert result['status'] == 'success'
 
@@ -272,19 +299,23 @@ def test_finalize_add_step_sorts_by_order(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        cmd_plan(Namespace(
-            sub_noun='phase-6-finalize',
-            verb='set-step-order-override',
-            step='project:finalize-step-custom',
-            order=1,
-        ))
+        cmd_plan(
+            Namespace(
+                sub_noun='phase-6-finalize',
+                verb='set-step-order-override',
+                step='project:finalize-step-custom',
+                order=1,
+            )
+        )
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-6-finalize',
-            verb='add-step',
-            step='project:finalize-step-custom',
-            position=5,  # Ignored — sort by order now.
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-6-finalize',
+                verb='add-step',
+                step='project:finalize-step-custom',
+                position=5,  # Ignored — sort by order now.
+            )
+        )
 
         assert result['status'] == 'success'
 
@@ -299,12 +330,14 @@ def test_finalize_add_step_duplicate_error(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-6-finalize',
-            verb='add-step',
-            step='default:commit-push',
-            position=None,
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-6-finalize',
+                verb='add-step',
+                step='default:commit-push',
+                position=None,
+            )
+        )
 
         assert result['status'] == 'error'
 
@@ -314,11 +347,13 @@ def test_finalize_remove_step(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-6-finalize',
-            verb='remove-step',
-            step='default:sonar-roundtrip',
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-6-finalize',
+                verb='remove-step',
+                step='default:sonar-roundtrip',
+            )
+        )
 
         assert result['status'] == 'success'
 
@@ -332,11 +367,13 @@ def test_finalize_remove_step_not_found_error(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-6-finalize',
-            verb='remove-step',
-            step='bogus',
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-6-finalize',
+                verb='remove-step',
+                step='bogus',
+            )
+        )
 
         assert result['status'] == 'error'
 
@@ -365,11 +402,13 @@ def test_finalize_set_steps_sorts_by_order(monkeypatch):
         create_marshal_json(ctx.fixture_dir)
 
         # Pass built-in steps in reverse order to prove sorting.
-        result = cmd_plan(Namespace(
-            sub_noun='phase-6-finalize',
-            verb='set-steps',
-            steps='default:archive-plan,default:record-metrics,default:commit-push,default:create-pr',
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-6-finalize',
+                verb='set-steps',
+                steps='default:archive-plan,default:record-metrics,default:commit-push,default:create-pr',
+            )
+        )
 
         assert result['status'] == 'success'
         assert result['steps'] == [
@@ -385,11 +424,13 @@ def test_finalize_set_steps_missing_order_returns_error(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-6-finalize',
-            verb='set-steps',
-            steps='default:commit-push,pm-dev-java:java-post-pr',
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-6-finalize',
+                verb='set-steps',
+                steps='default:commit-push,pm-dev-java:java-post-pr',
+            )
+        )
 
         assert result['status'] == 'error'
         assert result['error'] == 'missing_order'
@@ -403,18 +444,22 @@ def test_finalize_set_steps_order_collision_returns_error(monkeypatch):
         create_marshal_json(ctx.fixture_dir)
 
         # Reassign commit-push to share order=20 with create-pr.
-        cmd_plan(Namespace(
-            sub_noun='phase-6-finalize',
-            verb='set-step-order-override',
-            step='default:commit-push',
-            order=20,
-        ))
+        cmd_plan(
+            Namespace(
+                sub_noun='phase-6-finalize',
+                verb='set-step-order-override',
+                step='default:commit-push',
+                order=20,
+            )
+        )
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-6-finalize',
-            verb='set-steps',
-            steps='default:commit-push,default:create-pr',
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-6-finalize',
+                verb='set-steps',
+                steps='default:commit-push,default:create-pr',
+            )
+        )
 
         assert result['status'] == 'error'
         assert result['error'] == 'order_collision'
@@ -428,12 +473,14 @@ def test_finalize_set_step_order_override_persists(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-6-finalize',
-            verb='set-step-order-override',
-            step='pm-dev-java:java-post-pr',
-            order=42,
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-6-finalize',
+                verb='set-step-order-override',
+                step='pm-dev-java:java-post-pr',
+                order=42,
+            )
+        )
 
         assert result['status'] == 'success'
         assert result['step_order_overrides']['pm-dev-java:java-post-pr'] == 42
@@ -449,24 +496,28 @@ def test_finalize_override_precedence_over_discovery(monkeypatch):
         create_marshal_json(ctx.fixture_dir)
 
         # Push commit-push (discovery order 10) to the end via override.
-        cmd_plan(Namespace(
-            sub_noun='phase-6-finalize',
-            verb='set-step-order-override',
-            step='default:commit-push',
-            order=2000,
-        ))
+        cmd_plan(
+            Namespace(
+                sub_noun='phase-6-finalize',
+                verb='set-step-order-override',
+                step='default:commit-push',
+                order=2000,
+            )
+        )
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-6-finalize',
-            verb='set-steps',
-            steps='default:commit-push,default:create-pr,default:archive-plan',
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-6-finalize',
+                verb='set-steps',
+                steps='default:commit-push,default:create-pr,default:archive-plan',
+            )
+        )
 
         assert result['status'] == 'success'
         assert result['steps'] == [
-            'default:create-pr',       # discovery order 20
-            'default:archive-plan',    # discovery order 1000
-            'default:commit-push',     # overridden to 2000
+            'default:create-pr',  # discovery order 20
+            'default:archive-plan',  # discovery order 1000
+            'default:commit-push',  # overridden to 2000
         ]
 
 
@@ -475,18 +526,22 @@ def test_finalize_remove_step_order_override_clears_entry(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        cmd_plan(Namespace(
-            sub_noun='phase-6-finalize',
-            verb='set-step-order-override',
-            step='custom:thing',
-            order=500,
-        ))
+        cmd_plan(
+            Namespace(
+                sub_noun='phase-6-finalize',
+                verb='set-step-order-override',
+                step='custom:thing',
+                order=500,
+            )
+        )
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-6-finalize',
-            verb='remove-step-order-override',
-            step='custom:thing',
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-6-finalize',
+                verb='remove-step-order-override',
+                step='custom:thing',
+            )
+        )
 
         assert result['status'] == 'success'
         assert result['removed'] is True
@@ -502,11 +557,13 @@ def test_finalize_remove_step_order_override_missing_returns_error(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-6-finalize',
-            verb='remove-step-order-override',
-            step='custom:thing',
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-6-finalize',
+                verb='remove-step-order-override',
+                step='custom:thing',
+            )
+        )
 
         assert result['status'] == 'error'
         assert result['step'] == 'custom:thing'
@@ -519,19 +576,23 @@ def test_execute_add_step_order_collision_returns_error(monkeypatch):
         create_marshal_json(ctx.fixture_dir)
 
         # Place the new step at the same order as the existing built-in quality_check (10).
-        cmd_plan(Namespace(
-            sub_noun='phase-5-execute',
-            verb='set-step-order-override',
-            step='pm-documents:doc-verify',
-            order=10,
-        ))
+        cmd_plan(
+            Namespace(
+                sub_noun='phase-5-execute',
+                verb='set-step-order-override',
+                step='pm-documents:doc-verify',
+                order=10,
+            )
+        )
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-5-execute',
-            verb='add-step',
-            step='pm-documents:doc-verify',
-            position=None,
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-5-execute',
+                verb='add-step',
+                step='pm-documents:doc-verify',
+                position=None,
+            )
+        )
 
         assert result['status'] == 'error'
         assert result['error'] == 'order_collision'
@@ -559,12 +620,14 @@ def test_phase_1_init_set(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-1-init',
-            verb='set',
-            field='branch_strategy',
-            value='feature-branch',
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-1-init',
+                verb='set',
+                field='branch_strategy',
+                value='feature-branch',
+            )
+        )
 
         assert result['status'] == 'success'
 
@@ -588,12 +651,14 @@ def test_phase_2_refine_set(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-2-refine',
-            verb='set',
-            field='confidence_threshold',
-            value='90',
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-2-refine',
+                verb='set',
+                field='confidence_threshold',
+                value='90',
+            )
+        )
 
         assert result['status'] == 'success'
 
@@ -618,12 +683,14 @@ def test_phase_5_execute_set(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-5-execute',
-            verb='set',
-            field='commit_strategy',
-            value='per_plan',
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-5-execute',
+                verb='set',
+                field='commit_strategy',
+                value='per_plan',
+            )
+        )
 
         assert result['status'] == 'success'
 
@@ -648,12 +715,14 @@ def test_phase_2_refine_set_compatibility(monkeypatch):
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = cmd_plan(Namespace(
-            sub_noun='phase-2-refine',
-            verb='set',
-            field='compatibility',
-            value='deprecation',
-        ))
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-2-refine',
+                verb='set',
+                field='compatibility',
+                value='deprecation',
+            )
+        )
 
         assert result['status'] == 'success'
 

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Tests for input_validation.py shared module."""
 
-
 import pytest
 from input_validation import (  # type: ignore[import-not-found]I001
     is_valid_component,
@@ -377,10 +376,7 @@ class TestPhaseIdEnum:
 
 class TestComponentNotation:
     def test_three_part(self):
-        assert (
-            validate_component('plan-marshall:manage-tasks:script')
-            == 'plan-marshall:manage-tasks:script'
-        )
+        assert validate_component('plan-marshall:manage-tasks:script') == 'plan-marshall:manage-tasks:script'
 
     def test_trailing_colon(self):
         with pytest.raises(ValueError, match='Invalid component'):

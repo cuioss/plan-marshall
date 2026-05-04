@@ -8,7 +8,6 @@ Usage:
     from build_test_helpers import assert_coverage_missing_file, assert_coverage_high, ...
 """
 
-
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 from conftest import run_script

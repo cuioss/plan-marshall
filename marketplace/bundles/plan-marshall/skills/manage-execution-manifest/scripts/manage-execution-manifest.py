@@ -104,18 +104,21 @@ _BUNDLE_SOURCE_GLOBS = (
 # candidate list reaching the matcher has been boundary-normalized in
 # ``cmd_compose`` (any leading ``default:`` is stripped once at intake), so the
 # matcher compares plain strings without re-stripping per call site.
-_AGENT_DISPATCHED_STEPS = frozenset({
-    'create-pr',
-    'automated-review',
-    'sonar-roundtrip',
-    'knowledge-capture',
-    'lessons-capture',
-})
+_AGENT_DISPATCHED_STEPS = frozenset(
+    {
+        'create-pr',
+        'automated-review',
+        'sonar-roundtrip',
+        'knowledge-capture',
+        'lessons-capture',
+    }
+)
 
 
 def _strip_default_prefix(step: str) -> str:
     """Return the bare step name regardless of the optional ``default:`` prefix."""
-    return step[len('default:'):] if step.startswith('default:') else step
+    return step[len('default:') :] if step.startswith('default:') else step
+
 
 _EARLY_SYNC_STEP = 'project:finalize-step-sync-plugin-cache'
 
@@ -195,8 +198,7 @@ def _decide(
     # to drop heavy steps.
     if recipe_key:
         phase_6_steps = [
-            s for s in phase_6_candidates
-            if s not in {'automated-review', 'sonar-roundtrip', 'knowledge-capture'}
+            s for s in phase_6_candidates if s not in {'automated-review', 'sonar-roundtrip', 'knowledge-capture'}
         ]
         body = {
             'phase_5': {
@@ -209,17 +211,19 @@ def _decide(
 
     # Rule 3: docs-only — surgical scope plus no test/code expectations. Skip
     # build verification entirely; keep capture + commit + PR + branch cleanup.
-    if scope_estimate in ('surgical', 'single_module') and change_type in ('tech_debt', 'enhancement') and affected_files_count > 0 and _looks_docs_only(phase_5_candidates):
+    if (
+        scope_estimate in ('surgical', 'single_module')
+        and change_type in ('tech_debt', 'enhancement')
+        and affected_files_count > 0
+        and _looks_docs_only(phase_5_candidates)
+    ):
         body = {
             'phase_5': {
                 'early_terminate': False,
                 'verification_steps': [],
             },
             'phase_6': {
-                'steps': [
-                    s for s in phase_6_candidates
-                    if s not in {'sonar-roundtrip', 'automated-review'}
-                ],
+                'steps': [s for s in phase_6_candidates if s not in {'sonar-roundtrip', 'automated-review'}],
             },
         }
         return body, 'docs_only'
@@ -242,8 +246,7 @@ def _decide(
     # focused changes). Keep lessons-capture + commit/PR/cleanup.
     if scope_estimate == 'surgical' and change_type in ('bug_fix', 'tech_debt'):
         phase_6_steps = [
-            s for s in phase_6_candidates
-            if s not in {'automated-review', 'sonar-roundtrip', 'knowledge-capture'}
+            s for s in phase_6_candidates if s not in {'automated-review', 'sonar-roundtrip', 'knowledge-capture'}
         ]
         body = {
             'phase_5': {
@@ -291,11 +294,7 @@ def _bundle_self_modification(modified_files: list[str]) -> bool:
     The triggering surfaces are bundled agents, commands, and skills — the
     runtime source of truth for Task dispatch. See lesson 2026-04-26-23-003.
     """
-    return any(
-        fnmatch.fnmatchcase(path, glob)
-        for path in modified_files
-        for glob in _BUNDLE_SOURCE_GLOBS
-    )
+    return any(fnmatch.fnmatchcase(path, glob) for path in modified_files for glob in _BUNDLE_SOURCE_GLOBS)
 
 
 def _read_bundle_change_paths(plan_id: str) -> list[str]:
@@ -404,9 +403,7 @@ def _read_solution_outline_affected_files(plan_id: str) -> list[str]:
     return flat
 
 
-def _apply_bundle_self_modification(
-    plan_id: str, body: dict[str, Any], modified_files: list[str]
-) -> str | None:
+def _apply_bundle_self_modification(plan_id: str, body: dict[str, Any], modified_files: list[str]) -> str | None:
     """Insert an early ``sync-plugin-cache`` step when the rule fires.
 
     Mutates ``body['phase_6']['steps']`` in place and returns the inserting
@@ -547,9 +544,7 @@ def _log_decision(plan_id: str, rule: str, body: dict[str, Any]) -> None:
 
 def _log_commit_push_omitted(plan_id: str) -> None:
     """Emit the decision-log entry for the ``commit_strategy_none`` pre-filter."""
-    message = (
-        '(plan-marshall:manage-execution-manifest:compose) commit-push omitted — commit_strategy=none'
-    )
+    message = '(plan-marshall:manage-execution-manifest:compose) commit-push omitted — commit_strategy=none'
     _emit_decision_log(plan_id, message)
 
 
@@ -565,8 +560,7 @@ def _log_pre_push_quality_gate_omitted(plan_id: str) -> None:
 def _log_pre_submission_self_review_omitted(plan_id: str) -> None:
     """Emit the decision-log entry for the ``pre_submission_self_review_inactive`` pre-filter."""
     message = (
-        '(plan-marshall:manage-execution-manifest:compose) pre-submission-self-review omitted — '
-        'empty modified_files'
+        '(plan-marshall:manage-execution-manifest:compose) pre-submission-self-review omitted — empty modified_files'
     )
     _emit_decision_log(plan_id, message)
 
@@ -609,10 +603,7 @@ def _log_bot_enforcement_placement_violation(plan_id: str, diagnostic: str) -> N
     or ``plan-marshall:plan-retrospective``). The diagnostic string carries
     both step names and indexes for downstream auditing.
     """
-    message = (
-        '(plan-marshall:manage-execution-manifest:compose) bot-enforcement placement '
-        f'violation — {diagnostic}'
-    )
+    message = f'(plan-marshall:manage-execution-manifest:compose) bot-enforcement placement violation — {diagnostic}'
     _emit_decision_log(plan_id, message)
 
 
@@ -676,9 +667,7 @@ def _any_glob_matches(paths: list[str], globs: list[str]) -> bool:
     return False
 
 
-def _apply_commit_strategy_none(
-    phase_6_candidates: list[str], commit_strategy: str
-) -> tuple[list[str], bool]:
+def _apply_commit_strategy_none(phase_6_candidates: list[str], commit_strategy: str) -> tuple[list[str], bool]:
     """Pre-filter: drop ``commit-push`` when ``commit_strategy == none``.
 
     Also drops ``pre-push-quality-gate`` and ``pre-submission-self-review``
@@ -698,9 +687,7 @@ def _apply_commit_strategy_none(
     return filtered, fired
 
 
-def _apply_pre_push_quality_gate_inactive(
-    phase_6_candidates: list[str], plan_id: str
-) -> tuple[list[str], bool]:
+def _apply_pre_push_quality_gate_inactive(phase_6_candidates: list[str], plan_id: str) -> tuple[list[str], bool]:
     """Pre-filter: drop ``pre-push-quality-gate`` when activation conditions fail.
 
     Activation requires BOTH:
@@ -735,9 +722,7 @@ def _apply_pre_push_quality_gate_inactive(
     return phase_6_candidates, False
 
 
-def _apply_pre_submission_self_review_inactive(
-    phase_6_candidates: list[str], plan_id: str
-) -> tuple[list[str], bool]:
+def _apply_pre_submission_self_review_inactive(phase_6_candidates: list[str], plan_id: str) -> tuple[list[str], bool]:
     """Pre-filter: drop ``pre-submission-self-review`` when activation conditions fail.
 
     Activation requires ``references.json::modified_files`` to be non-empty.
@@ -805,9 +790,7 @@ def _read_ci_provider() -> str | None:
     return None
 
 
-def _apply_bot_enforcement_guard(
-    phase_6_steps: list[str], plan_id: str
-) -> str | None:
+def _apply_bot_enforcement_guard(phase_6_steps: list[str], plan_id: str) -> str | None:
     """Composition-time defense-in-depth: keep ``automated-review`` on GitHub/GitLab plans.
 
     Lesson ``2026-04-27-18-003`` requires PR-review bots to be effectively
@@ -935,10 +918,7 @@ def _validate_automated_review_placement(phase_6_steps: list[str]) -> str | None
         if index >= review_index:
             break
         if step in plan_mutating:
-            return (
-                f'automated-review at index {review_index} must precede '
-                f'{step} at index {index}'
-            )
+            return f'automated-review at index {review_index} must precede {step} at index {index}'
     return None
 
 
@@ -1009,14 +989,12 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # Each pre-filter returns (filtered_candidates, fired_flag); we log a
     # dedicated decision-log line per fired pre-filter in addition to the row
     # log line emitted by _log_decision below.
-    phase_6_candidates, commit_push_omitted = _apply_commit_strategy_none(
-        phase_6_candidates, commit_strategy
-    )
+    phase_6_candidates, commit_push_omitted = _apply_commit_strategy_none(phase_6_candidates, commit_strategy)
     phase_6_candidates, pre_push_quality_gate_omitted = _apply_pre_push_quality_gate_inactive(
         phase_6_candidates, plan_id
     )
-    phase_6_candidates, pre_submission_self_review_omitted = (
-        _apply_pre_submission_self_review_inactive(phase_6_candidates, plan_id)
+    phase_6_candidates, pre_submission_self_review_omitted = _apply_pre_submission_self_review_inactive(
+        phase_6_candidates, plan_id
     )
 
     affected_files_count = max(0, int(args.affected_files_count or 0))
@@ -1222,9 +1200,7 @@ def cmd_validate(args: argparse.Namespace) -> dict[str, Any] | None:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description='Manage the per-plan execution manifest', allow_abbrev=False
-    )
+    parser = argparse.ArgumentParser(description='Manage the per-plan execution manifest', allow_abbrev=False)
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     compose_parser = subparsers.add_parser('compose', help='Compose and write execution.toon', allow_abbrev=False)

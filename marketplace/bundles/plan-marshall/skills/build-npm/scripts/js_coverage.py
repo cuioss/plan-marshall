@@ -270,7 +270,9 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # analyze subcommand
-    analyze_parser = subparsers.add_parser('analyze', help='Analyze JavaScript test coverage reports', allow_abbrev=False)
+    analyze_parser = subparsers.add_parser(
+        'analyze', help='Analyze JavaScript test coverage reports', allow_abbrev=False
+    )
     analyze_parser.add_argument('--report', required=True, help='Path to coverage report file')
     analyze_parser.add_argument(
         '--format', choices=['json', 'lcov'], default='json', help='Report format: json (default) or lcov'

@@ -381,9 +381,7 @@ def main() -> int:
     """CLI entry point for extension discovery operations."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description='Extension discovery and configuration operations', allow_abbrev=False
-    )
+    parser = argparse.ArgumentParser(description='Extension discovery and configuration operations', allow_abbrev=False)
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # apply-config-defaults subcommand

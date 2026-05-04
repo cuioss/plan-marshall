@@ -19,6 +19,8 @@ Identify:
 2. **Target location** — Where new code should be created
 3. **Dependencies** — What existing code the new feature interacts with
 
+> **Note**: When a feature deliverable also deletes or renames a public symbol it is replacing (e.g., "add new helper X, removing legacy helper Y"), run the consumer sweep documented in [`consumer-sweep.md`](consumer-sweep.md) before finalizing the deliverable's `Affected files` list.
+
 Log findings:
 
 ```bash

@@ -178,9 +178,7 @@ def _set_status(plan_id: str, number: int, status: str) -> None:
 
 def _finalize_step(plan_id: str, task: int, step: int, outcome: str) -> None:
     """Mark a step with outcome (done/skipped/failed)."""
-    result = cmd_finalize_step(
-        Namespace(plan_id=plan_id, task_number=task, step=step, outcome=outcome)
-    )
+    result = cmd_finalize_step(Namespace(plan_id=plan_id, task_number=task, step=step, outcome=outcome))
     assert result.get('status') == 'success', f'finalize-step failed: {result}'
 
 
@@ -264,9 +262,7 @@ def test_linear_graph_returns_16char_hex_hash(stub_run_script) -> None:
 
     assert isinstance(result, str), f'expected hash string, got {result!r}'
     assert len(result) == 16, f'expected 16-char hash, got {len(result)} chars: {result}'
-    assert all(c in '0123456789abcdef' for c in result), (
-        f'expected lowercase hex, got {result!r}'
-    )
+    assert all(c in '0123456789abcdef' for c in result), f'expected lowercase hex, got {result!r}'
 
 
 def test_linear_graph_hash_changes_when_edges_change(stub_run_script) -> None:
@@ -274,21 +270,15 @@ def test_linear_graph_hash_changes_when_edges_change(stub_run_script) -> None:
     with PlanContext(plan_id='inv-linear-a'):
         _add_task('inv-linear-a', 'T1', 1)
         _add_task('inv-linear-a', 'T2', 2, depends_on='TASK-1')
-        hash_two_nodes = inv._capture_task_graph_valid(
-            'inv-linear-a', {}, '5-execute'
-        )
+        hash_two_nodes = inv._capture_task_graph_valid('inv-linear-a', {}, '5-execute')
 
     with PlanContext(plan_id='inv-linear-b'):
         _add_task('inv-linear-b', 'T1', 1)
         _add_task('inv-linear-b', 'T2', 2, depends_on='TASK-1')
         _add_task('inv-linear-b', 'T3', 3, depends_on='TASK-2')
-        hash_three_nodes = inv._capture_task_graph_valid(
-            'inv-linear-b', {}, '5-execute'
-        )
+        hash_three_nodes = inv._capture_task_graph_valid('inv-linear-b', {}, '5-execute')
 
-    assert hash_two_nodes != hash_three_nodes, (
-        'hash must change when an edge is added'
-    )
+    assert hash_two_nodes != hash_three_nodes, 'hash must change when an edge is added'
 
 
 def test_linear_graph_hash_is_deterministic_across_runs(stub_run_script) -> None:
@@ -321,9 +311,7 @@ def test_branching_graph_returns_different_deterministic_hash(stub_run_script) -
         _add_task('inv-branch-1', 'T2', 2, depends_on='TASK-1')
         _add_task('inv-branch-1', 'T3', 3, depends_on='TASK-1')
         _add_task('inv-branch-1', 'T4', 4, depends_on='TASK-2')
-        branching_a = inv._capture_task_graph_valid(
-            'inv-branch-1', {}, '5-execute'
-        )
+        branching_a = inv._capture_task_graph_valid('inv-branch-1', {}, '5-execute')
 
     # Branching run #2 (same topology) — must match for determinism.
     with PlanContext(plan_id='inv-branch-2'):
@@ -331,9 +319,7 @@ def test_branching_graph_returns_different_deterministic_hash(stub_run_script) -
         _add_task('inv-branch-2', 'T2', 2, depends_on='TASK-1')
         _add_task('inv-branch-2', 'T3', 3, depends_on='TASK-1')
         _add_task('inv-branch-2', 'T4', 4, depends_on='TASK-2')
-        branching_b = inv._capture_task_graph_valid(
-            'inv-branch-2', {}, '5-execute'
-        )
+        branching_b = inv._capture_task_graph_valid('inv-branch-2', {}, '5-execute')
 
     # Linear run of same node count — must differ because edges differ.
     with PlanContext(plan_id='inv-branch-linear'):
@@ -341,17 +327,11 @@ def test_branching_graph_returns_different_deterministic_hash(stub_run_script) -
         _add_task('inv-branch-linear', 'T2', 2, depends_on='TASK-1')
         _add_task('inv-branch-linear', 'T3', 3, depends_on='TASK-2')
         _add_task('inv-branch-linear', 'T4', 4, depends_on='TASK-3')
-        linear_same_size = inv._capture_task_graph_valid(
-            'inv-branch-linear', {}, '5-execute'
-        )
+        linear_same_size = inv._capture_task_graph_valid('inv-branch-linear', {}, '5-execute')
 
     assert isinstance(branching_a, str) and len(branching_a) == 16
-    assert branching_a == branching_b, (
-        'branching graph hash must be deterministic across runs'
-    )
-    assert branching_a != linear_same_size, (
-        'branching graph must hash differently than linear graph of same size'
-    )
+    assert branching_a == branching_b, 'branching graph hash must be deterministic across runs'
+    assert branching_a != linear_same_size, 'branching graph must hash differently than linear graph of same size'
 
 
 # =============================================================================
@@ -395,9 +375,7 @@ def test_three_node_cycle_raises_with_full_cycle_path(stub_run_script) -> None:
     assert err.cycle, 'cycle must be non-empty'
     # All three task identifiers must appear somewhere in the cycle path.
     for expected in ('TASK-1', 'TASK-2', 'TASK-3'):
-        assert expected in err.cycle, (
-            f'cycle must contain {expected}, got {err.cycle}'
-        )
+        assert expected in err.cycle, f'cycle must contain {expected}, got {err.cycle}'
     assert err.dangling == [], f'dangling must be empty, got {err.dangling}'
 
 
@@ -420,9 +398,7 @@ def test_dangling_reference_raises_with_non_empty_dangling(stub_run_script) -> N
     entry = err.dangling[0]
     assert isinstance(entry, dict), f'expected dict entry, got {entry!r}'
     assert entry.get('task') == 'TASK-1'
-    assert 'TASK-99' in str(entry.get('missing', '')), (
-        f'expected TASK-99 in missing, got {entry}'
-    )
+    assert 'TASK-99' in str(entry.get('missing', '')), f'expected TASK-99 in missing, got {entry}'
     assert err.cycle == [], f'cycle must be empty for pure dangling, got {err.cycle}'
 
 
@@ -447,12 +423,8 @@ def test_empty_task_list_returns_stable_zero_edge_hash(stub_run_script) -> None:
     with PlanContext(plan_id='inv-empty-vs-edge'):
         _add_task('inv-empty-vs-edge', 'T1', 1)
         _add_task('inv-empty-vs-edge', 'T2', 2, depends_on='TASK-1')
-        one_edge_hash = inv._capture_task_graph_valid(
-            'inv-empty-vs-edge', {}, '5-execute'
-        )
-    assert result_a != one_edge_hash, (
-        'zero-edge hash must differ from a graph with edges'
-    )
+        one_edge_hash = inv._capture_task_graph_valid('inv-empty-vs-edge', {}, '5-execute')
+    assert result_a != one_edge_hash, 'zero-edge hash must differ from a graph with edges'
 
 
 # =============================================================================
@@ -460,9 +432,7 @@ def test_empty_task_list_returns_stable_zero_edge_hash(stub_run_script) -> None:
 # =============================================================================
 
 
-def test_capture_all_surfaces_task_graph_invalid(
-    stub_run_script, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_capture_all_surfaces_task_graph_invalid(stub_run_script, monkeypatch: pytest.MonkeyPatch) -> None:
     """capture_all must propagate TaskGraphInvalid from the broken-graph fixture.
 
     We narrow ``INVARIANTS`` to the real ``task_graph_valid`` entry so the
@@ -502,22 +472,18 @@ def test_capture_all_surfaces_task_graph_invalid(
 def test_state_hash_non_empty_plan_differs_from_empty(stub_run_script) -> None:
     """A plan with ≥1 task must not hash to the same value as an empty plan."""
     with PlanContext(plan_id='inv-state-empty'):
-        empty_hash = inv._capture_task_state_hash(
-            'inv-state-empty', {}, '5-execute'
-        )
+        empty_hash = inv._capture_task_state_hash('inv-state-empty', {}, '5-execute')
 
     with PlanContext(plan_id='inv-state-one-task'):
         _add_task('inv-state-one-task', 'T1', 1)
-        one_task_hash = inv._capture_task_state_hash(
-            'inv-state-one-task', {}, '5-execute'
-        )
+        one_task_hash = inv._capture_task_state_hash('inv-state-one-task', {}, '5-execute')
 
     assert isinstance(empty_hash, str) and len(empty_hash) == 16
     assert isinstance(one_task_hash, str) and len(one_task_hash) == 16
     assert all(c in '0123456789abcdef' for c in one_task_hash)
     assert one_task_hash != empty_hash, (
         'hash for a 1-task plan must differ from the zero-task hash — '
-        "if this fails, _capture_task_state_hash is reading the wrong "
+        'if this fails, _capture_task_state_hash is reading the wrong '
         'key from manage-tasks list (should be tasks_table, not tasks)'
     )
 
@@ -531,18 +497,11 @@ def test_state_hash_changes_when_task_status_changes(stub_run_script) -> None:
     """Updating a task's status field must change the captured hash."""
     with PlanContext(plan_id='inv-state-status'):
         _add_task('inv-state-status', 'T1', 1)
-        before = inv._capture_task_state_hash(
-            'inv-state-status', {}, '5-execute'
-        )
+        before = inv._capture_task_state_hash('inv-state-status', {}, '5-execute')
         _set_status('inv-state-status', 1, 'in_progress')
-        after = inv._capture_task_state_hash(
-            'inv-state-status', {}, '5-execute'
-        )
+        after = inv._capture_task_state_hash('inv-state-status', {}, '5-execute')
 
-    assert before != after, (
-        'hash must change when a task status transitions '
-        'pending -> in_progress'
-    )
+    assert before != after, 'hash must change when a task status transitions pending -> in_progress'
 
 
 # =============================================================================
@@ -555,17 +514,11 @@ def test_state_hash_changes_when_depends_on_changes(stub_run_script) -> None:
     with PlanContext(plan_id='inv-state-deps'):
         _add_task('inv-state-deps', 'T1', 1)
         _add_task('inv-state-deps', 'T2', 2)
-        before = inv._capture_task_state_hash(
-            'inv-state-deps', {}, '5-execute'
-        )
+        before = inv._capture_task_state_hash('inv-state-deps', {}, '5-execute')
         _set_depends_on('inv-state-deps', 2, ['TASK-1'])
-        after = inv._capture_task_state_hash(
-            'inv-state-deps', {}, '5-execute'
-        )
+        after = inv._capture_task_state_hash('inv-state-deps', {}, '5-execute')
 
-    assert before != after, (
-        'hash must change when a task acquires a new depends_on entry'
-    )
+    assert before != after, 'hash must change when a task acquires a new depends_on entry'
 
 
 # =============================================================================
@@ -577,17 +530,11 @@ def test_state_hash_changes_when_step_status_changes(stub_run_script) -> None:
     """Marking a step done via finalize-step must change the captured hash."""
     with PlanContext(plan_id='inv-state-step'):
         _add_task('inv-state-step', 'T1', 1)
-        before = inv._capture_task_state_hash(
-            'inv-state-step', {}, '5-execute'
-        )
+        before = inv._capture_task_state_hash('inv-state-step', {}, '5-execute')
         _finalize_step('inv-state-step', task=1, step=1, outcome='done')
-        after = inv._capture_task_state_hash(
-            'inv-state-step', {}, '5-execute'
-        )
+        after = inv._capture_task_state_hash('inv-state-step', {}, '5-execute')
 
-    assert before != after, (
-        'hash must change when a step transitions pending -> done'
-    )
+    assert before != after, 'hash must change when a step transitions pending -> done'
 
 
 # =============================================================================
@@ -600,16 +547,10 @@ def test_state_hash_is_stable_for_no_op_recapture(stub_run_script) -> None:
     with PlanContext(plan_id='inv-state-noop'):
         _add_task('inv-state-noop', 'T1', 1)
         _add_task('inv-state-noop', 'T2', 2, depends_on='TASK-1')
-        first = inv._capture_task_state_hash(
-            'inv-state-noop', {}, '5-execute'
-        )
-        second = inv._capture_task_state_hash(
-            'inv-state-noop', {}, '5-execute'
-        )
+        first = inv._capture_task_state_hash('inv-state-noop', {}, '5-execute')
+        second = inv._capture_task_state_hash('inv-state-noop', {}, '5-execute')
 
-    assert first == second, (
-        'recapture without intervening state changes must yield the same hash'
-    )
+    assert first == second, 'recapture without intervening state changes must yield the same hash'
 
 
 # =============================================================================
@@ -620,19 +561,13 @@ def test_state_hash_is_stable_for_no_op_recapture(stub_run_script) -> None:
 def test_state_hash_empty_plan_returns_stable_hash(stub_run_script) -> None:
     """Two empty plans must produce the same zero-task hash without raising."""
     with PlanContext(plan_id='inv-state-empty-a'):
-        hash_a = inv._capture_task_state_hash(
-            'inv-state-empty-a', {}, '5-execute'
-        )
+        hash_a = inv._capture_task_state_hash('inv-state-empty-a', {}, '5-execute')
 
     with PlanContext(plan_id='inv-state-empty-b'):
-        hash_b = inv._capture_task_state_hash(
-            'inv-state-empty-b', {}, '5-execute'
-        )
+        hash_b = inv._capture_task_state_hash('inv-state-empty-b', {}, '5-execute')
 
     assert isinstance(hash_a, str) and len(hash_a) == 16
-    assert hash_a == hash_b, (
-        'zero-task hash must be stable across plans (deterministic empty state)'
-    )
+    assert hash_a == hash_b, 'zero-task hash must be stable across plans (deterministic empty state)'
 
 
 # =============================================================================
@@ -648,9 +583,7 @@ def test_state_hash_empty_plan_returns_stable_hash(stub_run_script) -> None:
 
 
 @pytest.mark.parametrize('pending_count', [0, 1, 2, 3])
-def test_pending_tasks_count_returns_pending_row_count(
-    stub_run_script, pending_count: int
-) -> None:
+def test_pending_tasks_count_returns_pending_row_count(stub_run_script, pending_count: int) -> None:
     """``_capture_pending_tasks_count`` must return the count of pending tasks.
 
     Seeds N tasks via the manage-tasks fixture flow, optionally marks some
@@ -671,12 +604,8 @@ def test_pending_tasks_count_returns_pending_row_count(
 
         result = inv._capture_pending_tasks_count(plan_id, {}, '5-execute')
 
-    assert isinstance(result, int), (
-        f'expected int count, got {type(result).__name__}: {result!r}'
-    )
-    assert result == pending_count, (
-        f'expected {pending_count} pending, got {result}'
-    )
+    assert isinstance(result, int), f'expected int count, got {type(result).__name__}: {result!r}'
+    assert result == pending_count, f'expected {pending_count} pending, got {result}'
 
 
 def test_pending_tasks_count_drift_across_phases(stub_run_script) -> None:
@@ -689,30 +618,22 @@ def test_pending_tasks_count_drift_across_phases(stub_run_script) -> None:
     with PlanContext(plan_id=plan_id):
         _add_task(plan_id, 'T1', 1)
         _add_task(plan_id, 'T2', 2)
-        during_execute = inv._capture_pending_tasks_count(
-            plan_id, {}, '5-execute'
-        )
+        during_execute = inv._capture_pending_tasks_count(plan_id, {}, '5-execute')
 
         # Complete every task — pending queue drains to zero.
         _set_status(plan_id, 1, 'done')
         _set_status(plan_id, 2, 'done')
-        after_execute = inv._capture_pending_tasks_count(
-            plan_id, {}, '6-finalize'
-        )
+        after_execute = inv._capture_pending_tasks_count(plan_id, {}, '6-finalize')
 
     assert during_execute == 2, f'expected 2 pending mid-execute, got {during_execute}'
-    assert after_execute == 0, (
-        f'expected 0 pending after completion, got {after_execute}'
-    )
+    assert after_execute == 0, f'expected 0 pending after completion, got {after_execute}'
     assert during_execute != after_execute, (
         'pending_tasks_count must reflect drift between phases — '
         'a non-changing value would mean the capture is reading stale data'
     )
 
 
-def test_pending_tasks_count_reachable_via_capture_all(
-    stub_run_script, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_pending_tasks_count_reachable_via_capture_all(stub_run_script, monkeypatch: pytest.MonkeyPatch) -> None:
     """``capture_all`` must surface ``pending_tasks_count`` from the registry.
 
     Narrows ``INVARIANTS`` to just the pending entry so the other invariants
@@ -746,9 +667,7 @@ def test_pending_tasks_count_registry_tuple_present() -> None:
     without this entry the phase-5-execute transition guard cannot fire.
     """
     names = [name for name, _, _ in inv.INVARIANTS]
-    assert 'pending_tasks_count' in names, (
-        f'pending_tasks_count must be registered, got {names}'
-    )
+    assert 'pending_tasks_count' in names, f'pending_tasks_count must be registered, got {names}'
     entry = next(t for t in inv.INVARIANTS if t[0] == 'pending_tasks_count')
     name, applies_fn, capture_fn = entry
     assert capture_fn is inv._capture_pending_tasks_count

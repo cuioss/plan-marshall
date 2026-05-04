@@ -20,7 +20,13 @@ SCRIPT_PATH = get_script_path('pm-documents', 'manage-interface', 'manage-interf
 # Tier 2 direct imports - load hyphenated module via importlib
 _MANAGE_IFACE_SCRIPT = str(
     Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'pm-documents' / 'skills' / 'manage-interface' / 'scripts' / 'manage-interface.py'
+    / 'marketplace'
+    / 'bundles'
+    / 'pm-documents'
+    / 'skills'
+    / 'manage-interface'
+    / 'scripts'
+    / 'manage-interface.py'
 )
 _spec = importlib.util.spec_from_file_location('manage_interface', _MANAGE_IFACE_SCRIPT)
 _mod = importlib.util.module_from_spec(_spec)
@@ -176,14 +182,12 @@ class TestManageInterface(unittest.TestCase):
 
     def test_cli_invalid_interface_type(self):
         """Test that invalid type is rejected via CLI."""
-        result = run_script(SCRIPT_PATH, 'create', '--title', 'Bad Interface', '--type', 'INVALID',
-                            cwd=self.temp_dir)
+        result = run_script(SCRIPT_PATH, 'create', '--title', 'Bad Interface', '--type', 'INVALID', cwd=self.temp_dir)
         self.assertNotEqual(result.returncode, 0)
 
     def test_cli_create_and_list(self):
         """Test CLI plumbing: create then list via subprocess."""
-        result = run_script(SCRIPT_PATH, 'create', '--title', 'CLI Test', '--type', 'REST_API',
-                            cwd=self.temp_dir)
+        result = run_script(SCRIPT_PATH, 'create', '--title', 'CLI Test', '--type', 'REST_API', cwd=self.temp_dir)
         self.assertEqual(result.returncode, 0)
         self.assertIn('success', result.stdout)
 

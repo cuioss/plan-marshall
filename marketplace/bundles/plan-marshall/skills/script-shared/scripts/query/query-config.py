@@ -48,13 +48,17 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest='command', required=True, help='Query command')
 
     # --- resolve-domain-skills ---
-    p_rds = subparsers.add_parser('resolve-domain-skills', help='Resolve skills for domain and profile', allow_abbrev=False)
+    p_rds = subparsers.add_parser(
+        'resolve-domain-skills', help='Resolve skills for domain and profile', allow_abbrev=False
+    )
     p_rds.add_argument('--domain', required=True, help='Domain name (java, javascript)')
     p_rds.add_argument('--profile', required=True, help='Profile name (implementation, testing)')
 
     # --- resolve-workflow-skill-extension ---
     p_rwse = subparsers.add_parser(
-        'resolve-workflow-skill-extension', help='Resolve workflow skill extension for domain and type', allow_abbrev=False
+        'resolve-workflow-skill-extension',
+        help='Resolve workflow skill extension for domain and type',
+        allow_abbrev=False,
     )
     p_rwse.add_argument('--domain', required=True, help='Domain name (java, javascript, etc.)')
     p_rwse.add_argument('--type', required=True, choices=['outline', 'triage'], help='Extension type (outline, triage)')
@@ -67,11 +71,15 @@ def main() -> int:
 
     # --- configure-execute-task-skills ---
     subparsers.add_parser(
-        'configure-execute-task-skills', help='Configure execute-task skills from discovered profiles', allow_abbrev=False
+        'configure-execute-task-skills',
+        help='Configure execute-task skills from discovered profiles',
+        allow_abbrev=False,
     )
 
     # --- resolve-execute-task-skill ---
-    p_rte = subparsers.add_parser('resolve-execute-task-skill', help='Resolve execute-task skill for a profile', allow_abbrev=False)
+    p_rte = subparsers.add_parser(
+        'resolve-execute-task-skill', help='Resolve execute-task skill for a profile', allow_abbrev=False
+    )
     p_rte.add_argument('--profile', required=True, help='Profile name (e.g., implementation, module_testing)')
 
     # --- list-recipes ---

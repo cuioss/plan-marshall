@@ -212,9 +212,7 @@ class TestFormatCommit(unittest.TestCase):
         long_scope = 'very-long-module-name'
         long_subject = 'a' * 50  # type(scope): subject -> 5 + 23 + 4 + 50 = 82 chars
         result = cmd_format_commit(
-            Namespace(
-                commit_type='feat', scope=long_scope, subject=long_subject, body=None, breaking=None, footer=None
-            )
+            Namespace(commit_type='feat', scope=long_scope, subject=long_subject, body=None, breaking=None, footer=None)
         )
         self.assertFalse(result['validation']['valid'])
         self.assertTrue(any('Header' in w for w in result['validation']['warnings']))

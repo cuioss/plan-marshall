@@ -32,6 +32,7 @@ TOOLS = {
     'glab': True,
 }
 
+
 def _derive_provider_key(skill_name: str) -> str | None:
     """Derive provider key from skill_name dynamically.
 
@@ -41,7 +42,7 @@ def _derive_provider_key(skill_name: str) -> str | None:
     name = skill_name.split(':')[-1] if ':' in skill_name else skill_name
     prefix = 'workflow-integration-'
     if name.startswith(prefix):
-        return name[len(prefix):]
+        return name[len(prefix) :]
     return None
 
 
@@ -66,6 +67,7 @@ def _discover_provider_tools() -> dict[str, str | None]:
         verify_cmd = p.get('verify_command', '')
         if verify_cmd:
             import shlex
+
             tool = shlex.split(verify_cmd)[0]
             mapping[provider_key] = tool
 
@@ -157,12 +159,14 @@ def _discover_detection_patterns() -> list[dict]:
         detection = p.get('detection', {})
         if not provider_key or not detection:
             continue
-        patterns.append({
-            'provider_key': provider_key,
-            'url_patterns': detection.get('url_patterns', []),
-            'directory_markers': detection.get('directory_markers', []),
-            'enterprise_patterns': detection.get('enterprise_patterns', []),
-        })
+        patterns.append(
+            {
+                'provider_key': provider_key,
+                'url_patterns': detection.get('url_patterns', []),
+                'directory_markers': detection.get('directory_markers', []),
+                'enterprise_patterns': detection.get('enterprise_patterns', []),
+            }
+        )
 
     return patterns
 
@@ -373,14 +377,18 @@ def cmd_verify_all(args: argparse.Namespace) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='CI health verification for detecting providers and verifying tools', allow_abbrev=False)
+    parser = argparse.ArgumentParser(
+        description='CI health verification for detecting providers and verifying tools', allow_abbrev=False
+    )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # detect subcommand
     subparsers.add_parser('detect', help='Detect CI provider from repository configuration', allow_abbrev=False)
 
     # verify subcommand
-    verify_parser = subparsers.add_parser('verify', help='Verify CLI tools are installed and authenticated', allow_abbrev=False)
+    verify_parser = subparsers.add_parser(
+        'verify', help='Verify CLI tools are installed and authenticated', allow_abbrev=False
+    )
     verify_parser.add_argument('--tool', type=str, help='Specific tool to verify (git, gh, glab)')
 
     # status subcommand

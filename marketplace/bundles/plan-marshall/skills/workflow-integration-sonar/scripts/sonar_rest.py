@@ -45,10 +45,12 @@ def cmd_search(args) -> int:
         result = client.get('/api/issues/search', params=params)
         client.close()
     except RestClientError as e:
-        output_toon({
-            'status': 'error',
-            'message': f'Sonar API error: HTTP {e.status}',
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'message': f'Sonar API error: HTTP {e.status}',
+            }
+        )
         return 0
 
     issues = result.get('issues', [])
@@ -73,17 +75,19 @@ def cmd_search(args) -> int:
         typ = entry['type']
         by_type[typ] = by_type.get(typ, 0) + 1
 
-    output_toon({
-        'status': 'success',
-        'project_key': args.project,
-        'pull_request_id': args.pr or 'none',
-        'issues': formatted,
-        'statistics': {
-            'total_issues_fetched': len(formatted),
-            'by_severity': by_severity,
-            'by_type': by_type,
-        },
-    })
+    output_toon(
+        {
+            'status': 'success',
+            'project_key': args.project,
+            'pull_request_id': args.pr or 'none',
+            'issues': formatted,
+            'statistics': {
+                'total_issues_fetched': len(formatted),
+                'by_severity': by_severity,
+                'by_type': by_type,
+            },
+        }
+    )
     return 0
 
 
@@ -92,24 +96,31 @@ def cmd_transition(args) -> int:
     client = get_authenticated_client(SKILL_NAME)
 
     try:
-        client.post('/api/issues/do_transition', body={
-            'issue': args.issue_key,
-            'transition': args.transition,
-        })
+        client.post(
+            '/api/issues/do_transition',
+            body={
+                'issue': args.issue_key,
+                'transition': args.transition,
+            },
+        )
         client.close()
     except RestClientError as e:
-        output_toon({
-            'status': 'error',
-            'message': f'Sonar API error: HTTP {e.status}',
-            'issue_key': args.issue_key,
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'message': f'Sonar API error: HTTP {e.status}',
+                'issue_key': args.issue_key,
+            }
+        )
         return 0
 
-    output_toon({
-        'status': 'success',
-        'issue_key': args.issue_key,
-        'transition': args.transition,
-    })
+    output_toon(
+        {
+            'status': 'success',
+            'issue_key': args.issue_key,
+            'transition': args.transition,
+        }
+    )
     return 0
 
 
@@ -128,10 +139,12 @@ def cmd_metrics(args) -> int:
         result = client.get('/api/measures/component', params=params)
         client.close()
     except RestClientError as e:
-        output_toon({
-            'status': 'error',
-            'message': f'Sonar API error: HTTP {e.status}',
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'message': f'Sonar API error: HTTP {e.status}',
+            }
+        )
         return 0
 
     component = result.get('component', {})
@@ -139,12 +152,14 @@ def cmd_metrics(args) -> int:
     for measure in component.get('measures', []):
         measures[measure.get('metric', '')] = measure.get('value', '')
 
-    output_toon({
-        'status': 'success',
-        'project_key': args.project,
-        'component': args.component,
-        'measures': measures,
-    })
+    output_toon(
+        {
+            'status': 'success',
+            'project_key': args.project,
+            'component': args.component,
+            'measures': measures,
+        }
+    )
     return 0
 
 
@@ -172,9 +187,9 @@ def main() -> int:
     # transition
     transition_parser = subparsers.add_parser('transition', help='Change issue status', allow_abbrev=False)
     transition_parser.add_argument('--issue-key', required=True, help='Sonar issue key')
-    transition_parser.add_argument('--transition', required=True,
-                                   choices=['accept', 'falsepositive', 'wontfix'],
-                                   help='Transition to apply')
+    transition_parser.add_argument(
+        '--transition', required=True, choices=['accept', 'falsepositive', 'wontfix'], help='Transition to apply'
+    )
 
     # metrics
     metrics_parser = subparsers.add_parser('metrics', help='Get component metrics', allow_abbrev=False)

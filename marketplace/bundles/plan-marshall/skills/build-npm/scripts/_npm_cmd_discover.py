@@ -207,7 +207,9 @@ def _resolve_pnpm_workspaces(root: Path) -> list[str]:
 # =============================================================================
 
 
-def _build_module(module_path: Path, project_root: Path, pkg_data: dict, *, is_root: bool, standalone: bool = False) -> dict | None:
+def _build_module(
+    module_path: Path, project_root: Path, pkg_data: dict, *, is_root: bool, standalone: bool = False
+) -> dict | None:
     """Build module dict from package.json data and file system analysis.
 
     Uses build_module_base() from extension-api for consistent name/path/README

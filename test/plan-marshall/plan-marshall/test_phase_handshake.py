@@ -217,9 +217,7 @@ def test_capture_override_requires_reason(stubbed_invariants, stub_metadata) -> 
 
 def test_capture_override_with_reason_stores_flag(stubbed_invariants, stub_metadata) -> None:
     with PlanContext(plan_id='cap-d'):
-        result = cmds.cmd_capture(
-            _ns(plan_id='cap-d', phase='5-execute', override=True, reason='manual commit')
-        )
+        result = cmds.cmd_capture(_ns(plan_id='cap-d', phase='5-execute', override=True, reason='manual commit'))
         assert result['status'] == 'success'
         assert result['override'] is True
         row = store.get_row('cap-d', '5-execute')
@@ -285,9 +283,7 @@ def test_verify_drift_config_hash(stubbed_invariants, stub_metadata) -> None:
         assert 'config_hash' in diff_names
 
 
-def test_capture_persists_pending_tasks_count_to_handshakes_toon(
-    stubbed_invariants, stub_metadata
-) -> None:
+def test_capture_persists_pending_tasks_count_to_handshakes_toon(stubbed_invariants, stub_metadata) -> None:
     """``pending_tasks_count`` must round-trip through handshakes.toon.
 
     The HANDSHAKE_FIELDS column list now includes ``pending_tasks_count`` —
@@ -305,9 +301,7 @@ def test_capture_persists_pending_tasks_count_to_handshakes_toon(
         # Persisted row has the column populated, not blanked out.
         row = store.get_row('cap-pending-persist', '5-execute')
         assert row is not None
-        assert 'pending_tasks_count' in row, (
-            f'pending_tasks_count must be a HANDSHAKE_FIELDS column, got {list(row)}'
-        )
+        assert 'pending_tasks_count' in row, f'pending_tasks_count must be a HANDSHAKE_FIELDS column, got {list(row)}'
         assert row['pending_tasks_count'] in (4, '4'), row
 
 
@@ -393,8 +387,7 @@ def test_parse_required_steps_ignores_blank_and_comments(tmp_path: Path) -> None
     f = tmp_path / 'required-steps.md'
     _write_required_steps(
         f,
-        '\n# Header line\n\nSome prose description.\n\n- one\n\n- two\n\n'
-        'Another paragraph.\n- three\n',
+        '\n# Header line\n\nSome prose description.\n\n- one\n\n- two\n\nAnother paragraph.\n- three\n',
     )
     assert inv._parse_required_steps(f) == ['one', 'two', 'three']
 
@@ -427,23 +420,14 @@ def test_parse_required_steps_missing_file_returns_empty(tmp_path: Path) -> None
 
 def test_resolve_required_steps_path_exists(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     bundles = tmp_path / 'bundles'
-    target = (
-        bundles
-        / 'plan-marshall'
-        / 'skills'
-        / 'phase-6-finalize'
-        / 'standards'
-        / 'required-steps.md'
-    )
+    target = bundles / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'required-steps.md'
     _write_required_steps(target, '- commit-push\n')
     monkeypatch.setattr(inv, 'find_marketplace_path', lambda: bundles)
     resolved = inv._resolve_required_steps_path('6-finalize')
     assert resolved == target
 
 
-def test_resolve_required_steps_path_missing_file(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_resolve_required_steps_path_missing_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     bundles = tmp_path / 'bundles'
     (bundles / 'plan-marshall' / 'skills' / 'phase-9-ghost' / 'standards').mkdir(parents=True)
     monkeypatch.setattr(inv, 'find_marketplace_path', lambda: bundles)
@@ -488,11 +472,7 @@ def test_capture_phase_steps_all_done(required_steps_path: Path) -> None:
 
 
 def test_capture_phase_steps_missing_step(required_steps_path: Path) -> None:
-    metadata = {
-        'phase_steps': {
-            '5-execute': {'step-a': {'outcome': 'done', 'display_detail': None}}
-        }
-    }
+    metadata = {'phase_steps': {'5-execute': {'step-a': {'outcome': 'done', 'display_detail': None}}}}
     with pytest.raises(inv.PhaseStepsIncomplete) as excinfo:
         inv._capture_phase_steps_complete('pid', metadata, '5-execute')
     assert excinfo.value.missing == ['step-b']
@@ -540,9 +520,7 @@ def test_capture_phase_steps_no_required_file_returns_none(
     assert result is None
 
 
-def test_capture_phase_steps_empty_required_file_returns_none(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_capture_phase_steps_empty_required_file_returns_none(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     f = tmp_path / 'required-steps.md'
     _write_required_steps(f, '# Only prose, no bullets\n')
     monkeypatch.setattr(inv, '_resolve_required_steps_path', lambda _p: f)
@@ -578,9 +556,7 @@ def only_phase_steps_invariant(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cmds, 'INVARIANTS', stubbed)
 
 
-def test_cmd_capture_phase_steps_success(
-    only_phase_steps_invariant, stub_metadata, required_steps_path: Path
-) -> None:
+def test_cmd_capture_phase_steps_success(only_phase_steps_invariant, stub_metadata, required_steps_path: Path) -> None:
     stub_metadata['phase_steps'] = {
         '5-execute': {
             'step-a': {'outcome': 'done', 'display_detail': None},
@@ -600,9 +576,7 @@ def test_cmd_capture_phase_steps_success(
 def test_cmd_capture_phase_steps_incomplete_returns_error(
     only_phase_steps_invariant, stub_metadata, required_steps_path: Path
 ) -> None:
-    stub_metadata['phase_steps'] = {
-        '5-execute': {'step-a': {'outcome': 'done', 'display_detail': None}}
-    }
+    stub_metadata['phase_steps'] = {'5-execute': {'step-a': {'outcome': 'done', 'display_detail': None}}}
     with PlanContext(plan_id='psc-fail'):
         result = cmds.cmd_capture(_ns(plan_id='psc-fail', phase='5-execute'))
         assert result['status'] == 'error'

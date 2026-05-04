@@ -105,16 +105,12 @@ class TestBuildTitle(ScriptTestCase):
 
     def test_plan_active_missing_short_description(self):
         """A None short_description yields the 2-segment plan-active form."""
-        title = set_terminal_title._build_title(
-            'running', 'my-plan', '2-refine', short_description=None
-        )
+        title = set_terminal_title._build_title('running', 'my-plan', '2-refine', short_description=None)
         self.assertEqual(title, '▶ pm:2-refine')
 
     def test_plan_active_empty_short_description(self):
         """An empty-string short_description is treated as missing (no trailing colon)."""
-        title = set_terminal_title._build_title(
-            'running', 'my-plan', '2-refine', short_description=''
-        )
+        title = set_terminal_title._build_title('running', 'my-plan', '2-refine', short_description='')
         self.assertEqual(title, '▶ pm:2-refine')
 
 
@@ -203,16 +199,20 @@ class TestBuildTitleEndToEnd(ScriptTestCase):
     def test_with_env_plan_and_status_file(self):
         plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / PLAN_ID
         _write_status(plan_dir, '3-outline')
-        with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None), \
-             mock.patch.dict(os.environ, {'PLAN_ID': PLAN_ID}, clear=False):
+        with (
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+            mock.patch.dict(os.environ, {'PLAN_ID': PLAN_ID}, clear=False),
+        ):
             title = set_terminal_title.build_title('running', str(self.temp_dir))
         self.assertEqual(title, '▶ pm:3-outline')
 
     def test_with_env_plan_and_short_description(self):
         plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / PLAN_ID
         _write_status(plan_dir, '4-plan', short_description='Refactor_title_handling')
-        with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None), \
-             mock.patch.dict(os.environ, {'PLAN_ID': PLAN_ID}, clear=False):
+        with (
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+            mock.patch.dict(os.environ, {'PLAN_ID': PLAN_ID}, clear=False),
+        ):
             title = set_terminal_title.build_title('running', str(self.temp_dir))
         self.assertEqual(title, '▶ pm:4-plan:Refactor_title_handling')
 
@@ -223,8 +223,10 @@ class TestBuildTitleEndToEnd(ScriptTestCase):
         self.assertEqual(title, '◯ claude')
 
     def test_fallback_when_status_missing(self):
-        with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None), \
-             mock.patch.dict(os.environ, {'PLAN_ID': 'absent-plan'}, clear=False):
+        with (
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+            mock.patch.dict(os.environ, {'PLAN_ID': 'absent-plan'}, clear=False),
+        ):
             title = set_terminal_title.build_title('running', str(self.temp_dir))
         self.assertEqual(title, '▶ claude')
 
@@ -267,8 +269,10 @@ class TestEmitOsc(ScriptTestCase):
         VS Code), _emit_osc must emit the OSC escape to sys.stdout so the
         controlling terminal still sees the title update."""
         fake_stdout = io.StringIO()
-        with mock.patch('builtins.open', side_effect=OSError('no tty')), \
-             mock.patch.object(set_terminal_title.sys, 'stdout', fake_stdout):
+        with (
+            mock.patch('builtins.open', side_effect=OSError('no tty')),
+            mock.patch.object(set_terminal_title.sys, 'stdout', fake_stdout),
+        ):
             set_terminal_title._emit_osc('hello')
 
         captured = fake_stdout.getvalue()
@@ -344,11 +348,13 @@ class TestHookPayloadParsing(ScriptTestCase):
     script = 'set_terminal_title.py'
 
     def test_returns_all_fields_when_present(self):
-        payload = json.dumps({
-            'cwd': '/tmp/repo',
-            'prompt': '/plan-marshall list',
-            'session_id': 'abc-123',
-        })
+        payload = json.dumps(
+            {
+                'cwd': '/tmp/repo',
+                'prompt': '/plan-marshall list',
+                'session_id': 'abc-123',
+            }
+        )
         with mock.patch.object(set_terminal_title.sys, 'stdin', io.StringIO(payload)):
             result = set_terminal_title._read_hook_payload()
         self.assertEqual(result['cwd'], '/tmp/repo')
@@ -509,17 +515,13 @@ class TestActiveCommandState(ScriptTestCase):
         """Captured verbose token `plan-marshall:plan-marshall` renders as `pm`."""
         with mock.patch.dict(os.environ, {'HOME': str(self.temp_dir)}, clear=False):
             set_terminal_title._write_active_command('sess-alias', 'plan-marshall:plan-marshall')
-            self.assertEqual(
-                set_terminal_title._read_active_command('sess-alias'), 'pm'
-            )
+            self.assertEqual(set_terminal_title._read_active_command('sess-alias'), 'pm')
 
     def test_read_passes_unaliased_tokens_through_unchanged(self):
         """Tokens without an alias entry are returned verbatim."""
         with mock.patch.dict(os.environ, {'HOME': str(self.temp_dir)}, clear=False):
             set_terminal_title._write_active_command('sess-plain', 'sync-plugin-cache')
-            self.assertEqual(
-                set_terminal_title._read_active_command('sess-plain'), 'sync-plugin-cache'
-            )
+            self.assertEqual(set_terminal_title._read_active_command('sess-plain'), 'sync-plugin-cache')
 
 
 class TestBuildTitlePrecedence(ScriptTestCase):
@@ -570,8 +572,10 @@ class TestBuildTitleWithSession(ScriptTestCase):
         _write_status(plan_dir, '3-outline')
         with mock.patch.dict(os.environ, {'HOME': str(self.temp_dir)}, clear=False):
             set_terminal_title._write_active_command('sess-1', 'plan-marshall')
-        with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None), \
-             mock.patch.dict(os.environ, {'PLAN_ID': PLAN_ID, 'HOME': str(self.temp_dir)}, clear=False):
+        with (
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+            mock.patch.dict(os.environ, {'PLAN_ID': PLAN_ID, 'HOME': str(self.temp_dir)}, clear=False),
+        ):
             title = set_terminal_title.build_title('running', str(self.temp_dir), 'sess-1')
         self.assertEqual(title, '▶ pm:3-outline')
 
@@ -592,22 +596,31 @@ class TestCliCommandCapture(ScriptTestCase):
     def test_active_command_alias_pm(self):
         """A UserPromptSubmit carrying `/plan-marshall:plan-marshall foo` renders
         the active-command segment of the title as `pm`, not the verbose token."""
-        submit_payload = json.dumps({
-            'cwd': str(self.temp_dir),
-            'prompt': '/plan-marshall:plan-marshall foo',
-            'session_id': 'sess-alias-cli',
-        })
+        submit_payload = json.dumps(
+            {
+                'cwd': str(self.temp_dir),
+                'prompt': '/plan-marshall:plan-marshall foo',
+                'session_id': 'sess-alias-cli',
+            }
+        )
         env_overrides = {'PLAN_ID': '', 'HOME': str(self.temp_dir)}
         result = run_script(
-            SCRIPT_PATH, 'running',
-            input_data=submit_payload, cwd=str(self.temp_dir), env_overrides=env_overrides,
+            SCRIPT_PATH,
+            'running',
+            input_data=submit_payload,
+            cwd=str(self.temp_dir),
+            env_overrides=env_overrides,
         )
         self.assertTrue(result.success, msg=result.stderr)
 
         status_payload = json.dumps({'cwd': str(self.temp_dir), 'session_id': 'sess-alias-cli'})
         result = run_script(
-            SCRIPT_PATH, '--statusline', 'idle',
-            input_data=status_payload, cwd=str(self.temp_dir), env_overrides=env_overrides,
+            SCRIPT_PATH,
+            '--statusline',
+            'idle',
+            input_data=status_payload,
+            cwd=str(self.temp_dir),
+            env_overrides=env_overrides,
         )
         self.assertTrue(result.success, msg=result.stderr)
         self.assertEqual(result.stdout.strip(), '◯ pm')
@@ -615,82 +628,116 @@ class TestCliCommandCapture(ScriptTestCase):
     def test_active_command_no_alias_passthrough(self):
         """A prompt starting with `/sync-plugin-cache` — a token with no alias —
         renders verbatim in the statusline."""
-        submit_payload = json.dumps({
-            'cwd': str(self.temp_dir),
-            'prompt': '/sync-plugin-cache',
-            'session_id': 'sess-plain-cli',
-        })
+        submit_payload = json.dumps(
+            {
+                'cwd': str(self.temp_dir),
+                'prompt': '/sync-plugin-cache',
+                'session_id': 'sess-plain-cli',
+            }
+        )
         env_overrides = {'PLAN_ID': '', 'HOME': str(self.temp_dir)}
         result = run_script(
-            SCRIPT_PATH, 'running',
-            input_data=submit_payload, cwd=str(self.temp_dir), env_overrides=env_overrides,
+            SCRIPT_PATH,
+            'running',
+            input_data=submit_payload,
+            cwd=str(self.temp_dir),
+            env_overrides=env_overrides,
         )
         self.assertTrue(result.success, msg=result.stderr)
 
         status_payload = json.dumps({'cwd': str(self.temp_dir), 'session_id': 'sess-plain-cli'})
         result = run_script(
-            SCRIPT_PATH, '--statusline', 'idle',
-            input_data=status_payload, cwd=str(self.temp_dir), env_overrides=env_overrides,
+            SCRIPT_PATH,
+            '--statusline',
+            'idle',
+            input_data=status_payload,
+            cwd=str(self.temp_dir),
+            env_overrides=env_overrides,
         )
         self.assertTrue(result.success, msg=result.stderr)
         self.assertEqual(result.stdout.strip(), '◯ sync-plugin-cache')
 
     def test_running_captures_command_and_statusline_reads_it(self):
         # 1. Simulate UserPromptSubmit hook: status=running, prompt=/plan-marshall, session_id=s1
-        submit_payload = json.dumps({
-            'cwd': str(self.temp_dir),
-            'prompt': '/plan-marshall action=list',
-            'session_id': 's1',
-        })
+        submit_payload = json.dumps(
+            {
+                'cwd': str(self.temp_dir),
+                'prompt': '/plan-marshall action=list',
+                'session_id': 's1',
+            }
+        )
         env_overrides = {'PLAN_ID': '', 'HOME': str(self.temp_dir)}
         result = run_script(
-            SCRIPT_PATH, 'running',
-            input_data=submit_payload, cwd=str(self.temp_dir), env_overrides=env_overrides,
+            SCRIPT_PATH,
+            'running',
+            input_data=submit_payload,
+            cwd=str(self.temp_dir),
+            env_overrides=env_overrides,
         )
         self.assertTrue(result.success, msg=result.stderr)
 
         # 2. Simulate statusLine query: status=idle, same session
         status_payload = json.dumps({'cwd': str(self.temp_dir), 'session_id': 's1'})
         result = run_script(
-            SCRIPT_PATH, '--statusline', 'idle',
-            input_data=status_payload, cwd=str(self.temp_dir), env_overrides=env_overrides,
+            SCRIPT_PATH,
+            '--statusline',
+            'idle',
+            input_data=status_payload,
+            cwd=str(self.temp_dir),
+            env_overrides=env_overrides,
         )
         self.assertTrue(result.success, msg=result.stderr)
         self.assertEqual(result.stdout.strip(), '◯ plan-marshall')
 
         # 3. Simulate Stop hook: clears state
         result = run_script(
-            SCRIPT_PATH, 'idle',
-            input_data=status_payload, cwd=str(self.temp_dir), env_overrides=env_overrides,
+            SCRIPT_PATH,
+            'idle',
+            input_data=status_payload,
+            cwd=str(self.temp_dir),
+            env_overrides=env_overrides,
         )
         self.assertTrue(result.success, msg=result.stderr)
 
         # 4. statusLine now returns plain `claude`
         result = run_script(
-            SCRIPT_PATH, '--statusline', 'idle',
-            input_data=status_payload, cwd=str(self.temp_dir), env_overrides=env_overrides,
+            SCRIPT_PATH,
+            '--statusline',
+            'idle',
+            input_data=status_payload,
+            cwd=str(self.temp_dir),
+            env_overrides=env_overrides,
         )
         self.assertTrue(result.success, msg=result.stderr)
         self.assertEqual(result.stdout.strip(), '◯ claude')
 
     def test_running_without_slash_prompt_does_not_create_state(self):
-        payload = json.dumps({
-            'cwd': str(self.temp_dir),
-            'prompt': 'just a normal user message',
-            'session_id': 's2',
-        })
+        payload = json.dumps(
+            {
+                'cwd': str(self.temp_dir),
+                'prompt': 'just a normal user message',
+                'session_id': 's2',
+            }
+        )
         env_overrides = {'PLAN_ID': '', 'HOME': str(self.temp_dir)}
         result = run_script(
-            SCRIPT_PATH, 'running',
-            input_data=payload, cwd=str(self.temp_dir), env_overrides=env_overrides,
+            SCRIPT_PATH,
+            'running',
+            input_data=payload,
+            cwd=str(self.temp_dir),
+            env_overrides=env_overrides,
         )
         self.assertTrue(result.success, msg=result.stderr)
 
         # statusLine still returns `claude`, not the message text
         status_payload = json.dumps({'cwd': str(self.temp_dir), 'session_id': 's2'})
         result = run_script(
-            SCRIPT_PATH, '--statusline', 'idle',
-            input_data=status_payload, cwd=str(self.temp_dir), env_overrides=env_overrides,
+            SCRIPT_PATH,
+            '--statusline',
+            'idle',
+            input_data=status_payload,
+            cwd=str(self.temp_dir),
+            env_overrides=env_overrides,
         )
         self.assertTrue(result.success, msg=result.stderr)
         self.assertEqual(result.stdout.strip(), '◯ claude')
@@ -745,7 +792,12 @@ class TestBuildTitleDoneEmission(ScriptTestCase):
 
     def test_done_with_plan_label_bypasses_resolution(self):
         title = set_terminal_title._build_title(
-            'done', None, None, None, None, plan_label='Refactor_title_handling',
+            'done',
+            None,
+            None,
+            None,
+            None,
+            plan_label='Refactor_title_handling',
         )
         self.assertEqual(title, '✓ pm:done:Refactor_title_handling')
 
@@ -753,7 +805,12 @@ class TestBuildTitleDoneEmission(ScriptTestCase):
         # Only 'done' honours --plan-label; other statuses fall through to the
         # normal resolution chain (empty here → claude fallback).
         title = set_terminal_title._build_title(
-            'running', None, None, None, None, plan_label='ignored',
+            'running',
+            None,
+            None,
+            None,
+            None,
+            plan_label='ignored',
         )
         self.assertEqual(title, '▶ claude')
 
@@ -767,10 +824,14 @@ class TestBuildTitleDoneEmission(ScriptTestCase):
         # so the caller's label wins over any ambient resolution.
         plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / PLAN_ID
         _write_status(plan_dir, '6-finalize', short_description='Old_derived')
-        with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None), \
-             mock.patch.dict(os.environ, {'PLAN_ID': PLAN_ID}, clear=False):
+        with (
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+            mock.patch.dict(os.environ, {'PLAN_ID': PLAN_ID}, clear=False),
+        ):
             title = set_terminal_title.build_title(
-                'done', str(self.temp_dir), plan_label='Explicit_label',
+                'done',
+                str(self.temp_dir),
+                plan_label='Explicit_label',
             )
         self.assertEqual(title, '✓ pm:done:Explicit_label')
 

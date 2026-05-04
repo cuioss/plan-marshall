@@ -520,9 +520,8 @@ class TestDiffFiles:
             # Capture mtime + content of references.json before invoking
             # diff-files so the read-only contract can be asserted.
             import _config_core  # type: ignore[import-not-found]
-            references_json = (
-                _config_core.PLAN_BASE_DIR / 'plans' / 'test-plan' / 'references.json'
-            )
+
+            references_json = _config_core.PLAN_BASE_DIR / 'plans' / 'test-plan' / 'references.json'
             assert references_json.exists(), 'references.json should exist after add-file'
             mtime_before = references_json.stat().st_mtime_ns
             content_before = references_json.read_bytes()
