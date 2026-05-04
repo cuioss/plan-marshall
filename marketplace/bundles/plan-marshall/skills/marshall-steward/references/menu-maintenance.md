@@ -53,6 +53,24 @@ Execute ALL operations in sequence. If any step fails, report the error and abor
 
 ## Operation: Regenerate Executor
 
+**Worktree detection**: Before invoking generate_executor, detect whether the maintenance menu is running inside a git worktree. Two signals:
+
+1. The repo top-level path resolves to something under `.claude/worktrees/`:
+   ```bash
+   git -C . rev-parse --show-toplevel
+   ```
+   Capture this value as `REPO_ROOT`. If `REPO_ROOT` contains the `/.claude/worktrees/` segment, the maintenance run is inside a worktree.
+
+2. As a secondary check, `git -C . rev-parse --is-inside-work-tree` returns `true` when inside any working tree; combined with the path check above it confirms a valid git context.
+
+When running inside a worktree, pass the worktree absolute path via `--marketplace-root <REPO_ROOT>` so the regenerated executor's script mappings resolve against the worktree's `marketplace/bundles/` rather than the main checkout (or the plugin cache). When running against the main checkout, omit the flag.
+
+**Inside a worktree** (path under `.claude/worktrees/`):
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor generate --marketplace-root "$REPO_ROOT"
+```
+
+**Outside a worktree** (main checkout, default path):
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor generate
 ```

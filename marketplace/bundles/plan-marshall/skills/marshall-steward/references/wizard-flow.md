@@ -102,6 +102,25 @@ This ensures script execution works without prompting, independent of global set
 
 **BOOTSTRAP**: Use DIRECT Python call with glob (executor doesn't exist yet):
 
+**Worktree detection**: Before invoking generate_executor, detect whether the wizard is running inside a git worktree (as opposed to the main checkout). Two signals:
+
+1. The repo top-level path resolves to something under `.claude/worktrees/`:
+   ```bash
+   git -C . rev-parse --show-toplevel
+   ```
+   Capture this value as `REPO_ROOT`. If `REPO_ROOT` contains the `/.claude/worktrees/` segment, the wizard is running inside a worktree.
+
+2. As a secondary check, `git -C . rev-parse --is-inside-work-tree` returns `true` when inside any working tree (not specific to worktrees, but combined with the path check above it confirms a valid git context).
+
+When the wizard is running inside a worktree, pass the worktree absolute path to `generate_executor.py` via `--marketplace-root <REPO_ROOT>` so the generated executor's script mappings resolve against the worktree's `marketplace/bundles/` rather than the main checkout (or the plugin cache). When running against the main checkout, omit the flag and let the script auto-detect the plugin cache.
+
+**Inside a worktree** (path under `.claude/worktrees/`):
+```bash
+GENERATE_EXECUTOR=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-script-executor/scripts/generate_executor.py | head -n 1)
+python3 "$GENERATE_EXECUTOR" generate --marketplace-root "$REPO_ROOT"
+```
+
+**Outside a worktree** (main checkout, default path):
 ```bash
 GENERATE_EXECUTOR=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-script-executor/scripts/generate_executor.py | head -n 1)
 python3 "$GENERATE_EXECUTOR" generate
@@ -113,7 +132,7 @@ status	scripts_discovered	executor_generated	logs_cleaned
 success	109	.plan/execute-script.py	0
 ```
 
-The script auto-detects the plugin cache location and generates `.plan/execute-script.py` with all script mappings embedded.
+The script auto-detects the plugin cache location and generates `.plan/execute-script.py` with all script mappings embedded. When `--marketplace-root` is supplied, mappings are anchored to the supplied path instead of the auto-detected cache.
 
 **Verify syntax**:
 ```bash

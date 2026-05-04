@@ -23,3 +23,5 @@ scripts/
 ## Import Resolution
 
 The executor's PYTHONPATH generation scans immediate subdirectories of each `scripts/` directory, so modules in `scripts/build/` and `scripts/extension/` are importable by any script in the marketplace without path manipulation.
+
+`marketplace_paths.find_marketplace_path()` and `get_base_path()` accept an optional `marketplace_root` override and resolve in this order: explicit parameter → `PM_MARKETPLACE_ROOT` env var → script-relative `Path(__file__).parents[6]` walk → cwd-based discovery. Use the override (or the env var) to pin marketplace lookups to a specific worktree or test fixture instead of relying on cwd.

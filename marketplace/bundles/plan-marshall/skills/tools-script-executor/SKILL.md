@@ -143,6 +143,7 @@ The executor exports environment variables to child scripts:
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `PLAN_DIR_NAME` | Directory name for plan storage (e.g., `.plan`) | `.plan` |
+| `PM_MARKETPLACE_ROOT` | Explicit marketplace anchor directory (must contain `marketplace/bundles`). Honored by `generate_executor.py` and `script_shared.marketplace_paths.find_marketplace_path()` when resolving the marketplace tree. Overrides the script-relative walk and cwd-based fallback. The CLI flag `--marketplace-root` (on `generate` and `drift`) takes precedence when both are set. | _(unset)_ |
 | `PYTHONPATH` | Cross-skill import paths | Auto-built from all script directories |
 
 ### PLAN_DIR_NAME Usage
@@ -169,6 +170,31 @@ LOG_DIR = Path(_PLAN_DIR_NAME) / "logs"
 ## Setup
 
 Run `/marshall-steward` to generate the executor after bundle changes.
+
+### Pinning the marketplace anchor (worktrees / alternate checkouts)
+
+When invoking `generate_executor.py` directly from a worktree or alternate
+checkout where `Path.cwd()` would otherwise resolve to the wrong marketplace
+tree, pin discovery explicitly. Two equivalent mechanisms are supported; the
+CLI flag wins when both are set:
+
+```bash
+# Option A — CLI flag (preferred, single-call discipline)
+python3 generate_executor.py generate --marketplace --marketplace-root /abs/path/to/checkout
+python3 generate_executor.py drift    --marketplace --marketplace-root /abs/path/to/checkout
+
+# Option B — environment variable (useful for batch invocations under a
+# pre-set env, e.g. CI). Set in the executor's invocation header rather than
+# inline `VAR=val cmd` to comply with the Bash one-command-per-call rule.
+export PM_MARKETPLACE_ROOT=/abs/path/to/checkout
+python3 generate_executor.py generate --marketplace
+```
+
+The path passed to `--marketplace-root` (and `PM_MARKETPLACE_ROOT`) is the
+checkout root that contains `marketplace/bundles`, not the bundles directory
+itself. See `script_shared.marketplace_paths.find_marketplace_path` for the
+authoritative four-step resolution order (explicit param → env var →
+script-relative walk → cwd discovery).
 
 ## Architecture
 

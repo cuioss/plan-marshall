@@ -117,12 +117,62 @@ def safe_relative_path(path: Path) -> str:
         return str(path)
 
 
-def find_marketplace_path() -> Path | None:
-    """Find marketplace/bundles directory via cwd-based discovery.
+def find_marketplace_path(marketplace_root: Path | None = None) -> Path | None:
+    """Find ``marketplace/bundles`` directory using a four-step resolution order.
 
-    Checks the current working directory and its parent for the standard
-    ``marketplace/bundles`` layout.
+    Resolution order (highest priority first):
+
+    1. Explicit ``marketplace_root`` parameter — used as the anchor when caller
+       provides an absolute path. The function returns
+       ``marketplace_root / 'marketplace/bundles'`` if that directory exists.
+    2. ``PM_MARKETPLACE_ROOT`` environment variable — same anchor semantics as
+       the explicit parameter, but sourced from the environment.
+    3. Script-relative walk via ``Path(__file__).resolve().parents[6]`` — anchors
+       to the marketplace root that contains this very file. This is robust to
+       cwd changes and worktrees because the script's own location is fixed
+       relative to the repository layout.
+    4. cwd-based discovery — the legacy fallback that probes ``Path.cwd()`` and
+       its immediate parent for the standard ``marketplace/bundles`` layout.
+       Retained for backward-compat with first-run bootstrap scenarios.
+
+    Args:
+        marketplace_root: Optional explicit override. When provided, takes
+            precedence over the env var, script-relative walk, and cwd
+            discovery. Must point at a directory that contains
+            ``marketplace/bundles``.
+
+    Returns:
+        Path to ``marketplace/bundles`` if any branch resolves, otherwise None.
     """
+    # Branch 1: explicit override
+    if marketplace_root is not None:
+        candidate = Path(marketplace_root) / MARKETPLACE_BUNDLES_PATH
+        if candidate.is_dir():
+            return candidate
+        return None
+
+    # Branch 2: environment variable
+    env_root = os.environ.get('PM_MARKETPLACE_ROOT')
+    if env_root:
+        candidate = Path(env_root) / MARKETPLACE_BUNDLES_PATH
+        if candidate.is_dir():
+            return candidate
+        return None
+
+    # Branch 3: script-relative walk
+    # marketplace_paths.py lives at:
+    #   <root>/marketplace/bundles/plan-marshall/skills/script-shared/scripts/marketplace_paths.py
+    # parents[6] is therefore the marketplace root that contains marketplace/bundles.
+    try:
+        script_anchor = Path(__file__).resolve().parents[6]
+    except IndexError:
+        script_anchor = None
+    if script_anchor is not None:
+        candidate = script_anchor / MARKETPLACE_BUNDLES_PATH
+        if candidate.is_dir():
+            return candidate
+
+    # Branch 4: cwd-based discovery (legacy bootstrap fallback)
     if (Path.cwd() / MARKETPLACE_BUNDLES_PATH).is_dir():
         return Path.cwd() / MARKETPLACE_BUNDLES_PATH
     if (Path.cwd().parent / MARKETPLACE_BUNDLES_PATH).is_dir():
@@ -136,7 +186,7 @@ def get_plugin_cache_path() -> Path | None:
     return cache_path if cache_path.is_dir() else None
 
 
-def get_base_path(scope: str = 'auto') -> Path:
+def get_base_path(scope: str = 'auto', marketplace_root: Path | None = None) -> Path:
     """Determine base path based on scope.
 
     Args:
@@ -147,6 +197,14 @@ def get_base_path(scope: str = 'auto') -> Path:
             - 'cache-first': tries plugin-cache first, then marketplace (executor default)
             - 'global': ~/.claude
             - 'project': ./.claude
+        marketplace_root: Optional explicit override forwarded to
+            :func:`find_marketplace_path`. Honored for the marketplace-aware
+            scopes (``auto``, ``marketplace``, ``cache-first``); ignored for
+            ``plugin-cache``, ``global``, and ``project`` scopes whose targets
+            are not anchored on the marketplace root. See
+            :func:`find_marketplace_path` for the full four-step resolution
+            order (explicit param → ``PM_MARKETPLACE_ROOT`` env var →
+            script-relative walk → cwd-based discovery).
 
     Returns:
         Path to the bundles directory (or .claude for global/project scope)
@@ -155,17 +213,39 @@ def get_base_path(scope: str = 'auto') -> Path:
         FileNotFoundError: If requested context is not available
         ValueError: If scope is invalid
     """
+    # An explicit anchor — either the function parameter or the
+    # ``PM_MARKETPLACE_ROOT`` environment variable — must outrank the
+    # plugin cache for ``cache-first`` (and ``auto``) scopes. Without this,
+    # callers that pass ``marketplace_root=<worktree>`` (e.g.
+    # generate_executor.py running inside an isolated worktree) would
+    # silently regenerate the executor against the cached main checkout
+    # because cache-first short-circuits on the first cache hit. The
+    # explicit override exists precisely to escape that branch — see
+    # lesson 2026-05-01-09-001 (consolidated 2026-04-29-06-001) for the
+    # original failure mode.
+    explicit_anchor = marketplace_root is not None or bool(os.environ.get('PM_MARKETPLACE_ROOT'))
+
     if scope == 'auto':
-        marketplace = find_marketplace_path()
+        marketplace = find_marketplace_path(marketplace_root=marketplace_root)
         if marketplace:
             return marketplace
         raise FileNotFoundError(f'{MARKETPLACE_BUNDLES_PATH} not found. Run from marketplace repo root.')
 
     if scope == 'cache-first':
+        if explicit_anchor:
+            # Skip the cache and resolve from the explicit anchor first.
+            marketplace = find_marketplace_path(marketplace_root=marketplace_root)
+            if marketplace:
+                return marketplace
+            raise FileNotFoundError(
+                f'Explicit marketplace anchor did not resolve to {MARKETPLACE_BUNDLES_PATH}. '
+                f'Set --marketplace-root or PM_MARKETPLACE_ROOT to a directory containing '
+                f'{MARKETPLACE_BUNDLES_PATH}.'
+            )
         cache = get_plugin_cache_path()
         if cache:
             return cache
-        marketplace = find_marketplace_path()
+        marketplace = find_marketplace_path(marketplace_root=marketplace_root)
         if marketplace:
             return marketplace
         raise FileNotFoundError(
@@ -175,7 +255,7 @@ def get_base_path(scope: str = 'auto') -> Path:
         )
 
     if scope == 'marketplace':
-        marketplace = find_marketplace_path()
+        marketplace = find_marketplace_path(marketplace_root=marketplace_root)
         if marketplace:
             return marketplace
         raise FileNotFoundError(f'{MARKETPLACE_BUNDLES_PATH} directory not found')

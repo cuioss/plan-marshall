@@ -2,6 +2,7 @@
 """Unit tests for generate_executor.py script."""
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -9,7 +10,7 @@ import time
 from datetime import date
 from pathlib import Path
 
-from conftest import _MARKETPLACE_SCRIPT_DIRS
+from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT
 
 # Path to the script
 SCRIPTS_DIR = (
@@ -574,3 +575,233 @@ def test_generate_executor_imports_without_executor_pythonpath():
         timeout=30,
     )
     assert result.returncode == 0, f'generate_executor.py failed without PYTHONPATH:\n{result.stderr}'
+
+
+# =============================================================================
+# TESTS: --marketplace-root flag and PM_MARKETPLACE_ROOT env var
+# =============================================================================
+# These tests pin the marketplace-discovery resolution order documented in
+# script-shared/marketplace_paths.find_marketplace_path: explicit param > env
+# var > script-relative walk > cwd. They construct a fake marketplace tree
+# with a sentinel bundle/skill/scripts/foo.py and verify the regenerated
+# executor's SCRIPTS dict reflects the fake path — not the project cwd or
+# plugin cache.
+
+
+def _build_fake_marketplace(tmp_path: Path) -> Path:
+    """Build a minimal but functional fake marketplace under tmp_path.
+
+    Copies the real ``plan-marshall`` and ``pm-plugin-development`` bundles so
+    ``generate_executor.py`` can run end-to-end (it needs the executor template,
+    logging scripts, and inventory script). Then adds a sentinel
+    ``fake-bundle/skills/fake-skill/scripts/foo.py`` whose absolute path
+    serves as the load-bearing assertion target — that path can ONLY be
+    discovered if ``--marketplace-root`` (or ``PM_MARKETPLACE_ROOT``)
+    correctly anchored discovery to the fake tree.
+
+    Returns:
+        Path to ``tmp_path / 'fake-ws'`` — the value to pass as
+        ``--marketplace-root`` (the layout is ``<root>/marketplace/bundles``).
+    """
+    fake_ws = tmp_path / 'fake-ws'
+    fake_bundles = fake_ws / 'marketplace' / 'bundles'
+    fake_bundles.mkdir(parents=True)
+
+    # Copy real bundles required for the generate flow:
+    # - plan-marshall: provides the executor template, logging scripts, and
+    #   shared script-shared modules used by collect_script_dirs/build_pythonpath.
+    # - pm-plugin-development: provides scan-marketplace-inventory used by
+    #   discover_scripts. Without it, generate falls back to glob discovery
+    #   (which still works — but we mirror the real flow here).
+    for bundle_name in ('plan-marshall', 'pm-plugin-development'):
+        src = MARKETPLACE_ROOT / bundle_name
+        dst = fake_bundles / bundle_name
+        shutil.copytree(src, dst)
+
+    # Add the sentinel fake bundle/skill/script. Inventory discovery requires
+    # ``.claude-plugin/plugin.json`` to recognize a directory as a bundle.
+    fake_bundle = fake_bundles / 'fake-bundle'
+    plugin_json_dir = fake_bundle / '.claude-plugin'
+    plugin_json_dir.mkdir(parents=True)
+    (plugin_json_dir / 'plugin.json').write_text(
+        '{"name": "fake-bundle", "version": "0.0.1", "description": "Test fixture"}\n'
+    )
+
+    fake_scripts = fake_bundle / 'skills' / 'fake-skill' / 'scripts'
+    fake_scripts.mkdir(parents=True)
+    fake_script = fake_scripts / 'foo.py'
+    fake_script.write_text('"""Sentinel script for marketplace-root regression test."""\n')
+
+    return fake_ws
+
+
+def _read_generated_scripts(generated_executor: Path) -> dict[str, str]:
+    """Load the generated executor and return its SCRIPTS dict.
+
+    Spawns a subprocess (mirroring how get_executor_mappings does it) to avoid
+    polluting the test's interpreter with the generated module.
+    """
+    import json as _json
+
+    code = (
+        'import importlib.util, json, sys\n'
+        f"spec = importlib.util.spec_from_file_location('gen_executor', '{generated_executor}')\n"
+        'module = importlib.util.module_from_spec(spec)\n'
+        '# The generated executor injects sys.path entries and imports plan_logging\n'
+        '# at module-import time. Skip that side-effect by loading without\n'
+        '# executing — but we DO need module-level SCRIPTS, which is just a\n'
+        '# literal dict assignment, so executing the module body is required.\n'
+        'spec.loader.exec_module(module)\n'
+        'print(json.dumps(module.SCRIPTS))\n'
+    )
+    env = os.environ.copy()
+    pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
+    if 'PYTHONPATH' in env:
+        pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
+    env['PYTHONPATH'] = pythonpath
+
+    result = subprocess.run(
+        [sys.executable, '-c', code], capture_output=True, text=True, env=env, timeout=30
+    )
+    assert result.returncode == 0, (
+        f'Failed to load generated executor: stdout={result.stdout!r} stderr={result.stderr!r}'
+    )
+    mappings: dict[str, str] = _json.loads(result.stdout.strip())
+    return mappings
+
+
+def _generate_with_anchor(
+    tmp_path: Path,
+    fake_ws: Path,
+    *,
+    use_flag: bool,
+    monkeypatch,
+) -> dict[str, str]:
+    """Run ``generate_executor.py generate`` against a fake marketplace.
+
+    Routes both the discovery anchor (via ``--marketplace-root`` flag OR
+    ``PM_MARKETPLACE_ROOT`` env var) and the executor write target (via
+    ``PLAN_BASE_DIR``) so the generated executor lands inside ``tmp_path``
+    instead of the real project's ``.plan/execute-script.py``.
+
+    Returns:
+        The SCRIPTS dict from the regenerated executor.
+    """
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir(parents=True, exist_ok=True)
+
+    # PLAN_BASE_DIR redirects executor_path() AND state_path()/logs_dir()
+    # away from the real project tree.
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+
+    # CWD-discovery-poisoning safety: chdir into tmp_path so the cwd-based
+    # branch of find_marketplace_path can NEVER accidentally resolve to the
+    # real project marketplace. This forces any non-flag/non-env-var success
+    # to come from the script-relative walk (branch 3) — which we explicitly
+    # avoid by deleting that anchor below would be impractical, so we lean
+    # on the assertion target (fake foo.py path under tmp_path) instead.
+    monkeypatch.chdir(tmp_path)
+
+    cmd = [sys.executable, str(GENERATE_SCRIPT), 'generate']
+    env = os.environ.copy()
+    pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
+    if 'PYTHONPATH' in env:
+        pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
+    env['PYTHONPATH'] = pythonpath
+    env['PLAN_BASE_DIR'] = str(plan_dir)
+
+    if use_flag:
+        cmd.extend(['--marketplace-root', str(fake_ws)])
+        env.pop('PM_MARKETPLACE_ROOT', None)
+    else:
+        env['PM_MARKETPLACE_ROOT'] = str(fake_ws)
+
+    result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=120)
+    assert result.returncode == 0, (
+        f'generate failed (use_flag={use_flag}):\nstdout={result.stdout}\nstderr={result.stderr}'
+    )
+
+    generated_executor = plan_dir / 'execute-script.py'
+    assert generated_executor.exists(), (
+        f'Expected generated executor at {generated_executor}, stdout={result.stdout}'
+    )
+
+    return _read_generated_scripts(generated_executor)
+
+
+def test_marketplace_root_flag_anchors_discovery_to_supplied_path(tmp_path, monkeypatch):
+    """generate --marketplace-root <path> roots the SCRIPTS dict at <path>.
+
+    Regression for the case where worktree-driven invocations of
+    generate_executor.py picked up the wrong marketplace tree because the
+    cwd-based fallback resolved to the parent checkout. The flag must
+    override every other resolution branch.
+    """
+    fake_ws = _build_fake_marketplace(tmp_path)
+
+    mappings = _generate_with_anchor(tmp_path, fake_ws, use_flag=True, monkeypatch=monkeypatch)
+
+    # Sentinel: the fake bundle script must appear in SCRIPTS, with its
+    # absolute path rooted at the fake marketplace tree (NOT the real
+    # project's marketplace and NOT the plugin cache).
+    expected_notation = 'fake-bundle:fake-skill:foo'
+    assert expected_notation in mappings, (
+        f'Expected {expected_notation!r} in SCRIPTS keys; got {sorted(mappings)[:10]}...'
+    )
+
+    sentinel_path = mappings[expected_notation]
+    assert sentinel_path.startswith(str(fake_ws)), (
+        f'Expected sentinel path rooted at {fake_ws}, got {sentinel_path}'
+    )
+
+    # No mapping may resolve under the real project's marketplace tree or
+    # the plugin cache when --marketplace-root is supplied.
+    real_marketplace = str(MARKETPLACE_ROOT.resolve())
+    plugin_cache = str(Path.home() / '.claude' / 'plugins' / 'cache' / 'plan-marshall')
+    real_cwd = str(Path(__file__).resolve().parents[3])  # project root
+    for notation, path in mappings.items():
+        assert not path.startswith(real_marketplace), (
+            f'{notation} resolved to real marketplace {path}, not fake {fake_ws}'
+        )
+        assert not path.startswith(plugin_cache), (
+            f'{notation} resolved to plugin cache {path}, not fake {fake_ws}'
+        )
+        # Defense-in-depth: the sentinel path is the strongest signal, but
+        # also verify no path leaked back to the real project root via cwd
+        # discovery. Allow paths under tmp_path which (on macOS) may resolve
+        # via /private/var symlinks.
+        if not path.startswith(str(tmp_path.resolve())) and not path.startswith(str(tmp_path)):
+            assert not path.startswith(real_cwd), (
+                f'{notation} resolved under real cwd {real_cwd}: {path}'
+            )
+
+
+def test_pm_marketplace_root_env_var_anchors_discovery(tmp_path, monkeypatch):
+    """PM_MARKETPLACE_ROOT (env var path) anchors discovery identically.
+
+    Equivalent to the flag, but sourced from the environment per the
+    documented resolution order in find_marketplace_path. Set via
+    monkeypatch.setenv to avoid the inline ``VAR=val cmd`` shell shape that
+    dev-general-practices forbids.
+    """
+    fake_ws = _build_fake_marketplace(tmp_path)
+
+    mappings = _generate_with_anchor(tmp_path, fake_ws, use_flag=False, monkeypatch=monkeypatch)
+
+    expected_notation = 'fake-bundle:fake-skill:foo'
+    assert expected_notation in mappings, (
+        f'Expected {expected_notation!r} in SCRIPTS keys; got {sorted(mappings)[:10]}...'
+    )
+
+    sentinel_path = mappings[expected_notation]
+    assert sentinel_path.startswith(str(fake_ws)), (
+        f'Expected sentinel path rooted at {fake_ws} (via PM_MARKETPLACE_ROOT), '
+        f'got {sentinel_path}'
+    )
+
+    real_marketplace = str(MARKETPLACE_ROOT.resolve())
+    for notation, path in mappings.items():
+        assert not path.startswith(real_marketplace), (
+            f'{notation} leaked through to real marketplace {path} despite '
+            f'PM_MARKETPLACE_ROOT={fake_ws}'
+        )

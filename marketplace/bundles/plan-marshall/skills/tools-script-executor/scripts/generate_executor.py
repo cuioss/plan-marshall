@@ -3,9 +3,9 @@
 Generate and manage execute-script.py with embedded script mappings.
 
 Usage:
-    python3 generate_executor.py generate [--force] [--dry-run] [--marketplace]
+    python3 generate_executor.py generate [--force] [--dry-run] [--marketplace] [--marketplace-root PATH]
     python3 generate_executor.py verify
-    python3 generate_executor.py drift [--marketplace]
+    python3 generate_executor.py drift [--marketplace] [--marketplace-root PATH]
     python3 generate_executor.py paths
     python3 generate_executor.py cleanup [--max-age-days N]
 
@@ -24,6 +24,14 @@ shim-to-external-executor split — every documented call site
 Context Detection:
     By default, operates in plugin-cache context (~/.claude/plugins/cache/plan-marshall/).
     Use --marketplace flag for marketplace development context (marketplace/bundles/).
+
+    The ``--marketplace-root PATH`` flag (honored by ``generate`` and ``drift``)
+    pins marketplace discovery to an explicit anchor directory, overriding the
+    script-relative walk and cwd-based fallback. Equivalent to setting the
+    ``PM_MARKETPLACE_ROOT`` environment variable; the flag takes precedence
+    when both are supplied. Use this when invoking the script from a worktree
+    or alternate checkout where Path.cwd() would otherwise resolve to the
+    wrong marketplace tree.
 """
 
 import argparse
@@ -89,14 +97,24 @@ def logs_dir() -> Path:
 # ============================================================================
 
 
-def get_base_path(use_marketplace: bool = False) -> Path:
+def get_base_path(use_marketplace: bool = False, marketplace_root: Path | None = None) -> Path:
     """Determine base path based on context.
 
     By default (use_marketplace=False), tries plugin-cache first, then marketplace.
     Delegates to shared marketplace_paths module.
+
+    Args:
+        use_marketplace: If True, force marketplace context (development mode).
+            If False (default), tries plugin-cache first then marketplace.
+        marketplace_root: Optional explicit override anchor for marketplace
+            discovery. Forwarded verbatim to
+            :func:`script_shared.marketplace_paths.get_base_path` and applied
+            to the marketplace-aware scopes (``marketplace``, ``cache-first``).
+            See :func:`script_shared.marketplace_paths.find_marketplace_path`
+            for the four-step resolution order.
     """
     scope = 'marketplace' if use_marketplace else 'cache-first'
-    return _shared_get_base_path(scope)
+    return _shared_get_base_path(scope, marketplace_root=marketplace_root)
 
 
 def _resolve_bundle_path(base_path: Path, bundle_name: str, subpath: str) -> Path:
@@ -569,7 +587,7 @@ def cmd_generate(args) -> dict:
     """Generate executor with embedded script mappings."""
     # Resolve base path
     try:
-        base_path = get_base_path(use_marketplace=args.marketplace)
+        base_path = get_base_path(use_marketplace=args.marketplace, marketplace_root=args.marketplace_root)
         context = 'marketplace' if args.marketplace else 'auto-detected'
         print(f'Using context: {context} ({base_path})')
     except FileNotFoundError as e:
@@ -648,7 +666,7 @@ def cmd_drift(args) -> dict:
 
     # Resolve base path
     try:
-        base_path = get_base_path(use_marketplace=args.marketplace)
+        base_path = get_base_path(use_marketplace=args.marketplace, marketplace_root=args.marketplace_root)
         context = 'marketplace' if args.marketplace else 'auto-detected'
         print(f'Using context: {context} ({base_path})')
     except FileNotFoundError as e:
@@ -717,7 +735,12 @@ def cmd_cleanup(args) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description='Generate execute-script.py with embedded script mappings',
-        epilog='By default uses plugin-cache context. Use --marketplace for development.',
+        epilog=(
+            'By default uses plugin-cache context. Use --marketplace for development. '
+            'Use --marketplace-root PATH (or set PM_MARKETPLACE_ROOT) to pin marketplace '
+            'discovery to an explicit anchor when running from a worktree or alternate '
+            'checkout. The flag takes precedence over the env var.'
+        ),
         allow_abbrev=False,
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -729,6 +752,16 @@ def main() -> int:
     gen_parser.add_argument(
         '--marketplace', action='store_true', help='Use marketplace context (development mode) instead of plugin-cache'
     )
+    gen_parser.add_argument(
+        '--marketplace-root',
+        type=Path,
+        default=None,
+        metavar='PATH',
+        help=(
+            'Explicit marketplace anchor directory (must contain marketplace/bundles). '
+            'Overrides PM_MARKETPLACE_ROOT, the script-relative walk, and cwd-based discovery.'
+        ),
+    )
     gen_parser.set_defaults(func=cmd_generate)
 
     # verify subcommand
@@ -739,6 +772,16 @@ def main() -> int:
     drift_parser = subparsers.add_parser('drift', help='Compare with current bundles state', allow_abbrev=False)
     drift_parser.add_argument(
         '--marketplace', action='store_true', help='Use marketplace context (development mode) instead of plugin-cache'
+    )
+    drift_parser.add_argument(
+        '--marketplace-root',
+        type=Path,
+        default=None,
+        metavar='PATH',
+        help=(
+            'Explicit marketplace anchor directory (must contain marketplace/bundles). '
+            'Overrides PM_MARKETPLACE_ROOT, the script-relative walk, and cwd-based discovery.'
+        ),
     )
     drift_parser.set_defaults(func=cmd_drift)
 
