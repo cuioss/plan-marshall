@@ -24,7 +24,7 @@ returns the main `.git` directory regardless of which worktree is active; the he
 
 **Rule**: never read `Path.cwd()` to locate `.plan/`. Always call `get_plan_dir()`.
 
-**Examples**: `manage-files`, `manage-tasks`, `manage-config`, `manage-findings`, `manage-logging`, `manage-memories`, `manage-lessons`, `manage-architecture`, `manage-providers`, `manage-run-config`, `manage-plan-documents`, `manage-references`.
+**Examples**: `manage-files`, `manage-tasks`, `manage-config`, `manage-findings`, `manage-logging`, `manage-lessons`, `manage-architecture`, `manage-providers`, `manage-run-config`, `manage-plan-documents`, `manage-references`.
 
 ### Bucket B — Worktree-Scoped Operations (explicit path)
 
@@ -53,7 +53,7 @@ A small set of tools operate on the marketplace itself rather than on plan state
 
 | Bucket | Category | Examples | Mechanism |
 |--------|----------|----------|-----------|
-| A | Plan metadata | `manage-*` scripts, logging, findings, memories | `get_plan_dir()` → `git rev-parse --git-common-dir` |
+| A | Plan metadata | `manage-*` scripts, logging, findings | `get_plan_dir()` → `git rev-parse --git-common-dir` |
 | B | Worktree-scoped git | Commit, status, diff, checkout | `git -C {worktree_path} <cmd>` |
 | B | Build / test / lint | `build-maven`, `build-python`, `build-npm`, `build-gradle` | `--project-dir {worktree_path}` |
 | B | CI / Sonar / PR tooling | `tools-integration-ci`, `workflow-integration-sonar`, `workflow-pr-doctor` | `--project-dir {worktree_path}` (or equivalent) |

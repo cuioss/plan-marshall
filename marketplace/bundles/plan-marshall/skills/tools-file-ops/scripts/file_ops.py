@@ -58,7 +58,7 @@ from marketplace_paths import (  # type: ignore[import-not-found]  # noqa: E402
 from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
 
 # Plan-marshall runtime state (plans, archived-plans, run-configuration.json,
-# lessons-learned, memory, logs) lives at ``<git_main_checkout_root>/.plan/local``
+# lessons-learned, logs) lives at ``<git_main_checkout_root>/.plan/local``
 # — project-local, covered by the existing ``Write(.plan/**)`` permission.
 # Worktrees are anchored separately at ``<root>/.claude/worktrees/``.
 
@@ -543,7 +543,7 @@ def output_error(operation: str, error: str) -> None:
     """Print TOON error output to stderr (canonical low-level variant).
 
     This is the shared base implementation. Domain-specific variants exist in
-    ci_base.py, manage-memory.py, _tasks_core.py, and _documents_core.py.
+    ci_base.py, _tasks_core.py, and _documents_core.py.
     Per manage-contract.md: prefer output_toon_error() for manage-* scripts.
     """
     result = {'status': 'error', 'success': False, 'operation': operation, 'error': error}

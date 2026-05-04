@@ -14,12 +14,12 @@ from conftest import PlanContext, get_script_path, run_script
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-run-config', 'run_config.py')
 
 # Default retention config for tests
-DEFAULT_RETENTION = {'logs_days': 1, 'archived_plans_days': 5, 'memory_days': 5, 'temp_on_maintenance': True}
+DEFAULT_RETENTION = {'logs_days': 1, 'archived_plans_days': 5, 'temp_on_maintenance': True}
 
 
 def clean_fixture_dirs(fixture_dir: Path):
     """Clean up directories that may leak between tests in shared fixture."""
-    for subdir in ['temp', 'logs', 'archived-plans', 'memory']:
+    for subdir in ['temp', 'logs', 'archived-plans']:
         path = fixture_dir / subdir
         if path.exists():
             shutil.rmtree(path)
@@ -118,38 +118,6 @@ def test_clean_archived_plans(monkeypatch):
         # Verify old plan deleted, recent kept
         assert not old_plan.exists(), 'Old plan should be deleted'
         assert recent_plan.exists(), 'Recent plan should be kept'
-
-
-def test_clean_memory(monkeypatch):
-    """Clean old memory files."""
-    with PlanContext(plan_id='test-clean-memory') as ctx:
-        # Pin HOME and credentials dir for the subprocess so cleanup's
-        # run-configuration side-effects cannot touch the real host paths.
-        monkeypatch.setenv('HOME', str(ctx.fixture_dir))
-        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(ctx.fixture_dir / 'creds'))
-        setup_marshal_json(ctx.fixture_dir)
-
-        memory_dir = ctx.fixture_dir / 'memory' / 'handoffs'
-        memory_dir.mkdir(parents=True, exist_ok=True)
-
-        # Create memory files - one old, one recent
-        old_file = memory_dir / 'old-handoff.toon'
-        old_file.write_text('old memory')
-        # Make it old (6 days ago)
-        old_time = time.time() - (6 * 86400)
-        os.utime(old_file, (old_time, old_time))
-
-        recent_file = memory_dir / 'recent-handoff.toon'
-        recent_file.write_text('recent memory')
-
-        result = run_script(SCRIPT_PATH, 'cleanup', '--target', 'memory')
-        assert result.success, f'Script failed: {result.stderr}'
-        assert 'status: success' in result.stdout
-        assert 'memory_files_deleted: 1' in result.stdout
-
-        # Verify old file deleted, recent kept
-        assert not old_file.exists(), 'Old memory file should be deleted'
-        assert recent_file.exists(), 'Recent memory file should be kept'
 
 
 def test_clean_all():

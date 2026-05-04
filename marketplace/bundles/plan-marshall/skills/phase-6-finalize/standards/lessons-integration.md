@@ -117,4 +117,3 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ## Related
 
 - `plan-marshall:manage-lessons` - Lessons storage and query
-- `plan-marshall:manage-memories` - Knowledge/memory capture (Step 6)

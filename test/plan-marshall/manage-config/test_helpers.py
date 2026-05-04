@@ -46,7 +46,7 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
                 'java-testing': {'defaults': ['pm-dev-java:junit-core'], 'optionals': []},
             },
             'system': {
-                'retention': {'logs_days': 1, 'archived_plans_days': 5, 'memory_days': 5, 'temp_on_maintenance': True}
+                'retention': {'logs_days': 1, 'archived_plans_days': 5, 'temp_on_maintenance': True}
             },
             'plan': {
                 'phase-1-init': {
@@ -71,7 +71,6 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
                         'default:create-pr',
                         'default:automated-review',
                         'default:sonar-roundtrip',
-                        'default:knowledge-capture',
                         'default:lessons-capture',
                         'default:branch-cleanup',
                         'default:record-metrics',
@@ -150,7 +149,7 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
             },
         },
         'system': {
-            'retention': {'logs_days': 1, 'archived_plans_days': 5, 'memory_days': 5, 'temp_on_maintenance': True}
+            'retention': {'logs_days': 1, 'archived_plans_days': 5, 'temp_on_maintenance': True}
         },
         'plan': {
             'phase-1-init': {
@@ -173,7 +172,6 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
                     'default:create-pr',
                     'default:automated-review',
                     'default:sonar-roundtrip',
-                    'default:knowledge-capture',
                     'default:lessons-capture',
                     'default:branch-cleanup',
                     'default:archive-plan',

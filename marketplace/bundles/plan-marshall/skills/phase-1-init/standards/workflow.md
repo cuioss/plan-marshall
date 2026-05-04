@@ -76,7 +76,7 @@ issue: "https://github.com/org/repo/issues/123"
 
 **Where**: Step 5c, immediately after Step 5b moves the lesson into the plan directory and immediately before Step 6 initializes references.
 
-**Why**: Most lessons-learned describe small, prescriptive cleanups — fix this wording, add this cross-reference, drop this anti-pattern doc. Routing those through the full refine → outline → Q-Gate → plan pipeline costs minutes of LLM time and produces a heavyweight manifest with `automated-review`, `sonar-roundtrip`, and `knowledge-capture` steps that are wholly unnecessary for a doc-only change. The auto-suggest hook short-circuits that path by routing doc-shaped lessons through `recipe-lesson-cleanup`, which forces `scope_estimate=surgical` and lets the manifest composer collapse Phase 5 and Phase 6 to the minimum safe set.
+**Why**: Most lessons-learned describe small, prescriptive cleanups — fix this wording, add this cross-reference, drop this anti-pattern doc. Routing those through the full refine → outline → Q-Gate → plan pipeline costs minutes of LLM time and produces a heavyweight manifest with `automated-review` and `sonar-roundtrip` steps that are wholly unnecessary for a doc-only change. The auto-suggest hook short-circuits that path by routing doc-shaped lessons through `recipe-lesson-cleanup`, which forces `scope_estimate=surgical` and lets the manifest composer collapse Phase 5 and Phase 6 to the minimum safe set.
 
 **Heuristic** (all three must hold for "doc-shaped"):
 

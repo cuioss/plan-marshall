@@ -3,7 +3,7 @@
 
 Used by every plan-marshall manage-* script test module that exercises
 canonical identifier flags (--plan-id, --lesson-id, --session-id,
---task-number, --task-id, --component, --hash-id, --phase, --memory-id,
+--task-number, --task-id, --component, --hash-id, --phase,
 --field, --module, --package, --domain, --name).
 
 The 6 axes mirror the canonical fixture set from
@@ -73,7 +73,6 @@ _HAPPY: dict[str, str] = {
     'component': 'plan-marshall:manage-tasks',
     'hash_id': 'abcdef12',
     'phase': '1-init',
-    'memory_id': 'mem_abc',
     'field': 'my_field',
     'module': 'my-module',
     'package': 'com.example.foo',

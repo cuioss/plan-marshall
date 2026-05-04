@@ -14,7 +14,6 @@ Usage:
         validate_task_id,
         validate_component,
         validate_hash_id,
-        validate_memory_id,
         validate_phase_id,
         validate_field_name,
         validate_module_name,
@@ -48,7 +47,6 @@ TASK_NUMBER_RE = re.compile(r'^[0-9]+$')
 TASK_ID_RE = re.compile(r'^TASK-[0-9]+$')
 COMPONENT_RE = re.compile(r'^[a-z0-9-]+(:[a-z0-9-]+)*$')
 HASH_ID_RE = re.compile(r'^[a-f0-9]{4,}$')
-MEMORY_ID_RE = re.compile(r'^[a-z0-9_-]+$')
 # Phase enum — single source of truth. PHASE_ID_RE is derived from this tuple
 # below, so adding/removing a phase only needs to change VALID_PHASES.
 VALID_PHASES = (
@@ -126,13 +124,6 @@ def validate_hash_id(hash_id: str) -> str:
     if not hash_id or not HASH_ID_RE.match(hash_id):
         raise ValueError(f'Invalid hash_id format: {hash_id!r}. Must match {HASH_ID_RE.pattern}')
     return hash_id
-
-
-def validate_memory_id(memory_id: str) -> str:
-    """Validate memory_id is lowercase letters/digits/underscore/hyphen."""
-    if not memory_id or not MEMORY_ID_RE.match(memory_id):
-        raise ValueError(f'Invalid memory_id format: {memory_id!r}. Must match {MEMORY_ID_RE.pattern}')
-    return memory_id
 
 
 def validate_phase_id(phase_id: str) -> str:
@@ -494,16 +485,6 @@ def add_hash_id_arg(parser, required: bool = True) -> None:
     )
 
 
-def add_memory_id_arg(parser, required: bool = True) -> None:
-    """Add the standard --memory-id argument to a parser or subparser."""
-    parser.add_argument(
-        '--memory-id',
-        required=required,
-        type=validate_memory_id,
-        help='Memory identifier (lowercase letters/digits/_-)',
-    )
-
-
 def add_field_arg(parser, required: bool = True) -> None:
     """Add the standard --field argument to a parser or subparser."""
     parser.add_argument(
@@ -630,15 +611,6 @@ def is_valid_hash_id(hash_id: str) -> bool:
     """Bool companion for validate_hash_id."""
     try:
         validate_hash_id(hash_id)
-        return True
-    except ValueError:
-        return False
-
-
-def is_valid_memory_id(memory_id: str) -> bool:
-    """Bool companion for validate_memory_id."""
-    try:
-        validate_memory_id(memory_id)
         return True
     except ValueError:
         return False
@@ -939,7 +911,6 @@ _FLAG_TO_ERROR_CODE: dict[str, str] = {
     '--component': 'invalid_component',
     '--hash-id': 'invalid_hash_id',
     '--phase': 'invalid_phase',
-    '--memory-id': 'invalid_memory_id',
     '--field': 'invalid_field',
     '--module': 'invalid_module',
     '--package': 'invalid_package',

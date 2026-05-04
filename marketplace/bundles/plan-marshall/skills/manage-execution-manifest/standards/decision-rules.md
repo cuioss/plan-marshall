@@ -131,9 +131,9 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 **Outcome**:
 - `phase_5.early_terminate = true`
 - `phase_5.verification_steps = []`
-- `phase_6.steps` = `phase_6_candidates ∩ {knowledge-capture, lessons-capture, archive-plan}`
+- `phase_6.steps` = `phase_6_candidates ∩ {lessons-capture, archive-plan}`
 
-**Why**: A pure-analysis plan with no source-file impact has nothing to verify. Phase 6 still runs lessons + knowledge capture so the analysis findings don't leak silently, and `archive-plan` finalizes the plan record.
+**Why**: A pure-analysis plan with no source-file impact has nothing to verify. Phase 6 still runs lessons capture so the analysis findings don't leak silently, and `archive-plan` finalizes the plan record.
 
 ### Row 2 — `recipe`
 
@@ -142,7 +142,7 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 **Outcome**:
 - `phase_5.early_terminate = false`
 - `phase_5.verification_steps = phase_5_candidates ∩ {quality-gate, module-tests}`
-- `phase_6.steps = phase_6_candidates − {automated-review, sonar-roundtrip, knowledge-capture}`
+- `phase_6.steps = phase_6_candidates − {automated-review, sonar-roundtrip}`
 
 **Why**: Recipe-driven plans (currently `recipe-refactor-to-profile-standards` and the upcoming `recipe-lesson-cleanup` from deliverable 7) follow deterministic, surgical-style patterns. Drop the heavy review steps that target broad code changes; keep the build/test gate and the bookkeeping/PR steps.
 
@@ -155,7 +155,7 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 - `phase_5.verification_steps = []`
 - `phase_6.steps = phase_6_candidates − {automated-review, sonar-roundtrip}`
 
-**Why**: A docs-shaped plan never needs to run tests or coverage. The candidate set already reflects this (no `module-tests`/`coverage`), so the manifest empties Phase 5's verification list and skips the heavy review steps. We keep `commit-push`, `create-pr`, `knowledge-capture`, `lessons-capture`, `branch-cleanup`, and `archive-plan` so the doc change is committed, surfaced, and recorded.
+**Why**: A docs-shaped plan never needs to run tests or coverage. The candidate set already reflects this (no `module-tests`/`coverage`), so the manifest empties Phase 5's verification list and skips the heavy review steps. We keep `commit-push`, `create-pr`, `lessons-capture`, `branch-cleanup`, and `archive-plan` so the doc change is committed, surfaced, and recorded.
 
 ### Row 4 — `tests_only`
 
@@ -175,9 +175,9 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 **Outcome**:
 - `phase_5.early_terminate = false`
 - `phase_5.verification_steps = phase_5_candidates ∩ {quality-gate, module-tests}`
-- `phase_6.steps = phase_6_candidates − {automated-review, sonar-roundtrip, knowledge-capture}`
+- `phase_6.steps = phase_6_candidates − {automated-review, sonar-roundtrip}`
 
-**Why**: Surgical bug fixes and tech-debt nudges have already passed the Q-Gate bypass at outline time (deliverable 4). The full review army (`automated-review` + `sonar-roundtrip`) adds latency without commensurate signal on a one-line fix; `knowledge-capture` is overkill for a focused fix. We keep `lessons-capture` so any lesson observed during execution is still captured.
+**Why**: Surgical bug fixes and tech-debt nudges have already passed the Q-Gate bypass at outline time (deliverable 4). The full review army (`automated-review` + `sonar-roundtrip`) adds latency without commensurate signal on a one-line fix. We keep `lessons-capture` so any lesson observed during execution is still captured.
 
 ### Row 6 — `verification_no_files`
 
@@ -186,9 +186,9 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 **Outcome**:
 - `phase_5.early_terminate = false`
 - `phase_5.verification_steps = phase_5_candidates` (full)
-- `phase_6.steps = phase_6_candidates ∩ {knowledge-capture, lessons-capture, archive-plan}`
+- `phase_6.steps = phase_6_candidates ∩ {lessons-capture, archive-plan}`
 
-**Why**: A verification plan with no affected files is a "run the existing checks" plan — keep Phase 5 fully wired (since the goal is verification) but trim Phase 6 down to the records-and-archive triad since nothing was committed.
+**Why**: A verification plan with no affected files is a "run the existing checks" plan — keep Phase 5 fully wired (since the goal is verification) but trim Phase 6 down to the records-and-archive pair since nothing was committed.
 
 ### Row 7 — `default`
 
@@ -218,14 +218,13 @@ Globs are matched with `fnmatch.fnmatchcase` (POSIX semantics, no regex).
 - `create-pr`
 - `automated-review`
 - `sonar-roundtrip`
-- `knowledge-capture`
 - `lessons-capture`
 
 The matcher strips an optional `default:` prefix before checking membership, so the rule fires regardless of whether the resolved candidate list arrived prefixed (production marshal.json passes `default:create-pr`, etc.) or bare (the script's `DEFAULT_PHASE_6_STEPS` fallback emits `create-pr`, etc.).
 
 If the resolved `phase_6.steps` contains no agent-dispatched step, the rule does not fire (no insertion, no log line). If `project:finalize-step-sync-plugin-cache` already sits immediately before the first agent-dispatched step, the rule is idempotent and skips reinsertion. The existing late-stage occurrence (when present in `phase_6_candidates`) is preserved verbatim — the rule stacks an additional early occurrence rather than relocating the late one.
 
-**Why this stacks instead of replacing a row**: cached plugin definitions under `~/.claude/plugins/cache/` are the runtime source of truth for Task agent dispatch. When the plan's diff edits bundled agents, commands, or skills, the worktree-side fix never reaches the cache until `project:finalize-step-sync-plugin-cache` runs — which by default sits late in the manifest (post `branch-cleanup`). That ordering is correct in the steady state ("publish after commit"), but when the in-flight finalize itself dispatches agents loaded from that cache (`create-pr`, `automated-review`, `knowledge-capture`, `lessons-capture`), it sees the *pre-fix* definitions for the duration of the run. The stacked rule closes the staleness window by inserting an early sync immediately before the first agent dispatch. The existing late-stage occurrence is preserved verbatim — duplicate occurrences are intentional (early sync feeds the in-flight run; late sync publishes the post-commit state).
+**Why this stacks instead of replacing a row**: cached plugin definitions under `~/.claude/plugins/cache/` are the runtime source of truth for Task agent dispatch. When the plan's diff edits bundled agents, commands, or skills, the worktree-side fix never reaches the cache until `project:finalize-step-sync-plugin-cache` runs — which by default sits late in the manifest (post `branch-cleanup`). That ordering is correct in the steady state ("publish after commit"), but when the in-flight finalize itself dispatches agents loaded from that cache (`create-pr`, `automated-review`, `lessons-capture`), it sees the *pre-fix* definitions for the duration of the run. The stacked rule closes the staleness window by inserting an early sync immediately before the first agent dispatch. The existing late-stage occurrence is preserved verbatim — duplicate occurrences are intentional (early sync feeds the in-flight run; late sync publishes the post-commit state).
 
 **Why a stacked rule, not an eighth row**: the seven-row matrix is keyed off change-type / scope / recipe semantics — orthogonal to which bundle surfaces the diff touches. Adding a `bundle_self_modification` row would force every other row to negotiate with it; modeling it as a post-matrix mutation keeps the matrix focused and lets multiple base rows benefit from the early-sync insertion.
 

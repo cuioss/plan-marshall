@@ -77,7 +77,6 @@ DEFAULT_PHASE_6_STEPS = (
     'create-pr',
     'automated-review',
     'sonar-roundtrip',
-    'knowledge-capture',
     'lessons-capture',
     'branch-cleanup',
     'archive-plan',
@@ -109,7 +108,6 @@ _AGENT_DISPATCHED_STEPS = frozenset(
         'create-pr',
         'automated-review',
         'sonar-roundtrip',
-        'knowledge-capture',
         'lessons-capture',
     }
 )
@@ -176,8 +174,8 @@ def _decide(
     """
 
     # Rule 1: early_terminate — analysis without affected files. Phase 5 is
-    # skipped entirely; Phase 6 still runs lessons/knowledge capture so the
-    # analysis doesn't leak insights silently.
+    # skipped entirely; Phase 6 still runs lessons capture so the analysis
+    # doesn't leak insights silently.
     if change_type == 'analysis' and affected_files_count == 0:
         body = {
             'phase_5': {
@@ -185,9 +183,7 @@ def _decide(
                 'verification_steps': [],
             },
             'phase_6': {
-                'steps': [
-                    s for s in phase_6_candidates if s in {'knowledge-capture', 'lessons-capture', 'archive-plan'}
-                ],
+                'steps': [s for s in phase_6_candidates if s in {'lessons-capture', 'archive-plan'}],
             },
         }
         return body, 'early_terminate_analysis'
@@ -197,9 +193,7 @@ def _decide(
     # so the surgical-style cascades still apply downstream; here we only need
     # to drop heavy steps.
     if recipe_key:
-        phase_6_steps = [
-            s for s in phase_6_candidates if s not in {'automated-review', 'sonar-roundtrip', 'knowledge-capture'}
-        ]
+        phase_6_steps = [s for s in phase_6_candidates if s not in {'automated-review', 'sonar-roundtrip'}]
         body = {
             'phase_5': {
                 'early_terminate': False,
@@ -242,12 +236,10 @@ def _decide(
 
     # Rule 5: surgical + bug_fix / tech_debt — Q-Gate bypass already applies
     # at outline time (deliverable 4). Here we trim the manifest: no
-    # automated-review, no sonar-roundtrip, no knowledge-capture (small,
-    # focused changes). Keep lessons-capture + commit/PR/cleanup.
+    # automated-review, no sonar-roundtrip (small, focused changes). Keep
+    # lessons-capture + commit/PR/cleanup.
     if scope_estimate == 'surgical' and change_type in ('bug_fix', 'tech_debt'):
-        phase_6_steps = [
-            s for s in phase_6_candidates if s not in {'automated-review', 'sonar-roundtrip', 'knowledge-capture'}
-        ]
+        phase_6_steps = [s for s in phase_6_candidates if s not in {'automated-review', 'sonar-roundtrip'}]
         body = {
             'phase_5': {
                 'early_terminate': False,
@@ -267,9 +259,7 @@ def _decide(
                 'verification_steps': list(phase_5_candidates),
             },
             'phase_6': {
-                'steps': [
-                    s for s in phase_6_candidates if s in {'knowledge-capture', 'lessons-capture', 'archive-plan'}
-                ],
+                'steps': [s for s in phase_6_candidates if s in {'lessons-capture', 'archive-plan'}],
             },
         }
         return body, 'verification_no_files'

@@ -261,7 +261,7 @@ Phase-4-plan reads the outline, sees `scope_estimate: surgical`, and applies the
 - `surgical + enhancement` → Phase 5 keeps `quality-gate` only; Phase 6 keeps `commit-push`, `create-pr`, `lessons-capture` only.
 - `surgical + tech_debt` → Phase 5 keeps `quality-gate` only; Phase 6 keeps `commit-push`, `create-pr`, `lessons-capture` only.
 
-In all three surgical cases, the composer drops `automated-review`, `sonar-roundtrip`, and `knowledge-capture` from Phase 6, matching the success criteria for this recipe.
+In all three surgical cases, the composer drops `automated-review` and `sonar-roundtrip` from Phase 6, matching the success criteria for this recipe.
 
 This recipe does not invoke phase-4-plan directly — phase-3-outline returns control to the orchestrator, which advances to phase-4-plan as usual. The manifest composer reads `scope_estimate` from the outline metadata.
 
