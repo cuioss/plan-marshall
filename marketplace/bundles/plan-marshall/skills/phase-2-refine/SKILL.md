@@ -173,7 +173,8 @@ When confidence reaches threshold:
 2. **Persist `scope_estimate`** to `references.json` via `manage-references set --field scope_estimate --value {scope_estimate}` (one of `none | surgical | single_module | multi_module | broad`)
 3. **Log decisions** to decision.log (scope, domains -- with duplicate guard)
 4. **Run Q-Gate verification checks**: module mapping completeness, track-scope consistency, scope realism, confidence justification
-5. **Return output**:
+5. **Spawn `plan-marshall:q-gate-validation-agent` for the narrative-vs-code-validator** — lesson-derived plans only. When `status.json` reports `plan_source: lesson`, dispatch the agent so its `narrative-vs-code-validator` (q-gate-validation-agent.md § 2.14) runs over the source lesson narrative against current code state. Findings flow into the same `qgate_pending_count` aggregate as the inline checks above and are consumed by the orchestrator's existing 3-iteration auto-loop. See [`refine-workflow-detail.md` Step 13.5](standards/refine-workflow-detail.md#step-135-spawn-q-gate-validation-agent--lesson-derived-plans-only) for the exact dispatch invocation, activation guard, and findings-aggregation contract. Skipped silently when `plan_source != lesson`.
+6. **Return output**:
 
 ```toon
 status: success

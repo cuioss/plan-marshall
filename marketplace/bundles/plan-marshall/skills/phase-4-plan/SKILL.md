@@ -590,6 +590,45 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Rigor**: this check is warn-only. Phase-4-plan MUST proceed to completion regardless of warnings — the operator reviews findings at the phase-4 gate.
 
+### Step 9b: Spawn q-gate-validation-agent for mechanical validators
+
+**Purpose**: Run the `module-mapping-validator` and `scope-criterion-validator` from `q-gate-validation-agent.md` (§§ 2.11, 2.12) over the just-created tasks and the parent deliverables. Both validators reconcile LLM-authored task/deliverable shape against live ground truth (architecture which-module, architecture find/marketplace grep) and emit findings that the orchestrator's existing 3-iteration auto-loop consumes.
+
+**Activation guard**: Unconditional — runs after every successful phase-4-plan invocation, regardless of `plan_source`. Both validators apply to every plan (lesson-derived, issue-derived, recipe-derived, free-form). Skip only when the Q-Gate inline checks above (Step 9) have already exhausted the orchestrator's `verification_max_iterations` budget — in that case the orchestrator will already be aborting the auto-loop.
+
+**Cross-reference (lesson-ID validation)**: The lesson-id-validator that was originally part of the umbrella lesson `2026-05-03-21-002` is intentionally NOT spawned here. PR #323 ships lesson-ID validation at **write time** in `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_tasks_crud.py` (via `tools-input-validation/scripts/input_validation.py`). Every `TASK-*.json` write hits the validator before disk and **hard-fails** with `validation_error: lesson_id_not_found` when a phantom ID is cited — distinct from this Step 9b's q-gate auto-loop placement. Future maintainers extending phase-4-plan validation should preserve the placement split: write-time hard-fail for lesson-ID lookup against `manage-lessons list`; q-gate auto-loop for structural cross-checks (module mapping, scope criterion).
+
+**Dispatch the validator agent**:
+
+```
+Task: plan-marshall:q-gate-validation-agent
+  Input:
+    plan_id: {plan_id}
+    activation_context: 4-plan
+    validators: [module-mapping-validator, scope-criterion-validator]
+```
+
+The agent reads `solution_outline.md` (for the deliverables and their `success_criterion`/`affected_files` blocks) and the just-written `TASK-*.json` files (for `module_testing` task targets), runs the validator detection logic documented in q-gate-validation-agent.md §§ 2.11–2.12, and emits findings using `--source qgate-module-mapping` / `--source qgate-scope-criterion`. See those sections for the canonical detection logic and finding emission templates.
+
+**Aggregate the findings** — read pending findings to update the running count returned in Step 11:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate query --plan-id {plan_id} --phase 4-plan --resolution pending
+```
+
+Parse `filtered_count` from the output and ADD it to the `qgate_pending_count` already aggregated by Step 9's inline checks. Both finding sources flow into the same aggregate, so the orchestrator's existing 3-iteration auto-loop handles re-entry uniformly.
+
+**Log dispatch outcome**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-4-plan:qgate) Spawned q-gate-validation-agent for module-mapping + scope-criterion validators; pending findings now {qgate_pending_count}"
+```
+
+This step runs AFTER the inline Q-Gate checks of Step 9 and BEFORE Step 10 (Record Issues as Lessons) / Step 11 (Transition Phase and Return Results). The placement is load-bearing: inline checks first means cheap structural findings are recorded before the more expensive cross-bundle queries; validator second ensures architecture-anchored findings can re-enter phase-4-plan alongside the inline ones.
+
 ### Step 10: Record Issues as Lessons
 
 On ambiguous deliverable or planning issues, follow the two-step path-allocate flow:
