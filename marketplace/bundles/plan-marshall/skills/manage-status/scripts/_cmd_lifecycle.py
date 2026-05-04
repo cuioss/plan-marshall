@@ -190,7 +190,7 @@ def cmd_transition(args: argparse.Namespace) -> dict | None:
     return result
 
 
-def cmd_archive(args: argparse.Namespace) -> dict:
+def cmd_archive(args: argparse.Namespace) -> dict | None:
     """Archive a completed plan.
 
     Atomically closes the active phase before moving the plan directory:
@@ -221,17 +221,21 @@ def cmd_archive(args: argparse.Namespace) -> dict:
     # call, but that always failed because shutil.move had already
     # invalidated the live path.
     status = require_status(args)
-    if status is not None:
-        phases = status.get('phases', [])
-        active_idx = next(
-            (i for i, p in enumerate(phases) if p.get('status') != PHASE_STATUS_DONE),
-            None,
-        )
-        if active_idx is not None:
-            phases[active_idx]['status'] = PHASE_STATUS_DONE
-        if all(p.get('status') == PHASE_STATUS_DONE for p in phases):
-            status['current_phase'] = 'complete'
-        write_status(args.plan_id, status)
+    if status is None:
+        # Plan dir exists but status.json is missing/unreadable. Fail
+        # loudly via require_status's error contract instead of moving the
+        # broken plan into the archive — silent archives mask data loss.
+        return None
+    phases = status.get('phases', [])
+    active_idx = next(
+        (i for i, p in enumerate(phases) if p.get('status') != PHASE_STATUS_DONE),
+        None,
+    )
+    if active_idx is not None:
+        phases[active_idx]['status'] = PHASE_STATUS_DONE
+    if all(p.get('status') == PHASE_STATUS_DONE for p in phases):
+        status['current_phase'] = 'complete'
+    write_status(args.plan_id, status)
 
     archive_dir.mkdir(parents=True, exist_ok=True)
     shutil.move(str(plan_dir), str(archive_path))

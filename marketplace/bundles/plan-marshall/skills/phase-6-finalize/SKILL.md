@@ -499,7 +499,7 @@ Capture the following values:
 
 See [standards/output-template.md#snapshot-procedure](standards/output-template.md#snapshot-procedure) for exact commands and field extraction.
 
-After the snapshot is captured, dispatch `default:archive-plan` normally (step 4 in the FOR body above) and capture its returned `archive_path` (step 5). Both the snapshot and `archive_path` flow into Step 4 "Render Final Output Template".
+After the snapshot is captured, dispatch `default:archive-plan` normally (step 5 in the FOR body above) and capture its returned `archive_path` (step 6). Both the snapshot and `archive_path` flow into Step 4 "Render Final Output Template".
 
 **Built-in step notes**:
 - `default:branch-cleanup`: Do NOT preemptively skip based on PR state. The `standards/branch-cleanup.md` standard has its own `AskUserQuestion` confirmation gate.
