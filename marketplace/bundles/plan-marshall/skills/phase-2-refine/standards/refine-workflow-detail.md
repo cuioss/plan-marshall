@@ -721,6 +721,54 @@ If `qgate_pending_count > 0`, the orchestrator (planning.md) decides whether to 
 
 ---
 
+### Step 13.5: Spawn q-gate-validation-agent — lesson-derived plans only
+
+**Purpose**: Run the `narrative-vs-code-validator` (q-gate-validation-agent.md § 2.14) over the source lesson narrative so concrete code claims (file paths, profile→target mappings, function names, argument shapes, behavioral assertions) are reconciled against current code state at refine time. Catches silent baseline drift between lesson capture and plan execution before the outline locks intent.
+
+**Activation guard**: Runs only when `status.json` reports `plan_source: lesson`. For free-form, issue-derived, or recipe-derived plans, skip this step entirely.
+
+**Read activation guard**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+  --plan-id {plan_id} --get --field plan_source
+```
+
+If `status: not_found` or `value != lesson`, skip Step 13.5 — log nothing and continue to Step 14.
+
+**Dispatch the validator agent** (lesson-derived plans only):
+
+```
+Task: plan-marshall:q-gate-validation-agent
+  Input:
+    plan_id: {plan_id}
+    activation_context: 2-refine
+    validators: [narrative-vs-code-validator]
+```
+
+The agent reads the source lesson body from the plan directory (`lesson-{id}.md` archived alongside `request.md`), extracts concrete code claims, probes the current code state for each, and emits a finding per `stale` or `invalid` claim using `--source qgate-narrative-vs-code`. See q-gate-validation-agent.md § 2.14 for the canonical detection logic and finding emission template.
+
+**Aggregate the findings** — read pending findings to update the running count returned in Step 13:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate query --plan-id {plan_id} --phase 2-refine --resolution pending
+```
+
+Parse `filtered_count` from the output and ADD it to the `qgate_pending_count` already aggregated in the inline-checks step above. Both finding sources (inline lightweight checks and the validator agent) flow into the same `qgate_pending_count` aggregate that is returned in the phase TOON, so the orchestrator's existing 3-iteration auto-loop handles re-entry uniformly.
+
+**Log dispatch outcome**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-2-refine:qgate) Spawned q-gate-validation-agent for narrative-vs-code-validator (lesson plan); pending findings now {qgate_pending_count}"
+```
+
+This step runs AFTER the inline lightweight Q-Gate checks (above) and BEFORE Step 14 (Transition Phase). The placement is load-bearing: inline checks first means cheap structural findings are recorded before the more expensive narrative cross-check; validator second ensures lesson-driven findings can re-enter refine alongside the inline ones.
+
+---
+
 ## Step 14: Transition Phase
 
 The phase transitions from refine → outline after confidence reaches the threshold:

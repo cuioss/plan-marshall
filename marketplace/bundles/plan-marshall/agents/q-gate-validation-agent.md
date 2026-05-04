@@ -328,6 +328,188 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 - [`consumer-sweep.md`](../skills/phase-3-outline/standards/consumer-sweep.md) — outline-time procedure this check enforces
 - Driving lesson: `2026-04-30-23-001` (TASK-9 scope expanded silently — pm-dev-java profiles.py needed migration to per-module layout)
 
+#### 2.10 Argparse Validator
+
+Verify that every `python3 .plan/execute-script.py {notation} {subcommand} [args...]` invocation embedded in `solution_outline.md` references a subcommand and flag set that exist in the target script's live `argparse` declaration. Catches stale or invented CLI shapes at design time, before phase-5-execute attempts the verification command and finds the flags do not exist.
+
+**Activation condition**: Runs in the `3-outline` phase context. Activates whenever `solution_outline.md` contains at least one `python3 .plan/execute-script.py` invocation in any `Verification` block, `Change per file` block, or inline reference.
+
+**Detection logic**:
+
+1. Parse every `python3 .plan/execute-script.py {notation} [{subcommand}] [args...]` invocation from `solution_outline.md`. Extract `{notation}`, `{subcommand}` (when present), and every `--flag` token.
+2. For each unique `{notation}`, fetch the live argparse schema:
+   ```bash
+   python3 .plan/execute-script.py {notation} --help
+   ```
+3. For each invocation that supplies a subcommand, fetch the subcommand-level help:
+   ```bash
+   python3 .plan/execute-script.py {notation} {subcommand} --help
+   ```
+4. Diff the cited subcommand and flags against the parsed help output. Emit a finding per undeclared subcommand and per missing `--flag`.
+
+**Finding emission template**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate add --plan-id {plan_id} --phase 3-outline \
+  --source qgate-argparse --type triage \
+  --title "Q-Gate: argparse_validator — undeclared {kind} '{token}' on {notation}" \
+  --detail "solution_outline.md cites '{notation} {subcommand} {flag}' but live --help does not declare '{token}'. Either correct the cited shape, regenerate the executor (.plan/execute-script.py) if the notation was recently added, or fall back to a different verification command." \
+  --audit-plan-id {plan_id}
+```
+
+`{kind}` is one of `subcommand`, `flag`. `{token}` is the offending text.
+
+**Positive example**: Outline cites `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate filter --status pending`. Live help shows the subcommand list `{add,query,resolve,...}` — no `filter`. Validator emits one finding for the undeclared subcommand.
+
+**Negative example**: Outline cites `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id X`. Live help shows `list` is a registered subcommand and `--plan-id` is a registered flag. Silent pass — no finding.
+
+**Driving lesson**: `2026-05-04-09-001` (validate verification commands against argparse before plan execution).
+
+#### 2.11 Module-Mapping Validator
+
+Verify that every `module_testing` profile task's declared test file lives in the same architecture module as the implementation file the deliverable's `implementation` profile task changes. Catches scope drift where the task author paired the right deliverable with the wrong test file (e.g., test sits in a sibling test module that pytest collects but exercises an unrelated production path).
+
+**Activation condition**: Runs in the `4-plan` phase context. Activates for every task whose `profile` is `module_testing` AND whose deliverable also has an `implementation` profile task.
+
+**Detection logic**:
+
+1. For each `module_testing` task, enumerate its `step.target` test file paths.
+2. Find the sibling `implementation` task for the same `deliverable` and enumerate its `step.target` implementation file paths.
+3. For each pair `(test_file, impl_file)`, query architecture:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture which-module --path {test_file}
+   python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture which-module --path {impl_file}
+   ```
+4. Compare the returned `module` values. If they differ, check whether both paths appear on the documented test→impl mapping list (project-local convention; absent means strict module match required). Emit a finding when modules differ AND no mapping entry covers the pair.
+
+**Finding emission template**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate add --plan-id {plan_id} --phase 4-plan \
+  --source qgate-module-mapping --type triage \
+  --title "Q-Gate: module_mapping_validator — test/impl module mismatch for deliverable {N}" \
+  --detail "module_testing task declares {test_file} (module: {test_module}) but sibling implementation task declares {impl_file} (module: {impl_module}). Test will pass without exercising the changed code path. Either re-target the test to the correct module's test directory, or document the mapping if the cross-module routing is intentional." \
+  --audit-plan-id {plan_id}
+```
+
+**Positive example**: Deliverable D3's implementation task targets `marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md` (module `plan-marshall`). Its module_testing sibling targets `test/pm-plugin-development/plugin-doctor/test_extension.py` (module `pm-plugin-development`). Validator emits finding — modules differ, no mapping entry.
+
+**Negative example**: Deliverable D1's implementation targets `.../scripts/manage-tasks.py` (module `plan-marshall`). Its module_testing sibling targets `test/plan-marshall/manage-tasks/test_manage_tasks.py` (module `plan-marshall`). Silent pass — modules match.
+
+**Driving lesson**: `2026-05-04-09-002` (task scope must match the actual code path under change, not adjacent test files).
+
+#### 2.12 Scope-Criterion Validator
+
+Verify that every deliverable's `success_criterion` is operationalized by a structured query whose result set is consistent with `affected_files`. Catches scope drift where the criterion implies a wider set of files than `affected_files` enumerates (under-coverage) or a narrower set than `affected_files` modifies (over-coverage). Distinct from Section 2.9 (consumer-sweep): 2.9 fires only on delete/rename language; this validator fires for every deliverable and covers sibling-set, find-pattern, and textual-grep criteria.
+
+**Activation condition**: Runs in the `3-outline` and `4-plan` phase contexts. Activates for every deliverable whose `Success Criteria` block contains at least one criterion that references a code-shape (file pattern, sibling group, symbol signature, sibling enumeration, regex, etc.) — i.e., a criterion that can be operationalized as a structured query. Pure behavioral criteria ("plugin-doctor passes", "user can log in") do NOT activate the validator.
+
+**Detection logic**:
+
+1. For each deliverable, parse the `Success Criteria` block and extract operationalizable predicates. Map each predicate to a query type: `find_pattern` (symbol signature), `sibling_group` (e.g., `change-*.md`), `marketplace_grep` (textual pattern across bundles), or `directory_enum` (every file under a path).
+2. Run the query against the worktree:
+   - `find_pattern` → `architecture find --pattern {signature}`
+   - `sibling_group` → architecture or directory enumeration
+   - `marketplace_grep` → `grep -rn {pattern} marketplace/bundles/`
+   - `directory_enum` → `architecture files --module {module}` filtered by path prefix
+3. Compute the symmetric difference between the query result set and `affected_files`:
+   - Files in query result but missing from `affected_files` → under-coverage
+   - Files in `affected_files` but absent from query result → over-coverage (possibly intentional; flag as warning)
+4. When the criterion implies marketplace-wide coverage (per `2026-04-30-23-001`), the query MUST sweep all bundles. Bundle-scoped queries on marketplace-wide criteria emit an under-coverage finding for each consumer in a different bundle.
+
+**Finding emission template**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate add --plan-id {plan_id} --phase {phase} \
+  --source qgate-scope-criterion --type triage \
+  --title "Q-Gate: scope_criterion_validator — {direction} for deliverable {N}" \
+  --detail "Success criterion '{criterion_text}' operationalized as {query_type} returns {N_results} files. Affected files lists {N_affected}. {direction_detail}: {missing_or_extra_files}. Either expand affected_files to cover the query result, narrow the success criterion to the bundle/module actually in scope, or document the deliberate exclusion." \
+  --audit-plan-id {plan_id}
+```
+
+`{direction}` is one of `under_coverage`, `over_coverage`. `{phase}` is `3-outline` or `4-plan`.
+
+**Positive example**: Deliverable's success criterion is "all `change-*.md` standards updated" but `affected_files` lists 3 of the 4 sibling files in the directory. Validator runs `architecture files --module plan-marshall` filtered by `change-*.md`, finds 4 results, computes diff, emits under-coverage finding for the missing sibling.
+
+**Negative example**: Deliverable's success criterion is "user can authenticate via JWT" — a behavioral criterion not operationalizable as a structured query. Silent pass — validator does not activate.
+
+**Driving lessons**: `2026-05-03-16-002` (keep deliverable success_criterion scope aligned with affected_files scope), `2026-05-03-16-001` (sweep sibling-group directories instead of transcribing deliverable lists), `2026-04-30-23-001` (sweep marketplace-wide when deleting/renaming a shared symbol).
+
+#### 2.13 Tier-Delta Validator
+
+Verify that any tiered or variant-based specification in `solution_outline.md` (Tier 0 / Tier 1, Simple Track / Complex Track, fast-path / slow-path) is accompanied by a delta table that contrasts every field that differs across tiers, with an explicit rationale for each delta. Catches cross-tier rationale drift where one tier's `MUST NOT` is silently violated by another tier's `MUST`.
+
+**Activation condition**: Runs in the `3-outline` phase context. Activates when `solution_outline.md` introduces tiered or variant-based content. Detection heuristics (any one match suffices):
+- Section pairs whose titles match `Tier 0` / `Tier 1`, `Simple Track` / `Complex Track`, `fast-path` / `slow-path`, `tier-A` / `tier-B`.
+- Two or more sibling sections whose headings differ only by an enumerated qualifier (`Profile X` / `Profile Y`, `Variant 1` / `Variant 2`).
+- LLM-judged fallback: a section that opens with "MUST NOT do X — rationale: …" while a sibling section under a different qualifier label specifies X without acknowledging the rationale.
+
+**Detection logic**:
+
+1. Identify the tier sections via the heuristics above.
+2. Enumerate every field/property/behavior described in each tier (commit-message body fields, return-shape keys, command flags, etc.).
+3. Compute the cross-tier delta: which fields differ across tiers, and whether the outline contains a delta table that lists each delta with rationale.
+4. Emit a finding when tiers are present but a delta table is absent OR the table is incomplete (omits one or more deltas).
+
+**Finding emission template**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate add --plan-id {plan_id} --phase 3-outline \
+  --source qgate-tier-delta --type triage \
+  --title "Q-Gate: tier_delta_validator — missing/incomplete delta table for tiered spec '{tier_label}'" \
+  --detail "solution_outline.md introduces tiered specs ({tier_a} vs {tier_b}) but {missing_or_incomplete}. Cross-tier rationale drift survives outline → plan → execute → tests and is only caught by reviewers reading both sections side-by-side. Add a delta table listing every field that differs across tiers along with the rationale for each delta." \
+  --audit-plan-id {plan_id}
+```
+
+`{missing_or_incomplete}` is one of `the outline contains no delta table`, `the delta table omits the following fields: {field_list}`.
+
+**Positive example**: Outline introduces "Tier 0 (small/trivial path)" and "Tier 1 (full path)" sections for commit-message format. Tier 0 explicitly states "MUST NOT embed `affected_modules_csv` in the commit body — the field is volatile, derivable, and adds noise". Tier 1 specifies the commit body with `affected_modules_csv` embedded. No delta table acknowledges the contradiction. Validator emits finding.
+
+**Negative example**: Outline contains a single, untiered specification with no variant labels. Silent pass — validator does not activate.
+
+**Driving lesson**: `2026-05-03-12-002` (cross-tier rationale drift in commit-message specs missed at outline/plan time).
+
+#### 2.14 Narrative-vs-Code Validator
+
+Verify, for lesson-derived plans, that every concrete code claim in the source lesson narrative (file path, profile→target mapping, function name, argument shape, behavioral assertion) matches the current code state. Catches silent baseline drift between lesson capture and plan execution: lessons authored at one point in time may describe code that has since been renamed, refactored, or removed, and treating the narrative as authoritative produces no-ops or regressions.
+
+**Activation condition**: Runs in the `2-refine` phase context. Activates when `status.json` reports `plan_source: lesson` (the plan was created via `phase-1-init` Step 4 from a lesson ID). Does NOT activate for free-form, issue-derived, or recipe-derived plans.
+
+**Detection logic**:
+
+1. Read the source lesson body from the plan directory (`lesson-{id}.md` archived alongside `request.md`).
+2. Extract concrete code claims: file paths (with extensions), profile→target mappings (e.g., "implementation profile runs `module-tests`"), function/symbol names with signatures, argument shapes (CLI flags, call args), behavioral assertions ("currently hard-codes `./pw`", "is registered in plugin.json").
+3. For each claim, probe the current code state:
+   - File path → `manage-files exists --plan-id {plan_id} --file {path}` or `architecture find --pattern {basename}`
+   - Profile→target mapping → query `manage-config plan {phase} get` or grep architecture
+   - Function/symbol name → `architecture find --pattern {name}` then `Read` the matched file
+   - Argument shape → `python3 .plan/execute-script.py {notation} --help`
+   - Behavioral assertion → `Read` the cited file/region and reason about current behavior
+4. Classify each claim as: `valid` (narrative matches code), `stale` (code has moved but the underlying intent remains valid), or `invalid` (code never matched the narrative). Emit a finding per `stale` or `invalid` claim.
+
+**Finding emission template**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate add --plan-id {plan_id} --phase 2-refine \
+  --source qgate-narrative-vs-code --type triage \
+  --title "Q-Gate: narrative_vs_code_validator — {classification} claim in lesson {lesson_id}" \
+  --detail "Lesson narrative claims '{claim_text}' but current code shows '{actual_state}' at {file_path}:{line}. {classification_detail}. Discrepancies are scope-expansion signals, not blockers — surface both readings to the user and ask which represents the desired end state before treating the narrative as authoritative." \
+  --audit-plan-id {plan_id}
+```
+
+`{classification}` is one of `stale`, `invalid`. `{classification_detail}` adds context: e.g., "Lesson was authored 2026-04-08; the cited symbol was renamed in PR #199 (2026-04-15)" for `stale`, or "No file matching the cited path was found in the worktree" for `invalid`.
+
+**Positive example**: Lesson `2026-05-03-21-003` claims "implementation profile runs `module-tests`". Validator queries `manage-config plan phase-2-refine get --field profile_command_map`, finds `implementation` profile maps to `compile`, not `module-tests`. Validator emits `invalid` finding — the narrative was wrong about the baseline.
+
+**Negative example**: Lesson cites `marketplace/bundles/plan-marshall/agents/q-gate-validation-agent.md` and the file exists with the cited Section 2.9 still present. Silent pass — narrative matches code.
+
+**Driving lesson**: `2026-05-04-08-001` (validate lesson narrative against current code during refine).
+
 ---
 
 ### Step 5: Check Missing Coverage
@@ -462,6 +644,11 @@ qgate_pending_count: {count}
 | File Existence | All affected file paths exist on disk | Path not found or wrong convention |
 | Profile Overlap | No redundant test coverage across deliverables | Test deliverable duplicates module_testing scope |
 | Consumer Sweep Completeness | Cross-bundle consumers of deleted/renamed public symbols enumerated in Affected files | Trigger language present AND (empty affected_files OR no cross-bundle entries when grep returns cross-bundle hits) |
+| Argparse Validator (3-outline) | Every `python3 .plan/execute-script.py` invocation in solution_outline.md cites a subcommand and flags declared by live `--help` | Cited subcommand or `--flag` is undeclared in the live argparse schema |
+| Module-Mapping Validator (4-plan) | `module_testing` task's test files share an `architecture which-module` result with the sibling implementation task's impl files | Test/impl modules differ AND no documented test→impl mapping covers the pair |
+| Scope-Criterion Validator (3-outline / 4-plan) | Every operationalizable `success_criterion` agrees with `affected_files` after the structured query is run | Symmetric difference between query result set and affected_files (under-coverage or over-coverage), or marketplace-wide criterion paired with bundle-scoped query |
+| Tier-Delta Validator (3-outline) | Tiered/variant specs include a delta table contrasting every cross-tier field with rationale | Tiered sections present AND delta table missing or incomplete |
+| Narrative-vs-Code Validator (2-refine, lesson plans) | Every concrete code claim in the source lesson narrative matches current code state | Claim is `stale` (code moved) or `invalid` (cited path/symbol/shape never matched) |
 | Missing Coverage | All assessed files in deliverables | Assessed files missing |
 
 ---
