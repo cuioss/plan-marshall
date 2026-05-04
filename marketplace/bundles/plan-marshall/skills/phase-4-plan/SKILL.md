@@ -182,7 +182,7 @@ For each deliverable D:
     IF D.profiles != [verification]:
       Log warning (see above)
     D.profiles = [verification]
-  1. Query architecture: module --name {D.module}
+  1. Query architecture: module --module {D.module}
   For each profile P in D.profiles:
     IF P = verification:
       2v. Skip skill resolution (no architecture query needed)
@@ -205,7 +205,7 @@ For each deliverable D:
 **Query architecture**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  module --name {deliverable.module} \
+  module --module {deliverable.module} \
   --audit-plan-id {plan_id}
 ```
 
@@ -628,7 +628,7 @@ Skills are resolved from architecture based on `module` + `profile`:
 
 | Scenario | Behavior |
 |----------|----------|
-| Single profile | Query `architecture.module --name {module}`, extract `skills_by_profile.{profile}` |
+| Single profile | Query `architecture.module --module {module}`, extract `skills_by_profile.{profile}` |
 | Multiple profiles | Create one task per profile, each with its own resolved skills |
 | `verification` profile | Skip architecture query — no skills needed, use verification commands as steps |
 | Module not in architecture | Error - module must exist in project architecture |
@@ -669,7 +669,7 @@ If deliverable metadata incomplete:
 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Read deliverables (list-deliverables, read)
-- `plan-marshall:manage-architecture:architecture` - Query module skills (module --name {module}) and resolve commands (resolve --command {cmd} --module {module}). Uses `--audit-plan-id`, NOT `--plan-id`.
+- `plan-marshall:manage-architecture:architecture` - Query module skills (module --module {module}) and resolve commands (resolve --command {cmd} --module {module}). Uses `--audit-plan-id`, NOT `--plan-id`.
 - `plan-marshall:manage-tasks:manage-tasks` - Create tasks atomically via `batch-add --tasks-file PATH` (preferred for multi-task creation in this phase, where `PATH` is staged via `manage-files write` to `.plan/local/plans/{plan_id}/work/tasks-batch.json`). Single ad-hoc adds may use the path-allocate flow (`prepare-add` → Write TOON → `commit-add`).
 - `plan-marshall:manage-files:manage-files` - Stage the batch JSON array (via `write --file work/tasks-batch.json`) so the payload never crosses the shell argument boundary.
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
