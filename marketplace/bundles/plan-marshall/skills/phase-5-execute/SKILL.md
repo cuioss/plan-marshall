@@ -84,6 +84,18 @@ Read standards/operations.md
 ```
 Contains: Delegation patterns for builds, quality checks, PR creation
 
+### Recovery Patterns
+```
+Read standards/recovery.md
+```
+Contains: First-line response to mid-plan `origin/main` advances — stash + merge + pop, with works/does-not-work conditions and rationale vs rebase.
+
+### Test Scaffolding Patterns
+```
+Read standards/test-scaffolding.md
+```
+Contains: Canonical `# ruff: noqa: I001, E402` + `sys.path.insert(0, ...)` prologue for tests that import underscore-prefixed sibling modules from `marketplace/bundles/.../scripts/`. Citation: `test/plan-marshall/plan-marshall/test_phase_handshake.py` lines 2 and 20-29.
+
 ---
 
 ## Execution Loop
@@ -320,11 +332,18 @@ Proceed to Step 4.
 
 ### Step 4: Log Phase Start and Surface Active Worktree (Once per phase)
 
-At the start of execute or finalize phase:
+At the start of execute or finalize phase, resolve the pending-task count and emit the canonical `[STATUS]` entry:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list \
+  --plan-id {plan_id} --status pending
+```
+
+Parse the row count from the returned `tasks_table` and substitute it as `{N}`. Then emit the phase-entry status line in the canonical format:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Starting {phase} phase"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Starting execute phase — {N} tasks pending"
 ```
 
 **Surface the active worktree absolute path** so it remains visible in model context for every subsequent Edit/Write/Read call. Read the worktree path from status metadata:
@@ -607,9 +626,11 @@ Before invoking `manage-status transition --completed 5-execute` (see **Phase Tr
 
 ### Step 13: Log Phase Completion (When phase completes)
 
+Substitute `{N}` with the count of tasks marked `done` during this phase entry and `{M}` with the total task count from the plan, then emit the canonical phase-exit `[STATUS]` line:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Completed {phase} phase: {tasks_completed} tasks"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Execute phase complete — {N}/{M} tasks done"
 ```
 
 **Add visual separator** after END log:
@@ -682,10 +703,18 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Script Failure (Lessons-Learned Capture)
 
-**ON SCRIPT FAILURE**: When any script execution fails (exit != 0):
-1. Log error to work-log (see above)
-2. Capture error context (script path, exit code, stderr)
-3. Continue with normal error recovery (retry, fail task, etc.)
+**ON SCRIPT FAILURE**: When any `python3 .plan/execute-script.py` invocation exits non-zero, emit the canonical `[ERROR]` script-failure line to work-log BEFORE any retry or abort. This is distinct from the `[ERROR]` task-failure line above — that one captures end-of-task failure context; this one captures every individual non-zero script exit so caller-name drift, argparse rejections, and "Unknown notation" failures stay visible in `work.log` instead of hiding in `script-execution.log`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-5-execute) Script {notation} {sub} failed: exit_code={N}, args={...}"
+```
+
+Substitute `{notation}` with the failing script's `bundle:skill:script` notation, `{sub}` with the subcommand (or `-` when none), `{N}` with the observed exit code, and `{...}` with a compact rendering of the call's arguments (mask any obviously sensitive values).
+
+After the emit:
+1. Capture error context (script path, exit code, stderr)
+2. Continue with normal error recovery (retry, fail task, etc.)
 
 ### Other Errors
 
