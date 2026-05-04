@@ -22,24 +22,16 @@ Findings have severity=error and fixable=False, matching the
 codebase. Each finding carries ``rule_id``, ``file``, ``line``, plus
 rule-specific ``details`` keys (notation/subcommand/flag/etc.).
 
-Gating mechanism
-----------------
-This rule cluster is GATED OFF by default and is only activated when the
-caller explicitly opts in via the ``PM_ARGUMENT_NAMING_ENABLED`` env var
-set to a truthy value (``1``, ``true``, ``yes``, case-insensitive). The
-gating is documented as a transitional period: it allows the rule cluster
-to land before the ``--task`` → ``--task-number`` and architecture-flag
-renames have swept the live codebase. Once those renames complete, the
-gate can be flipped on and (eventually) removed.
-
-The gate is implemented in the public entry point ``analyze_argument_naming``;
-when disabled, the function returns an empty list immediately. Tests
-exercise the analyzer directly against synthetic fixture trees, bypassing
-the gate via ``PM_ARGUMENT_NAMING_ENABLED=1``.
+Activation
+----------
+This rule cluster is unconditionally active across all marketplace markdown.
+See lesson ``2026-04-29-23-002`` for the rationale (three recurrences of
+stale-flag drift in skill workflows within ~3 days drove the move from a
+gated transitional period to default-on enforcement).
 
 Public API
 ----------
-- ``analyze_argument_naming(marketplace_root)``: gated entry point — returns
+- ``analyze_argument_naming(marketplace_root)``: entry point — returns
   findings for the four rule IDs combined.
 - ``scan_notation(marketplace_root, registered_notations)``: detects
   ``ARGUMENT_NAMING_NOTATION_INVALID``.
@@ -67,7 +59,6 @@ Rule IDs registered
 from __future__ import annotations
 
 import ast
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -80,13 +71,6 @@ RULE_NOTATION_INVALID = 'ARGUMENT_NAMING_NOTATION_INVALID'
 RULE_SUBCOMMAND_UNKNOWN = 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN'
 RULE_FLAG_UNKNOWN = 'ARGUMENT_NAMING_FLAG_UNKNOWN'
 RULE_CANONICAL_FORMS_DRIFT = 'ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT'
-
-# Env-var that gates the entire cluster. When unset or falsy, the public
-# entry point ``analyze_argument_naming`` returns an empty list.
-GATE_ENV_VAR = 'PM_ARGUMENT_NAMING_ENABLED'
-
-# Truthy values for the gate. Comparison is lower-case.
-_TRUTHY = frozenset({'1', 'true', 'yes', 'on'})
 
 
 # =============================================================================
@@ -154,17 +138,6 @@ class _ScriptEntry:
 
     subcommands: dict[str, set[str]]
     root_flags: set[str]
-
-
-# =============================================================================
-# Gating helper
-# =============================================================================
-
-
-def _is_gate_enabled() -> bool:
-    """Return ``True`` when the cluster gate env-var is set to a truthy value."""
-    raw = os.environ.get(GATE_ENV_VAR, '').strip().lower()
-    return raw in _TRUTHY
 
 
 # =============================================================================
@@ -811,15 +784,12 @@ def scan_canonical_forms(
 def analyze_argument_naming(marketplace_root: Path) -> list[dict]:
     """Run the full argument-naming rule cluster against ``marketplace_root``.
 
-    Gated by ``PM_ARGUMENT_NAMING_ENABLED``. When disabled (default), returns
-    an empty list immediately so existing module-tests are unaffected.
+    Unconditionally active. See lesson ``2026-04-29-23-002`` for the rationale
+    behind moving from a gated transitional period to default-on enforcement.
 
     Returns a flat list of finding dicts (one per detected drift). Use
     ``rule_id`` to differentiate rule clusters.
     """
-    if not _is_gate_enabled():
-        return []
-
     executor_path = marketplace_root.parent / '.plan' / 'execute-script.py'
     registered = load_registered_notations(executor_path)
     if not registered:

@@ -503,6 +503,10 @@ def _capture_pending_tasks_count(plan_id: str, _metadata: dict[str, Any], _phase
 
 
 def _capture_qgate_open_count(plan_id: str, _metadata: dict[str, Any], phase: str) -> Any:
+    if phase == '1-init':
+        # Q-Gate findings are scoped to phases 2-refine onward; manage-findings
+        # rejects --phase 1-init, so short-circuit to a trivially-zero result.
+        return 0
     stdout = _run_script(
         [
             'plan-marshall:manage-findings:manage-findings',

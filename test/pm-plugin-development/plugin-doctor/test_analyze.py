@@ -1177,9 +1177,9 @@ def test_display_detail_subdoc_em_dash_surfaces_in_subdoc_analysis():
 #         bundles/<bundle>/skills/<skill>/SKILL.md             (prose to scan)
 #         bundles/plan-marshall/skills/dev-general-practices/standards/argument-naming.md
 #
-# The cluster is gated by ``PM_ARGUMENT_NAMING_ENABLED``; every test below
-# turns the gate ON via ``monkeypatch.setenv`` to bypass the default-off
-# behaviour.
+# The cluster is unconditionally active (gate removed per lesson
+# 2026-04-29-23-002); tests below exercise the analyzer directly without
+# any env-var setup.
 
 
 def _write_fake_executor(plan_dir: Path, notations: list[str]) -> Path:
@@ -1301,13 +1301,12 @@ def _findings_by_rule(findings: list[dict], rule_id: str) -> list[dict]:
 # -----------------------------------------------------------------------------
 
 
-def test_argument_naming_notation_invalid_snake_case_bundle(tmp_path, monkeypatch):
+def test_argument_naming_notation_invalid_snake_case_bundle(tmp_path):
     """Snake-case bundle in notation (``plan_marshall:...``) emits NOTATION_INVALID.
 
     The registered notation uses kebab-case (``plan-marshall``); prose with
     underscore segments must not be silently treated as the same script.
     """
-    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
     marketplace_root = _build_fixture_root(tmp_path)
     # Register a kebab-case notation where the third segment differs from
     # the second so the snake_case-form prose does not also satisfy the
@@ -1341,9 +1340,8 @@ def test_argument_naming_notation_invalid_snake_case_bundle(tmp_path, monkeypatc
     assert finding['details']['reason'] == 'snake_case_not_registered'
 
 
-def test_argument_naming_notation_invalid_self_referential_repetition(tmp_path, monkeypatch):
+def test_argument_naming_notation_invalid_self_referential_repetition(tmp_path):
     """``foo:foo:foo``-shape notation triggers NOTATION_INVALID with repetition reason."""
-    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
     marketplace_root = _build_fixture_root(tmp_path)
     _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-providers:providers'])
     _write_fake_script(
@@ -1370,9 +1368,8 @@ def test_argument_naming_notation_invalid_self_referential_repetition(tmp_path, 
     assert finding['details']['reason'] == 'third_segment_repeats_second'
 
 
-def test_argument_naming_notation_invalid_unregistered_notation(tmp_path, monkeypatch):
+def test_argument_naming_notation_invalid_unregistered_notation(tmp_path):
     """Notation not present in executor SCRIPTS dict triggers NOTATION_INVALID."""
-    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
     marketplace_root = _build_fixture_root(tmp_path)
     # Register one notation; reference a different one in prose.
     _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-tasks:manage-tasks'])
@@ -1403,9 +1400,8 @@ def test_argument_naming_notation_invalid_unregistered_notation(tmp_path, monkey
     assert finding['details']['reason'] == 'not_registered'
 
 
-def test_argument_naming_notation_canonical_form_no_finding(tmp_path, monkeypatch):
+def test_argument_naming_notation_canonical_form_no_finding(tmp_path):
     """Properly registered kebab-case notation produces no NOTATION_INVALID finding."""
-    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
     marketplace_root = _build_fixture_root(tmp_path)
     _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-tasks:manage-tasks'])
     _write_fake_script(
@@ -1433,9 +1429,8 @@ def test_argument_naming_notation_canonical_form_no_finding(tmp_path, monkeypatc
 # -----------------------------------------------------------------------------
 
 
-def test_argument_naming_subcommand_unknown_emits_finding(tmp_path, monkeypatch):
+def test_argument_naming_subcommand_unknown_emits_finding(tmp_path):
     """Prose using an undeclared subcommand on a registered script triggers SUBCOMMAND_UNKNOWN."""
-    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
     marketplace_root = _build_fixture_root(tmp_path)
     _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-references:manage-references'])
     _write_fake_script(
@@ -1467,9 +1462,8 @@ def test_argument_naming_subcommand_unknown_emits_finding(tmp_path, monkeypatch)
     assert sorted(finding['details']['known_subcommands']) == ['add', 'read']
 
 
-def test_argument_naming_subcommand_known_no_finding(tmp_path, monkeypatch):
+def test_argument_naming_subcommand_known_no_finding(tmp_path):
     """Declared subcommand emits no SUBCOMMAND_UNKNOWN finding."""
-    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
     marketplace_root = _build_fixture_root(tmp_path)
     _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-references:manage-references'])
     _write_fake_script(
@@ -1497,9 +1491,8 @@ def test_argument_naming_subcommand_known_no_finding(tmp_path, monkeypatch):
 # -----------------------------------------------------------------------------
 
 
-def test_argument_naming_flag_unknown_emits_finding(tmp_path, monkeypatch):
+def test_argument_naming_flag_unknown_emits_finding(tmp_path):
     """Undeclared flag on a known subcommand triggers FLAG_UNKNOWN."""
-    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
     marketplace_root = _build_fixture_root(tmp_path)
     _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-files:manage-files'])
     _write_fake_script(
@@ -1532,9 +1525,8 @@ def test_argument_naming_flag_unknown_emits_finding(tmp_path, monkeypatch):
     assert 'content' in finding['details']['known_flags']
 
 
-def test_argument_naming_flag_known_no_finding(tmp_path, monkeypatch):
+def test_argument_naming_flag_known_no_finding(tmp_path):
     """Declared flag yields no FLAG_UNKNOWN finding."""
-    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
     marketplace_root = _build_fixture_root(tmp_path)
     _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-files:manage-files'])
     _write_fake_script(
@@ -1562,9 +1554,8 @@ def test_argument_naming_flag_known_no_finding(tmp_path, monkeypatch):
 # -----------------------------------------------------------------------------
 
 
-def test_argument_naming_canonical_forms_drift_flag_mismatch(tmp_path, monkeypatch):
+def test_argument_naming_canonical_forms_drift_flag_mismatch(tmp_path):
     """Canonical Forms row prescribing a flag that argparse does not declare emits drift finding."""
-    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
     marketplace_root = _build_fixture_root(tmp_path)
     _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-tasks:manage-tasks'])
     # Real argparse declares ``--task`` (post-rename: would be ``--task-number``);
@@ -1591,9 +1582,8 @@ def test_argument_naming_canonical_forms_drift_flag_mismatch(tmp_path, monkeypat
     assert 'task' in finding['details']['known_flags']
 
 
-def test_argument_naming_canonical_forms_match_no_finding(tmp_path, monkeypatch):
+def test_argument_naming_canonical_forms_match_no_finding(tmp_path):
     """Canonical Forms row matching argparse declaration produces no drift finding."""
-    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
     marketplace_root = _build_fixture_root(tmp_path)
     _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-tasks:manage-tasks'])
     _write_fake_script(
