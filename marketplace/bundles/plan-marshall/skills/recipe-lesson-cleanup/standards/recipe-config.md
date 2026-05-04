@@ -40,7 +40,7 @@ The recipe MUST set `scope_estimate: surgical` in the outline metadata. Downstre
 
 - `surgical + bug_fix` / `surgical + enhancement` / `surgical + tech_debt` all collapse to:
   - Phase 5 verification: `quality-gate` only
-  - Phase 6 finalize: `commit-push`, `create-pr`, `lessons-capture` only (drops `automated-review`, `sonar-roundtrip`, `knowledge-capture`)
+  - Phase 6 finalize: `commit-push`, `create-pr`, `lessons-capture` only (drops `automated-review`, `sonar-roundtrip`)
 
 This is the entire reason this recipe exists — driving the smallest safe manifest for a single-lesson cleanup.
 

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
-from constants import DIR_ARCHIVED, DIR_LOGS, DIR_MEMORIES  # type: ignore[import-not-found]
+from constants import DIR_ARCHIVED, DIR_LOGS  # type: ignore[import-not-found]
 from file_ops import (  # type: ignore[import-not-found]
     get_base_dir,
     get_marshal_path,
@@ -23,7 +23,7 @@ from file_ops import (  # type: ignore[import-not-found]
 )
 
 # Configuration — delegate to file_ops for consistent path resolution.
-# PLAN_BASE_DIR holds runtime state (logs/, archived-plans/, memory/) in
+# PLAN_BASE_DIR holds runtime state (logs/, archived-plans/) in
 # the per-project global plan-marshall directory. temp/ stays project-local
 # under the tracked config dir (.plan/), and marshal.json is also tracked.
 PLAN_BASE_DIR = get_base_dir()
@@ -41,8 +41,6 @@ class CleanupStats:
     logs_bytes: int = 0
     archived_plans_deleted: int = 0
     archived_plans_bytes: int = 0
-    memory_files_deleted: int = 0
-    memory_bytes: int = 0
 
 
 def get_retention_settings() -> dict | None:
@@ -202,49 +200,6 @@ def clean_archived_plans(max_age_days: int, dry_run: bool = False) -> tuple[int,
     return deleted, total_bytes
 
 
-def clean_memory(max_age_days: int, dry_run: bool = False) -> tuple[int, int]:
-    """
-    Clean old memory files from .plan/memory.
-
-    Returns:
-        (files_deleted, bytes_freed)
-    """
-    memory_dir = PLAN_BASE_DIR / DIR_MEMORIES
-    if not memory_dir.exists():
-        return 0, 0
-
-    deleted = 0
-    total_bytes = 0
-
-    # Clean all files recursively (handoffs, etc.)
-    for item in memory_dir.rglob('*'):
-        if not item.is_file():
-            continue
-
-        if get_file_age_days(item) > max_age_days:
-            try:
-                size = item.stat().st_size
-                if not dry_run:
-                    item.unlink()
-                deleted += 1
-                total_bytes += size
-            except OSError:
-                pass
-
-    # Clean empty subdirectories
-    if not dry_run:
-        for subdir in memory_dir.iterdir():
-            if subdir.is_dir():
-                try:
-                    # Only remove if empty
-                    if not any(subdir.iterdir()):
-                        subdir.rmdir()
-                except OSError:
-                    pass
-
-    return deleted, total_bytes
-
-
 def get_status() -> dict | None:
     """
     Get status of all cleanable directories.
@@ -302,28 +257,11 @@ def get_status() -> dict | None:
                     except OSError:
                         pass
 
-    # Memory stats
-    memory_dir = PLAN_BASE_DIR / DIR_MEMORIES
-    memory_total = 0
-    memory_old = 0
-    memory_old_bytes = 0
-    if memory_dir.exists():
-        for f in memory_dir.rglob('*'):
-            if f.is_file():
-                memory_total += 1
-                if get_file_age_days(f) > retention['memory_days']:
-                    memory_old += 1
-                    try:
-                        memory_old_bytes += f.stat().st_size
-                    except OSError:
-                        pass
-
     return {
         'retention': retention,
         'temp': {'files': temp_files, 'bytes': temp_bytes},
         'logs': {'total': logs_total, 'old': logs_old, 'old_bytes': logs_old_bytes},
         'archived_plans': {'total': archived_total, 'old': archived_old, 'old_bytes': archived_old_bytes},
-        'memory': {'total': memory_total, 'old': memory_old, 'old_bytes': memory_old_bytes},
     }
 
 
@@ -355,15 +293,9 @@ def cmd_clean(args) -> dict | None:
         stats.archived_plans_deleted = deleted
         stats.archived_plans_bytes = bytes_freed
 
-    # Clean memory
-    if target in ('all', 'memory'):
-        deleted, bytes_freed = clean_memory(retention['memory_days'], dry_run)
-        stats.memory_files_deleted = deleted
-        stats.memory_bytes = bytes_freed
-
     # Output
     status = 'dry_run' if dry_run else 'success'
-    total_bytes = stats.temp_bytes + stats.logs_bytes + stats.archived_plans_bytes + stats.memory_bytes
+    total_bytes = stats.temp_bytes + stats.logs_bytes + stats.archived_plans_bytes
 
     return {
         'status': status,
@@ -374,8 +306,6 @@ def cmd_clean(args) -> dict | None:
         'logs_bytes': stats.logs_bytes,
         'archived_plans_deleted': stats.archived_plans_deleted,
         'archived_plans_bytes': stats.archived_plans_bytes,
-        'memory_files_deleted': stats.memory_files_deleted,
-        'memory_bytes': stats.memory_bytes,
         'total_bytes_freed': total_bytes,
     }
 
@@ -390,7 +320,6 @@ def cmd_status(args) -> dict | None:
         'status': 'ok',
         'retention_logs_days': status['retention']['logs_days'],
         'retention_archived_plans_days': status['retention']['archived_plans_days'],
-        'retention_memory_days': status['retention']['memory_days'],
         'retention_temp_on_maintenance': status['retention']['temp_on_maintenance'],
         'temp_files': status['temp']['files'],
         'temp_bytes': status['temp']['bytes'],
@@ -400,7 +329,4 @@ def cmd_status(args) -> dict | None:
         'archived_plans_total': status['archived_plans']['total'],
         'archived_plans_old': status['archived_plans']['old'],
         'archived_plans_old_bytes': status['archived_plans']['old_bytes'],
-        'memory_total': status['memory']['total'],
-        'memory_old': status['memory']['old'],
-        'memory_old_bytes': status['memory']['old_bytes'],
     }

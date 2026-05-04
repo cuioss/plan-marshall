@@ -145,10 +145,8 @@ Each step declares an `order: <int>` value in its authoritative source — front
 | `default:architecture-refresh` | `standards/architecture-refresh.md` | Refresh architecture descriptors (tier-0 deterministic discover + diff, tier-1 LLM re-enrichment) |
 | `default:automated-review` | `standards/automated-review.md` | CI automated review |
 | `default:sonar-roundtrip` | `standards/sonar-roundtrip.md` | Sonar analysis roundtrip |
-| `default:knowledge-capture` | `standards/knowledge-capture.md` | Capture learnings to memory |
 | `default:lessons-capture` | `standards/lessons-capture.md` | Record lessons learned |
 | `default:branch-cleanup` | `standards/branch-cleanup.md` | Branch cleanup — adapts to PR mode or local-only based on create-pr step presence |
-| `default:review-knowledge` | `standards/review-knowledge.md` | Review existing lessons-learned and memories against plan changes; propose deletes/updates |
 | `default:record-metrics` | `standards/record-metrics.md` | Record final plan metrics before archive |
 | `default:archive-plan` | `standards/archive-plan.md` | Archive the completed plan |
 
@@ -338,7 +336,7 @@ Iterate over `manifest.phase_6.steps` (read in Step 2). The list is the manifest
 
 #### Plugin self-modification
 
-Cached plugin definitions under `~/.claude/plugins/cache/` are the runtime source of truth for Task agent dispatch. When a plan's diff modifies bundled agents, commands, or skills (paths matching `marketplace/bundles/*/{agents,commands,skills}/**`), the worktree-side fix never reaches the cache until `project:finalize-step-sync-plugin-cache` runs. The default Phase 6 manifest places that step late (post `branch-cleanup`) — correct in the steady state ("publish after commit"), but wrong when the in-flight finalize itself dispatches `default:create-pr`, `default:automated-review`, `default:knowledge-capture`, or `default:lessons-capture` against the *pre-fix* cached agents.
+Cached plugin definitions under `~/.claude/plugins/cache/` are the runtime source of truth for Task agent dispatch. When a plan's diff modifies bundled agents, commands, or skills (paths matching `marketplace/bundles/*/{agents,commands,skills}/**`), the worktree-side fix never reaches the cache until `project:finalize-step-sync-plugin-cache` runs. The default Phase 6 manifest places that step late (post `branch-cleanup`) — correct in the steady state ("publish after commit"), but wrong when the in-flight finalize itself dispatches `default:create-pr`, `default:automated-review`, or `default:lessons-capture` against the *pre-fix* cached agents.
 
 The manifest composer closes this window automatically: `manage-execution-manifest`'s `bundle_self_modification` stacked rule (see [manage-execution-manifest/standards/decision-rules.md](../manage-execution-manifest/standards/decision-rules.md) § "Stacked Rule — `bundle_self_modification`") inserts an extra `project:finalize-step-sync-plugin-cache` entry into `phase_6.steps` immediately before the earliest agent-dispatched step. The existing late-stage occurrence is preserved verbatim — duplicate occurrences are intentional (early sync feeds the in-flight finalize; late sync publishes the post-commit state).
 
@@ -370,7 +368,6 @@ Do NOT cache the live HEAD across loop iterations — read it fresh per step so 
 |------|--------|-----------|
 | `default:sonar-roundtrip` | 15 min (900s) | Full Sonar gate roundtrip plus optional fix-task creation |
 | `default:automated-review` | 15 min (900s) | CI wait + review-bot buffer + comment triage |
-| `default:knowledge-capture` | 5 min (300s) | Bounded `manage-memories save` workflow |
 | `default:lessons-capture` | 5 min (300s) | Bounded `manage-lessons add` + Write workflow |
 | All other steps | no explicit budget | Fall under Claude Code's default per-call ceiling |
 
@@ -383,11 +380,10 @@ For each step reference:
 | `default:create-pr` | `plan-marshall:create-pr-agent` |
 | `default:automated-review` | `plan-marshall:automated-review-agent` |
 | `default:sonar-roundtrip` | `plan-marshall:sonar-roundtrip-agent` |
-| `default:knowledge-capture` | `plan-marshall:knowledge-capture-agent` |
 | `default:lessons-capture` | `plan-marshall:lessons-capture-agent` |
 
 **Inline-only built-in steps** (require user interaction or sequential dependency):
-- `commit-push` (git working directory state), `architecture-refresh` (AskUserQuestion for Tier-1 prompt mode; consumes `architecture-pre/` snapshot from phase-1-init Step 5d), `branch-cleanup` (AskUserQuestion), `review-knowledge` (AskUserQuestion batch gate — classification sub-calls dispatch to `plan-marshall:classify-knowledge-agent`, see `standards/review-knowledge.md` §3f), `record-metrics` (must run immediately before `archive-plan` on the still-live plan directory), `archive-plan` (must be last, moves plan files)
+- `commit-push` (git working directory state), `architecture-refresh` (AskUserQuestion for Tier-1 prompt mode; consumes `architecture-pre/` snapshot from phase-1-init Step 5d), `branch-cleanup` (AskUserQuestion), `record-metrics` (must run immediately before `archive-plan` on the still-live plan directory), `archive-plan` (must be last, moves plan files)
 
 Per-step agent `<usage>` totals are persisted on disk by `manage-metrics accumulate-agent-usage` (called from step 5b below). The on-disk file `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` survives context compaction and is read by `default:record-metrics` at `end-phase` time. Do NOT maintain a parallel tally in model context — the on-disk file is authoritative.
 
@@ -430,7 +426,6 @@ FOR each step_id in manifest.phase_6.steps:
          * default:create-pr        -> Task(subagent_type: plan-marshall:create-pr-agent)
          * default:automated-review -> Task(subagent_type: plan-marshall:automated-review-agent, timeout: 900s)
          * default:sonar-roundtrip  -> Task(subagent_type: plan-marshall:sonar-roundtrip-agent, timeout: 900s)
-         * default:knowledge-capture -> Task(subagent_type: plan-marshall:knowledge-capture-agent, timeout: 300s)
          * default:lessons-capture  -> Task(subagent_type: plan-marshall:lessons-capture-agent, timeout: 300s)
        Each agent reads its corresponding standards document (standards/{name}.md) and executes all steps within the agent context. Pass `--plan-id {plan_id}` and, when an `{iteration}` counter applies, `--iteration {iteration}`. Embed the Worktree Header from `plan-marshall:phase-5-execute` Dispatch Protocol in every agent prompt so the worktree constraint propagates.
 
@@ -444,8 +439,8 @@ FOR each step_id in manifest.phase_6.steps:
               --display-detail "timed out after {budget}s"
          c. Continue to the next step in the loop — DO NOT abort the pipeline.
 
-     - BUILT-IN (inline-only: commit-push, branch-cleanup, review-knowledge, record-metrics, archive-plan):
-       Read the standards document from dispatch table and follow all steps in main context. Inline steps are not timeout-wrapped — they execute under Claude Code's standard per-call ceiling. For `review-knowledge` §3f classification sub-dispatches, route each candidate through `plan-marshall:classify-knowledge-agent` — see `standards/review-knowledge.md` for the prompt body.
+     - BUILT-IN (inline-only: commit-push, branch-cleanup, record-metrics, archive-plan):
+       Read the standards document from dispatch table and follow all steps in main context. Inline steps are not timeout-wrapped — they execute under Claude Code's standard per-call ceiling.
 
      - PROJECT/SKILL: Load the skill with interface contract:
        Skill: {step_ref}
@@ -609,7 +604,6 @@ Finalize steps (10/10 done)
   [OK]  create-pr                         #212
   [OK]  automated-review                  3 comment(s) resolved (no loop-back)
   [OK]  sonar-roundtrip                   quality gate passed
-  [OK]  knowledge-capture                 no new pattern saved
   [OK]  lessons-capture                   no lessons recorded
   [OK]  validation                        all required steps done
   [OK]  record-metrics                    1591s / 209327 tokens
@@ -710,9 +704,7 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `standards/architecture-refresh.md` | `default:architecture-refresh` | Tier-0 deterministic `architecture discover --force` + `diff-modules --pre` driven `chore(architecture)` commit; Tier-1 LLM re-enrichment with `prompt`/`auto`/`disabled` modes; respects `architecture_refresh.tier_0` / `tier_1` run-config knobs and `change_type ∈ {bug_fix, verification}` shortcut |
 | `standards/automated-review.md` | `default:automated-review` | CI wait, review triage, loop-back on findings |
 | `standards/sonar-roundtrip.md` | `default:sonar-roundtrip` | Sonar quality gate, issue resolution |
-| `standards/knowledge-capture.md` | `default:knowledge-capture` | manage-memories save command |
 | `standards/lessons-capture.md` | `default:lessons-capture` | manage-lesson add command |
-| `standards/review-knowledge.md` | `default:review-knowledge` | Review lessons-learned and memories against plan changes |
 | `standards/branch-cleanup.md` | `default:branch-cleanup` | Branch cleanup with user confirmation — PR mode (merge + CI) or local-only (switch + pull) |
 | `standards/record-metrics.md` | `default:record-metrics` | Record final plan metrics before archive |
 | `standards/archive-plan.md` | `default:archive-plan` | Archive the completed plan |
@@ -742,7 +734,6 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `plan-marshall:workflow-integration-github` | CI monitoring, review handling (GitHub) |
 | `plan-marshall:workflow-integration-sonar` | Sonar quality gate |
 | `plan-marshall:phase-5-execute` | Loop-back target for fix task execution |
-| `plan-marshall:manage-memories` | Knowledge capture |
 | `plan-marshall:manage-lessons` | Lessons capture |
 
 ### Phase-boundary metric bookkeeping

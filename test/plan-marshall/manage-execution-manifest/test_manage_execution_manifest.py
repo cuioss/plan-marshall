@@ -134,12 +134,12 @@ def test_early_terminate_analysis_with_empty_files():
         assert result is not None and result['rule_fired'] == 'early_terminate_analysis'
         assert result['phase_5']['early_terminate'] is True
         assert result['phase_5']['verification_steps_count'] == 0
-        # Phase 6 keeps the records-and-archive triad.
-        assert result['phase_6']['steps_count'] == 3
+        # Phase 6 keeps the records-and-archive duo (lessons-capture + archive-plan).
+        assert result['phase_6']['steps_count'] == 2
 
 
 def test_recipe_path_drops_heavy_review_steps():
-    """Row 2 — recipe_key present → drop automated-review/sonar-roundtrip/knowledge-capture."""
+    """Row 2 — recipe_key present → drop automated-review/sonar-roundtrip."""
     with PlanContext(plan_id='matrix-recipe'):
         result = cmd_compose(
             _compose_ns(
@@ -155,7 +155,6 @@ def test_recipe_path_drops_heavy_review_steps():
         assert manifest is not None
         assert 'automated-review' not in manifest['phase_6']['steps']
         assert 'sonar-roundtrip' not in manifest['phase_6']['steps']
-        assert 'knowledge-capture' not in manifest['phase_6']['steps']
         assert 'commit-push' in manifest['phase_6']['steps']
 
 
@@ -214,7 +213,7 @@ def test_surgical_bug_fix_trims_heavy_review_steps():
         assert result is not None and result['rule_fired'] == 'surgical_bug_fix'
         manifest = read_manifest('matrix-bug')
         assert manifest is not None
-        for stripped in ('automated-review', 'sonar-roundtrip', 'knowledge-capture'):
+        for stripped in ('automated-review', 'sonar-roundtrip'):
             assert stripped not in manifest['phase_6']['steps']
         assert 'lessons-capture' in manifest['phase_6']['steps']
 
@@ -237,7 +236,7 @@ def test_surgical_tech_debt_trims_heavy_review_steps():
         manifest = read_manifest('matrix-tech')
         assert manifest is not None
         assert 'commit-push' in manifest['phase_6']['steps']
-        for stripped in ('automated-review', 'sonar-roundtrip', 'knowledge-capture'):
+        for stripped in ('automated-review', 'sonar-roundtrip'):
             assert stripped not in manifest['phase_6']['steps']
 
 
@@ -267,7 +266,6 @@ _PREFIXED_PHASE_6 = (
     'default:commit-push',
     'default:create-pr',
     'default:automated-review',
-    'default:knowledge-capture',
     'default:lessons-capture',
     'default:branch-cleanup',
     'default:archive-plan',
@@ -275,7 +273,7 @@ _PREFIXED_PHASE_6 = (
 
 
 def test_rule_1_early_terminate_analysis_with_prefixed_candidates():
-    """Rule 1 (early_terminate_analysis) — prefixed candidates: include only knowledge/lessons/archive (bare)."""
+    """Rule 1 (early_terminate_analysis) — prefixed candidates: include only lessons/archive (bare)."""
     with PlanContext(plan_id='prefix-rule-1'):
         result = cmd_compose(
             _compose_ns(
@@ -291,7 +289,7 @@ def test_rule_1_early_terminate_analysis_with_prefixed_candidates():
         assert manifest is not None
         steps = manifest['phase_6']['steps']
         # Boundary normalization strips `default:` at intake — output is bare.
-        assert set(steps) == {'knowledge-capture', 'lessons-capture', 'archive-plan'}
+        assert set(steps) == {'lessons-capture', 'archive-plan'}
         # No `default:`-prefixed entries survive anywhere in the manifest.
         assert not any(s.startswith('default:') for s in steps)
         # Heavy steps that would have leaked through pre-fix are absent.
@@ -300,7 +298,7 @@ def test_rule_1_early_terminate_analysis_with_prefixed_candidates():
 
 
 def test_rule_2_recipe_with_prefixed_candidates():
-    """Rule 2 (recipe) — prefixed candidates: drop automated-review/sonar-roundtrip/knowledge-capture (bare output)."""
+    """Rule 2 (recipe) — prefixed candidates: drop automated-review/sonar-roundtrip (bare output)."""
     prefixed_with_sonar = _PREFIXED_PHASE_6 + ('default:sonar-roundtrip',)
     with PlanContext(plan_id='prefix-rule-2'):
         result = cmd_compose(
@@ -320,7 +318,7 @@ def test_rule_2_recipe_with_prefixed_candidates():
         # No `default:` prefix in output — boundary-normalized at intake.
         assert not any(s.startswith('default:') for s in steps)
         # Heavy review steps are dropped.
-        for dropped in ('automated-review', 'sonar-roundtrip', 'knowledge-capture'):
+        for dropped in ('automated-review', 'sonar-roundtrip'):
             assert dropped not in steps
         # Non-heavy steps survive (bare).
         assert 'commit-push' in steps
@@ -353,12 +351,11 @@ def test_rule_3_docs_only_with_prefixed_candidates():
             assert dropped not in steps
         # Non-review steps survive (bare).
         assert 'commit-push' in steps
-        assert 'knowledge-capture' in steps
         assert 'lessons-capture' in steps
 
 
 def test_rule_5_surgical_bug_fix_with_prefixed_candidates():
-    """Rule 5 (surgical_bug_fix) — prefixed candidates: drop automated-review/sonar-roundtrip/knowledge-capture (bare output)."""
+    """Rule 5 (surgical_bug_fix) — prefixed candidates: drop automated-review/sonar-roundtrip (bare output)."""
     prefixed_with_sonar = _PREFIXED_PHASE_6 + ('default:sonar-roundtrip',)
     with PlanContext(plan_id='prefix-rule-5-bug'):
         result = cmd_compose(
@@ -375,7 +372,7 @@ def test_rule_5_surgical_bug_fix_with_prefixed_candidates():
         assert manifest is not None
         steps = manifest['phase_6']['steps']
         assert not any(s.startswith('default:') for s in steps)
-        for dropped in ('automated-review', 'sonar-roundtrip', 'knowledge-capture'):
+        for dropped in ('automated-review', 'sonar-roundtrip'):
             assert dropped not in steps
         assert 'lessons-capture' in steps
         assert 'commit-push' in steps
@@ -401,13 +398,13 @@ def test_rule_5_surgical_tech_debt_with_prefixed_candidates():
         assert manifest is not None
         steps = manifest['phase_6']['steps']
         assert not any(s.startswith('default:') for s in steps)
-        for dropped in ('automated-review', 'sonar-roundtrip', 'knowledge-capture'):
+        for dropped in ('automated-review', 'sonar-roundtrip'):
             assert dropped not in steps
         assert 'commit-push' in steps
 
 
 def test_rule_6_verification_no_files_with_prefixed_candidates():
-    """Rule 6 (verification_no_files) — prefixed candidates: include only knowledge/lessons/archive (bare output)."""
+    """Rule 6 (verification_no_files) — prefixed candidates: include only lessons/archive (bare output)."""
     with PlanContext(plan_id='prefix-rule-6'):
         result = cmd_compose(
             _compose_ns(
@@ -423,7 +420,7 @@ def test_rule_6_verification_no_files_with_prefixed_candidates():
         assert manifest is not None
         steps = manifest['phase_6']['steps']
         # Boundary normalization strips `default:` at intake — output is bare.
-        assert set(steps) == {'knowledge-capture', 'lessons-capture', 'archive-plan'}
+        assert set(steps) == {'lessons-capture', 'archive-plan'}
         assert not any(s.startswith('default:') for s in steps)
         for excluded in ('commit-push', 'create-pr', 'automated-review', 'pre-push-quality-gate', 'branch-cleanup'):
             assert excluded not in steps
@@ -442,7 +439,6 @@ def test_prefix_normalization_no_op_for_bare_candidates():
         'create-pr',
         'automated-review',
         'sonar-roundtrip',
-        'knowledge-capture',
         'lessons-capture',
         'branch-cleanup',
         'archive-plan',
@@ -462,7 +458,7 @@ def test_prefix_normalization_no_op_for_bare_candidates():
         assert manifest is not None
         steps = manifest['phase_6']['steps']
         # Bare names: heavy review steps still dropped; helper is a no-op.
-        for dropped in ('automated-review', 'sonar-roundtrip', 'knowledge-capture'):
+        for dropped in ('automated-review', 'sonar-roundtrip'):
             assert dropped not in steps
         assert 'commit-push' in steps
         assert 'lessons-capture' in steps
@@ -1295,7 +1291,7 @@ def test_verification_no_files_keeps_full_phase_5_trims_phase_6():
         manifest = read_manifest('matrix-vnofiles')
         assert manifest is not None
         assert manifest['phase_5']['verification_steps'] == ['quality-gate', 'module-tests', 'coverage']
-        assert set(manifest['phase_6']['steps']) == {'knowledge-capture', 'lessons-capture', 'archive-plan'}
+        assert set(manifest['phase_6']['steps']) == {'lessons-capture', 'archive-plan'}
 
 
 # =============================================================================
@@ -2654,7 +2650,6 @@ class TestBotEnforcementGuardRemediation:
             # (c) Row 5's other subtractions are still dropped — only
             #     automated-review is remediated.
             assert 'sonar-roundtrip' not in bare_step_names
-            assert 'knowledge-capture' not in bare_step_names
 
             # (d) Decision-log records the remediation exactly once.
             remediations = self._remediation_messages(captured, provider)

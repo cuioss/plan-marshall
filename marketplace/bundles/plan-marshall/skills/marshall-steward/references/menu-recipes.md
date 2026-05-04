@@ -22,7 +22,7 @@ Use `manage-config list-recipes` to enumerate everything currently visible to th
 | **Default change_type** | _derived from lesson kind_ |
 | **Auto-suggest** | Yes (by `phase-1-init` Step 5c, doc-shaped lessons only) |
 
-**Purpose**: Convert a single lesson-learned into a deterministic surgical plan that fixes exactly what the lesson directs and nothing else. One deliverable per lesson directive; Q-Gate skipped (recipe path is its own gate); `scope_estimate=surgical` forced so the manifest composer drops `automated-review`, `sonar-roundtrip`, and `knowledge-capture` from Phase 6.
+**Purpose**: Convert a single lesson-learned into a deterministic surgical plan that fixes exactly what the lesson directs and nothing else. One deliverable per lesson directive; Q-Gate skipped (recipe path is its own gate); `scope_estimate=surgical` forced so the manifest composer drops `automated-review` and `sonar-roundtrip` from Phase 6.
 
 **Derived change_type mapping**:
 

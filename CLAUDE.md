@@ -64,7 +64,7 @@ bundle-name/
 ## The 10 Production Bundles
 
 ### plan-marshall
-Core infrastructure with script execution, permission management, memory, lessons learned, and project configuration. Includes the complete 5-phase development workflow (init, refine, outline, plan, execute, finalize), task planning, git workflows, PR management, Sonar integration, and build automation for Maven/Gradle/npm.
+Core infrastructure with script execution, permission management, lessons learned, and project configuration. Includes the complete 5-phase development workflow (init, refine, outline, plan, execute, finalize), task planning, git workflows, PR management, Sonar integration, and build automation for Maven/Gradle/npm.
 
 ### pm-dev-java
 Java development standards covering core patterns, null safety, Lombok, CDI/Quarkus, unit testing with JUnit 5, JavaDoc, and logging. Includes agents for verification and coverage analysis.

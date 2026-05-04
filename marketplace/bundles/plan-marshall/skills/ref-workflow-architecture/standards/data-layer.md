@@ -198,8 +198,7 @@ manage-config (configuration authority)
 ├── manage-tasks (inherits domain/profile from deliverables)
 ├── manage-status (routes phases using config workflow_skills)
 │   └── manage-metrics (parallels phase transitions with timing)
-├── manage-run-config (reads retention from marshal.json for cleanup)
-└── manage-memories (reads retention from marshal.json for cleanup)
+└── manage-run-config (reads retention from marshal.json for cleanup)
 
 manage-findings
 └── manage-lessons (promotion: findings → lessons)

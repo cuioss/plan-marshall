@@ -43,7 +43,7 @@ JSON structure and field definitions for project configuration.
       "review_bot_buffer_seconds": 180,
       "steps": [
         "commit_push", "create_pr", "automated_review",
-        "sonar_roundtrip", "knowledge_capture", "lessons_capture",
+        "sonar_roundtrip", "lessons_capture",
         "branch_cleanup", "archive"
       ]
     }
@@ -69,7 +69,6 @@ JSON structure and field definitions for project configuration.
     "retention": {
       "logs_days": 1,
       "archived_plans_days": 5,
-      "memory_days": 5,
       "temp_on_maintenance": true
     }
   }
@@ -97,7 +96,6 @@ System-level infrastructure settings.
     "retention": {
       "logs_days": 1,
       "archived_plans_days": 5,
-      "memory_days": 5,
       "temp_on_maintenance": true
     }
   }
@@ -110,7 +108,6 @@ System-level infrastructure settings.
 |-------|------|---------|-------------|
 | `logs_days` | int | 1 | Days to keep execution logs |
 | `archived_plans_days` | int | 5 | Days to keep archived plans |
-| `memory_days` | int | 5 | Days to keep memory entries |
 | `temp_on_maintenance` | bool | true | Clean temp on maintenance |
 
 ## Section: plan
@@ -242,7 +239,7 @@ Finalize pipeline with numbered boolean steps.
       "review_bot_buffer_seconds": 180,
       "steps": [
         "default:commit-push", "default:create-pr", "default:automated-review",
-        "default:sonar-roundtrip", "default:knowledge-capture", "default:lessons-capture",
+        "default:sonar-roundtrip", "default:lessons-capture",
         "default:branch-cleanup", "default:record-metrics", "default:archive-plan"
       ],
       "step_order_overrides": {
@@ -260,7 +257,7 @@ Finalize pipeline with numbered boolean steps.
 | `steps` | list | (see below) | Ordered list of step references to execute — persisted sorted ascending by each step's resolved `order` (override > authoritative source) |
 | `step_order_overrides` | map | `{}` | Per-step integer override of the discovered `order` value — managed via `set-step-order-override` / `remove-step-order-override` |
 
-Default steps: `commit_push`, `create_pr`, `automated_review`, `sonar_roundtrip`, `knowledge_capture`, `lessons_capture`, `branch_cleanup`, `archive`. Step types: built-in (plain name), project (`project:` prefix), skill (fully-qualified `bundle:skill`).
+Default steps: `commit_push`, `create_pr`, `automated_review`, `sonar_roundtrip`, `lessons_capture`, `branch_cleanup`, `archive`. Step types: built-in (plain name), project (`project:` prefix), skill (fully-qualified `bundle:skill`).
 
 ## Section: ci
 

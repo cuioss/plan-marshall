@@ -136,7 +136,6 @@ Three metadata styles exist across manage-* skills:
 |-------|---------|--------|
 | JSON fields | manage-status, manage-references, manage-tasks, manage-config | JSON with `created`/`updated` timestamp fields |
 | Markdown key=value headers | manage-lessons | `key=value` lines before content body |
-| JSON envelope | manage-memories | `{"meta": {...}, "data": {...}}` wrapper |
 
 All styles include a `created` timestamp in the canonical format above.
 
@@ -207,11 +206,11 @@ Error codes shared across multiple manage-* skills:
 | Error Code | Cause | Used By |
 |------------|-------|---------|
 | `invalid_plan_id` | Plan ID not in kebab-case format | manage-files, manage-metrics, manage-plan-documents, manage-references, manage-status, manage-tasks |
-| `file_not_found` | Expected file does not exist | manage-files, manage-memories, manage-references, manage-status |
+| `file_not_found` | Expected file does not exist | manage-files, manage-references, manage-status |
 | `not_found` | Requested resource does not exist | manage-findings, manage-lessons, manage-status |
 | `file_exists` | Resource already exists on create | manage-plan-documents, manage-references, manage-status |
 | `missing_required` | Required parameter not provided | manage-lessons, manage-plan-documents, manage-tasks |
-| `validation_error` | Data failed structural validation | manage-memories, manage-plan-documents |
+| `validation_error` | Data failed structural validation | manage-plan-documents |
 | `invalid_phase` | Phase name not in valid set | manage-findings, manage-metrics, manage-status |
 
 Per-skill error codes are documented in each skill's own SKILL.md.
@@ -235,7 +234,7 @@ See [artifacts.md — Plan Directory Structure](artifacts.md#plan-directory-stru
 | Scope | Skills |
 |-------|--------|
 | `plan` | manage-files, manage-findings, manage-plan-documents, manage-references, manage-solution-outline, manage-status, manage-tasks |
-| `global` | manage-lessons, manage-memories, manage-run-config |
+| `global` | manage-lessons, manage-run-config |
 | `hybrid` | manage-architecture, manage-config, manage-logging, manage-metrics |
 
 ## Cross-Skill Relationships
@@ -246,7 +245,7 @@ See [artifacts.md — Plan Directory Structure](artifacts.md#plan-directory-stru
 
 ### Retention Settings
 
-Retention defaults are defined in `manage-config/standards/data-model.md` under the `system.retention` section. Skills that perform cleanup (`manage-run-config cleanup`, `manage-memories cleanup`) read retention values from `marshal.json`.
+Retention defaults are defined in `manage-config/standards/data-model.md` under the `system.retention` section. Skills that perform cleanup (`manage-run-config cleanup`) read retention values from `marshal.json`.
 
 ### Phase Routing
 

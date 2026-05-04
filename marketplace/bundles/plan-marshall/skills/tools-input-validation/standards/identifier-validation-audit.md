@@ -2,11 +2,11 @@
 
 This document is the single source of truth for the canonical identifier-validator sweep across the marketplace. The validator foundation (regex constants, raising validators, `add_<id>_arg(parser)` builders, and the `parse_args_with_toon_errors()` helper) shipped via lesson-2026-04-28-12-001. The cross-bundle sweep that consumed those validators across 32 scripts in `plan-marshall`, `pm-dev-java`, and `pm-documents` landed via lesson-2026-04-29-08-003. Every entry below reflects the post-sweep state: which scripts were migrated, which were excluded and why, and the breaking-compat decisions that fell out of the audit. New scripts and new identifier-shaped flags MUST be reflected in both this document and the SKILL.md adoption table.
 
-## Migrated Scripts (32)
+## Migrated Scripts (31)
 
 Grouped by sweep wave. Each row records the script under sweep, its bundle, the in-scope identifier flags adopted via `add_<id>_arg(parser)` builders, the identifier-handling families covered (argparse-only / parse-then-rebuild / post-parse-normalize), and the corresponding test directory.
 
-### Wave A — plan-marshall manage-* (16)
+### Wave A — plan-marshall manage-* (15)
 
 | Script | Bundle | In-scope flags adopted | Families covered | Test directory |
 |--------|--------|------------------------|------------------|----------------|
@@ -17,7 +17,6 @@ Grouped by sweep wave. Each row records the script under sweep, its bundle, the 
 | `manage-findings/scripts/manage-findings.py` | plan-marshall | `--plan-id`, `--component`, `--module`, `--hash-id` | argparse-only, parse-then-rebuild | `test/plan-marshall/manage-findings/` |
 | `manage-lessons/scripts/manage-lessons.py` | plan-marshall | `--lesson-id` (action=append), `--component`, `--plan-id` | argparse-only, post-parse-normalize | `test/plan-marshall/manage-lessons/` |
 | `manage-logging/scripts/manage-logging.py` | plan-marshall | `--plan-id`, `--phase` | argparse-only, parse-then-rebuild | `test/plan-marshall/manage-logging/` |
-| `manage-memories/scripts/manage-memory.py` | plan-marshall | `--plan-id`, `--session-id` | argparse-only, parse-then-rebuild | `test/plan-marshall/manage-memories/` |
 | `manage-metrics/scripts/manage_metrics.py` | plan-marshall | `--plan-id`, `--phase`, `--session-id` | argparse-only, parse-then-rebuild | `test/plan-marshall/manage-metrics/` |
 | `manage-plan-documents/scripts/manage-plan-documents.py` | plan-marshall | `--plan-id` (+ dynamically-named identifier flags) | parse-then-rebuild, post-parse-normalize | `test/plan-marshall/manage-plan-documents/` |
 | `manage-references/scripts/manage-references.py` | plan-marshall | `--plan-id`, `--field` | argparse-only, parse-then-rebuild | `test/plan-marshall/manage-references/` |
@@ -55,7 +54,7 @@ Grouped by sweep wave. Each row records the script under sweep, its bundle, the 
 
 ## Excluded Scripts (47)
 
-The classification certainty `CERTAIN_EXCLUDE` was assigned during phase-3 component discovery. Each script declares no in-scope identifier flag from the canonical scope list (`--plan-id`, `--lesson-id`, `--session-id`, `--task-number`, `--task-id`, `--component`, `--hash-id`, `--phase`, `--memory-id`, `--field`, `--module`, `--package`, `--domain`, `--name`). Compact form, grouped by directory.
+The classification certainty `CERTAIN_EXCLUDE` was assigned during phase-3 component discovery. Each script declares no in-scope identifier flag from the canonical scope list (`--plan-id`, `--lesson-id`, `--session-id`, `--task-number`, `--task-id`, `--component`, `--hash-id`, `--phase`, `--field`, `--module`, `--package`, `--domain`, `--name`). Compact form, grouped by directory.
 
 | Directory | Scripts | Rationale |
 |-----------|---------|-----------|

@@ -5,7 +5,7 @@ TASK-3 of the canonical-identifier-validator migration audited
 ``extension_discovery.py`` and concluded it is AUDIT-ONLY: it does not declare
 any identifier flag that is in the canonical migration scope (no
 ``--plan-id``, ``--lesson-id``, ``--session-id``, ``--task-number``,
-``--task-id``, ``--component``, ``--hash-id``, ``--phase``, ``--memory-id``,
+``--task-id``, ``--component``, ``--hash-id``, ``--phase``,
 ``--field``, ``--module``, ``--package``, ``--domain``, ``--name``).
 
 The script's only argument is ``--project-dir``, which is a Bucket B
@@ -38,7 +38,6 @@ _IN_SCOPE_FLAGS = (
     '--component',
     '--hash-id',
     '--phase',
-    '--memory-id',
     '--field',
     '--module',
     '--package',
@@ -98,7 +97,6 @@ def test_extension_discovery_does_not_use_input_validation_helpers() -> None:
         'add_component_arg',
         'add_hash_id_arg',
         'add_phase_arg',
-        'add_memory_id_arg',
         'add_field_arg',
         'add_module_arg',
         'add_package_arg',
