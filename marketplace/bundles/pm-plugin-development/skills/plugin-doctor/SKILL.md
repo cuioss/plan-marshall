@@ -60,6 +60,9 @@ Select workflow based on input and execute immediately.
 ### If scope = "skill-knowledge" or skill-path specified with knowledge review
 → **EXECUTE** Workflow 9: doctor-skill-knowledge (jump to that section)
 
+### If scope = "test-conventions"
+→ **EXECUTE** Workflow 10: doctor-test-conventions (jump to that section)
+
 ---
 
 ## Progressive Disclosure Strategy
@@ -213,6 +216,10 @@ Follows common workflow pattern. PM-001 through PM-006 validation rules and refe
 
 Reviews knowledge skill content quality. See [standards/doctor-skill-knowledge.md](standards/doctor-skill-knowledge.md) for correctness, consistency, structure, and LLM optimization checks.
 
+## Workflow 10: doctor-test-conventions
+
+Test-tree conventions enforced as build-failing rules across the `test/` directory. See [standards/doctor-test-conventions.md](standards/doctor-test-conventions.md) for the three rules — unique fixture-module basenames, `subprocess.run` PYTHONPATH propagation (AST-based), and identifier-validator regex vs. corpus — plus the validator registry schema.
+
 ---
 
 ## External Resources
@@ -322,6 +329,7 @@ Representative rule ids by category:
 - **Script**: `argparse_safety`
 - **Content**: `checklist-pattern`
 - **PM-Workflow**: `pm-implicit-script-call` through `pm-contract-non-compliance`
+- **Test-Conventions**: `unique-fixture-basenames`, `subprocess-pythonpath`, `identifier-validator-corpus` (see [standards/doctor-test-conventions.md](standards/doctor-test-conventions.md))
 
 ---
 
