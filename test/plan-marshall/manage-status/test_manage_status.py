@@ -39,6 +39,7 @@ _query = _load_module('_status_cmd_query', '_status_query.py')
 
 cmd_create, cmd_delete_plan = _lifecycle.cmd_create, _lifecycle.cmd_delete_plan
 cmd_transition = _lifecycle.cmd_transition
+cmd_archive = _lifecycle.cmd_archive
 cmd_get_context = _query.cmd_get_context
 cmd_metadata = _query.cmd_metadata
 cmd_progress = _query.cmd_progress
@@ -668,3 +669,143 @@ def test_collect_modified_files_no_worktree_path(tmp_path, monkeypatch):
         f'got {result}. The function must fall through to ``git diff`` (no -C) '
         f'when metadata.worktree_path is absent.'
     )
+
+
+# =============================================================================
+# Regression Tests: cmd_archive atomically completes the active phase, and
+# cmd_transition mirrors the same end-state when the LAST phase finishes.
+# =============================================================================
+#
+# Historical bug (PR ref: #320 finalize): phase-6-finalize SKILL.md called
+# `transition --completed 6-finalize` AFTER `default:archive-plan` had already
+# moved status.json out of the live plan dir, so the transition always failed
+# with file_not_found and archived plans were frozen at
+# `current_phase: 6-finalize, phases[6-finalize]: in_progress`. The fix moves
+# the phase-completion responsibility into cmd_archive (atomic) and updates
+# cmd_transition symmetrically so both verbs produce the same end-state when
+# the last phase is the one being completed: `current_phase = "complete"`
+# (the dormant sentinel referenced by SKILL.md's "plan-already-complete"
+# check and `manage-status list --filter complete` in cleanup).
+
+
+def _seed_finalize_phase_plan(plan_id: str) -> None:
+    """Create a plan whose phases 1..5 are done and 6-finalize is in_progress.
+
+    Mirrors the end-of-execute state when phase-6-finalize is about to run
+    its final step (archive-plan).
+    """
+    cmd_create(
+        Namespace(
+            plan_id=plan_id,
+            title='Atomic Archive Test',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+    for phase in ('1-init', '2-refine', '3-outline', '4-plan', '5-execute'):
+        cmd_update_phase(Namespace(plan_id=plan_id, phase=phase, status='done'))
+    cmd_set_phase(Namespace(plan_id=plan_id, phase='6-finalize'))
+
+
+def test_archive_marks_final_phase_done_and_sets_complete():
+    """cmd_archive must close the active phase + set current_phase=complete BEFORE the move.
+
+    Regression for the PR-#320 finalize bug: archived status.json was frozen
+    at `current_phase: 6-finalize, phases[6-finalize]: in_progress` because
+    the post-archive `transition --completed 6-finalize` call always failed
+    with file_not_found. The fix moves phase-completion into cmd_archive so
+    the archived status.json reflects the closed state.
+    """
+    plan_id = 'archive-atomic-happy-path'
+    with PlanContext(plan_id=plan_id):
+        _seed_finalize_phase_plan(plan_id)
+        result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False))
+
+        assert result['status'] == 'success', f'archive failed: {result}'
+        assert 'archived_to' in result, f'missing archived_to in {result}'
+
+        archived_status_path = Path(result['archived_to']) / 'status.json'
+        assert archived_status_path.exists(), (
+            f'archived status.json missing at {archived_status_path} — '
+            f'either move failed or archived_to points to wrong path'
+        )
+
+        archived_status = json.loads(archived_status_path.read_text(encoding='utf-8'))
+        assert archived_status['current_phase'] == 'complete', (
+            f"Expected archived current_phase='complete', got "
+            f"{archived_status['current_phase']!r}. Atomic-archive fix "
+            f'regressed: cmd_archive is not setting the post-finalize sentinel '
+            f'before shutil.move runs.'
+        )
+        assert archived_status['phases'][-1]['status'] == 'done', (
+            f"Expected archived phases[-1].status='done', got "
+            f"{archived_status['phases'][-1]['status']!r}. Atomic-archive fix "
+            f'regressed: cmd_archive is not marking the active phase done '
+            f'before shutil.move runs.'
+        )
+
+
+def test_archive_dry_run_leaves_status_unchanged(tmp_path):
+    """--dry-run must NOT mutate status.json or create the archive directory."""
+    plan_id = 'archive-atomic-dry-run'
+    with PlanContext(plan_id=plan_id) as ctx:
+        _seed_finalize_phase_plan(plan_id)
+
+        live_status_path = ctx.plan_dir / 'status.json'
+        before = live_status_path.read_text(encoding='utf-8')
+
+        result = cmd_archive(Namespace(plan_id=plan_id, dry_run=True))
+
+        assert result['status'] == 'success'
+        assert result.get('dry_run') is True, f'missing dry_run flag: {result}'
+        assert 'would_archive_to' in result
+        assert 'archived_to' not in result, (
+            f'dry-run must NOT report archived_to: {result}'
+        )
+
+        assert not Path(result['would_archive_to']).exists(), (
+            f"dry-run created the archive dir at {result['would_archive_to']} — "
+            f'atomic-archive write block leaked into the dry-run path; the '
+            f'`if args.dry_run:` early-return must precede the write block.'
+        )
+
+        after = live_status_path.read_text(encoding='utf-8')
+        assert before == after, (
+            'dry-run mutated the live status.json — atomic-archive write '
+            'block leaked into the dry-run path; verify the early-return '
+            'on args.dry_run runs before the write_status call.'
+        )
+
+
+def test_transition_last_phase_sets_complete():
+    """cmd_transition must mirror cmd_archive when completing the LAST phase.
+
+    Symmetry guard: a future caller that uses transition for finalization
+    (instead of relying on archive's atomic close) must produce the same
+    end-state — current_phase='complete' and the closing phase marked done.
+    """
+    plan_id = 'transition-last-phase-complete'
+    with PlanContext(plan_id=plan_id) as ctx:
+        _seed_finalize_phase_plan(plan_id)
+
+        result = cmd_transition(Namespace(plan_id=plan_id, completed='6-finalize'))
+
+        assert result['status'] == 'success'
+        assert result.get('message') == 'All phases completed', (
+            f'expected terminal message, got {result}'
+        )
+        assert 'next_phase' not in result, (
+            f'cmd_transition on the last phase must not return next_phase: {result}'
+        )
+
+        live_status = json.loads((ctx.plan_dir / 'status.json').read_text(encoding='utf-8'))
+        assert live_status['current_phase'] == 'complete', (
+            f"Expected current_phase='complete' after transition --completed "
+            f'6-finalize, got {live_status["current_phase"]!r}. Symmetry '
+            f'with cmd_archive regressed: cmd_transition is not setting '
+            f'the post-finalize sentinel for the last phase.'
+        )
+        assert live_status['phases'][-1]['status'] == 'done', (
+            f"Expected phases[-1].status='done', got "
+            f'{live_status["phases"][-1]["status"]!r}.'
+        )

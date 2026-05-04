@@ -336,8 +336,9 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │     │    → Loop back to 5-execute                                  │       │
 │     │    → Max iterations: 3 (configurable)                        │       │
 │     │                                                              │       │
-│     │  6. Mark plan complete                                       │       │
-│     │     └─▶ transition --completed 6-finalize                    │       │
+│     │  6. Archive plan (atomic phase close)                        │       │
+│     │     └─▶ archive — marks active phase done +                  │       │
+│     │         sets current_phase: complete BEFORE moving           │       │
 │     │                                                              │       │
 │     └──────────────────────────────────────────────────────────────┘       │
 │                                                                             │

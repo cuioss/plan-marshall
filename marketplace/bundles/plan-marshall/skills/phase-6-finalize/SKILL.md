@@ -181,7 +181,7 @@ The step skill can access the plan's context via manage-* scripts (references, s
 
 The orchestrator is responsible for resolving `session_id` (see "How to obtain session_id" earlier in this file). This skill receives the resolved value via its Input Parameters and forwards it verbatim to whitelisted steps; it does not re-resolve.
 
-**Required termination:** Every external step (project and fully-qualified skill) MUST terminate with a `manage-status mark-step-done` call that carries `--display-detail "{one-line summary}"`. This is REQUIRED, not optional — a missing or empty `display_detail` causes renderer failure in Step 5 (the literal placeholder `<missing display_detail>` will surface to the user and contribute to a `[FAILED]` headline). The detail string is authored by the step itself; the renderer NEVER invents content on the step's behalf.
+**Required termination:** Every external step (project and fully-qualified skill) MUST terminate with a `manage-status mark-step-done` call that carries `--display-detail "{one-line summary}"`. This is REQUIRED, not optional — a missing or empty `display_detail` causes renderer failure in Step 4 (the literal placeholder `<missing display_detail>` will surface to the user and contribute to a `[FAILED]` headline). The detail string is authored by the step itself; the renderer NEVER invents content on the step's behalf.
 
 The full command template (use verbatim, substituting the placeholders):
 
@@ -193,7 +193,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 
 MANDATORY annotations for every argument:
 
-- `--phase` — MANDATORY. Always the literal string `6-finalize` for steps dispatched under this operation. This anchors the step record to the finalize phase; any other value routes the record into the wrong phase bucket and breaks the Step 5 renderer grouping.
+- `--phase` — MANDATORY. Always the literal string `6-finalize` for steps dispatched under this operation. This anchors the step record to the finalize phase; any other value routes the record into the wrong phase bucket and breaks the Step 4 renderer grouping.
 - `--outcome` — MANDATORY. Must be exactly one of `done`, `skipped`, or `failed`. Any other value (including misspellings or capitalized variants) is rejected by `manage_status`. The choice determines the headline classification and CANNOT be inferred from `display_detail` alone.
 - `--step` — MANDATORY. Must match the fully-qualified step name as listed in `marshal.json` (e.g. `default:commit-push`, `project:foo`, or `plan-marshall:some-skill:some-script`). Mismatches here create orphan status records that the renderer cannot pair with the dispatched step.
 - `--display-detail` — MANDATORY. Single-line summary of what the step actually did, authored by the step itself. Subject to the constraints listed below. A missing, empty, or whitespace-only value triggers the `<missing display_detail>` placeholder and contributes a `[FAILED]` headline regardless of the `--outcome` value.
@@ -469,7 +469,7 @@ FOR each step_id in manifest.phase_6.steps:
       The script reads `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` (initialising it on first call), sums in the supplied values, increments the `samples` counter, and writes the file back. Inline steps and timed-out steps skip this call — the timeout path's cost is captured by the `manage-metrics enrich` transcript sweep inside `default:record-metrics`. Step 5b runs at most once per dispatched agent return; do NOT also append the totals to a model-context variable.
 
   6. Capture archive result (only when step_id == "archive-plan"):
-     Record the returned `archive_path` into model context alongside the pre-archive snapshot — it is consumed by Step 5 (Render Final Output Template).
+     Record the returned `archive_path` into model context alongside the pre-archive snapshot — it is consumed by Step 4 (Render Final Output Template).
 
   7. Log step completion:
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -483,9 +483,9 @@ END FOR
 
 #### Pre-Archive Snapshot Hook
 
-When the NEXT step to dispatch is `default:archive-plan` (always the last CONFIGURED step), capture a snapshot of plan state BEFORE dispatching archive-plan. The archive step moves `.plan/plans/{plan_id}/` to `.plan/archived-plans/{date}-{plan_id}/` and invalidates subsequent `manage-status read` calls against the live path, so the renderer (Step 5) would be unable to read state after archive returns.
+When the NEXT step to dispatch is `default:archive-plan` (always the last CONFIGURED step), capture a snapshot of plan state BEFORE dispatching archive-plan. The archive step moves `.plan/plans/{plan_id}/` to `.plan/archived-plans/{date}-{plan_id}/` and invalidates subsequent `manage-status read` calls against the live path, so the renderer (Step 4) would be unable to read state after archive returns.
 
-The snapshot is held in **model context (in-memory)** — do NOT write a work file to disk. It flows directly from this hook into Step 5's render procedure.
+The snapshot is held in **model context (in-memory)** — do NOT write a work file to disk. It flows directly from this hook into Step 4's render procedure.
 
 Capture the following values:
 
@@ -495,11 +495,11 @@ Capture the following values:
 4. **Repository state** — branch via `git -C {main_checkout} branch --show-current`, porcelain via `git -C {main_checkout} status --porcelain`.
 5. **PR state + number** — via `ci pr view --project-dir {main_checkout}`. Treat error (no PR for branch) as `state=n/a, number=n/a`.
 6. **Solution outline Summary** — the 2-3 sentence Summary body that feeds the Goal block. Fetch via `manage-solution-outline read --plan-id {plan_id} --section summary` and extract the `content` field. On `section_not_found` or empty content, store the sentinel value `None`; the emission procedure substitutes the defensive placeholder `(no summary recorded)`.
-7. **Plan `short_description`** — the compact label used by Step 7's terminal `done` emission. Extract `plan.short_description` from `manage-status read --plan-id {plan_id}` (already fetched in item 1). Store the raw string, or `None` when the field is absent/empty. This value is captured **before** archive so it remains available after `status.json` is moved.
+7. **Plan `short_description`** — the compact label used by Step 6's terminal `done` emission. Extract `plan.short_description` from `manage-status read --plan-id {plan_id}` (already fetched in item 1). Store the raw string, or `None` when the field is absent/empty. This value is captured **before** archive so it remains available after `status.json` is moved.
 
 See [standards/output-template.md#snapshot-procedure](standards/output-template.md#snapshot-procedure) for exact commands and field extraction.
 
-After the snapshot is captured, dispatch `default:archive-plan` normally (step 4 in the FOR body above) and capture its returned `archive_path` (step 5). Both the snapshot and `archive_path` flow into Step 5 "Render Final Output Template".
+After the snapshot is captured, dispatch `default:archive-plan` normally (step 5 in the FOR body above) and capture its returned `archive_path` (step 6). Both the snapshot and `archive_path` flow into Step 4 "Render Final Output Template".
 
 **Built-in step notes**:
 - `default:branch-cleanup`: Do NOT preemptively skip based on PR state. The `standards/branch-cleanup.md` standard has its own `AskUserQuestion` confirmation gate.
@@ -508,15 +508,9 @@ After the snapshot is captured, dispatch `default:archive-plan` normally (step 4
 
 Do NOT add any further `manage-metrics` invocations after `default:archive-plan` or after `Skill: plan-marshall:phase-6-finalize` returns to its caller. The plan-finalization bookkeeping (`end-phase` + `enrich` + `generate`) is fully contained by `default:record-metrics`.
 
-### Step 4: Mark Plan Complete
+### Step 4: Render Final Output Template
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
-  --plan-id {plan_id} \
-  --completed 6-finalize
-```
-
-### Step 5: Render Final Output Template
+The legacy "Mark Plan Complete" step (a separate `manage-status transition --completed 6-finalize` call) was removed. `default:archive-plan` in Step 3 now atomically marks the active phase done and sets `current_phase: complete` on the live status.json BEFORE moving the plan directory — see `manage-status:_cmd_lifecycle.py cmd_archive`. A follow-up `transition` call would always fail with `file_not_found` because archive has already invalidated the live path.
 
 **This step ALWAYS runs** — it is NOT configurable via the `steps` list. It is the terminal action of the phase, invoked after `default:archive-plan` returns in Step 3.
 
@@ -546,7 +540,7 @@ Skill: plan-marshall:phase-6-finalize
 
 The emitted template is a **user-facing text block printed to the model's output**, not a log entry. It is the primary surface reported to the user at the end of the finalize phase.
 
-### Step 6: Log Phase Completion
+### Step 5: Log Phase Completion
 
 Final metrics are already recorded inside the Step 3 pipeline by `default:record-metrics` (which runs immediately before `default:archive-plan`). This step only logs phase completion to work.log.
 
@@ -562,7 +556,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **Note**: `manage-logging` operates on log files, not the plan directory, so these calls remain valid after `default:archive-plan` has moved the plan state.
 
-### Step 7: Emit Done Terminal Title
+### Step 6: Emit Done Terminal Title
 
 **This step ALWAYS runs** when a `short_description` was captured in the pre-archive snapshot — it is NOT configurable via the `steps` list.
 
@@ -578,7 +572,7 @@ Emit a one-shot `✓ pm:done:{short_description}` OSC escape to the terminal so 
 python3 ~/.claude/plugins/cache/plan-marshall/marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/set_terminal_title.py done --plan-label "{short_description}"
 ```
 
-**Advisory**: this step is best-effort. On any error (script missing, non-zero exit, `/dev/tty` unavailable), log a WARNING and continue. A missing terminal emission is cosmetic and MUST NOT block finalize from returning success — the plan has already archived, all state transitions are committed, and the user can still read the Step 5 output template in their scrollback:
+**Advisory**: this step is best-effort. On any error (script missing, non-zero exit, `/dev/tty` unavailable), log a WARNING and continue. A missing terminal emission is cosmetic and MUST NOT block finalize from returning success — the plan has already archived, all state transitions are committed, and the user can still read the Step 4 output template in their scrollback:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -591,7 +585,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **Success** (user-facing):
 
-The primary output is the five-block template rendered by Step 5. It is a plain-text, user-facing block — not TOON — assembled from the pre-archive snapshot plus `archive_path`. See [standards/output-template.md](standards/output-template.md) for the full renderer specification.
+The primary output is the five-block template rendered by Step 4. It is a plain-text, user-facing block — not TOON — assembled from the pre-archive snapshot plus `archive_path`. See [standards/output-template.md](standards/output-template.md) for the full renderer specification.
 
 Example:
 
@@ -722,7 +716,7 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `standards/branch-cleanup.md` | `default:branch-cleanup` | Branch cleanup with user confirmation — PR mode (merge + CI) or local-only (switch + pull) |
 | `standards/record-metrics.md` | `default:record-metrics` | Record final plan metrics before archive |
 | `standards/archive-plan.md` | `default:archive-plan` | Archive the completed plan |
-| `standards/output-template.md` | — | Renderer specification for the five-block final output template (Step 5) |
+| `standards/output-template.md` | — | Renderer specification for the five-block final output template (Step 4) |
 | `standards/required-steps.md` | — | Canonical list of steps enforced by the `phase_steps_complete` handshake invariant |
 | `standards/validation.md` | — | Configuration requirements, error scenarios |
 | `standards/lessons-integration.md` | — | Conceptual guidance on lesson capture |
