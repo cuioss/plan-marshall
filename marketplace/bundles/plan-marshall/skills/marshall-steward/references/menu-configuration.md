@@ -611,7 +611,7 @@ Non-secret values collected via `AskUserQuestion`. Secrets entered by user editi
    If `default:sonar-roundtrip` not in steps:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-     plan phase-6-finalize add-step --step default:sonar-roundtrip --after default:automated-review
+     plan phase-6-finalize add-step --step default:sonar-roundtrip
    ```
 
 ### Edit Workflow

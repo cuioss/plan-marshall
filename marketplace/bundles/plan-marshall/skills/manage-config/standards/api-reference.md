@@ -177,7 +177,7 @@ manage-config plan phase-6-finalize set-step \
 
 ### Order-driven step verbs (phase-5-execute, phase-6-finalize)
 
-`set-steps` and `add-step` on these two phases derive each step's effective order exclusively from the step's authoritative `order` field (frontmatter for built-in standards / project-local `SKILL.md`, return-dict key for extension-contributed steps). The resulting list is persisted sorted ascending by that order — any positional arguments passed to `add-step` (e.g., `--position`, `--after`) are ignored for the sort.
+`set-steps` and `add-step` on these two phases derive each step's effective order exclusively from the step's authoritative `order` field (frontmatter for built-in standards / project-local `SKILL.md`, return-dict key for extension-contributed steps). The resulting list is persisted sorted ascending by that order.
 
 Error responses surfaced by `set-steps` and `add-step`:
 
