@@ -48,10 +48,6 @@
           "marketplace/bundles/*/skills/*/scripts/**/*.py",
           "test/**/*.py"
         ]
-      },
-      "step_order_overrides": {
-        "default:pre-push-quality-gate": 5,
-        "default:pre-submission-self-review": 7
       }
     }
   },
