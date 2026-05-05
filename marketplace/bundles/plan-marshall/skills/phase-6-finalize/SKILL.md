@@ -143,8 +143,8 @@ Each step declares an `order: <int>` value in its authoritative source — front
 | `default:commit-push` | `standards/commit-push.md` | Commit and push changes |
 | `default:create-pr` | `standards/create-pr.md` | Create pull request |
 | `default:architecture-refresh` | `standards/architecture-refresh.md` | Refresh architecture descriptors (tier-0 deterministic discover + diff, tier-1 LLM re-enrichment) |
-| `default:automated-review` | `standards/automated-review.md` | CI automated review — CI wait, producer-side `github_pr comments-stage`, then per-finding dispatch through `manage-findings query --type pr-comment` + `ext-triage-{domain}` |
-| `default:sonar-roundtrip` | `standards/sonar-roundtrip.md` | Sonar analysis roundtrip — producer-side `sonar fetch-and-store`, then per-finding dispatch through `manage-findings query --type sonar-issue` + `ext-triage-{domain}` |
+| `default:automated-review` | `standards/automated-review.md` | CI automated review (see standards doc for the consumer step list; [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) for the architectural flow) |
+| `default:sonar-roundtrip` | `standards/sonar-roundtrip.md` | Sonar analysis roundtrip (see standards doc for the consumer step list; [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) for the architectural flow) |
 | `default:lessons-capture` | `standards/lessons-capture.md` | Record lessons learned |
 | `default:branch-cleanup` | `standards/branch-cleanup.md` | Branch cleanup — adapts to PR mode or local-only based on create-pr step presence |
 | `default:record-metrics` | `standards/record-metrics.md` | Record final plan metrics before archive |
@@ -702,8 +702,8 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `standards/commit-push.md` | `default:commit-push` | Commit strategy, git status, workflow-integration-git delegation |
 | `standards/create-pr.md` | `default:create-pr` | PR existence check, body generation, CI pr create |
 | `standards/architecture-refresh.md` | `default:architecture-refresh` | Tier-0 deterministic `architecture discover --force` + `diff-modules --pre` driven `chore(architecture)` commit; Tier-1 LLM re-enrichment with `prompt`/`auto`/`disabled` modes; respects `architecture_refresh.tier_0` / `tier_1` run-config knobs and `change_type ∈ {bug_fix, verification}` shortcut |
-| `standards/automated-review.md` | `default:automated-review` | CI wait, producer-side `github_pr comments-stage`, then per-finding dispatch through `manage-findings query --type pr-comment` + `ext-triage-{domain}` (FIX / SUPPRESS / ACCEPT / AskUserQuestion); loop-back on FIX |
-| `standards/sonar-roundtrip.md` | `default:sonar-roundtrip` | Producer-side `sonar fetch-and-store`, then per-finding dispatch through `manage-findings query --type sonar-issue` + `ext-triage-{domain}` (FIX / SUPPRESS / ACCEPT / AskUserQuestion); loop-back on FIX |
+| `standards/automated-review.md` | `default:automated-review` | CI wait, then consumer dispatch (FIX / SUPPRESS / ACCEPT / AskUserQuestion); loop-back on FIX. Architectural flow: [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) |
+| `standards/sonar-roundtrip.md` | `default:sonar-roundtrip` | Sonar consumer dispatch (FIX / SUPPRESS / ACCEPT / AskUserQuestion); loop-back on FIX. Architectural flow: [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) |
 | `standards/lessons-capture.md` | `default:lessons-capture` | manage-lesson add command |
 | `standards/branch-cleanup.md` | `default:branch-cleanup` | Branch cleanup with user confirmation — PR mode (merge + CI) or local-only (switch + pull) |
 | `standards/record-metrics.md` | `default:record-metrics` | Record final plan metrics before archive |

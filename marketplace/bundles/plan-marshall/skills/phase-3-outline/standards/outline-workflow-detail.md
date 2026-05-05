@@ -611,7 +611,7 @@ The remaining validators (`module-mapping`, `scope-criterion`, `narrative-vs-cod
 Findings emitted by these validators flow into the same `qgate_pending_count` aggregate as the existing checks (Sections 2.1–2.7 and the missing-coverage sweep), so the orchestrator's existing 3-iteration auto-loop handles re-entry uniformly regardless of which validator emitted the finding.
 
 **Q-Gate writes**:
-- `artifacts/findings/{type}.jsonl` - Any triage findings (split per type, merged on query)
+- See [`findings-pipeline.md` § Store](../../ref-workflow-architecture/standards/findings-pipeline.md#store) for the per-type write layout.
 - `logs/decision.log` - Q-Gate verification results
 
 #### Q-Gate Return Value

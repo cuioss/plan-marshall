@@ -4,19 +4,22 @@
 
 ## Overview
 
-Triage extensions declare domain-specific decision-making knowledge for **PR review comments only**: suppression syntax, severity guidelines, and acceptable-to-accept criteria for `pr-comment` findings raised on a pull request. The triage skill for the relevant domain is loaded to decide the appropriate action (FIX / SUPPRESS / ACCEPT) for each PR comment based on the file or component it targets. Other finding sources (build warnings, test failures, Sonar issues, lint issues) are handled by their own dedicated workflows and do NOT route through triage extensions.
+Triage extensions declare domain-specific decision-making knowledge for the consumer-side dispatch in the [findings pipeline](../../ref-workflow-architecture/standards/findings-pipeline.md). The contract scope covers two finding types: `pr-comment` (raised on a pull request, dispatched by [`phase-6-finalize/standards/automated-review.md`](../../phase-6-finalize/standards/automated-review.md)) and `sonar-issue` (raised by SonarQube/SonarCloud, dispatched by [`phase-6-finalize/standards/sonar-roundtrip.md`](../../phase-6-finalize/standards/sonar-roundtrip.md)). For each finding, the consumer detects the domain from `file_path`, resolves the per-domain triage skill, loads it, and decides per-finding (FIX / SUPPRESS / ACCEPT / `AskUserQuestion`) using the loaded standards.
+
+Build / test / lint findings are routed through their own producer-side store path (build-* SKILL.mds, `--plan-id` always-on); they currently flow into `manage-findings` directly without per-domain ext-triage dispatch. Future iterations may extend ext-triage scope to those types — at that point the Required Skill Sections table below is the contract surface to update.
 
 ## Implementor Requirements
 
 ### Required Skill Sections
 
-The referenced triage skill MUST include these sections in its `SKILL.md`:
+The referenced triage skill MUST include these sections in its `SKILL.md` (or as standards files referenced from it):
 
 | Section | Purpose | Content |
 |---------|---------|---------|
-| `## Suppression Syntax` | How to suppress findings | Annotation/comment syntax per finding type |
-| `## Severity Guidelines` | When to fix vs suppress vs accept | Decision table by severity |
-| `## Acceptable to Accept` | What can be accepted without fixing | Situations where accepting is appropriate |
+| `## Suppression Syntax` (or `standards/suppression.md`) | How to suppress findings | Annotation/comment syntax per finding type |
+| `## Severity Guidelines` (or `standards/severity.md`) | When to fix vs suppress vs accept | Decision table by severity |
+| `## Acceptable to Accept` (or `standards/acceptable-to-accept.md`) | What can be accepted without fixing | Situations where accepting is appropriate |
+| `standards/pr-comment-disposition.md` | Per-domain disposition table for PR comments | When to FIX (fix-task) vs reply-with-rationale-and-resolve vs escalate-to-user, with reply-rationale templates per category |
 
 ### Implementor Frontmatter
 
@@ -41,32 +44,38 @@ class Extension(ExtensionBase):
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `domain` | str | Yes | Domain key (e.g., `java`, `python`, `documentation`) |
-| `finding` | dict | Yes | PR comment finding (`type == 'pr-comment'`) with `file`, `line`, `message`, `severity` |
+| `finding` | dict | Yes | Finding with `type ∈ {'pr-comment', 'sonar-issue'}`, `file`, `line`, `message`, `severity` |
 
 ### Pre-Conditions
 
 - Domain is registered in `marshal.json` under `skill_domains.{domain_key}`
 - Triage skill exists and is loadable via `resolve-workflow-skill-extension --domain {domain} --type triage`
-- PR comments have been collected from the active pull request
+- The producer-side stage has run: PR comments have been fetched + stored as `pr-comment` findings (`workflow-integration-{github,gitlab}:github_pr/gitlab_pr comments-stage`), or Sonar issues have been fetched + stored as `sonar-issue` findings (`workflow-integration-sonar:sonar fetch-and-store`)
 
 ### Post-Conditions
 
-- Each PR comment gets a decision: **FIX**, **SUPPRESS**, or **ACCEPT** with rationale
-- Suppressions include syntax-correct annotation/comment for the domain
+- Each finding gets a decision: **FIX**, **SUPPRESS**, **ACCEPT**, or `AskUserQuestion` (escalation) with rationale
+- Suppressions include syntax-correct annotation/comment for the domain (`suppression.md`)
+- The decision is recorded via `manage-findings resolve --resolution {fixed|suppressed|accepted|taken_into_account}`
 - Decisions are logged to `decision.log`
 
 ### Lifecycle
 
 ```
-1. Fetch PR review comments (via tools-integration-ci)
-2. For each pr-comment finding:
-   a. Determine domain from the commented file path/extension
+1. Producer stage: fetch upstream items, pre-filter, store as pr-comment / sonar-issue
+   findings via manage-findings add (workflow-integration-{github,gitlab,sonar})
+2. Consumer dispatch: manage-findings query --type {pr-comment|sonar-issue} --resolution pending
+3. For each finding:
+   a. Determine domain from the file_path (architecture which-module heuristic)
    b. resolve-workflow-skill-extension --domain {domain} --type triage
-   c. If extension exists: load skill, apply severity/suppression rules
+   c. If extension exists: load Skill: {bundle}:ext-triage-{domain}
    d. If no extension: use default severity mapping
-   e. Decide: fix | suppress | accept
-3. Apply fixes/suppressions -> push commit -> resolve thread
+   e. Decide: FIX | SUPPRESS | ACCEPT | AskUserQuestion (when standards leave the call ambiguous)
+4. Act on the decision (fix-task + loop-back / annotation / pr thread-reply or sonar dismiss)
+5. manage-findings resolve --hash-id H --resolution {fixed|suppressed|accepted|taken_into_account}
 ```
+
+See [`findings-pipeline.md` § Consumer Dispatch](../../ref-workflow-architecture/standards/findings-pipeline.md#consumer-dispatch) for the full producer→store→consumer→gate flow.
 
 ## Hook API
 

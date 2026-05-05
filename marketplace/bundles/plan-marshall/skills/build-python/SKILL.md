@@ -38,7 +38,7 @@ See `build-api-reference.md` for the full subcommand API and availability matrix
 
 ### Producer-Side Finding Storage (`run --plan-id`)
 
-When `run` is invoked with `--plan-id <P>`, every parsed issue from a failed build is auto-stored as a finding via `manage-findings add` (always-on — there is no separate `--store-findings` flag). When `--plan-id` is omitted, the historical silent behaviour is preserved (parse + format only). The per-issue routing is:
+When `run` is invoked with `--plan-id <P>`, every parsed issue from a failed build is auto-stored via the producer path (always-on — there is no separate `--store-findings` flag). When `--plan-id` is omitted, the historical silent behaviour is preserved (parse + format only). The python-specific issue→finding-type routing is:
 
 | Parsed `category` (Issue) | Finding type |
 |---------------------------|--------------|
@@ -48,7 +48,7 @@ When `run` is invoked with `--plan-id <P>`, every parsed issue from a failed bui
 
 Severity is mapped from `Issue.severity`: `error` → `error`, `warning` → `warning`. The finding's `module` carries the build tool name (`python`), `rule` carries the original parser category, and `detail` carries the full message plus any stack trace.
 
-Producer-side mismatches (parsed issue count ≠ stored count) are surfaced as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`.
+> For the producer→store→consumer→gate flow including the producer-mismatch fidelity contract, see [`ref-workflow-architecture/standards/findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md). This SKILL.md owns the per-tool issue→finding-type routing only.
 
 ## Quality-Gate Coverage
 

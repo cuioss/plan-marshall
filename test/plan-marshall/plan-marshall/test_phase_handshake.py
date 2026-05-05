@@ -1067,3 +1067,348 @@ def test_capture_blocking_count_excludes_resolved_findings(
         assert result['invariants']['pending_findings_blocking_count'] in (0, '0')
         row = store.get_row('pf-accepted', '6-finalize')
         assert row is not None
+
+
+# --- (e) qgate aggregation across all phase files ------------------------
+#
+# The qgate blocking type cannot be queried via ``manage-findings query
+# --type qgate`` because Q-Gate findings live in ``qgate-{phase}.jsonl``
+# (canonical query iterates only ``FINDING_TYPES`` which excludes
+# ``qgate``). The aggregation helper loops every phase and sums the
+# per-phase qgate query results so a producer-mismatch row filed under
+# any phase still blocks the 6-finalize boundary.
+
+
+def test_qgate_aggregated_helper_loops_every_qgate_phase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``_query_pending_qgate_count_aggregated`` issues one query per phase.
+
+    Pins the contract that the helper enumerates every value in
+    ``QGATE_PHASES`` and routes through the ``qgate query --phase {p}
+    --resolution pending`` subcommand (NOT the canonical ``query --type
+    qgate`` path that returns 0 for the qgate type). Without this
+    enumeration a producer-mismatch row filed under ``5-execute`` would
+    fail to block the ``5-execute → 6-finalize`` boundary even though
+    ``qgate`` is in the configured blocking partition.
+    """
+    # Arrange — capture every script invocation made by the helper.
+    captured: list[list[str]] = []
+    per_phase_counts = {
+        '2-refine': 0,
+        '3-outline': 1,  # one pending qgate row at 3-outline
+        '4-plan': 0,
+        '5-execute': 2,  # two pending qgate rows at 5-execute (producer-mismatch)
+        '6-finalize': 0,
+    }
+
+    def _fake_run(args: list[str]) -> str:
+        captured.append(args)
+        # Locate the ``--phase`` flag and emit the per-phase count.
+        phase_idx = args.index('--phase')
+        phase = args[phase_idx + 1]
+        return f'filtered_count: {per_phase_counts.get(phase, 0)}\n'
+
+    monkeypatch.setattr(inv, '_run_script', _fake_run)
+
+    # Act
+    total = inv._query_pending_qgate_count_aggregated('any-plan')
+
+    # Assert — sum across all phases (1 + 2 = 3) and exactly one query per
+    # phase value defined in QGATE_PHASES.
+    assert total == 3
+    assert len(captured) == len(inv.QGATE_PHASES)
+    for args in captured:
+        # Every call MUST hit the qgate subcommand surface, not the
+        # canonical query path that misses qgate findings entirely.
+        assert args[1] == 'qgate'
+        assert args[2] == 'query'
+        # And every call MUST filter by ``--resolution pending`` — the same
+        # contract the per-type query enforces for the other blocking types.
+        resolution_idx = args.index('--resolution')
+        assert args[resolution_idx + 1] == 'pending'
+
+    # Every phase in QGATE_PHASES was queried exactly once (set equality
+    # pins the loop's coverage of the phase list).
+    queried_phases = {args[args.index('--phase') + 1] for args in captured}
+    assert queried_phases == set(inv.QGATE_PHASES)
+
+
+def test_qgate_aggregated_helper_returns_none_on_partial_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Any per-phase query failure poisons the aggregate to ``None``.
+
+    The aggregated helper inherits the conservative "not applicable"
+    contract from ``_query_pending_count_for_type`` — silent
+    under-counting would let a transition advance with unresolved Q-Gate
+    rows in flight, defeating the whole boundary guard.
+    """
+    # Arrange — the executor returns ``None`` for one phase (script failed).
+    def _fake_run(args: list[str]) -> str | None:
+        phase = args[args.index('--phase') + 1]
+        if phase == '4-plan':
+            return None  # simulated executor failure
+        return 'filtered_count: 0\n'
+
+    monkeypatch.setattr(inv, '_run_script', _fake_run)
+
+    # Act
+    total = inv._query_pending_qgate_count_aggregated('any-plan')
+
+    # Assert — partial visibility -> ``None``, not 0.
+    assert total is None
+
+
+def test_capture_blocks_at_finalize_when_qgate_pending_via_aggregator(
+    only_pending_findings_invariants,
+    stub_metadata,
+    stub_query_counts,
+    stub_blocking_types,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """qgate is in the default blocking partition for 6-finalize: a
+    pending qgate row (from any phase) MUST trip ``BlockingFindingsPresent``.
+
+    Stubs the aggregating helper to return a non-zero count — the same
+    semantics a real producer-mismatch row filed under ``phase=5-execute``
+    would produce after this fix. Pre-fix the canonical
+    ``--type qgate`` query returned 0 always, so the gate never tripped.
+    This test pins the corrected behaviour structurally.
+    """
+    # Arrange — qgate aggregator reports a pending row; canonical per-type
+    # query continues to report zeros for the other blocking types.
+    monkeypatch.setattr(
+        inv,
+        '_query_pending_qgate_count_aggregated',
+        lambda _plan_id: 1,
+    )
+    stub_blocking_types['6-finalize'] = ['qgate']
+
+    # Act
+    with PlanContext(plan_id='pf-block-qgate'):
+        result = cmds.cmd_capture(_ns(plan_id='pf-block-qgate', phase='6-finalize'))
+
+        # Assert — the aggregator's count rolls up into the blocking total
+        # and the capture refuses to persist the row.
+        assert result['status'] == 'error'
+        assert result['error'] == 'blocking_findings_present'
+        assert result['blocking_count'] == 1
+        assert result['blocking_types'] == ['qgate']
+        assert result['per_type'] == {'qgate': 1}
+        assert store.get_row('pf-block-qgate', '6-finalize') is None
+
+
+def test_capture_succeeds_at_finalize_when_qgate_finding_accepted(
+    only_pending_findings_invariants,
+    stub_metadata,
+    stub_query_counts,
+    stub_blocking_types,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """qgate findings resolved via ``accepted`` / ``taken_into_account``
+    drop out of the pending count; the boundary clears.
+
+    Mirrors the resolution-escape-valve contract documented in
+    ``phase-handshake.md`` § Resolution model: any non-``pending``
+    resolution counts as resolved for blocking purposes. The aggregator
+    returns 0 because every per-phase qgate query filters by
+    ``--resolution pending``, so resolved rows never contribute.
+    """
+    # Arrange — every qgate row across every phase has been resolved.
+    monkeypatch.setattr(
+        inv,
+        '_query_pending_qgate_count_aggregated',
+        lambda _plan_id: 0,
+    )
+    stub_blocking_types['6-finalize'] = ['qgate']
+
+    # Act
+    with PlanContext(plan_id='pf-qgate-accepted'):
+        result = cmds.cmd_capture(_ns(plan_id='pf-qgate-accepted', phase='6-finalize'))
+
+        # Assert — capture succeeds, the boundary clears.
+        assert result['status'] == 'success'
+        assert result['invariants']['pending_findings_blocking_count'] in (0, '0')
+        row = store.get_row('pf-qgate-accepted', '6-finalize')
+        assert row is not None
+        assert row['pending_findings_blocking_count'] in (0, '0')
+
+
+def test_capture_routes_only_qgate_via_aggregator(
+    only_pending_findings_invariants,
+    stub_metadata,
+    stub_query_counts,
+    stub_blocking_types,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The qgate-aggregator route MUST NOT leak into other blocking types.
+
+    Pins that ``_capture_pending_findings_blocking_count`` only routes the
+    ``qgate`` partition entry through the aggregating helper —
+    ``bug``, ``lint-issue``, ``sonar-issue``, ``pr-comment``, etc. continue
+    to use the canonical per-type query. A regression that routes every
+    type through the aggregator would over-count and incorrectly block.
+    Conversely, a regression that routes ``qgate`` through the per-type
+    query would re-introduce the silent no-op the aggregator was added to
+    fix.
+    """
+    # Arrange — track aggregator invocations and which finding_type values
+    # the canonical per-type query receives. The per-type query is also
+    # invoked by the passive ``_capture_pending_findings_by_type`` row for
+    # every type in _PENDING_FINDING_TYPES, so the assertion only checks
+    # that ``qgate`` is NEVER passed to it (route-isolation contract) —
+    # not that the call list is exhaustive of the blocking partition.
+    aggregator_calls: list[str] = []
+    type_query_types: list[str] = []
+
+    def _fake_aggregator(plan_id: str) -> int:
+        aggregator_calls.append(plan_id)
+        return 0
+
+    def _fake_type_query(_plan_id: str, finding_type: str) -> int:
+        type_query_types.append(finding_type)
+        return 0
+
+    monkeypatch.setattr(inv, '_query_pending_qgate_count_aggregated', _fake_aggregator)
+    monkeypatch.setattr(inv, '_query_pending_count_for_type', _fake_type_query)
+
+    # Standard partition with qgate alongside non-qgate blocking types.
+    stub_blocking_types['6-finalize'] = ['build-error', 'qgate', 'lint-issue']
+
+    # Act
+    with PlanContext(plan_id='pf-qgate-route'):
+        result = cmds.cmd_capture(_ns(plan_id='pf-qgate-route', phase='6-finalize'))
+
+    # Assert — qgate dispatched to aggregator exactly once.
+    assert result['status'] == 'success'
+    assert aggregator_calls == ['pf-qgate-route']
+
+    # ``qgate`` MUST NEVER reach the per-type query path — that is the
+    # silent no-op the aggregator exists to bypass.
+    assert 'qgate' not in type_query_types
+
+    # Non-qgate blocking types MUST hit the per-type query at least once
+    # (they may also be queried by the passive _capture_pending_findings_
+    # by_type row, hence ``in`` rather than ``==``).
+    assert 'build-error' in type_query_types
+    assert 'lint-issue' in type_query_types
+
+
+# --- (f) intra-finalize boundary re-capture (production scenarios) -------
+#
+# The phase-6-finalize standards (``automated-review.md`` and
+# ``sonar-roundtrip.md``) re-issue ``phase_handshake capture --phase
+# 6-finalize`` between the consumer-side dispatch loop and
+# ``mark-step-done``. These tests pin the production pairing of finding
+# type and boundary so a regression that drops the re-capture from one
+# of the two standards documents (e.g., during a future restructure)
+# surfaces as a clear test failure naming the boundary that lost its
+# gate.
+
+
+def test_pending_pr_comment_blocks_automated_review_to_branch_cleanup(
+    only_pending_findings_invariants,
+    stub_metadata,
+    stub_query_counts,
+    stub_blocking_types,
+) -> None:
+    """automated-review → branch-cleanup intra-finalize re-capture.
+
+    In production the ``automated-review.md`` standard re-issues
+    ``phase_handshake capture --phase 6-finalize`` immediately after the
+    per-finding consumer dispatch and immediately before
+    ``mark-step-done --step automated-review``. With ``pr-comment`` in
+    the configured blocking partition for 6-finalize (the default seeded
+    by ``determine_mode.py``), a pending pr-comment finding refuses the
+    capture — and therefore refuses the boundary advance into
+    ``branch-cleanup``.
+    """
+    # Arrange — production-matching partition: pr-comment blocks at
+    # 6-finalize per the default seeded by `marshall-steward`.
+    stub_query_counts['pr-comment'] = 2
+    stub_blocking_types['6-finalize'] = ['pr-comment']
+
+    # Act — exact call shape automated-review.md issues in production.
+    with PlanContext(plan_id='pf-intra-autoreview'):
+        result = cmds.cmd_capture(_ns(plan_id='pf-intra-autoreview', phase='6-finalize'))
+
+    # Assert — capture refuses; the orchestrator surfaces the structured
+    # error envelope and refuses to proceed to branch-cleanup.
+    assert result['status'] == 'error'
+    assert result['error'] == 'blocking_findings_present'
+    assert result['blocking_count'] == 2
+    assert 'pr-comment' in result['blocking_types']
+    assert result['per_type'] == {'pr-comment': 2}
+    assert store.get_row('pf-intra-autoreview', '6-finalize') is None
+
+
+def test_pending_sonar_issue_blocks_sonar_roundtrip_to_next(
+    only_pending_findings_invariants,
+    stub_metadata,
+    stub_query_counts,
+    stub_blocking_types,
+) -> None:
+    """sonar-roundtrip → next intra-finalize re-capture.
+
+    In production the ``sonar-roundtrip.md`` standard re-issues
+    ``phase_handshake capture --phase 6-finalize`` immediately after the
+    per-finding consumer dispatch and immediately before
+    ``mark-step-done --step sonar-roundtrip``. With ``sonar-issue`` in
+    the blocking partition (default), a pending sonar-issue finding
+    refuses the capture — gating the boundary into the next finalize
+    step.
+    """
+    # Arrange — production-matching partition: sonar-issue is in the
+    # global block list (every phase) per the default partition.
+    stub_query_counts['sonar-issue'] = 1
+    stub_blocking_types['6-finalize'] = ['sonar-issue']
+
+    # Act — exact call shape sonar-roundtrip.md issues in production.
+    with PlanContext(plan_id='pf-intra-sonar'):
+        result = cmds.cmd_capture(_ns(plan_id='pf-intra-sonar', phase='6-finalize'))
+
+    # Assert — capture refuses; the next finalize step does not run.
+    assert result['status'] == 'error'
+    assert result['error'] == 'blocking_findings_present'
+    assert result['blocking_count'] == 1
+    assert 'sonar-issue' in result['blocking_types']
+    assert result['per_type'] == {'sonar-issue': 1}
+    assert store.get_row('pf-intra-sonar', '6-finalize') is None
+
+
+def test_intra_finalize_recapture_clears_after_resolution(
+    only_pending_findings_invariants,
+    stub_metadata,
+    stub_query_counts,
+    stub_blocking_types,
+) -> None:
+    """The intra-finalize re-capture loop-back contract: clears after fix.
+
+    Pins the loop-back guidance documented in ``automated-review.md``
+    and ``sonar-roundtrip.md`` Phase Boundary Re-Capture sections — the
+    boundary is satisfied "only when capture returns ``status: success``"
+    after each pending finding is resolved.
+    """
+    # Arrange — pending pr-comment refuses the capture.
+    stub_query_counts['pr-comment'] = 1
+    stub_blocking_types['6-finalize'] = ['pr-comment']
+
+    with PlanContext(plan_id='pf-intra-loop'):
+        # First capture refuses.
+        first = cmds.cmd_capture(_ns(plan_id='pf-intra-loop', phase='6-finalize'))
+        assert first['status'] == 'error'
+        assert first['error'] == 'blocking_findings_present'
+
+        # Resolution dropping the pending count to zero — the same effect
+        # as ``manage-findings resolve --resolution fixed`` /
+        # ``--resolution accepted`` /etc. unblocks the boundary.
+        stub_query_counts['pr-comment'] = 0
+
+        # Re-issued capture (the loop-back call from the standards doc)
+        # now succeeds and persists the row.
+        second = cmds.cmd_capture(_ns(plan_id='pf-intra-loop', phase='6-finalize'))
+        assert second['status'] == 'success'
+        assert second['invariants']['pending_findings_blocking_count'] in (0, '0')
+        row = store.get_row('pf-intra-loop', '6-finalize')
+        assert row is not None
