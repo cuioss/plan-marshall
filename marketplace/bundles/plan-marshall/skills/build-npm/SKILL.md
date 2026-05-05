@@ -43,7 +43,7 @@ See `build-api-reference.md` for the full subcommand API and availability matrix
 
 ### Producer-Side Finding Storage (`run --plan-id`)
 
-When `run` is invoked with `--plan-id <P>`, every parsed issue from a failed build is auto-stored as a finding via `manage-findings add` (always-on). Without `--plan-id`, the historical silent behaviour is preserved.
+When `run` is invoked with `--plan-id <P>`, every parsed issue from a failed build is auto-stored via the producer path (always-on). Without `--plan-id`, the historical silent behaviour is preserved. The npm-specific issue→finding-type routing is:
 
 | Parsed `category` (Issue) | Finding type |
 |---------------------------|--------------|
@@ -51,7 +51,9 @@ When `run` is invoked with `--plan-id <P>`, every parsed issue from a failed bui
 | ESLint, `lint_*`, `style_*` | `lint-issue` |
 | everything else (TypeScript errors, npm execution failures) | `build-error` |
 
-The finding's `module` carries `npm`, `rule` carries the parser category. Producer-side mismatches are surfaced as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`.
+The finding's `module` carries `npm`, `rule` carries the parser category.
+
+> For the producer→store→consumer→gate flow including the producer-mismatch fidelity contract, see [`ref-workflow-architecture/standards/findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md). This SKILL.md owns the per-tool issue→finding-type routing only.
 
 ### js_coverage.py — Deep Coverage Analysis
 

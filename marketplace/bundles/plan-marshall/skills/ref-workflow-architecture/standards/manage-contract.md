@@ -243,6 +243,10 @@ See [artifacts.md — Plan Directory Structure](artifacts.md#plan-directory-stru
 
 `manage-findings` can promote findings to `manage-lessons` via the `promote` command. This creates a lesson from a finding's content and marks the finding as promoted. See `manage-findings` for the promotion API and `manage-lessons` for the resulting lesson format.
 
+### Findings Pipeline
+
+For the producer→store→consumer→gate flow that connects every quality signal (PR review comments, Sonar issues, build / test / lint failures, Q-Gate findings) to the unified `manage-findings` store and the `pending_findings_blocking_count` invariant, see [findings-pipeline.md](findings-pipeline.md). This `manage-contract.md` document describes the shared contract surface (TOON output, error taxonomy, plan/global scope split) but does not restate the pipeline narrative.
+
 ### Retention Settings
 
 Retention defaults are defined in `manage-config/standards/data-model.md` under the `system.retention` section. Skills that perform cleanup (`manage-run-config cleanup`) read retention values from `marshal.json`.

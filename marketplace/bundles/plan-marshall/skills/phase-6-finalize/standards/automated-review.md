@@ -6,7 +6,7 @@ order: 30
 
 # Automated Review
 
-Pure executor for the `automated-review` finalize step. Waits for CI, drives the producer-side comment-stage call, then dispatches per-finding through `manage-findings` + the domain-specific `ext-triage-{domain}` extension to decide and act on each PR comment.
+Pure executor for the `automated-review` finalize step. Drives the consumer-side dispatch for `pr-comment` findings as defined in [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) — this document owns the step list (CI wait, producer call, per-finding decision loop, intra-finalize re-capture, mark-step-done). Refer to [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) for the architecture-level synthesis (producers, store schema, invariant gate, extension contract).
 
 This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `automated-review` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
 
@@ -213,7 +213,45 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-ph
 
 3. Continue until clean or max iterations (3).
 
-When NO finding resolved to **FIX** (every finding closed as SUPPRESS / ACCEPT / taken_into_account), `loop_back_needed = false` — proceed directly to "Mark Step Complete" Branch A.
+When NO finding resolved to **FIX** (every finding closed as SUPPRESS / ACCEPT / taken_into_account), `loop_back_needed = false` — proceed directly to "Phase Boundary Re-Capture" below.
+
+## Phase Boundary Re-Capture (intra-finalize gate)
+
+Before marking the step complete, re-issue the `phase_handshake capture` against the `6-finalize` phase. The orchestrator's `_BLOCKING_BOUNDARIES` set guards `6-finalize` — re-issuing capture here trips `BlockingFindingsPresent` if any pending blocking-type finding (notably any unresolved `pr-comment`) remains in the store, which guards the documented `automated-review → branch-cleanup` boundary in [`plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md#guarded-boundaries).
+
+Run the capture:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
+  --plan-id {plan_id} --phase 6-finalize
+```
+
+**On `status: success`** (no pending blocking-type findings): proceed to "Mark Step Complete" below.
+
+**On `status: error` with `error: blocking_findings_present`** (the structured envelope mirrors the TOON shape in [`phase-handshake.md` § Capture-time behavior](../../plan-marshall/references/phase-handshake.md#pending_findings_blocking_count-resolution)):
+
+```toon
+status: error
+error: blocking_findings_present
+plan_id: {plan_id}
+phase: 6-finalize
+blocking_count: {N}
+blocking_types[K]:
+  - pr-comment
+  - …
+per_type{pr-comment,…}:
+  {N},…
+message: "pending_findings_blocking_count failed for phase '6-finalize': …"
+```
+
+The capture is the structural enforcer of "no unresolved pr-comment findings at branch-cleanup". Loop-back guidance:
+
+1. Read the offending findings via `manage-findings query --type pr-comment --resolution pending` (or whichever type the `per_type` map names).
+2. For each pending finding, run the per-finding consumer dispatch defined above (load `ext-triage-{domain}`, decide FIX / SUPPRESS / ACCEPT / `AskUserQuestion`, act, then `manage-findings resolve`). FIX outcomes set `loop_back_needed = true` and re-enter phase-5-execute via the loop-back block in this document; SUPPRESS / ACCEPT / `taken_into_account` resolve in-place without loop-back.
+3. After every pending finding is resolved, **re-issue the same `phase_handshake capture --phase 6-finalize`** call. The boundary is satisfied only when capture returns `status: success`.
+4. Bound the iterations by the existing `automated-review` iteration cap (3); on cap exhaustion mark the step `failed` per the dispatcher contract — the boundary remains gated and `branch-cleanup` does not run.
+
+**No `_BLOCKING_BOUNDARIES` change required**: re-issuing capture under the `6-finalize` phase value reuses the existing single-phase guard from [`_invariants.py`](../../plan-marshall/scripts/_invariants.py).
 
 ## Mark Step Complete
 

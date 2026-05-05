@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from _git_helpers import git_dirty_count, git_head  # type: ignore[import-not-found]
+from constants import QGATE_PHASES  # type: ignore[import-not-found]
 from file_ops import get_base_dir  # type: ignore[import-not-found]
 from marketplace_paths import find_marketplace_path  # type: ignore[import-not-found]
 from toon_parser import parse_toon  # type: ignore[import-not-found]
@@ -656,6 +657,71 @@ def _query_pending_count_for_type(plan_id: str, finding_type: str) -> int | None
     return None
 
 
+def _query_pending_qgate_count_aggregated(plan_id: str) -> int | None:
+    """Sum ``pending`` Q-Gate findings across every phase.
+
+    Q-Gate findings live in ``findings/qgate-{phase}.jsonl`` per-phase files
+    rather than the canonical per-type ``findings/{type}.jsonl`` layout, so
+    they cannot be reached via ``manage-findings query --type qgate``
+    (``query_findings`` only iterates :data:`tools-file-ops/scripts/constants.py:FINDING_TYPES`,
+    which excludes ``qgate``). Producer-mismatch findings filed by
+    ``add_qgate_finding(...)`` from ``github_pr.py`` / ``gitlab_pr.py`` /
+    ``sonar.py`` / ``_build_shared.py`` therefore did not surface in the
+    blocking-count check before this helper existed — see lesson
+    ``2026-05-05-11-001`` follow-up plan ``findings-pipeline-blocking-fixes``.
+
+    Loops :data:`QGATE_PHASES` and sums each per-phase
+    ``manage-findings qgate query --phase {p} --resolution pending`` result's
+    ``filtered_count``. The aggregation makes the blocking gate phase-agnostic
+    with respect to where producers chose to file their Q-Gate rows: a
+    ``5-execute`` row produced during the ``6-finalize`` step still blocks
+    the ``5-execute → 6-finalize`` boundary because the aggregated total is
+    non-zero regardless of phase label.
+
+    Returns ``None`` when ANY per-phase query fails (executor unreachable or
+    output unparseable). Returning ``None`` triggers the calling capture's
+    "not applicable" contract — preferring to record an empty column over
+    silently under-counting and letting a transition advance.
+    """
+    total = 0
+    for qphase in QGATE_PHASES:
+        stdout = _run_script(
+            [
+                'plan-marshall:manage-findings:manage-findings',
+                'qgate',
+                'query',
+                '--plan-id',
+                plan_id,
+                '--phase',
+                qphase,
+                '--resolution',
+                'pending',
+            ]
+        )
+        if stdout is None:
+            return None
+        try:
+            parsed = parse_toon(stdout)
+        except Exception:
+            return None
+        count = parsed.get('filtered_count')
+        if isinstance(count, int):
+            total += count
+            continue
+        if isinstance(count, str) and count.isdigit():
+            total += int(count)
+            continue
+        alt = parsed.get('count')
+        if isinstance(alt, int):
+            total += alt
+            continue
+        if isinstance(alt, str) and alt.isdigit():
+            total += int(alt)
+            continue
+        return None
+    return total
+
+
 def _read_blocking_finding_types(plan_id: str, phase: str) -> list[str] | None:
     """Read ``plan.phase-{phase}.blocking_finding_types`` from ``marshal.json``.
 
@@ -762,7 +828,13 @@ def _capture_pending_findings_blocking_count(
     per_type: dict[str, int] = {}
     total = 0
     for finding_type in blocking_types:
-        count = _query_pending_count_for_type(plan_id, finding_type)
+        if finding_type == 'qgate':
+            # Q-Gate findings live in qgate-{phase}.jsonl, not the canonical
+            # per-type findings/{type}.jsonl. Route through the aggregated
+            # helper that loops every phase via the qgate query subcommand.
+            count = _query_pending_qgate_count_aggregated(plan_id)
+        else:
+            count = _query_pending_count_for_type(plan_id, finding_type)
         if count is None:
             # Partial query failure — fall back to "not applicable" rather
             # than under-counting and silently letting a transition

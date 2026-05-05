@@ -6,7 +6,9 @@ user-invocable: false
 
 # GitHub CI Integration Workflow Skill
 
-GitHub-specific PR review comment workflow — fetching comments and triaging them into action categories (code_change, explain, ignore). Uses the `gh` CLI for all GitHub operations.
+GitHub provider for the findings-pipeline `pr-comment` producer. Fetches PR review comments, applies the pre-filter (`comment-patterns.json`), and writes one finding per surviving comment via `manage-findings add`. Uses the `gh` CLI for all GitHub operations.
+
+> **Architectural context**: This SKILL.md owns the producer-side CLI surface. For the producer→store→consumer→gate flow that connects this producer to the unified store, the per-domain `ext-triage` consumer dispatch, and the invariant gate, see [`ref-workflow-architecture/standards/findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md).
 
 ## Enforcement
 

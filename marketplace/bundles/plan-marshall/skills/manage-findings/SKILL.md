@@ -9,6 +9,8 @@ scope: plan
 
 Unified storage for plan-level findings, phase-scoped Q-Gate findings, and component assessments. Findings and Q-Gate share the same type taxonomy, resolution model, and severity values. Assessments use a separate certainty/confidence model for component evaluations.
 
+> **Architectural context**: This SKILL.md documents the storage layout and CLI surface. For the end-to-end producer→store→consumer→gate pipeline that connects every quality signal (PR review comments, Sonar issues, build / test / lint failures, Q-Gate findings) to this store and the `pending_findings_blocking_count` invariant, see [`ref-workflow-architecture/standards/findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md).
+
 ## Enforcement
 
 > **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.

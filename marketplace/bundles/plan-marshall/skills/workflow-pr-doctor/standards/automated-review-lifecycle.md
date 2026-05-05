@@ -2,6 +2,8 @@
 
 Detailed reference for the Automated Review Lifecycle mode used by phase-6-finalize when `decisions.automated_review: true`.
 
+> **Architectural context**: This document owns the lifecycle step list (CI wait, review-bot buffer, producer call, consumer dispatch, thread replies). For the architecture-level synthesis (producer→store→consumer→gate), see [`ref-workflow-architecture/standards/findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md). The pipeline narrative is not restated here.
+
 ## Input Parameters
 
 - `plan_id` — for logging, finding storage, and Q-Gate findings

@@ -108,18 +108,15 @@ The plan-marshall bundle uses manage-* skills as the data access layer for all p
 │  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
 │  │                       │                   │                          │  │
 │  │ manage-findings       │ findings/         │ Findings + Q-Gate +      │  │
-│  │                       │  {type}.jsonl     │ Assessments              │  │
-│  │                       │  qgate-{phase}    │ • add/query/resolve      │  │
-│  │                       │   .jsonl          │ • promote (findings)     │  │
-│  │                       │  assessments      │ • qgate add/query/clear  │  │
-│  │                       │   .jsonl          │ • assessment add/query   │  │
-│  │                       │ (per-type split,  │   query merges across    │  │
-│  │                       │  query merges)    │   findings/{type}.jsonl  │  │
+│  │                       │                   │ Assessments              │  │
+│  │                       │                   │ (see cross-ref below)    │  │
 │  │                       │                   │                          │  │
 │  └───────────────────────┴───────────────────┴──────────────────────────┘  │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+> **Findings pipeline**: see [`findings-pipeline.md`](findings-pipeline.md) for the canonical producer→store→consumer→gate flow, the per-type / per-phase JSONL layout, the `manage-findings` CLI surface, and the invariant gate. This data-layer document does not restate the pipeline narrative inline.
 
 ---
 
