@@ -45,11 +45,14 @@ def _discover_steps_for_phase(phase_section: str) -> list[dict]:
 
 
 def _resolve_step_orders(
-    steps: list[str], phase_section: str, overrides: dict
+    steps: list[str], phase_section: str
 ) -> tuple[list[tuple[str, int]], dict | None]:
     """Resolve `(step, order)` pairs and detect missing/colliding orders.
 
-    Override precedence: `overrides[step_ref]` > discovery-time `order`.
+    Order is taken exclusively from each step's authoritative source (frontmatter
+    on built-in standards docs, frontmatter on project-local SKILL.md for
+    `project:` steps, or the return-dict `order` field for extension-contributed
+    skills).
 
     Returns:
         (resolved, error):
@@ -61,9 +64,6 @@ def _resolve_step_orders(
 
     resolved: list[tuple[str, int]] = []
     for step in steps:
-        if step in overrides and isinstance(overrides[step], int):
-            resolved.append((step, overrides[step]))
-            continue
         discovered_order = discovered.get(step)
         if isinstance(discovered_order, int):
             resolved.append((step, discovered_order))
@@ -74,8 +74,7 @@ def _resolve_step_orders(
             phase=phase_section,
             detail=(
                 f"Step '{step}' has no resolved order in {phase_section}. "
-                'Declare an `order` field in its authoritative source, or persist an override via '
-                '`set-step-order-override`.'
+                'Declare an `order` field in its authoritative source.'
             ),
         )
 
@@ -89,7 +88,7 @@ def _resolve_step_orders(
                 phase=phase_section,
                 detail=(
                     f"Steps '{seen[order]}' and '{step}' share order={order} in {phase_section}. "
-                    'Reassign one via `set-step-order-override`.'
+                    'Reassign one of the colliding steps in its authoritative source.'
                 ),
             )
         seen[order] = step
@@ -153,8 +152,7 @@ def cmd_phase(args, phase_section: str) -> dict:
         if not steps:
             return error_exit('Steps list cannot be empty')
 
-        overrides = section.get('step_order_overrides', {})
-        resolved, err = _resolve_step_orders(steps, phase_section, overrides)
+        resolved, err = _resolve_step_orders(steps, phase_section)
         if err is not None:
             return err
 
@@ -171,8 +169,7 @@ def cmd_phase(args, phase_section: str) -> dict:
         if step in steps:
             return error_exit(f"Step '{step}' already exists in {phase_section}")
 
-        overrides = section.get('step_order_overrides', {})
-        resolved, err = _resolve_step_orders(steps + [step], phase_section, overrides)
+        resolved, err = _resolve_step_orders(steps + [step], phase_section)
         if err is not None:
             return err
 
@@ -195,46 +192,5 @@ def cmd_phase(args, phase_section: str) -> dict:
         config['plan'] = plan_config
         save_config(config)
         return success_exit({'phase': phase_section, 'step': step, 'steps': steps, 'count': len(steps)})
-
-    elif args.verb == 'set-step-order-override' and phase_section in LIST_STEP_PHASES:
-        step = args.step
-        order = int(args.order)
-        overrides = dict(section.get('step_order_overrides', {}))
-        overrides[step] = order
-        section['step_order_overrides'] = overrides
-        plan_config[phase_section] = section
-        config['plan'] = plan_config
-        save_config(config)
-        return success_exit(
-            {
-                'phase': phase_section,
-                'step': step,
-                'order': order,
-                'step_order_overrides': overrides,
-            }
-        )
-
-    elif args.verb == 'remove-step-order-override' and phase_section in LIST_STEP_PHASES:
-        step = args.step
-        overrides = dict(section.get('step_order_overrides', {}))
-        if step not in overrides:
-            return error_exit(
-                f"No order override for step '{step}' in {phase_section}",
-                step=step,
-                phase=phase_section,
-            )
-        del overrides[step]
-        section['step_order_overrides'] = overrides
-        plan_config[phase_section] = section
-        config['plan'] = plan_config
-        save_config(config)
-        return success_exit(
-            {
-                'phase': phase_section,
-                'step': step,
-                'removed': True,
-                'step_order_overrides': overrides,
-            }
-        )
 
     return error_exit('Unknown phase verb')

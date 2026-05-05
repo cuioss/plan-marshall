@@ -208,7 +208,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize set-steps --steps {selection}
 ```
 
-Before calling `set-steps` for either phase, run the shared order resolution sub-flow so the command cannot fail with `missing_order` or `order_collision`. See [menu-configuration.md § Order resolution sub-flow](menu-configuration.md#order-resolution-sub-flow) for the full `AskUserQuestion` + `set-step-order-override` prompts.
+If `set-steps` returns `missing_order` or `order_collision`, the offending step's authoritative source (frontmatter on built-in standards docs / `SKILL.md` for `project:` steps / extension `provides_*_steps()` return-dict for skill steps) lacks an `order` value or duplicates one already used by another selected step — fix the source and re-run.
 
 For max iterations (verification default 5, finalize default 3):
 

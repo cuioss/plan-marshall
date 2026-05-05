@@ -34,6 +34,10 @@ def _load_module(name, filename):
     return mod
 
 
+# Load _cmd_quality_phases first so it's registered in sys.modules BEFORE _cmd_system_plan
+# does `from _cmd_quality_phases import cmd_phase` — both modules must share the same instance
+# for monkeypatching `_discover_steps_for_phase` to take effect during cmd_plan dispatch.
+_cmd_quality_phases = _load_module('_cmd_quality_phases', '_cmd_quality_phases.py')
 _cmd_system_plan = _load_module('_cmd_system_plan', '_cmd_system_plan.py')
 
 cmd_plan = _cmd_system_plan.cmd_plan
@@ -74,51 +78,45 @@ def test_execute_verify_set_max_iterations(monkeypatch):
 
 
 def test_execute_set_steps(monkeypatch):
-    """Test plan phase-5-execute set-steps replaces entire steps list, sorted by order."""
+    """Test plan phase-5-execute set-steps replaces entire steps list, sorted by discovered order."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        # Persist an override for the non-discoverable extension step so set-steps can resolve its order.
-        cmd_plan(
-            Namespace(
-                sub_noun='phase-5-execute',
-                verb='set-step-order-override',
-                step='pm-documents:doc-verify',
-                order=500,
-            )
-        )
-
+        # Pass built-ins in reverse to prove ordering comes from discovery, not call order.
         result = cmd_plan(
             Namespace(
                 sub_noun='phase-5-execute',
                 verb='set-steps',
-                steps='pm-documents:doc-verify,default:quality_check,default:build_verify',
+                steps='default:coverage_check,default:build_verify,default:quality_check',
             )
         )
 
         assert result['status'] == 'success'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
-        # Sorted by resolved order: 10, 20, 500
+        # Sorted by discovered order: 10, 20, 30
         assert config['plan']['phase-5-execute']['steps'] == [
             'default:quality_check',
             'default:build_verify',
-            'pm-documents:doc-verify',
+            'default:coverage_check',
         ]
 
 
 def test_execute_add_step(monkeypatch):
-    """Test plan phase-5-execute add-step inserts into list at the order-sorted position."""
+    """Test plan phase-5-execute add-step inserts an extension step at its discovered-order position."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        cmd_plan(
-            Namespace(
-                sub_noun='phase-5-execute',
-                verb='set-step-order-override',
-                step='pm-documents:doc-verify',
-                order=500,
-            )
+        # Inject an extension step with a known discovery order — overrides no longer exist.
+        monkeypatch.setattr(
+            _cmd_quality_phases,
+            '_discover_steps_for_phase',
+            lambda phase: [
+                {'name': 'default:quality_check', 'order': 10},
+                {'name': 'default:build_verify', 'order': 20},
+                {'name': 'default:coverage_check', 'order': 30},
+                {'name': 'pm-documents:doc-verify', 'order': 500},
+            ],
         )
 
         result = cmd_plan(
@@ -261,17 +259,25 @@ def test_finalize_set_steps_empty_error(monkeypatch):
 
 
 def test_finalize_add_step(monkeypatch):
-    """Test plan phase-6-finalize add-step inserts into list at the order-sorted position."""
+    """Test plan phase-6-finalize add-step places an extension step at its discovered-order position."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        cmd_plan(
-            Namespace(
-                sub_noun='phase-6-finalize',
-                verb='set-step-order-override',
-                step='pm-dev-java:java-post-pr',
-                order=75,
-            )
+        # Inject discovery orders for the existing built-ins plus an extension step at order 75.
+        monkeypatch.setattr(
+            _cmd_quality_phases,
+            '_discover_steps_for_phase',
+            lambda phase: [
+                {'name': 'default:commit-push', 'order': 10},
+                {'name': 'default:create-pr', 'order': 20},
+                {'name': 'default:automated-review', 'order': 30},
+                {'name': 'default:sonar-roundtrip', 'order': 40},
+                {'name': 'default:lessons-capture', 'order': 50},
+                {'name': 'default:branch-cleanup', 'order': 70},
+                {'name': 'pm-dev-java:java-post-pr', 'order': 75},
+                {'name': 'default:record-metrics', 'order': 990},
+                {'name': 'default:archive-plan', 'order': 1000},
+            ],
         )
 
         result = cmd_plan(
@@ -295,17 +301,25 @@ def test_finalize_add_step(monkeypatch):
 
 
 def test_finalize_add_step_sorts_by_order(monkeypatch):
-    """Test plan phase-6-finalize add-step places the step according to its resolved order (positional arg ignored)."""
+    """Test plan phase-6-finalize add-step places the step by discovered order (positional arg ignored)."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        cmd_plan(
-            Namespace(
-                sub_noun='phase-6-finalize',
-                verb='set-step-order-override',
-                step='project:finalize-step-custom',
-                order=1,
-            )
+        # Inject a project step at order=1 so it sorts ahead of every built-in.
+        monkeypatch.setattr(
+            _cmd_quality_phases,
+            '_discover_steps_for_phase',
+            lambda phase: [
+                {'name': 'project:finalize-step-custom', 'order': 1},
+                {'name': 'default:commit-push', 'order': 10},
+                {'name': 'default:create-pr', 'order': 20},
+                {'name': 'default:automated-review', 'order': 30},
+                {'name': 'default:sonar-roundtrip', 'order': 40},
+                {'name': 'default:lessons-capture', 'order': 50},
+                {'name': 'default:branch-cleanup', 'order': 70},
+                {'name': 'default:record-metrics', 'order': 990},
+                {'name': 'default:archive-plan', 'order': 1000},
+            ],
         )
 
         result = cmd_plan(
@@ -313,7 +327,7 @@ def test_finalize_add_step_sorts_by_order(monkeypatch):
                 sub_noun='phase-6-finalize',
                 verb='add-step',
                 step='project:finalize-step-custom',
-                position=5,  # Ignored — sort by order now.
+                position=5,  # Ignored — sort by discovered order.
             )
         )
 
@@ -439,18 +453,18 @@ def test_finalize_set_steps_missing_order_returns_error(monkeypatch):
 
 
 def test_finalize_set_steps_order_collision_returns_error(monkeypatch):
-    """set-steps fails with `error: order_collision` when two steps share the same resolved order."""
+    """set-steps fails with `error: order_collision` when two steps share the same discovered order."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        # Reassign commit-push to share order=20 with create-pr.
-        cmd_plan(
-            Namespace(
-                sub_noun='phase-6-finalize',
-                verb='set-step-order-override',
-                step='default:commit-push',
-                order=20,
-            )
+        # Inject a discovery layout where commit-push and create-pr collide at order 20.
+        monkeypatch.setattr(
+            _cmd_quality_phases,
+            '_discover_steps_for_phase',
+            lambda phase: [
+                {'name': 'default:commit-push', 'order': 20},
+                {'name': 'default:create-pr', 'order': 20},
+            ],
         )
 
         result = cmd_plan(
@@ -468,121 +482,21 @@ def test_finalize_set_steps_order_collision_returns_error(monkeypatch):
         assert result['phase'] == 'phase-6-finalize'
 
 
-def test_finalize_set_step_order_override_persists(monkeypatch):
-    """set-step-order-override persists `step_order_overrides` in marshal.json."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-
-        result = cmd_plan(
-            Namespace(
-                sub_noun='phase-6-finalize',
-                verb='set-step-order-override',
-                step='pm-dev-java:java-post-pr',
-                order=42,
-            )
-        )
-
-        assert result['status'] == 'success'
-        assert result['step_order_overrides']['pm-dev-java:java-post-pr'] == 42
-
-        config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
-        persisted = config['plan']['phase-6-finalize']['step_order_overrides']
-        assert persisted == {'pm-dev-java:java-post-pr': 42}
-
-
-def test_finalize_override_precedence_over_discovery(monkeypatch):
-    """Overrides trump discovery-time order values during set-steps resolution."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-
-        # Push commit-push (discovery order 10) to the end via override.
-        cmd_plan(
-            Namespace(
-                sub_noun='phase-6-finalize',
-                verb='set-step-order-override',
-                step='default:commit-push',
-                order=2000,
-            )
-        )
-
-        result = cmd_plan(
-            Namespace(
-                sub_noun='phase-6-finalize',
-                verb='set-steps',
-                steps='default:commit-push,default:create-pr,default:archive-plan',
-            )
-        )
-
-        assert result['status'] == 'success'
-        assert result['steps'] == [
-            'default:create-pr',  # discovery order 20
-            'default:archive-plan',  # discovery order 1000
-            'default:commit-push',  # overridden to 2000
-        ]
-
-
-def test_finalize_remove_step_order_override_clears_entry(monkeypatch):
-    """remove-step-order-override deletes the persisted entry and returns success."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-
-        cmd_plan(
-            Namespace(
-                sub_noun='phase-6-finalize',
-                verb='set-step-order-override',
-                step='custom:thing',
-                order=500,
-            )
-        )
-
-        result = cmd_plan(
-            Namespace(
-                sub_noun='phase-6-finalize',
-                verb='remove-step-order-override',
-                step='custom:thing',
-            )
-        )
-
-        assert result['status'] == 'success'
-        assert result['removed'] is True
-        assert 'custom:thing' not in result['step_order_overrides']
-
-        config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
-        persisted = config['plan']['phase-6-finalize'].get('step_order_overrides', {})
-        assert 'custom:thing' not in persisted
-
-
-def test_finalize_remove_step_order_override_missing_returns_error(monkeypatch):
-    """remove-step-order-override returns an error when no override exists for the step."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-
-        result = cmd_plan(
-            Namespace(
-                sub_noun='phase-6-finalize',
-                verb='remove-step-order-override',
-                step='custom:thing',
-            )
-        )
-
-        assert result['status'] == 'error'
-        assert result['step'] == 'custom:thing'
-        assert result['phase'] == 'phase-6-finalize'
-
-
 def test_execute_add_step_order_collision_returns_error(monkeypatch):
     """add-step fails with `error: order_collision` mirroring set-steps semantics."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        # Place the new step at the same order as the existing built-in quality_check (10).
-        cmd_plan(
-            Namespace(
-                sub_noun='phase-5-execute',
-                verb='set-step-order-override',
-                step='pm-documents:doc-verify',
-                order=10,
-            )
+        # Inject discovery where the new extension step shares order 10 with quality_check.
+        monkeypatch.setattr(
+            _cmd_quality_phases,
+            '_discover_steps_for_phase',
+            lambda phase: [
+                {'name': 'default:quality_check', 'order': 10},
+                {'name': 'default:build_verify', 'order': 20},
+                {'name': 'default:coverage_check', 'order': 30},
+                {'name': 'pm-documents:doc-verify', 'order': 10},
+            ],
         )
 
         result = cmd_plan(
@@ -755,6 +669,46 @@ def test_cli_plan_phase_6_finalize_get():
 
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'max_iterations' in result.stdout
+
+
+def test_cli_set_step_order_override_no_longer_registered():
+    """Regression: the set-step-order-override verb is no longer a registered argparse choice."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'plan',
+            'phase-6-finalize',
+            'set-step-order-override',
+            '--step',
+            'foo',
+            '--order',
+            '1',
+        )
+
+        assert not result.success
+        combined = (result.stderr + result.stdout).lower()
+        assert 'invalid choice' in combined or 'unrecognized' in combined
+
+
+def test_cli_remove_step_order_override_no_longer_registered():
+    """Regression: the remove-step-order-override verb is no longer a registered argparse choice."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'plan',
+            'phase-6-finalize',
+            'remove-step-order-override',
+            '--step',
+            'foo',
+        )
+
+        assert not result.success
+        combined = (result.stderr + result.stdout).lower()
+        assert 'invalid choice' in combined or 'unrecognized' in combined
 
 
 # =============================================================================

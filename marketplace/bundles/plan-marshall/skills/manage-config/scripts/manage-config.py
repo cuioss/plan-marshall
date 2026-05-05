@@ -94,26 +94,9 @@ def _add_phase_subparser(
 
         phase_add_step = phase_sub.add_parser('add-step', help='Add step to list', allow_abbrev=False)
         phase_add_step.add_argument('--step', required=True, help='Step reference')
-        phase_add_step.add_argument('--position', type=int, help='Insert position (0-based, default: append)')
-        phase_add_step.add_argument('--after', help='Insert after this step name (takes precedence over --position)')
 
         phase_rm_step = phase_sub.add_parser('remove-step', help='Remove step from list', allow_abbrev=False)
         phase_rm_step.add_argument('--step', required=True, help='Step reference to remove')
-
-        phase_set_order = phase_sub.add_parser(
-            'set-step-order-override',
-            help='Persist per-step order override for the phase',
-            allow_abbrev=False,
-        )
-        phase_set_order.add_argument('--step', required=True, help='Step reference')
-        phase_set_order.add_argument('--order', required=True, type=int, help='Override order value (int)')
-
-        phase_rm_order = phase_sub.add_parser(
-            'remove-step-order-override',
-            help='Remove a previously persisted order override',
-            allow_abbrev=False,
-        )
-        phase_rm_order.add_argument('--step', required=True, help='Step reference')
 
     if has_domain_steps:
         phase_set_ds = phase_sub.add_parser(

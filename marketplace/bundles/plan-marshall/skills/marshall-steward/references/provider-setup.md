@@ -361,7 +361,7 @@ If the configured skill was `workflow-integration-sonar`, add sonar-roundtrip to
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize add-step --step default:sonar-roundtrip --after default:automated-review
+  plan phase-6-finalize add-step --step default:sonar-roundtrip
 ```
 
 ---
