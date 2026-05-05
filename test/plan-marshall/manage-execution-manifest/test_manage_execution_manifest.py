@@ -616,7 +616,7 @@ def test_bundle_self_modification_inserts_early_sync_before_first_agent_step():
         first_agent_idx = next(
             i
             for i, s in enumerate(steps)
-            if s in ('create-pr', 'automated-review', 'lessons-capture')
+            if s in ('create-pr', 'automated-review', 'sonar-roundtrip', 'lessons-capture')
         )
         assert first_agent_idx >= 1
         assert steps[first_agent_idx - 1] == 'project:finalize-step-sync-plugin-cache'
