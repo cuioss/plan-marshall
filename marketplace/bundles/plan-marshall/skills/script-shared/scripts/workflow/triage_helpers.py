@@ -8,9 +8,14 @@ Provides:
 - ``ErrorCode`` / ``make_error`` — error code taxonomy for cross-skill error propagation
 - ``load_skill_config`` — standardized config loading from skill standards directories
 - ``create_workflow_cli`` — argparse boilerplate reduction for subcommand-based scripts
-- ``cmd_triage_single`` / ``cmd_triage_batch_handler`` — triage command handlers for JSON→TOON workflows
-- ``calculate_priority`` — priority calculation utility for severity/boost workflows (used by sonar.py)
+- ``calculate_priority`` — priority calculation utility for severity/boost workflows
 - ``is_test_file`` — test file detection across languages (used by sonar.py, git_workflow.py)
+
+Note: the previous ``cmd_triage_single`` / ``cmd_triage_batch_handler`` helpers
+were removed alongside the LLM-callable triage / triage-batch surfaces on
+github_pr / gitlab_pr / sonar. Producer-side staging now writes findings via
+``manage-findings add`` and the LLM consumes them through
+``manage-findings query`` instead of invoking script-side classification.
 
 Usage:
     from triage_helpers import print_toon, print_error, safe_main, create_workflow_cli
@@ -48,9 +53,6 @@ __all__ = [
     'PRIORITY_LEVELS',
     # Test detection
     'is_test_file',
-    # Triage handlers
-    'cmd_triage_single',
-    'cmd_triage_batch_handler',
     # Type definitions
     'TriageResult',
     # Regex compilation
@@ -73,9 +75,8 @@ class _TriageResultRequired(TypedDict):
 class TriageResult(_TriageResultRequired, total=False):
     """Expected return shape for triage callback functions.
 
-    Used by ``cmd_triage_single`` and ``cmd_triage_batch_handler`` callbacks.
-    ``action`` and ``status`` are required; all others are optional
-    and vary by domain (CI comments, Sonar issues, etc.).
+    Retained for typing of any remaining triage helpers. ``action`` and
+    ``status`` are required; all others are optional and vary by domain.
     """
 
     reason: str
@@ -337,81 +338,6 @@ def is_test_file(file_path: str) -> bool:
     if any(file_path.startswith(prefix) for prefix in _TEST_DIR_PREFIXES):
         return True
     return False
-
-
-# ============================================================================
-# TRIAGE COMMAND HANDLERS
-# ============================================================================
-
-
-def cmd_triage_single(json_str: str, triage_fn: Callable[[dict], dict]) -> dict:
-    """Standard single-item triage command handler.
-
-    Parses JSON string, calls triage_fn, returns result dict.
-
-    Args:
-        json_str: JSON string representing a single item (comment, issue, etc.)
-        triage_fn: Function that takes a dict and returns a triage result dict
-
-    Returns:
-        Result dict with 'status' key.
-    """
-    try:
-        item = json.loads(json_str)
-    except json.JSONDecodeError as e:
-        return make_error(f'Invalid JSON input: {e}')
-
-    return triage_fn(item)
-
-
-def cmd_triage_batch_handler(
-    json_str: str,
-    triage_fn: Callable[[dict], dict],
-    action_categories: list[str],
-) -> dict:
-    """Standard batch triage command handler.
-
-    Parses JSON array, triages each item, returns result dict with summary counts.
-
-    Args:
-        json_str: JSON string representing an array of items
-        triage_fn: Function that takes a dict and returns a triage result dict
-        action_categories: List of action names to count in summary
-            (e.g., ['code_change', 'explain', 'ignore'] or ['fix', 'suppress'])
-
-    Returns:
-        Result dict with 'status' key.
-    """
-    try:
-        items = json.loads(json_str)
-    except json.JSONDecodeError as e:
-        return make_error(f'Invalid JSON input: {e}')
-
-    if not isinstance(items, list):
-        return make_error('Input must be a JSON array')
-
-    results: list[dict[str, Any]] = []
-    failed = 0
-    for item in items:
-        try:
-            results.append(triage_fn(item))
-        except Exception as e:
-            failed += 1
-            item_id = item.get('id', item.get('key', 'unknown')) if isinstance(item, dict) else 'unknown'
-            results.append(
-                {
-                    'item_id': item_id,
-                    'action': 'error',
-                    'reason': f'Triage failed: {e}',
-                    'status': 'error',
-                }
-            )
-
-    summary: dict[str, Any] = {'total': len(results), 'failed': failed}
-    for category in action_categories:
-        summary[category] = sum(1 for r in results if r.get('action') == category)
-
-    return {'results': results, 'summary': summary, 'status': 'success'}
 
 
 # ============================================================================

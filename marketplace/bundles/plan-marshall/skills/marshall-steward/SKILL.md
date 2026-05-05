@@ -78,7 +78,7 @@ Output this banner directly as text at command start (do NOT use Bash echo - out
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode |
+| determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `seed-blocking-finding-types` for the wizard's blocking-partition seed step |
 | gitignore_setup | `plan-marshall:marshall-steward:gitignore_setup` | Configure .gitignore for .plan/ |
 | bootstrap_plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/local/marshall-state.toon` |
 
@@ -208,6 +208,67 @@ Then execute the workflow described in that file. Each reference file is loaded 
 | `error-handling.md` | Error types and recovery | On error conditions |
 
 ---
+
+## Blocking-Finding Partition Seed (Wizard Step)
+
+After `marshal.json` is initialised the wizard seeds a default per-phase **blocking-finding partition** into each phase slot. The partition drives the `pending_findings_blocking_count` invariant in `phase-handshake` (see [`plan-marshall:plan-marshall/references/phase-handshake.md`](../plan-marshall/references/phase-handshake.md)) — it determines which finding types refuse the phase boundary advance when their `pending` count is non-zero.
+
+**Wizard step** (runs once on first-run wizard, after `marshal.json` exists):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode \
+  seed-blocking-finding-types
+```
+
+**Effect on `marshal.json`**: writes `plan.phase-{phase}.blocking_finding_types` for every phase slot whose key is currently absent. Phase slots that already declare `blocking_finding_types` are left untouched — the seed never clobbers a user customisation.
+
+**Default partition:**
+
+| Phase slot | Default `blocking_finding_types` |
+|------------|----------------------------------|
+| `phase-1-init` | `["build-error", "test-failure", "lint-issue", "sonar-issue", "qgate"]` |
+| `phase-2-refine` | `["build-error", "test-failure", "lint-issue", "sonar-issue", "qgate"]` |
+| `phase-3-outline` | `["build-error", "test-failure", "lint-issue", "sonar-issue", "qgate"]` |
+| `phase-4-plan` | `["build-error", "test-failure", "lint-issue", "sonar-issue", "qgate"]` |
+| `phase-5-execute` | `["build-error", "test-failure", "lint-issue", "sonar-issue", "qgate"]` |
+| `phase-6-finalize` | `["build-error", "test-failure", "lint-issue", "sonar-issue", "qgate", "pr-comment"]` |
+
+**Rationale:**
+
+- **Block at every phase boundary**: `build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `qgate` — these are correctness gates that must clear before any phase advances.
+- **Block only inside `6-finalize`**: `pr-comment` — PR review feedback is only meaningful once a PR exists, which happens during finalize.
+- **Never block** (omitted from every partition): `insight`, `tip`, `best-practice`, `improvement` — long-lived knowledge types that accumulate across plans and should not gate an active boundary.
+
+**Idempotency contract:** the seed is safe to re-run. Each subsequent invocation skips every phase whose `blocking_finding_types` key is already present (status `unchanged`). Projects override the defaults by editing `marshal.json` directly; the seed will never overwrite a manual edit.
+
+**Output (TOON)** when at least one phase was newly written:
+
+```toon
+status	success
+seed_status	seeded
+seeded_count	6
+skipped_count	0
+seeded	phase-1-init,phase-2-refine,phase-3-outline,phase-4-plan,phase-5-execute,phase-6-finalize
+```
+
+When every phase already has the key:
+
+```toon
+status	success
+seed_status	unchanged
+seeded_count	0
+skipped_count	6
+skipped	phase-1-init,phase-2-refine,phase-3-outline,phase-4-plan,phase-5-execute,phase-6-finalize
+```
+
+When `marshal.json` is missing:
+
+```toon
+status	success
+seed_status	missing_marshal
+seeded_count	0
+skipped_count	0
+```
 
 ## Architecture Refresh Tier Knobs
 

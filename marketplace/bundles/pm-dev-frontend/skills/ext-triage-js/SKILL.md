@@ -23,6 +23,7 @@ Loaded via `resolve-workflow-skill-extension --domain javascript --type triage` 
 2. Jest test failures occur
 3. Prettier formatting issues are detected
 4. Stylelint reports CSS issues
+5. PR review comment disposition is required (FIX, REPLY-AND-RESOLVE, or ESCALATE on bot review threads)
 
 ## Standards
 
@@ -30,6 +31,7 @@ Loaded via `resolve-workflow-skill-extension --domain javascript --type triage` 
 |----------|---------|
 | [suppression.md](standards/suppression.md) | JavaScript suppression syntax (eslint-disable) |
 | [severity.md](standards/severity.md) | JavaScript-specific severity guidelines and decision criteria |
+| [pr-comment-disposition.md](standards/pr-comment-disposition.md) | PR review comment disposition (FIX / REPLY-AND-RESOLVE / ESCALATE) for JavaScript and CSS |
 
 ## Quick Reference
 

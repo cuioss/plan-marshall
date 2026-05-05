@@ -63,7 +63,7 @@ extension-api/
 │   └── _module_aggregation.py      # Virtual module splitting
 └── standards/
     ├── extension-contract.md       # Extension API contract (core methods, overview, examples)
-    ├── ext-point-triage.md         # Triage extension point contract (7 implementations)
+    ├── ext-point-triage.md         # Triage extension point contract — scoped to PR comments only (7 implementations)
     ├── ext-point-outline.md        # Outline extension point contract (1 implementation)
     ├── ext-point-recipe.md         # Recipe extension point contract (4 implementations)
     ├── ext-point-build.md          # Build system extension point contract (4 implementations)
@@ -103,7 +103,7 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 | Method | Default | Purpose |
 |--------|---------|---------|
 | `config_defaults(project_root: str) -> None` | no-op | Configure project defaults (called during init) |
-| `provides_triage() -> str \| None` | `None` | Return triage skill reference |
+| `provides_triage() -> str \| None` | `None` | Return triage skill reference (scoped to PR review comments) |
 | `provides_outline_skill() -> str \| None` | `None` | Return domain-specific outline skill reference |
 | `provides_recipes() -> list[dict]` | `[]` | Return recipe definitions for predefined transformations |
 | `provides_verify_steps() -> list[dict]` | `[]` | Return domain-specific verification steps |
@@ -117,7 +117,7 @@ Each extension point has a dedicated contract document with formal parameters, p
 | Extension Point | Hook Method | Contract | Implementations |
 |-----------------|-------------|----------|-----------------|
 | Build System | `discover_modules()` + `ExecuteConfig` | [ext-point-build.md](standards/ext-point-build.md) | 4 |
-| Triage | `provides_triage()` | [ext-point-triage.md](standards/ext-point-triage.md) | 7 |
+| Triage (PR comments only) | `provides_triage()` | [ext-point-triage.md](standards/ext-point-triage.md) | 7 |
 | Outline | `provides_outline_skill()` | [ext-point-outline.md](standards/ext-point-outline.md) | 1 |
 | Recipe | `provides_recipes()` | [ext-point-recipe.md](standards/ext-point-recipe.md) | 4 |
 | Provider | `*_provider.py` | [ext-point-provider.md](standards/ext-point-provider.md) | 4 |

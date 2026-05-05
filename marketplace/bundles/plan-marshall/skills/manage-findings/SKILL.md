@@ -24,25 +24,43 @@ Unified storage for plan-level findings, phase-scoped Q-Gate findings, and compo
 
 | Scope | Storage | Lifecycle |
 |-------|---------|-----------|
-| **Plan findings** | `.plan/plans/{plan_id}/artifacts/findings.jsonl` | Long-lived, promotable |
-| **Q-Gate findings** | `.plan/plans/{plan_id}/artifacts/qgate-{phase}.jsonl` | Per-phase, not promotable |
-| **Assessments** | `.plan/plans/{plan_id}/artifacts/assessments.jsonl` | Working data, read-only after outline |
+| **Plan findings** | `.plan/plans/{plan_id}/artifacts/findings/{type}.jsonl` (one per type) | Long-lived, promotable |
+| **Q-Gate findings** | `.plan/plans/{plan_id}/artifacts/findings/qgate-{phase}.jsonl` | Per-phase, not promotable |
+| **Assessments** | `.plan/plans/{plan_id}/artifacts/findings/assessments.jsonl` | Working data, read-only after outline |
 
 Plan findings are working data during plan execution. Notable findings are promoted to project-level at `6-finalize`. Q-Gate findings track per-phase verification issues. Assessments track component evaluations with certainty/confidence classifications.
 
 ## Storage Structure
 
+All finding-related JSONL files live under a single `findings/` subdirectory. Plan findings are split per type — each value of the `type` field gets its own file, and queries merge across files transparently:
+
 ```
 .plan/plans/{plan_id}/
 └── artifacts/
-    ├── assessments.jsonl      # Component assessments
-    ├── findings.jsonl         # Unified: lessons + bugs (optionally promotable)
-    ├── qgate-2-refine.jsonl   # Per-phase Q-Gate findings
-    ├── qgate-3-outline.jsonl
-    ├── qgate-4-plan.jsonl
-    ├── qgate-5-execute.jsonl
-    └── qgate-6-finalize.jsonl
+    └── findings/
+        ├── assessments.jsonl       # Component assessments
+        ├── bug.jsonl               # Plan finding — type: bug
+        ├── improvement.jsonl       # Plan finding — type: improvement
+        ├── anti-pattern.jsonl
+        ├── triage.jsonl
+        ├── tip.jsonl
+        ├── insight.jsonl
+        ├── best-practice.jsonl
+        ├── build-error.jsonl
+        ├── test-failure.jsonl
+        ├── lint-issue.jsonl
+        ├── sonar-issue.jsonl
+        ├── pr-comment.jsonl
+        ├── qgate-2-refine.jsonl    # Per-phase Q-Gate findings
+        ├── qgate-3-outline.jsonl
+        ├── qgate-4-plan.jsonl
+        ├── qgate-5-execute.jsonl
+        └── qgate-6-finalize.jsonl
 ```
+
+Per-type files are created lazily — only types that have been added produce a file. The `query` command transparently merges across all per-type files (in canonical type order); `get`/`resolve`/`promote` locate the owning file by `hash_id`. The CLI surface is unaffected by the per-type split.
+
+See [standards/jsonl-format.md](standards/jsonl-format.md) for the complete storage layout and per-type file list.
 
 ## Finding Types
 

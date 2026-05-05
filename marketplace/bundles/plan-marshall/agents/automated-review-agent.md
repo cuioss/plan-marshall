@@ -1,7 +1,7 @@
 ---
 name: automated-review-agent
 description: |
-  Named agent that performs the finalize-phase Automated Review step. Loads plan-marshall:dev-general-practices into its own context, then delegates end-to-end to the authoritative standard phase-6-finalize/standards/automated-review.md, using plan-marshall:tools-integration-ci and plan-marshall:workflow-integration-github (or plan-marshall:workflow-integration-gitlab, depending on provider) to fetch, triage, and respond to automated review comments.
+  Named agent that performs the finalize-phase Automated Review step. Loads plan-marshall:dev-general-practices into its own context, then delegates end-to-end to the authoritative standard phase-6-finalize/standards/automated-review.md. The standard drives the producer-side `github_pr comments-stage` (or the GitLab equivalent) to populate the per-plan findings store, then dispatches each pending `pr-comment` finding through `manage-findings query` + `ext-triage-{domain}` for the FIX / SUPPRESS / ACCEPT / AskUserQuestion decision, with thread replies, thread resolution, and loop-back fix-task creation per the loaded extension's standards.
 
   Examples:
   - Input: plan_id=my-plan, worktree_path=/Users/x/repo/.claude/worktrees/my-plan
@@ -48,7 +48,7 @@ Mirrors the Workflow Discipline hard rules from `plan-marshall:dev-general-pract
 
 **Workflow constraints:**
 - Execute ONLY the steps documented in `phase-6-finalize/standards/automated-review.md`. Do not add discovery steps, invent arguments, or skip documented steps.
-- PR-review bot suggestions must be validated against plan intent before being accepted (per the Workflow Discipline hard rule on PR review).
+- PR comments dispatch through `manage-findings` + `ext-triage-{domain}`; never auto-resolve outside that flow.
 
 ## Step 2: Delegate to Authoritative Standard
 
@@ -59,10 +59,12 @@ marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/automated-re
 ```
 
 The standard is the source of truth for the step sequence, including:
-- Fetching automated review comments via `plan-marshall:tools-integration-ci`
-- Dispatching through `plan-marshall:workflow-integration-github` or `plan-marshall:workflow-integration-gitlab` depending on provider
-- Triage, response, and fix-task creation
-- Outcome logging and `manage-status mark-step-done`
+- CI wait + review-bot polling via `plan-marshall:tools-integration-ci`
+- Producer-side comment-stage call via `plan-marshall:workflow-integration-github:github_pr comments-stage` (or `plan-marshall:workflow-integration-gitlab:gitlab_pr comments-stage` for GitLab projects), which writes one `pr-comment` finding per surviving comment to the per-plan findings store
+- Consumer-side enumeration via `manage-findings query --type pr-comment --resolution pending`, per-finding domain detection via `architecture which-module`, triage-extension resolution via `manage-config resolve-workflow-skill-extension --type triage`, and load of the resulting `ext-triage-{domain}` skill
+- Per-finding decision (FIX / SUPPRESS / ACCEPT / AskUserQuestion) using the loaded extension's `severity.md`, `suppression.md`, and `pr-comment-disposition.md` standards
+- Action: FIX → fix-task + loop-back; SUPPRESS → annotation + thread reply + thread resolve; ACCEPT → thread reply + thread resolve; AskUserQuestion when standards are ambiguous
+- Outcome logging via `manage-findings resolve --resolution {fixed|suppressed|accepted|taken_into_account}` and `manage-status mark-step-done`
 
 Follow every step verbatim. Return the standard's output contract unchanged.
 

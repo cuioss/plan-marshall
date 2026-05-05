@@ -24,6 +24,7 @@ Loaded via `resolve-workflow-skill-extension --domain oci-containers --type tria
 3. Docker build failures occur
 4. Container runtime security issues are flagged
 5. PR review comments reference Dockerfile or container configuration
+6. PR review comment disposition is required (FIX, REPLY-AND-RESOLVE, or ESCALATE on bot review threads)
 
 ## Standards
 
@@ -31,6 +32,7 @@ Loaded via `resolve-workflow-skill-extension --domain oci-containers --type tria
 |----------|---------|
 | [suppression.md](standards/suppression.md) | Dockerfile and scanner suppression syntax (hadolint ignore, trivyignore) |
 | [severity.md](standards/severity.md) | OCI-specific severity guidelines and decision criteria |
+| [pr-comment-disposition.md](standards/pr-comment-disposition.md) | PR review comment disposition (FIX / REPLY-AND-RESOLVE / ESCALATE) for OCI containers |
 
 ## Extension Registration
 

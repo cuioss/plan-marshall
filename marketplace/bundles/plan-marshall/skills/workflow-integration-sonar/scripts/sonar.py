@@ -1,31 +1,25 @@
 #!/usr/bin/env python3
 """
-Sonar workflow operations - triage issues for fix or suppress.
+Sonar workflow operations - producer-side fetch + pre-filter + per-finding store.
+
+Producer-side flow: ``fetch-and-store`` fetches gate-blocking Sonar issues,
+applies the keyword pre-filter from ``standards/sonar-rules.json`` (drops
+issues already suppressable via NOSONAR / test-acceptable rules) and writes
+one ``sonar-issue`` finding per surviving issue via ``manage-findings add``
+(direct ``add_finding`` import). LLM consumers query via
+``manage-findings query --type sonar-issue`` — the script-side triage and
+triage-batch surfaces have been retired.
 
 Usage:
-    sonar.py triage --issue <json>
-    sonar.py triage-batch --issues <json-array>
+    sonar.py fetch-and-store --plan-id <P> --project <key> [--pr <id>] [--severities <list>] [--types <list>]
     sonar.py --help
-
-Subcommands:
-    triage         Triage a single Sonar issue
-    triage-batch   Triage multiple Sonar issues at once
-
-Examples:
-    # Triage a single issue
-    sonar.py triage --issue '{"key":"ISSUE-1","rule":"java:S1234",...}'
-
-    # Triage multiple issues at once
-    sonar.py triage-batch --issues '[{"key":"I1","rule":"java:S1234",...}, ...]'
 """
 
 import sys
+from typing import Any
 
 from ci_base import extract_project_dir, set_default_cwd  # type: ignore[import-not-found]
 from triage_helpers import (  # type: ignore[import-not-found]
-    calculate_priority,
-    cmd_triage_batch_handler,
-    cmd_triage_single,
     create_workflow_cli,
     is_test_file,
     load_skill_config,
@@ -33,156 +27,234 @@ from triage_helpers import (  # type: ignore[import-not-found]
 )
 
 # ============================================================================
-# TRIAGE CONFIGURATION (loaded from sonar-rules.json)
+# PRE-FILTER CONFIGURATION (loaded from sonar-rules.json)
 # ============================================================================
+#
+# sonar-rules.json is a PRE-FILTER for the producer-side ``fetch-and-store``
+# flow. Suppressable rules and test-acceptable rules are dropped before
+# findings are written so the per-type store contains only issues the LLM
+# needs to act on. Severity priority and type-boost mappings are retained as
+# Python-internal helpers used to derive the finding ``severity`` field.
 
 _RULES_CONFIG = load_skill_config(__file__, 'sonar-rules.json')
 
 SUPPRESSABLE_RULES: dict[str, str] = _RULES_CONFIG.get('suppressable_rules', {})
-
-# Severity to priority mapping — externalized to sonar-rules.json for consistency
-# with the data-driven pattern used by all workflow scripts.
-SEVERITY_PRIORITY: dict[str, str] = _RULES_CONFIG['severity_priority']
-
-# Type to priority boost — includes SECURITY_HOTSPOT (Sonar's 4th issue type).
-# Values are index offsets in PRIORITY_LEVELS: +1 promotes, -1 demotes.
-TYPE_BOOST: dict[str, int] = _RULES_CONFIG['type_boost']
-
-# Issue types that must always be fixed — loaded from sonar-rules.json.
+SEVERITY_PRIORITY: dict[str, str] = _RULES_CONFIG.get('severity_priority', {})
+_TEST_ACCEPTABLE_RULES: set[str] = set(_RULES_CONFIG.get('test_acceptable_rules', []))
 _ALWAYS_FIX_TYPES: dict[str, str] = _RULES_CONFIG.get('always_fix_types', {})
 
 
 # ============================================================================
-# TRIAGE SUBCOMMAND
+# PRE-FILTER (Python-internal helper)
 # ============================================================================
 
 
-_FIX_SUGGESTIONS: dict[str, str] = _RULES_CONFIG.get('fix_suggestions', {})
-_TEST_ACCEPTABLE_RULES: set[str] = set(_RULES_CONFIG.get('test_acceptable_rules', []))
+def _is_suppressable(rule: str, file: str, issue_type: str) -> bool:
+    """Pre-filter: True if the issue is one we already know how to suppress.
 
+    Drops:
+    - Rules listed in ``suppressable_rules`` (already documented as suppressable).
+    - Test-file issues whose rule appears in ``test_acceptable_rules``.
 
-def get_fix_suggestion(rule: str, message: str, file: str, line: int) -> str:
-    """Generate fix suggestion based on rule.
-
-    Supports Java, JavaScript/TypeScript, and Python rules. Rule-to-suggestion
-    mappings are loaded from ``standards/sonar-rules.json``. Falls back to
-    the Sonar issue message for unrecognized rules.
+    Always-fix types (VULNERABILITY, SECURITY_HOTSPOT, BLOCKER severity) are
+    NEVER suppressed at the pre-filter stage — they always pass through to
+    the finding store regardless of rule.
     """
-    suggestion = _FIX_SUGGESTIONS.get(rule, f'Review and fix: {message}')
-    return f'{suggestion} at {file}:{line}'
-
-
-_SUPPRESSION_SYNTAX: dict[str, str] = _RULES_CONFIG.get(
-    'suppression_syntax',
-    {
-        'python': '# NOSONAR {rule} - {reason}',
-        'default': '// NOSONAR {rule} - {reason}',
-    },
-)
-
-
-def get_suppression_string(rule: str, reason: str, file: str = '') -> str:
-    """Generate suppression string for the issue using language-appropriate comment syntax.
-
-    Language detection order: file extension → rule prefix → default (//).
-    Syntax templates are loaded from ``standards/sonar-rules.json`` suppression_syntax.
-    """
-    # Detect language from file extension or rule prefix
-    lang = None
-    if file.endswith('.py') or rule.startswith('python:'):
-        lang = 'python'
-    template = _SUPPRESSION_SYNTAX.get(
-        lang or 'default', _SUPPRESSION_SYNTAX.get('default', '// NOSONAR {rule} - {reason}')
-    )
-    return template.format(rule=rule, reason=reason)
-
-
-def calculate_sonar_priority(severity: str, issue_type: str) -> str:
-    """Calculate priority based on Sonar severity and issue type.
-
-    Delegates to shared ``calculate_priority`` from triage_helpers with
-    a severity-to-base mapping and type-based boost.
-    """
-    base_priority = SEVERITY_PRIORITY.get(severity, 'low')
-    boost = TYPE_BOOST.get(issue_type, 0)
-    return calculate_priority(base_priority, boost)
-
-
-def should_suppress(rule: str, file: str, issue_type: str) -> tuple[bool, str | None]:
-    """Determine if issue should be suppressed."""
-    # Check suppressable rules
-    if rule in SUPPRESSABLE_RULES:
-        return True, SUPPRESSABLE_RULES[rule]
-
-    # Test files often have acceptable exceptions — detect across languages
-    if is_test_file(file):
-        # Console/stdout usage and missing assertions are acceptable in tests
-        if rule in _TEST_ACCEPTABLE_RULES:
-            return True, 'Test code - acceptable pattern'
-
-    return False, None
-
-
-def triage_issue(issue: dict) -> dict:
-    """Triage a single issue and return decision."""
-    key = issue.get('key', 'unknown')
-    issue_type = issue.get('type', 'CODE_SMELL')
-    severity = issue.get('severity', 'MAJOR')
-    file = issue.get('file', 'unknown')
-    line = issue.get('line', 0)
-    rule = issue.get('rule', 'unknown')
-    message = issue.get('message', '')
-
-    # Issue types that must always be fixed (loaded from sonar-rules.json)
     if issue_type in _ALWAYS_FIX_TYPES:
-        priority = 'critical' if severity == 'BLOCKER' else 'high'
-        return {
-            'issue_key': key,
-            'action': 'fix',
-            'reason': _ALWAYS_FIX_TYPES[issue_type],
-            'priority': priority,
-            'suggested_implementation': get_fix_suggestion(rule, message, file, line),
-            'suppression_string': None,
-            'status': 'success',
-        }
+        return False
+    if rule in SUPPRESSABLE_RULES:
+        return True
+    if is_test_file(file) and rule in _TEST_ACCEPTABLE_RULES:
+        return True
+    return False
 
-    # Check if should suppress
-    suppress, suppress_reason = should_suppress(rule, file, issue_type)
 
-    if suppress:
-        return {
-            'issue_key': key,
-            'action': 'suppress',
-            'reason': suppress_reason,
-            'priority': 'low',
-            'suggested_implementation': None,
-            'suppression_string': get_suppression_string(rule, suppress_reason or '', file),
-            'status': 'success',
-        }
+def _map_severity(sonar_severity: str) -> str | None:
+    """Map a Sonar issue severity (BLOCKER/CRITICAL/...) to the finding store's
+    severity vocabulary (``error``/``warning``/``info``).
 
-    # Calculate priority and suggest fix
-    priority = calculate_sonar_priority(severity, issue_type)
-    fix_suggestion = get_fix_suggestion(rule, message, file, line)
+    BLOCKER/CRITICAL/MAJOR -> error, MINOR -> warning, INFO -> info. Unknown
+    severities map to None so the finding is written without a severity field.
+    """
+    s = (sonar_severity or '').upper()
+    if s in ('BLOCKER', 'CRITICAL', 'MAJOR'):
+        return 'error'
+    if s == 'MINOR':
+        return 'warning'
+    if s == 'INFO':
+        return 'info'
+    return None
+
+
+# ============================================================================
+# FETCH-AND-STORE SUBCOMMAND (producer-side fetch + filter + store)
+# ============================================================================
+
+
+def _fetch_issues(project: str, pr: str | None, severities: str | None, types: str | None) -> dict[str, Any]:
+    """Fetch issues via the Sonar REST client and return the parsed dict.
+
+    Mirrors ``sonar_rest.cmd_search`` issue extraction so the producer-side
+    flow does not depend on a subprocess call into another skill script.
+    """
+    from _providers_core import (  # type: ignore[import-not-found]
+        RestClientError,
+        get_authenticated_client,
+    )
+
+    client = get_authenticated_client('workflow-integration-sonar')
+    params: dict[str, str] = {
+        'projects': project,
+        'ps': '500',
+    }
+    if pr:
+        params['pullRequest'] = pr
+    if severities:
+        params['severities'] = severities
+    if types:
+        params['types'] = types
+
+    try:
+        result = client.get('/api/issues/search', params=params)
+        client.close()
+    except RestClientError as e:
+        return {'status': 'error', 'message': f'Sonar API error: HTTP {e.status}'}
+
+    issues = result.get('issues', [])
+    formatted: list[dict[str, Any]] = []
+    for issue in issues:
+        formatted.append(
+            {
+                'key': issue.get('key', ''),
+                'type': issue.get('type', ''),
+                'severity': issue.get('severity', ''),
+                'file': issue.get('component', '').split(':')[-1],
+                'line': issue.get('line', 0),
+                'rule': issue.get('rule', ''),
+                'message': issue.get('message', ''),
+                'component': issue.get('component', ''),
+            }
+        )
+
+    return {'status': 'success', 'issues': formatted}
+
+
+def cmd_fetch_and_store(args):
+    """Producer-side: fetch + pre-filter + write one sonar-issue finding per surviving issue.
+
+    Always-on storage: every surviving (non-suppressable) Sonar issue becomes
+    a ``sonar-issue`` finding via ``add_finding``. ``count_fetched`` vs
+    ``count_stored`` mismatches are recorded as a ``qgate`` finding with title
+    prefix ``(producer-mismatch)``.
+    """
+    from _findings_core import (  # type: ignore[import-not-found]
+        add_finding,
+        add_qgate_finding,
+    )
+
+    plan_id: str = args.plan_id
+    project: str = args.project
+    pr: str | None = getattr(args, 'pr', None)
+
+    fetch_result = _fetch_issues(project, pr, getattr(args, 'severities', None), getattr(args, 'types', None))
+    if fetch_result.get('status') != 'success':
+        return fetch_result
+
+    raw_issues: list[dict[str, Any]] = fetch_result.get('issues', []) or []
+    count_fetched = len(raw_issues)
+
+    stored_hashes: list[str] = []
+    skipped_suppressable = 0
+    store_failures: list[str] = []
+
+    for issue in raw_issues:
+        rule = issue.get('rule', '')
+        file_path = issue.get('file', '') or None
+        issue_type = issue.get('type', 'CODE_SMELL')
+
+        if _is_suppressable(rule, file_path or '', issue_type):
+            skipped_suppressable += 1
+            continue
+
+        severity = _map_severity(issue.get('severity', ''))
+        component = issue.get('component') or None
+        line = issue.get('line') or None
+        line_arg: int | None = None
+        if isinstance(line, int) and line > 0:
+            line_arg = line
+
+        title = f'Sonar {rule} in {file_path or "(unknown)"} (key={issue.get("key", "")})'
+
+        detail_lines = [
+            f'key: {issue.get("key", "")}',
+            f'rule: {rule}',
+            f'sonar_severity: {issue.get("severity", "")}',
+            f'sonar_type: {issue_type}',
+            f'project: {project}',
+        ]
+        if pr:
+            detail_lines.append(f'pull_request: {pr}')
+        if component:
+            detail_lines.append(f'component: {component}')
+        if file_path:
+            detail_lines.append(f'file: {file_path}')
+        if line_arg:
+            detail_lines.append(f'line: {line_arg}')
+        detail_lines.append('')
+        detail_lines.append('--- message ---')
+        detail_lines.append(issue.get('message', ''))
+        detail = '\n'.join(detail_lines)
+
+        add_result = add_finding(
+            plan_id=plan_id,
+            finding_type='sonar-issue',
+            title=title,
+            detail=detail,
+            file_path=file_path,
+            line=line_arg,
+            component=component,
+            module=project,
+            rule=rule,
+            severity=severity,
+        )
+        if add_result.get('status') == 'success':
+            stored_hashes.append(add_result.get('hash_id', ''))
+        else:
+            store_failures.append(issue.get('key', ''))
+
+    count_stored = len(stored_hashes)
+    expected_stored = count_fetched - skipped_suppressable
+
+    qgate_hash: str | None = None
+    if count_stored != expected_stored:
+        mismatch_detail = (
+            f'count_fetched={count_fetched}, '
+            f'count_skipped_suppressable={skipped_suppressable}, '
+            f'count_stored={count_stored}, '
+            f'expected_stored={expected_stored}, '
+            f'failed_issue_keys={store_failures}'
+        )
+        qgate_result = add_qgate_finding(
+            plan_id=plan_id,
+            phase='5-execute',
+            source='qgate',
+            finding_type='sonar-issue',
+            title=f'(producer-mismatch) sonar fetch-and-store project={project}',
+            detail=mismatch_detail,
+        )
+        qgate_hash = qgate_result.get('hash_id')
 
     return {
-        'issue_key': key,
-        'action': 'fix',
-        'reason': f'{issue_type} with {severity} severity should be fixed',
-        'priority': priority,
-        'suggested_implementation': fix_suggestion,
-        'suppression_string': None,
         'status': 'success',
+        'plan_id': plan_id,
+        'project': project,
+        'pull_request': pr or 'none',
+        'count_fetched': count_fetched,
+        'count_skipped_suppressable': skipped_suppressable,
+        'count_stored': count_stored,
+        'stored_hash_ids': stored_hashes,
+        'producer_mismatch_hash_id': qgate_hash,
     }
-
-
-def cmd_triage(args):
-    """Handle triage subcommand - triage a single Sonar issue."""
-    return cmd_triage_single(args.issue, triage_issue)
-
-
-def cmd_triage_batch(args):
-    """Handle triage-batch subcommand — triage multiple issues at once."""
-    return cmd_triage_batch_handler(args.issues, triage_issue, ['fix', 'suppress'])
 
 
 # ============================================================================
@@ -193,11 +265,9 @@ def cmd_triage_batch(args):
 def main():
     """Main entry point."""
     # Accept (and swallow) a top-level --project-dir for API uniformity with
-    # the github/gitlab workflow scripts. Triage is a pure in-memory operation
-    # that does not invoke any subprocess, so the cwd has no functional effect
-    # today; installing it here keeps the flag a no-op rather than a parser
-    # error and future-proofs the interface in case subprocess/REST calls are
-    # added (e.g., via sonar_rest).
+    # the github/gitlab workflow scripts. The Sonar REST client does not use
+    # cwd; the flag is preserved so future subprocess additions remain
+    # configurable.
     project_dir, remaining = extract_project_dir(sys.argv[1:])
     sys.argv = [sys.argv[0], *remaining]
     if project_dir is not None:
@@ -207,21 +277,21 @@ def main():
         description='Sonar workflow operations',
         epilog="""
 Examples:
-  sonar.py triage --issue '{"key":"ISSUE-1","rule":"java:S1234"}'
-  sonar.py triage-batch --issues '[{"key":"I1","rule":"java:S1234"}, ...]'
+  sonar.py fetch-and-store --plan-id my-plan --project com.example:project
+  sonar.py fetch-and-store --plan-id my-plan --project com.example:project --pr 123 --severities BLOCKER,CRITICAL
 """,
         subcommands=[
             {
-                'name': 'triage',
-                'help': 'Triage a single Sonar issue',
-                'handler': cmd_triage,
-                'args': [{'flags': ['--issue'], 'required': True, 'help': 'JSON string with issue data'}],
-            },
-            {
-                'name': 'triage-batch',
-                'help': 'Triage multiple Sonar issues at once',
-                'handler': cmd_triage_batch,
-                'args': [{'flags': ['--issues'], 'required': True, 'help': 'JSON array of issue objects'}],
+                'name': 'fetch-and-store',
+                'help': 'Producer-side: fetch + pre-filter + store one sonar-issue finding per surviving issue',
+                'handler': cmd_fetch_and_store,
+                'args': [
+                    {'flags': ['--plan-id'], 'dest': 'plan_id', 'required': True, 'help': 'Plan ID for finding store'},
+                    {'flags': ['--project'], 'required': True, 'help': 'SonarQube project key'},
+                    {'flags': ['--pr'], 'help': 'Pull request ID'},
+                    {'flags': ['--severities'], 'help': 'Filter by severity (comma-separated)'},
+                    {'flags': ['--types'], 'help': 'Filter by type (comma-separated)'},
+                ],
             },
         ],
     )

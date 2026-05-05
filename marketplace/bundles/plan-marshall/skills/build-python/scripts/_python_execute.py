@@ -172,6 +172,7 @@ def cmd_run(args) -> int:
         mode=getattr(args, 'mode', 'actionable'),
         project_dir=project_dir,
         parser_needs_command=_CONFIG.parser_needs_command,
+        plan_id=getattr(args, 'plan_id', None),
     )
 
 

@@ -32,7 +32,7 @@ Per the plugin.json registration convention documented in `frontmatter-standards
 | Skill | Registered | Scope | Purpose |
 |-------|-----------|-------|---------|
 | manage-architecture | yes | hybrid | Project module discovery and LLM enrichment |
-| manage-findings | yes | plan | Findings, Q-Gate findings, assessments (JSONL) |
+| manage-findings | yes | plan | Findings, Q-Gate findings, assessments — JSONL split per type under `artifacts/findings/{type}.jsonl`; queries merge across files |
 | manage-lessons | yes | global | Lessons learned with global scope |
 | manage-run-config | yes | hybrid | Per-execution transient command configuration |
 | manage-tasks | yes | plan | Implementation tasks with sequential sub-steps |

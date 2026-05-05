@@ -47,20 +47,41 @@ workflow-integration-sonar (Sonar issue workflow)
 ## Usage Examples
 
 ```bash
-# Triage a single Sonar issue
-python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar triage \
-  --issue '{"key":"ISSUE-1","rule":"java:S1234","type":"BUG","severity":"MAJOR","file":"src/Main.java","line":42,"message":"Fix this"}'
+# Producer-side: fetch + pre-filter + store one sonar-issue finding per surviving issue
+python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar fetch-and-store \
+  --plan-id my-plan --project com.example:project --pr 123 --severities BLOCKER,CRITICAL
 
-# Batch triage multiple issues
-python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar triage-batch \
-  --issues '[{"key":"I1","rule":"java:S1234","type":"BUG","severity":"MAJOR","file":"src/Main.java","line":42,"message":"Fix this"}]'
+# LLM consumer reads stored findings via manage-findings
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query --plan-id my-plan --type sonar-issue
 ```
 
 ## Workflows
 
-### Workflow 1: Fetch Issues (REST API)
+### Workflow 1: Fetch & Store Issues (Producer-Side)
 
-**Purpose:** Fetch Sonar issues via REST API using `sonar_rest.py`. Credentials are loaded automatically via `get_authenticated_client()`.
+**Purpose:** Stage gate-blocking Sonar issues into the per-type finding store, then let the LLM consumer drive fix-vs-suppress decisions from the stored findings.
+
+**Producer-side flow:** `sonar.py fetch-and-store` is the only callable surface. It fetches issues via the REST client, applies the `sonar-rules.json` pre-filter (drops issues already documented as suppressable via NOSONAR / test-acceptable rules), and writes one `sonar-issue` finding per surviving issue via `manage-findings add`. Severity is derived from the Sonar severity (BLOCKER/CRITICAL/MAJOR → error, MINOR → warning, INFO → info), the rule key is captured in the finding's `rule` field, and the project key is captured in `module`.
+
+**Steps:**
+
+1. **Fetch & Store**:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar fetch-and-store \
+     --plan-id {plan_id} --project {project_key} [--pr {pr_number}] [--severities BLOCKER,CRITICAL] [--types BUG,VULNERABILITY]
+   ```
+   Output reports `count_fetched`, `count_skipped_suppressable`, `count_stored`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_suppressable; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`).
+
+2. **Query Stored Findings**:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query --plan-id {plan_id} --type sonar-issue
+   ```
+
+3. **Process** — the LLM reads each finding's `detail` (which carries `key`, `rule`, `sonar_severity`, `sonar_type`, `project`, `pull_request`, `component`, `file`, `line`, and the full message) and decides fix-vs-suppress per finding. After acting on each finding, call `manage-findings resolve --hash-id {hash} --resolution fixed|suppressed|accepted`.
+
+### (Legacy) Workflow 1: Raw REST search
+
+For ad-hoc inspection or non-finding-store integrations, `sonar_rest.py search` remains available as the raw REST surface. Producer-side flows MUST use `sonar.py fetch-and-store`.
 
 **Input:**
 - **project**: SonarQube project key
@@ -111,109 +132,65 @@ statistics:
 
 ### Workflow 2: Fix Issues
 
-**Purpose:** Process Sonar issues and resolve them.
+**Purpose:** Process stored Sonar findings and resolve them.
 
-**Input:** Issue list from Fetch workflow or specific issue keys
+**Input:** `sonar-issue` findings already populated in the per-type store via Workflow 1.
 
 **Steps:**
 
-1. **Get Issues**
-   If not provided, use Fetch Issues workflow first.
-
-2. **Triage All Issues (Batch)**
-   Collect all issues into a JSON array and triage in a single call:
-
-   Script: `plan-marshall:workflow-integration-sonar`
-
+1. **Query Findings**:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar triage-batch --issues '[{issue1}, {issue2}, ...]'
+   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query --plan-id {plan_id} --type sonar-issue
    ```
 
-   Script outputs all decisions at once:
-   ```toon
-   results[N]:
-     - issue_key: ...
-       action: fix|suppress
-       reason: ...
-       priority: critical|high|medium|low
-       suggested_implementation: ...
-       suppression_string: "// NOSONAR rule - reason"
-   summary:
-     total: N
-     fix: N
-     suppress: N
-   status: success
-   ```
+2. **LLM Decides Per Finding**
+   The LLM reads each finding's `detail` (key, rule, sonar_severity, sonar_type, project, file, line, message) and decides fix-vs-suppress. There is no script-side classification call.
 
-   For single-issue edge cases, `triage --issue '{json}'` is also available.
-
-3. **Process by Priority**
-   Order: critical → high → medium → low
-
-4. **Execute Actions**
+3. **Execute Actions**
 
    **For fix:**
    - Read file at issue location
    - Apply fix using Edit tool
-   - Verify fix with Grep
 
    **For suppress:**
    - Read file
-   - Add suppression comment at line using Edit
+   - Add suppression comment at line using Edit (e.g., `// NOSONAR rule - reason`)
    - Include rule key and reason
 
-5. **Mark Issues Resolved (Optional)**
+4. **Mark Findings Resolved**:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
+     --plan-id {plan_id} --hash-id {hash} --resolution fixed|suppressed|accepted
+   ```
 
+5. **Mark Issues Resolved on Sonar (Optional)**:
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar_rest transition \
      --issue-key {issue_key} --transition accept
    ```
 
-6. **Return Summary**
-
-**Output:**
-```toon
-processed:
-  fixed: 4
-  suppressed: 1
-  failed: 0
-files_modified[1]:
-  - ...
-status: success
-```
-
 ---
 
 ## Scripts
 
-Script: `plan-marshall:workflow-integration-sonar` → `sonar.py` (triage logic)
-Script: `plan-marshall:workflow-integration-sonar:sonar_rest` → `sonar_rest.py` (REST API client)
+Script: `plan-marshall:workflow-integration-sonar:sonar` → `sonar.py` (producer-side fetch + pre-filter + finding store)
+Script: `plan-marshall:workflow-integration-sonar:sonar_rest` → `sonar_rest.py` (raw REST API client)
 
-### sonar.py triage
+### sonar.py fetch-and-store
 
-**Purpose:** Analyze a single issue and determine fix vs suppress.
-
-**Usage:**
-```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar triage --issue '{"key":"...", "rule":"...", ...}'
-```
-
-**Output:** TOON with action decision
-
-### sonar.py triage-batch
-
-**Purpose:** Triage multiple issues in a single call, reducing subprocess overhead.
+**Purpose:** Producer-side flow — fetch gate-blocking issues via the REST client, apply the pre-filter, and persist one `sonar-issue` finding per surviving issue.
 
 **Usage:**
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar triage-batch --issues '[{"key":"I1", "rule":"java:S1234", ...}, ...]'
+python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar fetch-and-store \
+  --plan-id {plan_id} --project {project_key} [--pr {pr}] [--severities ...] [--types ...]
 ```
 
-**Output:** TOON with results array and summary counts
+**Output:** TOON with counters (`count_fetched`, `count_skipped_suppressable`, `count_stored`), the list of stored finding hash_ids, and `producer_mismatch_hash_id` when applicable.
 
 ## Issue Classification
 
-Classification rules are data-driven — loaded from `standards/sonar-rules.json` (keys: `suppressable_rules`, `fix_suggestions`, `test_acceptable_rules`, `severity_priority`, `type_boost`). To add or update rule handling, edit the JSON file instead of the script.
+`standards/sonar-rules.json` is now a **pre-filter only** for the producer-side `fetch-and-store` flow. Suppressable rules (rules already documented as suppressable, test-acceptable rules) are dropped before findings are written; severity/type boost mappings derive the finding `severity` field. Final fix-vs-suppress classification of stored findings belongs to the LLM consumer reading the finding `detail`.
 
 Key principles:
 

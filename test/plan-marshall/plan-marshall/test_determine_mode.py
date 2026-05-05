@@ -114,22 +114,9 @@ class TestCheckDocsSubcommand(ScriptTestCase):
     def test_ok_when_docs_have_all_patterns(self):
         """Should return ok when docs have all required content."""
         claude_md = self.temp_dir / 'CLAUDE.md'
-        # The Workflow Discipline section is checked for presence AND for
-        # bullet-count completeness (drift detection added in lesson
-        # 2026-05-03-17-001). A minimal fixture that satisfies the canonical
-        # 8-bullet contract keeps this happy-path test stable.
         claude_md.write_text(
             '# Project\n\nUse `.plan/temp/` for temporary files.\n\n'
-            'For file operations use Glob, Read, Grep tools.\n\n'
-            '### Workflow Discipline (Hard Rules)\n\n'
-            '- Rule one\n'
-            '- Rule two\n'
-            '- Rule three\n'
-            '- Rule four\n'
-            '- Rule five\n'
-            '- Rule six\n'
-            '- Rule seven\n'
-            '- Rule eight\n'
+            'For file operations use Glob, Read, Grep tools.\n'
         )
 
         result = cmd_check_docs(Namespace(project_root=str(self.temp_dir)))
@@ -191,20 +178,9 @@ class TestCheckDocsSubcommand(ScriptTestCase):
 
     def test_mixed_files_one_ok_one_missing(self):
         """Should only list files that need updating."""
-        # The Workflow Discipline section needs at least 8 bullets to satisfy
-        # drift detection (lesson 2026-05-03-17-001).
         (self.temp_dir / 'CLAUDE.md').write_text(
             'Use .plan/temp for temp files\n'
             'For file operations use Glob, Read, Grep tools\n'
-            '### Workflow Discipline (Hard Rules)\n\n'
-            '- Rule one\n'
-            '- Rule two\n'
-            '- Rule three\n'
-            '- Rule four\n'
-            '- Rule five\n'
-            '- Rule six\n'
-            '- Rule seven\n'
-            '- Rule eight\n'
         )
         (self.temp_dir / 'agents.md').write_text('# Agents\n')
 
@@ -216,13 +192,13 @@ class TestCheckDocsSubcommand(ScriptTestCase):
 
     def test_missing_count_reflects_total_entries(self):
         """missing_count should reflect total number of missing check entries."""
-        # CLAUDE.md missing all 3 checks, agents.md missing plan_temp = 4 entries
+        # CLAUDE.md missing both checks (plan_temp, file_ops), agents.md missing plan_temp = 3 entries
         (self.temp_dir / 'CLAUDE.md').write_text('# Project\n')
         (self.temp_dir / 'agents.md').write_text('# Agents\n')
 
         result = cmd_check_docs(Namespace(project_root=str(self.temp_dir)))
         self.assertEqual(result['status'], 'success')
-        self.assertEqual(result['missing_count'], 4)
+        self.assertEqual(result['missing_count'], 3)
 
     def test_check_docs_function_directly(self):
         """Test the raw check_docs function."""
@@ -248,20 +224,9 @@ class TestFixDocsSubcommand(ScriptTestCase):
     def test_ok_when_docs_already_complete(self):
         """Should return ok when docs already have all required content."""
         claude_md = self.temp_dir / 'CLAUDE.md'
-        # Provide enough bullets to satisfy the drift threshold introduced by
-        # lesson 2026-05-03-17-001.
         claude_md.write_text(
             '# Project\n\nUse `.plan/temp/` for temporary files.\n\n'
-            'use Glob, Read, Grep tools.\n\n'
-            '### Workflow Discipline (Hard Rules)\n\n'
-            '- Rule one\n'
-            '- Rule two\n'
-            '- Rule three\n'
-            '- Rule four\n'
-            '- Rule five\n'
-            '- Rule six\n'
-            '- Rule seven\n'
-            '- Rule eight\n'
+            'use Glob, Read, Grep tools.\n'
         )
         result = cmd_fix_docs(Namespace(project_root=str(self.temp_dir)))
         self.assertEqual(result['fix_status'], 'ok')
@@ -270,7 +235,7 @@ class TestFixDocsSubcommand(ScriptTestCase):
     def test_fixes_missing_plan_temp_in_claude_md(self):
         """Should append plan_temp content to CLAUDE.md."""
         claude_md = self.temp_dir / 'CLAUDE.md'
-        claude_md.write_text('# Project\n\nuse Glob, Read, Grep tools.\n\n### Workflow Discipline (Hard Rules)\n')
+        claude_md.write_text('# Project\n\nuse Glob, Read, Grep tools.\n')
         result = cmd_fix_docs(Namespace(project_root=str(self.temp_dir)))
         self.assertEqual(result['fix_status'], 'fixed')
         self.assertIn('plan_temp:CLAUDE.md', result['fixes'])
@@ -282,7 +247,7 @@ class TestFixDocsSubcommand(ScriptTestCase):
     def test_fixes_missing_file_ops(self):
         """Should append file_ops content to CLAUDE.md."""
         claude_md = self.temp_dir / 'CLAUDE.md'
-        claude_md.write_text('# Project\n\nUse .plan/temp for files.\n### Workflow Discipline\n')
+        claude_md.write_text('# Project\n\nUse .plan/temp for files.\n')
         result = cmd_fix_docs(Namespace(project_root=str(self.temp_dir)))
         self.assertEqual(result['fix_status'], 'fixed')
         self.assertIn('file_ops:CLAUDE.md', result['fixes'])
@@ -290,31 +255,17 @@ class TestFixDocsSubcommand(ScriptTestCase):
         content = claude_md.read_text()
         self.assertIn('use Glob, Read, Grep', content)
 
-    def test_fixes_missing_workflow_discipline(self):
-        """Should append workflow_discipline content to CLAUDE.md."""
-        claude_md = self.temp_dir / 'CLAUDE.md'
-        claude_md.write_text('# Project\n\nUse .plan/temp for files.\nuse Glob, Read, Grep tools.\n')
-        result = cmd_fix_docs(Namespace(project_root=str(self.temp_dir)))
-        self.assertEqual(result['fix_status'], 'fixed')
-        self.assertIn('workflow_discipline:CLAUDE.md', result['fixes'])
-
-        content = claude_md.read_text()
-        self.assertIn('Workflow Discipline', content)
-        self.assertIn('one command per call', content)
-        self.assertIn('no improvisation', content)
-
     def test_fixes_multiple_missing_checks(self):
         """Should fix all missing checks in one call."""
         claude_md = self.temp_dir / 'CLAUDE.md'
         claude_md.write_text('# Project\n')
         result = cmd_fix_docs(Namespace(project_root=str(self.temp_dir)))
         self.assertEqual(result['fix_status'], 'fixed')
-        self.assertEqual(result['fixed_count'], 3)
+        self.assertEqual(result['fixed_count'], 2)
 
         content = claude_md.read_text()
         self.assertIn('.plan/temp/', content)
         self.assertIn('use Glob, Read, Grep', content)
-        self.assertIn('Workflow Discipline', content)
 
     def test_fixes_agents_md_plan_temp(self):
         """Should append plan_temp to agents.md when missing."""
@@ -342,31 +293,6 @@ class TestFixDocsSubcommand(ScriptTestCase):
         status, fixes = fix_docs(self.temp_dir)
         self.assertEqual(status, 'ok')
         self.assertEqual(fixes, [])
-
-    def test_workflow_discipline_content_includes_canonical_rules(self):
-        """
-        Workflow discipline FIX_CONTENT should include the full canonical
-        rule set from CLAUDE.md (lesson 2026-05-03-17-001 restored the
-        rules that an earlier reduction had stripped). This is a smoke
-        test — the authoritative drift assertion is in
-        ``test_workflow_discipline_fix_content_matches_claude_md``
-        (added by deliverable 5 task 8).
-        """
-        claude_md = self.temp_dir / 'CLAUDE.md'
-        claude_md.write_text('# Project\n\nUse .plan/temp.\nuse Glob, Read, Grep tools.\n')
-
-        cmd_fix_docs(Namespace(project_root=str(self.temp_dir)))
-        content = claude_md.read_text()
-
-        # All eight canonical rules must be present in the appended block.
-        self.assertIn('`.plan/` access: scripts only', content)
-        self.assertIn('Bash: one command per call', content)
-        self.assertIn('Bash: no shell constructs', content)
-        self.assertIn('Workflow steps: no improvisation', content)
-        self.assertIn('CI operations: use abstraction layer', content)
-        self.assertIn('Build commands: resolve via architecture', content)
-        self.assertIn('PR review: validate bot suggestions against plan intent', content)
-        self.assertIn('Structured queries first', content)
 
 
 # =============================================================================

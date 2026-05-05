@@ -1,7 +1,7 @@
 ---
 name: sonar-roundtrip-agent
 description: |
-  Named agent that performs the finalize-phase Sonar Roundtrip step. Loads plan-marshall:dev-general-practices into its own context, then delegates end-to-end to the authoritative standard phase-6-finalize/standards/sonar-roundtrip.md, using plan-marshall:workflow-integration-sonar to fetch, triage, and resolve SonarQube/SonarCloud issues against the plan's PR.
+  Named agent that performs the finalize-phase Sonar Roundtrip step. Loads plan-marshall:dev-general-practices into its own context, then delegates end-to-end to the authoritative standard phase-6-finalize/standards/sonar-roundtrip.md. The standard drives the producer-side `sonar fetch-and-store` call to populate the per-plan findings store with one `sonar-issue` finding per surviving issue, then dispatches each pending finding through `manage-findings query` + `ext-triage-{domain}` for the FIX / SUPPRESS / ACCEPT / AskUserQuestion decision, with NOSONAR/`@SuppressWarnings`/Sonar-dismissal actions and loop-back fix-task creation per the loaded extension's standards.
 
   Examples:
   - Input: plan_id=my-plan, worktree_path=/Users/x/repo/.claude/worktrees/my-plan
@@ -58,10 +58,11 @@ marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/sonar-roundt
 ```
 
 The standard is the source of truth for the step sequence, including:
-- Fetching Sonar issues via `plan-marshall:workflow-integration-sonar`
-- Triage (fix / suppress / accept)
-- Fix-task creation when warranted
-- Outcome logging and `manage-status mark-step-done`
+- Producer-side fetch+store call via `plan-marshall:workflow-integration-sonar:sonar fetch-and-store`, which writes one `sonar-issue` finding per surviving Sonar issue to the per-plan findings store
+- Consumer-side enumeration via `manage-findings query --type sonar-issue --resolution pending`, per-finding domain detection via `architecture which-module`, triage-extension resolution via `manage-config resolve-workflow-skill-extension --type triage`, and load of the resulting `ext-triage-{domain}` skill
+- Per-finding decision (FIX / SUPPRESS / ACCEPT / AskUserQuestion) using the loaded extension's `severity.md` and `suppression.md` standards
+- Action: FIX → fix-task + loop-back; SUPPRESS → NOSONAR / `@SuppressWarnings` annotation per loaded suppression syntax; ACCEPT → Sonar dismissal with rationale; AskUserQuestion when standards are ambiguous
+- Outcome logging via `manage-findings resolve --resolution {fixed|suppressed|accepted|taken_into_account}` and `manage-status mark-step-done`
 
 Follow every step verbatim. Return the standard's output contract unchanged.
 

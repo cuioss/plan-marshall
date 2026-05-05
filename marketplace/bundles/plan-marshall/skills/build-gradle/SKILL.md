@@ -38,6 +38,18 @@ See `build-api-reference.md` for the full subcommand API and availability matrix
 - **find-project**: Resolves module names to Gradle notation (e.g., `auth` → `:services:auth`)
 - **search-markers**: Default extensions: `.java,.kt`
 
+### Producer-Side Finding Storage (`run --plan-id`)
+
+When `run` is invoked with `--plan-id <P>`, every parsed issue from a failed build is auto-stored as a finding via `manage-findings add` (always-on). Without `--plan-id`, the historical silent behaviour is preserved.
+
+| Parsed `category` (Issue) | Finding type |
+|---------------------------|--------------|
+| `test_failure`, `test_*` | `test-failure` |
+| categories containing `lint` or `style` (spotless, checkstyle, ktlint, detekt) | `lint-issue` |
+| everything else (compilation, dependency, plugin, Kotlin Unresolved/Type mismatch) | `build-error` |
+
+The finding's `module` carries `gradle`, `rule` carries the parser category. Producer-side mismatches are surfaced as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`.
+
 ## Module Discovery
 
 Reads `settings.gradle(.kts)` for `include()` declarations. Supports both Groovy and Kotlin DSL. Shells out to Gradle for properties, dependencies, and quality task detection.

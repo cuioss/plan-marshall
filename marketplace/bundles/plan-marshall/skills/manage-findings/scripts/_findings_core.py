@@ -3,17 +3,17 @@
 Finding, Q-Gate, and assessment storage for plan-level artifacts.
 
 Provides JSONL-based storage for:
-- Plan-scoped findings (long-lived, promotable)
-- Phase-scoped Q-Gate findings (per-phase, not promotable)
-- Plan-scoped assessments (component evaluations with certainty/confidence)
+- Plan-scoped findings (long-lived, promotable) — split per type into findings/{type}.jsonl
+- Phase-scoped Q-Gate findings (per-phase, not promotable) — findings/qgate-{phase}.jsonl
+- Plan-scoped assessments (component evaluations with certainty/confidence) — findings/assessments.jsonl
 
 Findings and Q-Gate share the same type taxonomy, resolution model, and severity values.
 Assessments use a separate certainty/confidence model.
 
 Storage:
-- Plan findings: .plan/plans/{plan_id}/artifacts/findings.jsonl
-- Q-Gate findings: .plan/plans/{plan_id}/artifacts/qgate-{phase}.jsonl
-- Assessments: .plan/plans/{plan_id}/artifacts/assessments.jsonl
+- Plan findings: .plan/plans/{plan_id}/artifacts/findings/{type}.jsonl (one file per type)
+- Q-Gate findings: .plan/plans/{plan_id}/artifacts/findings/qgate-{phase}.jsonl
+- Assessments: .plan/plans/{plan_id}/artifacts/findings/assessments.jsonl
 
 Stdlib-only - no external dependencies (except shared modules via PYTHONPATH).
 """
@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from constants import (  # type: ignore[import-not-found]
+    FILE_FINDINGS_DIR,
     FINDING_SEVERITIES,
     FINDING_TYPES,
     QGATE_PHASES,
@@ -39,8 +40,10 @@ from jsonl_store import (  # type: ignore[import-not-found]
     generate_hash_id,
     get_artifact_path,
     read_jsonl,
+    read_jsonl_merge,
     timestamp,
     update_jsonl,
+    update_jsonl_in_dir,
 )
 
 # --- Backward-compatible aliases (imported from constants) ---
@@ -53,18 +56,29 @@ CERTAINTY_VALUES = VALID_CERTAINTIES
 # --- Path Helpers ---
 
 
-def get_findings_path(plan_id: str) -> 'Path':
-    """Returns .plan/plans/{plan_id}/artifacts/findings.jsonl"""
+def get_findings_dir(plan_id: str) -> 'Path':
+    """Returns .plan/plans/{plan_id}/artifacts/findings/"""
     validate_plan_id(plan_id)
-    return get_artifact_path(plan_id, 'findings.jsonl')
+    return get_artifact_path(plan_id, FILE_FINDINGS_DIR)
+
+
+def get_findings_path(plan_id: str, finding_type: str) -> 'Path':
+    """Returns .plan/plans/{plan_id}/artifacts/findings/{type}.jsonl
+
+    Per-type splitting: each finding type lives in its own JSONL file under the
+    findings/ subdirectory. Cross-type queries merge results across files via
+    `read_jsonl_merge` over `get_findings_dir(plan_id)`.
+    """
+    if finding_type not in FINDING_TYPES:
+        raise ValueError(f'Invalid finding type: {finding_type}. Must be one of {FINDING_TYPES}')
+    return get_findings_dir(plan_id) / f'{finding_type}.jsonl'
 
 
 def get_qgate_path(plan_id: str, phase: str) -> 'Path':
-    """Returns .plan/plans/{plan_id}/artifacts/qgate-{phase}.jsonl"""
-    validate_plan_id(plan_id)
+    """Returns .plan/plans/{plan_id}/artifacts/findings/qgate-{phase}.jsonl"""
     if phase not in QGATE_PHASES:
         raise ValueError(f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}')
-    return get_artifact_path(plan_id, f'qgate-{phase}.jsonl')
+    return get_findings_dir(plan_id) / f'qgate-{phase}.jsonl'
 
 
 # --- Shared Query Helper ---
@@ -165,9 +179,21 @@ def add_finding(
     if severity:
         record['severity'] = severity
 
-    append_jsonl(get_findings_path(plan_id), record)
+    append_jsonl(get_findings_path(plan_id, finding_type), record)
 
     return {'status': 'success', 'hash_id': hash_id, 'type': finding_type}
+
+
+def _list_finding_files(plan_id: str) -> list['Path']:
+    """List all per-type finding JSONL files (excluding qgate-*, assessments)."""
+    findings_dir = get_findings_dir(plan_id)
+    if not findings_dir.exists():
+        return []
+    return [
+        findings_dir / f'{t}.jsonl'
+        for t in FINDING_TYPES
+        if (findings_dir / f'{t}.jsonl').exists()
+    ]
 
 
 def query_findings(
@@ -177,9 +203,16 @@ def query_findings(
     promoted: bool | None = None,
     file_pattern: str | None = None,
 ) -> dict[str, Any]:
-    """Query findings with filters."""
-    path = get_findings_path(plan_id)
-    records = read_jsonl(path)
+    """Query findings across all per-type files, merging results.
+
+    Storage is split into findings/{type}.jsonl. The full record set across all
+    per-type files is always loaded (in canonical FINDING_TYPES order) so
+    `total_count` reflects the entire store; type/resolution/file_pattern/promoted
+    filters then narrow the result to `filtered_count`. This preserves the
+    CLI-surface semantics from the pre-split single-file layout.
+    """
+    paths = [get_findings_path(plan_id, t) for t in FINDING_TYPES]
+    records = read_jsonl_merge(paths)
 
     type_filter = {t.strip() for t in finding_type.split(',')} if finding_type else None
     filtered = _filter_records(
@@ -201,11 +234,11 @@ def query_findings(
 
 
 def get_finding(plan_id: str, hash_id: str) -> dict[str, Any]:
-    """Get a single finding by hash_id."""
-    path = get_findings_path(plan_id)
-    for record in read_jsonl(path):
-        if record.get('hash_id') == hash_id:
-            return {'status': 'success', **record}
+    """Get a single finding by hash_id, scanning all per-type files."""
+    for path in _list_finding_files(plan_id):
+        for record in read_jsonl(path):
+            if record.get('hash_id') == hash_id:
+                return {'status': 'success', **record}
     return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
 
 
@@ -215,16 +248,15 @@ def resolve_finding(
     resolution: str,
     detail: str | None = None,
 ) -> dict[str, Any]:
-    """Resolve a finding."""
+    """Resolve a finding (locates the per-type file by hash_id)."""
     if resolution not in RESOLUTIONS:
         return {'status': 'error', 'message': f'Invalid resolution: {resolution}. Must be one of {RESOLUTIONS}'}
 
-    path = get_findings_path(plan_id)
     updates: dict[str, Any] = {'resolution': resolution}
     if detail:
         updates['resolution_detail'] = detail
 
-    if update_jsonl(path, hash_id, updates):
+    if update_jsonl_in_dir(get_findings_dir(plan_id), hash_id, updates):
         return {'status': 'success', 'hash_id': hash_id, 'resolution': resolution}
     return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
 
@@ -234,11 +266,10 @@ def promote_finding(
     hash_id: str,
     promoted_to: str,
 ) -> dict[str, Any]:
-    """Mark a finding as promoted."""
-    path = get_findings_path(plan_id)
+    """Mark a finding as promoted (locates the per-type file by hash_id)."""
     updates = {'promoted': True, 'promoted_to': promoted_to}
 
-    if update_jsonl(path, hash_id, updates):
+    if update_jsonl_in_dir(get_findings_dir(plan_id), hash_id, updates):
         return {'status': 'success', 'hash_id': hash_id, 'promoted_to': promoted_to}
     return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
 
@@ -396,9 +427,8 @@ def clear_qgate_findings(
 
 
 def get_assessments_path(plan_id: str) -> 'Path':
-    """Returns .plan/plans/{plan_id}/artifacts/assessments.jsonl"""
-    validate_plan_id(plan_id)
-    return get_artifact_path(plan_id, 'assessments.jsonl')
+    """Returns .plan/plans/{plan_id}/artifacts/findings/assessments.jsonl"""
+    return get_findings_dir(plan_id) / 'assessments.jsonl'
 
 
 # --- Assessment Operations ---

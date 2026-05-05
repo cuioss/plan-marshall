@@ -42,17 +42,14 @@ This skill is the GitHub provider in the CI provider model. The central dispatch
 ## Usage Examples
 
 ```bash
-# Fetch comments for current branch's PR
-python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr comments
+# Producer-side: fetch + pre-filter + store one pr-comment finding per surviving comment
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr comments-stage --pr-number 123 --plan-id my-plan
 
-# Fetch comments for specific PR
-python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr comments --pr-number 123
+# Raw fetch (no filtering, no storage) — for ad-hoc inspection
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr fetch-comments --pr 123
 
-# Triage a single comment
-python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr triage --comment '{"id":"C1","body":"Fix this","path":"src/Main.java","line":42}'
-
-# Batch triage multiple comments
-python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr triage-batch --comments '[{"id":"C1","body":"Bug here"},{"id":"C2","body":"LGTM"}]'
+# LLM consumer reads stored findings via manage-findings
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query --plan-id my-plan --type pr-comment
 ```
 
 ## Scripts
@@ -60,7 +57,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 | Script | Notation | Purpose |
 |--------|----------|---------|
 | github_ops | `plan-marshall:workflow-integration-github:github_ops` | GitHub PR, CI, and issue operations via gh CLI |
-| github_pr | `plan-marshall:workflow-integration-github:github_pr` | PR review comment triage (delegates to github_ops for fetch) |
+| github_pr | `plan-marshall:workflow-integration-github:github_pr` | Producer-side PR review comment fetcher (fetch + pre-filter + store) |
 
 ## Consumers
 
@@ -85,9 +82,11 @@ This skill is consumed by:
 
 2. **Return Comment List**
 
-### Workflow 2: Handle Review
+### Workflow 2: Handle Review (Producer-Side)
 
-**Purpose:** Process review comments and respond appropriately.
+**Purpose:** Stage PR review comments into the per-type finding store, then let the LLM consumer drive classification and responses from the stored findings.
+
+**Producer-side flow:** `comments-stage` is the only callable surface. It fetches review comments, applies the `comment-patterns.json` keyword pre-filter to drop obvious noise (bot signatures, "lgtm", etc.), and writes one `pr-comment` finding per surviving comment via `manage-findings add`. No script-side classification or batch-triage call is exposed to the LLM — the LLM reads the stored findings and decides per-finding action itself.
 
 **GitHub GraphQL ID Format Rules:**
 
@@ -96,18 +95,24 @@ This skill is consumed by:
 | `thread-reply --thread-id` | Comment's `thread_id` field | GraphQL node ID | `PRRT_kwDO...` |
 | `resolve-thread --thread-id` | Comment's `thread_id` field | GraphQL node ID | `PRRT_kwDO...` |
 
-Both operations take the same `PRRT_` thread ID — pass the comment's `thread_id` field for either. The comment's `id` field (format `PRRC_...`) is never valid for `thread-reply` or `resolve-thread`.
+Both operations take the same `PRRT_` thread ID — pass the comment's `thread_id` field for either. The comment's `id` field (format `PRRC_...`) is never valid for `thread-reply` or `resolve-thread`. The producer-side stager places `thread_id`, `comment_id`, `kind`, `author`, `path`, `line`, and the full body in the finding's `detail` field so downstream consumers can reconstruct any reply or resolve call.
 
 **NEVER use numeric IDs** — GitHub GraphQL requires global node IDs.
 
 **Steps:**
 
-1. **Get Comments** — use Fetch Comments workflow with `--unresolved-only`
-2. **Triage All Comments (Batch)**:
+1. **Stage Comments**:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr triage-batch --comments '[...]'
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr comments-stage --pr-number {pr} --plan-id {plan_id}
    ```
-3. **Process by Action Type**
+   Output reports `count_fetched`, `count_skipped_noise`, `count_stored`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_noise; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`).
+
+2. **Query Stored Findings**:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query --plan-id {plan_id} --type pr-comment
+   ```
+
+3. **Process by Action Type** — the LLM reads each finding's `detail` (which carries the full body, kind, thread_id, author, path:line, comment_id) and decides:
 
    **For code_change:** Read file, implement change, reply with commit reference
    **For explain:** Generate explanation, reply via:
@@ -120,9 +125,11 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    ```
    **For ignore:** Resolve thread without replying
 
+   After acting on each finding, the LLM should call `manage-findings resolve --hash-id {hash} --resolution fixed|suppressed|accepted` to mark progress.
+
 ## Comment Classification
 
-Classification patterns are data-driven — loaded from `standards/comment-patterns.json`. Classification priority: `code_change(high)` > `code_change(medium/low)` > `ignore` > `explain`.
+`standards/comment-patterns.json` is now a **pre-filter only** — it drops obvious noise (bot signatures, "lgtm", "thanks!") before findings are written, but is **no longer the decision authority** for the action category. Classification of surviving comments belongs to the LLM consumer, which reads the full body from each finding's `detail` field.
 
 ## Error Handling
 

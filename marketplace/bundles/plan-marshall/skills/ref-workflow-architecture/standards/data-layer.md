@@ -107,12 +107,14 @@ The plan-marshall bundle uses manage-* skills as the data access layer for all p
 │  │                       │                   │                          │  │
 │  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
 │  │                       │                   │                          │  │
-│  │ manage-findings       │ findings.jsonl    │ Findings + Q-Gate +      │  │
-│  │                       │ assessments.jsonl │ Assessments              │  │
-│  │                       │ qgate-{phase}     │ • add/query/resolve      │  │
+│  │ manage-findings       │ findings/         │ Findings + Q-Gate +      │  │
+│  │                       │  {type}.jsonl     │ Assessments              │  │
+│  │                       │  qgate-{phase}    │ • add/query/resolve      │  │
 │  │                       │   .jsonl          │ • promote (findings)     │  │
-│  │                       │                   │ • qgate add/query/clear  │  │
-│  │                       │                   │ • assessment add/query   │  │
+│  │                       │  assessments      │ • qgate add/query/clear  │  │
+│  │                       │   .jsonl          │ • assessment add/query   │  │
+│  │                       │ (per-type split,  │   query merges across    │  │
+│  │                       │  query merges)    │   findings/{type}.jsonl  │  │
 │  │                       │                   │                          │  │
 │  └───────────────────────┴───────────────────┴──────────────────────────┘  │
 │                                                                             │

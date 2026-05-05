@@ -1,5 +1,5 @@
 {
-  "_note": "Regex patterns for PR comment classification. Pre-compiled at import time by pr.py for fetch-comments, triage, and triage-batch subcommands. Classification priority: code_change(high) > code_change(medium) > code_change(low) > ignore > explain. Priority vocabulary uses PRIORITY_LEVELS (low, medium, high, critical) from triage_helpers.",
+  "_note": "Regex patterns used by github_pr.py as a PRE-FILTER ONLY for the producer-side comments-stage subcommand. Only the `ignore` category is consulted by the script today — surviving comments are persisted as `pr-comment` findings via manage-findings, and classification of surviving entries is the LLM consumer's responsibility (reading each finding's full body from `detail`). The `code_change` and `explain` categories are retained verbatim as documentation of the historical taxonomy and may guide downstream LLM prompts, but they are no longer the decision authority. Priority vocabulary uses PRIORITY_LEVELS (low, medium, high, critical) from triage_helpers.",
   "_category_rationale": {
     "code_change.high": "Security and correctness issues that demand immediate code changes — bugs, crashes, vulnerabilities.",
     "code_change.medium": "Actionable requests using directive language (please add/fix/change) or calling out specific incorrectness.",

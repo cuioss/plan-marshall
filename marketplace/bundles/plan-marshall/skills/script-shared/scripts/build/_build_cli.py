@@ -83,6 +83,17 @@ def add_run_subparser(
         help='Output format (default: toon)',
     )
     add_project_dir_arg(run_parser)
+    # --plan-id is the producer-side opt-in for auto-storing build issues as
+    # findings. When set, every parsed build-error / test-failure / lint-issue
+    # is appended to the per-type finding store via manage-findings (always-on
+    # — no separate --store-findings flag). When unset, the historical silent
+    # behaviour is preserved (parse + format only).
+    run_parser.add_argument(
+        '--plan-id',
+        dest='plan_id',
+        default=None,
+        help='Plan ID — when set, parsed issues are stored as findings via manage-findings (always-on)',
+    )
     if extra_args_fn:
         extra_args_fn(run_parser)
     return run_parser

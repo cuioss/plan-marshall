@@ -23,6 +23,7 @@ Loaded via `resolve-workflow-skill-extension --domain plan-marshall-plugin-dev -
 2. Plugin-doctor reports issues
 3. Markdown linting issues detected
 4. YAML validation errors occur
+5. PR review comment disposition is required (FIX, REPLY-AND-RESOLVE, or ESCALATE on bot review threads)
 
 ## Standards
 
@@ -30,6 +31,7 @@ Loaded via `resolve-workflow-skill-extension --domain plan-marshall-plugin-dev -
 |----------|---------|
 | [suppression.md](standards/suppression.md) | Python and markdown suppression syntax |
 | [severity.md](standards/severity.md) | Plugin-specific severity guidelines |
+| [pr-comment-disposition.md](standards/pr-comment-disposition.md) | PR review comment disposition (FIX / REPLY-AND-RESOLVE / ESCALATE) for marketplace plugins |
 
 ## Extension Registration
 

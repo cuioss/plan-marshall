@@ -7,8 +7,6 @@ from toon_parser import parse_toon
 from triage_helpers import (
     ErrorCode,
     calculate_priority,
-    cmd_triage_batch_handler,
-    cmd_triage_single,
     create_workflow_cli,
     is_test_file,
     load_config_file,
@@ -259,80 +257,6 @@ def test_is_test_file_go():
     """Test Go test file detection."""
     assert is_test_file('handler_test.go')
     assert not is_test_file('handler.go')
-
-
-# =============================================================================
-# Test: cmd_triage_single
-# =============================================================================
-
-
-def _mock_triage(item: dict) -> dict:
-    """Simple triage function for testing."""
-    return {
-        'action': 'fix' if item.get('severity') == 'HIGH' else 'ignore',
-        'status': 'success',
-    }
-
-
-def test_cmd_triage_single_success(capsys):
-    """Test single triage with valid JSON."""
-    result = cmd_triage_single('{"severity": "HIGH"}', _mock_triage)
-    assert result['status'] == 'success'
-    assert result['action'] == 'fix'
-
-
-def test_cmd_triage_single_invalid_json(capsys):
-    """Test single triage with invalid JSON."""
-    result = cmd_triage_single('not-json', _mock_triage)
-    assert result['status'] == 'error'
-
-
-# =============================================================================
-# Test: cmd_triage_batch_handler (including A10 error handling)
-# =============================================================================
-
-
-def test_cmd_triage_batch_success(capsys):
-    """Test batch triage with valid items."""
-    items = json.dumps([{'severity': 'HIGH'}, {'severity': 'LOW'}])
-    result = cmd_triage_batch_handler(items, _mock_triage, ['fix', 'ignore'])
-    assert result['status'] == 'success'
-    assert result['summary']['total'] == 2
-    assert result['summary']['fix'] == 1
-    assert result['summary']['ignore'] == 1
-    assert result['summary']['failed'] == 0
-
-
-def test_cmd_triage_batch_invalid_json(capsys):
-    """Test batch triage with invalid JSON."""
-    result = cmd_triage_batch_handler('not-json', _mock_triage, ['fix'])
-    assert result['status'] == 'error'
-
-
-def test_cmd_triage_batch_not_array(capsys):
-    """Test batch triage with non-array JSON."""
-    result = cmd_triage_batch_handler('{"key": "val"}', _mock_triage, ['fix'])
-    assert result['status'] == 'error'
-
-
-def test_cmd_triage_batch_error_handling(capsys):
-    """A10: Test that per-item exceptions don't crash the batch."""
-
-    def flaky_triage(item: dict) -> dict:
-        if item.get('bomb'):
-            raise ValueError('deliberate test explosion')
-        return {'action': 'fix', 'status': 'success'}
-
-    items = json.dumps([{'id': 'ok1'}, {'id': 'bad', 'bomb': True}, {'id': 'ok2'}])
-    result = cmd_triage_batch_handler(items, flaky_triage, ['fix'])
-    assert result['status'] == 'success'
-    assert result['summary']['total'] == 3
-    assert result['summary']['failed'] == 1
-    assert result['summary']['fix'] == 2
-    # The failed item should have action 'error'
-    failed_items = [r for r in result['results'] if r.get('action') == 'error']
-    assert len(failed_items) == 1
-    assert 'deliberate test explosion' in failed_items[0]['reason']
 
 
 # =============================================================================

@@ -241,6 +241,146 @@ def cmd_discover_common(args, discover_fn: Callable) -> int:
         return 1
 
 
+# ---------------------------------------------------------------------------
+# Issue → finding-type routing (used by the --plan-id auto-store path)
+# ---------------------------------------------------------------------------
+
+
+def _classify_issue_finding_type(issue: Issue) -> str:
+    """Map a parsed build Issue to one of three finding-store types.
+
+    Returns one of:
+    - ``test-failure`` — test runner failures (category ``test_failure`` or
+      similar). Test failures take precedence over lint hints.
+    - ``lint-issue`` — linter / style / formatter findings (category contains
+      ``lint`` or ``style``).
+    - ``build-error`` — everything else (compilation, dependency, plugin,
+      execution failures).
+    """
+    category = (issue.category or '').lower()
+    if 'test' in category and 'failure' in category:
+        return 'test-failure'
+    if category in ('test_failure',) or category.startswith('test_'):
+        return 'test-failure'
+    if 'lint' in category or 'style' in category:
+        return 'lint-issue'
+    return 'build-error'
+
+
+def _classify_finding_severity(issue: Issue) -> str:
+    """Map an Issue.severity (``error``/``warning``) to the finding store
+    severity vocabulary (``error``/``warning``/``info``)."""
+    if issue.severity == SEVERITY_ERROR:
+        return 'error'
+    return 'warning'
+
+
+def _store_build_findings(
+    plan_id: str,
+    tool_name: str,
+    issues: list[Issue],
+    command_str: str,
+) -> tuple[int, int, list[str]]:
+    """Store parsed build issues as findings.
+
+    Returns a ``(count_seen, count_stored, store_failures)`` tuple. The
+    "expected_stored" value equals ``count_seen`` because every parsed issue
+    must be stored (no producer-side filtering). Mismatches between
+    ``count_seen`` and ``count_stored`` are surfaced by the caller as a Q-Gate
+    finding with title prefix ``(producer-mismatch)``.
+    """
+    from _findings_core import add_finding  # type: ignore[import-not-found]
+
+    count_seen = len(issues)
+    count_stored = 0
+    store_failures: list[str] = []
+
+    for issue in issues:
+        finding_type = _classify_issue_finding_type(issue)
+        severity = _classify_finding_severity(issue)
+        file_path = issue.file or None
+        line = issue.line if isinstance(issue.line, int) and issue.line > 0 else None
+
+        title_prefix = {
+            'test-failure': 'Test failure',
+            'lint-issue': 'Lint issue',
+            'build-error': 'Build error',
+        }[finding_type]
+
+        location = ''
+        if file_path:
+            location = f' in {file_path}'
+            if line:
+                location = f' in {file_path}:{line}'
+        category_suffix = f' [{issue.category}]' if issue.category else ''
+        title = f'{title_prefix}{location}{category_suffix}: {issue.message[:80]}'
+
+        detail_lines = [
+            f'tool: {tool_name}',
+            f'command: {command_str}',
+            f'category: {issue.category or "(none)"}',
+            f'severity: {issue.severity}',
+        ]
+        if file_path:
+            detail_lines.append(f'file: {file_path}')
+        if line:
+            detail_lines.append(f'line: {line}')
+        if issue.stack_trace:
+            detail_lines.append('')
+            detail_lines.append('--- stack trace ---')
+            detail_lines.append(issue.stack_trace)
+        detail_lines.append('')
+        detail_lines.append('--- message ---')
+        detail_lines.append(issue.message)
+        detail = '\n'.join(detail_lines)
+
+        add_result = add_finding(
+            plan_id=plan_id,
+            finding_type=finding_type,
+            title=title,
+            detail=detail,
+            file_path=file_path,
+            line=line,
+            module=tool_name,
+            rule=issue.category or None,
+            severity=severity,
+        )
+        if add_result.get('status') == 'success':
+            count_stored += 1
+        else:
+            store_failures.append(issue.message[:60])
+
+    return count_seen, count_stored, store_failures
+
+
+def _record_producer_mismatch(
+    plan_id: str,
+    tool_name: str,
+    command_str: str,
+    count_seen: int,
+    count_stored: int,
+    store_failures: list[str],
+) -> None:
+    """Emit a Q-Gate finding when a build run's parsed-issue count does not
+    match the count successfully stored in the findings store."""
+    from _findings_core import add_qgate_finding  # type: ignore[import-not-found]
+
+    detail = (
+        f'count_seen={count_seen}, '
+        f'count_stored={count_stored}, '
+        f'expected_stored={count_seen}, '
+        f'store_failures={store_failures}'
+    )
+    add_qgate_finding(
+        plan_id=plan_id,
+        phase='5-execute',
+        source='qgate',
+        finding_type='build-error',
+        title=f'(producer-mismatch) {tool_name} build run',
+        detail=f'command={command_str} ; {detail}',
+    )
+
+
 def cmd_run_common(
     result: DirectCommandResult,
     parser_fn: ParserFn,
@@ -249,6 +389,7 @@ def cmd_run_common(
     mode: str = 'actionable',
     project_dir: str = '.',
     parser_needs_command: bool = False,
+    plan_id: str | None = None,
 ) -> int:
     """Common cmd_run logic shared across all build skills.
 
@@ -322,6 +463,28 @@ def cmd_run_common(
             issues, test_summary, build_status = parser_fn(log_file, command_str)
         else:
             issues, test_summary, build_status = parser_fn(log_file)
+
+        # Auto-store parsed issues as findings when --plan-id is provided.
+        # Always-on: every parsed issue (build-error / test-failure /
+        # lint-issue) is appended to the per-type finding store before any
+        # mode-specific warning filtering is applied. Producer-side mismatch
+        # (parsed != stored) is surfaced as a Q-Gate finding.
+        if plan_id:
+            count_seen, count_stored, store_failures = _store_build_findings(
+                plan_id=plan_id,
+                tool_name=tool_name,
+                issues=issues,
+                command_str=command_str,
+            )
+            if count_stored != count_seen:
+                _record_producer_mismatch(
+                    plan_id=plan_id,
+                    tool_name=tool_name,
+                    command_str=command_str,
+                    count_seen=count_seen,
+                    count_stored=count_stored,
+                    store_failures=store_failures,
+                )
 
         # Partition issues into errors and warnings
         errors, warnings = partition_issues(issues)

@@ -42,11 +42,13 @@ VALID_PHASE_STATUSES = (PHASE_STATUS_PENDING, PHASE_STATUS_IN_PROGRESS, PHASE_ST
 # ---------------------------------------------------------------------------
 FILE_STATUS = 'status.json'
 FILE_REFERENCES = 'references.json'
-FILE_ASSESSMENTS = 'assessments.jsonl'
-FILE_FINDINGS = 'findings.jsonl'
 FILE_METRICS = 'metrics.toon'
 FILE_MARSHAL = 'marshal.json'
 FILE_RUN_CONFIG = 'run-config.json'
+
+# Findings live under artifacts/findings/{type}.jsonl (per-type splitting),
+# alongside qgate-{phase}.jsonl and assessments.jsonl in the same directory.
+FILE_FINDINGS_DIR = 'findings'
 
 # ---------------------------------------------------------------------------
 # Hash ID pattern (shared by findings, assessments, logging)
