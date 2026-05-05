@@ -117,7 +117,7 @@ manage-config system retention set \
   --value 7
 ```
 
-Retention fields: `logs_days`, `archived_plans_days`, `memory_days`, `temp_on_maintenance`.
+Retention fields: `logs_days`, `archived_plans_days`, `temp_on_maintenance`.
 
 ---
 

@@ -325,10 +325,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │     │  3. sonar_roundtrip                                          │       │
 │     │     └─▶ Wait for analysis, fetch issues, triage              │       │
 │     │                                                              │       │
-│     │  4. knowledge_capture                                        │       │
-│     │     └─▶ Update project-structure.toon (advisory)             │       │
-│     │                                                              │       │
-│     │  5. lessons_capture                                          │       │
+│     │  4. lessons_capture                                          │       │
 │     │     └─▶ Record notable triage decisions (advisory)           │       │
 │     │                                                              │       │
 │     │  ON FINDINGS (automated_review/sonar):                       │       │
@@ -336,7 +333,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │     │    → Loop back to 5-execute                                  │       │
 │     │    → Max iterations: 3 (configurable)                        │       │
 │     │                                                              │       │
-│     │  6. Archive plan (atomic phase close)                        │       │
+│     │  5. Archive plan (atomic phase close)                        │       │
 │     │     └─▶ archive — marks active phase done +                  │       │
 │     │         sets current_phase: complete BEFORE moving           │       │
 │     │                                                              │       │

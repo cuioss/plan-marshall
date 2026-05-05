@@ -242,8 +242,6 @@ AskUserQuestion:
     - label: "sonar_roundtrip"
       description: "Sonar analysis roundtrip"
     # Page 2 (if paging needed):
-    - label: "knowledge_capture (Recommended)"
-      description: "Capture learnings to memory"
     - label: "lessons_capture (Recommended)"
       description: "Record lessons learned"
     - label: "branch_cleanup"

@@ -499,7 +499,6 @@ def test_boundary_normalization_strips_prefix_for_all_downstream_consumers():
         'default:create-pr',
         'default:automated-review',
         # Bare default entries (no prefix to strip).
-        'knowledge-capture',
         'lessons-capture',
         # Typed-step entry (project: prefix is preserved verbatim).
         'project:finalize-step-sync-plugin-cache',
@@ -552,7 +551,6 @@ def test_boundary_normalization_strips_prefix_for_all_downstream_consumers():
             'commit-push',
             'create-pr',
             'automated-review',
-            'knowledge-capture',
             'lessons-capture',
             'branch-cleanup',
             'archive-plan',
@@ -580,7 +578,6 @@ def test_bundle_self_modification_inserts_early_sync_before_first_agent_step():
         'default:commit-push',
         'default:create-pr',
         'default:automated-review',
-        'default:knowledge-capture',
         'default:lessons-capture',
         'default:branch-cleanup',
         'project:finalize-step-sync-plugin-cache',
@@ -619,7 +616,7 @@ def test_bundle_self_modification_inserts_early_sync_before_first_agent_step():
         first_agent_idx = next(
             i
             for i, s in enumerate(steps)
-            if s in ('create-pr', 'automated-review', 'knowledge-capture', 'lessons-capture')
+            if s in ('create-pr', 'automated-review', 'lessons-capture')
         )
         assert first_agent_idx >= 1
         assert steps[first_agent_idx - 1] == 'project:finalize-step-sync-plugin-cache'
@@ -858,7 +855,7 @@ def test_bundle_self_modification_detects_sonar_roundtrip_as_agent_step():
     The Phase 6 dispatch table in `phase-6-finalize/SKILL.md` routes
     `default:sonar-roundtrip` to `plan-marshall:sonar-roundtrip-agent`, so it
     must appear in the agent-dispatched set alongside create-pr / automated-review
-    / knowledge-capture / lessons-capture (regression guard for the missing-step
+    / lessons-capture (regression guard for the missing-step
     defect gemini flagged on PR #278). When sonar-roundtrip is the EARLIEST
     agent-dispatched entry in the resolved list, the early sync inserts before
     it, not before any later step.
@@ -951,7 +948,6 @@ _BSM_REGRESSION_PHASE_6 = [
     'default:create-pr',
     'default:automated-review',
     'default:sonar-roundtrip',
-    'default:knowledge-capture',
     'default:lessons-capture',
     'default:branch-cleanup',
     'project:finalize-step-sync-plugin-cache',
@@ -1023,7 +1019,7 @@ def test_bundle_self_modification_regression_references_driven_path(monkeypatch)
     path. The composer MUST emit exactly TWO ``project:finalize-step-sync-plugin-cache``
     entries — one early (before ``create-pr``, the earliest of the
     agent-dispatched set ``create-pr | automated-review | sonar-roundtrip |
-    knowledge-capture | lessons-capture``, bare after boundary normalization)
+    lessons-capture``, bare after boundary normalization)
     and one in the canonical late-stage position (immediately after
     ``branch-cleanup``). The decision log MUST contain the canonical
     bundle_self_modification message (with bare step names).
@@ -1218,7 +1214,6 @@ def test_agent_dispatched_steps_matcher_with_prefixed_input(monkeypatch):
         'default:commit-push',
         'default:create-pr',  # earliest agent-dispatched (bare: create-pr)
         'default:automated-review',
-        'default:knowledge-capture',
         'default:lessons-capture',
         'default:branch-cleanup',
         'project:finalize-step-sync-plugin-cache',  # canonical late occurrence
@@ -1818,7 +1813,6 @@ def test_commit_strategy_none_with_prefixed_input_drops_commit_push_and_pre_push
         'default:commit-push',
         'default:create-pr',
         'default:automated-review',
-        'default:knowledge-capture',
         'default:lessons-capture',
         'default:branch-cleanup',
         'default:archive-plan',
@@ -1855,7 +1849,6 @@ def test_commit_strategy_none_with_prefixed_input_drops_commit_push_and_pre_push
         for kept in (
             'create-pr',
             'automated-review',
-            'knowledge-capture',
             'lessons-capture',
             'branch-cleanup',
             'archive-plan',
@@ -2540,7 +2533,7 @@ class TestPrePushQualityGatePreFilter:
 # surgical_tech_debt), the guard appends `default:automated-review` back into
 # the list and emits a decision-log entry. The composition continues normally;
 # no `bot_enforcement_violation` error is raised. Row 5's other subtractions
-# (`sonar-roundtrip`, `knowledge-capture`) stay dropped — the guard remediates
+# (`sonar-roundtrip`) stay dropped — the guard remediates
 # only `automated-review`.
 #
 # Row 5 + no CI provider configured remains the baseline: the guard is a

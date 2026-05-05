@@ -146,10 +146,9 @@ status: success
 operation: cleanup
 dry_run: false
 
-deleted[4]{category,count,size_bytes}:
+deleted[3]{category,count,size_bytes}:
 logs	3	512
 archived_plans	2	8192
-memory	10	2048
 temp	5	1024
 ```
 
@@ -161,7 +160,6 @@ Configurable via marshal.json:
 |---------|---------|-------------|
 | `logs_days` | 1 | Delete logs older than N days |
 | `archived_plans_days` | 5 | Delete archived plans older than N days |
-| `memory_days` | 5 | Delete memory files older than N days |
 | `lessons_superseded_days` | 0 | Delete superseded lesson stubs older than N days; tombstones at `.tombstones/{id}.json` are preserved |
 | `temp_on_maintenance` | true | Clean temp directory on maintenance |
 
@@ -176,7 +174,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config system
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config cleanup \
-    --logs-days 1 --archived-days 5 --memory-days 5
+    --logs-days 1 --archived-days 5
 ```
 
 ### Dry Run (Preview)

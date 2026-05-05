@@ -12,7 +12,6 @@
   "keywords": ["environment", "permissions", "utilities", "configuration", "workflow", "task", "pr", "implementation", "quality", "orchestration"],
   "agents": [
     "./agents/automated-review-agent.md",
-    "./agents/classify-knowledge-agent.md",
     "./agents/create-pr-agent.md",
     "./agents/detect-change-type-agent.md",
     "./agents/lessons-capture-agent.md",

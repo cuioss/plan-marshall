@@ -3,9 +3,8 @@
 Regression tests for the phase-6-finalize per-agent timeout wrapper contract.
 
 Each agent-suitable finalize step (sonar-roundtrip, automated-review,
-knowledge-capture, lessons-capture) runs under a per-agent timeout enforced
-by the SKILL.md Step 3 dispatch loop. When the wrapper expires, the
-dispatcher MUST:
+lessons-capture) runs under a per-agent timeout enforced by the SKILL.md
+Step 3 dispatch loop. When the wrapper expires, the dispatcher MUST:
 
   1. Log an ERROR entry.
   2. Mark the step outcome=failed (NOT done) with a timeout display_detail.
@@ -13,7 +12,7 @@ dispatcher MUST:
 
 These tests pin the timeout contract:
 
-  * The four budgeted steps and their budgets are documented in SKILL.md.
+  * The budgeted steps and their budgets are documented in SKILL.md.
   * automated-review.md and sonar-roundtrip.md document the timeout contract
     (15-minute budget, graceful degradation).
   * A simulated hung agent yields outcome=failed and the dispatcher continues.

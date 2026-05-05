@@ -840,7 +840,6 @@ MARSHAL_SCHEMA_DEFAULT: dict[str, Any] = {
                 'create_pr',
                 'automated_review',
                 'sonar_roundtrip',
-                'knowledge_capture',
                 'lessons_capture',
                 'branch_cleanup',
                 'archive',
