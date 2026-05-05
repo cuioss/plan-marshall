@@ -12,7 +12,7 @@ Canonical definitions for terms used across the plan-marshall bundle. When a ter
 | **plan_id** | Unique kebab-case identifier for a plan (max 50 chars). Derived from the input source during phase-1-init (Step 2) or provided explicitly. |
 | **phase** | One of 6 sequential lifecycle stages: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize`. Phases execute in order; skipping is not allowed. |
 | **track** | Outline creation strategy determined during phase-2-refine. **Simple track**: localized changes with known targets. **Complex track**: codebase-wide discovery requiring domain skill involvement. |
-| **Q-Gate** | Quality gate — a verification checkpoint between phases. Findings are stored per-phase in `qgate-{phase}.jsonl` and must be resolved before proceeding. |
+| **Q-Gate** | Quality gate — a verification checkpoint between phases. Findings are stored per-phase in `findings/qgate-{phase}.jsonl` and must be resolved before proceeding. |
 
 ## Work Artifacts
 
@@ -20,8 +20,8 @@ Canonical definitions for terms used across the plan-marshall bundle. When a ter
 |------|-----------|
 | **deliverable** | A scoped unit of change produced by phase-3-outline. Each deliverable maps to 1:N tasks (one per profile). Stored in `solution_outline.md` as numbered `###` sections. |
 | **task** | An executable work unit created by phase-4-plan from a deliverable. Stored as `TASK-{NNN}.json`. Each task belongs to exactly one deliverable and one profile. |
-| **finding** | An observation recorded during any phase. Types include: bug, improvement, anti-pattern, triage, tip, insight, best-practice, build-error, test-failure, lint-issue, sonar-issue, pr-comment. Stored in `findings.jsonl`. |
-| **assessment** | A file-level evaluation produced during phase-3-outline (complex track). Certainty levels: `CERTAIN_INCLUDE`, `CERTAIN_EXCLUDE`, `UNCERTAIN` (with 0-100 confidence). Stored in `assessments.jsonl`. |
+| **finding** | An observation recorded during any phase. Types include: bug, improvement, anti-pattern, triage, tip, insight, best-practice, build-error, test-failure, lint-issue, sonar-issue, pr-comment. Stored split per type in `findings/{type}.jsonl`; cross-type queries merge across files. |
+| **assessment** | A file-level evaluation produced during phase-3-outline (complex track). Certainty levels: `CERTAIN_INCLUDE`, `CERTAIN_EXCLUDE`, `UNCERTAIN` (with 0-100 confidence). Stored in `findings/assessments.jsonl`. |
 
 ## Task Execution
 

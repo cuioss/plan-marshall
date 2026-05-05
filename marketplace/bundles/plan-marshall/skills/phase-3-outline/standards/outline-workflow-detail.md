@@ -587,7 +587,7 @@ Task: plan-marshall:q-gate-validation-agent
 
 **Q-Gate reads from**:
 - `solution_outline.md` (written by domain skill)
-- `artifacts/assessments.jsonl` (written by domain skill)
+- `artifacts/findings/assessments.jsonl` (written by domain skill)
 - `request.md` (clarified_request or body)
 
 **Q-Gate verifies**:
@@ -611,7 +611,7 @@ The remaining validators (`module-mapping`, `scope-criterion`, `narrative-vs-cod
 Findings emitted by these validators flow into the same `qgate_pending_count` aggregate as the existing checks (Sections 2.1–2.7 and the missing-coverage sweep), so the orchestrator's existing 3-iteration auto-loop handles re-entry uniformly regardless of which validator emitted the finding.
 
 **Q-Gate writes**:
-- `artifacts/findings.jsonl` - Any triage findings
+- `artifacts/findings/{type}.jsonl` - Any triage findings (split per type, merged on query)
 - `logs/decision.log` - Q-Gate verification results
 
 #### Q-Gate Return Value

@@ -15,6 +15,7 @@ from _handshake_store import (  # type: ignore[import-not-found]
 )
 from _invariants import (  # type: ignore[import-not-found]
     INVARIANTS,
+    BlockingFindingsPresent,
     PhaseStepsIncomplete,
     capture_all,
 )
@@ -107,6 +108,17 @@ def cmd_capture(args: Any) -> dict[str, Any]:
             'legacy_format': exc.legacy_format,
             'message': str(exc),
         }
+    except BlockingFindingsPresent as exc:
+        return {
+            'status': 'error',
+            'error': 'blocking_findings_present',
+            'plan_id': plan_id,
+            'phase': phase,
+            'blocking_count': exc.blocking_count,
+            'blocking_types': exc.blocking_types,
+            'per_type': exc.per_type,
+            'message': str(exc),
+        }
     row = _row_for_capture(
         plan_id,
         phase,
@@ -174,6 +186,30 @@ def cmd_verify(args: Any) -> dict[str, Any]:
                 'captured': str(captured_row.get('phase_steps_complete', '')),
                 'observed': (
                     f'incomplete(missing={exc.missing},not_done={exc.not_done},legacy_format={exc.legacy_format})'
+                ),
+            }
+        ]
+        return {
+            'status': 'drift',
+            'plan_id': plan_id,
+            'phase': phase,
+            'override': captured_row.get('override', False),
+            'drift_count': len(diffs),
+            'diffs': diffs,
+        }
+    except BlockingFindingsPresent as exc:
+        # Treat observed blocking findings as drift on the
+        # ``pending_findings_blocking_count`` column so callers see a
+        # structured difference rather than a hard error. ``--strict``
+        # turns this into a non-zero exit.
+        diffs = [
+            {
+                'invariant': 'pending_findings_blocking_count',
+                'captured': str(captured_row.get('pending_findings_blocking_count', '')),
+                'observed': (
+                    f'blocking(count={exc.blocking_count},'
+                    f'blocking_types={exc.blocking_types},'
+                    f'per_type={exc.per_type})'
                 ),
             }
         ]

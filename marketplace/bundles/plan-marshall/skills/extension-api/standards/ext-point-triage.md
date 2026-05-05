@@ -4,7 +4,7 @@
 
 ## Overview
 
-Triage extensions declare domain-specific finding decision-making knowledge: suppression syntax, severity guidelines, and acceptable-to-accept criteria. When verification produces findings (build warnings, test failures, Sonar issues), the triage skill for the relevant domain is loaded to decide the appropriate action for each finding.
+Triage extensions declare domain-specific decision-making knowledge for **PR review comments only**: suppression syntax, severity guidelines, and acceptable-to-accept criteria for `pr-comment` findings raised on a pull request. The triage skill for the relevant domain is loaded to decide the appropriate action (FIX / SUPPRESS / ACCEPT) for each PR comment based on the file or component it targets. Other finding sources (build warnings, test failures, Sonar issues, lint issues) are handled by their own dedicated workflows and do NOT route through triage extensions.
 
 ## Implementor Requirements
 
@@ -41,32 +41,31 @@ class Extension(ExtensionBase):
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `domain` | str | Yes | Domain key (e.g., `java`, `python`, `documentation`) |
-| `finding` | dict | Yes | Finding dict with `file`, `line`, `message`, `severity`, `source` |
+| `finding` | dict | Yes | PR comment finding (`type == 'pr-comment'`) with `file`, `line`, `message`, `severity` |
 
 ### Pre-Conditions
 
 - Domain is registered in `marshal.json` under `skill_domains.{domain_key}`
 - Triage skill exists and is loadable via `resolve-workflow-skill-extension --domain {domain} --type triage`
-- Findings have been collected from verification (build, test, lint, Sonar)
+- PR comments have been collected from the active pull request
 
 ### Post-Conditions
 
-- Each finding gets a decision: **FIX**, **SUPPRESS**, or **ACCEPT** with rationale
+- Each PR comment gets a decision: **FIX**, **SUPPRESS**, or **ACCEPT** with rationale
 - Suppressions include syntax-correct annotation/comment for the domain
 - Decisions are logged to `decision.log`
 
 ### Lifecycle
 
 ```
-1. Run verification (build, test, lint, Sonar)
-2. Collect findings
-3. For each finding:
-   a. Determine domain from file path/extension
+1. Fetch PR review comments (via tools-integration-ci)
+2. For each pr-comment finding:
+   a. Determine domain from the commented file path/extension
    b. resolve-workflow-skill-extension --domain {domain} --type triage
    c. If extension exists: load skill, apply severity/suppression rules
    d. If no extension: use default severity mapping
    e. Decide: fix | suppress | accept
-4. Apply fixes/suppressions -> re-run verification if changes made
+3. Apply fixes/suppressions -> push commit -> resolve thread
 ```
 
 ## Hook API

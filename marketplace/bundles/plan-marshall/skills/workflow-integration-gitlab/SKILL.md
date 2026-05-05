@@ -32,32 +32,53 @@ GitLab-specific MR review comment workflow — fetching comments and triaging th
 
 ```
 workflow-integration-gitlab (GitLab MR comment workflow)
-  ├─> gitlab.py (GitLab operations via glab CLI)
-  ├─> pr.py (comment fetch, triage)
-  └─> triage_helpers (ref-toon-format) — shared triage, error handling
+  ├─> gitlab_ops.py (GitLab operations via glab CLI)
+  ├─> gitlab_pr.py (producer-side fetch + pre-filter + per-finding store)
+  └─> triage_helpers (ref-toon-format) — shared error handling
 ```
 
-This skill is the GitLab provider in the CI provider model. The central dispatcher (`tools-integration-ci:ci`) routes to this skill's `gitlab.py` for all GitLab operations.
+This skill is the GitLab provider in the CI provider model. The central dispatcher (`tools-integration-ci:ci`) routes to this skill's `gitlab_ops.py` for all GitLab operations.
 
 ## Usage Examples
 
 ```bash
-# Fetch comments for current branch's MR
-python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:pr fetch-comments
+# Producer-side: fetch + pre-filter + store one pr-comment finding per surviving comment
+python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab_pr comments-stage --pr-number 123 --plan-id my-plan
 
-# Fetch comments for specific MR
-python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:pr fetch-comments --pr 123
+# Raw fetch (no filtering, no storage) — for ad-hoc inspection
+python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab_pr fetch-comments --pr 123
 
-# Triage a single comment
-python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:pr triage --comment '{"id":"C1","body":"Fix this","path":"src/Main.java","line":42}'
+# LLM consumer reads stored findings via manage-findings
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query --plan-id my-plan --type pr-comment
 ```
 
 ## Scripts
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| gitlab | `plan-marshall:workflow-integration-gitlab:gitlab` | GitLab operations via glab CLI |
-| pr | `plan-marshall:workflow-integration-gitlab:pr` | MR comment fetch and triage |
+| gitlab_ops | `plan-marshall:workflow-integration-gitlab:gitlab_ops` | GitLab operations via glab CLI |
+| gitlab_pr | `plan-marshall:workflow-integration-gitlab:gitlab_pr` | Producer-side MR review comment fetcher (fetch + pre-filter + store) |
+
+## Workflow: Handle Review (Producer-Side)
+
+**Purpose:** Stage MR review comments into the per-type finding store, then let the LLM consumer drive classification and responses from the stored findings.
+
+**Producer-side flow:** `comments-stage` is the only callable surface. It fetches review comments, applies the `comment-patterns.json` keyword pre-filter to drop obvious noise (bot signatures, "lgtm", etc.), and writes one `pr-comment` finding per surviving comment via `manage-findings add`. No script-side classification or batch-triage call is exposed to the LLM — the LLM reads the stored findings and decides per-finding action itself.
+
+**Steps:**
+
+1. **Stage Comments**:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab_pr comments-stage --pr-number {mr} --plan-id {plan_id}
+   ```
+   Output reports `count_fetched`, `count_skipped_noise`, `count_stored`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_noise; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`).
+
+2. **Query Stored Findings**:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query --plan-id {plan_id} --type pr-comment
+   ```
+
+3. **Process by Action Type** — the LLM reads each finding's `detail` (which carries the full body, kind, thread_id, author, path:line, comment_id) and decides code_change / explain / ignore. After acting on each finding, call `manage-findings resolve --hash-id {hash} --resolution fixed|suppressed|accepted`.
 
 ## Consumers
 
@@ -68,7 +89,7 @@ This skill is consumed by:
 
 ## Comment Classification
 
-Classification patterns are data-driven — loaded from `standards/comment-patterns.json`. Classification priority: `code_change(high)` > `code_change(medium/low)` > `ignore` > `explain`.
+`standards/comment-patterns.json` is now a **pre-filter only** — it drops obvious noise (bot signatures, "lgtm", "thanks!") before findings are written, but is **no longer the decision authority** for the action category. Classification of surviving comments belongs to the LLM consumer, which reads the full body from each finding's `detail` field.
 
 ## Error Handling
 

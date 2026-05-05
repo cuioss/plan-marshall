@@ -12,10 +12,16 @@ Usage:
         ensure_parent_dir,
         append_jsonl,
         read_jsonl,
+        read_jsonl_merge,
         update_jsonl,
+        update_jsonl_in_dir,
         find_by_title,
         timestamp,
     )
+
+Cross-file helpers (`read_jsonl_merge`, `update_jsonl_in_dir`) support the
+per-type findings layout where records of different types live in sibling
+JSONL files under a common directory.
 """
 
 import hashlib
@@ -85,6 +91,35 @@ def update_jsonl(path: Path, hash_id: str, updates: dict[str, Any]) -> bool:
                 f.write(json.dumps(record, ensure_ascii=False) + '\n')
 
     return found
+
+
+def read_jsonl_merge(paths: list[Path]) -> list[dict[str, Any]]:
+    """Read and concatenate records from multiple JSONL files.
+
+    Files are read in the order given. Missing files are silently skipped — the
+    per-type findings layout creates files lazily, so absence is normal. Records
+    retain their per-file ordering and are concatenated in the order of `paths`.
+    """
+    merged: list[dict[str, Any]] = []
+    for path in paths:
+        merged.extend(read_jsonl(path))
+    return merged
+
+
+def update_jsonl_in_dir(directory: Path, hash_id: str, updates: dict[str, Any]) -> bool:
+    """Update a record by hash_id, scanning every *.jsonl file under `directory`.
+
+    Used by the per-type findings layout where the caller knows the record's
+    `hash_id` but not which per-type file it lives in. Stops at the first match
+    and rewrites only that file. Returns False if no file contains the hash.
+    """
+    if not directory.exists() or not directory.is_dir():
+        return False
+
+    for path in sorted(directory.glob('*.jsonl')):
+        if update_jsonl(path, hash_id, updates):
+            return True
+    return False
 
 
 def find_by_title(path: Path, title: str) -> dict[str, Any] | None:

@@ -251,7 +251,14 @@ Based on checks parameter:
    ```
    Use the returned `executable` to run verify. When `--project-dir` is active, append `--project-dir {project_dir}` to the `executable` invocation so the build runs against the intended checkout/worktree.
 
-**REVIEW_COMMENTS**: Delegate to workflow-integration-github "Handle Review" workflow. The CI skill handles fetching comments, batch triage, and classifying actions (code_change/explain/ignore). The pr-doctor processes each action and commits via the git skill.
+**REVIEW_COMMENTS**: Drive the producer-stage + per-finding dispatch shape:
+
+1. Producer: `plan-marshall:workflow-integration-github:github_pr comments-stage --pr-number {pr} --plan-id {plan_id}` (or the GitLab equivalent) — writes one `pr-comment` finding per surviving comment to the per-plan findings store.
+2. Consumer: `manage-findings query --plan-id {plan_id} --type pr-comment --resolution pending` — enumerates pending findings.
+3. Per finding: detect domain via `architecture which-module --path {file_path}`, resolve the triage extension via `manage-config resolve-workflow-skill-extension --domain {domain} --type triage`, load the resulting `Skill: {bundle}:ext-triage-{domain}`, and apply the loaded `pr-comment-disposition.md` decision table (FIX / SUPPRESS / ACCEPT / AskUserQuestion).
+4. Act on the decision (fix-task + loop-back / annotation + thread-reply + thread-resolve / thread-reply + thread-resolve / one-question-at-a-time user prompt) and close each finding with `manage-findings resolve --resolution {fixed|suppressed|accepted|taken_into_account}`.
+
+The keyword-classifier-as-decision-authority pattern (a single batch classifier deciding `code_change` / `explain` / `ignore` for a whole list of comments) is RETIRED — every per-finding decision goes through the loaded `ext-triage-{domain}` skill's standards. Commits for FIX-decision changes still flow through the git skill.
 
 **SONAR_QUALITY**: Delegate to workflow-integration-sonar "Fix Issues" workflow. The Sonar skill handles batch triage and fix-vs-suppress classification. The pr-doctor executes each action and commits via the git skill.
 

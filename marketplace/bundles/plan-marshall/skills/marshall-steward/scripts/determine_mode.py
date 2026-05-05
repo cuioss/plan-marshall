@@ -3,10 +3,12 @@
 Plan-marshall helper script for mode detection and documentation checks.
 
 Subcommands:
-    mode            Determine wizard vs menu mode based on existing files
-    check-docs      Check if project docs need .plan/temp documentation
-    fix-docs        Deterministically fix missing documentation content
-    check-structure Check if the per-module project-architecture layout exists
+    mode                          Determine wizard vs menu mode based on existing files
+    check-docs                    Check if project docs need .plan/temp documentation
+    fix-docs                      Deterministically fix missing documentation content
+    check-structure               Check if the per-module project-architecture layout exists
+    seed-blocking-finding-types   Idempotently seed default phase-boundary
+                                  blocking-finding partitions into marshal.json
 
 Note: check-docs and check-structure overlap with menu-healthcheck steps 2 and 5.
 The healthcheck runs these same checks via the menu path; this script provides
@@ -18,6 +20,7 @@ Usage:
     python3 determine_mode.py check-docs
     python3 determine_mode.py fix-docs
     python3 determine_mode.py check-structure
+    python3 determine_mode.py seed-blocking-finding-types
 
 Output (TOON format):
     mode subcommand:
@@ -32,7 +35,6 @@ Output (TOON format):
         missing_count	2
         plan_temp	CLAUDE.md,agents.md
         file_ops	CLAUDE.md
-        workflow_discipline	CLAUDE.md
 
     fix-docs subcommand:
         status	ok
@@ -50,6 +52,24 @@ Output (TOON format):
         status	missing
         path	.plan/project-architecture
         modules_count	0
+
+    seed-blocking-finding-types subcommand:
+        status	success
+        seed_status	seeded
+        seeded_count	6
+        skipped_count	0
+        seeded	phase-1-init,phase-2-refine,phase-3-outline,phase-4-plan,phase-5-execute,phase-6-finalize
+
+        status	success
+        seed_status	unchanged
+        seeded_count	0
+        skipped_count	6
+        skipped	phase-1-init,phase-2-refine,phase-3-outline,phase-4-plan,phase-5-execute,phase-6-finalize
+
+        status	success
+        seed_status	missing_marshal
+        seeded_count	0
+        skipped_count	0
 """
 
 import argparse
@@ -88,16 +108,6 @@ CONTENT_CHECKS: list[dict[str, str | int | list[str]]] = [
         'files': ['CLAUDE.md'],
         'pattern': 'use Glob, Read, Grep',
     },
-    {
-        'key': 'workflow_discipline',
-        'files': ['CLAUDE.md'],
-        'pattern': 'Workflow Discipline',
-        # When the section is present, also assert the bullet count matches
-        # the canonical block. Below the threshold, the check reports
-        # 'incomplete' (drift) instead of 'missing' (absent).
-        'min_bullets': 8,
-        'section_heading': 'Workflow Discipline (Hard Rules)',
-    },
 ]
 
 # Verbatim content blocks appended by fix-docs when a check is missing.
@@ -114,52 +124,6 @@ FIX_CONTENT: dict[str, str] = {
         '\n'
         '- Use proper tools (Edit, Read, Write) instead of shell commands (echo, cat)\n'
         '- Never use Bash for file operations (find, grep, cat, ls) — use Glob, Read, Grep tools instead\n'
-    ),
-    # IMPORTANT: This block is the authoritative fix-content snapshot of the
-    # "Workflow Discipline (Hard Rules)" section in the canonical CLAUDE.md
-    # (see CLAUDE.md lines 185-192). It MUST stay byte-for-byte in sync with
-    # that section — phrasing, punctuation, em-dashes, and bullet ordering all
-    # matter. The drift self-test in
-    # ``test/plan-marshall/plan-marshall/test_determine_mode.py`` asserts
-    # literal equality between this string and the canonical bullets parsed
-    # out of CLAUDE.md, so any wording change here MUST be mirrored there
-    # (and vice versa). Do not "improve" individual bullets locally.
-    'workflow_discipline': (
-        '\n### Workflow Discipline (Hard Rules)\n'
-        '\n'
-        'These rules apply to ALL work in this repository — ad-hoc tasks, plan execution, '
-        'and agent work alike. They exist because Claude regularly violates them despite '
-        'softer guidance.\n'
-        '\n'
-        '- **`.plan/` access: scripts only** — ALL `.plan/` file access MUST go through '
-        '`python3 .plan/execute-script.py` manage-* scripts. Never Read/Write/Edit `.plan/` '
-        "files directly unless a loaded skill's workflow explicitly documents it.\n"
-        '- **Bash: one command per call** — Each Bash call must contain exactly ONE command. '
-        'Never combine with `&&`, `;`, `&`, or newlines.\n'
-        '- **Bash: no shell constructs** — No `for`/`while` loops, no `$()` substitution, '
-        'no subshells, no heredocs with `#` lines. These trigger security prompts. '
-        'Use dedicated tools or multiple Bash calls instead.\n'
-        '- **Workflow steps: no improvisation** — When following a skill or workflow, '
-        'execute ONLY the commands documented in it. Never add discovery steps, '
-        'invent arguments, or skip documented steps.\n'
-        '- **CI operations: use abstraction layer** — All CI/Git provider operations '
-        '(PRs, issues, CI status, reviews) MUST go through '
-        '`plan-marshall:tools-integration-ci:ci` scripts. Never use `gh` or `glab` directly.\n'
-        '- **Build commands: resolve via architecture** — Never hard-code `./pw`, `mvn`, '
-        '`npm`, or `gradle`. Always resolve via '
-        '`plan-marshall:manage-architecture:architecture resolve` first, then execute the '
-        'returned `executable`.\n'
-        '- **PR review: validate bot suggestions against plan intent** — Before accepting '
-        'any automated review comment (gemini-code-assist, Copilot, Sonar bots, etc.), '
-        "check it against the plan's stated intent and any driving lessons. If a "
-        "suggestion contradicts the change's purpose (e.g., reintroducing the exact "
-        'anti-pattern the plan was removing), reply with the rationale and resolve the '
-        'thread — do NOT create a loop-back fix task.\n'
-        '- **Structured queries first** — Before using Glob/Grep for codebase navigation '
-        '(file discovery, module identification, path resolution), consult '
-        '`architecture files --module X`, `architecture which-module --path P`, or '
-        '`architecture find --pattern P`. Glob/Grep is the fallback for sub-module '
-        'component lookup and exceptional cases, not routine discovery.\n'
     ),
 }
 
@@ -238,6 +202,139 @@ def check_structure(plan_dir: Path) -> tuple[str, Path, int]:
     if valid_count == 0:
         return 'missing', arch_dir, 0
     return 'exists', arch_dir, valid_count
+
+
+# ---------------------------------------------------------------------------
+# Default phase-boundary blocking-finding partition.
+#
+# Each entry maps a marshal.json phase slot (`plan.phase-{phase}`) to the list
+# of finding types whose presence in `pending` resolution should refuse the
+# phase boundary advance. The handshake invariant
+# `pending_findings_blocking_count` reads this slot at capture time.
+#
+# The partition mirrors the design contract documented in
+# `plan-marshall/references/phase-handshake.md`:
+#
+#   - Block at every phase boundary: build-error, test-failure, lint-issue,
+#     sonar-issue, qgate.
+#   - Block only inside `6-finalize`: pr-comment (PR review feedback is only
+#     meaningful once a PR exists, which happens during finalize).
+#   - Never block: long-lived knowledge types (insight, tip, best-practice,
+#     improvement) — these accumulate across plans and should not gate an
+#     active boundary.
+#
+# Projects override by editing `marshal.json` directly. The seed only writes
+# when the phase slot does not yet contain a `blocking_finding_types` key,
+# so re-running the wizard never clobbers user customisations.
+# ---------------------------------------------------------------------------
+
+# Global block list — applied to every plan phase except where a phase-specific
+# partition supersedes it. The handshake's guarded-boundary set determines
+# *where* a non-empty count actually refuses to persist; the partition itself
+# determines *which* types contribute to the count.
+_GLOBAL_BLOCKING_TYPES = [
+    'build-error',
+    'test-failure',
+    'lint-issue',
+    'sonar-issue',
+    'qgate',
+]
+
+# pr-comment is only relevant during 6-finalize (after the PR exists), so the
+# global list is augmented only at that phase.
+_FINALIZE_BLOCKING_TYPES = _GLOBAL_BLOCKING_TYPES + ['pr-comment']
+
+# Per-phase default partition. Phases not listed below inherit
+# `_GLOBAL_BLOCKING_TYPES`. The map is the source of truth for the seed; the
+# wizard step writes into `marshal.json["plan"][phase]["blocking_finding_types"]`
+# only when that key is absent (idempotent).
+_DEFAULT_BLOCKING_PARTITION: dict[str, list[str]] = {
+    'phase-1-init': list(_GLOBAL_BLOCKING_TYPES),
+    'phase-2-refine': list(_GLOBAL_BLOCKING_TYPES),
+    'phase-3-outline': list(_GLOBAL_BLOCKING_TYPES),
+    'phase-4-plan': list(_GLOBAL_BLOCKING_TYPES),
+    'phase-5-execute': list(_GLOBAL_BLOCKING_TYPES),
+    'phase-6-finalize': list(_FINALIZE_BLOCKING_TYPES),
+}
+
+
+def seed_blocking_finding_types(plan_dir: Path) -> tuple[str, list[str], list[str]]:
+    """Idempotently seed default `blocking_finding_types` partitions into marshal.json.
+
+    Walks every phase slot in :data:`_DEFAULT_BLOCKING_PARTITION` and writes
+    the configured list into `marshal.json["plan"][phase]["blocking_finding_types"]`
+    **only when that key is absent** in the existing file. Phase slots that
+    already declare the key are left untouched — the seed never clobbers a
+    user customisation. Phase slots that are missing entirely are created
+    with the partition as their sole field; later config writes merge over
+    that minimal slot via the standard `manage-config` set path.
+
+    The function is the wizard's bridge between "marshal.json was just
+    initialised" and "the phase-handshake invariant has the data it needs to
+    enforce the blocking-finding gate". It runs once per first-run wizard
+    invocation; subsequent invocations skip every phase whose slot already
+    contains the key (status `unchanged`).
+
+    Args:
+        plan_dir: Path to the repo-local ``.plan/`` directory containing
+                  ``marshal.json``. The script never writes elsewhere.
+
+    Returns:
+        Tuple of ``(status, seeded_phases, skipped_phases)`` where:
+
+        - ``status`` is ``seeded`` when at least one phase was written,
+          ``unchanged`` when every phase already had the key, or
+          ``missing_marshal`` when ``marshal.json`` does not exist.
+        - ``seeded_phases`` lists the phase slots whose key was newly
+          written (in declaration order).
+        - ``skipped_phases`` lists the phase slots whose key was already
+          present (in declaration order).
+    """
+    import json as _json
+
+    marshal_path = plan_dir / 'marshal.json'
+    if not marshal_path.is_file():
+        return 'missing_marshal', [], []
+
+    try:
+        config = _json.loads(marshal_path.read_text())
+    except (OSError, _json.JSONDecodeError):
+        return 'missing_marshal', [], []
+
+    if not isinstance(config, dict):
+        return 'missing_marshal', [], []
+
+    plan_section = config.setdefault('plan', {})
+    if not isinstance(plan_section, dict):
+        # Defensive: an unexpectedly-shaped 'plan' section gets replaced
+        # with a fresh dict so the seed can proceed without losing the
+        # outer config.
+        plan_section = {}
+        config['plan'] = plan_section
+
+    seeded: list[str] = []
+    skipped: list[str] = []
+
+    for phase, blocking_types in _DEFAULT_BLOCKING_PARTITION.items():
+        phase_section = plan_section.get(phase)
+        if not isinstance(phase_section, dict):
+            phase_section = {}
+            plan_section[phase] = phase_section
+
+        if 'blocking_finding_types' in phase_section:
+            skipped.append(phase)
+            continue
+
+        # Write a defensive copy so future seeds cannot mutate the
+        # canonical default partition through the saved JSON object.
+        phase_section['blocking_finding_types'] = list(blocking_types)
+        seeded.append(phase)
+
+    if not seeded:
+        return 'unchanged', [], skipped
+
+    marshal_path.write_text(_json.dumps(config, indent=2) + '\n')
+    return 'seeded', seeded, skipped
 
 
 def count_section_bullets(content: str, section_heading: str) -> int:
@@ -462,6 +559,38 @@ def cmd_check_structure(args: argparse.Namespace) -> dict:
     }
 
 
+def cmd_seed_blocking_finding_types(args: argparse.Namespace) -> dict:
+    """Handle the 'seed-blocking-finding-types' subcommand.
+
+    Returns TOON-shaped dict with:
+
+    - ``status``: always ``success`` for the script-level operation; the
+      actual seed outcome is in ``seed_status``.
+    - ``seed_status``: ``seeded`` (at least one phase written),
+      ``unchanged`` (all phases already had the key), or
+      ``missing_marshal`` (no marshal.json to seed).
+    - ``seeded_count`` / ``skipped_count``: row counts for downstream
+      formatting.
+    - ``seeded`` / ``skipped``: comma-separated phase keys when non-empty
+      so the wizard can surface the operator-facing detail without
+      double-parsing.
+    """
+    plan_dir = Path(args.plan_dir)
+    seed_status, seeded, skipped = seed_blocking_finding_types(plan_dir)
+
+    result: dict = {
+        'status': 'success',
+        'seed_status': seed_status,
+        'seeded_count': len(seeded),
+        'skipped_count': len(skipped),
+    }
+    if seeded:
+        result['seeded'] = ','.join(seeded)
+    if skipped:
+        result['skipped'] = ','.join(skipped)
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description='Plan-marshall helper for mode detection and documentation checks',
@@ -493,6 +622,19 @@ def main() -> int:
     )
     structure_parser.add_argument('--plan-dir', type=str, default='.plan', help='Directory to check (default: .plan)')
 
+    # seed-blocking-finding-types subcommand
+    seed_parser = subparsers.add_parser(
+        'seed-blocking-finding-types',
+        help='Idempotently seed default phase-boundary blocking-finding partitions into marshal.json',
+        allow_abbrev=False,
+    )
+    seed_parser.add_argument(
+        '--plan-dir',
+        type=str,
+        default='.plan',
+        help='Directory containing marshal.json (default: .plan)',
+    )
+
     args = parser.parse_args()
 
     if args.command == 'mode':
@@ -503,6 +645,8 @@ def main() -> int:
         result = cmd_fix_docs(args)
     elif args.command == 'check-structure':
         result = cmd_check_structure(args)
+    elif args.command == 'seed-blocking-finding-types':
+        result = cmd_seed_blocking_finding_types(args)
     else:
         parser.print_help()
         return 1

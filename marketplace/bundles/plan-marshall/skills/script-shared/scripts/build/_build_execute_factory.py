@@ -223,6 +223,7 @@ def create_execute_handlers(
             mode=getattr(args, 'mode', 'actionable'),
             project_dir=project_dir,
             parser_needs_command=config.parser_needs_command,
+            plan_id=getattr(args, 'plan_id', None),
         )
 
     # Preserve useful names for debugging

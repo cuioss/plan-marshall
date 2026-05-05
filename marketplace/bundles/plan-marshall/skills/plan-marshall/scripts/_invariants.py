@@ -61,6 +61,55 @@ class PhaseStepsIncomplete(Exception):
         super().__init__(f'phase_steps_complete failed for phase {phase!r}: ' + ', '.join(parts))
 
 
+class BlockingFindingsPresent(Exception):
+    """Raised by ``_capture_pending_findings_blocking_count`` when capturing
+    at a guarded phase boundary while one or more *blocking-type* findings
+    remain in ``pending`` resolution.
+
+    The blocking-type partition is read from ``marshal.json`` at
+    ``plan.phase-{phase}.blocking_finding_types`` (a list of finding-type
+    strings). Resolutions counting as "resolved" are ``fixed``,
+    ``suppressed``, ``accepted``, ``taken_into_account``; only ``pending``
+    counts toward the block.
+
+    Guarded boundaries (where this exception fires):
+
+    - phase ``6-finalize`` capture (covers the ``5-execute → 6-finalize``
+      transition; a phase-5-execute capture for the next phase persists
+      first, and the marshal then issues a ``capture --phase 6-finalize``
+      which surfaces this exception when blocking counts are non-zero).
+    - The intra-finalize boundaries (``automated-review → branch-cleanup``
+      and ``sonar-roundtrip → next``) are guarded by the phase-6-finalize
+      orchestrator re-issuing ``phase_handshake capture --phase 6-finalize``
+      at those checkpoints; the same exception fires.
+
+    All other phase captures **read** the rows (so retrospective analysis
+    sees pending counts at each handshake) but do **not** raise — see the
+    early-return inside the capture function.
+
+    ``cmd_capture`` translates this into a structured TOON error payload so
+    callers cannot persist a row that legitimises a phase advance with
+    pending blockers in flight.
+    """
+
+    def __init__(
+        self,
+        phase: str,
+        blocking_count: int,
+        per_type: dict[str, int],
+        blocking_types: list[str],
+    ):
+        self.phase = phase
+        self.blocking_count = blocking_count
+        self.per_type = per_type
+        self.blocking_types = blocking_types
+        super().__init__(
+            f'pending_findings_blocking_count failed for phase {phase!r}: '
+            f'blocking_count={blocking_count}, blocking_types={blocking_types}, '
+            f'per_type={per_type}'
+        )
+
+
 class TaskGraphInvalid(Exception):
     """Raised by the ``task_graph_valid`` invariant capture when the plan's
     task dependency graph has a cycle or a dangling reference (a
@@ -534,6 +583,204 @@ def _capture_qgate_open_count(plan_id: str, _metadata: dict[str, Any], phase: st
     return None
 
 
+# --- pending-finding invariants ------------------------------------------
+
+# All finding types tracked by ``manage-findings`` (mirrors the taxonomy in
+# ``tools-file-ops/scripts/constants.py``). Kept inline so the invariant
+# capture has no run-time dependency on the constants module beyond the
+# existing executor hop, and so the row contract stays stable when new
+# types are added centrally (the registry simply reads the per-phase config
+# slot to decide which types block).
+_PENDING_FINDING_TYPES: tuple[str, ...] = (
+    'bug',
+    'improvement',
+    'anti-pattern',
+    'triage',
+    'tip',
+    'insight',
+    'best-practice',
+    'build-error',
+    'test-failure',
+    'lint-issue',
+    'sonar-issue',
+    'pr-comment',
+)
+
+# Phases at which a non-zero ``pending_findings_blocking_count`` raises
+# :class:`BlockingFindingsPresent` to refuse the capture. Other phases
+# capture the row passively (read-only — see capture function).
+_BLOCKING_BOUNDARIES: frozenset[str] = frozenset({'6-finalize'})
+
+
+def _query_pending_count_for_type(plan_id: str, finding_type: str) -> int | None:
+    """Return the count of ``pending`` findings for ``finding_type``.
+
+    Drives both the per-type breakdown and the blocking-count summary.
+    Routes through ``manage-findings query --type T --resolution pending``
+    so it picks up the per-type JSONL split introduced in TASK-1 without
+    duplicating the query logic.
+
+    Returns ``None`` when the executor cannot be reached or the output is
+    unparseable so the calling capture can surface "not applicable" via the
+    existing capture-returns-None contract.
+    """
+    stdout = _run_script(
+        [
+            'plan-marshall:manage-findings:manage-findings',
+            'query',
+            '--plan-id',
+            plan_id,
+            '--type',
+            finding_type,
+            '--resolution',
+            'pending',
+        ]
+    )
+    if stdout is None:
+        return None
+    try:
+        parsed = parse_toon(stdout)
+    except Exception:
+        return None
+    count = parsed.get('filtered_count')
+    if isinstance(count, int):
+        return count
+    if isinstance(count, str) and count.isdigit():
+        return int(count)
+    # Some manage-findings paths emit ``count`` instead of ``filtered_count``.
+    alt = parsed.get('count')
+    if isinstance(alt, int):
+        return alt
+    if isinstance(alt, str) and alt.isdigit():
+        return int(alt)
+    return None
+
+
+def _read_blocking_finding_types(plan_id: str, phase: str) -> list[str] | None:
+    """Read ``plan.phase-{phase}.blocking_finding_types`` from ``marshal.json``.
+
+    Uses ``manage-config plan phase-{phase} get --field blocking_finding_types``.
+    Returns ``None`` when the field is absent or cannot be parsed — callers
+    treat ``None`` as "no blocking partition configured for this phase, so
+    nothing blocks". An empty list explicitly configures "no blocking
+    types" and is returned as ``[]``.
+    """
+    stdout = _run_script(
+        [
+            'plan-marshall:manage-config:manage-config',
+            'plan',
+            f'phase-{phase}',
+            'get',
+            '--field',
+            'blocking_finding_types',
+            '--audit-plan-id',
+            plan_id,
+        ]
+    )
+    if stdout is None:
+        return None
+    try:
+        parsed = parse_toon(stdout)
+    except Exception:
+        return None
+    raw = parsed.get('value')
+    if raw is None:
+        return None
+    # ``manage-config`` serializes lists as TOON arrays which ``parse_toon``
+    # decodes to Python lists. Tolerate the comma-separated string fallback
+    # for robustness.
+    if isinstance(raw, list):
+        return [str(item) for item in raw if str(item)]
+    if isinstance(raw, str):
+        items = [item.strip() for item in raw.split(',') if item.strip()]
+        return items
+    return None
+
+
+def _capture_pending_findings_by_type(
+    plan_id: str,
+    _metadata: dict[str, Any],
+    _phase: str,
+) -> Any:
+    """Per-type breakdown of pending findings, captured at every boundary.
+
+    Returns a stable, sorted compact summary of the form
+    ``"bug=N,build-error=N,..."`` covering every type the project knows
+    about. Returns ``None`` when no per-type query succeeds — callers
+    interpret ``None`` as "not applicable" and skip the column.
+
+    This row is always passive: it never raises. Retrospective analysis
+    reads it to see the queue at each phase boundary; the blocking
+    decision is the sole responsibility of
+    :func:`_capture_pending_findings_blocking_count`.
+    """
+    parts: list[str] = []
+    any_value = False
+    for finding_type in _PENDING_FINDING_TYPES:
+        count = _query_pending_count_for_type(plan_id, finding_type)
+        if count is None:
+            # Skip silently — partial visibility is acceptable for the
+            # passive row; the blocking row enforces correctness.
+            continue
+        any_value = True
+        parts.append(f'{finding_type}={count}')
+    if not any_value:
+        return None
+    return ','.join(parts)
+
+
+def _capture_pending_findings_blocking_count(
+    plan_id: str,
+    _metadata: dict[str, Any],
+    phase: str,
+) -> Any:
+    """Sum of pending findings whose type is *blocking* for ``phase``.
+
+    Reads the per-phase ``blocking_finding_types`` partition from
+    ``marshal.json``; if the slot is unset, no types are considered
+    blocking for that phase and the count is ``0``. Otherwise, sums the
+    pending counts across every configured blocking type.
+
+    At a *guarded boundary* (``phase`` in :data:`_BLOCKING_BOUNDARIES`),
+    a non-zero count raises :class:`BlockingFindingsPresent` so
+    ``cmd_capture`` refuses to persist the handshake row — that gates the
+    phase transition. At every other phase the count is returned as an int
+    so retrospective analysis sees the queue size at each boundary; the
+    transition itself is not blocked.
+
+    Returns ``None`` when the executor cannot be reached for any of the
+    underlying queries — matches the other captures' "not applicable"
+    contract and keeps the column empty in stored rows.
+    """
+    blocking_types = _read_blocking_finding_types(plan_id, phase)
+    if blocking_types is None:
+        # No partition configured for this phase → nothing blocks; record 0.
+        return 0
+    if not blocking_types:
+        return 0
+
+    per_type: dict[str, int] = {}
+    total = 0
+    for finding_type in blocking_types:
+        count = _query_pending_count_for_type(plan_id, finding_type)
+        if count is None:
+            # Partial query failure — fall back to "not applicable" rather
+            # than under-counting and silently letting a transition
+            # advance.
+            return None
+        per_type[finding_type] = count
+        total += count
+
+    if total > 0 and phase in _BLOCKING_BOUNDARIES:
+        raise BlockingFindingsPresent(
+            phase=phase,
+            blocking_count=total,
+            per_type=per_type,
+            blocking_types=list(blocking_types),
+        )
+    return total
+
+
 def _capture_config_hash(plan_id: str, _metadata: dict[str, Any], phase: str) -> Any:
     # Phase config keys use the `phase-{phase}` naming convention.
     stdout = _run_script(
@@ -630,6 +877,8 @@ INVARIANTS: list[tuple[str, AppliesFn, CaptureFn]] = [
     ('pending_tasks_count', _always, _capture_pending_tasks_count),
     ('phase_steps_complete', _always, _capture_phase_steps_complete),
     ('task_graph_valid', _always, _capture_task_graph_valid),
+    ('pending_findings_by_type', _always, _capture_pending_findings_by_type),
+    ('pending_findings_blocking_count', _always, _capture_pending_findings_blocking_count),
 ]
 
 

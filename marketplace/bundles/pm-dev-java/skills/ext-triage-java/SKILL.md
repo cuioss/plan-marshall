@@ -23,6 +23,7 @@ Loaded via `resolve-workflow-skill-extension --domain java --type triage` during
 2. Sonar analysis reports issues
 3. PR review comments reference Java code
 4. Lint/format checks fail
+5. PR review comment disposition is required (FIX, REPLY-AND-RESOLVE, or ESCALATE on bot review threads)
 
 ## Standards
 
@@ -30,6 +31,7 @@ Loaded via `resolve-workflow-skill-extension --domain java --type triage` during
 |----------|---------|
 | [suppression.md](standards/suppression.md) | Java suppression syntax (@SuppressWarnings, NOSONAR) |
 | [severity.md](standards/severity.md) | Java-specific severity guidelines and decision criteria |
+| [pr-comment-disposition.md](standards/pr-comment-disposition.md) | PR review comment disposition (FIX / REPLY-AND-RESOLVE / ESCALATE) for Java |
 
 ## Extension Registration
 

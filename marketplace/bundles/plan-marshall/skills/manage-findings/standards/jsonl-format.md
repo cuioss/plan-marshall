@@ -1,19 +1,48 @@
 # Findings JSONL Format
 
-Storage format specifications for plan-level findings and phase-scoped Q-Gate findings.
+Storage format specifications for plan-level findings, phase-scoped Q-Gate findings, and assessments.
 
-## Storage Files
+## Storage Layout
+
+All finding-related JSONL files live under a single subdirectory:
+
+```
+.plan/plans/{plan_id}/artifacts/findings/
+├── {type}.jsonl             # one file per finding type (bug, improvement, sonar-issue, …)
+├── qgate-{phase}.jsonl      # per-phase Q-Gate findings
+└── assessments.jsonl        # component assessments
+```
 
 | File | Scope | Purpose |
 |------|-------|---------|
-| `findings.jsonl` | Plan | Long-lived findings, promotable to lessons or architecture |
-| `qgate-{phase}.jsonl` | Phase | Per-phase verification findings, not promotable |
+| `findings/{type}.jsonl` | Plan | Per-type plan findings — one file per value of the `type` field |
+| `findings/qgate-{phase}.jsonl` | Phase | Per-phase verification findings, not promotable |
+| `findings/assessments.jsonl` | Plan | Component assessments (certainty/confidence) |
 
-Both files live in `.plan/plans/{plan_id}/artifacts/`.
+### Per-Type Splitting
+
+Plan-scoped findings are stored split per type rather than in a single combined file. Each finding type listed in the type taxonomy below has its own JSONL file in the `findings/` subdirectory:
+
+- `findings/bug.jsonl`
+- `findings/improvement.jsonl`
+- `findings/anti-pattern.jsonl`
+- `findings/triage.jsonl`
+- `findings/tip.jsonl`
+- `findings/insight.jsonl`
+- `findings/best-practice.jsonl`
+- `findings/build-error.jsonl`
+- `findings/test-failure.jsonl`
+- `findings/lint-issue.jsonl`
+- `findings/sonar-issue.jsonl`
+- `findings/pr-comment.jsonl`
+
+Files are created lazily — a per-type file only exists once a finding of that type has been added.
+
+The `query` command merges across all per-type files in canonical type order before applying filters. The `get`, `resolve`, and `promote` commands locate the owning per-type file by scanning the directory for the requested `hash_id`.
 
 ## Plan Finding Record
 
-Each line in `findings.jsonl` is a JSON object:
+Each line in a `findings/{type}.jsonl` file is a JSON object:
 
 ```json
 {
@@ -84,7 +113,7 @@ Finding types promote to specific targets:
 
 ## Q-Gate Finding Record
 
-Each line in `qgate-{phase}.jsonl` is a JSON object:
+Each line in `findings/qgate-{phase}.jsonl` is a JSON object:
 
 ```json
 {

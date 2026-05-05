@@ -36,6 +36,20 @@ See `build-api-reference.md` for the full subcommand API and availability matrix
 - **coverage-report**: Searches `coverage.xml`, `htmlcov/coverage.xml`. Generate with `pytest --cov --cov-report=xml`
 - **discover**: Modules are directories containing `test/` or `tests/` subdirectories. Metadata from `pyproject.toml` via `tomllib`. Excludes `.venv`, `venv`, `.tox`, cache directories
 
+### Producer-Side Finding Storage (`run --plan-id`)
+
+When `run` is invoked with `--plan-id <P>`, every parsed issue from a failed build is auto-stored as a finding via `manage-findings add` (always-on — there is no separate `--store-findings` flag). When `--plan-id` is omitted, the historical silent behaviour is preserved (parse + format only). The per-issue routing is:
+
+| Parsed `category` (Issue) | Finding type |
+|---------------------------|--------------|
+| `test_failure`, `test_*` | `test-failure` |
+| categories containing `lint` or `style` (e.g., `lint_error`) | `lint-issue` |
+| everything else (compile, type_error, dependency, plugin) | `build-error` |
+
+Severity is mapped from `Issue.severity`: `error` → `error`, `warning` → `warning`. The finding's `module` carries the build tool name (`python`), `rule` carries the original parser category, and `detail` carries the full message plus any stack trace.
+
+Producer-side mismatches (parsed issue count ≠ stored count) are surfaced as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`.
+
 ## Quality-Gate Coverage
 
 The `quality-gate` build target (root `build.py:cmd_quality_gate`) is the fast-feedback stage developers run on every iteration. It enforces the following marketplace-wide invariants in seconds, so violations are caught before push rather than at CI time:

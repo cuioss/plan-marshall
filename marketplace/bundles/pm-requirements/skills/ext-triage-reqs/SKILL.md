@@ -23,6 +23,7 @@ Loaded via `resolve-workflow-skill-extension --domain requirements --type triage
 2. Requirements structure issues are detected
 3. Traceability gaps are identified
 4. Acceptance criteria format issues are found
+5. PR review comment disposition is required (FIX, REPLY-AND-RESOLVE, or ESCALATE on bot review threads)
 
 ## Standards
 
@@ -30,6 +31,7 @@ Loaded via `resolve-workflow-skill-extension --domain requirements --type triage
 |----------|---------|
 | [suppression.md](standards/suppression.md) | AsciiDoc comment syntax for suppression |
 | [severity.md](standards/severity.md) | Requirements-specific severity guidelines |
+| [pr-comment-disposition.md](standards/pr-comment-disposition.md) | PR review comment disposition (FIX / REPLY-AND-RESOLVE / ESCALATE) for requirements |
 
 ## Extension Registration
 

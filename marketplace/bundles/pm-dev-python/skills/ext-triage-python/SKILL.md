@@ -24,6 +24,7 @@ Loaded via `resolve-workflow-skill-extension --domain python --type triage` duri
 3. Pytest failures or coverage regressions occur
 4. PR review comments reference Python code quality
 5. Pyprojectx build errors are flagged
+6. PR review comment disposition is required (FIX, REPLY-AND-RESOLVE, or ESCALATE on bot review threads)
 
 ## Standards
 
@@ -31,6 +32,7 @@ Loaded via `resolve-workflow-skill-extension --domain python --type triage` duri
 |----------|---------|
 | [suppression.md](standards/suppression.md) | Python-specific suppression syntax (ruff, mypy, pytest) |
 | [severity.md](standards/severity.md) | Python-specific severity guidelines and decision criteria |
+| [pr-comment-disposition.md](standards/pr-comment-disposition.md) | PR review comment disposition (FIX / REPLY-AND-RESOLVE / ESCALATE) for Python |
 
 ## Extension Registration
 

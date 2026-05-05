@@ -196,6 +196,27 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:manage_session curre
 
 The script returns TOON. On success: `status: success\nsession_id: <id>`. When neither cache file is present: `status: error\nerror: session_id_unavailable` — callers apply their own policy (abort vs. degrade). The resolver itself never reads `$VAR`, never shells out beyond `git rev-parse`, and never falls back to environment variables: the only in-process source of `session_id` is the hook stdin payload, so the cache is the only correct read path.
 
+## Phase Handshake & Blocking-Finding Invariant
+
+Phase transitions are guarded by a registry of **invariants** captured at every phase boundary; see [`references/phase-handshake.md`](references/phase-handshake.md) for the full narrative, the registry table, and the resolution rules. Two registry rows (added in TASK-007 of plan `lesson-2026-05-05-11-001`) drive the blocking-finding gate:
+
+| Row | Behavior at every boundary | Behavior at guarded boundaries |
+|-----|----------------------------|--------------------------------|
+| `pending_findings_by_type` | per-type breakdown of pending findings (passive — never raises) | identical (passive) |
+| `pending_findings_blocking_count` | sum of pending counts across the per-phase blocking partition | raises `BlockingFindingsPresent` when the count is non-zero — capture refuses to persist a row, gating the boundary |
+
+The blocking partition is configured per-phase in `marshal.json` at `plan.phase-{phase}.blocking_finding_types` (a list of finding-type strings). `marshall-steward` seeds a default partition on first wizard run; see [`marshall-steward/SKILL.md`](../marshall-steward/SKILL.md) for the seed step.
+
+**Guarded boundaries** (the only points where the strict-verify check refuses to advance):
+
+- `5-execute → 6-finalize` (covers the phase-level transition)
+- `automated-review → branch-cleanup` (intra-finalize)
+- `sonar-roundtrip → next` (intra-finalize)
+
+Every other capture point — phases `1-init` through `5-execute` and any other finalize sub-step — captures the rows passively for retrospective analysis without blocking the transition.
+
+The resolutions counted as **resolved** (and therefore non-blocking) are: `fixed`, `suppressed`, `accepted`, `taken_into_account`. Only `pending` contributes to the count.
+
 ## Related
 
 | Skill | Purpose |

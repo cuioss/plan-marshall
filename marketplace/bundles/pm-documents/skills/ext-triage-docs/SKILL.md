@@ -24,6 +24,7 @@ Loaded via `resolve-workflow-skill-extension --domain documentation --type triag
 3. ADR format issues are found
 4. Interface specification validation fails
 5. Link validation errors occur
+6. PR review comment disposition is required (FIX, REPLY-AND-RESOLVE, or ESCALATE on bot review threads)
 
 ## Standards
 
@@ -31,6 +32,7 @@ Loaded via `resolve-workflow-skill-extension --domain documentation --type triag
 |----------|---------|
 | [suppression.md](standards/suppression.md) | AsciiDoc and markdown suppression syntax |
 | [severity.md](standards/severity.md) | Documentation-specific severity guidelines |
+| [pr-comment-disposition.md](standards/pr-comment-disposition.md) | PR review comment disposition (FIX / REPLY-AND-RESOLVE / ESCALATE) for documentation |
 
 ## Extension Registration
 

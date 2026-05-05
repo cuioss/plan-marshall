@@ -643,3 +643,427 @@ def test_cmd_verify_phase_steps_drift_when_step_regresses(
         assert result['status'] == 'drift'
         diff_names = {d['invariant'] for d in result['diffs']}
         assert 'phase_steps_complete' in diff_names
+
+
+# =============================================================================
+# pending-findings invariant rows (TASK-7 / TASK-8)
+# =============================================================================
+#
+# These tests cover the two new pluggable invariants — ``pending_findings_by_type``
+# and ``pending_findings_blocking_count`` — added to enforce the phase-boundary
+# blocking-finding contract documented in the BlockingFindingsPresent docstring:
+#
+# - Per-type capture is passive at every phase (records the queue snapshot).
+# - Blocking-count capture refuses (raises BlockingFindingsPresent → cmd_capture
+#   returns ``error: blocking_findings_present``) at the *guarded* boundary
+#   ``6-finalize`` when a blocking-type pending finding is present. The intra-
+#   finalize boundaries (``automated-review → branch-cleanup`` and
+#   ``sonar-roundtrip → next``) are guarded by re-issuing
+#   ``capture --phase 6-finalize`` so they trip the same exception.
+# - Verify-strict behaviour: ``cmd_verify`` translates the exception into a
+#   ``drift`` payload on the ``pending_findings_blocking_count`` invariant so
+#   the CLI ``--strict`` flag lifts that into a non-zero exit (exercised
+#   structurally below — ``cmd_verify`` is the value-producing path the CLI
+#   wraps with the strict-exit check).
+# - Long-lived non-blocking types (``insight``, ``tip``, ``best-practice``,
+#   ``improvement``) MUST NOT block when they are the only pending findings,
+#   even when their counts are non-zero.
+# - ``accepted`` and ``taken_into_account`` resolutions count as resolved —
+#   the per-type query is filtered by ``--resolution pending``, so any finding
+#   in those resolutions is structurally excluded from both rows.
+
+
+@pytest.fixture
+def only_pending_findings_invariants(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replace INVARIANTS with just the two real pending-finding entries.
+
+    Mirrors :func:`only_phase_steps_invariant` so cmd_capture / cmd_verify
+    exercise the real per-type and blocking-count code paths without the
+    other invariants shelling out to the executor.
+    """
+    stubbed = [
+        (
+            'pending_findings_by_type',
+            lambda _pid, _md: True,
+            inv._capture_pending_findings_by_type,
+        ),
+        (
+            'pending_findings_blocking_count',
+            lambda _pid, _md: True,
+            inv._capture_pending_findings_blocking_count,
+        ),
+    ]
+    monkeypatch.setattr(inv, 'INVARIANTS', stubbed)
+    monkeypatch.setattr(cmds, 'INVARIANTS', stubbed)
+
+
+@pytest.fixture
+def stub_query_counts(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
+    """Stub ``_query_pending_count_for_type`` with a per-type pending counter.
+
+    Returns the mutable mapping; tests assign per-type counts (``state['bug']
+    = 2``) before invoking captures. Unset types resolve to ``0`` — the same
+    "no pending findings of this type" outcome the real query produces when
+    the JSONL file is empty.
+    """
+    state: dict[str, int] = {}
+
+    def _query(_plan_id: str, finding_type: str) -> int:
+        return state.get(finding_type, 0)
+
+    monkeypatch.setattr(inv, '_query_pending_count_for_type', _query)
+    return state
+
+
+@pytest.fixture
+def stub_blocking_types(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[str] | None]:
+    """Stub ``_read_blocking_finding_types`` with a per-phase mapping.
+
+    Tests populate ``state[phase] = ['bug', 'lint-issue']`` (etc.) before
+    capture. Unset phases resolve to ``None`` — matching the production
+    contract that "no partition configured" means "nothing blocks".
+    """
+    state: dict[str, list[str] | None] = {}
+
+    def _read(_plan_id: str, phase: str) -> list[str] | None:
+        return state.get(phase)
+
+    monkeypatch.setattr(inv, '_read_blocking_finding_types', _read)
+    return state
+
+
+# --- (a) per-type capture matches manage-findings query output -----------
+
+
+def test_capture_pending_findings_by_type_compact_summary(
+    only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+) -> None:
+    """The per-type row mirrors the per-type query and stays sorted/stable."""
+    # Arrange — three types have pending findings, the rest are zero.
+    stub_query_counts['bug'] = 2
+    stub_query_counts['lint-issue'] = 1
+    stub_query_counts['insight'] = 5
+    # No blocking partition configured → blocking row must remain 0.
+    stub_blocking_types['5-execute'] = None
+
+    # Act
+    with PlanContext(plan_id='pf-by-type'):
+        result = cmds.cmd_capture(_ns(plan_id='pf-by-type', phase='5-execute'))
+
+        # Assert
+        assert result['status'] == 'success'
+        summary = result['invariants']['pending_findings_by_type']
+        # Every known type appears with its count, in registry order.
+        assert 'bug=2' in summary
+        assert 'lint-issue=1' in summary
+        assert 'insight=5' in summary
+        # Types with zero pending findings still appear (passive snapshot).
+        assert 'tip=0' in summary
+        assert 'best-practice=0' in summary
+        # Blocking row reflects "nothing blocks" — partition unset.
+        assert result['invariants']['pending_findings_blocking_count'] in (0, '0')
+
+
+def test_capture_pending_findings_by_type_persists_to_handshakes_toon(
+    only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+) -> None:
+    """The per-type row round-trips through handshakes.toon under the schema."""
+    # Arrange
+    stub_query_counts['triage'] = 4
+    stub_blocking_types['5-execute'] = None
+
+    # Act
+    with PlanContext(plan_id='pf-persist'):
+        cmds.cmd_capture(_ns(plan_id='pf-persist', phase='5-execute'))
+
+        # Assert
+        row = store.get_row('pf-persist', '5-execute')
+        assert row is not None
+        assert 'pending_findings_by_type' in row
+        assert 'triage=4' in row['pending_findings_by_type']
+        assert 'pending_findings_blocking_count' in row
+
+
+def test_handshake_fields_includes_pending_finding_columns() -> None:
+    """The TOON column schema must include both pending-finding columns.
+
+    Without these columns the row writer would silently drop the values at
+    persistence time, defeating the phase-6-finalize boundary guard.
+    """
+    assert 'pending_findings_by_type' in store.HANDSHAKE_FIELDS
+    assert 'pending_findings_blocking_count' in store.HANDSHAKE_FIELDS
+
+
+# --- (b) verify-strict blocks transition at guarded boundary -------------
+
+
+def test_capture_at_finalize_boundary_blocks_when_blocking_type_pending(
+    only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+) -> None:
+    """5-execute → 6-finalize: capture --phase 6-finalize must refuse.
+
+    A pending ``bug`` finding (configured as blocking for 6-finalize) makes
+    the capture raise BlockingFindingsPresent; cmd_capture surfaces it as a
+    structured error and refuses to persist the row.
+    """
+    # Arrange
+    stub_query_counts['bug'] = 1
+    stub_query_counts['lint-issue'] = 0
+    stub_blocking_types['6-finalize'] = ['bug', 'lint-issue']
+
+    # Act
+    with PlanContext(plan_id='pf-block-finalize'):
+        result = cmds.cmd_capture(_ns(plan_id='pf-block-finalize', phase='6-finalize'))
+
+        # Assert
+        assert result['status'] == 'error'
+        assert result['error'] == 'blocking_findings_present'
+        assert result['blocking_count'] == 1
+        assert result['blocking_types'] == ['bug', 'lint-issue']
+        assert result['per_type'] == {'bug': 1, 'lint-issue': 0}
+        # Row must NOT be persisted on failure — boundary is gated.
+        assert store.get_row('pf-block-finalize', '6-finalize') is None
+
+
+def test_capture_blocks_automated_review_to_branch_cleanup_boundary(
+    only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+) -> None:
+    """automated-review → branch-cleanup boundary is guarded via re-capture.
+
+    The phase-6-finalize orchestrator re-issues
+    ``phase_handshake capture --phase 6-finalize`` at this checkpoint, so a
+    pending blocking-type finding trips the same exception. This test pins
+    the contract that the exception fires for the same phase key the
+    orchestrator passes — there is no separate "automated-review" phase.
+    """
+    # Arrange — a Sonar issue is configured as blocking for 6-finalize.
+    stub_query_counts['sonar-issue'] = 2
+    stub_blocking_types['6-finalize'] = ['sonar-issue']
+
+    # Act
+    with PlanContext(plan_id='pf-block-autoreview'):
+        result = cmds.cmd_capture(_ns(plan_id='pf-block-autoreview', phase='6-finalize'))
+
+        # Assert
+        assert result['status'] == 'error'
+        assert result['error'] == 'blocking_findings_present'
+        assert result['blocking_count'] == 2
+        assert result['per_type'] == {'sonar-issue': 2}
+        assert store.get_row('pf-block-autoreview', '6-finalize') is None
+
+
+def test_capture_blocks_sonar_roundtrip_next_boundary(
+    only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+) -> None:
+    """sonar-roundtrip → next boundary is guarded via re-capture.
+
+    Same mechanism as automated-review → branch-cleanup: the orchestrator
+    issues ``capture --phase 6-finalize`` and a pending blocking finding
+    refuses persistence. Pinned with a different blocking-type set so a
+    regression that hard-codes the blocking partition would fail here.
+    """
+    # Arrange
+    stub_query_counts['pr-comment'] = 3
+    stub_blocking_types['6-finalize'] = ['pr-comment']
+
+    # Act
+    with PlanContext(plan_id='pf-block-sonar'):
+        result = cmds.cmd_capture(_ns(plan_id='pf-block-sonar', phase='6-finalize'))
+
+        # Assert
+        assert result['status'] == 'error'
+        assert result['error'] == 'blocking_findings_present'
+        assert result['blocking_count'] == 3
+        assert result['per_type'] == {'pr-comment': 3}
+        assert store.get_row('pf-block-sonar', '6-finalize') is None
+
+
+def test_verify_at_finalize_boundary_reports_drift_for_strict_mode(
+    only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+) -> None:
+    """cmd_verify translates BlockingFindingsPresent into drift on the
+    blocking-count column — the CLI ``--strict`` flag turns drift into exit 1.
+
+    First captures a clean row (no blocking findings), then introduces a
+    pending blocking-type finding; verify must surface drift on
+    ``pending_findings_blocking_count`` so the CLI strict guard fires.
+    """
+    # Arrange — capture with the boundary clean.
+    stub_blocking_types['6-finalize'] = ['bug']
+
+    # Act — initial clean capture, then a regression.
+    with PlanContext(plan_id='pf-verify-strict'):
+        cap = cmds.cmd_capture(_ns(plan_id='pf-verify-strict', phase='6-finalize'))
+        assert cap['status'] == 'success'
+
+        # Mid-phase a blocking-type finding lands.
+        stub_query_counts['bug'] = 1
+        result = cmds.cmd_verify(_ns(plan_id='pf-verify-strict', phase='6-finalize'))
+
+        # Assert — verify treats the blocker as drift on the dedicated column,
+        # which the CLI's ``--strict`` flag promotes to exit 1.
+        assert result['status'] == 'drift'
+        diff_names = {d['invariant'] for d in result['diffs']}
+        assert 'pending_findings_blocking_count' in diff_names
+
+
+# --- (c) verify-strict allows transition with only non-blocking types ---
+
+
+def test_capture_at_finalize_succeeds_when_only_long_lived_findings_pending(
+    only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+) -> None:
+    """Only the four long-lived non-blocking types pending → boundary clears.
+
+    ``insight``, ``tip``, ``best-practice``, ``improvement`` are not in the
+    blocking partition for 6-finalize, so non-zero counts on them MUST NOT
+    block the transition. cmd_capture succeeds and persists the row; verify
+    sees no drift on the blocking-count column.
+    """
+    # Arrange — every long-lived type has pending findings, none are blocking.
+    stub_query_counts['insight'] = 7
+    stub_query_counts['tip'] = 4
+    stub_query_counts['best-practice'] = 2
+    stub_query_counts['improvement'] = 9
+    stub_blocking_types['6-finalize'] = ['bug', 'lint-issue', 'sonar-issue']
+
+    # Act
+    with PlanContext(plan_id='pf-long-lived'):
+        result = cmds.cmd_capture(_ns(plan_id='pf-long-lived', phase='6-finalize'))
+
+        # Assert — capture succeeded.
+        assert result['status'] == 'success'
+        assert result['invariants']['pending_findings_blocking_count'] in (0, '0')
+        # Per-type row reflects the long-lived counts — passive snapshot.
+        summary = result['invariants']['pending_findings_by_type']
+        assert 'insight=7' in summary
+        assert 'tip=4' in summary
+        assert 'best-practice=2' in summary
+        assert 'improvement=9' in summary
+        # Row was persisted: the boundary is satisfied.
+        row = store.get_row('pf-long-lived', '6-finalize')
+        assert row is not None
+        assert row['pending_findings_blocking_count'] in (0, '0')
+
+        # Verify is clean — no drift surfaces on the blocking-count column.
+        verify = cmds.cmd_verify(_ns(plan_id='pf-long-lived', phase='6-finalize'))
+        assert verify['status'] == 'ok'
+
+
+def test_blocking_count_zero_when_no_partition_configured(
+    only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+) -> None:
+    """Phases without a blocking_finding_types config slot capture as 0.
+
+    Passive snapshot semantics: the per-type row still records every
+    pending finding (so retrospective analysis sees the queue), but the
+    blocking-count column is a hard zero because nothing is configured to
+    block.
+    """
+    # Arrange — pending findings but no partition configured for this phase.
+    stub_query_counts['bug'] = 5
+    stub_blocking_types['3-outline'] = None  # explicit "no partition"
+
+    # Act
+    with PlanContext(plan_id='pf-no-partition'):
+        result = cmds.cmd_capture(_ns(plan_id='pf-no-partition', phase='3-outline'))
+
+        # Assert
+        assert result['status'] == 'success'
+        assert result['invariants']['pending_findings_blocking_count'] in (0, '0')
+        summary = result['invariants']['pending_findings_by_type']
+        assert 'bug=5' in summary
+
+
+def test_blocking_count_passive_at_non_guarded_boundary(
+    only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+) -> None:
+    """Non-guarded phases capture the blocking total without raising.
+
+    A pending blocking-type finding at phase ``5-execute`` records the count
+    but MUST NOT raise — only ``6-finalize`` is in ``_BLOCKING_BOUNDARIES``.
+    Retrospective analysis reads the row to see the queue at every phase
+    boundary.
+    """
+    # Arrange — a blocking-type finding pending at a non-guarded phase.
+    stub_query_counts['bug'] = 2
+    stub_blocking_types['5-execute'] = ['bug']
+
+    # Act
+    with PlanContext(plan_id='pf-passive'):
+        result = cmds.cmd_capture(_ns(plan_id='pf-passive', phase='5-execute'))
+
+        # Assert — captured with the non-zero total, no exception raised.
+        assert result['status'] == 'success'
+        assert result['invariants']['pending_findings_blocking_count'] in (2, '2')
+
+
+# --- (d) accepted / taken_into_account resolutions count as resolved -----
+
+
+def test_query_pending_count_excludes_accepted_and_taken_into_account(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``_query_pending_count_for_type`` filters by ``--resolution pending``.
+
+    The blocking-count contract documents that ``accepted`` and
+    ``taken_into_account`` resolutions count as resolved. The implementation
+    encodes that property by passing ``--resolution pending`` to
+    ``manage-findings query``, so any finding in any other resolution
+    bucket — including ``accepted`` and ``taken_into_account`` — is
+    structurally excluded from both pending-finding rows.
+
+    This test pins the filter argument so a regression that drops
+    ``--resolution pending`` would surface immediately.
+    """
+    # Arrange — capture the args that ``_run_script`` is asked to send.
+    captured: list[list[str]] = []
+
+    def _fake_run(args: list[str]) -> str:
+        captured.append(args)
+        return 'filtered_count: 0\n'
+
+    monkeypatch.setattr(inv, '_run_script', _fake_run)
+
+    # Act
+    inv._query_pending_count_for_type('any-plan', 'bug')
+
+    # Assert — the resolution filter pins ``pending`` exclusively.
+    assert len(captured) == 1
+    args = captured[0]
+    # ``--resolution pending`` — the filter that excludes ``accepted`` and
+    # ``taken_into_account`` from the count.
+    resolution_idx = args.index('--resolution')
+    assert args[resolution_idx + 1] == 'pending'
+    # The query targets the requested type — pins the per-type partitioning.
+    type_idx = args.index('--type')
+    assert args[type_idx + 1] == 'bug'
+
+
+def test_capture_blocking_count_excludes_resolved_findings(
+    only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_blocking_types
+) -> None:
+    """End-to-end: a 6-finalize capture clears even when blocking-type
+    findings exist in resolved buckets (``accepted`` / ``taken_into_account``).
+
+    The stub mirrors the real query semantics: ``stub_query_counts`` only
+    counts pending findings, so a value of ``0`` is exactly what the real
+    query returns when every blocking-type finding is in an ``accepted``
+    or ``taken_into_account`` resolution. Boundary clears.
+    """
+    # Arrange — every blocking-type finding has been accepted or
+    # taken_into_account, so pending counts are zero.
+    stub_query_counts['bug'] = 0
+    stub_query_counts['lint-issue'] = 0
+    stub_query_counts['sonar-issue'] = 0
+    stub_blocking_types['6-finalize'] = ['bug', 'lint-issue', 'sonar-issue']
+
+    # Act
+    with PlanContext(plan_id='pf-accepted'):
+        result = cmds.cmd_capture(_ns(plan_id='pf-accepted', phase='6-finalize'))
+
+        # Assert — no exception, capture succeeded, boundary cleared.
+        assert result['status'] == 'success'
+        assert result['invariants']['pending_findings_blocking_count'] in (0, '0')
+        row = store.get_row('pf-accepted', '6-finalize')
+        assert row is not None

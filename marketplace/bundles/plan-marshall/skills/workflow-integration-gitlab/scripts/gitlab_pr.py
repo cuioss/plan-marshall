@@ -1,35 +1,31 @@
 #!/usr/bin/env python3
 """
-GitLab MR workflow operations - fetch comments and triage them.
+GitLab MR workflow operations - producer-side fetch + pre-filter + per-finding store.
 
-Uses gitlab.py directly for GitLab operations (no provider detection needed).
+Producer-side flow: ``comments-stage`` fetches MR review comments, applies the
+keyword pre-filter from ``standards/comment-patterns.json`` to drop obvious
+noise, then writes one ``pr-comment`` finding per surviving comment via
+``manage-findings add`` (direct ``add_finding`` import). LLM consumers query
+via ``manage-findings query --type pr-comment`` — the script-side triage
+batch surface that previously accepted inline JSON has been retired.
 
 Usage:
-    pr.py fetch-comments [--pr <number>] [--unresolved-only]
-    pr.py triage --comment <json> [--context <code>]
-    pr.py triage-batch --comments <json-array>
-    pr.py --help
+    gitlab_pr.py fetch-comments [--pr <number>] [--unresolved-only]
+    gitlab_pr.py comments-stage --pr-number <N> --plan-id <P>
+    gitlab_pr.py --help
 
 Subcommands:
-    fetch-comments    Fetch PR review comments (GitHub or GitLab via ci router)
-    triage           Triage a single PR review comment
-    triage-batch     Triage multiple PR review comments at once
+    fetch-comments    Fetch MR review comments (raw, no filtering or storage)
+    comments-stage    Producer-side: fetch + pre-filter + store one finding per surviving comment
 
 Examples:
-    # Fetch comments for current branch's PR
-    pr.py fetch-comments
+    # Fetch raw comments
+    gitlab_pr.py fetch-comments --pr 123
 
-    # Fetch comments for specific PR
-    pr.py fetch-comments --pr 123
-
-    # Triage a single comment
-    pr.py triage --comment '{"id":"C1","body":"Please fix this","path":"src/Main.java","line":42}'
-
-    # Batch triage multiple comments
-    pr.py triage-batch --comments '[{"id":"C1","body":"Fix this"},{"id":"C2","body":"LGTM"}]'
+    # Producer-side stage (fetch, filter, store findings)
+    gitlab_pr.py comments-stage --pr-number 123 --plan-id my-plan
 """
 
-import json
 import re
 import sys
 from typing import Any
@@ -38,41 +34,43 @@ import gitlab_ops as _gitlab  # type: ignore[import-not-found]
 from ci_base import extract_project_dir, set_default_cwd  # type: ignore[import-not-found]
 from triage_helpers import (  # type: ignore[import-not-found]
     ErrorCode,
-    cmd_triage_batch_handler,
-    cmd_triage_single,
     compile_patterns_from_config,
     create_workflow_cli,
     load_skill_config,
     make_error,
-    parse_json_arg,
     safe_main,
 )
 
 # ============================================================================
-# TRIAGE CONFIGURATION (loaded from comment-patterns.json)
+# PRE-FILTER CONFIGURATION (loaded from comment-patterns.json)
 # ============================================================================
+#
+# comment-patterns.json is a PRE-FILTER for noise removal only. It used to
+# carry the LLM decision authority (full keyword classification), but the
+# producer-side migration moves the decision to the LLM consumer, which
+# loads each surviving finding from the per-type store. The keyword data is
+# kept here verbatim so we can still drop obvious automated/acknowledgment
+# noise (e.g., "lgtm", "thanks!", bot signatures) before the finding store
+# is populated. A surviving comment becomes a ``pr-comment`` finding.
 
 PATTERNS: dict[str, Any] = load_skill_config(__file__, 'comment-patterns.json')
 
-# Configurable thresholds (from comment-patterns.json or defaults)
-_THRESHOLDS = PATTERNS.get('thresholds', {})
-SUBSTANTIAL_COMMENT_LENGTH: int = _THRESHOLDS.get('substantial_comment_length', 100)
-CONTEXT_MATCH_MIN_LENGTH: int = _THRESHOLDS.get('context_match_min_length', 20)
-
-# Pre-compile regex patterns at load time to catch malformed patterns early
-# and avoid repeated compilation per classify_comment() call.
-_COMPILED_PATTERNS: dict[str, dict[str, list[re.Pattern]]] = {}
-for _category in ('code_change', 'explain', 'ignore'):
-    _COMPILED_PATTERNS[_category] = {}
-    for _priority, _pattern_list in PATTERNS.get(_category, {}).items():
-        _COMPILED_PATTERNS[_category][_priority] = compile_patterns_from_config(
+# Pre-compile only the ``ignore`` category — that's what the pre-filter uses.
+# Other categories (``code_change``, ``explain``) are no longer consulted by
+# this script; the LLM decides classification downstream from the finding
+# detail.
+_COMPILED_IGNORE: list[re.Pattern] = []
+for _priority, _pattern_list in PATTERNS.get('ignore', {}).items():
+    _COMPILED_IGNORE.extend(
+        compile_patterns_from_config(
             _pattern_list,
-            f'comment-patterns.json [{_category}][{_priority}]',
+            f'comment-patterns.json [ignore][{_priority}]',
         )
+    )
 
 
 # ============================================================================
-# FETCH-COMMENTS SUBCOMMAND (Provider-Agnostic via direct import)
+# FETCH-COMMENTS SUBCOMMAND (raw fetch, no filtering or storage)
 # ============================================================================
 
 
@@ -99,7 +97,7 @@ def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, A
     if result.get('status') != 'success':
         return make_error(result.get('error', 'Failed to fetch PR comments'), code=ErrorCode.FETCH_FAILURE)
 
-    # Transform provider result into pr.py's expected format
+    # Transform provider result into gitlab_pr.py's expected format
     return {
         'pr_number': pr_number,
         'provider': result.get('provider', 'unknown'),
@@ -124,200 +122,139 @@ def cmd_fetch_comments(args):
 
 
 # ============================================================================
-# TRIAGE SUBCOMMAND
+# PRE-FILTER (Python-internal helper)
 # ============================================================================
 
 
-CAMEL_CASE_MIN_LENGTH: int = _THRESHOLDS.get('camel_case_min_length', 4)
+def _is_obvious_noise(body: str) -> bool:
+    """Pre-filter: True if the comment body matches an ``ignore`` keyword.
 
-# Pre-compiled verb patterns for suggest_implementation() — avoids
-# re-compiling regex on every call. Checked in specificity order.
-_VERB_PATTERNS: list[tuple[list[re.Pattern], str]] = [
-    ([re.compile(rf'\b{v}\b') for v in verbs], suggestion)
-    for verbs, suggestion in [
-        (['rename', 'refactor'], 'Rename/refactor as suggested'),
-        (['remove', 'delete', 'drop'], 'Remove indicated code'),
-        (['fix', 'resolve', 'correct'], 'Fix the issue indicated'),
-        (['add', 'include', 'create'], 'Add requested code/functionality'),
-        (['replace', 'swap', 'change', 'update'], 'Update code as requested'),
-        (['move', 'extract', 'split'], 'Restructure code as suggested'),
-    ]
-]
-
-
-def _looks_like_identifier(w: str) -> bool:
-    """Check if a word looks like a code identifier.
-
-    Matches words with underscores, dots, parens, or camelCase
-    (mixed upper/lower within a word, configurable min length).
+    Used by ``comments-stage`` to drop obvious automated/acknowledgment noise
+    (e.g., "lgtm", "thanks!", bot signatures) before each surviving comment is
+    persisted as a ``pr-comment`` finding. This is intentionally permissive —
+    the goal is only to skip the most obvious noise, not to make the final
+    classification decision (that belongs to the LLM consumer).
     """
-    clean = w.rstrip('.,;:)')
-    if '_' in clean or '.' in clean or '(' in clean:
-        return True
-    # camelCase: has both upper and lower, at least CAMEL_CASE_MIN_LENGTH chars
-    if len(clean) >= CAMEL_CASE_MIN_LENGTH and any(c.isupper() for c in clean[1:]) and any(c.islower() for c in clean):
-        return True
-    return False
-
-
-def classify_comment(body: str, context: str | None = None) -> dict[str, str]:
-    """Classify comment and determine action and priority.
-
-    Returns dict with 'action', 'priority', and 'reason' keys.
-
-    Priority order: code_change(high) → code_change(medium/low) → ignore → explain → default.
-    High-priority code changes (security, bugs) always win. Then actionable
-    requests. Ignore patterns are checked after code_change so that comments
-    like "LGTM, but please fix the typo" are classified as code_change, not
-    swallowed by the ignore match on "lgtm".
-
-    Args:
-        body: Comment body text.
-        context: Optional surrounding code context for better classification.
-            When provided, helps disambiguate comments that reference code patterns.
-    """
-    body_lower = body.lower()
-
-    # Check for code change patterns FIRST — actionable requests take
-    # priority over ignore/explain. This ensures "LGTM, but please fix
-    # the typo" is classified as code_change, not swallowed by ignore.
-    for priority in ['high', 'medium', 'low']:
-        for compiled in _COMPILED_PATTERNS['code_change'].get(priority, []):
-            if compiled.search(body_lower):
-                return {
-                    'action': 'code_change',
-                    'priority': priority,
-                    'reason': f'Matches {priority} priority pattern: {compiled.pattern}',
-                }
-
-    # Check for ignore patterns AFTER code_change — pure acknowledgments
-    # with no actionable content.
-    for priority, compiled_list in _COMPILED_PATTERNS['ignore'].items():
-        for compiled in compiled_list:
-            if compiled.search(body_lower):
-                return {'action': 'ignore', 'priority': priority, 'reason': 'Automated or acknowledgment comment'}
-
-    # Check for explanation patterns — only after ruling out code_change,
-    # so "Why did you fix it this way?" is correctly classified as explain
-    # rather than matching "fix" as code_change first (handled above) or
-    # matching "?" and missing code_change intent.
-    for priority, compiled_list in _COMPILED_PATTERNS['explain'].items():
-        for compiled in compiled_list:
-            if compiled.search(body_lower):
-                return {'action': 'explain', 'priority': priority, 'reason': 'Question or clarification request'}
-
-    # Standalone question mark — comment is a question but doesn't match
-    # explicit explain keywords. Check after code_change and explain patterns.
-    if '?' in body_lower:
-        return {'action': 'explain', 'priority': 'low', 'reason': 'Question or clarification request'}
-
-    # Context-aware classification: if code context is provided and the
-    # comment references specific code patterns, boost to code_change
-    if context and len(body) > CONTEXT_MATCH_MIN_LENGTH:
-        # Comment mentions something visible in the code context —
-        # likely a targeted review comment that needs action
-        context_lower = context.lower()
-        code_refs = [w for w in body.split() if _looks_like_identifier(w)]
-        if any(ref.lower().rstrip('.,;:)') in context_lower for ref in code_refs):
-            return {
-                'action': 'code_change',
-                'priority': 'medium',
-                'reason': 'Comment references code identifiers visible in context',
-            }
-
-    # Default: review comment without clear action signal.
-    # Longer comments (>100 chars) likely contain substantive feedback that
-    # warrants attention even without keyword matches. Short comments without
-    # recognizable patterns are typically drive-by acknowledgments.
-    if len(body) > SUBSTANTIAL_COMMENT_LENGTH:
-        return {
-            'action': 'code_change',
-            'priority': 'low',
-            'reason': f'Substantial review comment (>{SUBSTANTIAL_COMMENT_LENGTH} chars) requires attention',
-        }
-
-    return {'action': 'ignore', 'priority': 'low', 'reason': 'Brief comment with no actionable content'}
-
-
-def suggest_implementation(action: str, body: str, path: str | None, line: int | None) -> str | None:
-    """Generate implementation suggestion based on action type.
-
-    For code_change actions, extracts the most specific verb from the comment
-    body to produce a targeted suggestion. Falls back to a generic review
-    prompt when no verb is detected.
-    """
-    if action == 'ignore':
-        return None
-
-    location = f'{path}:{line}' if path and line is not None else (path or 'unspecified location')
-
-    if action == 'explain':
-        return f'Reply to comment at {location} with explanation of design decision'
-
-    # For code_change, extract the most specific action verb from the body.
-    # Uses word boundary matching to avoid false positives (e.g., "prefix" matching "fix").
-    # Checked in specificity order: targeted verbs first, then generic ones.
-    # Patterns are pre-compiled at module level (_VERB_PATTERNS) for performance.
-    body_lower = body.lower()
-    for compiled_patterns, suggestion in _VERB_PATTERNS:
-        if any(p.search(body_lower) for p in compiled_patterns):
-            return f'{suggestion} at {location}'
-
-    return f'Review and address comment at {location}'
-
-
-def triage_comment(comment: dict) -> dict:
-    """Triage a single comment and return decision."""
-    comment_id = comment.get('id', 'unknown')
-    body = comment.get('body', '')
-    path = comment.get('path')
-    line = comment.get('line')
-    author = comment.get('author', 'unknown')
-    context = comment.get('context')
-
     if not body:
-        return {
-            'comment_id': comment_id,
-            'action': 'ignore',
-            'reason': 'Empty comment body',
-            'priority': 'low',
-            'suggested_implementation': None,
-            'status': 'success',
-        }
+        return True
+    body_lower = body.lower()
+    return any(p.search(body_lower) for p in _COMPILED_IGNORE)
 
-    classification = classify_comment(body, context=context)
-    action = classification['action']
-    priority = classification['priority']
-    reason = classification['reason']
-    suggestion = suggest_implementation(action, body, path, line)
+
+# ============================================================================
+# COMMENTS-STAGE SUBCOMMAND (producer-side fetch + filter + store)
+# ============================================================================
+
+
+def cmd_comments_stage(args):
+    """Producer-side: fetch + pre-filter + write one finding per surviving comment.
+
+    Always-on storage: every surviving (non-noise) comment becomes a
+    ``pr-comment`` finding via ``add_finding``. ``count_fetched`` vs
+    ``count_stored`` mismatches are recorded as a ``qgate`` finding with title
+    prefix ``(producer-mismatch)`` so the LLM sees them in
+    ``manage-findings qgate query``.
+    """
+    from _findings_core import (  # type: ignore[import-not-found]
+        add_finding,
+        add_qgate_finding,
+    )
+
+    pr_number: int = args.pr_number
+    plan_id: str = args.plan_id
+
+    fetch_result = fetch_comments(pr_number, unresolved_only=False)
+    if fetch_result.get('status') != 'success':
+        return fetch_result
+
+    raw_comments: list[dict] = fetch_result.get('comments') or []
+    count_fetched = len(raw_comments)
+
+    stored_hashes: list[str] = []
+    skipped_noise = 0
+    store_failures: list[str] = []
+
+    for comment in raw_comments:
+        body = comment.get('body') or ''
+        if _is_obvious_noise(body):
+            skipped_noise += 1
+            continue
+
+        kind = comment.get('kind') or 'inline'
+        thread_id = comment.get('thread_id') or ''
+        author = comment.get('author') or 'unknown'
+        path = comment.get('path') or None
+        line = comment.get('line') or None
+        comment_id = comment.get('id') or 'unknown'
+
+        location_suffix = f' @ {path}:{line}' if path and line else ''
+        title = f'MR #{pr_number} {kind} comment by {author}{location_suffix} ({comment_id})'
+
+        detail_lines = [
+            f'pr_number: {pr_number}',
+            f'kind: {kind}',
+            f'author: {author}',
+            f'thread_id: {thread_id}',
+            f'comment_id: {comment_id}',
+        ]
+        if path:
+            detail_lines.append(f'path: {path}')
+        if line:
+            detail_lines.append(f'line: {line}')
+        detail_lines.append('')
+        detail_lines.append('--- body ---')
+        detail_lines.append(body)
+        detail = '\n'.join(detail_lines)
+
+        line_arg: int | None = None
+        if isinstance(line, int) and line > 0:
+            line_arg = line
+
+        add_result = add_finding(
+            plan_id=plan_id,
+            finding_type='pr-comment',
+            title=title,
+            detail=detail,
+            file_path=path or None,
+            line=line_arg,
+        )
+        if add_result.get('status') == 'success':
+            stored_hashes.append(add_result.get('hash_id', ''))
+        else:
+            store_failures.append(comment_id)
+
+    count_stored = len(stored_hashes)
+    expected_stored = count_fetched - skipped_noise
+
+    qgate_hash: str | None = None
+    if count_stored != expected_stored:
+        mismatch_detail = (
+            f'count_fetched={count_fetched}, '
+            f'count_skipped_noise={skipped_noise}, '
+            f'count_stored={count_stored}, '
+            f'expected_stored={expected_stored}, '
+            f'failed_comment_ids={store_failures}'
+        )
+        qgate_result = add_qgate_finding(
+            plan_id=plan_id,
+            phase='5-execute',
+            source='qgate',
+            finding_type='pr-comment',
+            title=f'(producer-mismatch) gitlab_pr comments-stage MR #{pr_number}',
+            detail=mismatch_detail,
+        )
+        qgate_hash = qgate_result.get('hash_id')
 
     return {
-        'comment_id': comment_id,
-        'author': author,
-        'action': action,
-        'reason': reason,
-        'priority': priority,
-        'location': f'{path}:{line}' if path and line is not None else None,
-        'suggested_implementation': suggestion,
         'status': 'success',
+        'pr_number': pr_number,
+        'plan_id': plan_id,
+        'count_fetched': count_fetched,
+        'count_skipped_noise': skipped_noise,
+        'count_stored': count_stored,
+        'stored_hash_ids': stored_hashes,
+        'producer_mismatch_hash_id': qgate_hash,
     }
-
-
-def cmd_triage(args):
-    """Handle triage subcommand."""
-    # Inject CLI --context into the comment JSON if provided
-    if getattr(args, 'context', None):
-        comment, rc = parse_json_arg(args.comment, '--comment')
-        if not rc and isinstance(comment, dict):
-            comment['context'] = args.context
-            return cmd_triage_single(json.dumps(comment), triage_comment)
-        # On parse failure, fall through to cmd_triage_single which reports the error
-    return cmd_triage_single(args.comment, triage_comment)
-
-
-def cmd_triage_batch(args):
-    """Handle triage-batch subcommand — triage multiple comments at once."""
-    return cmd_triage_batch_handler(args.comments, triage_comment, ['code_change', 'explain', 'ignore'])
 
 
 # ============================================================================
@@ -336,36 +273,30 @@ def main():
         set_default_cwd(project_dir)
 
     parser = create_workflow_cli(
-        description='PR workflow operations',
+        description='MR workflow operations',
         epilog="""
 Examples:
-  pr.py fetch-comments --pr 123
-  pr.py triage --comment '{"id":"C1","body":"Please fix this"}'
+  gitlab_pr.py fetch-comments --pr 123
+  gitlab_pr.py comments-stage --pr-number 123 --plan-id my-plan
 """,
         subcommands=[
             {
                 'name': 'fetch-comments',
-                'help': 'Fetch PR review comments (GitHub/GitLab)',
+                'help': 'Fetch MR review comments (raw)',
                 'handler': cmd_fetch_comments,
                 'args': [
-                    {'flags': ['--pr'], 'type': int, 'help': "PR number (default: current branch's PR)"},
+                    {'flags': ['--pr'], 'type': int, 'help': "MR number (default: current branch's MR)"},
                     {'flags': ['--unresolved-only'], 'action': 'store_true', 'help': 'Only return unresolved comments'},
                 ],
             },
             {
-                'name': 'triage',
-                'help': 'Triage a single PR review comment',
-                'handler': cmd_triage,
+                'name': 'comments-stage',
+                'help': 'Producer-side: fetch + pre-filter + store one pr-comment finding per surviving comment',
+                'handler': cmd_comments_stage,
                 'args': [
-                    {'flags': ['--comment'], 'required': True, 'help': 'JSON string with comment data'},
-                    {'flags': ['--context'], 'help': 'Surrounding code context for better classification'},
+                    {'flags': ['--pr-number'], 'dest': 'pr_number', 'type': int, 'required': True, 'help': 'MR number'},
+                    {'flags': ['--plan-id'], 'dest': 'plan_id', 'required': True, 'help': 'Plan ID for finding store'},
                 ],
-            },
-            {
-                'name': 'triage-batch',
-                'help': 'Triage multiple PR review comments at once',
-                'handler': cmd_triage_batch,
-                'args': [{'flags': ['--comments'], 'required': True, 'help': 'JSON array of comment objects'}],
             },
         ],
     )

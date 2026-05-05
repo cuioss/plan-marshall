@@ -41,6 +41,18 @@ See `build-api-reference.md` for the full subcommand API and availability matrix
 - **coverage-report**: Searches `coverage/coverage-summary.json` (Jest/Istanbul), `coverage/lcov.info` (LCOV), `dist/coverage/coverage-summary.json`. Reports `function`/`statement` metrics instead of JaCoCo's `instruction`/`method`
 - **discover**: Detects workspaces from `package.json` `workspaces` field (npm/yarn) and `pnpm-workspace.yaml` `packages` field (pnpm). Commands are conditional on available scripts
 
+### Producer-Side Finding Storage (`run --plan-id`)
+
+When `run` is invoked with `--plan-id <P>`, every parsed issue from a failed build is auto-stored as a finding via `manage-findings add` (always-on). Without `--plan-id`, the historical silent behaviour is preserved.
+
+| Parsed `category` (Issue) | Finding type |
+|---------------------------|--------------|
+| `test_failure`, `test_*` (Jest, Vitest, TAP) | `test-failure` |
+| ESLint, `lint_*`, `style_*` | `lint-issue` |
+| everything else (TypeScript errors, npm execution failures) | `build-error` |
+
+The finding's `module` carries `npm`, `rule` carries the parser category. Producer-side mismatches are surfaced as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`.
+
 ### js_coverage.py — Deep Coverage Analysis
 
 Per-file coverage breakdown with CRITICAL/WARNING/OK classification, separate from the summary-level `coverage-report` subcommand:
