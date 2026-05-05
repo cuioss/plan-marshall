@@ -144,9 +144,11 @@ The `pending_findings_blocking_count` invariant in [`plan-marshall/scripts/_inva
 
 The blocking partition lives in `marshal.json` under `plan.phase-{phase}.blocking_finding_types` (a list of finding-type strings). The default partition is seeded by `marshall-steward/scripts/determine_mode.py::seed_blocking_finding_types`:
 
-| Block at every phase boundary | Block only inside `6-finalize` | Never block (long-lived knowledge types) |
+| Included in blocking partition for all phases | Included only inside `6-finalize` | Never included (long-lived knowledge types) |
 |---|---|---|
 | `build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `qgate` | `pr-comment` | `insight`, `tip`, `best-practice`, `improvement` |
+
+Partition membership is per-phase configuration; whether a non-zero pending count actually *raises* `BlockingFindingsPresent` is a separate concern controlled by [Guarded boundaries](#guarded-boundaries). Captures at non-guarded phases read these rows passively without raising.
 
 Projects override by editing `marshal.json` directly; the seed only writes when the slot is absent (idempotent).
 
