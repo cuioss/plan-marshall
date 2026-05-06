@@ -112,7 +112,7 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
 
 **Claude:** Create `.plan/`, seed `marshal.json` with `runtime.target: claude`, ensure `.plan/temp/` exists. Install `SessionStart` hook in `.claude/settings.json` that captures `session_id` into `$CLAUDE_CODE_SESSION_ID` environment variable.
 
-**OpenCode:** Same, but `runtime.target: opencode`. OpenCode supports `OPENCODE_SESSION_ID` via PR #9289 (merged Jan 2026, available in OpenCode v1.2.x+). The session ID is injected into shell environments automatically — no hook installation needed. Note: `execute-script.py` is Claude-specific; OpenCode does not use it.
+**OpenCode:** Same, but `runtime.target: opencode`. OpenCode does not currently expose the session id to the shell environment (tracked at upstream issue #9292; PR #9289 was closed unmerged), so no SessionStart-equivalent hook is installed. `session capture` returns `no-op` on OpenCode (see below); automatic token-usage capture is unsupported and callers fall back to manual `--total-tokens`. Note: `execute-script.py` is Claude-specific; OpenCode does not use it.
 
 ### `session capture`
 
@@ -122,13 +122,13 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
 |----------|-------------|
 | `--plan-id` | Plan identifier (required) |
 
-**When to call:** At the start of every plan phase (init, execute, finalize, retrospective). This ensures `metrics capture` reads the correct session data even if the user switched terminals or started a new Claude Code/OpenCode instance.
+**When to call:** At the start of every plan phase (init, execute, finalize, retrospective). On Claude Code this ensures `metrics capture` reads the correct session data even if the user switched terminals or started a new instance. On OpenCode the call is still made but returns `no-op` (see below).
 
-**Precondition:** `project initial-setup` must have been run (by `marshall-steward`) to install the `SessionStart` hook.
+**Precondition (Claude only):** `project initial-setup` must have been run (by `marshall-steward`) to install the `SessionStart` hook. Not applicable on OpenCode.
 
 **Claude:** Read `$CLAUDE_CODE_SESSION_ID` environment variable (set by the `SessionStart` hook installed by `project initial-setup`). Store the value as `session_id` in `.plan/status.json` via `manage-status`. Overwrites any previous value. Returns `error` with code `hook_not_configured` if the env var is absent.
 
-**OpenCode:** Read `$OPENCODE_SESSION_ID` environment variable (set by equivalent hook, or available via OpenCode's session context). Store the value as `session_id` via `manage-status`. If the env var is absent, returns `error` with code `hook_not_configured`.
+**OpenCode:** Returns `no-op` with `reason: OpenCode does not expose a platform-provided session id to the shell; tracked upstream at issue #9292` and `alternative: pass --total-tokens manually to metrics capture`. No env var is read; `session_id` remains unset in `.plan/status.json`.
 
 ### `permission configure`
 
@@ -293,11 +293,11 @@ summary:
 | `--phase` | Phase identifier (required) |
 | `--total-tokens` | Token count (optional) |
 
-**Precondition:** `session capture` must have been called at the start of the current plan phase to populate `session_id` in `.plan/status.json` via `manage-status`.
+**Precondition (Claude only):** `session capture` must have been called at the start of the current plan phase to populate `session_id` in `.plan/status.json` via `manage-status`. On OpenCode this precondition does not apply because `session capture` is a no-op there.
 
 **Claude:** Read `session_id` from `.plan/status.json` via `manage-status` (set by `session capture`). Open the corresponding `.jsonl` under `~/.claude/projects/<project>/sessions/`. Sum `usage.input_tokens + usage.output_tokens` from assistant messages since the last `metrics capture` call for this phase. Returns `no-op` if `session_id` missing or transcript not found.
 
-**OpenCode:** Read `session_id` from `.plan/status.json` via `manage-status` (set by `session capture`). Attempt to query the OpenCode session storage (JSON files at `storage/session/{projectID}/{sessionID}.json`). Returns `no-op` if no session ID stored or query fails.
+**OpenCode:** Returns `no-op` with `reason: automatic token capture requires a platform-provided session id, which OpenCode does not expose (issue #9292)` and `alternative: pass --total-tokens manually`. If `--total-tokens` is provided, the runtime stores it directly without consulting any session source.
 
 ### `subagent dispatch`
 
@@ -552,7 +552,7 @@ The hook script reads `session_id` from stdin JSON and writes it to `$CLAUDE_ENV
 
 ### OpenCode Hook
 
-OpenCode implements `OPENCODE_SESSION_ID` via PR #9289 and Issue #9292. The session ID is injected into shell environments automatically — no hook installation needed. `project initial-setup` documents this behavior for OpenCode users.
+OpenCode does not currently expose a platform-provided session id to the shell environment. Upstream issue #9292 tracks the request; PR #9289 attempting to land it was closed unmerged. `project initial-setup` skips hook installation on OpenCode and `session capture` returns `no-op`.
 
 ### Why Hooks Are Required
 

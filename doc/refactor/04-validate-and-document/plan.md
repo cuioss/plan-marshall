@@ -33,7 +33,7 @@ Claude target drift detection is specified in [02 — Build System](02-build-sys
 
 The OpenCode target generates output under `target/opencode/` (see [02 — Build System](02-build-system)). Validation means:
 - `target/opencode/opencode.json` is valid JSON with correct `$schema`
-- All referenced skill directories exist in `target/opencode/skills/`
+- All referenced skill directories exist in `target/opencode/skill/`
 - Agent files are valid markdown with required frontmatter
 - All agent tools are mapped (build fails with exit 2 on unmapped tools)
 - Agents using `Task` or `Skill` have `task`/`skill` permissions correctly mapped
@@ -102,37 +102,21 @@ The OpenCode target generates output under `target/opencode/` (see [02 — Build
 
 ## Documentation
 
-### `doc/multi-target-marketplace.adoc`
+The six cluster plan documents in `doc/refactor/` (`README.md`, `principles.md`, and `01` through `06`) contain comprehensive design rationale, API contracts, architecture decisions, and migration guidance. They are the basis for the canonical project documentation produced by this cluster.
 
-Sections:
-
-| Section | Contents |
-|---------|----------|
-| **Overview** | Why multi-target, what changed, what stayed the same |
-| **Architecture** | Source → Target Engine → Platform Runtime → Generated Outputs |
-| **Platform Runtime API** | Full operation reference, TOON schemas, no-op behavior |
-| **Target Framework** | How to add a new target (implement `TargetBase`, register, validate) |
-| **Source Format Contract** | What makes a skill "target-friendly" |
-| **Distribution** | Claude marketplace, OpenCode config, future targets |
-| **Migration Guide** | For bundle authors: how to make skills target-compatible |
-| **Marshall-Steward Multi-Platform** | How the wizard works across platforms |
-| **Limitations** | Unmapped tools, metrics no-ops, MCP diagnostics, terminal title |
-
-### Project Documentation from Refactor Plans
-
-The six cluster plan documents in `doc/refactor/` (`README.md`, `principles.md`, and `01` through `06`) already contain comprehensive design rationale, API contracts, architecture decisions, and migration guidance. These should be the basis for proper project documentation.
-
-**Task:** After implementation stabilizes, produce canonical project documentation from the refactor plans:
+**Task:** After implementation stabilizes, port the refactor plans into their canonical homes:
 
 | Source | Destination | What to Port |
 |--------|-------------|--------------|
-| `doc/refactor/README.md` | `doc/multi-target-marketplace.adoc` (or `README.md` at repo root) | Overview, dependency graph, terminology |
+| `doc/refactor/README.md` | `doc/multi-target-marketplace.adoc` (umbrella overview) | Overview, dependency graph, terminology, source → engine → runtime → output architecture |
 | `doc/refactor/principles.md` | `doc/principles.md` | Cross-cutting constraints, API design rules, no-op policy |
-| `doc/refactor/01-design-platform-api/plan.md` | `doc/platform-runtime-api.md` | Full 13-operation API reference, TOON schemas, bootstrap invocation pattern |
-| `doc/refactor/02-build-system/plan.md` | `doc/build-system.md` | Target framework, generator CLI, drift detection, OpenCode emitter |
-| `doc/refactor/03-refactor-for-portability/plan.md` | `doc/migration-guide.md` | Audit checklist, skill rewrites, permission migration, bootstrap migration |
+| `doc/refactor/01-design-platform-api/plan.md` | `doc/platform-runtime-api.md` | Full 13-operation API reference, TOON schemas, bootstrap invocation pattern, target framework + extension guide |
+| `doc/refactor/02-build-system/plan.md` | `doc/build-system.md` | Target framework, generator CLI, drift detection, OpenCode emitter, source-format contract |
+| `doc/refactor/03-refactor-for-portability/plan.md` | `doc/migration-guide.md` | Audit checklist, skill rewrites, permission migration, bootstrap migration, marshall-steward multi-platform behavior |
 | `doc/refactor/05-distribution/plan.md` | `doc/distribution.md` | CI/CD, artifact hosting, end-user installation (Claude + OpenCode) |
 | `doc/refactor/06-developer-workflow/plan.md` | `doc/developer-workflow.md` | Inner loop for Claude Code and OpenCode developers |
+
+`doc/multi-target-marketplace.adoc` is the umbrella entry point — it carries the overview, architecture, and limitations summary, then cross-references the per-topic documents above. Per-topic documents own their domain content; the umbrella does not duplicate it.
 
 **Rules for porting:**
 - Remove "plan" language ("this cluster will...", "when complete...") — rewrite in present tense as authoritative documentation
@@ -153,7 +137,7 @@ The six cluster plan documents in `doc/refactor/` (`README.md`, `principles.md`,
 **OpenCode:**
 - Generated output — best-effort support
 - All agents mapped with `task`/`skill` permissions (subagent dispatch and skill loading supported)
-- Model aliases preserved (`opus` → `anthropic/claude-opus-4-5`); no forced downgrades to cheaper models
+- Model aliases preserved (`opus` → `anthropic/claude-opus-4-7`); no forced downgrades to cheaper models
 - No terminal title hooks
 - No automatic token usage extraction (requires `--total-tokens` manual input)
 - Direct script execution (no `execute-script.py`)
@@ -171,7 +155,7 @@ The entire refactor is complete when:
 ### For Cluster 02 (Build System)
 - [ ] `marketplace/targets/` exists with framework
 - [ ] Claude target produces zero drift on committed source
-- [ ] OpenCode target produces valid output under `target/opencode/` with `skills/`, `agents/`, `commands/`, and `opencode.json`
+- [ ] OpenCode target produces valid output under `target/opencode/` with `skill/`, `agent/`, `command/`, and `opencode.json`
 - [ ] `./pw generate -- --target {claude,opencode} --output target/{claude,opencode}` works
 - [ ] `marketplace/adapters/` retired
 

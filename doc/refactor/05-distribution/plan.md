@@ -196,7 +196,7 @@ Git-based sync with selective import, ref pinning, and change detection.
 
 **4. Local copy/symlink**
 ```bash
-cp -r target/opencode/skills/ ~/.config/opencode/skills/
+cp -r target/opencode/skill/ ~/.config/opencode/skills/   # rename singular → plural for native discovery
 ```
 
 **Analysis:** OpenCode's ecosystem is more mature for distribution than Claude Code. The `opencode-marketplace` CLI and `opencode-remote-config` plugin provide established patterns we should support.
@@ -489,18 +489,18 @@ See `doc/distribution.md` (produced from this plan; see [04 — Validate and Doc
 
 ### opencode-marketplace
 
-The `opencode-marketplace` CLI expects a directory with `skills/`, `agents/`, and `commands/` subdirectories.
+The `opencode-marketplace` CLI (third-party, `NikiforovAll/opencode-marketplace`) expects a source-repo layout with singular `skill/`, `agent/`, and `command/` subdirectories.
 
 **Our GitHub Pages output:**
 ```
 https://{org}.github.io/plan-marshall/opencode/latest/
-├── skills/
-├── agents/
-├── commands/
+├── skill/
+├── agent/
+├── command/
 └── opencode.json
 ```
 
-This matches the expected structure for OpenCode. Note: `opencode-marketplace` CLI may need enhancement to support static file server URLs (see Installation section for alternatives).
+This matches the layout `opencode-marketplace` consumes. The CLI installs into OpenCode's native plural directories at runtime (`~/.config/opencode/skills/`, etc.). Note: `opencode-marketplace` CLI may need enhancement to support static file server URLs (see Installation section for alternatives).
 
 ---
 

@@ -62,7 +62,7 @@ Search all skill bodies for:
 |---------|------|----|
 | `tools-fix-intellij-diagnostics` | `mcp__ide__getDiagnostics` tool call | `platform-runtime health-check --checks mcp-diagnostics` |
 
-### Skills Unaffected (remaining skills, 9 agents, 1 command)
+### Skills Unaffected (remaining skills, 8 agents, 1 command)
 
 No body changes needed. These are already platform-agnostic.
 

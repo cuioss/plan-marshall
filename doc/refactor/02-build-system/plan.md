@@ -89,19 +89,21 @@ Adding a target: implement `TargetBase`, register in `TARGET_REGISTRY`.
 
 ## OpenCode Target (Format Emitter)
 
-**Behavior:** Full emitter. Translates Claude Code source format into OpenCode's expected structure inside the output directory (default: `target/opencode/`):
+**Behavior:** Full emitter. Translates Claude Code source format into the layout expected by the `opencode-marketplace` CLI (singular subdirectory names — see [05 — Distribution](05-distribution)) inside the output directory (default: `target/opencode/`):
 
 ```
 target/opencode/
-├── skills/
+├── skill/
 │   └── {bundle}-{skill}/
 │       └── SKILL.md
-├── agents/
+├── agent/
 │   └── {agent}.md
-├── commands/
+├── command/
 │   └── {command}.md
 └── opencode.json
 ```
+
+**Singular vs plural directory names.** OpenCode's native runtime discovery uses plural directories (e.g. `~/.config/opencode/skills/`); the `opencode-marketplace` CLI's expected source-repo layout uses singular (`skill/`, `agent/`, `command/`). The emitter writes the singular form because the primary distribution path is `opencode-marketplace install`. Workflows that need the plural form (`sync-opencode` deployment to `~/.config/opencode/`, direct `OPENCODE_CONFIG_DIR` usage) rename singular → plural during deployment — see [06 — Developer Workflow](06-developer-workflow).
 
 **Output directory is configurable.** The CLI accepts `--output <dir>` (default: `target/opencode/`). This is a **build output directory**, not `.opencode/` at the project root — placing generated artifacts at `.opencode/skills/` would conflict with committed project-local skills (see [06 — Developer Workflow](06-developer-workflow)).
 
@@ -175,12 +177,12 @@ Research shows OpenCode's instruction injection mechanism differs from Claude Co
 
 - **Claude Code:** `CLAUDE.md` is injected as a "system reminder" that persists through compaction and is re-injected into context throughout the session
 - **OpenCode:** `AGENTS.md` is loaded once at session start. As context compacts, instructions may be lost
-- **Known issue (#8892):** Anthropic models in OpenCode sometimes ignore `instructions` array content entirely (fixed in OpenCode v1.2.x via PR #11316)
+- **Known issue (#8892):** Anthropic models in OpenCode sometimes ignore `instructions` array content entirely (open upstream)
 - **Known issue (#11441):** OpenCode's Plan agent does not enforce plan rules architecturally — it relies on the LLM to respect them voluntarily
 
 **Temperature does not solve this.** OpenCode supports `temperature: 0.1` for more deterministic output, but this affects creativity, not instruction comprehension. A model that cannot understand complex rules at `temperature=0.7` will not suddenly understand them at `temperature=0.1`.
 
-**Practical implication:** For skills with complex multi-step workflows (like plan-marshall's 55 skills), `opus` is strongly recommended. Mapping `opus` to `sonnet` to save costs will degrade reliability.
+**Practical implication:** For skills with complex multi-step workflows (like plan-marshall's 54 skills), `opus` is strongly recommended. Mapping `opus` to `sonnet` to save costs will degrade reliability.
 
 ### Agent Mapping
 
@@ -249,7 +251,7 @@ target/claude/
 This cluster is complete when:
 1. `marketplace/targets/` exists with `TargetBase`, registry, and CLI
 2. Claude target produces zero drift on committed source
-3. OpenCode target produces valid output under `target/opencode/` with `skills/`, `agents/`, `commands/`, and `opencode.json`
+3. OpenCode target produces valid output under `target/opencode/` with `skill/`, `agent/`, `command/`, and `opencode.json`
 4. `./pw generate -- --target {claude,opencode}` works
 5. `marketplace/adapters/` retired
 

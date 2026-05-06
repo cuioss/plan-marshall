@@ -99,8 +99,8 @@ OpenCode discovers skills from multiple locations in priority order:
 | 2 | `~/.config/opencode/skills/` | **User-global** | **Recommended for development deployment** |
 | 3 | `.claude/skills/` | Project-local | Claude compatibility |
 | 4 | `~/.claude/skills/` | User-global | Claude compatibility |
-| 5 | `~/.claude/plugins/cache/` | Claude plugins | Cached Claude Code plugins |
-| 6 | `~/.claude/plugins/marketplaces/` | Claude plugins | Installed from marketplace |
+| 5 | `.agents/skills/` | Project-local | Cross-platform agent dir |
+| 6 | `~/.agents/skills/` | User-global | Cross-platform agent dir |
 
 **Key insight:** `~/.config/opencode/skills/` is OpenCode's equivalent of Claude Code's `~/.claude/plugins/cache/`. This is the correct target for local development deployment.
 
@@ -112,9 +112,9 @@ OpenCode supports `OPENCODE_CONFIG_DIR` environment variable to point to a custo
 OPENCODE_CONFIG_DIR=/path/to/custom/opencode opencode
 ```
 
-This custom directory is searched for `skills/`, `agents/`, `commands/`, `plugins/` just like the standard `~/.config/opencode/` directory. It loads **after** global config and `.opencode` directories, so it can override them.
+This custom directory is searched for `skills/`, `agents/`, `commands/`, `plugins/` just like the standard `~/.config/opencode/` directory. Per OpenCode's documented config precedence, the env-var-pointed config is loaded **before** project-local `.opencode` directories — so committed `.opencode` content in the project root takes priority over the env-var directory, not the other way around. Use this override to inject content the project doesn't already provide; it does not let you override committed `.opencode` skills.
 
-**Use case:** Point `OPENCODE_CONFIG_DIR` to the generated `target/opencode/` output directory. This avoids polluting the user's global `~/.config/opencode/skills/` and provides complete isolation.
+**Use case:** Point `OPENCODE_CONFIG_DIR` to a plural-renamed staging copy of `target/opencode/` (see Option B below) when the project has no committed `.opencode/skills/` of its own. Pointing the env var directly at `target/opencode/` does NOT work because OpenCode's native discovery reads plural directories while the emitter writes singular. Best-effort isolation: the user's global `~/.config/opencode/skills/` and any project-local `.opencode/` content are still discovered alongside the env-var directory.
 
 ### Recommended: Two-Phase Workflow (Generate + Deploy)
 
@@ -125,25 +125,27 @@ This custom directory is searched for `skills/`, `agents/`, `commands/`, `plugin
 ./pw generate -- --target opencode --output target/opencode/
 ```
 
-Output structure:
+Output structure (singular subdirectories — matches `opencode-marketplace` source-repo layout, see [02 — Build System](02-build-system) and [05 — Distribution](05-distribution)):
 ```
 target/opencode/
-├── skills/
+├── skill/
 │   └── plan-marshall-plan-marshall/
 │       └── SKILL.md
 │   └── pm-dev-java-java-core/
 │       └── SKILL.md
 │   └── ...
-├── agents/
+├── agent/
 │   └── automated-review-agent.md
 │   └── ...
-├── commands/
+├── command/
 │   └── tools-fix-intellij-diagnostics.md
 │   └── ...
 └── opencode.json
 ```
 
 **Namespacing:** Skills are prefixed with bundle name to avoid collisions in the global directory (e.g., `plan-marshall-plan-marshall`, `pm-dev-java-java-core`). OpenCode skill names must not contain consecutive `--`.
+
+**Singular vs plural:** OpenCode's native discovery reads plural directories (`skills/`, `agents/`, `commands/`) under `~/.config/opencode/`, `.opencode/`, etc. The emitter writes singular because the primary distribution path is `opencode-marketplace install`, which expects singular source layout. The deploy paths below rename singular → plural where needed.
 
 #### Phase 2: Deploy (Choose One)
 
@@ -159,9 +161,9 @@ python3 marketplace/bundles/plan-marshall/skills/sync-opencode/scripts/sync_open
 ```
 
 **What the deploy script does:**
-- Copies `skills/` → `~/.config/opencode/skills/`
-- Copies `agents/` → `~/.config/opencode/agents/`
-- Copies `commands/` → `~/.config/opencode/commands/`
+- Copies `target/opencode/skill/` → `~/.config/opencode/skills/` (singular → plural)
+- Copies `target/opencode/agent/` → `~/.config/opencode/agents/`
+- Copies `target/opencode/command/` → `~/.config/opencode/commands/`
 - Uses `rsync --delete` for exact mirroring (same pattern as `sync-plugin-cache`)
 - Namespaces skills to avoid collisions
 
@@ -174,27 +176,34 @@ python3 marketplace/bundles/plan-marshall/skills/sync-opencode/scripts/sync_open
 - Pollutes user's global OpenCode config
 - Must be careful with namespacing to avoid overwriting other skills
 
-**Option B: Use OPENCODE_CONFIG_DIR (Recommended for Isolated Development)**
+**Option B: Use OPENCODE_CONFIG_DIR (Lightweight Iteration)**
 
-Set the environment variable to point to the build output:
+Generate to a staging directory whose subdirectories are renamed to plural so OpenCode's native discovery finds them, then point `OPENCODE_CONFIG_DIR` at that staging directory:
 
 ```bash
-# Generate
+# Generate (singular layout)
 ./pw generate -- --target opencode --output target/opencode/
 
-# Launch OpenCode with custom config directory
-OPENCODE_CONFIG_DIR=/path/to/plan-marshall/target/opencode opencode
+# Stage with plural names so OpenCode's native discovery finds the content
+mkdir -p target/opencode-stage
+cp -r target/opencode/skill   target/opencode-stage/skills
+cp -r target/opencode/agent   target/opencode-stage/agents
+cp -r target/opencode/command target/opencode-stage/commands
+cp    target/opencode/opencode.json target/opencode-stage/
+
+# Launch OpenCode with the staged directory
+OPENCODE_CONFIG_DIR=/path/to/plan-marshall/target/opencode-stage opencode
 ```
 
 **Pros:**
-- Complete isolation — no pollution of user-global config
-- No copy step — OpenCode reads directly from build output
-- Fastest iteration: generate → test (no deploy step)
+- No pollution of user-global config (no write to `~/.config/opencode/`)
+- Fastest iteration: regenerate the staged dir and restart OpenCode
 
 **Cons:**
 - Must remember to set env var every time
-- May not discover user's other global skills (unless they are also in the custom dir)
-- The custom config dir loads AFTER global config, so it overrides same-key settings from earlier configs
+- Requires the singular → plural staging step (cannot point env var directly at `target/opencode/`)
+- Not full isolation: user's global `~/.config/opencode/skills/` and any project-local `.opencode/` content are still discovered
+- Project-local `.opencode/` overrides the env-var directory, so a committed `.opencode/skills/foo/` will shadow a staged `target/opencode-stage/skills/foo/`
 
 **Option C: opencode-marketplace with File URL (For Testing Distribution)**
 
@@ -235,8 +244,9 @@ python3 .plan/execute-script.py plan-marshall:sync-opencode:sync_opencode \
   --target ~/.config/opencode/
 opencode                                      # Test (auto-discovers)
 
-# OR deploy and test (Option B - isolated with env var)
-OPENCODE_CONFIG_DIR=/path/to/plan-marshall/target/opencode opencode
+# OR deploy and test (Option B - lightweight env var; requires plural staging dir)
+# (See Option B above for the singular → plural staging steps)
+OPENCODE_CONFIG_DIR=/path/to/plan-marshall/target/opencode-stage opencode
 ```
 
 ### Deployment Script Design (`sync-opencode`)
@@ -245,13 +255,13 @@ Following the same pattern as `sync-plugin-cache`:
 
 ```python
 # sync_opencode.py
-# Source: target/opencode/
-# Destination: ~/.config/opencode/ (or custom path via --target)
+# Source: target/opencode/ (singular subdirs: skill/, agent/, command/)
+# Destination: ~/.config/opencode/ (plural subdirs: skills/, agents/, commands/) or custom via --target
 
 # Behavior:
-# - rsync skills/ to ~/.config/opencode/skills/ (with namespace prefix)
-# - rsync agents/ to ~/.config/opencode/agents/
-# - rsync commands/ to ~/.config/opencode/commands/
+# - rsync target/opencode/skill/   -> {target}/skills/   (singular -> plural rename)
+# - rsync target/opencode/agent/   -> {target}/agents/
+# - rsync target/opencode/command/ -> {target}/commands/
 # - --delete for exact mirroring
 # --dry-run for preview
 # --bundles for subset
@@ -270,10 +280,10 @@ Following the same pattern as `sync-plugin-cache`:
 |--------|-------------|---------------------------|-------------------------------|
 | **Edit source** | `marketplace/bundles/` | `marketplace/bundles/` | `marketplace/bundles/` |
 | **Build step** | None (source = runtime) | Generate to `target/opencode/` | Generate to `target/opencode/` |
-| **Deploy step** | `sync-plugin-cache` to `~/.claude/plugins/cache/` | `sync-opencode` to `~/.config/opencode/` | None (env var points to build output) |
+| **Deploy step** | `sync-plugin-cache` to `~/.claude/plugins/cache/` | `sync-opencode` (singular → plural rename) to `~/.config/opencode/` | Singular → plural staging copy, then env var points at staging dir |
 | **Reload** | New session or restart | Restart OpenCode | Restart OpenCode |
-| **Iteration time** | ~1s (sync) | ~3s (generate + deploy) | ~2s (generate only) |
-| **Isolation** | Shared cache | Shared global dir | Complete isolation |
+| **Iteration time** | ~1s (sync) | ~3s (generate + deploy) | ~3s (generate + stage) |
+| **Isolation** | Shared cache | Shared global dir | Partial — global + project `.opencode/` still discovered |
 | **Namespacing** | Bundle directory | `{bundle}-{skill}` prefix | Bundle directory |
 | **Best for** | Rapid skill editing | Daily development | Isolated testing, CI |
 
@@ -284,7 +294,7 @@ Following the same pattern as `sync-plugin-cache`:
 This cluster is complete when:
 1. Claude Code: `sync-plugin-cache` workflow is documented and works
 2. OpenCode: `sync-opencode` deploy script copies generated skills to `~/.config/opencode/skills/`
-3. OpenCode: `OPENCODE_CONFIG_DIR` workflow (point to `target/opencode/`) works
+3. OpenCode: `OPENCODE_CONFIG_DIR` workflow (point to a plural-renamed staging directory derived from `target/opencode/`) works
 4. OpenCode: `opencode-marketplace install file:///` workflow is documented
 5. All workflows have been tested by at least one developer
 6. README at repo root documents all workflows for contributors
