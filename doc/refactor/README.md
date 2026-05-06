@@ -17,11 +17,12 @@ Multi-target portability without changing the source-of-truth format:
 
 ## Cluster Structure
 
-This refactor is organized into 6 clusters plus cross-cutting principles:
+This refactor is organized into 7 clusters plus cross-cutting principles:
 
 | Cluster | Focus | Output |
 |---------|-------|--------|
 | [Principles](principles.md) | Rules that govern all clusters | Shared contract |
+| [00 — Cleanup / Precondition](00-cleanup-precondition/plan.md) | One-time source-side prose cleanup of skill bodies (Claude-only plumbing prose, tool-name rules) | Cleaned skill bodies + `references/{topic}.md` files; benefits Claude Code today, unblocks OpenCode tomorrow |
 | [01 — Design Platform API](01-design-platform-api/plan.md) | Goal-based platform-runtime abstraction | API contract + router spec |
 | [02 — Build System](02-build-system/plan.md) | Target generator, drift detection, OpenCode emitter | `marketplace/targets/` framework |
 | [03 — Refactor for Portability](03-refactor-for-portability/plan.md) | Clean code of platform leakage | Updated skills + marshal.json |
@@ -33,6 +34,9 @@ This refactor is organized into 6 clusters plus cross-cutting principles:
 
 ```
 Principles (governs all)
+    │
+    ▼
+00-cleanup-precondition (precondition — pure source housekeeping)
     │
     ▼
 01-design-platform-api ──────┐
@@ -51,9 +55,13 @@ Principles (governs all)
               parallel)       parallel)
 ```
 
+**00 runs first** because it is pure source-side prose cleanup with no dependencies. It strips Claude-only plumbing prose from skill bodies, benefits Claude Code immediately, and leaves clean source for the rest of the refactor to operate on. Clusters 01, 02, 05, 06 do not depend on 00 directly but are easier to design and validate against cleaned source.
+
 **01 must complete before 03** because the structural refactoring (03) depends on knowing the platform-runtime API surface (01).
 
 **02 can proceed in parallel with 01** because the target engine's OpenCode emitter is a separate concern from the runtime API. However, 03's migration of the adapter into the target engine requires 02 to exist.
+
+**03 must run after 00** so its behavioural rewrites apply on already-clean source.
 
 **04 runs last** because validation criteria depend on all implementation being in place.
 

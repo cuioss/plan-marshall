@@ -154,6 +154,14 @@ The six cluster plan documents in `doc/refactor/` (`README.md`, `principles.md`,
 
 The entire refactor is complete when:
 
+### For Cluster 00 (Cleanup / Precondition)
+- [ ] No skill body contains a Claude tool name (`EnterPlanMode`, `ExitPlanMode`, `AskUserQuestion`, `Agent(subagent_type=…)`, `TaskCreate`, `Task:`, etc.) inside an instructional rule
+- [ ] No skill body contains a section describing a Claude-only hook mechanism (terminal title, status-line, `SessionStart`, `UserPromptSubmit`, `PostToolUse`, etc.) — such content lives in `marketplace/bundles/{bundle}/skills/{skill}/references/{topic}.md`
+- [ ] No skill body contains a section describing a Claude-only cache or session-resolver pipeline — such content lives in `references/{topic}.md`
+- [ ] Every `.claude/` and `~/.claude/...` mention in skill bodies is either inside a `platform-runtime` call site (deferred to cluster 03) or removed because the prose described platform plumbing now living in `references/`
+- [ ] The `plan-marshall` entry skill has its "Terminal Title Integration" and "Session ID Resolver" sections moved to `references/terminal-title.md` and `references/session-id-resolver.md` respectively
+- [ ] `./pw verify` passes (canary — cleanup must not regress Claude Code)
+
 ### For Cluster 01 (Design Platform API)
 - [ ] API contract document exists covering all 13 operations
 - [ ] TOON schemas defined for success, error, no-op
@@ -179,9 +187,7 @@ The entire refactor is complete when:
 - [ ] `opencode-marketplace install {pages-url}` succeeds
 
 ### For Cluster 03 (Refactor for Portability)
-- [ ] No `.claude/` or `~/.claude` leakage in plan-marshall skill bodies
-- [ ] No Claude tool names (`EnterPlanMode`, `AskUserQuestion`, `Agent(subagent_type=…)`, etc.) appear in instructional rules; rules are platform-agnostic
-- [ ] Claude-only mechanism descriptions (terminal title, session id resolver, hook plumbing) live in per-skill `references/{topic}.md`, not in skill bodies
+- [ ] No remaining `.claude/` or `~/.claude` **behavioural** references (writes, reads, hook installation) in plan-marshall skill bodies — all routed through `platform-runtime` (prose cleanup is verified under cluster 00)
 - [ ] `tools-script-executor` is target-aware: same notation resolves correctly via the Claude-cache resolver on Claude and the OpenCode-skill-roots resolver on OpenCode
 - [ ] `marshall-steward` uses goal-based calls
 - [ ] `marshal.json` template includes `runtime.target`
