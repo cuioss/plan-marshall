@@ -92,10 +92,11 @@ This copies to `~/.claude/plugins/cache/plan-marshall/` via rsync `--delete`.
 
 ## Multi-Target Distribution (In Design)
 
-See `doc/refactor/` for the 6-cluster plan to distribute to both Claude Code and OpenCode:
+See `doc/refactor/` for the 7-cluster plan to distribute to both Claude Code and OpenCode:
 
 | Cluster | Document | Topic |
 |---------|----------|-------|
+| 00 | `00-cleanup-precondition/plan.md` | Source-side prose cleanup of skill bodies (precondition) |
 | 01 | `01-design-platform-api/plan.md` | `platform-runtime` API (13 operations) |
 | 02 | `02-build-system/plan.md` | Target generator, OpenCode emitter |
 | 03 | `03-refactor-for-portability/plan.md` | Skill rewrites for portability |

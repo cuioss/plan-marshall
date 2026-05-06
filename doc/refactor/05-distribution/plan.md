@@ -180,7 +180,7 @@ bunx opencode-marketplace update my-plugin
 ```
 Conventions-based discovery. Supports git URLs, local directories, and subfolders.
 
-**3. opencode-remote-config plugin**
+**2. opencode-remote-config plugin**
 ```json
 {
   "repositories": [
@@ -194,7 +194,7 @@ Conventions-based discovery. Supports git URLs, local directories, and subfolder
 ```
 Git-based sync with selective import, ref pinning, and change detection.
 
-**4. Local copy/symlink**
+**3. Local copy/symlink**
 ```bash
 cp -r target/opencode/skill/ ~/.config/opencode/skills/   # rename singular → plural for native discovery
 ```

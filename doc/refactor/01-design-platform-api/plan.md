@@ -368,16 +368,16 @@ This operation does **not** spawn the subagent itself. Both Claude Code and Open
 2. **Parse frontmatter**: Read `name`, `description`, and `tools:`.
 3. **Map tools to OpenCode permissions**: Transform the `tools:` list using the mapping defined in `marketplace/targets/opencode/mapping.json` (see [02 — Build System](02-build-system) for the full `tool_permissions` table).
 4. **Build `task` payload**: Construct the `task` tool invocation. Note: OpenCode permissions are set in agent frontmatter (`tools:` field) or `opencode.json` (`agent.{name}.permission`), not at invocation time.
-   5. **Return TOON** with:
-    ```
-    status: success
-    platform: opencode
-    invocation:
-      tool: task
-      description: "..."
-      prompt: "..."
-      subagent_type: "{agent-name}"
-    ```
+5. **Return TOON** with:
+   ```
+   status: success
+   platform: opencode
+   invocation:
+     tool: task
+     description: "..."
+     prompt: "..."
+     subagent_type: "{agent-name}"
+   ```
 
 #### No-Op Policy
 
