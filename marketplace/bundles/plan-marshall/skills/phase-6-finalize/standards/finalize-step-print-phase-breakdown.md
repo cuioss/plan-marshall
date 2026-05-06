@@ -8,7 +8,7 @@ order: 995
 
 Pure executor for the `default:finalize-step-print-phase-breakdown` finalize step. Replaces the per-step `[OK]` Finalize-steps block with the verbatim `## Phase Breakdown` table content from `metrics.md`.
 
-This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `default:finalize-step-print-phase-breakdown` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
+This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `finalize-step-print-phase-breakdown` in `manifest.phase_6.steps` (bare name — the manifest holds un-prefixed step ids; the dispatcher prepends `default:` when looking up the dispatch-table row). When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
 
 ## Purpose
 
