@@ -112,3 +112,7 @@ See `doc/refactor/` for the 6-cluster plan to distribute to both Claude Code and
 - `pyproject.toml` — Tool configs (ruff, mypy, pytest)
 - `build.py` — Build script with module filtering
 - `marketplace/.claude-plugin/marketplace.json` — Master marketplace manifest
+
+## Git Commit Guidelines
+
+- Git commit Co-Authored-By line: Use `Co-Authored-By: opencode/{model-version}` — include model name and version, no email address, no marketing claims.
