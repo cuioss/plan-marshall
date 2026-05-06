@@ -1,0 +1,97 @@
+# 03 — Refactor for Portability — TODO
+
+## Core Rules
+
+- Work **one item at a time**. Do not start the next item until the current one is fully implemented, tested, and documented.
+- Each task has up to three checkboxes: **implementation**, **testing** (whenever a script is touched or a workflow has an exercisable surface), **documentation** (whenever the SKILL body or wizard step semantics change).
+- All work happens on a dedicated feature branch (see "Setup" below). Never commit on `main`.
+- The PR is created only after every task is done **and** the local quality gate has passed.
+
+## Setup
+
+- [ ] Switch to a feature branch: `git switch -c feature/refactor-03-portability`
+- [ ] Confirm clusters 00, 01, and 02 have been merged to `main` and pulled locally
+
+## Tasks
+
+### 1. `marshal.json` template — `runtime.target` field
+- [ ] Implementation: extend `phase-1-init`'s template scaffolding to include `runtime.target` defaulting to `claude`. `project initial-setup` already accepts `--target` (cluster 01) — confirm it writes the field.
+- [ ] Testing: integration test confirms a fresh-init plan has `runtime.target: claude` (or `opencode` when `--target opencode` was passed)
+
+### 2. `phase-1-init` — call `session capture` at start
+- [ ] Implementation: add `session capture` invocation as the first step of the phase
+- [ ] Testing: integration test on Claude confirms `session_id` lands in `status.json` via `manage-status`; on OpenCode confirms the no-op return value is handled gracefully and the phase proceeds
+
+### 3. `phase-5-execute` — replace `<usage>` parsing with `metrics capture`
+- [ ] Implementation: remove `<usage>` tag parsing; add `session capture` at start; replace token-extraction with `platform-runtime metrics capture --phase 5-execute`
+- [ ] Testing: integration tests on both targets
+
+### 4. `phase-6-finalize` — same treatment
+- [ ] Implementation: add `session capture`; replace direct `session_id = Claude UUID` assumption with `manage-status` read; use `metrics capture --phase 6-finalize`
+- [ ] Testing: integration tests on both targets
+
+### 5. `plan-retrospective` — replace transcript analysis
+- [ ] Implementation: add `session capture`; replace transcript walking with `metrics capture --phase retrospective`; for permission-prompt analysis use `permission analyze --checks suspicious`; produce target-agnostic report
+- [ ] Testing: integration tests on both targets; OpenCode-side asserts no transcript-walking code runs
+
+### 6. `marshall-steward` wizard rewrite
+- [ ] Implementation: rewrite the wizard steps per cluster 03 "marshall-steward Wizard Rewrite" table — Steps 1, 3, 4, 5, 13. Step 1 / 3 use bootstrap-direct invocation; Steps 4 onwards use the executor.
+- [ ] Testing: end-to-end fresh-init walks both targets; verify settings/hook outputs match the target
+
+### 7. `tools-permission-doctor` — delegate to `permission analyze`
+- [ ] Implementation: replace direct settings reads with `platform-runtime permission analyze --checks <checks>`; remove Claude-specific anti-pattern lists from the skill body (now lives in the runtime)
+- [ ] Testing: existing doctor tests migrated; output TOON shape unchanged
+
+### 8. `tools-permission-fix` — delegate to `permission fix`
+- [ ] Implementation: replace direct settings writes with `platform-runtime permission fix --operation <op>`. All three executor operations (`ensure-executor`, `cleanup-scripts`, `migrate-executor`) implemented on both targets per the per-target shape table in cluster 03
+- [ ] Testing: per-operation tests on both targets including the OpenCode permission shape assertions
+
+### 9. `workflow-permission-web` — delegate to `permission web-*`
+- [ ] Implementation: replace `WebFetch(...)` string parsing with `permission web-analyze` / `permission web-apply` calls
+- [ ] Testing: per-target tests covering analyze + apply (add and remove)
+
+### 10. `tools-script-executor` — target-aware generator
+- [ ] Implementation: extend the executor generator to read `runtime.target` from `marshal.json` and emit the matching resolver template (Claude-cache resolver or OpenCode-skill-roots resolver — see cluster 01 "Executor Resolution Per Target"). Notation `{bundle}:{skill}:{script}` unchanged.
+- [ ] Testing: per-target unit tests for the resolver tables; integration test that the generated executor resolves a sample notation correctly on each target
+
+### 11. `tools-file-ops` and `manage-worktree` — `marshal.json` `worktree.path`
+- [ ] Implementation: replace hardcoded `.claude/worktrees/{plan_id}/` with `marshal.json` `worktree.path` prefix (default `.claude/worktrees/` for Claude, `.opencode/worktrees/` for OpenCode). Both skills consult the same source.
+- [ ] Testing: per-target tests confirming worktree creation under the expected path
+
+### 12. `tools-input-validation` — target-specific session_id validation
+- [ ] Implementation: branch validation rule on `runtime.target`. Claude validates UUID-shape token; OpenCode validates whatever shape the upstream session-id format takes (or accepts opaque strings if no documented shape exists)
+- [ ] Testing: validation tests for both targets
+
+### 13. `tools-fix-intellij-diagnostics` (command) — `health-check`
+- [ ] Implementation: replace direct `mcp__ide__getDiagnostics` invocation with `platform-runtime health-check --checks mcp-diagnostics`
+- [ ] Testing: command runs on Claude (real MCP); on OpenCode the no-op response surfaces as a documented user-facing message
+
+### 14. `bootstrap_plugin.py` — multi-platform path resolution
+- [ ] Implementation: extend `bootstrap_plugin.py` to walk the same target-aware root list documented in cluster 01 "Bootstrap Invocation". Convert matched location to absolute path. Default target = claude when no marshal.json exists.
+- [ ] Testing: per-target path-resolution tests including the OpenCode 7-root walk
+
+### 15. Final audit pass
+- [ ] Implementation: grep `marketplace/bundles/*/skills/*/SKILL.md` for any remaining behavioural Claude-specific reference (writes, reads, hook installation outside `platform-runtime` call sites). Each remaining occurrence must be a `platform-runtime` call site or a `references/{topic}.md` pointer.
+- [ ] Testing: `./pw verify` passes on all 10 bundles
+
+## Quality Gate
+
+- [ ] Run the quality gate: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "quality-gate"` (Bash timeout ≥ 600000 ms). Inspect TOON.
+- [ ] Run full verify: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "verify"` (Bash timeout ≥ 600000 ms).
+- [ ] Both `status: success` before "Ship".
+
+## Ship
+
+- [ ] Commit all changes
+- [ ] Push the feature branch
+- [ ] Create the PR via the CI integration script
+- [ ] **Wait 5 minutes** for review automation
+- [ ] Handle review comments (apply sensible fixes; ask before skipping)
+- [ ] **Wait for user review**
+
+## Close
+
+- [ ] User approval
+- [ ] Merge via the CI integration script
+- [ ] `git switch main && git pull origin main`
+- [ ] Mark this TODO as **completed**
