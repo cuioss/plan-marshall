@@ -123,6 +123,39 @@ def format_duration(seconds: float) -> str:
     return f'{h}h{m}m'
 
 
+def format_tokens_short(n: int) -> str:
+    """Format an integer token count as an abbreviated decimal-suffix string.
+
+    Used by the finalize-summary [OK] rows where horizontal space is tight; the
+    Phase Breakdown table in metrics.md continues to use comma-grouped values.
+    Negative input is clamped to zero.
+
+    Args:
+        n: Token count.
+
+    Returns:
+        Plain integer string for ``n < 1_000`` (``"599"``), K-suffix for
+        ``1_000 <= n < 1_000_000`` (``"12K"``, ``"12.5K"``, ``"599K"``), and
+        M-suffix for ``n >= 1_000_000`` (``"1.2M"``, ``"12M"``). Trailing
+        ``.0`` is trimmed in both suffix branches.
+    """
+    if n < 0:
+        n = 0
+    if n < 1_000:
+        return str(n)
+    if n < 1_000_000:
+        scaled = n / 1_000
+        rendered = f'{scaled:.1f}'
+        if rendered.endswith('.0'):
+            rendered = rendered[:-2]
+        return f'{rendered}K'
+    scaled = n / 1_000_000
+    rendered = f'{scaled:.1f}'
+    if rendered.endswith('.0'):
+        rendered = rendered[:-2]
+    return f'{rendered}M'
+
+
 def get_worktree_root() -> Path:
     """Return the project-local worktree root for plan-marshall.
 

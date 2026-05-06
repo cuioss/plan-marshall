@@ -243,6 +243,10 @@ def test_generate_creates_metrics_md():
         assert result['status'] == 'success'
         assert result['phases_recorded'] == 2
         assert result['total_tokens'] == 25000
+        # Pre-formatted display fields are populated alongside the raw values.
+        assert isinstance(result['total_duration_formatted'], str)
+        assert result['total_duration_formatted']
+        assert result['total_tokens_formatted'] == '25K'
 
         # Verify metrics.md content
         md_path = ctx.plan_dir / 'metrics.md'
