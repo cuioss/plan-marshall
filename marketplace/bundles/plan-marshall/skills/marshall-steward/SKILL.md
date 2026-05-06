@@ -149,7 +149,7 @@ Display menu when both executor and marshal.json exist.
 ### Main Menu
 
 ```
-AskUserQuestion:
+user-question:
   question: "What would you like to do?"
   header: "Main Menu"
   options:

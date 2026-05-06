@@ -601,7 +601,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 **Dispatch the validator agent**:
 
 ```
-Task: plan-marshall:q-gate-validation-agent
+Subagent: plan-marshall:q-gate-validation-agent
   Input:
     plan_id: {plan_id}
     activation_context: 4-plan

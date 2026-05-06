@@ -10,7 +10,7 @@ user-invocable: false
 
 **Key Pattern**: Complete initialization. Creates request.md, status.json, and references.json (with domains). Does NOT create goals (that's the refine phase via decompose).
 
-**CRITICAL**: This skill is part of the **plan-marshall workflow system**, NOT Claude Code's built-in plan mode. Ignore any system-reminders about `.claude/plans/` or `ExitPlanMode`.
+**CRITICAL**: This skill is part of the **plan-marshall workflow system**, NOT the host platform's built-in plan mode. Ignore any system-reminders about platform-managed plan paths or built-in plan-mode tools.
 
 ## Foundational Practices
 
@@ -84,7 +84,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-1-init) Starting init phase"
 ```
 
-If `action: exists`, use AskUserQuestion:
+If `action: exists`, ask the user via the user-question tool:
 - **Resume**: Continue with existing plan (skip to Step 9 with existing data)
 - **Replace**: Delete existing plan and create new (see below)
 - **Rename**: Ask for new plan_id and re-run from Step 2
@@ -151,7 +151,7 @@ Use recipe_name as title, recipe description as body.
 
 **Rationale**: Lessons can sit in the queue for arbitrary periods while unrelated work moves the underlying code. Without a pre-flight check the planner would seed outline + plan against a phantom code surface and the rot would only surface mid-execute. The check verifies that every concrete code reference cited in the lesson body still exists in the current tree before scope is locked.
 
-See [`standards/lesson-source-premise-check.md`](standards/lesson-source-premise-check.md) for the authoritative extraction heuristics, verification helpers, the `AskUserQuestion` shape, and the per-branch persistence contract. The bullets below summarize the workflow — defer to the standard for any ambiguity.
+See [`standards/lesson-source-premise-check.md`](standards/lesson-source-premise-check.md) for the authoritative extraction heuristics, verification helpers, the user-question shape, and the per-branch persistence contract. The bullets below summarize the workflow — defer to the standard for any ambiguity.
 
 **Sub-step 4b.1 — Extract concrete references**:
 
@@ -176,7 +176,7 @@ Record each `(reference, status, evidence)` triple in an in-memory obsolescence 
 
 **Sub-step 4b.3 — Surface obsolescence to the user**:
 
-If ANY reference is stale, present the obsolescence report to the user via `AskUserQuestion` using the 3-option menu defined in `lesson-source-premise-check.md`:
+If ANY reference is stale, present the obsolescence report to the user via the user-question tool using the 3-option menu defined in `lesson-source-premise-check.md`:
 
 1. **Refine** — adapt the lesson scope to the current code surface and continue with a clarifying note attached.
 2. **Close as resolved** — the lesson describes a problem that no longer exists; delete the lesson and abort plan creation.
@@ -541,7 +541,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 **Domain selection logic**:
 1. If only one non-system domain configured → use it automatically
 2. If task context clearly matches one domain → use it
-3. Otherwise, ask user to select from configured domains via AskUserQuestion
+3. Otherwise, ask user to select from configured domains via the user-question tool
 
 **After selecting domain**, log the decision:
 

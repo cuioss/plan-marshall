@@ -195,7 +195,7 @@ If duplication found:
 - Present findings to user
 - Ask: Proceed anyway, Consolidate, or Skip
 
-Use AskUserQuestion for confirmation.
+Use the user-question tool for confirmation.
 
 #### Step 7: Create Knowledge Document
 

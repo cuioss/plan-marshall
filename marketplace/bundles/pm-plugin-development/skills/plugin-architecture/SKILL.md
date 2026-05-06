@@ -87,7 +87,7 @@ Load references progressively based on current task. **Never load all references
 | 11 | Execution Directive | `references/execution-directive.md` | Ensuring execution (not explanation), EXECUTE vs READ vs REFERENCE modes |
 | 12 | Minimal Wrapper Pattern | `references/minimal-wrapper-pattern.md` | Thin orchestrators (<150 lines), agent-to-skill delegation, fat agent migration |
 | 13 | User-Facing Output | `references/user-facing-output.md` | Output filtering, status messages, anti-patterns (no step numbers, no diffs) |
-| 14 | AskUserQuestion Patterns | `references/askuserquestion-patterns.md` | Interactive workflows, free-text input, multi-select, UI constraints |
+| 14 | User-Question Patterns | `references/askuserquestion-patterns.md` | Interactive workflows, free-text input, multi-select, UI constraints |
 
 ### Examples
 

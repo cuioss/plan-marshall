@@ -15,7 +15,7 @@ Load specific standards on-demand based on what aspect you need to understand.
 | Document | Focus | Key Content |
 |----------|-------|-------------|
 | [phases.md](standards/phases.md) | 6-phase model | Phase flow, transitions, outputs, iteration limits |
-| [agents.md](standards/agents.md) | Thin agent pattern | Agent structure, Skill: vs Task: invocation |
+| [agents.md](standards/agents.md) | Thin agent pattern | Agent structure, `Skill:` directive vs subagent dispatch |
 | [data-layer.md](standards/data-layer.md) | manage-* skills | Inventory, dependency graph, data flow |
 | [manage-contract.md](standards/manage-contract.md) | manage-* contract | Enforcement, error codes, shared formats |
 | [skill-loading.md](standards/skill-loading.md) | Two-tier loading | System vs domain skills, domain flow through phases |

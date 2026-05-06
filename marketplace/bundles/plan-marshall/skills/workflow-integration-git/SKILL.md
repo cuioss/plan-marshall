@@ -94,7 +94,7 @@ Detect artifacts using the script:
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow detect-artifacts [--root <repo-root>]
 ```
 
-The script returns `safe` (auto-deletable) and `uncertain` (needs confirmation) lists. Pattern definitions are in `standards/artifact-patterns.json`. The script respects `.gitignore` by default — gitignored files are excluded since they cannot be accidentally committed. Tracked files never appear in `safe`; they are always routed to `uncertain` so the caller must confirm before deletion. For safe artifacts, delete them. For uncertain artifacts, ask user via `AskUserQuestion`.
+The script returns `safe` (auto-deletable) and `uncertain` (needs confirmation) lists. Pattern definitions are in `standards/artifact-patterns.json`. The script respects `.gitignore` by default — gitignored files are excluded since they cannot be accidentally committed. Tracked files never appear in `safe`; they are always routed to `uncertain` so the caller must confirm before deletion. For safe artifacts, delete them. For uncertain artifacts, ask the user via the user-question tool.
 
 **Step 4: Generate Commit Message**
 
@@ -258,7 +258,7 @@ status: success
 | No changes to commit | Report "No changes to commit" and return success (not an error). |
 | format-commit validation failure | Report warnings to caller. Do not commit with invalid message. |
 | analyze-diff on missing/invalid worktree | Return failure with the path. Caller should pass an existing worktree. |
-| Artifact cleanup uncertain | Ask user via `AskUserQuestion` before deleting. Never auto-delete uncertain files. |
+| Artifact cleanup uncertain | Ask the user via the user-question tool before deleting. Never auto-delete uncertain files. |
 | git commit failure (hook rejection, conflict) | Report error with full output. Do not retry automatically. |
 | git push failure | Report error. Never force-push as fallback. |
 

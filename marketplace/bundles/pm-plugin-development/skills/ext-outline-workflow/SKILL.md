@@ -130,7 +130,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings as
   query --plan-id {plan_id} --certainty UNCERTAIN
 ```
 
-Group by pattern and use AskUserQuestion. Log resolution:
+Group by pattern and ask the user via the user-question tool. Log resolution:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

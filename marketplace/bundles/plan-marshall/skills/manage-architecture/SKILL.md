@@ -94,7 +94,7 @@ file under their per-module directory.
 **If stubs exist**, ask user:
 
 ```yaml
-AskUserQuestion:
+user-question:
   question: "Per-module enriched.json stubs already exist. What do you want to do?"
   header: "Enrichment"
   options:
@@ -226,7 +226,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 Present suggestions to user for confirmation:
 
 ```yaml
-AskUserQuestion:
+user-question:
   question: "Which skill domains apply to '{module-name}'?"
   header: "Skill Domains"
   options: [{domain} ({confidence}) — {signals}]
