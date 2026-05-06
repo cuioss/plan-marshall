@@ -43,11 +43,13 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics gene
 
 Capture the following fields from the returned TOON for the parent skill's output contract:
 
-- `total_duration_seconds`
-- `total_tokens`
-- `file` (relative path to `metrics.md`)
+- `total_duration_seconds` — raw integer/float seconds, kept for the output contract's machine-readable column.
+- `total_tokens` — raw integer count, kept for the output contract's machine-readable column.
+- `total_duration_formatted` — human-readable string produced by `format_duration` (e.g. `1h46m`, `9m32s`).
+- `total_tokens_formatted` — abbreviated string produced by `format_tokens_short` (e.g. `599K`, `1.2M`).
+- `file` — relative path to `metrics.md`.
 
-These values are also reused below as the `--display-detail` payload for `mark-step-done` and as inputs to the output-template renderer.
+The two `_formatted` fields are the canonical inputs for the `--display-detail` payload below. The raw fields remain available to consumers (and to the output-template renderer) that need machine-readable values.
 
 ## Log Artifact
 
@@ -71,8 +73,10 @@ This step populates the following fields in the parent skill's `metrics` output 
 
 | Field | Source |
 |-------|--------|
-| `metrics.total_duration_seconds` | `total_duration_seconds` from generate output |
-| `metrics.total_tokens` | `total_tokens` from generate output |
+| `metrics.total_duration_seconds` | `total_duration_seconds` from generate output (raw seconds) |
+| `metrics.total_tokens` | `total_tokens` from generate output (raw count) |
+| `metrics.total_duration_formatted` | `total_duration_formatted` from generate output (e.g. `1h46m`) |
+| `metrics.total_tokens_formatted` | `total_tokens_formatted` from generate output (e.g. `599K`) |
 | `metrics.metrics_file` | `.plan/archived-plans/{date}-{plan_id}/metrics.md` (post-archive resolved path) |
 
 Per-step outcome tables, end-state verification, and the plan-complete summary are NOT part of this step's output contract — those live in `standards/output-template.md` and are rendered by the finalize output renderer after all steps have completed.
@@ -86,7 +90,7 @@ Pass a `--display-detail` value alongside `--outcome done` so the output-templat
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step record-metrics --outcome done \
-  --display-detail "{total_duration_seconds}s / {total_tokens} tokens"
+  --display-detail "{total_duration_formatted} / {total_tokens_formatted} tokens"
 ```
 
-The `{total_duration_seconds}` and `{total_tokens}` placeholders are populated from the fields captured in `## Generate Final Metrics Report` above.
+The `{total_duration_formatted}` and `{total_tokens_formatted}` placeholders are populated from the fields captured in `## Generate Final Metrics Report` above. Use the formatted variants — never the raw `{total_duration_seconds}s / {total_tokens} tokens` template, which produces the unformatted `6381s / 599089 tokens` row that the central formatter exists to replace.

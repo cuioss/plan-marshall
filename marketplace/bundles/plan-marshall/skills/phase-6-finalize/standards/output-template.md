@@ -1,8 +1,10 @@
 # Finalize Output Template
 
-Defines how `phase-6-finalize` renders its final user-facing output as a fixed five-block template: **Headline + Goal + Deliverables + Finalize steps** closed by a one-line **Repository** trailer. The renderer runs as the terminal action of the phase, after `default:archive-plan` returns. It is NOT a configurable step in the `steps` list — it always runs.
+Defines how `phase-6-finalize` renders its final user-facing output. The default mode emits a fixed five-block template: **Headline + Goal + Deliverables + Finalize steps** closed by a one-line **Repository** trailer. The renderer runs as the terminal action of the phase, after `default:archive-plan` returns. It is NOT a configurable step in the `steps` list — it always runs.
 
 The renderer is a pure assembler: it never invents per-step content. Each finalize step authors its own one-line `display_detail` string at `mark-step-done` time; the renderer only concatenates those strings against the configured step order.
+
+When `finalize-step-print-phase-breakdown` is present in `manifest.phase_6.steps` AND its outcome is `done`, the renderer enters **Phase Breakdown override mode**: the Finalize-steps block is suppressed and the captured Phase Breakdown table is emitted in its place. All other blocks (Headline, Goal, Deliverables, Repository trailer) emit unchanged. See `## Phase Breakdown Override` below for the full toggle, snapshot read, and emission swap.
 
 ## Template Skeleton
 
@@ -23,8 +25,35 @@ Finalize steps ({N_done}/{N_total} done)
   [OK]  sonar-roundtrip                   quality gate passed
   [OK]  lessons-capture                   {N} lesson(s) recorded ({lesson_ids})
   [OK]  branch-cleanup                    main pulled, branch deleted (local+remote), worktree removed
-  [OK]  record-metrics                    {duration}s / {tokens} tokens
+  [OK]  record-metrics                    {total_duration_formatted} / {total_tokens_formatted} tokens
   [OK]  archive-plan                      -> {archive_path}
+
+Repository: main up-to-date | worktree removed | working tree clean
+```
+
+### Phase Breakdown override skeleton
+
+When the override is active (see `## Phase Breakdown Override` below), the Finalize-steps block above is replaced by the verbatim Phase Breakdown table content captured from `metrics.md`. The other blocks emit unchanged.
+
+```
+[TOKEN] PR #{n} -- {N} deliverable(s) shipped, {state summary}
+
+Goal
+  {summary}
+
+Deliverables ({N_done}/{N_total})
+  [OK]  1. {deliverable 1 title}
+
+Phase Breakdown
+
+## Phase Breakdown
+
+| Phase | Duration | Tokens | Input | Output | Tool Uses |
+|-------|----------|--------|-------|--------|-----------|
+| 1-init | 2m41s | 53,719 | - | - | 29 |
+| 2-refine | 8m41s | - | - | - | - |
+| ... | ... | ... | ... | ... | ... |
+| **Total** | **1h46m** | **599,089** | **...** | **...** | **...** |
 
 Repository: main up-to-date | worktree removed | working tree clean
 ```
@@ -128,7 +157,23 @@ Capture the following into in-memory state (no work file is written):
 
    Extract the `content` field on success. On `section_not_found` or empty content, store the sentinel value `None` — the emission procedure substitutes the defensive placeholder. This read MUST happen BEFORE `default:archive-plan` runs, because archive moves `solution_outline.md` into the archived-plans directory.
 
-7. **Plan short_description** — the compact label used by the phase-6-finalize terminal `done` emission. Extracted from the live `status.json` before archive moves it.
+7. **Phase Breakdown override content** — the captured stdout produced by the optional `finalize-step-print-phase-breakdown` step. The step (when present in `manifest.phase_6.steps`) writes the verbatim `## Phase Breakdown` section content to `work/phase-breakdown-output.txt` for this read.
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-files:manage-files exists \
+     --plan-id {plan_id} --file work/phase-breakdown-output.txt
+   ```
+
+   When `exists: true`, read the content:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
+     --plan-id {plan_id} --file work/phase-breakdown-output.txt
+   ```
+
+   Extract the file content. When the file does not exist (the step was not configured, was skipped, or failed), store sentinel `None` — the override does NOT activate and emission falls back to the default Finalize-steps block. This read MUST happen BEFORE `default:archive-plan` runs, because archive moves the entire plan directory (including `work/`) into the archived-plans tree. The producer of this file is documented in `finalize-step-print-phase-breakdown/SKILL.md` (cross-deliverable contract for the path string).
+
+8. **Plan short_description** — the compact label used by the phase-6-finalize terminal `done` emission. Extracted from the live `status.json` before archive moves it.
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
@@ -138,6 +183,21 @@ Capture the following into in-memory state (no work file is written):
    Extract `plan.short_description` (or `status.metadata.short_description`, whichever field is populated by `phase-1-init`). Store the raw string, or `None` when the field is absent/empty. The emission procedure hands this value to `set_terminal_title.py --plan-label` verbatim; the script clamps and rejects malformed values on its side.
 
 Keep this snapshot in model context. It is passed to the emission procedure AFTER `default:archive-plan` returns.
+
+## Phase Breakdown Override
+
+The renderer supports an opt-in **Phase Breakdown override mode** that replaces the per-step `[OK]` Finalize-steps block with the captured Phase Breakdown table from `metrics.md`. The override is intended for users who prefer the compact per-phase metrics breakdown over the redundant `[OK]` step list.
+
+**Toggle activation**: the override activates when BOTH conditions hold:
+
+1. `finalize-step-print-phase-breakdown` (or its fully-qualified marketplace notation) is present in `manifest.phase_6.steps`.
+2. The captured `phase_breakdown_override_content` from Snapshot Procedure step 7 above is non-`None` (i.e. `work/phase-breakdown-output.txt` existed and was read successfully).
+
+When EITHER condition fails, the override is inactive and emission proceeds with the default Finalize-steps block. There is no error path for "step configured but no content captured" — the renderer fails open to the default block so the finalize summary always emits.
+
+**Emission swap**: when the toggle is active, Emission Procedure step 5 (`Build finalize steps block`) is skipped entirely. In its place, the renderer emits a one-line literal header `Phase Breakdown` followed by a blank line, then the verbatim captured content (which already begins with `## Phase Breakdown` and ends with a single trailing newline).
+
+**Unchanged blocks**: the override mode affects ONLY the Finalize-steps block. The Headline (step 1-2), Goal (step 3), Deliverables (step 4), and Repository trailer (step 6) emit identically in both modes.
 
 ## Emission Procedure
 
@@ -200,7 +260,19 @@ Icon resolution:
 
 Deliverable numbering starts at `1.` and pads width to accommodate up to 99 deliverables (`" 1."` vs `"10."`).
 
-### 5. Build finalize steps block
+### 5. Build finalize steps block (or Phase Breakdown override)
+
+**Override-mode short-circuit**: BEFORE building the default block, check the Phase Breakdown override toggle (see `## Phase Breakdown Override` above). When the toggle is active (`finalize-step-print-phase-breakdown` present in `manifest.phase_6.steps` AND `phase_breakdown_override_content` from Snapshot Procedure step 7 is non-`None`), SKIP the default block construction below and emit the override block instead:
+
+```
+Phase Breakdown
+
+{phase_breakdown_override_content}
+```
+
+`{phase_breakdown_override_content}` is the verbatim file content captured from `work/phase-breakdown-output.txt`. It already begins with `## Phase Breakdown` and ends with a single trailing newline; the renderer prepends one blank line between the literal `Phase Breakdown` header and the content, and inserts the standard inter-block blank lines around it. After emitting the override block, jump to step 6 (Repository trailer).
+
+**Default block** (when the toggle is inactive):
 
 Header: `Finalize steps ({N_done}/{N_total} done)` where `N_total` = count of steps in `manifest.phase_6.steps` and `N_done` = count with `outcome == done`.
 
@@ -274,7 +346,7 @@ Detail string rules:
 | `branch-cleanup` | PR mode full cleanup | `main pulled, branch deleted (local+remote), worktree removed` |
 | `branch-cleanup` | Local-only mode | `local-only: switched to main` |
 | `branch-cleanup` | Declined by user | `declined by user` |
-| `record-metrics` | Metrics recorded | `{duration}s / {tokens} tokens` |
+| `record-metrics` | Metrics recorded | `{total_duration_formatted} / {total_tokens_formatted} tokens` (e.g. `1h46m / 599K tokens`) |
 | `archive-plan` | Archived successfully | `-> .plan/archived-plans/2026-04-17-jwt-auth/` |
 | `validation` | All required steps done | `all required steps done` |
 | `validation` | N checks passed | `{N} validation check(s) passed` |

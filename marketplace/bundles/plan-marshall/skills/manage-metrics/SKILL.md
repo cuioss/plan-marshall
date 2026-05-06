@@ -90,9 +90,39 @@ file: metrics.md
 phases_recorded: 4
 total_duration_seconds: 572.5
 total_tokens: 86754
+total_duration_formatted: 9m32s
+total_tokens_formatted: 86.8K
 ```
 
+The `total_duration_formatted` field is produced by `format_duration` (shared with the metrics.md Phase Breakdown table) and `total_tokens_formatted` is produced by `format_tokens_short` from `tools-file-ops` (abbreviated decimal-suffix form, e.g. `599K`, `1.2M`). Raw `total_duration_seconds` and `total_tokens` are kept for backward compatibility — consumers that want the human-readable form for an `[OK]` row should read the `_formatted` fields instead of re-formatting.
+
 Returns `status: error, error: no_data` if no metrics have been collected yet (no start-phase/end-phase calls made).
+
+### print-phase-breakdown
+
+Read `metrics.md` from the live plan directory, extract only the `## Phase Breakdown` section (table content from the heading to the next `## ` heading or end-of-file), and print it verbatim to stdout. On success, TOON status output is suppressed so stdout contains only the section content — the `finalize-step-print-phase-breakdown` skill captures stdout and writes it to `work/phase-breakdown-output.txt` for the renderer.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics print-phase-breakdown \
+  --plan-id {plan_id}
+```
+
+**Output (success)**: stdout contains the verbatim section. No TOON status is emitted.
+
+**Output (error, TOON to stdout)**:
+```toon
+status: error
+error: metrics_md_not_found
+plan_id: my-plan
+message: metrics.md not found at {path}
+```
+or
+```toon
+status: error
+error: phase_breakdown_section_not_found
+plan_id: my-plan
+message: ## Phase Breakdown heading not found in metrics.md
+```
 
 ### phase-boundary
 

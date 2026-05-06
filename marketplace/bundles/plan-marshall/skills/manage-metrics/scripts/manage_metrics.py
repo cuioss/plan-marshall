@@ -28,6 +28,7 @@ Usage:
 import argparse
 import json
 import re
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -35,6 +36,7 @@ from constants import FILE_WORK_METRICS, PHASES  # type: ignore[import-not-found
 from file_ops import (  # type: ignore[import-not-found]
     atomic_write_file,
     format_duration,
+    format_tokens_short,
     get_plan_dir,
     now_utc_iso,
     output_toon,
@@ -411,12 +413,85 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         'phases_recorded': len(phases),
         'total_duration_seconds': round(total_duration, 1),
         'total_tokens': total_tokens,
+        'total_duration_formatted': format_duration(total_duration),
+        'total_tokens_formatted': format_tokens_short(total_tokens),
     }
     if total_input_tokens:
         result['total_input_tokens'] = total_input_tokens
     if total_output_tokens:
         result['total_output_tokens'] = total_output_tokens
     return result
+
+
+_PHASE_BREAKDOWN_HEADING_RE = re.compile(r'^## Phase Breakdown\s*$')
+_NEXT_H2_RE = re.compile(r'^## ')
+
+
+def _extract_phase_breakdown_section(content: str) -> str | None:
+    """Return the '## Phase Breakdown' section verbatim from metrics.md content.
+
+    The section spans from the heading line up to (but not including) the next
+    ``## `` heading or end-of-file. A single trailing blank line is normalised
+    so the output ends with exactly one newline.
+
+    Args:
+        content: Full metrics.md file contents.
+
+    Returns:
+        The section as a string ending in a single newline, or ``None`` when
+        the heading is absent.
+    """
+    lines = content.splitlines(keepends=True)
+    start_idx: int | None = None
+    for i, line in enumerate(lines):
+        if _PHASE_BREAKDOWN_HEADING_RE.match(line):
+            start_idx = i
+            break
+    if start_idx is None:
+        return None
+    end_idx = len(lines)
+    for j in range(start_idx + 1, len(lines)):
+        if _NEXT_H2_RE.match(lines[j]):
+            end_idx = j
+            break
+    section = ''.join(lines[start_idx:end_idx]).rstrip() + '\n'
+    return section
+
+
+def cmd_print_phase_breakdown(args: argparse.Namespace) -> dict:
+    """Print the '## Phase Breakdown' section from metrics.md to stdout.
+
+    On success, writes the section verbatim to stdout (no trailing TOON) and
+    returns a result dict carrying the ``_print_only`` sentinel so ``main``
+    skips the standard TOON emission. On error (missing metrics.md, missing
+    section), returns a normal error TOON via the standard emit path.
+    """
+    plan_id = require_valid_plan_id(args)
+    md_path = get_plan_dir(plan_id) / METRICS_MD
+    if not md_path.exists():
+        return {
+            'status': 'error',
+            'error': 'metrics_md_not_found',
+            'plan_id': plan_id,
+            'message': f'metrics.md not found at {md_path}',
+        }
+    content = md_path.read_text(encoding='utf-8')
+    section = _extract_phase_breakdown_section(content)
+    if section is None:
+        return {
+            'status': 'error',
+            'error': 'phase_breakdown_section_not_found',
+            'plan_id': plan_id,
+            'message': '## Phase Breakdown heading not found in metrics.md',
+        }
+    sys.stdout.write(section)
+    sys.stdout.flush()
+    return {
+        '_print_only': True,
+        'status': 'success',
+        'plan_id': plan_id,
+        'bytes_written': len(section.encode('utf-8')),
+    }
 
 
 def cmd_phase_boundary(args: argparse.Namespace) -> dict:
@@ -811,6 +886,25 @@ def main() -> int:
     add_plan_id_arg(gp)
     gp.set_defaults(func=cmd_generate)
 
+    # print-phase-breakdown
+    pb_print = subparsers.add_parser(
+        'print-phase-breakdown',
+        help='Extract and print the ## Phase Breakdown section from metrics.md',
+        description=(
+            'Read metrics.md from the live plan directory, extract only the '
+            '## Phase Breakdown section (table from heading to the next ## '
+            'heading or EOF), and print it verbatim to stdout. On success, '
+            'TOON status output is suppressed so stdout contains only the '
+            'section content (the new finalize-step skill captures it for '
+            'the renderer). On error (metrics.md missing, section missing), '
+            'a standard error TOON is emitted.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(pb_print)
+    pb_print.set_defaults(func=cmd_print_phase_breakdown)
+
     # phase-boundary (fused end-phase + start-phase + generate)
     pb = subparsers.add_parser(
         'phase-boundary',
@@ -865,7 +959,8 @@ def main() -> int:
 
     args = parse_args_with_toon_errors(parser)
     result = args.func(args)
-    output_toon(result)
+    if not result.pop('_print_only', False):
+        output_toon(result)
     return 0
 
 
