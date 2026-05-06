@@ -94,11 +94,13 @@ Use `PLAN_ID=refactor-01-platform-api` in the commands below. Capture the PR num
 - [ ] Fetch unresolved comments and reviews:
       `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr comments --pr-number $PR --unresolved-only`
       `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr reviews  --pr-number $PR`
-- [ ] For each comment:
-      - Real issue + sensible fix → apply, commit, push; reply via:
-        `... pr prepare-body --plan-id refactor-01-platform-api --for edit --slot reply-<n>` (write text), then
-        `... pr reply --pr-number $PR --plan-id refactor-01-platform-api --slot reply-<n>`
-      - Wrong / out of scope → ask the user before skipping.
+- [ ] For each unresolved comment (use `thread_id` from `ci pr comments` output):
+      - **Real issue + sensible fix** → apply, commit, push; reply to the inline thread:
+        `... pr prepare-comment --plan-id refactor-01-platform-api --for thread-reply --slot reply-<n>` (write text), then
+        `... pr thread-reply --pr-number $PR --thread-id <THREAD_ID> --plan-id refactor-01-platform-api --slot reply-<n>`,
+        then `... pr resolve-thread --thread-id <THREAD_ID>` once the fix has landed.
+        For PR-level (non-inline) comments use `pr prepare-comment --for reply` + `pr reply --pr-number $PR ...` instead.
+      - **Wrong / out of scope** → ask the user before skipping.
 - [ ] After comment handling, **wait for the user to review** the PR.
 
 ## Close

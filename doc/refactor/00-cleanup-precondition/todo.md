@@ -84,15 +84,20 @@ Use `PLAN_ID=refactor-00-cleanup` in the commands below as the body-tracking han
       python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr comments --pr-number $PR --unresolved-only
       python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr reviews  --pr-number $PR
       ```
-- [ ] For each comment:
-      - **Real issue + sensible fix** → apply it, commit, push, and reply to the thread:
+- [ ] For each unresolved comment (use the `thread_id` field from `ci pr comments` output):
+      - **Real issue + sensible fix** → apply it, commit, push. Then reply to the inline thread:
         ```
-        python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body --plan-id refactor-00-cleanup --for edit --slot reply-<n>
+        python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-comment --plan-id refactor-00-cleanup --for thread-reply --slot reply-<n>
         ```
-        (write reply text to the returned path), then
+        (write your reply text to the returned path), then
         ```
-        python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr reply --pr-number $PR --plan-id refactor-00-cleanup --slot reply-<n>
+        python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr thread-reply --pr-number $PR --thread-id <THREAD_ID> --plan-id refactor-00-cleanup --slot reply-<n>
         ```
+        Once the fix has landed, mark the thread resolved:
+        ```
+        python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr resolve-thread --thread-id <THREAD_ID>
+        ```
+        For PR-level (non-inline) comments use `pr prepare-comment --for reply` + `pr reply --pr-number $PR --plan-id ... --slot ...` instead.
       - **Wrong / out of scope** → do **not** silently skip. Ask the user first ("Skip comment X because Y?"); only skip after explicit approval.
 - [ ] After all comment handling, **wait for the user to review** the PR. Do not merge unilaterally.
 
