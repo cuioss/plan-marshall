@@ -26,7 +26,6 @@
   ],
   "skills": [
     "./skills/extension-api",
-    "./skills/finalize-step-print-phase-breakdown",
     "./skills/manage-architecture",
     "./skills/manage-providers",
     "./skills/manage-findings",

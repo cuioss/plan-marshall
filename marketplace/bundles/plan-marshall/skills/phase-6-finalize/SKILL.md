@@ -148,6 +148,7 @@ Each step declares an `order: <int>` value in its authoritative source — front
 | `default:lessons-capture` | `standards/lessons-capture.md` | Record lessons learned |
 | `default:branch-cleanup` | `standards/branch-cleanup.md` | Branch cleanup — adapts to PR mode or local-only based on create-pr step presence |
 | `default:record-metrics` | `standards/record-metrics.md` | Record final plan metrics before archive |
+| `default:finalize-step-print-phase-breakdown` | `standards/finalize-step-print-phase-breakdown.md` | Optional override mode: capture the Phase Breakdown table from metrics.md so the renderer emits it in place of the per-step [OK] block |
 | `default:archive-plan` | `standards/archive-plan.md` | Archive the completed plan |
 
 ### Interface Contract for External Steps
@@ -709,6 +710,7 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `standards/lessons-capture.md` | `default:lessons-capture` | manage-lesson add command |
 | `standards/branch-cleanup.md` | `default:branch-cleanup` | Branch cleanup with user confirmation — PR mode (merge + CI) or local-only (switch + pull) |
 | `standards/record-metrics.md` | `default:record-metrics` | Record final plan metrics before archive |
+| `standards/finalize-step-print-phase-breakdown.md` | `default:finalize-step-print-phase-breakdown` | Optional override mode: capture Phase Breakdown table for the renderer (replaces per-step [OK] block) |
 | `standards/archive-plan.md` | `default:archive-plan` | Archive the completed plan |
 | `standards/output-template.md` | — | Renderer specification for the five-block final output template (Step 4) |
 | `standards/required-steps.md` | — | Canonical list of steps enforced by the `phase_steps_complete` handshake invariant |

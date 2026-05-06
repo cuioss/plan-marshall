@@ -21,7 +21,7 @@ Scope:
 4. The override-mode skeleton is present in the document.
 5. The producer/consumer path string ``work/phase-breakdown-output.txt``
    appears verbatim in both ``output-template.md`` and
-   ``finalize-step-print-phase-breakdown/SKILL.md`` — enforces the
+   ``standards/finalize-step-print-phase-breakdown.md`` — enforces the
    cross-deliverable contract documented in the solution outline.
 """
 
@@ -45,8 +45,9 @@ FINALIZE_STEP_SKILL_PATH = (
     MARKETPLACE_ROOT
     / 'plan-marshall'
     / 'skills'
-    / 'finalize-step-print-phase-breakdown'
-    / 'SKILL.md'
+    / 'phase-6-finalize'
+    / 'standards'
+    / 'finalize-step-print-phase-breakdown.md'
 )
 SHARED_ARTIFACT_PATH = 'work/phase-breakdown-output.txt'
 
@@ -157,15 +158,15 @@ class TestProducerConsumerContract:
     (producer). Both must reference the same path string verbatim.
     """
 
-    def test_finalize_step_skill_exists(self):
+    def test_finalize_step_standards_exists(self):
         assert FINALIZE_STEP_SKILL_PATH.is_file(), (
-            f'expected finalize-step skill at {FINALIZE_STEP_SKILL_PATH}'
+            f'expected finalize-step standards at {FINALIZE_STEP_SKILL_PATH}'
         )
 
     def test_path_appears_in_producer(self):
         producer_text = FINALIZE_STEP_SKILL_PATH.read_text(encoding='utf-8')
         assert SHARED_ARTIFACT_PATH in producer_text, (
-            f'expected {SHARED_ARTIFACT_PATH} in finalize-step-print-phase-breakdown SKILL.md'
+            f'expected {SHARED_ARTIFACT_PATH} in finalize-step-print-phase-breakdown standards'
         )
 
     def test_path_appears_in_consumer(self, output_template_text: str):
