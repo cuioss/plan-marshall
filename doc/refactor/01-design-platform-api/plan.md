@@ -140,7 +140,7 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
 | `--permissions` | List of patterns |
 
 **Claude:** Patch `.claude/settings.local.json` `permissions.allow` array.
-**OpenCode:** Patch `./opencode.json` or `~/.config/opencode/opencode.json` `permission` object.
+**OpenCode:** Patch `./opencode.json` or `~/.config/opencode/opencode.json` `agents.{name}.permission` object (permissions are per-agent, not a flat top-level object).
 
 **Note:** This is the low-level primitive. Skills should prefer `permission analyze` and `permission fix` for hygienic permission management. When only a raw list write is needed, use `permission configure`.
 
@@ -212,8 +212,8 @@ summary:
 
 | Permission | Claude Code | OpenCode |
 |------------|-------------|----------|
-| Plan file access | `Edit(.plan/**)`, `Write(.plan/**)` | `edit: { ".plan/**": "allow" }`, `read: { ".plan/**": "allow" }` |
-| Plugin cache access | `Read(~/.claude/plugins/cache/**)` | `read: { "~/.opencode/plugins/cache/**": "allow" }` (if applicable) |
+| Plan file access | `Edit(.plan/**)`, `Write(.plan/**)` | `agents.{name}.permission.edit: { ".plan/**": "allow" }`, `agents.{name}.permission.read: { ".plan/**": "allow" }` |
+| Plugin cache access | `Read(~/.claude/plugins/cache/**)` | `agents.{name}.permission.read: { "~/.opencode/plugins/cache/**": "allow" }` (if applicable) |
 | Executor pattern | `Bash(python3 .plan/execute-script.py *)` | No-op (OpenCode does not use executor) |
 
 ### `permission ensure-wildcards`
@@ -227,7 +227,7 @@ summary:
 | `--dry-run` | Preview changes without applying |
 
 **Claude:** Scans `marketplace/.claude-plugin/marketplace.json` and `*/.claude-plugin/plugin.json`. Generates `Skill(bundle:*)` and `SlashCommand(/bundle:*)` entries.
-**OpenCode:** Scans marketplace and generates `"skill": { "bundle:*": "allow" }` and command patterns. **Note:** OpenCode does not have `SlashCommand` equivalent; command permissions may be no-op or mapped to agent permissions.
+**OpenCode:** Scans marketplace and generates `agents.{name}.permission.skill: { "bundle:*": "allow" }` and command patterns. **Note:** OpenCode does not have `SlashCommand` equivalent; command permissions may be no-op or mapped to agent permissions.
 
 ### `permission ensure-steps`
 
@@ -240,7 +240,7 @@ summary:
 | `--dry-run` | Preview changes without applying |
 
 **Claude:** Adds `Skill({skill})` to `permissions.allow`.
-**OpenCode:** Adds `"skill": { "{skill}": "allow" }` or `"skill": { "{skill}:*": "allow" }`.
+**OpenCode:** Adds `agents.{name}.permission.skill: { "{skill}": "allow" }` or `agents.{name}.permission.skill: { "{skill}:*": "allow" }`.
 
 **Usage:** Pair with `permission analyze --checks missing-steps` to close gaps surfaced by analysis.
 
@@ -269,7 +269,7 @@ summary:
 | `--dry-run` | Preview changes without applying |
 
 **Claude:** Adds/removes `WebFetch(domain)` entries.
-**OpenCode:** Modifies `webfetch` object keys.
+**OpenCode:** Modifies `agents.{name}.permission.webfetch` object.
 
 ### `session configure-display`
 
@@ -337,24 +337,8 @@ This operation does **not** spawn the subagent itself. Both Claude Code and Open
 
 1. **Agent file discovery**: Same as Claude — locate `marketplace/bundles/*/agents/{agent-name}.md`.
 2. **Parse frontmatter**: Read `name`, `description`, and `tools:`.
- 3. **Map tools to OpenCode permissions**: Transform the `tools:` list using the mapping defined in `marketplace/targets/opencode/mapping.json`:
-
-| Claude Code tool | OpenCode permission |
-|------------------|---------------------|
-| `Read` | `read` |
-| `Write` | `edit` |
-| `Edit` | `edit` |
-| `Glob` | `glob` |
-| `Grep` | `grep` |
-| `Bash` | `bash` |
-| `WebFetch` | `webfetch` |
-| `WebSearch` | `websearch` |
-| `AskUserQuestion` | `question` |
-| `Task` | `task` |
-| `Skill` | `skill` |
-| `NotebookEdit` | `edit` |
-| `TaskCreate`/`TaskGet`/`TaskList` | `todowrite`/`todoread` |
-   4. **Build `task` payload**: Construct the `task` tool invocation. Note: OpenCode permissions are set in agent frontmatter or `opencode.json`, not at invocation time.
+3. **Map tools to OpenCode permissions**: Transform the `tools:` list using the mapping defined in `marketplace/targets/opencode/mapping.json` (see [02 — Build System](02-build-system) for the full `tool_permissions` table).
+4. **Build `task` payload**: Construct the `task` tool invocation. Note: OpenCode permissions are set in agent frontmatter (`tools:` field) or `opencode.json` (`agents.{name}.permission`), not at invocation time.
    5. **Return TOON** with:
     ```
     status: success
@@ -443,7 +427,7 @@ invocation:
   subagent_type: "phase-agent"
 ```
 
-Note: OpenCode permissions are set in agent frontmatter or `opencode.json`, not at `task` invocation time. The caller uses the invocation parameters to spawn the subagent via the `task` tool.
+Note: OpenCode permissions are set in agent frontmatter (`tools:` field) or `opencode.json` (`agents.{name}.permission`), not at `task` invocation time. The caller uses the invocation parameters to spawn the subagent via the `task` tool.
 
 **Example 3: Dispatch agent with unmapped tools on either platform**
 
@@ -472,7 +456,7 @@ alternative: "Remove unsupported tools from agent frontmatter or inline the agen
 | `--checks` | `all`, `permissions`, `display`, `mcp-diagnostics` |
 
 **Claude:** Check settings, hooks, MCP diagnostics.
-**OpenCode:** Check `opencode.json`, permissions.
+**OpenCode:** Check `opencode.json`, `agents.{name}.permission` or global tool permissions.
 
 ## Router Design
 

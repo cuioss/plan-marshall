@@ -446,13 +446,26 @@ These are the installation methods we validate in CI and recommend to users.
 Claude Code discovers `.claude-plugin/marketplace.json` at the repo root, reads `metadata.pluginRoot: "./marketplace/bundles"`, and registers all bundles.
 
 #### OpenCode: `opencode-marketplace` CLI
-
 ```bash
 # Install from GitHub Pages (build artifact)
 opencode-marketplace install https://{org}.github.io/plan-marshall/opencode/latest/
 
 # Update
 opencode-marketplace update plan-marshall
+```
+
+**Note:** `opencode-marketplace` CLI currently supports GitHub repo URLs and local paths. Support for static file server URLs (GitHub Pages) may require enhancement to `opencode-marketplace` or an alternative distribution approach:
+
+**Alternative 1 — GitHub Releases (tarball):**
+```bash
+# Download and extract to OpenCode config directory
+curl -L https://github.com/{org}/plan-marshall/releases/latest/download/plan-marshall-opencode.tar.gz | tar xz -C ~/.config/opencode/
+```
+
+**Alternative 2 — Separate GitHub repo:**
+Host `target/opencode/` output in a dedicated repo (e.g., `plan-marshall-opencode`), then use standard GitHub URL install:
+```bash
+opencode-marketplace install https://github.com/{org}/plan-marshall-opencode
 ```
 
 Content-hash comparison avoids re-downloading unchanged files.
@@ -487,7 +500,7 @@ https://{org}.github.io/plan-marshall/opencode/latest/
 └── opencode.json
 ```
 
-This matches the expected structure exactly.
+This matches the expected structure for OpenCode. Note: `opencode-marketplace` CLI may need enhancement to support static file server URLs (see Installation section for alternatives).
 
 ---
 
@@ -569,6 +582,7 @@ This cluster is complete when:
 | OpenCode plugin format changes | Pin to OpenCode version in CI; test against latest stable |
 | opencode-marketplace not widely adopted | Primary path tested in CI; alternatives documented for user choice |
 | Cursor format unknown | Defer Cursor target until format stabilizes |
+| `opencode-marketplace` CLI doesn't support static URLs | Enhance CLI to support file server URLs, or use GitHub Releases tarballs as primary distribution |
 
 ---
 

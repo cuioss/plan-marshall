@@ -186,7 +186,7 @@ Research shows OpenCode's instruction injection mechanism differs from Claude Co
 
 Agents with `Task` or `Skill` in their `tools:` frontmatter are **not** Claude-only. OpenCode has equivalent `task` and `skill` tools. See [01 — Design Platform API](01-design-platform-api) for the full tool mapping table.
 
-**Implementation note:** Permissions are set in agent frontmatter or `opencode.json`, not at `task` invocation time. The `subagent dispatch` operation returns invocation parameters only (no permissions field in TOON response).
+**Implementation note:** Permissions are set in agent frontmatter (`tools:` field) or `opencode.json` (`agents.{name}.permission`), not at `task` invocation time. The `subagent dispatch` operation returns invocation parameters only (no permissions field in TOON response).
 
 **Impact:** All 10 plan-marshall agents are included in OpenCode output with proper permission mapping. They function via OpenCode's `task` tool for subagent dispatch and `skill` tool for skill loading.
 

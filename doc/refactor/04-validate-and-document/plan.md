@@ -153,7 +153,7 @@ The six cluster plan documents in `doc/refactor/` (`README.md`, `principles.md`,
 **OpenCode:**
 - Generated output — best-effort support
 - All agents mapped with `task`/`skill` permissions (subagent dispatch and skill loading supported)
-- Model aliases preserved (`opus` → `anthropic/claude-opus-4-7`); no forced downgrades to cheaper models
+- Model aliases preserved (`opus` → `anthropic/claude-opus-4-5`); no forced downgrades to cheaper models
 - No terminal title hooks
 - No automatic token usage extraction (requires `--total-tokens` manual input)
 - Direct script execution (no `execute-script.py`)
