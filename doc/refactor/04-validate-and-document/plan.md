@@ -74,6 +74,10 @@ The OpenCode target generates output under `target/opencode/` (see [02 — Build
 | No-op handling | Callers receive `status: no-op` and continue |
 | Error handling | `hook_not_configured` when env var absent |
 | User-invocable dual-emit | For each `user-invocable: true` source skill, the OpenCode emitter writes both a skill dir and a matching command wrapper from `templates/user-invocable-command.md`, with `description`, optional `model`, and `skill_id` substituted from frontmatter |
+| Body transform — `Skill:` directive | Standalone-line `Skill: {bundle}:{skill}` rewrites to `Call the \`skill\` tool with \`{ name: "{bundle}-{skill}" }\` before continuing.` Inline `` `Skill: foo:bar` `` references in prose are untouched. |
+| Body transform — slash command | `/{user-invocable-skill-name}` rewrites to `/{bundle}-{user-invocable-skill-name}` for every known user-invocable skill. Path-like substrings (`path/to/foo`) are not matched. |
+| Executor resolver — Claude | `python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get …` resolves under `~/.claude/plugins/cache/plan-marshall/*/skills/manage-status/scripts/manage_status.py` |
+| Executor resolver — OpenCode | Same notation resolves under the first match across the six OpenCode skill roots (`$OPENCODE_CONFIG_DIR/skills/`, `.opencode/skills/`, `.claude/skills/`, `.agents/skills/`, `~/.config/opencode/skills/`, `~/.claude/skills/`, `~/.agents/skills/`), at directory `plan-marshall-manage-status/scripts/manage_status.py`. Returned path is absolute. |
 
 ### Integration Tests
 
@@ -158,6 +162,9 @@ The entire refactor is complete when:
 - [ ] Claude target produces zero drift on committed source
 - [ ] OpenCode target produces valid output under `target/opencode/` with `skill/`, `agent/`, `command/`, and `opencode.json`
 - [ ] Every Claude source skill with `user-invocable: true` produces both a `skill/{bundle}-{skill}/SKILL.md` and a `command/{bundle}-{skill}.md` wrapper (template-driven, frontmatter-derived)
+- [ ] OpenCode-emitted bodies have all standalone-line `Skill:` directives rewritten to `skill` tool-call instructions per `transforms.md`
+- [ ] OpenCode-emitted bodies have all `/skill-name` references rewritten to `/{bundle}-{skill-name}` for every user-invocable skill
+- [ ] `marketplace/targets/opencode/transforms.md` exists and is the authoritative spec; `body-transforms.py` implements exactly those transforms (no silent extras)
 - [ ] `./pw generate -- --target {claude,opencode} --output target/{claude,opencode}` works
 - [ ] `marketplace/adapters/` retired
 
@@ -170,6 +177,9 @@ The entire refactor is complete when:
 
 ### For Cluster 03 (Refactor for Portability)
 - [ ] No `.claude/` or `~/.claude` leakage in plan-marshall skill bodies
+- [ ] No Claude tool names (`EnterPlanMode`, `AskUserQuestion`, `Agent(subagent_type=…)`, etc.) appear in instructional rules; rules are platform-agnostic
+- [ ] Claude-only mechanism descriptions (terminal title, session id resolver, hook plumbing) live in per-skill `references/{topic}.md`, not in skill bodies
+- [ ] `tools-script-executor` is target-aware: same notation resolves correctly via the Claude-cache resolver on Claude and the OpenCode-skill-roots resolver on OpenCode
 - [ ] `marshall-steward` uses goal-based calls
 - [ ] `marshal.json` template includes `runtime.target`
 - [ ] `./pw verify` passes on all 10 bundles

@@ -36,6 +36,10 @@ Search all skill bodies for:
 | `Task:` tool in body | Claude-only subagent dispatch | Use `platform-runtime subagent dispatch` |
 | `permissions.allow` array manipulation | Claude-specific permission format | Use `platform-runtime permission fix` |
 | `WebFetch(...)` string parsing | Claude-specific web permission format | Use `platform-runtime permission-web-*` |
+| Claude tool name in a rule (e.g. `EnterPlanMode`, `ExitPlanMode`, `AskUserQuestion`, `Agent(subagent_type=…)`) | Couples skill prose to one target's tool taxonomy | Rephrase platform-agnostically (e.g. "the host platform's plan-mode tools", "the user-question tool"); do not name a specific tool in instructional rules |
+| Skill body section describing a Claude Code hook mechanism (terminal title, statusLine, SessionStart, UserPromptSubmit, etc.) | Documentation for a Claude-only mechanism inside a workflow body | Move section into `references/{topic}.md`; the SKILL body should describe workflow steps, not platform plumbing |
+| Skill body section describing a Claude-only cache or session-resolver pipeline | Same as above — describes plumbing, not workflow | Move into `references/{topic}.md` |
+| `.claude/` path mentioned in passing prose outside of platform-runtime call sites | Coupled to one target's filesystem layout | Rephrase to use `platform-runtime` or remove the prose if it described platform plumbing now living in `references/` |
 
 ### Skills Requiring Body Changes (plan-marshall)
 
@@ -50,7 +54,7 @@ Search all skill bodies for:
 | `tools-permission-doctor` | Read `~/.claude/settings.json`, `.claude/settings.json`; Claude-specific anti-patterns | `platform-runtime permission analyze --checks <checks>` |
 | `tools-permission-fix` | Write to `~/.claude/settings.json`, `.claude/settings.json`; `ensure-executor` / `cleanup-scripts` / `migrate-executor` are Claude-specific executor operations | `platform-runtime permission fix --operation <op>`; `ensure-executor`/`cleanup-scripts`/`migrate-executor` return `no-op` on OpenCode |
 | `workflow-permission-web` | Read `WebFetch(...)` strings from `.claude/settings*.json` | `platform-runtime permission web-analyze --scope <scope>`; `platform-runtime permission web-apply --add/--remove` |
-| `tools-script-executor` | Generates `.plan/execute-script.py` using `~/.claude/plugins/cache/` paths; bootstrap reads `~/.claude/plugins/cache/` | Target engine handles bundle sync to target-specific plugin directory (`.claude/` or `.opencode/`). Bootstrap resolves path via `platform-runtime` or target-configurable path. |
+| `tools-script-executor` | Generates `.plan/execute-script.py` using `~/.claude/plugins/cache/` paths; bootstrap reads `~/.claude/plugins/cache/` | Target-aware generator: reads `runtime.target` from `marshal.json` and emits the matching resolver template (Claude resolver searches plugin cache; OpenCode resolver searches OpenCode's six skill discovery roots). Notation `{bundle}:{skill}:{script}` is unchanged — only the resolver behind it differs. See [01 — Design Platform API](01-design-platform-api) "Executor Resolution Per Target". |
 | `tools-file-ops` | Worktree paths under `.claude/worktrees/` hardcoded | Use `marshal.json` `worktree.path` (target-configurable, default `.claude/worktrees/` for Claude, `.opencode/worktrees/` for OpenCode) |
 | `manage-worktree` | Creates worktrees under `.claude/worktrees/{plan_id}/` | Use `marshal.json` `worktree.path` prefix; do not hardcode `.claude/` segment |
 | `tools-input-validation` | Validates `session_id` as "Claude Code UUID-shape token" | Target-specific validation: Claude UUID format vs OpenCode session format |
@@ -67,6 +71,21 @@ Search all skill bodies for:
 No body changes needed. These are already platform-agnostic.
 
 **Note:** The following skills require body changes (see table above): `phase-1-init`, `phase-5-execute`, `phase-6-finalize`, `plan-retrospective`, `marshall-steward`, `tools-permission-doctor`, `tools-permission-fix`, `workflow-permission-web`, `tools-script-executor`, `tools-file-ops`, `manage-worktree`, `tools-input-validation`.
+
+### Skills Requiring Prose Cleanup (Source-Side, Not Per-Target)
+
+These skill bodies contain Claude-only documentation or tool-name rules that belong outside the body. Cleanup is a one-time source change so future targets don't need conditional rendering.
+
+| Skill | Issue | Action |
+|-------|-------|--------|
+| `plan-marshall` (entry skill) | "Terminal Title Integration" section (~25 lines describing `SessionStart`/`UserPromptSubmit`/`PostToolUse`/etc. hooks and `.claude/settings.local.json`) | Move to `marketplace/bundles/plan-marshall/skills/plan-marshall/references/terminal-title.md` |
+| `plan-marshall` | "Session ID Resolver" section (~15 lines describing Claude-only hook-populated cache at `~/.cache/plan-marshall/sessions/...`) | Move to `references/session-id-resolver.md`; on OpenCode, `session capture` is a no-op and the resolver is unused |
+| `plan-marshall` | Rule "Never use Claude Code's built-in `EnterPlanMode` or `ExitPlanMode`" | Rephrase as "Never use the host platform's built-in plan-mode tools — this skill implements its own plan system" |
+| `plan-marshall` | Rule "All user interactions use `AskUserQuestion` tool with proper YAML structure" | Rephrase as "All user interactions use the user-question tool with proper YAML structure" (omit the platform-specific tool name) |
+| `plan-marshall` | Rule "Never spawn `Agent(subagent_type=\"general-purpose\")`" | Rephrase as "Never spawn an unconstrained generic subagent — always specify a plan-marshall agent or skill" |
+| Other skills | Sweep for the same patterns (Claude-only hook descriptions, Claude tool names in rules, `.claude/` paths in prose) | Apply the audit-checklist categories above |
+
+This is **source cleanup** — it improves both Claude Code and OpenCode targets, because skill bodies become focused on workflow steps instead of platform plumbing.
 
 ### User-Invocable Skills (Dual Emission on OpenCode)
 
@@ -158,15 +177,18 @@ If any bundle contains `.claude/` references in skill bodies, flag for update.
 ## Verification
 
 This cluster is complete when:
-1. No `.claude/`, `~/.claude`, or Claude-specific tool names remain in plan-marshall skill bodies
+1. No `.claude/`, `~/.claude`, or Claude-specific tool names remain in plan-marshall skill bodies (per the audit-checklist categories above, including the prose-cleanup rules for tool-name rules and Claude-only mechanism descriptions)
 2. `marshall-steward` uses goal-based calls for all platform-specific operations
 3. `marshal.json` template includes `runtime.target`
-4. `project initial-setup` installs the `SessionStart` hook for session capture
+4. `project initial-setup` installs the `SessionStart` hook on Claude (no-op on OpenCode) and generates the target-appropriate `.plan/execute-script.py`
 5. `bootstrap_plugin.py` handles multi-platform path resolution
 6. `marketplace/adapters/` retired (logic in `marketplace/targets/`)
 7. `tools-permission-doctor`, `tools-permission-fix`, and `workflow-permission-web` delegate all settings file I/O to `platform-runtime` permission operations
 8. Executor-specific operations (`ensure-executor`, `cleanup-scripts`, `migrate-executor`) return `no-op` on OpenCode target
-9. `./pw verify` passes
+9. `tools-script-executor` is target-aware: same notation `{bundle}:{skill}:{script}` resolves correctly via the Claude-cache resolver on Claude and the OpenCode-skill-roots resolver on OpenCode
+10. Claude-only hook/cache documentation has been moved out of skill bodies and into per-skill `references/{topic}.md`
+11. Tool-name rules in skill bodies are platform-agnostic (no `EnterPlanMode`/`AskUserQuestion`/`Agent(subagent_type=…)` etc. in instructional rules)
+12. `./pw verify` passes
 
 ## Dependencies
 

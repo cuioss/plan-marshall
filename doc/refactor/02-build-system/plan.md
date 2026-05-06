@@ -39,8 +39,10 @@ marketplace/targets/
 │   ├── target.py            # OpenCode target implementation (OpenCodeTarget class)
 │   ├── emitter.py           # OpenCode emitter
 │   ├── frontmatter.py       # Frontmatter transform engine
+│   ├── body-transforms.py   # Mechanical body-text transforms (Skill: rewrite, slash rewrite)
 │   ├── mapping.json         # Tool + model + layout mappings
 │   ├── frontmatter-rules.json  # Frontmatter transform rules
+│   ├── transforms.md        # Spec for the mechanical body-text transforms
 │   └── templates/           # Body-text templates the emitter substitutes into
 │       └── user-invocable-command.md  # Wrapper command body for user-invocable skills
 └── claude/
@@ -198,10 +200,45 @@ Agents with `Task` or `Skill` in their `tools:` frontmatter are **not** Claude-o
 
 ### Body Text
 
-Emitted **verbatim**. No transformation of instructional content. Only:
+Emitted **verbatim except for the mechanical line-level transforms documented in `marketplace/targets/opencode/transforms.md`**. The transforms are bounded — each one is a single-pass regex rewrite over body lines — so the bulk of instructional content is unchanged. The contract is:
+
 - Frontmatter rewritten
-- Comment annotations added for `Skill:` directives
-- Standards/scripts/templates copied verbatim
+- A small fixed set of body transforms applied (see Body Transforms section below)
+- Standards/scripts/templates copied verbatim (no transforms)
+
+### Body Transforms
+
+The OpenCode emitter applies two mechanical line-level transforms to skill and command bodies. Both are documented in `marketplace/targets/opencode/transforms.md` and implemented in `body-transforms.py`. Adding a new transform is a deliberate spec change — the emitter does not silently rewrite anything else.
+
+#### Transform 1: `Skill:` directive rewrite
+
+Claude Code's runtime intercepts `Skill: {bundle}:{skill}` directives and loads the named skill into context. OpenCode does not — its `skill` tool is LLM-driven, not runtime-parsed. Without rewriting, the `Skill:` line is just text the LLM may or may not act on.
+
+| Match in source body | Rewrite in OpenCode body |
+|----------------------|--------------------------|
+| `^Skill:\s+{bundle}:{skill}\s*$` | `Call the \`skill\` tool with \`{ name: "{bundle}-{skill}" }\` before continuing.` |
+
+The regex is anchored to a full line (`^...$`) so inline backtick references like `` `Skill: foo:bar` `` in prose are unaffected. The replacement uses the same `{bundle}-{skill}` namespacing that the emitter produces for skill directories (so the load target always resolves).
+
+#### Transform 2: Slash-command rewrite
+
+Claude Code skills with `user-invocable: true` are invoked as `/skill-name`. On OpenCode the dual-emit places them under `command/{bundle}-{skill}.md`, invoked as `/{bundle}-{skill}` (see User-Invocable Skills below). Cross-references in skill bodies and usage examples must be rewritten to the namespaced form.
+
+**Build-time lookup table:** the emitter walks every source skill with `user-invocable: true` and builds a global `{skill-name → {bundle}-{skill-name}}` map (across all bundles, not per-bundle).
+
+**Body regex:** `(?<![\w-])/(?P<name>{any-known-skill-name})(?=\s|$|=)` → `/{bundle}-{skill-name}`. The lookbehind avoids matching inside paths like `path/to/foo`. The lookahead permits the form `/skill action=...` used in usage examples.
+
+**Argument syntax stays as-is.** Both Claude and OpenCode pass the post-command tail to the LLM as a string; the body's natural-language `key=value` parsing is LLM-driven on both targets, so no further transform is required.
+
+#### What is *not* transformed
+
+The emitter does **not** rewrite:
+
+- Tool-name mentions in prose (`AskUserQuestion`, `EnterPlanMode`, etc.) — these are addressed by source-side cleanup in [03 — Refactor for Portability](03-refactor-for-portability), not at emit time.
+- `.claude/` paths or hook event names in prose — same treatment as above.
+- Argument syntax (`key=value` vs. `$ARGUMENTS`) — neither runtime parses these; both pass them as a string to the LLM.
+
+Body transforms are reserved for cases where the same source line has different meaning on the two targets (the LLM cannot bridge the gap by itself). Everything else is either source-cleaned or left alone.
 
 ### User-Invocable Skills (Dual Emission)
 
@@ -297,8 +334,10 @@ This cluster is complete when:
 2. Claude target produces zero drift on committed source
 3. OpenCode target produces valid output under `target/opencode/` with `skill/`, `agent/`, `command/`, and `opencode.json`
 4. Every Claude source skill with `user-invocable: true` produces both a `skill/{bundle}-{skill}/SKILL.md` and a `command/{bundle}-{skill}.md` wrapper
-5. `./pw generate -- --target {claude,opencode}` works
-6. `marketplace/adapters/` retired
+5. `Skill:` directives in OpenCode-emitted bodies are rewritten to `Call the \`skill\` tool …` form per `transforms.md`
+6. `/skill-name` slash references in OpenCode-emitted bodies are rewritten to `/{bundle}-{skill-name}` for every `user-invocable: true` skill
+7. `./pw generate -- --target {claude,opencode}` works
+8. `marketplace/adapters/` retired
 
 ## Dependencies
 

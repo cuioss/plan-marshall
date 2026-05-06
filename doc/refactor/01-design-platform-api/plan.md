@@ -112,7 +112,7 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
 
 **Claude:** Create `.plan/`, seed `marshal.json` with `runtime.target: claude`, ensure `.plan/temp/` exists. Install `SessionStart` hook in `.claude/settings.json` that captures `session_id` into `$CLAUDE_CODE_SESSION_ID` environment variable.
 
-**OpenCode:** Same, but `runtime.target: opencode`. OpenCode does not currently expose the session id to the shell environment (tracked at upstream issue #9292; PR #9289 was closed unmerged), so no SessionStart-equivalent hook is installed. `session capture` returns `no-op` on OpenCode (see below); automatic token-usage capture is unsupported and callers fall back to manual `--total-tokens`. Note: `execute-script.py` is Claude-specific; OpenCode does not use it.
+**OpenCode:** Same, but `runtime.target: opencode`. OpenCode does not currently expose the session id to the shell environment (tracked at upstream issue #9292; PR #9289 was closed unmerged), so no SessionStart-equivalent hook is installed. `session capture` returns `no-op` on OpenCode (see below); automatic token-usage capture is unsupported and callers fall back to manual `--total-tokens`. `.plan/execute-script.py` IS generated on OpenCode — same notation contract `{bundle}:{skill}:{script}`, but with an OpenCode-aware resolver that searches OpenCode's six skill discovery roots (see Executor Resolution Per Target below).
 
 ### `session capture`
 
@@ -467,6 +467,23 @@ alternative: "Remove unsupported tools from agent frontmatter or inline the agen
 5. Returns TOON
 
 Registry must be extensible — adding a new target means adding a new class + registration entry.
+
+## Executor Resolution Per Target
+
+Skill bodies invoke scripts via the canonical notation `python3 .plan/execute-script.py {bundle}:{skill}:{script} [subcommand] [args...]`. This notation is **target-portable** — the body never changes between targets. The only thing that changes is the resolver embedded in the generated `.plan/execute-script.py`.
+
+`tools-script-executor` regenerates the executor with a target-aware resolver when `runtime.target` in `marshal.json` changes. The two resolvers today:
+
+| Target | Skill discovery roots (first match wins) | Notation → path mapping |
+|--------|------------------------------------------|-------------------------|
+| `claude` | `~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts/{script}.py` | `{bundle}:{skill}:{script}` → first `{skill}/scripts/{script}.py` under the plugin cache |
+| `opencode` | `$OPENCODE_CONFIG_DIR/skills/`, `.opencode/skills/`, `.claude/skills/`, `.agents/skills/`, `~/.config/opencode/skills/`, `~/.claude/skills/`, `~/.agents/skills/` | `{bundle}:{skill}:{script}` → first `{bundle}-{skill}/scripts/{script}.py` (note: dash-namespaced directory name to match dual-emit layout) |
+
+**Why absolute paths:** the OpenCode resolver always converts the matched location to an absolute path before invoking. OpenCode's bash-tool cwd is not guaranteed to be the project root (anomalyco/opencode#9077). Resolving to an absolute path before exec sidesteps cwd ambiguity entirely.
+
+**Bootstrap exception (unchanged):** during `marshall-steward` Steps 1–3 the executor does not yet exist, so direct glob-path invocation is used per the Bootstrap Invocation section above. Step 4 generates the target-appropriate executor; thereafter all calls go through the executor.
+
+**No body rewriting:** the OpenCode emitter does **not** transform `python3 .plan/execute-script.py …` lines. The notation is identical on both targets; only the resolver behind it differs. This keeps every workflow body portable.
 
 ## TOON Contract
 
