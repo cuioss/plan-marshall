@@ -1,32 +1,27 @@
 ---
-name: finalize-step-print-phase-breakdown
+name: default:finalize-step-print-phase-breakdown
 description: Optional finalize-summary mode that captures the Phase Breakdown table from metrics.md and writes it to work/phase-breakdown-output.txt for the renderer to inline in place of the per-step [OK] list
-user-invocable: false
-allowed-tools: Bash
 order: 995
 ---
 
 # Finalize Step: print-phase-breakdown
 
+Pure executor for the `default:finalize-step-print-phase-breakdown` finalize step. Replaces the per-step `[OK]` Finalize-steps block with the verbatim `## Phase Breakdown` table content from `metrics.md`.
+
+This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `default:finalize-step-print-phase-breakdown` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
+
 ## Purpose
 
-Optional finalize-summary mode that replaces the per-step `[OK]` Finalize-steps block with the verbatim `## Phase Breakdown` table content from `metrics.md`. When this skill is present in `manifest.phase_6.steps` (and runs successfully), the `phase-6-finalize` output renderer enters override mode and emits the captured breakdown content in place of the default per-step list. Useful for users who prefer the compact per-phase metrics view over the redundant `[OK]` summary.
+Optional finalize-summary mode. When the step is in `manifest.phase_6.steps` (and runs successfully), the `phase-6-finalize` output renderer enters Phase Breakdown override mode and emits the captured breakdown content in place of the default per-step list. Useful for users who prefer the compact per-phase metrics view over the redundant `[OK]` summary.
 
-The skill is a **producer** in the cross-deliverable contract documented in `phase-6-finalize/standards/output-template.md` (the consumer/renderer side). Both ends MUST reference the same artifact path verbatim:
+The step is the **producer** in the cross-deliverable contract documented in `output-template.md` (the consumer/renderer side). Both ends MUST reference the same artifact path verbatim:
 
-- **Producer (this skill)** — writes `work/phase-breakdown-output.txt`.
+- **Producer (this step)** — writes `work/phase-breakdown-output.txt`.
 - **Consumer (renderer)** — reads `work/phase-breakdown-output.txt` during the snapshot procedure, BEFORE `default:archive-plan` runs.
 
-## Interface Contract
+## Ordering constraint
 
-Invoked by `plan-marshall:phase-6-finalize` for projects that include `plan-marshall:finalize-step-print-phase-breakdown` in their `phase-6-finalize.steps` list.
-
-Accepts the standard finalize-step arguments:
-
-- `--plan-id` — plan identifier (required, used to scope all `manage-*` calls)
-- `--iteration` — finalize iteration counter (accepted for contract compliance, no effect)
-
-**Ordering constraint**: `order: 995` places this step AFTER `default:record-metrics` (order 990, which produces `metrics.md`) and BEFORE `default:archive-plan` (order 1000, which moves the plan directory). Do NOT relocate this step outside that window — the producer relies on `metrics.md` existing under `.plan/local/plans/{plan_id}/`, and the consumer (renderer snapshot) reads `work/phase-breakdown-output.txt` from the same live directory before archive moves it.
+`order: 995` places this step AFTER `default:record-metrics` (order 990, which produces `metrics.md`) and BEFORE `default:archive-plan` (order 1000, which moves the plan directory). Do NOT relocate this step outside that window — the producer relies on `metrics.md` existing under `.plan/local/plans/{plan_id}/`, and the consumer (renderer snapshot) reads `work/phase-breakdown-output.txt` from the same live directory before archive moves it.
 
 ## Workflow
 
@@ -57,7 +52,7 @@ Capture `bytes_written` from the returned TOON.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
-  --message "[ARTIFACT] (plan-marshall:finalize-step-print-phase-breakdown) work/phase-breakdown-output.txt written ({bytes_written} bytes)"
+  --message "[ARTIFACT] (plan-marshall:phase-6-finalize:finalize-step-print-phase-breakdown) work/phase-breakdown-output.txt written ({bytes_written} bytes)"
 ```
 
 ```bash
@@ -75,7 +70,7 @@ When `manage-metrics print-phase-breakdown` returns an error (metrics.md missing
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level WARN \
-  --message "[WARN] (plan-marshall:finalize-step-print-phase-breakdown) print-phase-breakdown failed: {error_message} — renderer will fall back to default Finalize-steps block"
+  --message "[WARN] (plan-marshall:phase-6-finalize:finalize-step-print-phase-breakdown) print-phase-breakdown failed: {error_message} — renderer will fall back to default Finalize-steps block"
 ```
 
 Mark the step `failed` with a brief detail; the renderer's override-activation rule requires both manifest presence AND non-`None` captured content, so a failed step naturally falls back to the default block:
@@ -99,6 +94,6 @@ Finalize MUST continue — this step is presentation-only and never blocks plan 
 
 ## Related
 
-- [marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md](../manage-metrics/SKILL.md) — `print-phase-breakdown` subcommand (the producer's data source)
-- [marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/output-template.md](../phase-6-finalize/standards/output-template.md) — renderer (the consumer that reads `work/phase-breakdown-output.txt` and emits the override block)
-- [marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/record-metrics.md](../phase-6-finalize/standards/record-metrics.md) — the previous-order step (990) that produces `metrics.md`
+- [../../manage-metrics/SKILL.md](../../manage-metrics/SKILL.md) — `print-phase-breakdown` subcommand (the producer's data source)
+- [output-template.md](output-template.md) — renderer (the consumer that reads `work/phase-breakdown-output.txt` and emits the override block)
+- [record-metrics.md](record-metrics.md) — the previous-order step (990) that produces `metrics.md`
