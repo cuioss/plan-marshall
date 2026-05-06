@@ -135,9 +135,9 @@ Tool and model mappings (see [01 — Design Platform API](01-design-platform-api
     "TaskList": "todoread"
   },
   "model_map": {
-    "opus": "claude-opus-4-5",
-    "sonnet": "claude-sonnet-4-5",
-    "haiku": "claude-haiku-4-5"
+    "opus": "claude-opus-4-7",
+    "sonnet": "claude-sonnet-4-6",
+    "haiku": "claude-haiku-4-5-20251001"
   },
   "required_fields": ["description"],
   "optional_fields": ["model", "mode"]
@@ -161,13 +161,13 @@ Uses `tool_permissions` and `model_map` from `mapping.json` (loaded by the front
 
 Claude Code aliases (`opus`, `sonnet`, `haiku`) resolve to the latest version. OpenCode requires explicit model IDs. The generator maps to the current available version to preserve the skill author's intent:
 
-- `opus` → `claude-opus-4-5` (deep reasoning, reliable rule following; avoids `claude-opus-4-7` which may not be available in OpenCode's built-in provider)
-- `sonnet` → `claude-sonnet-4-5` (daily coding)
-- `haiku` → `claude-haiku-4-5` (simple tasks)
+- `opus` → `claude-opus-4-7` (deep reasoning, reliable rule following)
+- `sonnet` → `claude-sonnet-4-6` (daily coding)
+- `haiku` → `claude-haiku-4-5-20251001` (simple tasks)
 
 **Note:** OpenCode provider prefix (`anthropic/`) is added by the config generator, not included in the model ID mapping.
 
-**No forced downgrades.** If a skill specifies `opus`, the OpenCode output preserves that requirement.
+**No forced downgrades.** If a skill specifies `opus`, the OpenCode output preserves that requirement. The generator maps to the latest stable version per MODEL_MAP.
 
 ### Limitation: Instruction Following
 
@@ -186,7 +186,7 @@ Research shows OpenCode's instruction injection mechanism differs from Claude Co
 
 Agents with `Task` or `Skill` in their `tools:` frontmatter are **not** Claude-only. OpenCode has equivalent `task` and `skill` tools. See [01 — Design Platform API](01-design-platform-api) for the full tool mapping table.
 
-**Implementation note:** Permissions are set in agent frontmatter (`tools:` field) or `opencode.json` (`agents.{name}.permission`), not at `task` invocation time. The `subagent dispatch` operation returns invocation parameters only (no permissions field in TOON response).
+**Implementation note:** Permissions are set in agent frontmatter (`tools:` field) or `opencode.json` (`agent.{name}.permission`), not at `task` invocation time. The `subagent dispatch` operation returns invocation parameters only (no permissions field in TOON response).
 
 **Impact:** All 10 plan-marshall agents are included in OpenCode output with proper permission mapping. They function via OpenCode's `task` tool for subagent dispatch and `skill` tool for skill loading.
 
