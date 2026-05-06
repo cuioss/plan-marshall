@@ -4,6 +4,10 @@
 
 Redesign the plan-marshall marketplace for multi-target distribution (Claude Code native + OpenCode + future) without changing the source-of-truth format or duplicating content.
 
+## Marketplace Inventory
+
+10 production bundles containing 116 skills, 11 agents, and 2 commands (counts at the time of this refactor). Of the 116 skills, 13 are flagged `user-invocable: true` and require the dual-emit treatment on OpenCode (see [02 — Build System](02-build-system) "User-Invocable Skills (Dual Emission)").
+
 ## Core Insight
 
 Multi-target portability without changing the source-of-truth format:

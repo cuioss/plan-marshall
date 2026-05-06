@@ -93,6 +93,8 @@ The OpenCode target generates output under `target/opencode/` (see [02 — Build
 | Permission ensure steps | Run `permission ensure-steps --marshal .plan/marshal.json --scope project`, verify missing `project:{skill}` steps have matching skill permissions |
 | Permission web analyze | Run `permission web-analyze --scope both`, verify domain categorization and duplicate detection |
 | OpenCode `ensure-executor` | Run `permission fix --operation ensure-executor` on OpenCode target, verify `permission.bash: { "python3 .plan/execute-script.py *": "allow" }` is added to the resolved opencode.json |
+| OpenCode `cleanup-scripts` | Run `permission fix --operation cleanup-scripts` on OpenCode target with stale executor entries pre-seeded; verify the stale entries are removed from `permission.bash` and `permission.skill` in the resolved opencode.json |
+| OpenCode `migrate-executor` | Run `permission fix --operation migrate-executor` on OpenCode target with a legacy-shape executor entry pre-seeded; verify it is rewritten to the current OpenCode permission shape |
 | Bundle sync (Claude) | Run target generator, verify skills mirrored to `~/.claude/plugins/cache/` via `sync-plugin-cache` |
 | Bundle sync (OpenCode) | Run target generator, verify output under `target/opencode/`; deploy via `sync-opencode` or `OPENCODE_CONFIG_DIR` |
 | Drift detection | Introduce intentional orphan in `plugin.json`, verify CI fails |

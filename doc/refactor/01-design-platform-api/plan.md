@@ -73,12 +73,41 @@ Or in skill body shorthand: `platform-runtime <operation> [args...]`
 
 ### Bootstrap Invocation (Before Executor Exists)
 
-During first-run wizard, the executor does not yet exist. `platform-runtime` must be callable directly via glob path, following the same pattern as `bootstrap_plugin.py`:
+During first-run wizard, the executor does not yet exist. `platform-runtime` must be callable directly via glob path, following the same pattern as `bootstrap_plugin.py`. The bootstrap searches the **same root list as the post-bootstrap executor** so the discovery surface stays consistent across both phases.
+
+**Search roots (target-aware, first match wins):**
+
+| Target | Roots searched (in order) |
+|--------|---------------------------|
+| `claude` (default before `marshal.json` exists) | `~/.claude/plugins/cache/plan-marshall/*/skills/platform-runtime/scripts/platform_runtime.py` |
+| `opencode` (when `--target opencode` is passed to `project initial-setup`) | `$OPENCODE_CONFIG_DIR/skills/`, `.opencode/skills/`, `.claude/skills/`, `.agents/skills/`, `~/.config/opencode/skills/`, `~/.claude/skills/`, `~/.agents/skills/` — looking for `plan-marshall-platform-runtime/scripts/platform_runtime.py` under each |
+
+**Bootstrap logic** (pseudocode):
 
 ```bash
-PLATFORM_RUNTIME=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/platform-runtime/scripts/platform_runtime.py | head -n 1)
+# Determine target: use --target arg if present, else read marshal.json, else default 'claude'
+TARGET="${1:-$(cat .plan/marshal.json 2>/dev/null | jq -r .runtime.target)}"
+TARGET="${TARGET:-claude}"
+
+# Walk the appropriate root list and pick the first hit
+case "$TARGET" in
+  claude)
+    PLATFORM_RUNTIME=$(ls ~/.claude/plugins/cache/plan-marshall/*/skills/platform-runtime/scripts/platform_runtime.py 2>/dev/null | head -n 1)
+    ;;
+  opencode)
+    for root in "$OPENCODE_CONFIG_DIR/skills" .opencode/skills .claude/skills .agents/skills \
+                ~/.config/opencode/skills ~/.claude/skills ~/.agents/skills; do
+      [ -n "$root" ] || continue
+      candidate="$root/plan-marshall-platform-runtime/scripts/platform_runtime.py"
+      [ -f "$candidate" ] && PLATFORM_RUNTIME="$candidate" && break
+    done
+    ;;
+esac
+
 python3 "$PLATFORM_RUNTIME" <operation> [args...]
 ```
+
+The OpenCode bootstrap must convert any matched location to an absolute path before invocation (same reason as the executor — bash cwd ambiguity, anomalyco/opencode#9077).
 
 **When to use bootstrap invocation:**
 

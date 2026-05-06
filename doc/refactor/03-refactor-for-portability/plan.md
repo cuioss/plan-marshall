@@ -48,14 +48,14 @@ Search all skill bodies for:
 
 | Skill | From | To |
 |-------|------|----|
-| `phase-1-init` | None (new call needed) | `session capture` at start (SessionStart hook installed by `project initial-setup`, called once during `marshall-steward`) |
+| `phase-1-init` | None (new call needed) | `session capture` at start. On Claude this reads the env var set by the SessionStart hook installed once by `project initial-setup` during `marshall-steward`. On OpenCode `session capture` returns `no-op` (no hook installed; see [01 — Design Platform API](01-design-platform-api) `session capture`). |
 | `phase-5-execute` | Extract `total_tokens` from `<usage>` tag | Add `session capture` at start; use `metrics capture --phase 5-execute` |
 | `phase-6-finalize` | `session_id` = Claude UUID | Add `session capture` at start; use `metrics capture --phase 6-finalize` |
 | `plan-retrospective` | Transcript analysis | Add `session capture` at start; use `metrics capture --phase retrospective` |
 | `marshall-steward` | Write hooks to `.claude/settings.local.json` | `platform-runtime session configure-display` |
 | `marshall-steward` | Patch `.claude/settings.local.json` permissions | `platform-runtime permission configure` |
 | `tools-permission-doctor` | Read `~/.claude/settings.json`, `.claude/settings.json`; Claude-specific anti-patterns | `platform-runtime permission analyze --checks <checks>` |
-| `tools-permission-fix` | Write to `~/.claude/settings.json`, `.claude/settings.json`; `ensure-executor` adds the `Bash(python3 .plan/execute-script.py *)` permission; `cleanup-scripts` and `migrate-executor` operate on Claude-cache-located scripts | `platform-runtime permission fix --operation <op>`. `ensure-executor` applies on **both targets** (the executor exists on both — see [01 — Design Platform API](01-design-platform-api) "Executor Resolution Per Target"); on OpenCode it writes `permission.bash: { "python3 .plan/execute-script.py *": "allow" }`. Treatment of `cleanup-scripts` and `migrate-executor` on OpenCode is TBD (see open question in cluster 04). |
+| `tools-permission-fix` | Write to `~/.claude/settings.json`, `.claude/settings.json`; `ensure-executor` adds the `Bash(python3 .plan/execute-script.py *)` permission; `cleanup-scripts` and `migrate-executor` operate on Claude-cache-located scripts | `platform-runtime permission fix --operation <op>`. **All three executor operations apply on both targets** (the executor exists on both — see [01 — Design Platform API](01-design-platform-api) "Executor Resolution Per Target"). On OpenCode: `ensure-executor` writes `permission.bash: { "python3 .plan/execute-script.py *": "allow" }`; `cleanup-scripts` removes stale executor-related entries from the OpenCode-permission shape; `migrate-executor` rewrites legacy executor permissions into the current shape. Each operation reads `runtime.target` from `marshal.json` and dispatches to the matching implementation. |
 | `workflow-permission-web` | Read `WebFetch(...)` strings from `.claude/settings*.json` | `platform-runtime permission web-analyze --scope <scope>`; `platform-runtime permission web-apply --add/--remove` |
 | `tools-script-executor` | Generates `.plan/execute-script.py` using `~/.claude/plugins/cache/` paths; bootstrap reads `~/.claude/plugins/cache/` | Target-aware generator: reads `runtime.target` from `marshal.json` and emits the matching resolver template (Claude resolver searches plugin cache; OpenCode resolver searches OpenCode's six skill discovery roots). Notation `{bundle}:{skill}:{script}` is unchanged — only the resolver behind it differs. See [01 — Design Platform API](01-design-platform-api) "Executor Resolution Per Target". |
 | `tools-file-ops` | Worktree paths under `.claude/worktrees/` hardcoded | Use `marshal.json` `worktree.path` (target-configurable, default `.claude/worktrees/` for Claude, `.opencode/worktrees/` for OpenCode) |
@@ -148,10 +148,12 @@ The `marshall-steward` wizard uses a bootstrap pattern: it calls scripts directl
 
 **Problem:** On OpenCode, `bootstrap_plugin.py` needs to find the correct script path without relying on `~/.claude/plugins/cache/`.
 
-**Solution:** Extend `bootstrap_plugin.py` to:
-1. Check `runtime.target` from `marshal.json` (if exists)
-2. Search multiple locations: plugin cache, `.opencode/skills/`, local `marketplace/bundles/`
-3. Use first match
+**Solution:** Extend `bootstrap_plugin.py` to use **the same target-aware root list as the post-bootstrap executor**, so pre-bootstrap and post-bootstrap discovery surfaces stay consistent. See [01 — Design Platform API](01-design-platform-api) "Bootstrap Invocation (Before Executor Exists)" for the concrete root list per target and the pseudocode.
+
+Implementation steps:
+1. Determine target (`--target` arg, else `runtime.target` from `marshal.json` if it exists, else default `claude`).
+2. Walk the target's documented root list (1 root for Claude; 7 for OpenCode — 6 documented skill roots plus the `$OPENCODE_CONFIG_DIR/skills/` env-var override).
+3. Use first match. Convert to absolute path before invoking (OpenCode bash-cwd ambiguity, anomalyco/opencode#9077).
 
 This is a script change, not a skill body change.
 
@@ -187,7 +189,7 @@ This cluster is complete when:
 5. `bootstrap_plugin.py` handles multi-platform path resolution
 6. `marketplace/adapters/` retired (logic in `marketplace/targets/`)
 7. `tools-permission-doctor`, `tools-permission-fix`, and `workflow-permission-web` delegate all settings file I/O to `platform-runtime` permission operations
-8. `ensure-executor` is implemented on both targets (writes the appropriate bash permission for the generated `.plan/execute-script.py`); `cleanup-scripts` and `migrate-executor` resolution on OpenCode is decided per the cluster 04 open question and either implemented or returns documented `no-op`
+8. `ensure-executor`, `cleanup-scripts`, and `migrate-executor` are implemented on both targets — each reads `runtime.target` and writes/cleans/migrates permissions in the appropriate target's permission shape
 9. `tools-script-executor` is target-aware: same notation `{bundle}:{skill}:{script}` resolves correctly via the Claude-cache resolver on Claude and the OpenCode-skill-roots resolver on OpenCode
 10. Claude-only hook/cache documentation has been moved out of skill bodies and into per-skill `references/{topic}.md`
 11. Tool-name rules in skill bodies are platform-agnostic (no `EnterPlanMode`/`AskUserQuestion`/`Agent(subagent_type=…)` etc. in instructional rules)

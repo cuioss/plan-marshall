@@ -303,7 +303,7 @@ generate-opencode = "python marketplace/targets/generate.py --target opencode"
 `marketplace/adapters/opencode_adapter.py` contains working logic to port:
 - Frontmatter parsing (`parse_frontmatter`)
 - Skill/agent/command transforms
-- Body `Skill:` directive annotation
+- Body transformations — both the existing `Skill:` directive handling and the slash-command rewrite (per `transforms.md`); upgrade the adapter's annotation-only handling into the rewrite specified by Body Transforms above
 - Config generation
 
 **Steps:**
