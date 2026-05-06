@@ -96,16 +96,32 @@ Run **once**, after every task above is complete. Do not run between tasks — t
 
 ## Ship
 
-- [ ] Commit all changes
-- [ ] Push the feature branch
-- [ ] Create the PR via the CI integration script
-- [ ] **Wait 5 minutes** for review automation
-- [ ] Handle review comments (apply sensible fixes; ask before skipping)
-- [ ] **Wait for user review**
+Use `PLAN_ID=refactor-03-portability` in the commands below. Capture the PR number into `PR=<n>` after `ci pr create`.
+
+- [ ] Commit all changes (conventional commits)
+- [ ] Push the feature branch:
+      `git push -u origin feature/refactor-03-portability`
+- [ ] Allocate a body file:
+      `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body --plan-id refactor-03-portability`
+      (write PR body to the returned path)
+- [ ] Create the PR:
+      `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --title "refactor(skills): replace Claude-specific behaviour with platform-runtime calls" --plan-id refactor-03-portability --base main`
+- [ ] Wait 5 minutes for review automation:
+      `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-for-comments --pr-number $PR --timeout 300`
+- [ ] Fetch unresolved comments and reviews:
+      `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr comments --pr-number $PR --unresolved-only`
+      `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr reviews  --pr-number $PR`
+- [ ] For each comment:
+      - Real issue + sensible fix → apply, commit, push; reply via:
+        `... pr prepare-body --plan-id refactor-03-portability --for edit --slot reply-<n>` (write text), then
+        `... pr reply --pr-number $PR --plan-id refactor-03-portability --slot reply-<n>`
+      - Wrong / out of scope → ask the user before skipping.
+- [ ] After comment handling, **wait for the user to review** the PR.
 
 ## Close
 
-- [ ] User approval
-- [ ] Merge via the CI integration script
+- [ ] User has approved the PR
+- [ ] Merge with squash + delete branch:
+      `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge --pr-number $PR --strategy squash --delete-branch`
 - [ ] `git switch main && git pull origin main`
 - [ ] Mark this TODO as **completed**

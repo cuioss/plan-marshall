@@ -26,7 +26,10 @@ Read these documents in full **before touching anything**. Do not start the task
 
 ### 1. Skeleton: `platform-runtime` skill scaffolding
 - [ ] Implementation: create `marketplace/bundles/plan-marshall/skills/platform-runtime/{SKILL.md, standards/, scripts/, scripts/__init__.py}`. SKILL.md describes the API contract (intent + invocation + 13 operations). Add the skill to `plan-marshall/.claude-plugin/plugin.json`.
-- [ ] Testing: skill loads without error via `Skill: plan-marshall:platform-runtime`; plugin-doctor reports no rule violations
+- [ ] Testing: skill loads without error via `Skill: plan-marshall:platform-runtime`; plugin-doctor passes its quality gate against the new skill:
+      ```
+      python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate
+      ```
 - [ ] Documentation: SKILL.md has all 13 operations enumerated and cross-references `standards/contract.md`
 
 ### 2. `runtime_base.py` (abstract base + shared helpers)
@@ -76,18 +79,32 @@ Run **once**, after every task above is complete. Do not run between tasks — t
 
 ## Ship
 
+Use `PLAN_ID=refactor-01-platform-api` in the commands below. Capture the PR number into `PR=<n>` after `ci pr create`.
+
 - [ ] Commit all changes (conventional commits, one logical change per commit)
-- [ ] Push the feature branch to `origin`
-- [ ] Create the PR via the CI integration script: `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create ...`
-- [ ] **Wait 5 minutes** for review automation
-- [ ] Fetch PR review comments. For each comment:
-  - Real issue + sensible fix → apply, commit, push.
-  - Wrong / out of scope → ask the user before skipping.
-- [ ] After review-comment handling, **wait for the user to review** the PR.
+- [ ] Push the feature branch:
+      `git push -u origin feature/refactor-01-platform-api`
+- [ ] Allocate a body file:
+      `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body --plan-id refactor-01-platform-api`
+      (write PR body to the returned path)
+- [ ] Create the PR (CLAUDE.md hard rule: never use `gh pr create` directly):
+      `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --title "feat(platform-runtime): goal-based platform abstraction with 13 operations" --plan-id refactor-01-platform-api --base main`
+- [ ] Wait 5 minutes for review automation:
+      `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-for-comments --pr-number $PR --timeout 300`
+- [ ] Fetch unresolved comments and reviews:
+      `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr comments --pr-number $PR --unresolved-only`
+      `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr reviews  --pr-number $PR`
+- [ ] For each comment:
+      - Real issue + sensible fix → apply, commit, push; reply via:
+        `... pr prepare-body --plan-id refactor-01-platform-api --for edit --slot reply-<n>` (write text), then
+        `... pr reply --pr-number $PR --plan-id refactor-01-platform-api --slot reply-<n>`
+      - Wrong / out of scope → ask the user before skipping.
+- [ ] After comment handling, **wait for the user to review** the PR.
 
 ## Close
 
 - [ ] User has approved the PR
-- [ ] Merge the PR via the CI integration script
+- [ ] Merge with squash + delete branch:
+      `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge --pr-number $PR --strategy squash --delete-branch`
 - [ ] `git switch main && git pull origin main`
 - [ ] Mark this cluster's TODO as **completed** (add `> ✅ Completed: {YYYY-MM-DD}` under the top-level heading)
