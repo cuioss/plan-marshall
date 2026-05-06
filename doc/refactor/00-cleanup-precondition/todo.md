@@ -7,6 +7,16 @@
 - All work happens on a dedicated feature branch (see "Setup" below). Never commit on `main`.
 - The PR is created only after every task is done **and** the local quality gate has passed.
 
+## Briefing
+
+Read these documents in full **before touching anything**. Do not start the tasks below until you have done so.
+
+- [ ] Read [`plan.md`](plan.md) — this cluster's design, scope, audit checklist, concrete cleanup tasks, and verification criteria
+- [ ] Read [`../principles.md`](../principles.md) — cross-cutting rules that bind every cluster
+- [ ] Read [`../README.md`](../README.md) — refactor overview, terminology, dependency graph
+- [ ] Confirm to yourself you have understood the cluster's objective, the audit checklist, what is and is not in scope, and how this cluster relates to others
+- [ ] If **any** part is unclear or contradictory, **stop and ask the user** before continuing — do not guess
+
 ## Setup
 
 - [ ] Switch to a feature branch: `git switch -c feature/refactor-00-cleanup`

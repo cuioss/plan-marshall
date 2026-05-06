@@ -7,6 +7,17 @@
 - All work happens on a dedicated feature branch (see "Setup" below). Never commit on `main`.
 - The PR is created only after every task is done **and** the local quality gate has passed.
 
+## Briefing
+
+Read these documents in full **before touching anything**. Do not start the tasks below until you have done so.
+
+- [ ] Read [`plan.md`](plan.md) — this cluster's inner-loop options (Option A deploy-to-global, Option B `OPENCODE_CONFIG_DIR` with plural staging, Option C `opencode-marketplace install`), the `sync-opencode` script design, and the comparison table
+- [ ] Read [`../02-build-system/plan.md`](../02-build-system/plan.md) — the developer workflow consumes the generator's output (singular layout); you must know what is produced and how
+- [ ] Read [`../principles.md`](../principles.md) — cross-cutting rules
+- [ ] Read [`../README.md`](../README.md) — refactor overview, terminology, dependency graph
+- [ ] Confirm to yourself you have understood the singular → plural rename requirement, the `OPENCODE_CONFIG_DIR` precedence caveat (project `.opencode/` shadows it), and which option is recommended for which use case
+- [ ] If **any** part is unclear or contradictory, **stop and ask the user** before continuing — do not guess
+
 ## Setup
 
 - [ ] Switch to a feature branch: `git switch -c feature/refactor-06-developer-workflow`

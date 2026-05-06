@@ -7,6 +7,17 @@
 - All work happens on a dedicated feature branch (see "Setup" below). Never commit on `main`.
 - The PR is created only after every task is done **and** the local quality gate has passed.
 
+## Briefing
+
+Read these documents in full **before touching anything**. Do not start the tasks below until you have done so.
+
+- [ ] Read [`plan.md`](plan.md) — this cluster's drift detection, OpenCode generation validation, health checks, test plan (unit + integration + E2E), documentation porting table, target-specific notes, acceptance criteria, risk register
+- [ ] Read every prerequisite cluster's `plan.md` — `00`, `01`, `02`, `03`. Validation criteria reference contracts those clusters define; you cannot validate something you did not read.
+- [ ] Read [`../principles.md`](../principles.md) — cross-cutting rules referenced by acceptance criteria
+- [ ] Read [`../README.md`](../README.md) — refactor overview, terminology, dependency graph
+- [ ] Confirm to yourself you have understood the porting rules ("Remove plan language", "Keep technical specs", etc.), what gets deleted from `doc/refactor/`, and how the umbrella doc relates to per-topic docs
+- [ ] If **any** part is unclear or contradictory, **stop and ask the user** before continuing — do not guess
+
 ## Setup
 
 - [ ] Switch to a feature branch: `git switch -c feature/refactor-04-validate-document`

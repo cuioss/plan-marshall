@@ -7,6 +7,17 @@
 - All work happens on a dedicated feature branch (see "Setup" below). Never commit on `main`.
 - The PR is created only after every task is done **and** the local quality gate has passed.
 
+## Briefing
+
+Read these documents in full **before touching anything**. Do not start the tasks below until you have done so.
+
+- [ ] Read [`plan.md`](plan.md) — this cluster's distribution architecture: Claude Code plugin discovery (manifest at repo root, `pluginRoot`), OpenCode install paths, CI/CD pipeline, versioning strategy, hosting comparison, update strategy
+- [ ] Read [`../02-build-system/plan.md`](../02-build-system/plan.md) — distribution wraps the generator; you must know what the generator produces (singular layout, dual-emit, body transforms)
+- [ ] Read [`../principles.md`](../principles.md) — cross-cutting rules
+- [ ] Read [`../README.md`](../README.md) — refactor overview, terminology, dependency graph
+- [ ] Confirm to yourself you have understood the marketplace.json relocation, the singular-vs-plural directory tension, and which install paths are CI-tested vs documented-only
+- [ ] If **any** part is unclear or contradictory, **stop and ask the user** before continuing — do not guess
+
 ## Setup
 
 - [ ] Switch to a feature branch: `git switch -c feature/refactor-05-distribution`

@@ -7,6 +7,18 @@
 - All work happens on a dedicated feature branch (see "Setup" below). Never commit on `main`.
 - The PR is created only after every task is done **and** the local quality gate has passed.
 
+## Briefing
+
+Read these documents in full **before touching anything**. Do not start the tasks below until you have done so.
+
+- [ ] Read [`plan.md`](plan.md) — this cluster's behavioural rewrites: audit checklist, per-skill rewrite table, `marshal.json` template, marshall-steward wizard rewrite, phase-skills rewrite, bootstrap exception
+- [ ] Read [`../00-cleanup-precondition/plan.md`](../00-cleanup-precondition/plan.md) — the precondition cluster you are layered on top of (do not redo prose work it already covers)
+- [ ] Read [`../01-design-platform-api/plan.md`](../01-design-platform-api/plan.md) — every `platform-runtime` operation you will be calling from skills must match its contract
+- [ ] Read [`../principles.md`](../principles.md) — boundary rules in particular ("would this work identically on both targets?")
+- [ ] Read [`../README.md`](../README.md) — refactor overview, terminology, dependency graph
+- [ ] Confirm to yourself you have understood the boundary between behavioural and prose changes, every operation's per-target behaviour, and the executor resolution per target
+- [ ] If **any** part is unclear or contradictory, **stop and ask the user** before continuing — do not guess
+
 ## Setup
 
 - [ ] Switch to a feature branch: `git switch -c feature/refactor-03-portability`

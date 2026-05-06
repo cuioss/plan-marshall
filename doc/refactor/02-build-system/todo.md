@@ -7,6 +7,16 @@
 - All work happens on a dedicated feature branch (see "Setup" below). Never commit on `main`.
 - The PR is created only after every task is done **and** the local quality gate has passed.
 
+## Briefing
+
+Read these documents in full **before touching anything**. Do not start the tasks below until you have done so.
+
+- [ ] Read [`plan.md`](plan.md) — this cluster's architecture (TargetBase, registry, Claude drift, OpenCode emitter, body transforms, dual-emit, mapping/frontmatter-rules split, adapter migration)
+- [ ] Read [`../principles.md`](../principles.md) — cross-cutting rules (especially "single source of truth" and the loosened body-verbatim contract)
+- [ ] Read [`../README.md`](../README.md) — refactor overview, terminology, dependency graph
+- [ ] Confirm to yourself you have understood the singular-vs-plural directory choice, the bounded body-transforms contract, the dual-emit rationale, and the build-failure-on-unmapped-tools policy
+- [ ] If **any** part is unclear or contradictory, **stop and ask the user** before continuing — do not guess
+
 ## Setup
 
 - [ ] Switch to a feature branch: `git switch -c feature/refactor-02-build-system`

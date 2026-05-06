@@ -7,6 +7,16 @@
 - All work happens on a dedicated feature branch (see "Setup" below). Never commit on `main`.
 - The PR is created only after every task is done **and** the local quality gate has passed.
 
+## Briefing
+
+Read these documents in full **before touching anything**. Do not start the tasks below until you have done so.
+
+- [ ] Read [`plan.md`](plan.md) — this cluster's API surface (13 operations, TOON contract, no-op policy, executor resolution per target, bootstrap invocation, error codes, session hook setup)
+- [ ] Read [`../principles.md`](../principles.md) — cross-cutting rules (goal-based API, boundary rules, no-op policy, single source of truth, terminology)
+- [ ] Read [`../README.md`](../README.md) — refactor overview, terminology, dependency graph
+- [ ] Confirm to yourself you have understood every operation's intent, both per-target implementations, the boundary test, and the no-op contract
+- [ ] If **any** part is unclear or contradictory, **stop and ask the user** before continuing — do not guess
+
 ## Setup
 
 - [ ] Switch to a feature branch: `git switch -c feature/refactor-01-platform-api`
