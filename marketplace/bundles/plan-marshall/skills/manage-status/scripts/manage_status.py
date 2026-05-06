@@ -150,7 +150,18 @@ def main() -> int:
     add_plan_id_arg(mark_step_parser)
     add_phase_arg(mark_step_parser)
     mark_step_parser.add_argument('--step', required=True, help='Step identifier within the phase')
-    mark_step_parser.add_argument('--outcome', required=True, choices=['done', 'skipped'], help='Step outcome')
+    mark_step_parser.add_argument(
+        '--outcome',
+        required=True,
+        choices=['done', 'skipped', 'loop_back', 'failed'],
+        help=(
+            'Step outcome. ``done`` and ``skipped`` are terminal markers (dispatcher will not re-fire). '
+            '``loop_back`` records a loop-back iteration: dispatcher will re-fire the step on next phase entry '
+            '(treat as no record - dispatch as fresh run). '
+            '``failed`` records that the step aborted with an error (e.g., graceful timeout degradation); '
+            'the dispatcher will retry the step on next phase entry.'
+        ),
+    )
     mark_step_parser.add_argument('--force', action='store_true', help='Overwrite an existing conflicting outcome')
     mark_step_parser.add_argument(
         '--display-detail',

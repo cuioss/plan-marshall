@@ -4,7 +4,14 @@ mark-step-done command handler for manage-status.
 
 Persists phase step completion state into status.metadata.phase_steps so that
 phase skills can record which intra-phase steps have finished. Outcomes are
-``done`` or ``skipped``. The operation is idempotent when outcome,
+``done``, ``skipped``, ``failed``, or ``loop_back``. The ``failed`` value
+records that the step aborted with an error (e.g., a graceful timeout
+degradation in the phase-6-finalize dispatcher); the dispatcher will retry
+the step on next phase entry rather than treating it as terminal. The
+``loop_back`` value records that the step deliberately re-fired (loop-back
+iteration recorded; dispatcher will re-fire on next phase-6 entry) and signals
+the dispatcher to treat the step as a fresh dispatch on the next phase entry
+rather than skipping it. The operation is idempotent when outcome,
 display_detail, and head_at_completion all match and returns a ``conflict``
 error when a step already has a different outcome unless ``--force`` is
 supplied. An optional ``--display-detail`` one-line string is persisted
@@ -24,7 +31,7 @@ from typing import Any
 
 from _status_core import require_status, write_status
 
-VALID_OUTCOMES = ('done', 'skipped')
+VALID_OUTCOMES = ('done', 'skipped', 'loop_back', 'failed')
 
 
 def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:

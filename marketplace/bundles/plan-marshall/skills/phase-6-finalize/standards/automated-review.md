@@ -133,12 +133,49 @@ The `AskUserQuestion` outcome is reserved for the cases where domain-skill rules
 
 **5. Act on the decision**:
 
-- **FIX** — Create a fix task via the two-step prepare-add → commit-add flow (see "Handle findings (loop-back)" below). The finding's resolution is recorded after the loop-back fix lands; from this step's perspective, mark the finding `fixed` once the fix task has been recorded:
+- **FIX** — The comment identifies a real defect that requires a follow-up commit. The action body emits a fix task allocation, a thread-reply chain pointing the reviewer at that task, and finally a `manage-findings resolve` record. Order is load-bearing: the task number must be allocated FIRST so the thread reply can name it.
+
+  Step 1 — allocate the fix task via the two-step prepare-add → commit-add flow:
+
+  ```bash
+  # Allocate a scratch path for the pending task (returns draft_id and scratch path)
+  python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks prepare-add \
+    --plan-id {plan_id}
+  ```
+
+  Write the task YAML to the returned scratch path (title, deliverable: 0, domain matching the finding, profile: implementation, description referencing the comment, steps targeting `{finding.file_path}`), then commit:
+
+  ```bash
+  # Read the prepared file and create TASK-NNN.json — capture the returned task number as {N}
+  python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks commit-add \
+    --plan-id {plan_id}
+  ```
+
+  Step 2 — emit the thread-reply chain pointing at TASK-{N}. Allocate a scratch path for the reply body:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr prepare-comment \
+    --plan-id {plan_id} --pr-number {pr_number}
+  ```
+
+  Write the reply body to the returned scratch path via the Write tool. The body MUST reference the freshly-allocated fix-task number, e.g. `Will be addressed by TASK-{N}; see follow-up commit on this branch`. Then post and resolve the thread:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr thread-reply \
+    --pr-number {pr_number} --thread-id {finding.thread_id} --plan-id {plan_id}
+  ```
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr resolve-thread \
+    --pr-number {pr_number} --thread-id {finding.thread_id}
+  ```
+
+  Step 3 — record the finding as fixed. Mark resolved only after the task allocation and thread chain have completed, so the resolution rationale can name the task number:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
     --plan-id {plan_id} --hash-id {finding.hash_id} --resolution fixed \
-    --detail "{rationale referencing the fix task number}"
+    --detail "Will be addressed by TASK-{N}; see follow-up commit on this branch"
   ```
 
 - **SUPPRESS** — Apply the domain-specific suppression annotation to the source location identified by `{finding.file_path}:{finding.line}`, using the syntax from the loaded `suppression.md`. Then:
@@ -186,32 +223,26 @@ The `AskUserQuestion` outcome is reserved for the cases where domain-skill rules
 
 ### Handle findings (loop-back)
 
-**On findings** that resolved to **FIX** (one or more `pr-comment` findings closed with `--resolution fixed` and a fix-task reference), `loop_back_needed = true`:
+The per-finding loop above already allocated fix tasks and posted reviewer-facing thread replies inline (see the FIX action body). This section only handles the loop-back bookkeeping after that loop has finished.
 
-1. Create fix tasks (two-step prepare-add → commit-add flow):
+**If any FIX disposition fired during the per-finding loop** (one or more `pr-comment` findings closed with `--resolution fixed` and a fix-task reference), `loop_back_needed = true`:
 
-```bash
-# Step 1: allocate a scratch path for the pending task (returns draft_id and scratch path)
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks prepare-add \
-  --plan-id {plan_id}
-```
-
-Write the task YAML to the returned scratch path (title, deliverable: 0, domain, profile: implementation, description, steps), then commit:
-
-```bash
-# Step 2: read the prepared file and create TASK-NNN.json
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks commit-add \
-  --plan-id {plan_id}
-```
-
-2. Loop back to phase-5-execute (iteration + 1):
+1. Set the plan back to phase-5-execute so the orchestrator picks the freshly-allocated fix tasks up on the next iteration:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-phase \
   --plan-id {plan_id} --phase 5-execute
 ```
 
-3. Continue until clean or max iterations (3).
+2. Mark this finalize step as a loop-back iteration (the dispatcher will re-fire it on the next phase-6 entry):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step automated-review --outcome loop_back \
+  --display-detail "loop-back iteration {iteration}"
+```
+
+3. Continue until clean or max iterations (3). Iteration counting and the 3-iteration cap are unchanged.
 
 When NO finding resolved to **FIX** (every finding closed as SUPPRESS / ACCEPT / taken_into_account), `loop_back_needed = false` — proceed directly to "Phase Boundary Re-Capture" below.
 
@@ -275,10 +306,10 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
   --display-detail "no PR available"
 ```
 
-**Branch C — loop-back recorded** (intermediate pass; used only when a non-terminal iteration must be surfaced in the output): `{iteration}` is the current loop-back iteration number (1..3). This branch is informational — the terminal pass still uses Branch A when review eventually goes clean.
+**Branch C — loop-back recorded** (intermediate pass; used when a non-terminal iteration must be surfaced and the dispatcher must re-fire this step on the next phase-6 entry): `{iteration}` is the current loop-back iteration number (1..3). This branch records `--outcome loop_back` so the Step 3 dispatcher table (and the Resumability table in `phase-6-finalize/SKILL.md`) re-fires the step as a fresh dispatch on next entry. The terminal pass still uses Branch A when review eventually goes clean. Never record `--outcome done` for an intermediate iteration — `done` is terminal and will cause the dispatcher to skip the step on re-entry.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step automated-review --outcome done \
+  --plan-id {plan_id} --phase 6-finalize --step automated-review --outcome loop_back \
   --display-detail "loop-back iteration {iteration}"
 ```

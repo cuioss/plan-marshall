@@ -115,6 +115,57 @@ def test_mark_step_skipped_happy_path():
         }
 
 
+def test_mark_step_failed_happy_path():
+    """Outcome 'failed' persists as dict with null display_detail.
+
+    Regression guard for PR #338 review (gemini-code-assist findings 0d1782 and
+    f9c054): the phase-6-finalize dispatcher's graceful timeout degradation
+    path uses ``--outcome failed`` (see SKILL.md and automated-review.md
+    Timeout Contract), so ``failed`` MUST be a valid persisted outcome.
+    """
+    plan_id = 'mark-step-failed'
+    with PlanContext(plan_id=plan_id):
+        _make_plan(plan_id)
+        result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'automated-review', 'failed'))
+
+        assert result['status'] == 'success'
+        assert result['changed'] is True
+        assert result['outcome'] == 'failed'
+        assert result['display_detail'] is None
+
+        persisted = read_status(plan_id)
+        assert persisted['metadata']['phase_steps']['6-finalize']['automated-review'] == {
+            'outcome': 'failed',
+            'display_detail': None,
+        }
+
+
+def test_mark_step_failed_with_display_detail():
+    """Outcome 'failed' carries a display_detail describing the failure cause."""
+    plan_id = 'mark-step-failed-detail'
+    with PlanContext(plan_id=plan_id):
+        _make_plan(plan_id)
+        result = cmd_mark_step_done(
+            _args(
+                plan_id,
+                '6-finalize',
+                'automated-review',
+                'failed',
+                display_detail='timeout after 1800s',
+            )
+        )
+
+        assert result['status'] == 'success'
+        assert result['outcome'] == 'failed'
+        assert result['display_detail'] == 'timeout after 1800s'
+
+        persisted = read_status(plan_id)
+        assert persisted['metadata']['phase_steps']['6-finalize']['automated-review'] == {
+            'outcome': 'failed',
+            'display_detail': 'timeout after 1800s',
+        }
+
+
 def test_mark_step_persists_display_detail():
     """--display-detail value is stored alongside the outcome."""
     plan_id = 'mark-step-detail'
@@ -332,6 +383,65 @@ def test_mark_step_invalid_outcome():
 
         persisted = read_status(plan_id)
         assert 'phase_steps' not in persisted.get('metadata', {})
+
+
+def test_mark_step_failed_idempotent():
+    """Re-marking a step 'failed' with same detail is a no-op (changed=False)."""
+    plan_id = 'mark-step-failed-idempotent'
+    with PlanContext(plan_id=plan_id):
+        _make_plan(plan_id)
+        cmd_mark_step_done(
+            _args(plan_id, '6-finalize', 'automated-review', 'failed', display_detail='timeout')
+        )
+
+        second = cmd_mark_step_done(
+            _args(plan_id, '6-finalize', 'automated-review', 'failed', display_detail='timeout')
+        )
+
+        assert second['status'] == 'success'
+        assert second['changed'] is False
+        assert second['outcome'] == 'failed'
+
+
+def test_mark_step_failed_then_done_with_force():
+    """After a 'failed' marker, dispatcher can re-fire and overwrite with 'done' under --force."""
+    plan_id = 'mark-step-failed-then-done'
+    with PlanContext(plan_id=plan_id):
+        _make_plan(plan_id)
+        cmd_mark_step_done(
+            _args(plan_id, '6-finalize', 'automated-review', 'failed', display_detail='timeout')
+        )
+
+        # Without --force, a different outcome on an existing step is a conflict.
+        conflict = cmd_mark_step_done(
+            _args(plan_id, '6-finalize', 'automated-review', 'done', display_detail='retry green')
+        )
+        assert conflict['status'] == 'error'
+        assert conflict['error'] == 'conflict'
+        assert conflict['existing_outcome'] == 'failed'
+        assert conflict['requested_outcome'] == 'done'
+
+        # With --force, the retry overwrite succeeds.
+        retry = cmd_mark_step_done(
+            _args(
+                plan_id,
+                '6-finalize',
+                'automated-review',
+                'done',
+                force=True,
+                display_detail='retry green',
+            )
+        )
+        assert retry['status'] == 'success'
+        assert retry['changed'] is True
+        assert retry['outcome'] == 'done'
+        assert retry['previous_outcome'] == 'failed'
+
+        persisted = read_status(plan_id)
+        assert persisted['metadata']['phase_steps']['6-finalize']['automated-review'] == {
+            'outcome': 'done',
+            'display_detail': 'retry green',
+        }
 
 
 def test_mark_step_empty_phase():

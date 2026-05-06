@@ -404,6 +404,7 @@ FOR each step_id in manifest.phase_6.steps:
        - ELSE (every other step keeps the general rule):
            - IF outcome == "done": SKIP this step (continue to next iteration)
            - IF outcome == "failed": RETRY (proceed to dispatch as fresh run)
+           - IF outcome == "loop_back": RE-FIRE (treat as no record — dispatch as fresh run)
            - IF no record OR any other value: dispatch normally
      Log skip/retry/re-fire decisions at INFO level so the work.log reflects the re-entry path.
 
@@ -668,6 +669,7 @@ The Step 3 dispatch loop is fully resumable across re-entries: each step's `stat
 |---------------------|--------|
 | `done` | Skip dispatch entirely. The step ran successfully on a previous invocation; do not re-execute. |
 | `failed` | Retry from scratch. The previous run produced a `failed` record (typically a timeout or step-internal abort); the new invocation gets exactly one fresh attempt. |
+| `loop_back` | Re-fire (treat as no record — dispatch as fresh run). The previous run recorded a deliberate loop-back iteration and signalled that the dispatcher should re-execute the step on next phase entry. |
 | (no record) | Dispatch as a first-time run. |
 | any other value | Dispatch as a first-time run (treat as a degraded record). |
 
