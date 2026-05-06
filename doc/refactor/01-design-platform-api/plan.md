@@ -613,7 +613,7 @@ Ask: "Would this operation work identically on both Claude and OpenCode?"
 ## Verification
 
 This cluster is complete when:
-1. API contract document exists and covers all 7 operations
+1. API contract document exists and covers all 13 operations
 2. TOON schemas defined for success, error, and no-op paths
 3. Router specification documented
 4. Boundary rules clear enough that a new skill author knows where to put things

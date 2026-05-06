@@ -33,18 +33,16 @@ An ad-hoc adapter (`marketplace/adapters/opencode_adapter.py`) generates OpenCod
 
 ```
 marketplace/targets/
-├── __init__.py              # Target registry
 ├── base.py                  # TargetBase abstract class
 ├── generate.py              # CLI entry point
-├── claude.py                # Claude target (drift detection only)
 ├── opencode/
-│   ├── __init__.py          # OpenCode target implementation
+│   ├── target.py            # OpenCode target implementation (OpenCodeTarget class)
 │   ├── emitter.py           # OpenCode emitter
 │   ├── frontmatter.py       # Frontmatter transform engine
 │   ├── mapping.json         # Tool + model + layout mappings
 │   └── frontmatter-rules.json  # Frontmatter transform rules
 └── claude/
-    ├── __init__.py          # Claude target implementation
+    ├── target.py             # Claude target implementation (ClaudeTarget class)
     └── drift.py             # Drift detection engine
 ```
 
@@ -117,7 +115,7 @@ All transformations are driven by configuration files, not hardcoded logic. This
 
 ```json
 {
-  "tools": {
+  "tool_permissions": {
     "Read": "read",
     "Write": "edit",
     "Edit": "edit",
@@ -131,7 +129,7 @@ All transformations are driven by configuration files, not hardcoded logic. This
     "Skill": "skill",
     "NotebookEdit": "edit"
   },
-  "models": {
+  "model_map": {
     "opus": "anthropic/claude-opus-4-7",
     "sonnet": "anthropic/claude-sonnet-4-6",
     "haiku": "anthropic/claude-haiku-4-5"
@@ -242,8 +240,8 @@ generate-opencode = "python marketplace/targets/generate.py --target opencode"
 - Config generation
 
 **Steps:**
-1. Port transformation functions into `opencode_frontmatter.py`
-2. Port generation logic into `opencode.py` as `OpenCodeTarget`
+1. Port transformation functions into `opencode/frontmatter.py`
+2. Port generation logic into `opencode/target.py` as `OpenCodeTarget`
 3. Port CLI into `generate.py`
 4. Delete `marketplace/adapters/` directory
 5. Update any references (search for `marketplace.adapters` imports)

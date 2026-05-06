@@ -140,14 +140,7 @@ If any bundle contains `.claude/` references in skill bodies, flag for update.
 
 ## Adapter Migration
 
-`marketplace/adapters/opencode_adapter.py` must be migrated into the target engine (see 02).
-
-**Steps:**
-1. Port frontmatter transform functions to `marketplace/targets/opencode_frontmatter.py`
-2. Port generation logic to `marketplace/targets/opencode.py`
-3. Port CLI to `marketplace/targets/generate.py`
-4. Update any imports (`marketplace.adapters` → `marketplace.targets`)
-5. Delete `marketplace/adapters/`
+`marketplace/adapters/opencode_adapter.py` must be migrated into the target engine. See [02 — Build System](02-build-system) for the full migration steps and architecture.
 
 ## Verification
 

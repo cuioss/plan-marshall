@@ -129,9 +129,9 @@ Output structure:
 ```
 target/opencode/
 ├── skills/
-│   └── plan-marshall--plan-marshall/
+│   └── plan-marshall-plan-marshall/
 │       └── SKILL.md
-│   └── pm-dev-java--java-core/
+│   └── pm-dev-java-java-core/
 │       └── SKILL.md
 │   └── ...
 ├── agents/
@@ -143,7 +143,7 @@ target/opencode/
 └── opencode.json
 ```
 
-**Namespacing:** Skills are prefixed with bundle name to avoid collisions in the global directory (e.g., `plan-marshall--plan-marshall`, `pm-dev-java--java-core`).
+**Namespacing:** Skills are prefixed with bundle name to avoid collisions in the global directory (e.g., `plan-marshall-plan-marshall`, `pm-dev-java-java-core`). OpenCode skill names must not contain consecutive `--`.
 
 #### Phase 2: Deploy (Choose One)
 
@@ -194,7 +194,7 @@ OPENCODE_CONFIG_DIR=/path/to/plan-marshall/target/opencode opencode
 **Cons:**
 - Must remember to set env var every time
 - May not discover user's other global skills (unless they are also in the custom dir)
-- The custom config dir loads AFTER global config, so it overrides but doesn't merge
+- The custom config dir loads AFTER global config, so it overrides same-key settings from earlier configs
 
 **Option C: opencode-marketplace with File URL (For Testing Distribution)**
 
@@ -258,9 +258,9 @@ Following the same pattern as `sync-plugin-cache`:
 ```
 
 **Namespacing convention:**
-- Skills: `{bundle}--{skill}` directory name (e.g., `plan-marshall--plan-marshall`)
+- Skills: `{bundle}-{skill}` directory name (e.g., `plan-marshall-plan-marshall`)
 - This avoids collisions with other skills in the global directory
-- Matches how `opencode-marketplace` names installed plugins
+- OpenCode skill names must not contain consecutive `--`
 
 ---
 
@@ -274,7 +274,7 @@ Following the same pattern as `sync-plugin-cache`:
 | **Reload** | New session or restart | Restart OpenCode | Restart OpenCode |
 | **Iteration time** | ~1s (sync) | ~3s (generate + deploy) | ~2s (generate only) |
 | **Isolation** | Shared cache | Shared global dir | Complete isolation |
-| **Namespacing** | Bundle directory | `{bundle}--{skill}` prefix | Bundle directory |
+| **Namespacing** | Bundle directory | `{bundle}-{skill}` prefix | Bundle directory |
 | **Best for** | Rapid skill editing | Daily development | Isolated testing, CI |
 
 ---
