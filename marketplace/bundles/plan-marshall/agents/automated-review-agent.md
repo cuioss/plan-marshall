@@ -1,7 +1,7 @@
 ---
 name: automated-review-agent
 description: |
-  Named agent that performs the finalize-phase Automated Review step. Loads plan-marshall:dev-general-practices into its own context, then delegates end-to-end to the authoritative standard phase-6-finalize/standards/automated-review.md. The standard drives the producer-side `github_pr comments-stage` (or the GitLab equivalent) to populate the per-plan findings store, then dispatches each pending `pr-comment` finding through `manage-findings query` + `ext-triage-{domain}` for the FIX / SUPPRESS / ACCEPT / AskUserQuestion decision, with thread replies, thread resolution, and loop-back fix-task creation per the loaded extension's standards.
+  Named agent that performs the finalize-phase Automated Review step. Loads plan-marshall:dev-general-practices into its own context, then delegates end-to-end to the authoritative standard phase-6-finalize/standards/automated-review.md. The standard drives the producer-side `github_pr comments-stage` (or the GitLab equivalent) to populate the per-plan findings store, then dispatches each pending `pr-comment` finding through `manage-findings query` + `ext-triage-{domain}` for the FIX / SUPPRESS / ACCEPT / AskUserQuestion decision, with thread replies, thread resolution, and loop-back fix-task creation per the loaded extension's standards. Loop-back iterations record the step with `--outcome loop_back` (never `--outcome done`) so the phase-6 dispatcher re-fires this step on the next phase entry until review eventually goes clean.
 
   Examples:
   - Input: plan_id=my-plan, worktree_path=/Users/x/repo/.claude/worktrees/my-plan
@@ -49,6 +49,7 @@ Mirrors the Workflow Discipline hard rules from `plan-marshall:dev-general-pract
 **Workflow constraints:**
 - Execute ONLY the steps documented in `phase-6-finalize/standards/automated-review.md`. Do not add discovery steps, invent arguments, or skip documented steps.
 - PR comments dispatch through `manage-findings` + `ext-triage-{domain}`; never auto-resolve outside that flow.
+- Loop-back iterations MUST record the step via `manage-status mark-step-done --outcome loop_back`, never `--outcome done`. Only the terminal clean pass uses `--outcome done`.
 
 ## Step 2: Delegate to Authoritative Standard
 
@@ -63,10 +64,10 @@ The standard is the source of truth for the step sequence, including:
 - Producer-side comment-stage call via `plan-marshall:workflow-integration-github:github_pr comments-stage` (or `plan-marshall:workflow-integration-gitlab:gitlab_pr comments-stage` for GitLab projects), which writes one `pr-comment` finding per surviving comment to the per-plan findings store
 - Consumer-side enumeration via `manage-findings query --type pr-comment --resolution pending`, per-finding domain detection via `architecture which-module`, triage-extension resolution via `manage-config resolve-workflow-skill-extension --type triage`, and load of the resulting `ext-triage-{domain}` skill
 - Per-finding decision (FIX / SUPPRESS / ACCEPT / AskUserQuestion) using the loaded extension's `severity.md`, `suppression.md`, and `pr-comment-disposition.md` standards
-- Action: FIX → fix-task + loop-back; SUPPRESS → annotation + thread reply + thread resolve; ACCEPT → thread reply + thread resolve; AskUserQuestion when standards are ambiguous
-- Outcome logging via `manage-findings resolve --resolution {fixed|suppressed|accepted|taken_into_account}` and `manage-status mark-step-done`
+- Action: FIX → allocate fix-task via `prepare-add → commit-add` FIRST (so the task number is known), then `prepare-comment → thread-reply → resolve-thread` referencing TASK-{N} in the reply body, then `manage-findings resolve --resolution fixed`, then loop-back; SUPPRESS → annotation + thread reply + thread resolve; ACCEPT → thread reply + thread resolve; AskUserQuestion when standards are ambiguous
+- Outcome logging via `manage-findings resolve --resolution {fixed|suppressed|accepted|taken_into_account}` and `manage-status mark-step-done`. Loop-back iterations record `--outcome loop_back` (never `--outcome done`) so the phase-6 dispatcher re-fires the step on the next phase entry; only the terminal clean pass uses `--outcome done`.
 
-Follow every step verbatim. Return the standard's output contract unchanged.
+Follow every step verbatim. Return the standard's output contract unchanged (TOON with the same field set: `status`, `comments_processed`, `comments_resolved`, `fix_tasks_created`).
 
 ## Step 3: Log Agent Completion
 
