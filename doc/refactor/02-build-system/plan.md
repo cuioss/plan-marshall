@@ -40,7 +40,9 @@ marketplace/targets/
 │   ├── emitter.py           # OpenCode emitter
 │   ├── frontmatter.py       # Frontmatter transform engine
 │   ├── mapping.json         # Tool + model + layout mappings
-│   └── frontmatter-rules.json  # Frontmatter transform rules
+│   ├── frontmatter-rules.json  # Frontmatter transform rules
+│   └── templates/           # Body-text templates the emitter substitutes into
+│       └── user-invocable-command.md  # Wrapper command body for user-invocable skills
 └── claude/
     ├── target.py             # Claude target implementation (ClaudeTarget class)
     └── drift.py             # Drift detection engine
@@ -201,6 +203,48 @@ Emitted **verbatim**. No transformation of instructional content. Only:
 - Comment annotations added for `Skill:` directives
 - Standards/scripts/templates copied verbatim
 
+### User-Invocable Skills (Dual Emission)
+
+Claude Code skills with `user-invocable: true` in their frontmatter appear as `/skill-name` slash commands in the Claude TUI. OpenCode does **not** support TUI invocation of skills — its `skill` tool is agent-driven only. To preserve user-invocability on OpenCode, every `user-invocable: true` skill is emitted twice:
+
+1. **As a skill** at `target/opencode/skill/{bundle}-{skill}/SKILL.md` — picked up by OpenCode's `skill` tool when an agent decides it's relevant.
+2. **As a command wrapper** at `target/opencode/command/{bundle}-{skill}.md` — typed as `/{bundle}-{skill}` in the OpenCode TUI to invoke the skill directly.
+
+**Discovery:** the emitter selects skills for dual emission by reading the source skill's frontmatter `user-invocable: true` field. No `plugin.json` lookup is needed; the frontmatter is the single source of truth.
+
+**Wrapper template** (`marketplace/targets/opencode/templates/user-invocable-command.md`):
+
+```markdown
+---
+description: {{description}}
+{{#model}}model: {{model}}{{/model}}
+---
+
+Load and run the `{{skill_id}}` skill via the `skill` tool, then carry out its instructions using the user input below.
+
+User input:
+
+$ARGUMENTS
+```
+
+**Substitutions:**
+
+| Placeholder | Source |
+|-------------|--------|
+| `{{description}}` | Source skill frontmatter `description` |
+| `{{model}}` | Source skill frontmatter `model` (mapped via `mapping.json` `model_map`); omitted if unset |
+| `{{skill_id}}` | `{bundle}-{skill}` namespaced id (matches the skill directory under `skill/`) |
+
+**Why this template, not the skill body inline:**
+
+- The skill body remains the single source of truth — duplicating it into the command file would invite drift between the two artifacts.
+- The wrapper is small (≤10 lines) and fully driven by the source skill's frontmatter, so the emitter generates it mechanically without per-skill exceptions.
+- `$ARGUMENTS` is OpenCode's documented argument-substitution token for commands, so user-supplied input is forwarded to the agent that loads the skill.
+
+**Affected count:** 13 plan-marshall + pm-plugin-development skills currently have `user-invocable: true`. The emitter must produce 13 corresponding command wrappers.
+
+**No-op behaviour:** If the source skill has no `description` field, the emitter logs an error and exits with code 2 (same policy as unmapped tools — silent exclusion is prohibited).
+
 ## Build Integration
 
 Local developer workflow:
@@ -252,8 +296,9 @@ This cluster is complete when:
 1. `marketplace/targets/` exists with `TargetBase`, registry, and CLI
 2. Claude target produces zero drift on committed source
 3. OpenCode target produces valid output under `target/opencode/` with `skill/`, `agent/`, `command/`, and `opencode.json`
-4. `./pw generate -- --target {claude,opencode}` works
-5. `marketplace/adapters/` retired
+4. Every Claude source skill with `user-invocable: true` produces both a `skill/{bundle}-{skill}/SKILL.md` and a `command/{bundle}-{skill}.md` wrapper
+5. `./pw generate -- --target {claude,opencode}` works
+6. `marketplace/adapters/` retired
 
 ## Dependencies
 

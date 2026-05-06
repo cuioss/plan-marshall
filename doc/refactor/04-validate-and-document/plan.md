@@ -73,6 +73,7 @@ The OpenCode target generates output under `target/opencode/` (see [02 — Build
 | TOON output | All operations return valid TOON |
 | No-op handling | Callers receive `status: no-op` and continue |
 | Error handling | `hook_not_configured` when env var absent |
+| User-invocable dual-emit | For each `user-invocable: true` source skill, the OpenCode emitter writes both a skill dir and a matching command wrapper from `templates/user-invocable-command.md`, with `description`, optional `model`, and `skill_id` substituted from frontmatter |
 
 ### Integration Tests
 
@@ -156,6 +157,7 @@ The entire refactor is complete when:
 - [ ] `marketplace/targets/` exists with framework
 - [ ] Claude target produces zero drift on committed source
 - [ ] OpenCode target produces valid output under `target/opencode/` with `skill/`, `agent/`, `command/`, and `opencode.json`
+- [ ] Every Claude source skill with `user-invocable: true` produces both a `skill/{bundle}-{skill}/SKILL.md` and a `command/{bundle}-{skill}.md` wrapper (template-driven, frontmatter-derived)
 - [ ] `./pw generate -- --target {claude,opencode} --output target/{claude,opencode}` works
 - [ ] `marketplace/adapters/` retired
 

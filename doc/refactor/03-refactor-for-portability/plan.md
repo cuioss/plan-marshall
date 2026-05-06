@@ -68,6 +68,19 @@ No body changes needed. These are already platform-agnostic.
 
 **Note:** The following skills require body changes (see table above): `phase-1-init`, `phase-5-execute`, `phase-6-finalize`, `plan-retrospective`, `marshall-steward`, `tools-permission-doctor`, `tools-permission-fix`, `workflow-permission-web`, `tools-script-executor`, `tools-file-ops`, `manage-worktree`, `tools-input-validation`.
 
+### User-Invocable Skills (Dual Emission on OpenCode)
+
+Skills with `user-invocable: true` in their frontmatter need no body change. The OpenCode emitter (see [02 — Build System](02-build-system)) dual-emits them as both an OpenCode skill and an OpenCode command wrapper so users can still invoke them via `/{bundle}-{skill}` in the TUI. This is purely a build-time concern; source skills are untouched.
+
+The 13 currently affected skills:
+
+| Bundle | Skill |
+|--------|-------|
+| plan-marshall | `marshall-steward`, `plan-marshall`, `plan-doctor`, `plan-retrospective`, `ref-workflow-architecture`, `tools-permission-doctor`, `tools-permission-fix`, `workflow-permission-web`, `workflow-pr-doctor` |
+| pm-plugin-development | `plugin-create`, `plugin-doctor`, `plugin-maintain`, `plugin-apply-lessons-learned` |
+
+Adding or removing `user-invocable: true` on a skill automatically changes the OpenCode emitter's output on the next build — no separate registration list to maintain.
+
 ## marshal.json Template
 
 Add `runtime.target` to the template used by `phase-1-init`:
