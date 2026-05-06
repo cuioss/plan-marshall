@@ -67,7 +67,7 @@ The OpenCode target generates output under `target/opencode/` (see [02 — Build
 | `platform-runtime` router | Correct target dispatch based on `runtime.target` |
 | `ClaudeRuntime` | Settings patch, hook write, session ID capture |
 | `OpenCodeRuntime` | Config patch, no-op behavior |
-| `SessionStart` hook | Installed by `project initial-setup`, sets `$CLAUDE_CODE_SESSION_ID` |
+| `SessionStart` hook (Claude only) | Installed by `project initial-setup` on Claude, sets `$CLAUDE_CODE_SESSION_ID`. On OpenCode `project initial-setup` skips hook installation; verify nothing is written. |
 | `session capture` | Reads env var, stores in `status.json` via `manage-status` |
 | `metrics capture` | Reads stored session ID, locates transcript, sums usage |
 | TOON output | All operations return valid TOON |
@@ -77,13 +77,14 @@ The OpenCode target generates output under `target/opencode/` (see [02 — Build
 | Body transform — `Skill:` directive | Standalone-line `Skill: {bundle}:{skill}` rewrites to `Call the \`skill\` tool with \`{ name: "{bundle}-{skill}" }\` before continuing.` Inline `` `Skill: foo:bar` `` references in prose are untouched. |
 | Body transform — slash command | `/{user-invocable-skill-name}` rewrites to `/{bundle}-{user-invocable-skill-name}` for every known user-invocable skill. Path-like substrings (`path/to/foo`) are not matched. |
 | Executor resolver — Claude | `python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get …` resolves under `~/.claude/plugins/cache/plan-marshall/*/skills/manage-status/scripts/manage_status.py` |
-| Executor resolver — OpenCode | Same notation resolves under the first match across the six OpenCode skill roots (`$OPENCODE_CONFIG_DIR/skills/`, `.opencode/skills/`, `.claude/skills/`, `.agents/skills/`, `~/.config/opencode/skills/`, `~/.claude/skills/`, `~/.agents/skills/`), at directory `plan-marshall-manage-status/scripts/manage_status.py`. Returned path is absolute. |
+| Executor resolver — OpenCode | Same notation resolves under the first match across OpenCode's documented skill discovery roots plus the env-var override — `$OPENCODE_CONFIG_DIR/skills/` (when set), `.opencode/skills/`, `.claude/skills/`, `.agents/skills/`, `~/.config/opencode/skills/`, `~/.claude/skills/`, `~/.agents/skills/` — at directory `plan-marshall-manage-status/scripts/manage_status.py`. Returned path is absolute. |
 
 ### Integration Tests
 
 | Scenario | How to Test |
 |----------|-------------|
-| Fresh project init | Run `project initial-setup` (via `marshall-steward`), verify `.plan/`, `marshal.json`, and SessionStart hook installed |
+| Fresh project init (Claude) | Run `project initial-setup --target claude` (via `marshall-steward`), verify `.plan/`, `marshal.json` with `runtime.target: claude`, the SessionStart hook is installed in `.claude/settings.json`, and `.plan/execute-script.py` is generated with the Claude-cache resolver |
+| Fresh project init (OpenCode) | Run `project initial-setup --target opencode`, verify `.plan/`, `marshal.json` with `runtime.target: opencode`, **no** SessionStart-equivalent hook is written, and `.plan/execute-script.py` is generated with the OpenCode-skill-roots resolver |
 | Session capture | Run `session capture`, verify `session_id` stored in `status.json` via `manage-status` |
 | Permission config | Run `permission configure`, verify settings file updated |
 | Permission analyze | Run `permission analyze --checks all --scope both`, verify TOON output with findings array |
@@ -91,7 +92,7 @@ The OpenCode target generates output under `target/opencode/` (see [02 — Build
 | Permission ensure wildcards | Run `permission ensure-wildcards --scope project`, verify all bundle skill wildcards present |
 | Permission ensure steps | Run `permission ensure-steps --marshal .plan/marshal.json --scope project`, verify missing `project:{skill}` steps have matching skill permissions |
 | Permission web analyze | Run `permission web-analyze --scope both`, verify domain categorization and duplicate detection |
-| OpenCode no-op executor | Run `permission fix --operation ensure-executor` on OpenCode target, verify `status: no-op` with reason |
+| OpenCode `ensure-executor` | Run `permission fix --operation ensure-executor` on OpenCode target, verify `permission.bash: { "python3 .plan/execute-script.py *": "allow" }` is added to the resolved opencode.json |
 | Bundle sync (Claude) | Run target generator, verify skills mirrored to `~/.claude/plugins/cache/` via `sync-plugin-cache` |
 | Bundle sync (OpenCode) | Run target generator, verify output under `target/opencode/`; deploy via `sync-opencode` or `OPENCODE_CONFIG_DIR` |
 | Drift detection | Introduce intentional orphan in `plugin.json`, verify CI fails |
@@ -143,9 +144,9 @@ The six cluster plan documents in `doc/refactor/` (`README.md`, `principles.md`,
 - Generated output — best-effort support
 - All agents mapped with `task`/`skill` permissions (subagent dispatch and skill loading supported)
 - Model aliases preserved (`opus` → `anthropic/claude-opus-4-7`); no forced downgrades to cheaper models
-- No terminal title hooks
-- No automatic token usage extraction (requires `--total-tokens` manual input)
-- Direct script execution (no `execute-script.py`)
+- No platform-driven status-line / terminal-title hook (anomalyco/opencode#8619); built-in `/statusline` TUI command available as alternative
+- No automatic token usage extraction (requires `--total-tokens` manual input — see `session capture` no-op on OpenCode)
+- `.plan/execute-script.py` is generated with the OpenCode-skill-roots resolver — same `{bundle}:{skill}:{script}` notation as Claude, different resolution table
 
 ## Acceptance Criteria
 

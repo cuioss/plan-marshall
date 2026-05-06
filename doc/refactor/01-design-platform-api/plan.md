@@ -112,7 +112,7 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
 
 **Claude:** Create `.plan/`, seed `marshal.json` with `runtime.target: claude`, ensure `.plan/temp/` exists. Install `SessionStart` hook in `.claude/settings.json` that captures `session_id` into `$CLAUDE_CODE_SESSION_ID` environment variable.
 
-**OpenCode:** Same, but `runtime.target: opencode`. OpenCode does not currently expose the session id to the shell environment (tracked at upstream issue #9292; PR #9289 was closed unmerged), so no SessionStart-equivalent hook is installed. `session capture` returns `no-op` on OpenCode (see below); automatic token-usage capture is unsupported and callers fall back to manual `--total-tokens`. `.plan/execute-script.py` IS generated on OpenCode — same notation contract `{bundle}:{skill}:{script}`, but with an OpenCode-aware resolver that searches OpenCode's six skill discovery roots (see Executor Resolution Per Target below).
+**OpenCode:** Same, but `runtime.target: opencode`. OpenCode does not currently expose the session id to the shell environment (tracked at upstream issue #9292; PR #9289 was closed unmerged), so no SessionStart-equivalent hook is installed. `session capture` returns `no-op` on OpenCode (see below); automatic token-usage capture is unsupported and callers fall back to manual `--total-tokens`. `.plan/execute-script.py` IS generated on OpenCode — same notation contract `{bundle}:{skill}:{script}`, but with an OpenCode-aware resolver that searches OpenCode's documented skill discovery roots plus the `$OPENCODE_CONFIG_DIR/skills/` env-var override (see Executor Resolution Per Target below).
 
 ### `session capture`
 
@@ -140,7 +140,7 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
 | `--permissions` | List of patterns |
 
 **Claude:** Patch `.claude/settings.local.json` `permissions.allow` array.
-**OpenCode:** Patch `./opencode.json` or `~/.config/opencode/opencode.json` `agent.{name}.permission` object (permissions are per-agent, not a flat top-level object).
+**OpenCode:** Patch `./opencode.json` or `~/.config/opencode/opencode.json`. OpenCode supports both top-level `permission` (global default) and per-agent `agent.{name}.permission` (overrides global); per-agent rules take precedence. The runtime writes whichever scope the caller selects (typically top-level for global, per-agent for agent-specific).
 
 **Note:** This is the low-level primitive. Skills should prefer `permission analyze` and `permission fix` for hygienic permission management. When only a raw list write is needed, use `permission configure`.
 
@@ -213,8 +213,8 @@ summary:
 | Permission | Claude Code | OpenCode |
 |------------|-------------|----------|
 | Plan file access | `Edit(.plan/**)`, `Write(.plan/**)` | `agent.{name}.permission: { "edit": { ".plan/**": "allow" }, "read": { ".plan/**": "allow" } }` |
-| Plugin cache access | `Read(~/.claude/plugins/cache/**)` | `agent.{name}.permission: { "read": { "~/.opencode/plugins/cache/**": "allow" } }` (if applicable) |
-| Executor pattern | `Bash(python3 .plan/execute-script.py *)` | No-op (OpenCode does not use executor) |
+| Plugin cache access | `Read(~/.claude/plugins/cache/**)` | `permission: { "read": { "~/.config/opencode/plugins/**": "allow", "~/.config/opencode/skills/**": "allow" } }` |
+| Executor pattern | `Bash(python3 .plan/execute-script.py *)` | `permission: { "bash": { "python3 .plan/execute-script.py *": "allow" } }` (OpenCode also generates `.plan/execute-script.py` — see Executor Resolution Per Target) |
 
 ### `permission ensure-wildcards`
 
@@ -227,7 +227,7 @@ summary:
 | `--dry-run` | Preview changes without applying |
 
 **Claude:** Scans `marketplace/.claude-plugin/marketplace.json` and `*/.claude-plugin/plugin.json`. Generates `Skill(bundle:*)` and `SlashCommand(/bundle:*)` entries.
-**OpenCode:** Scans marketplace and generates `agent.{name}.permission.skill: { "bundle:*": "allow" }` and command patterns. **Note:** OpenCode does not have `SlashCommand` equivalent; command permissions may be no-op or mapped to agent permissions.
+**OpenCode:** Scans marketplace and generates `permission.skill: { "{bundle}-*": "allow" }` and `permission.command: { "{bundle}-*": "allow" }` entries. OpenCode commands ARE invocable as `/{bundle}-{skill}` per the dual-emit design — see [02 — Build System](02-build-system) "User-Invocable Skills (Dual Emission)".
 
 ### `permission ensure-steps`
 
@@ -525,8 +525,8 @@ Examples:
 ```toon
 status: no-op
 operation: session configure-display
-reason: OpenCode does not support terminal title hooks
-alternative: Use --type none or install opencode-statusline plugin
+reason: OpenCode has no plugin-driven status-line hook (issue anomalyco/opencode#8619)
+alternative: Use --type none, or use OpenCode's built-in /statusline TUI command for an interactive status line
 ```
 
 ```toon
@@ -538,9 +538,9 @@ alternative: Pass --total-tokens manually
 
 ## Session Hook Setup
 
-**One-time configuration per project.**
+**One-time configuration per project (Claude only).**
 
-`project initial-setup` installs a `SessionStart` hook that captures the platform's session identifier and makes it available as an environment variable to all subsequent tool calls.
+On Claude, `project initial-setup` installs a `SessionStart` hook that captures the platform's session identifier and makes it available as an environment variable to all subsequent tool calls. On OpenCode no hook is installed (see "OpenCode Hook" below).
 
 ### Claude Code Hook
 
@@ -577,9 +577,8 @@ Neither Claude Code nor OpenCode exposes a reliable programmatic API to discover
 
 ### Fallback
 
-If hooks are not installed, `session capture` returns `error` with code `hook_not_configured`. The calling skill can either:
-1. Run `marshall-steward` (which calls `project initial-setup`) to install hooks
-2. Accept manual `--total-tokens` input and skip automatic capture
+- **Claude:** if `project initial-setup` has not been run, the hook is missing and the env var is unset. `session capture` returns `error` with code `hook_not_configured`. The calling skill can either run `marshall-steward` (which calls `project initial-setup`) to install the hook, or accept manual `--total-tokens` input and skip automatic capture.
+- **OpenCode:** no hook is expected; `session capture` always returns `no-op` with the documented `reason`/`alternative`. The calling skill must continue and accept manual `--total-tokens` input where token capture is needed.
 
 ## What Stays Out
 

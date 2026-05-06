@@ -7,9 +7,9 @@ Redesign the plan-marshall marketplace for multi-target distribution (Claude Cod
 ## Core Insight
 
 Multi-target portability without changing the source-of-truth format:
-- **Keep Claude Code format as source of truth** — body text emitted verbatim
+- **Keep Claude Code format as source of truth** — body text is emitted verbatim except for a small bounded set of mechanical line-level transforms (see [02 — Build System](02-build-system) "Body Transforms")
 - **Abstract platform-specific behavior into scripts** — a `platform-runtime` layer
-- **Generate target outputs at build time** — frontmatter + manifest transforms only
+- **Generate target outputs at build time** — frontmatter, manifest, and the bounded body transforms documented in `marketplace/targets/opencode/transforms.md`
 
 ## Cluster Structure
 
@@ -59,8 +59,8 @@ Principles (governs all)
 
 ## What We Are NOT Doing
 
-- No universal syntax (`{{ }}`) — body text stays verbatim
-- No body text transformation for target outputs — only frontmatter + manifest
+- No universal templating syntax (`{{ }}`) — there is no cross-platform body language
+- No open-ended body text transformations — body transforms are limited to the bounded set in `marketplace/targets/opencode/transforms.md`; adding a new transform is a deliberate spec change
 - No excluding `marshall-steward` from OpenCode — it stays, but with platform-agnostic instructions
 - No changing the 10-bundle structure or component model
 - No adding version numbers, changelogs, or dated update sections to any document

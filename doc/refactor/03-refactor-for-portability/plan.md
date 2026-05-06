@@ -8,7 +8,10 @@ All calls go through the executor: `python3 .plan/execute-script.py plan-marshal
 
 ## Why This Cluster Exists
 
-Skills hardcode `.claude/settings.local.json`, `~/.claude/plugins/cache/`, and Claude-specific hook instructions. These must be abstracted behind `platform-runtime` before multi-target generation is meaningful.
+Skills hardcode `.claude/settings.local.json`, `~/.claude/plugins/cache/`, and Claude-specific hook instructions. Two parallel cleanups are needed before multi-target generation is meaningful:
+
+1. **Behavioural abstraction** — replace direct settings/hook/path manipulation with goal-based `platform-runtime` calls.
+2. **Source-side prose cleanup** — move Claude-only mechanism descriptions (terminal title plumbing, session-id resolver, hook plumbing) out of skill bodies and into `references/{topic}.md`; rephrase tool-name rules platform-agnostically. This benefits both targets — skill bodies become focused on workflow steps instead of one platform's plumbing.
 
 ## Scope
 
@@ -52,7 +55,7 @@ Search all skill bodies for:
 | `marshall-steward` | Write hooks to `.claude/settings.local.json` | `platform-runtime session configure-display` |
 | `marshall-steward` | Patch `.claude/settings.local.json` permissions | `platform-runtime permission configure` |
 | `tools-permission-doctor` | Read `~/.claude/settings.json`, `.claude/settings.json`; Claude-specific anti-patterns | `platform-runtime permission analyze --checks <checks>` |
-| `tools-permission-fix` | Write to `~/.claude/settings.json`, `.claude/settings.json`; `ensure-executor` / `cleanup-scripts` / `migrate-executor` are Claude-specific executor operations | `platform-runtime permission fix --operation <op>`; `ensure-executor`/`cleanup-scripts`/`migrate-executor` return `no-op` on OpenCode |
+| `tools-permission-fix` | Write to `~/.claude/settings.json`, `.claude/settings.json`; `ensure-executor` adds the `Bash(python3 .plan/execute-script.py *)` permission; `cleanup-scripts` and `migrate-executor` operate on Claude-cache-located scripts | `platform-runtime permission fix --operation <op>`. `ensure-executor` applies on **both targets** (the executor exists on both — see [01 — Design Platform API](01-design-platform-api) "Executor Resolution Per Target"); on OpenCode it writes `permission.bash: { "python3 .plan/execute-script.py *": "allow" }`. Treatment of `cleanup-scripts` and `migrate-executor` on OpenCode is TBD (see open question in cluster 04). |
 | `workflow-permission-web` | Read `WebFetch(...)` strings from `.claude/settings*.json` | `platform-runtime permission web-analyze --scope <scope>`; `platform-runtime permission web-apply --add/--remove` |
 | `tools-script-executor` | Generates `.plan/execute-script.py` using `~/.claude/plugins/cache/` paths; bootstrap reads `~/.claude/plugins/cache/` | Target-aware generator: reads `runtime.target` from `marshal.json` and emits the matching resolver template (Claude resolver searches plugin cache; OpenCode resolver searches OpenCode's six skill discovery roots). Notation `{bundle}:{skill}:{script}` is unchanged — only the resolver behind it differs. See [01 — Design Platform API](01-design-platform-api) "Executor Resolution Per Target". |
 | `tools-file-ops` | Worktree paths under `.claude/worktrees/` hardcoded | Use `marshal.json` `worktree.path` (target-configurable, default `.claude/worktrees/` for Claude, `.opencode/worktrees/` for OpenCode) |
@@ -184,7 +187,7 @@ This cluster is complete when:
 5. `bootstrap_plugin.py` handles multi-platform path resolution
 6. `marketplace/adapters/` retired (logic in `marketplace/targets/`)
 7. `tools-permission-doctor`, `tools-permission-fix`, and `workflow-permission-web` delegate all settings file I/O to `platform-runtime` permission operations
-8. Executor-specific operations (`ensure-executor`, `cleanup-scripts`, `migrate-executor`) return `no-op` on OpenCode target
+8. `ensure-executor` is implemented on both targets (writes the appropriate bash permission for the generated `.plan/execute-script.py`); `cleanup-scripts` and `migrate-executor` resolution on OpenCode is decided per the cluster 04 open question and either implemented or returns documented `no-op`
 9. `tools-script-executor` is target-aware: same notation `{bundle}:{skill}:{script}` resolves correctly via the Claude-cache resolver on Claude and the OpenCode-skill-roots resolver on OpenCode
 10. Claude-only hook/cache documentation has been moved out of skill bodies and into per-skill `references/{topic}.md`
 11. Tool-name rules in skill bodies are platform-agnostic (no `EnterPlanMode`/`AskUserQuestion`/`Agent(subagent_type=…)` etc. in instructional rules)

@@ -154,8 +154,8 @@ target/opencode/
 Copy generated skills to `~/.config/opencode/skills/` using a deployment script:
 
 ```bash
-# Deploy script (to be created)
-python3 marketplace/bundles/plan-marshall/skills/sync-opencode/scripts/sync_opencode.py \
+# Deploy via the canonical executor notation (CLAUDE.md hard rule — never invoke scripts by direct path)
+python3 .plan/execute-script.py plan-marshall:sync-opencode:sync_opencode \
   --source target/opencode/ \
   --target ~/.config/opencode/
 ```

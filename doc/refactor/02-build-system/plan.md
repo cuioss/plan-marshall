@@ -144,9 +144,7 @@ Tool and model mappings (see [01 — Design Platform API](01-design-platform-api
     "opus": "claude-opus-4-7",
     "sonnet": "claude-sonnet-4-6",
     "haiku": "claude-haiku-4-5-20251001"
-  },
-  "required_fields": ["description"],
-  "optional_fields": ["model", "mode"]
+  }
 }
 ```
 
@@ -154,7 +152,7 @@ Tool and model mappings (see [01 — Design Platform API](01-design-platform-api
 
 #### Configuration: `marketplace/targets/opencode/frontmatter-rules.json`
 
-Uses `tool_permissions` and `model_map` from `mapping.json` (loaded by the frontmatter engine at runtime).
+Owns the frontmatter-shape rules (which fields are required, which are optional). Loads `tool_permissions` and `model_map` from `mapping.json` at runtime — `mapping.json` owns the dictionaries; `frontmatter-rules.json` owns the validation contract. No field is duplicated across the two files.
 
 ```json
 {
@@ -194,7 +192,7 @@ Agents with `Task` or `Skill` in their `tools:` frontmatter are **not** Claude-o
 
 **Implementation note:** Permissions are set in agent frontmatter (`tools:` field) or `opencode.json` (`agent.{name}.permission`), not at `task` invocation time. The `subagent dispatch` operation returns invocation parameters only (no permissions field in TOON response).
 
-**Impact:** All 10 plan-marshall agents are included in OpenCode output with proper permission mapping. They function via OpenCode's `task` tool for subagent dispatch and `skill` tool for skill loading.
+**Impact:** All 8 plan-marshall agents (and the additional 3 in other bundles, 11 total across the marketplace) are included in OpenCode output with proper permission mapping. They function via OpenCode's `task` tool for subagent dispatch and `skill` tool for skill loading.
 
 **Build failure on unmapped tools:** If an agent uses a tool that has no entry in `frontmatter-rules.json`'s `tool_permissions` map, the target generator logs an error and exits with code 2. Silent exclusion is prohibited — every skipped agent must be a conscious decision. To add support for a new tool, update the JSON config.
 

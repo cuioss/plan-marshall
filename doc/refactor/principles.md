@@ -51,8 +51,9 @@ The caller MUST handle `no-op` gracefully and continue. Never fail a workflow be
 
 - Claude Code format in `marketplace/bundles/` is the only editable source
 - Target outputs (`.opencode/`, `.cursor-plugin/`) are **generated artifacts**
-- Body text is emitted **verbatim** — no transformation for target outputs
-- Only frontmatter and manifests are transformed at build time
+- Body text is emitted **verbatim except for the bounded mechanical line-level transforms documented in `marketplace/targets/opencode/transforms.md`** (today: `Skill:` directive rewrite + `/skill-name` slash rewrite)
+- Frontmatter, manifests, and those bounded body transforms are the only build-time rewrites
+- Adding a new body transform is a deliberate spec change in `transforms.md`, not a silent emitter behaviour
 
 ---
 
