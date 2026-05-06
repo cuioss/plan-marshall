@@ -113,6 +113,8 @@ All transformations are driven by configuration files, not hardcoded logic. This
 
 #### Configuration: `marketplace/targets/opencode/mapping.json`
 
+Tool and model mappings (see [01 — Design Platform API](01-design-platform-api) for the full tool mapping table):
+
 ```json
 {
   "tool_permissions": {
@@ -127,12 +129,15 @@ All transformations are driven by configuration files, not hardcoded logic. This
     "AskUserQuestion": "question",
     "Task": "task",
     "Skill": "skill",
-    "NotebookEdit": "edit"
+    "NotebookEdit": "edit",
+    "TaskCreate": "todowrite",
+    "TaskGet": "todoread",
+    "TaskList": "todoread"
   },
   "model_map": {
-    "opus": "anthropic/claude-opus-4-7",
-    "sonnet": "anthropic/claude-sonnet-4-6",
-    "haiku": "anthropic/claude-haiku-4-5"
+    "opus": "claude-opus-4-7",
+    "sonnet": "claude-sonnet-4-6",
+    "haiku": "claude-haiku-4-5"
   },
   "layout": {
     "skill_dir": "skills/{bundle}-{skill}",
@@ -141,6 +146,8 @@ All transformations are driven by configuration files, not hardcoded logic. This
   }
 }
 ```
+
+**Note:** The generator adds the `anthropic/` provider prefix when writing `opencode.json`, so model IDs here are without prefix.
 
 #### Configuration: `marketplace/targets/opencode/frontmatter-rules.json`
 
@@ -158,12 +165,15 @@ All transformations are driven by configuration files, not hardcoded logic. This
     "AskUserQuestion": "question",
     "Task": "task",
     "Skill": "skill",
-    "NotebookEdit": "edit"
+    "NotebookEdit": "edit",
+    "TaskCreate": "todowrite",
+    "TaskGet": "todoread",
+    "TaskList": "todoread"
   },
   "model_map": {
-    "opus": "anthropic/claude-opus-4-7",
-    "sonnet": "anthropic/claude-sonnet-4-6",
-    "haiku": "anthropic/claude-haiku-4-5"
+    "opus": "claude-opus-4-7",
+    "sonnet": "claude-sonnet-4-6",
+    "haiku": "claude-haiku-4-5"
   },
   "required_fields": ["description"],
   "optional_fields": ["model", "mode"]
@@ -174,9 +184,11 @@ All transformations are driven by configuration files, not hardcoded logic. This
 
 Claude Code aliases (`opus`, `sonnet`, `haiku`) resolve to the latest version. OpenCode requires explicit model IDs. The generator maps to the current latest version to preserve the skill author's intent:
 
-- `opus` → `anthropic/claude-opus-4-7` (deep reasoning, reliable rule following)
-- `sonnet` → `anthropic/claude-sonnet-4-6` (daily coding)
-- `haiku` → `anthropic/claude-haiku-4-5` (simple tasks)
+- `opus` → `claude-opus-4-7` (deep reasoning, reliable rule following)
+- `sonnet` → `claude-sonnet-4-6` (daily coding)
+- `haiku` → `claude-haiku-4-5` (simple tasks)
+
+**Note:** OpenCode provider prefix (`anthropic/`) is added by the config generator, not included in the model ID mapping.
 
 **No forced downgrades.** If a skill specifies `opus`, the OpenCode output preserves that requirement.
 
@@ -195,12 +207,9 @@ Research shows OpenCode's instruction injection mechanism differs from Claude Co
 
 ### Agent Mapping
 
-Agents with `Task` or `Skill` in their `tools:` frontmatter are **not** Claude-only. OpenCode has equivalent `task` and `skill` tools. The frontmatter transform maps:
+Agents with `Task` or `Skill` in their `tools:` frontmatter are **not** Claude-only. OpenCode has equivalent `task` and `skill` tools. See [01 — Design Platform API](01-design-platform-api) for the full tool mapping table.
 
-| Claude Tool | OpenCode Permission |
-|-------------|---------------------|
-| `Task` | `task: allow` |
-| `Skill` | `skill: allow` |
+**Implementation note:** Permissions are set in agent frontmatter or `opencode.json`, not at `task` invocation time. The `subagent dispatch` operation returns invocation parameters only (no permissions field in TOON response).
 
 **Impact:** All 10 plan-marshall agents are included in OpenCode output with proper permission mapping. They function via OpenCode's `task` tool for subagent dispatch and `skill` tool for skill loading.
 
