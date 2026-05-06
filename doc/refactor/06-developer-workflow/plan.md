@@ -96,8 +96,8 @@ OpenCode discovers skills from multiple locations in priority order:
 | Priority | Location | Type | Notes |
 |----------|----------|------|-------|
 | 1 | `.opencode/skills/` | Project-local | Highest priority; may conflict with committed skills |
-| 2 | `.claude/skills/` | Project-local | Claude compatibility |
-| 3 | `~/.config/opencode/skills/` | **User-global** | **Recommended for development deployment** |
+| 2 | `~/.config/opencode/skills/` | **User-global** | **Recommended for development deployment** |
+| 3 | `.claude/skills/` | Project-local | Claude compatibility |
 | 4 | `~/.claude/skills/` | User-global | Claude compatibility |
 | 5 | `~/.claude/plugins/cache/` | Claude plugins | Cached Claude Code plugins |
 | 6 | `~/.claude/plugins/marketplaces/` | Claude plugins | Installed from marketplace |

@@ -74,3 +74,5 @@ Principles (governs all)
 | **source of truth** | The Claude Code format in `marketplace/bundles/` |
 | **drift** | When committed `.claude-plugin/` output differs from what the generator would produce |
 | **no-op** | When a target cannot implement an operation, it returns a graceful fallback |
+
+See [05 — Distribution](05-distribution) for the full `marketplace.json` structure and Claude Code plugin discovery details.

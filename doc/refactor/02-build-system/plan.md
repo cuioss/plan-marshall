@@ -175,7 +175,7 @@ Research shows OpenCode's instruction injection mechanism differs from Claude Co
 
 - **Claude Code:** `CLAUDE.md` is injected as a "system reminder" that persists through compaction and is re-injected into context throughout the session
 - **OpenCode:** `AGENTS.md` is loaded once at session start. As context compacts, instructions may be lost
-- **Known issue (#8892):** Anthropic models in OpenCode sometimes ignore `instructions` array content entirely
+- **Known issue (#8892):** Anthropic models in OpenCode sometimes ignore `instructions` array content entirely (fixed in OpenCode v1.2.x via PR #11316)
 - **Known issue (#11441):** OpenCode's Plan agent does not enforce plan rules architecturally — it relies on the LLM to respect them voluntarily
 
 **Temperature does not solve this.** OpenCode supports `temperature: 0.1` for more deterministic output, but this affects creativity, not instruction comprehension. A model that cannot understand complex rules at `temperature=0.7` will not suddenly understand them at `temperature=0.1`.

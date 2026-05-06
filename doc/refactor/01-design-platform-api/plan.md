@@ -112,7 +112,7 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
 
 **Claude:** Create `.plan/`, seed `marshal.json` with `runtime.target: claude`, ensure `.plan/temp/` exists. Install `SessionStart` hook in `.claude/settings.json` that captures `session_id` into `$CLAUDE_CODE_SESSION_ID` environment variable.
 
-**OpenCode:** Same, but `runtime.target: opencode`. Install equivalent session hook if OpenCode supports it. No-op note about `execute-script.py` being Claude-specific.
+**OpenCode:** Same, but `runtime.target: opencode`. OpenCode supports `OPENCODE_SESSION_ID` via PR #9289 (merged Jan 2026, available in OpenCode v1.2.x+). The session ID is injected into shell environments automatically — no hook installation needed. Note: `execute-script.py` is Claude-specific; OpenCode does not use it.
 
 ### `session capture`
 
@@ -212,8 +212,8 @@ summary:
 
 | Permission | Claude Code | OpenCode |
 |------------|-------------|----------|
-| Plan file access | `Edit(.plan/**)`, `Write(.plan/**)` | `agent.{name}.permission.edit: { ".plan/**": "allow" }`, `agent.{name}.permission.read: { ".plan/**": "allow" }` |
-| Plugin cache access | `Read(~/.claude/plugins/cache/**)` | `agent.{name}.permission.read: { "~/.opencode/plugins/cache/**": "allow" }` (if applicable) |
+| Plan file access | `Edit(.plan/**)`, `Write(.plan/**)` | `agent.{name}.permission: { "edit": { ".plan/**": "allow" }, "read": { ".plan/**": "allow" } }` |
+| Plugin cache access | `Read(~/.claude/plugins/cache/**)` | `agent.{name}.permission: { "read": { "~/.opencode/plugins/cache/**": "allow" } }` (if applicable) |
 | Executor pattern | `Bash(python3 .plan/execute-script.py *)` | No-op (OpenCode does not use executor) |
 
 ### `permission ensure-wildcards`
@@ -240,7 +240,7 @@ summary:
 | `--dry-run` | Preview changes without applying |
 
 **Claude:** Adds `Skill({skill})` to `permissions.allow`.
-**OpenCode:** Adds `agent.{name}.permission.skill: { "{skill}": "allow" }` or `agent.{name}.permission.skill: { "{skill}:*": "allow" }`.
+**OpenCode:** Adds `agent.{name}.permission: { "skill": { "{skill}": "allow" } }` or `agent.{name}.permission: { "skill": { "{skill}:*": "allow" } }`.
 
 **Usage:** Pair with `permission analyze --checks missing-steps` to close gaps surfaced by analysis.
 
