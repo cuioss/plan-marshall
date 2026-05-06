@@ -54,7 +54,8 @@ platform-runtime/
     ├── platform_runtime.py      # Router (reads runtime.target, dispatches)
     ├── runtime_base.py          # Abstract base class + shared TOON helpers
     ├── claude_runtime.py        # Claude Code implementation
-    └── opencode_runtime.py      # OpenCode implementation
+    ├── opencode_runtime.py      # OpenCode implementation
+    └── claude_hook.py          # SessionStart hook for Claude Code (sets $CLAUDE_CODE_SESSION_ID)
 ```
 
 Router specification: how `runtime.target` in `marshal.json` is read and dispatched.
@@ -296,7 +297,7 @@ summary:
 
 **Claude:** Read `session_id` from `.plan/status.json` via `manage-status` (set by `session capture`). Open the corresponding `.jsonl` under `~/.claude/projects/<project>/sessions/`. Sum `usage.input_tokens + usage.output_tokens` from assistant messages since the last `metrics capture` call for this phase. Returns `no-op` if `session_id` missing or transcript not found.
 
-**OpenCode:** Read `session_id` from `.plan/status.json` via `manage-status` (set by `session capture`). Attempt to query the OpenCode SQLite DB for usage data associated with that session. Returns `no-op` if no session ID stored or DB query fails.
+**OpenCode:** Read `session_id` from `.plan/status.json` via `manage-status` (set by `session capture`). Attempt to query the OpenCode session storage (JSON files at `storage/session/{projectID}/{sessionID}.json`). Returns `no-op` if no session ID stored or query fails.
 
 ### `subagent dispatch`
 
@@ -367,13 +368,11 @@ This operation does **not** spawn the subagent itself. Both Claude Code and Open
 
 #### No-Op Policy
 
-`subagent dispatch` returns `no-op` only when the agent's `tools:` frontmatter contains a tool with **no OpenCode equivalent**. Examples of genuinely unsupported tools:
+`subagent dispatch` returns `no-op` only when the agent's `tools:` frontmatter contains a tool with **no OpenCode equivalent**. Examples of unsupported tools:
 
 | Tool | Status | Reason |
 |------|--------|--------|
-| `NotebookEdit` | Mapped to `edit` | Functional equivalent exists |
 | `SendMessage` | No-op | Agent teams feature; no OpenCode equivalent |
-| `TaskCreate`/`TaskGet`/`TaskList` | Mapped to `todowrite`/`todoread` | OpenCode uses todo tools |
 
 When an unmapped tool is detected:
 ```toon
@@ -442,16 +441,9 @@ invocation:
   description: "Run phase init"
   prompt: "...agent body with context merged..."
   subagent_type: "phase-agent"
-  permissions:
-    read: allow
-    edit: allow
-    glob: allow
-    grep: allow
-    bash: allow
-    question: allow
-    task: allow
-    skill: allow
 ```
+
+Note: OpenCode permissions are set in agent frontmatter or `opencode.json`, not at `task` invocation time. The caller uses the invocation parameters to spawn the subagent via the `task` tool.
 
 **Example 3: Dispatch agent with unmapped tools on either platform**
 

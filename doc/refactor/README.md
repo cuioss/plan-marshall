@@ -34,13 +34,13 @@ Principles (governs all)
 01-design-platform-api ──────┐
     │                        │
     ▼                        │
-02-build-system              │
-    │                        │
-    ▼                        │
-03-refactor-for-portability ◄┘
-    │
-    ├──────────┬─────────────┬─────────────┐
-    ▼          ▼             ▼             ▼
+02-build-system ──────────┐ │
+    │                       │ │
+    ▼                       │ │
+03-refactor-for-portability ◄┘ │
+    │                         │
+    ├──────────┬──────────────┤
+    ▼          ▼              ▼
 04-validate  05-distribution 06-developer-workflow
              (can start      (can start
               design in       design in
@@ -53,7 +53,7 @@ Principles (governs all)
 
 **04 runs last** because validation criteria depend on all implementation being in place.
 
-**05 can be designed in parallel with 02** (both concern build artifacts), but CI integration requires 02 complete. The distribution cluster depends on 02 for the generator, but not on 01 or 03.
+**05 depends on 02** for the generator, but can be designed in parallel with 02 since both concern build artifacts. CI integration requires 02 to be complete.
 
 **06 can be designed in parallel with 02** because the developer workflow depends on the build system for OpenCode generation, but not on 01 or 03. The Claude Code portion of 06 already exists and is documented.
 

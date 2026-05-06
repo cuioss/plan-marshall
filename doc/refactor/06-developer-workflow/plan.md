@@ -203,7 +203,7 @@ OPENCODE_CONFIG_DIR=/path/to/plan-marshall/target/opencode opencode
 ./pw generate -- --target opencode --output target/opencode/
 
 # Install via marketplace CLI (tests end-user path)
-opencode-marketplace install file:///path/to/plan-marshall/target/opencode/ --scope user
+opencode-marketplace install /path/to/plan-marshall/target/opencode/ --scope user
 ```
 
 **Pros:**

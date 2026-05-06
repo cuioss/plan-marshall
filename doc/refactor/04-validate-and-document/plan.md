@@ -179,7 +179,6 @@ The entire refactor is complete when:
 - [ ] GitHub Actions workflow builds and publishes artifacts on push to main
 - [ ] GitHub Pages hosts browsable `target/opencode/` output at stable URL
 - [ ] GitHub Releases attach versioned tarballs to tags
-- [ ] npm package `plan-marshall-opencode` is published and installable
 - [ ] Installation documentation exists for both Claude Code and OpenCode
 - [ ] `opencode-marketplace install {pages-url}` succeeds
 

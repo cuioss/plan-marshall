@@ -23,12 +23,12 @@ This does NOT cover:
 
 ## The Distribution Problem
 
-plan-marshall is a **marketplace of skills, agents, and commands** for AI assistants. Unlike a traditional library distributed via npm/pip, it must integrate with the AI assistant's own plugin discovery mechanism. Each platform has different conventions:
+plan-marshall is a **marketplace of skills, agents, and commands** for AI assistants. Unlike a traditional library distributed via pip, it must integrate with the AI assistant's own plugin discovery mechanism. Each platform has different conventions:
 
 | Platform | Discovery Mechanism | Installation Model | Update Model |
 |----------|--------------------|--------------------|--------------|
 | **Claude Code** | `marketplace.json` + bundle `plugin.json` | Claude plugin command from GitHub URL, or `git clone` | `git pull` in cloned repo |
-| **OpenCode** | `~/.config/opencode/skills/`, npm plugins, git-based plugins | `opencode-marketplace install`, npm, git clone | `opencode-marketplace update`, npm update |
+| **OpenCode** | `~/.config/opencode/skills/`, git-based plugins | `opencode-marketplace install`, git clone | `opencode-marketplace update` |
 | **Cursor** | `.cursor/rules/`, `.cursor/skills/` | Manual copy | Manual update |
 | **Future** | Unknown | Unknown | Unknown |
 
@@ -135,7 +135,7 @@ All follow the same pattern: marketplace manifest at repo root, plugins in subdi
 
 **Via Claude Code plugin command:**
 ```bash
-claude plugin install https://github.com/{org}/plan-marshall.git
+claude plugin install {org}/plan-marshall
 ```
 
 Claude Code:
@@ -173,15 +173,7 @@ For Claude Code, the source format in `marketplace/bundles/` IS the runtime form
 
 OpenCode has multiple installation paths:
 
-**1. npm plugins**
-```json
-{
-  "plugin": ["opencode-helicone-session", "@my-org/custom-plugin"]
-}
-```
-Installed automatically at startup via Bun. Requires publishing to npm registry.
-
-**2. opencode-marketplace CLI**
+**1. opencode-marketplace CLI**
 ```bash
 bunx opencode-marketplace install https://github.com/user/repo
 bunx opencode-marketplace update my-plugin
@@ -214,7 +206,7 @@ cp -r target/opencode/skills/ ~/.config/opencode/skills/
 | Project | Distribution | Notes |
 |---------|-------------|-------|
 | **Superpowers** (Claude Code workflow) | GitHub repo + manual clone | Users clone into `.claude/skills/` |
-| **opencode-agent-skills** | npm package + git clone | Published to npm as `opencode-agent-skills` |
+| **opencode-agent-skills** | git clone | Published to GitHub as `opencode-agent-skills` |
 | **opencode-marketplace** | CLI tool | Not a plugin itself, but a distribution tool |
 | **Cursor rules** | GitHub repos | Users copy `.cursor/rules/` from examples |
 
@@ -237,12 +229,12 @@ GitHub Actions (this cluster)
 Artifact Hosting
     ├─ GitHub Releases (versioned tarballs)
     ├─ GitHub Pages (latest stable, installable URL)
-    └─ npm registry (OpenCode npm plugin)
+     └─ GitHub Releases (OpenCode tarballs)
     │
     ▼
 End User Installation
     ├─ Claude Code: plugin install from GitHub URL, or manual clone + discover
-    ├─ OpenCode: opencode-marketplace install, npm, or git
+     ├─ OpenCode: opencode-marketplace install, or git
     └─ Cursor: manual copy (future)
 ```
 
@@ -396,60 +388,6 @@ release:
 
 ---
 
-## npm Package (OpenCode)
-
-For OpenCode users who prefer npm over git-based installation:
-
-### Package Structure
-
-```
-plan-marshall-opencode/
-├── package.json
-├── opencode.json
-├── skills/
-│   └── (all skills)
-├── agents/
-│   └── (all agents)
-├── commands/
-│   └── (all commands)
-└── README.md
-```
-
-### package.json
-
-```json
-{
-  "name": "plan-marshall-opencode",
-  "version": "{version}",
-  "description": "plan-marshall marketplace for OpenCode",
-  "main": "opencode.json",
-  "files": [
-    "opencode.json",
-    "skills/",
-    "agents/",
-    "commands/"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/{org}/plan-marshall.git"
-  },
-  "keywords": ["opencode", "skills", "plan-marshall"],
-  "license": "Apache-2.0"
-}
-```
-
-### Publishing
-
-```bash
-# In CI, after build:
-cd dist/opencode
-npm publish --access public
-```
-
-**Note:** npm requires a build artifact. The source repo cannot be published directly because OpenCode expects a different directory layout than Claude Code.
-
----
-
 ## Versioning Strategy
 
 ### Schema
@@ -527,7 +465,6 @@ The following methods work but are **not tested in CI**. Documented for referenc
 |----------|--------|-------------|
 | Claude Code | `claude plugin install {repo-url}` | Direct install without marketplace catalog |
 | Claude Code | `git clone` + manual discovery | Development, custom forks, air-gapped environments |
-| OpenCode | `npm install -g plan-marshall-opencode` | Organizations with npm proxy/mirror |
 | OpenCode | `opencode-remote-config` | Auto-sync on startup; ref pinning for stability |
 | OpenCode | `OPENCODE_CONFIG_DIR` pointing to build output | Local development (see [06 — Developer Workflow](06-developer-workflow)) |
 
@@ -552,20 +489,6 @@ https://{org}.github.io/plan-marshall/opencode/latest/
 
 This matches the expected structure exactly.
 
-### npm
-
-npm packages need a `package.json` at the root. Our npm artifact:
-```
-plan-marshall-opencode-{version}.tar.gz
-├── package.json
-├── opencode.json
-├── skills/
-├── agents/
-└── commands/
-```
-
-The `package.json` main field points to `opencode.json` so OpenCode's plugin loader can find the config.
-
 ---
 
 ## Hosting Options Comparison
@@ -573,15 +496,13 @@ The `package.json` main field points to `opencode.json` so OpenCode's plugin loa
 | Host | Pros | Cons | Best For |
 |------|------|------|----------|
 | **GitHub Pages** | Free, versioned paths, custom domain, easy CI integration | Static only, no server-side logic | Primary host for OpenCode artifacts |
-| **GitHub Releases** | Attached to git tags, automatic changelog, artifact storage | Manual download, no directory listing | Versioned tarballs, npm packages |
-| **npm Registry** | Native OpenCode integration, semver, easy updates | Requires npm account, build artifact needed | OpenCode users who prefer npm |
+| **GitHub Releases** | Attached to git tags, automatic changelog, artifact storage | Manual download, no directory listing | Versioned tarballs |
 | **Git Repo (source)** | No build needed for Claude, always latest | Requires git, manual clone | Claude Code users, developers |
 | **jsDelivr CDN** | CDN edge caching, serves GitHub repos directly | Read-only, 24h cache delay | High-traffic installations |
 
 **Recommendation:**
 - **OpenCode Primary:** GitHub Pages (browsable, versioned, CI-driven)
-- **OpenCode Secondary:** GitHub Releases for tarballs and npm packages
-- **OpenCode Tertiary:** npm registry for npm plugin users
+- **OpenCode Secondary:** GitHub Releases for tarballs
 - **Claude Code:** GitHub repo itself (source format IS runtime format; no build or hosting needed)
   - Users install via `/plugin marketplace add {org}/{repo}` + `/plugin install`
   - Updates via `/plugin marketplace update {org}/{repo}`
@@ -610,7 +531,6 @@ Content-hash comparison avoids re-downloading unchanged files.
 |----------|--------|---------|
 | Claude Code | `claude plugin update` | `claude plugin update plan-marshall` |
 | Claude Code | Manual clone | `git pull origin main` |
-| OpenCode | npm | `npm update -g plan-marshall-opencode` |
 | OpenCode | opencode-remote-config | Restart OpenCode (auto-sync on startup) |
 | OpenCode | Re-install from URL | `opencode-marketplace install {url}` |
 
@@ -622,16 +542,15 @@ This cluster is complete when:
 1. GitHub Actions workflow builds and publishes OpenCode artifacts on push to main
 2. GitHub Pages hosts browsable `target/opencode/` output at a stable URL
 3. GitHub Releases attach versioned tarballs to tags
-4. npm package `plan-marshall-opencode` is published and installable
-5. Installation documentation exists for both Claude Code and OpenCode
-6. `opencode-marketplace install {pages-url}` succeeds and produces working skills
-7. Update path is documented and tested
-8. **Claude Code:** `.claude-plugin/marketplace.json` is at repo root with correct `source` paths
-9. **Claude Code:** `/plugin marketplace add {org}/{repo}` discovers and registers all bundles
-10. **Claude Code:** `/plugin install plan-marshall` installs all bundles
-11. **Claude Code:** `/plugin marketplace update {org}/{repo}` updates successfully
-12. **OpenCode:** `opencode-marketplace install {pages-url}` succeeds and produces working skills
-13. **OpenCode:** `opencode-marketplace update plan-marshall` updates successfully
+4. Installation documentation exists for both Claude Code and OpenCode
+5. `opencode-marketplace install {pages-url}` succeeds and produces working skills
+6. Update path is documented and tested
+7. **Claude Code:** `.claude-plugin/marketplace.json` is at repo root with correct `source` paths
+8. **Claude Code:** `/plugin marketplace add {org}/{repo}` discovers and registers all bundles
+9. **Claude Code:** `/plugin install plan-marshall` installs all bundles
+10. **Claude Code:** `/plugin marketplace update {org}/{repo}` updates successfully
+11. **OpenCode:** `opencode-marketplace install {pages-url}` succeeds and produces working skills
+12. **OpenCode:** `opencode-marketplace update plan-marshall` updates successfully
 
 ---
 
@@ -646,7 +565,6 @@ This cluster is complete when:
 
 | Risk | Mitigation |
 |------|------------|
-| npm registry requires separate artifact maintenance | Automate in CI; fail build if `npm publish` fails |
 | GitHub Pages cache delay (up to 10 min) | Document; users can use `jsDelivr` for immediate updates |
 | OpenCode plugin format changes | Pin to OpenCode version in CI; test against latest stable |
 | opencode-marketplace not widely adopted | Primary path tested in CI; alternatives documented for user choice |
@@ -659,4 +577,3 @@ This cluster is complete when:
 - **Cursor target:** When Cursor's skill/agent format is documented, add `cursor` target to the generator and publish `.cursor/` artifacts
 - **MCP server:** Expose plan-marshall skills as MCP tools for any MCP-compatible client
 - **Web UI:** A simple web page listing all skills with search and filter (hosted on GitHub Pages)
-- **Semver resolver:** If independent bundle versioning becomes necessary, implement dependency resolution

@@ -135,44 +135,8 @@ Tool and model mappings (see [01 — Design Platform API](01-design-platform-api
     "TaskList": "todoread"
   },
   "model_map": {
-    "opus": "claude-opus-4-7",
-    "sonnet": "claude-sonnet-4-6",
-    "haiku": "claude-haiku-4-5"
-  },
-  "layout": {
-    "skill_dir": "skills/{bundle}-{skill}",
-    "agent_dir": "agents",
-    "command_dir": "commands"
-  }
-}
-```
-
-**Note:** The generator adds the `anthropic/` provider prefix when writing `opencode.json`, so model IDs here are without prefix.
-
-#### Configuration: `marketplace/targets/opencode/frontmatter-rules.json`
-
-```json
-{
-  "tool_permissions": {
-    "Read": "read",
-    "Write": "edit",
-    "Edit": "edit",
-    "Glob": "glob",
-    "Grep": "grep",
-    "Bash": "bash",
-    "WebFetch": "webfetch",
-    "WebSearch": "websearch",
-    "AskUserQuestion": "question",
-    "Task": "task",
-    "Skill": "skill",
-    "NotebookEdit": "edit",
-    "TaskCreate": "todowrite",
-    "TaskGet": "todoread",
-    "TaskList": "todoread"
-  },
-  "model_map": {
-    "opus": "claude-opus-4-7",
-    "sonnet": "claude-sonnet-4-6",
+    "opus": "claude-opus-4-5",
+    "sonnet": "claude-sonnet-4-5",
     "haiku": "claude-haiku-4-5"
   },
   "required_fields": ["description"],
@@ -180,12 +144,25 @@ Tool and model mappings (see [01 — Design Platform API](01-design-platform-api
 }
 ```
 
+**Note:** The generator adds the `anthropic/` provider prefix when writing `opencode.json`, so model IDs here are without prefix.
+
+#### Configuration: `marketplace/targets/opencode/frontmatter-rules.json`
+
+Uses `tool_permissions` and `model_map` from `mapping.json` (loaded by the frontmatter engine at runtime).
+
+```json
+{
+  "required_fields": ["description"],
+  "optional_fields": ["model", "mode"]
+}
+```
+
 ### Model Mapping Rationale
 
-Claude Code aliases (`opus`, `sonnet`, `haiku`) resolve to the latest version. OpenCode requires explicit model IDs. The generator maps to the current latest version to preserve the skill author's intent:
+Claude Code aliases (`opus`, `sonnet`, `haiku`) resolve to the latest version. OpenCode requires explicit model IDs. The generator maps to the current available version to preserve the skill author's intent:
 
-- `opus` → `claude-opus-4-7` (deep reasoning, reliable rule following)
-- `sonnet` → `claude-sonnet-4-6` (daily coding)
+- `opus` → `claude-opus-4-5` (deep reasoning, reliable rule following; avoids `claude-opus-4-7` which may not be available in OpenCode's built-in provider)
+- `sonnet` → `claude-sonnet-4-5` (daily coding)
 - `haiku` → `claude-haiku-4-5` (simple tasks)
 
 **Note:** OpenCode provider prefix (`anthropic/`) is added by the config generator, not included in the model ID mapping.
