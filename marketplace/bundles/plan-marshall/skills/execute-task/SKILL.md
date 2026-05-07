@@ -205,7 +205,7 @@ Apply throughout all subsequent steps:
 
 - **breaking**: Make changes directly. Remove old code, rename freely, no backward compatibility.
 - **deprecation**: Keep old APIs/methods with `@Deprecated` markers. Add new code alongside old. Provide migration notes in commit messages.
-- **smart_and_ask**: For each change that could break consumers, evaluate impact. If uncertain, ask the user via the user-question tool before proceeding.
+- **smart_and_ask**: For each change that could break consumers, evaluate impact. If uncertain, ask user via AskUserQuestion before proceeding.
 
 ### Workflow
 

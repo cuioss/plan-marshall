@@ -33,11 +33,11 @@ Skill: plan-marshall:dev-general-practices
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
 - On phase entry (Step 4), resolve the active worktree absolute path and surface it as a `[STATUS]` work-log line so it stays visible in model context throughout the run. If present, every subsequent Edit/Write/Read must reference that path as the root.
-- Every subagent dispatch (named subagent / `Skill:` / `phase-agent` invocation) MUST embed the `worktree_path` directly in the dispatch prompt when a worktree is active (see **Dispatch Protocol** below) AND MUST pass it as an input parameter to satisfy the subagent's Input Contract (e.g., `execute-task`, `phase-agent`). Prompt embedding and parameter passing are both required — the former propagates the constraint through free-form delegation, the latter satisfies the structured interface.
+- Every subagent dispatch (Task / Skill / phase-agent invocation) MUST embed the `worktree_path` directly in the dispatch prompt when a worktree is active (see **Dispatch Protocol** below) AND MUST pass it as an input parameter to satisfy the subagent's Input Contract (e.g., `execute-task`, `phase-agent`). Prompt embedding and parameter passing are both required — the former propagates the constraint through free-form delegation, the latter satisfies the structured interface.
 
 ## Dispatch Protocol (Worktree Header)
 
-**REQUIREMENT**: When the plan runs in an isolated worktree (see the `[STATUS] Active worktree` work-log line from Step 4), every subagent dispatch prompt — including subagent dispatches, `Skill:` invocations that accept free-form prompts, and `phase-agent` delegations — MUST begin with the following header:
+**REQUIREMENT**: When the plan runs in an isolated worktree (see the `[STATUS] Active worktree` work-log line from Step 4), every subagent dispatch prompt — including `Task:`, `Skill:` invocations that accept free-form prompts, and `phase-agent` delegations — MUST begin with the following header:
 
 ```
 WORKTREE: {worktree_path}
@@ -380,7 +380,7 @@ Returns next task with status `pending` or `in_progress`, including embedded goa
 
 For each step in task's `steps[]` array:
 1. Parse the step text
-2. Execute the action (delegate if specified) — when delegating to a subagent (named subagent dispatch, `Skill:` invocation that accepts a prompt, or `phase-agent`), the prompt MUST begin with the Worktree Header from the **Dispatch Protocol** section above (omit only when no worktree is active).
+2. Execute the action (delegate if specified) — when delegating to a subagent via `Task:`, `Skill:` (prompt-accepting), or `phase-agent`, the prompt MUST begin with the Worktree Header from the **Dispatch Protocol** section above (omit only when no worktree is active).
 3. Mark step complete via `manage-tasks:finalize-step`
 
 ### Step 7: Mark Step Complete
@@ -649,9 +649,9 @@ When checklist items specify delegation, invoke the appropriate agent/skill:
 | Checklist Pattern | Delegation |
 |-------------------|------------|
 | "Run build" / "maven" / "npm" | See `standards/operations.md` |
-| "Delegate to {agent}" | Dispatch subagent `{agent}` |
+| "Delegate to {agent}" | `Task: {agent}` |
 | "Load skill: {skill}" | `Skill: {skill}` |
-| "Run /command" | Invoke `/command` |
+| "Run /command" | `SlashCommand: /command` |
 
 ---
 

@@ -22,7 +22,7 @@ Unified entry point for plan lifecycle management covering all 6 phases.
 **Constraints:**
 - Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
 - User review gates (`plan_without_asking`, `execute_without_asking`) must be respected — never skip when config is false
-- All user interactions use the user-question tool with proper YAML structure
+- All user interactions use `AskUserQuestion` tool with proper YAML structure
 - Phase transitions use `manage-status transition` — never set phase status directly
 
 **CRITICAL: USE ONLY THIS SKILL'S PLAN SYSTEM**

@@ -20,7 +20,7 @@ Analyzes WebFetch domains across global and project settings, researches domains
 **Constraints:**
 - Always research unknown domains before categorizing them
 - Prefer project-local permissions over global when appropriate
-- All user interactions use the user-question tool with proper YAML structure
+- All user interactions use `AskUserQuestion` tool with proper YAML structure
 - Track all statistics (domains_analyzed, permissions_added/removed, security_checks, files_read/modified) throughout workflow
 
 ## Parameters
@@ -70,7 +70,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-permission-web:permission
 
 The script handles missing files gracefully (reports them in output). On invalid JSON, it returns a failure status with the parse error.
 
-**Error handling for missing/invalid files**: Ask the user via the user-question tool with options to create defaults, skip the file, or abort.
+**Error handling for missing/invalid files**: Ask the user via `AskUserQuestion` with options to create defaults, skip the file, or abort.
 
 The script categorizes domains into: universal (`*`), major (from `standards/domain-lists.json`), high_reach (github.com, stackoverflow.com, etc.), suspicious (red flag patterns), and unknown (need research).
 
@@ -156,10 +156,10 @@ Recommendations:
 
 ### Step 7: Apply Recommendations (Optional)
 
-Ask the user via the user-question tool:
+Ask the user via `AskUserQuestion`:
 
 ```
-user-question:
+AskUserQuestion:
   questions:
     - question: "How would you like to apply the recommendations?"
       header: "Apply Changes"
@@ -254,7 +254,7 @@ status: success
 
 | Failure | Action |
 |---------|--------|
-| Settings file not found | Report as missing in statistics. Ask the user via the user-question tool (create defaults, skip, abort). |
+| Settings file not found | Report as missing in statistics. Ask user via `AskUserQuestion` (create defaults, skip, abort). |
 | Settings file invalid JSON | Return failure with parse error. Do not proceed with that file. |
 | WebSearch unavailable | Skip domain research. Present unknowns to user for manual assessment. |
 | Apply returns failure | Ask user (retry, skip file, abort). Track in files_modified counter. |

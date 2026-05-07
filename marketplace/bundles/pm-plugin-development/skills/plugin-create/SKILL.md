@@ -10,10 +10,10 @@ Interactive wizard for creating well-structured marketplace components following
 
 ## Enforcement
 
-**Execution mode**: Interactive wizard — gather user input via the user-question tool, validate, generate, verify.
+**Execution mode**: Interactive wizard — gather user input via AskUserQuestion, validate, generate, verify.
 
 **Prohibited actions:**
-- Agents cannot dispatch other subagents (Rule 6 — unavailable at runtime). If user lists subagent-dispatch capabilities in an agent's tools, reject and suggest creating a command instead.
+- Agents cannot use the Task tool (Rule 6 — unavailable at runtime). If user lists `Task` in tools, reject and suggest creating a command instead.
 - Only the maven-builder agent may execute Maven build commands (Rule 7).
 - Reject any non-maven-builder agent whose declared capabilities combine the shell tool with direct Java-build-tool invocation needs.
 - Do not invent script notations — use only documented notations

@@ -16,7 +16,7 @@ Parse `session_id` from the TOON output. Resolution order: `~/.cache/plan-marsha
 - `printenv`, `env | grep`, `$(...)` command substitution — forbidden by `workflows/planning.md` for the one env-var case it handles; same prohibition applies here
 - Any other `$VAR` expansion — the **only** allow-listed env-var read pattern in plan-marshall is `echo "TERM_PROGRAM=$TERM_PROGRAM"` (installed by the marshall-steward wizard for IDE hand-off)
 
-As a last resort (fresh checkout, stripped platform config, hook has not fired yet), use the user-question tool to ask the user for the id — but prefer the resolver in every other case, since users typically do not know where to find the id in the platform UI.
+As a last resort (fresh checkout, stripped `.claude` config, hook has not fired yet), use `AskUserQuestion` to ask the user for the id — but prefer the resolver in every other case, since users typically do not know where to find the id in the Claude Code UI.
 
 ## How to obtain transcript_path
 

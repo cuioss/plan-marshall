@@ -159,7 +159,7 @@ If confidence >= threshold → Step 13. Otherwise → Step 11.
 
 ### Step 11: Clarify with User
 
-Formulate clarification questions from issues found in Steps 8-9. Use the user-question tool with specific options. At most 4 questions per iteration, prioritized: Correctness > Consistency > Completeness > Ambiguity > Duplication.
+Formulate clarification questions from issues found in Steps 8-9. Use AskUserQuestion with specific options. At most 4 questions per iteration, prioritized: Correctness > Consistency > Completeness > Ambiguity > Duplication.
 
 ### Step 12: Update Request
 

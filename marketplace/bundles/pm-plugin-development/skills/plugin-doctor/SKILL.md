@@ -13,8 +13,8 @@ Comprehensive diagnostic and fix skill for marketplace components. Combines diag
 **Execution mode**: Select workflow based on scope parameter and execute immediately. Do not explain — execute.
 
 **Prohibited actions:**
-- Do not prompt for safe fixes — apply them automatically without invoking the user-question tool
-- Agents cannot dispatch other subagents (agent-task-tool-prohibited — unavailable at runtime)
+- Do not prompt for safe fixes — apply them automatically without AskUserQuestion
+- Agents cannot use the Task tool (agent-task-tool-prohibited — unavailable at runtime)
 - Only maven-builder agent may execute Maven commands (agent-maven-restricted)
 - Do not invent script notations — use only documented notations from the skill being called (command-self-contained-notation)
 
@@ -132,11 +132,11 @@ Categorize each issue as safe or risky per `references/fix-catalog.md`. Safe fix
 
 ### Phase 3: Apply Fixes
 
-1. **Auto-Apply Safe Fixes** — Apply immediately using Edit tool without prompting. Track success/failure.
+1. **Auto-Apply Safe Fixes** — Apply immediately using Edit tool without AskUserQuestion. Track success/failure.
 
-2. **Prompt for Risky Fixes ONLY** via the user-question tool:
+2. **Prompt for Risky Fixes ONLY**
    ```
-   user-question:
+   AskUserQuestion:
      question: "Apply fix for {issue}?"
      options:
        - label: "Yes" description: "Apply this fix"
@@ -351,12 +351,12 @@ This skill is designed to run without user prompts for safe operations. Required
 - `Glob(//marketplace/**)` - Discover components
 
 **Prompting Behavior:**
-- **Safe fixes**: Applied automatically WITHOUT prompts (no user-question call)
-- **Risky fixes**: ONLY these require user-question confirmation
+- **Safe fixes**: Applied automatically WITHOUT prompts (no AskUserQuestion)
+- **Risky fixes**: ONLY these require AskUserQuestion confirmation
 - All other operations (read, analyze, glob) are non-prompting
 
 **Ensuring Non-Prompting for Safe Operations:**
 - All file reads/edits use relative paths within marketplace/
 - Script paths resolved from `.plan/scripts-library.toon` (system convention)
 - Skill invocations use bundle-qualified names covered by `Skill({bundle}:*)` wildcards
-- The user-question tool is ONLY used for risky fix confirmations
+- AskUserQuestion is ONLY used for risky fix confirmations

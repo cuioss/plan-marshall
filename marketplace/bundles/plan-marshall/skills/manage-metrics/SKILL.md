@@ -9,7 +9,7 @@ scope: hybrid
 
 Collects wall-clock duration and token usage data per phase, generates incremental metrics.md reports in the plan directory.
 
-**Scope: hybrid** means this skill stores data per-plan (`.plan/plans/{plan_id}/`) but can also enrich from the host platform's session transcripts on disk.
+**Scope: hybrid** means this skill stores data per-plan (`.plan/plans/{plan_id}/`) but can also enrich from global session transcripts (`~/.claude/projects/`).
 
 ## Enforcement
 
@@ -17,7 +17,7 @@ Collects wall-clock duration and token usage data per phase, generates increment
 
 **Skill-specific constraints:**
 - Script-only skill — all access via the script API; script uses underscore (`manage_metrics`) for Python module compatibility
-- Never hard-code token values — only use data from subagent `<usage>` tags
+- Never hard-code token values — only use data from Task agent `<usage>` tags
 - Metrics data stored in `.plan/plans/{plan_id}/work/metrics.toon`; human-readable output in `.plan/plans/{plan_id}/metrics.md`
 - Phase names must be one of: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize` (must match `manage-status` phases exactly)
 
@@ -42,7 +42,7 @@ start_time: 2026-03-27T10:00:00+00:00
 
 ### end-phase
 
-Record phase end timestamp with optional token data from subagent notifications.
+Record phase end timestamp with optional token data from Task agent notifications.
 
 **Prerequisite**: `start-phase` must have been called for this phase. If no start time exists, duration cannot be calculated (the phase is silently recorded without duration).
 
@@ -57,11 +57,11 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-
 ```
 
 **Parameters:**
-- `--total-tokens` — Total tokens from subagent `<usage>` tag (optional, non-negative integer)
-- `--duration-ms` — Agent-reported duration in milliseconds from subagent `<usage>` tag. This is the agent's self-reported time, separate from wall-clock duration computed from start/end timestamps. (optional)
-- `--tool-uses` — Tool use count from subagent `<usage>` tag (optional)
+- `--total-tokens` — Total tokens from Task agent `<usage>` tag (optional, non-negative integer)
+- `--duration-ms` — Agent-reported duration in milliseconds from Task agent `<usage>` tag. This is the agent's self-reported time, separate from wall-clock duration computed from start/end timestamps. (optional)
+- `--tool-uses` — Tool use count from Task agent `<usage>` tag (optional)
 
-**Token data sources**: subagents (spawned via Agent tool) report usage in `<usage>` XML tags upon completion. These contain `total_tokens`, `duration_ms`, and optionally `tool_uses`. The orchestrator may forward each return's totals via the optional flags above, or rely on `accumulate-agent-usage` to persist them on disk between agent dispatches (recommended for `phase-5-execute` and `phase-6-finalize` — see below). For main-context phases (no agent dispatch), use `enrich` to capture session tokens.
+**Token data sources**: Task agents (spawned via Agent tool) report usage in `<usage>` XML tags upon completion. These contain `total_tokens`, `duration_ms`, and optionally `tool_uses`. The orchestrator may forward each return's totals via the optional flags above, or rely on `accumulate-agent-usage` to persist them on disk between agent dispatches (recommended for `phase-5-execute` and `phase-6-finalize` — see below). For main-context phases (no agent dispatch), use `enrich` to capture session tokens.
 
 **Output:**
 ```toon
@@ -175,7 +175,7 @@ if the file exists. Explicit flags always override accumulator values.
 
 Persist running per-phase totals of subagent `<usage>` data to disk. Designed
 to be called from `phase-5-execute` and `phase-6-finalize` SKILL.md
-immediately after every subagent return — the on-disk file replaces the
+immediately after every Task-agent return — the on-disk file replaces the
 fragile model-context-only `agent_usage_totals` discipline that lost data
 across context compactions and inline-only step runs.
 
@@ -213,10 +213,10 @@ See [data-format.md](standards/data-format.md) for the on-disk schema.
 
 Parse JSONL session transcript to extract token usage for main-context
 phases AND attribute subagent `<usage>` totals to the phase whose timestamp
-window contains each subagent dispatch. Locates the transcript JSONL via
-the `manage_session transcript-path` resolver (caller-supplied
-`session_id`), sums main-context input/output tokens across all messages,
-and walks `tool_result` content for embedded `<usage>...</usage>` blocks.
+window contains each `Task` tool call. Searches `~/.claude/projects/` for
+JSONL files matching the `session_id`, sums main-context input/output
+tokens across all messages, and walks `tool_result` content for embedded
+`<usage>...</usage>` blocks.
 
 Main-context tokens are attributed to the plan as a whole; subagent totals
 are attributed per-phase via the `start_time` / `end_time` recorded in
@@ -314,8 +314,8 @@ The `generate` command produces a markdown report with:
 |--------|-----------|---------|
 | `plan-marshall:plan-marshall` orchestrator | start-phase, end-phase, phase-boundary | Record phase timing at boundaries |
 | `plan-marshall:phase-5-execute` SKILL.md | accumulate-agent-usage | Persist per-task agent `<usage>` totals after each `execute-task` return |
-| `plan-marshall:phase-6-finalize` SKILL.md | accumulate-agent-usage | Persist per-step agent `<usage>` totals after each subagent return |
-| Phase agents (via subagent dispatch) | end-phase (with token args) | Pass `<usage>` tag data after agent completion (alternative to accumulator path) |
+| `plan-marshall:phase-6-finalize` SKILL.md | accumulate-agent-usage | Persist per-step agent `<usage>` totals after each Task-agent return |
+| Phase agents (via Task tool) | end-phase (with token args) | Pass `<usage>` tag data after agent completion (alternative to accumulator path) |
 
 ### Consumers
 
@@ -327,8 +327,8 @@ The `generate` command produces a markdown report with:
 ### Data Sources
 
 - Wall-clock timing: bash timestamps via start-phase/end-phase
-- Token data: subagent `<usage>` tags (total_tokens, duration_ms, tool_uses)
-- JSONL enrichment: host-platform session transcripts resolved via `manage_session transcript-path`
+- Token data: Task agent `<usage>` tags (total_tokens, duration_ms, tool_uses)
+- JSONL enrichment: `~/.claude/projects/` session transcripts
 
 ## Standards
 

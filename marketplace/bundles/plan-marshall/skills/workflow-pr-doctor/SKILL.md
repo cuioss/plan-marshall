@@ -21,7 +21,7 @@ Diagnose and fix pull request issues with parameterized checks.
 - Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
 - Fixes require build verification before committing
 - Review comment responses must explain the fix or provide rationale for disagreement
-- All user interactions use the user-question tool with proper YAML structure
+- All user interactions use `AskUserQuestion` tool with proper YAML structure
 - CI wait timeout (30 minutes) must be respected with user prompt on expiry
 
 ## Parameters
@@ -179,10 +179,10 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci [--project
 
 **Bash tool timeout**: 1800000ms (30-minute safety net).
 
-On timeout, present via the user-question tool:
+On timeout, present using `AskUserQuestion`:
 
 ```
-user-question:
+AskUserQuestion:
   questions:
     - question: "CI checks timed out after 30 minutes. How would you like to proceed?"
       header: "Timeout"
@@ -255,7 +255,7 @@ Based on checks parameter:
 
 1. Producer: `plan-marshall:workflow-integration-github:github_pr comments-stage --pr-number {pr} --plan-id {plan_id}` (or the GitLab equivalent) — writes one `pr-comment` finding per surviving comment to the per-plan findings store.
 2. Consumer: `manage-findings query --plan-id {plan_id} --type pr-comment --resolution pending` — enumerates pending findings.
-3. Per finding: detect domain via `architecture which-module --path {file_path}`, resolve the triage extension via `manage-config resolve-workflow-skill-extension --domain {domain} --type triage`, load the resulting `Skill: {bundle}:ext-triage-{domain}`, and apply the loaded `pr-comment-disposition.md` decision table (FIX / SUPPRESS / ACCEPT / ASK).
+3. Per finding: detect domain via `architecture which-module --path {file_path}`, resolve the triage extension via `manage-config resolve-workflow-skill-extension --domain {domain} --type triage`, load the resulting `Skill: {bundle}:ext-triage-{domain}`, and apply the loaded `pr-comment-disposition.md` decision table (FIX / SUPPRESS / ACCEPT / AskUserQuestion).
 4. Act on the decision (fix-task + loop-back / annotation + thread-reply + thread-resolve / thread-reply + thread-resolve / one-question-at-a-time user prompt) and close each finding with `manage-findings resolve --resolution {fixed|suppressed|accepted|taken_into_account}`.
 
 The keyword-classifier-as-decision-authority pattern (a single batch classifier deciding `code_change` / `explain` / `ignore` for a whole list of comments) is RETIRED — every per-finding decision goes through the loaded `ext-triage-{domain}` skill's standards. Commits for FIX-decision changes still flow through the git skill.
@@ -382,7 +382,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-pr-doctor:pr_doctor parse
 | Failure | Action |
 |---------|--------|
 | PR not found | Report error. Verify branch has a PR or use `--pr` parameter. |
-| CI wait timeout | Ask the user via the user-question tool (continue/skip/abort). |
+| CI wait timeout | Ask user via `AskUserQuestion` (continue/skip/abort). |
 | CI status check fails | Report error with stderr. Skip build diagnosis. |
 | Sonar MCP unavailable | Skip Sonar checks, report as "skipped — MCP not connected". |
 | Fix breaks build | Revert fix, report to user. Do not commit broken state. |

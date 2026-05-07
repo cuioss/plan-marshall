@@ -60,7 +60,7 @@ plan-marshall:manage-providers:credentials
 
 **Three-step workflow** — the LLM collects non-secret values, the script creates a file with placeholder secrets, and the user edits the file directly:
 
-1. **LLM phase**: Collect provider, URL, and auth type via the user-question tool
+1. **LLM phase**: Collect provider, URL, and auth type via `AskUserQuestion`
 2. **Run configure** to create credential file with placeholders:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-providers:credentials configure \

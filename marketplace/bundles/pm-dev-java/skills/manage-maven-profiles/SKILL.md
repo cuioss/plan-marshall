@@ -93,7 +93,7 @@ unmatched_profiles = {profile-id-1, profile-id-2, ...}
 For each NO-MATCH-FOUND profile:
 
 ```yaml
-user-question:
+AskUserQuestion:
   question: "Maven profile '{profile-id}' is unmatched. What should it do?"
   header: "Profile"
   options:
