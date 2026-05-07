@@ -10,7 +10,7 @@ All calls go through the executor: `python3 .plan/execute-script.py plan-marshal
 
 Skills hardcode `.claude/settings.local.json`, `~/.claude/plugins/cache/`, and Claude-specific hook instructions. This cluster replaces direct settings/hook/path manipulation with goal-based `platform-runtime` calls.
 
-**Precondition:** [00 — Cleanup / Precondition](../00-cleanup-precondition/plan.md) must complete first. That cluster handles the source-side prose cleanup (moving Claude-only mechanism descriptions to `references/{topic}.md`, rephrasing tool-name rules platform-agnostically). This cluster operates on already-cleaned source and is concerned only with **behavioural** rewrites — replacing platform-specific calls with `platform-runtime` calls.
+**Precondition:** [00 — Cleanup / Precondition](../00-cleanup-precondition/plan.md) must complete first. That cluster handles the source-side prose cleanup (moving Claude-only mechanism descriptions to `references/{topic}.md`, and rephrasing tool-name rules **only for tools that have no OpenCode equivalent** — `EnterPlanMode` / `ExitPlanMode` / `Agent(subagent_type="general-purpose")`). Mapped tool names with OpenCode equivalents (`AskUserQuestion` → `question`, `Task` → `task`, `Skill` → `skill`, etc.) deliberately remain verbatim in skill bodies — the OpenCode adapter's `TOOL_NAME_MAP` is the right place to bridge them. This cluster operates on already-cleaned source and is concerned only with **behavioural** rewrites — replacing platform-specific calls with `platform-runtime` calls.
 
 ## Scope
 
@@ -27,7 +27,7 @@ All 10 bundles, but with priority:
 
 ## Audit Checklist (Behavioural Patterns)
 
-Search all skill bodies for these **behavioural** patterns (i.e. operations the skill actually performs). Source-side prose patterns (Claude tool names in rules, Claude-only mechanism descriptions) are handled in [00 — Cleanup / Precondition](../00-cleanup-precondition/plan.md) and are not repeated here.
+Search all skill bodies for these **behavioural** patterns (i.e. operations the skill actually performs). Source-side prose patterns are handled in [00 — Cleanup / Precondition](../00-cleanup-precondition/plan.md) and are not repeated here — note that cluster 00 left mapped tool names (`AskUserQuestion`, `Task`, `Skill`, etc.) verbatim in skill bodies because the OpenCode adapter's `TOOL_NAME_MAP` bridges them; only no-equivalent names (`EnterPlanMode`, `ExitPlanMode`, `Agent(subagent_type="general-purpose")`) were rephrased. The `Task:` row in the table below is therefore still in scope for this cluster as a **behavioural** rewrite (`Task:` invocation → `platform-runtime subagent dispatch`), even though the prose mention of `Task:` was not rephrased.
 
 | Pattern | Violation | Fix |
 |---------|-----------|-----|
@@ -53,10 +53,10 @@ Search all skill bodies for these **behavioural** patterns (i.e. operations the 
 | `tools-permission-fix` | Write to `~/.claude/settings.json`, `.claude/settings.json`; `ensure-executor` adds the `Bash(python3 .plan/execute-script.py *)` permission; `cleanup-scripts` and `migrate-executor` operate on Claude-cache-located scripts | `platform-runtime permission fix --operation <op>`. **All three executor operations apply on both targets** (the executor exists on both — see [01 — Design Platform API](01-design-platform-api) "Executor Resolution Per Target"). On OpenCode: `ensure-executor` writes `permission.bash: { "python3 .plan/execute-script.py *": "allow" }`; `cleanup-scripts` removes stale executor-related entries from the OpenCode-permission shape; `migrate-executor` rewrites legacy executor permissions into the current shape. Each operation reads `runtime.target` from `marshal.json` and dispatches to the matching implementation. |
 | `workflow-permission-web` | Read `WebFetch(...)` strings from `.claude/settings*.json` | `platform-runtime permission web-analyze --scope <scope>`; `platform-runtime permission web-apply --add/--remove` |
 | `tools-script-executor` | Generates `.plan/execute-script.py` using `~/.claude/plugins/cache/` paths; bootstrap reads `~/.claude/plugins/cache/` | Target-aware generator: reads `runtime.target` from `marshal.json` and emits the matching resolver template (Claude resolver searches plugin cache; OpenCode resolver searches OpenCode's six skill discovery roots). Notation `{bundle}:{skill}:{script}` is unchanged — only the resolver behind it differs. See [01 — Design Platform API](01-design-platform-api) "Executor Resolution Per Target". |
-| `tools-file-ops` | Worktree paths under `.claude/worktrees/` hardcoded | Use `marshal.json` `worktree.path` (target-configurable, default `.claude/worktrees/` for Claude, `.opencode/worktrees/` for OpenCode) |
-| `manage-worktree` | Creates worktrees under `.claude/worktrees/{plan_id}/` | Use `marshal.json` `worktree.path` prefix; do not hardcode `.claude/` segment |
 | `tools-input-validation` | Validates `session_id` as "Claude Code UUID-shape token" | Target-specific validation: Claude UUID format vs OpenCode session format |
 | `plan-retrospective` | Permission prompt analysis references `.claude/settings.json` | Use `platform-runtime permission analyze --checks suspicious` to diagnose prompts; target-agnostic report generation |
+
+> **Worktree handling is NOT in this cluster's scope.** The earlier rows for `tools-file-ops` and `manage-worktree` (worktree path under `.claude/worktrees/`, `marshal.json` `worktree.path` defaults per target) are superseded by lesson **`2026-05-07-11-001`** (`plan-marshall:workflow-integration-git`, category `improvement`). That lesson lands as **upfront, platform-invariant work** before this cluster: `manage-worktree` consolidates into `workflow-integration-git`, the canonical location moves to `.plan/local/worktrees/{plan_id}/` (platform-neutral, gitignored — no per-target default needed), and a `git_workflow worktree {path,create,remove,list,rebase-to}` verb set replaces the old API. Because the path is no longer target-coupled, `platform-runtime` does not need a worktree operation. Cluster 03 inherits the cleaned surface and the migration sweep documented in §7 of that lesson; no further worktree-related rows belong in this table.
 
 ### Commands Requiring Changes
 
@@ -68,11 +68,11 @@ Search all skill bodies for these **behavioural** patterns (i.e. operations the 
 
 No body changes needed. These are already platform-agnostic.
 
-**Note:** The following skills require body changes (see table above): `phase-1-init`, `phase-5-execute`, `phase-6-finalize`, `plan-retrospective`, `marshall-steward`, `tools-permission-doctor`, `tools-permission-fix`, `workflow-permission-web`, `tools-script-executor`, `tools-file-ops`, `manage-worktree`, `tools-input-validation`.
+**Note:** The following skills require body changes (see table above): `phase-1-init`, `phase-5-execute`, `phase-6-finalize`, `plan-retrospective`, `marshall-steward`, `tools-permission-doctor`, `tools-permission-fix`, `workflow-permission-web`, `tools-script-executor`, `tools-input-validation`. (Worktree handling — formerly listed under `tools-file-ops` and `manage-worktree` — is upfront work, see lesson `2026-05-07-11-001`.)
 
 ### Source-Side Prose Cleanup
 
-The source-side prose cleanup tasks (moving Claude-only hook/cache documentation out of skill bodies, rephrasing tool-name rules platform-agnostically) live in their own precondition cluster: [00 — Cleanup / Precondition](../00-cleanup-precondition/plan.md). Cluster 03 starts on already-cleaned source and adds **behavioural** `platform-runtime` calls on top.
+The source-side prose cleanup tasks (moving Claude-only hook/cache documentation out of skill bodies, and rephrasing tool-name rules **only for tools that have no OpenCode equivalent** — see the precondition note above) live in their own precondition cluster: [00 — Cleanup / Precondition](../00-cleanup-precondition/plan.md). Cluster 03 starts on already-cleaned source and adds **behavioural** `platform-runtime` calls on top.
 
 ### User-Invocable Skills (Dual Emission on OpenCode)
 
