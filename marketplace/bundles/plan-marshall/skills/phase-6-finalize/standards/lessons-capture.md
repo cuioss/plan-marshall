@@ -62,7 +62,7 @@ The script reads the staged file from disk and replaces the body section of the 
 
 ### Anti-patterns — prohibited shortcuts
 
-Do **not** attempt to compress the three steps into a single shell-mediated write. The following shortcuts are explicitly prohibited because they either trip Claude Code's path-validation heuristic on `#`-bearing markdown, mangle whitespace and code fences, or otherwise corrupt the lesson body:
+Do **not** attempt to compress the three steps into a single shell-mediated write. The following shortcuts are explicitly prohibited because they either trip the host platform's path-validation heuristic on `#`-bearing markdown, mangle whitespace and code fences, or otherwise corrupt the lesson body:
 
 - `python -c "open(...).write(...)"` — inline Python that smuggles body content through the shell argument vector. Forbidden.
 - `$(printf ...)` — command substitution to assemble multi-line markdown. Forbidden.

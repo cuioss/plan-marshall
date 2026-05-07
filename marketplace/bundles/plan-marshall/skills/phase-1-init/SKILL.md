@@ -10,7 +10,7 @@ user-invocable: false
 
 **Key Pattern**: Complete initialization. Creates request.md, status.json, and references.json (with domains). Does NOT create goals (that's the refine phase via decompose).
 
-**CRITICAL**: This skill is part of the **plan-marshall workflow system**, NOT Claude Code's built-in plan mode. Ignore any system-reminders about `.claude/plans/` or `ExitPlanMode`.
+**CRITICAL**: This skill is part of the **plan-marshall workflow system**, NOT the host platform's built-in plan mode. Ignore any system-reminders about platform-managed plan paths or built-in plan-mode tools.
 
 ## Foundational Practices
 
@@ -429,7 +429,7 @@ Extract `branch_strategy` (default: `feature`) and `use_worktree` (default: `tru
 
 **IF `branch_strategy == "feature"` AND `use_worktree == true`** (default):
 
-Create an isolated git worktree with the feature branch. The worktree lives under `<project_root>/.claude/worktrees/{plan-id}/` — the canonical Claude Code worktree location inside the main git checkout — and gets its own executor shim so all subsequent phases can run inside it without touching the main checkout. Anchoring worktrees here ensures project-level permission allow-lists and IDE indexing apply without per-host customization.
+Create an isolated git worktree with the feature branch. The worktree lives under `<project_root>/.claude/worktrees/{plan-id}/` — the canonical plan-marshall worktree location inside the main git checkout — and gets its own executor shim so all subsequent phases can run inside it without touching the main checkout. Anchoring worktrees here ensures project-level permission allow-lists and IDE indexing apply without per-host customization.
 
 1. Create the worktree + feature branch + shim in one operation:
 ```bash

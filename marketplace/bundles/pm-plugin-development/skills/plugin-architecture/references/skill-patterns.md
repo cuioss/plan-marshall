@@ -6,7 +6,7 @@ This document catalogs common skill patterns to guide implementation. Reference 
 
 ## Pattern 1: Script Automation
 
-**Description**: Execute deterministic logic in Python/Bash scripts while Claude processes results.
+**Description**: Execute deterministic logic in Python/Bash scripts while the LLM processes results.
 
 **When to Use**:
 - Complex parsing or analysis logic
@@ -45,8 +45,8 @@ Apply the following interpretation rules:
 
 **Key Characteristics**:
 - Scripts output structured data (JSON/XML)
-- Claude interprets and acts on script output
-- Clear separation: logic (script) vs orchestration (Claude)
+- The LLM interprets and acts on script output
+- Clear separation: logic (script) vs orchestration (LLM)
 - Scripts are testable with standard unit tests
 
 **Examples**:

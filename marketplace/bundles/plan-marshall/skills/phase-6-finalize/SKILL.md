@@ -59,36 +59,11 @@ See [references/workflow-overview.md](references/workflow-overview.md) for the v
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `plan_id` | string | Yes | Plan identifier |
-| `session_id` | string | Yes | Current Claude Code conversation ID — forwarded to `default:record-metrics` for `manage-metrics enrich`, which reads the matching transcript JSONL to capture main-context token usage. Without it, `enrich` cannot locate the transcript and session tokens are lost from the final report. |
+| `session_id` | string | Yes | Current host-platform session id — forwarded to `default:record-metrics` for `manage-metrics enrich`, which reads the matching transcript JSONL to capture main-context token usage. Without it, `enrich` cannot locate the transcript and session tokens are lost from the final report. |
 
-### How to obtain session_id
+### How to obtain session_id and transcript_path
 
-Claude Code exposes `session_id` only in the JSON stdin payload delivered to hook invocations — it is **not** available via any environment variable or Bash command from a main-context skill run. The outer workflow obtains it by calling the resolver script, which reads a cache populated by the terminal-title hook on every `UserPromptSubmit`:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall:manage_session current
-```
-
-Parse `session_id` from the TOON output. Resolution order: `~/.cache/plan-marshall/sessions/by-cwd/{sha256(cwd)}` → `~/.cache/plan-marshall/sessions/current` → `status: error\nerror: session_id_unavailable`. On error, the caller decides whether to abort finalize or degrade (skipping `enrich`); the contract here stays `Yes` / required and the caller is responsible for producing a valid value before dispatching this skill.
-
-**Forbidden resolution patterns** (all trip the Bash sandbox or produce garbage):
-
-- `echo "$CLAUDE_SESSION_ID"` — invented env-var name, not exposed by Claude Code; expansion triggers the `simple_expansion` sandbox heuristic and prompts the user
-- `printenv`, `env | grep`, `$(...)` command substitution — forbidden by `workflows/planning.md` for the one env-var case it handles; same prohibition applies here
-- Any other `$VAR` expansion — the **only** allow-listed env-var read pattern in plan-marshall is `echo "TERM_PROGRAM=$TERM_PROGRAM"` (installed by the marshall-steward wizard for IDE hand-off)
-
-As a last resort (fresh checkout, stripped `.claude` config, hook has not fired yet), use `AskUserQuestion` to ask the user for the id — but prefer the resolver in every other case, since users typically do not know where to find the id in the Claude Code UI.
-
-### How to obtain transcript_path
-
-When a step needs the absolute path of the session transcript JSONL on disk (e.g., for `default:record-metrics` `manage-metrics enrich`, or for any aspect that reads the transcript directly), call the canonical resolver — the same script that exposes `current` also exposes `transcript-path`:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall:manage_session \
-  transcript-path --session-id {session_id}
-```
-
-Parse `transcript_path` from the TOON output. Resolution order: `~/.claude/projects/{cwd-slug}/{session_id}.jsonl` (where `{cwd-slug}` is the absolute project cwd with each `/` replaced by `-`) → in-process `pathlib.Path.glob` parent-directory scan for cross-cwd recovery → `status: error\nerror: transcript_not_found`. On error, the caller decides whether to abort finalize or degrade (e.g., skip `enrich`); the resolver does not shell out beyond the single `git rev-parse` already in `_resolve_cwd()`. Never substitute Bash file discovery (`ls`, `find`, Glob) for this resolver — the dev-general-practices ban on Bash file discovery already covers it, and the resolver is the only sanctioned alternative.
+Both are resolved via `manage_session` (`current` + `transcript-path` subcommands). Resolver-pipeline mechanism — cache layout, hook source, error contract, forbidden Bash-sandbox patterns — lives in [`references/session-resolver.md`](references/session-resolver.md). Callers obtain `session_id` first, then `transcript_path` keyed by it.
 
 ## Configuration Sources
 
@@ -337,7 +312,7 @@ Iterate over `manifest.phase_6.steps` (read in Step 2). The list is the manifest
 
 #### Plugin self-modification
 
-Cached plugin definitions under `~/.claude/plugins/cache/` are the runtime source of truth for Task agent dispatch. When a plan's diff modifies bundled agents, commands, or skills (paths matching `marketplace/bundles/*/{agents,commands,skills}/**`), the worktree-side fix never reaches the cache until `project:finalize-step-sync-plugin-cache` runs. The default Phase 6 manifest places that step late (post `branch-cleanup`) — correct in the steady state ("publish after commit"), but wrong when the in-flight finalize itself dispatches `default:create-pr`, `default:automated-review`, or `default:lessons-capture` against the *pre-fix* cached agents.
+The host platform's plugin cache is the runtime source of truth for Task agent dispatch. When a plan's diff modifies bundled agents, commands, or skills (paths matching `marketplace/bundles/*/{agents,commands,skills}/**`), the worktree-side fix never reaches the cache until `project:finalize-step-sync-plugin-cache` runs. The default Phase 6 manifest places that step late (post `branch-cleanup`) — correct in the steady state ("publish after commit"), but wrong when the in-flight finalize itself dispatches `default:create-pr`, `default:automated-review`, or `default:lessons-capture` against the *pre-fix* cached agents.
 
 The manifest composer closes this window automatically: `manage-execution-manifest`'s `bundle_self_modification` stacked rule (see [manage-execution-manifest/standards/decision-rules.md](../manage-execution-manifest/standards/decision-rules.md) § "Stacked Rule — `bundle_self_modification`") inserts an extra `project:finalize-step-sync-plugin-cache` entry into `phase_6.steps` immediately before the earliest agent-dispatched step. The existing late-stage occurrence is preserved verbatim — duplicate occurrences are intentional (early sync feeds the in-flight finalize; late sync publishes the post-commit state).
 
@@ -363,14 +338,14 @@ git -C {worktree_path} rev-parse HEAD
 
 Do NOT cache the live HEAD across loop iterations — read it fresh per step so a step that advances HEAD mid-loop (e.g., a hypothetical inline commit) is observed correctly by every later step's check. All other finalize steps keep the general rule above verbatim; this special case applies only to `pre-push-quality-gate`.
 
-**Per-agent timeout wrapper**: Every Task agent dispatch in this loop runs under a per-agent timeout budget. If the dispatch does not return inside the budget, the wrapper logs an ERROR, marks the step `failed` via `manage-status mark-step-done`, and continues with the next step in the list (no abort, no re-throw). Inline-only steps are not timeout-wrapped because they execute in the main context where Claude Code already manages call timeouts. Budgets:
+**Per-agent timeout wrapper**: Every Task agent dispatch in this loop runs under a per-agent timeout budget. If the dispatch does not return inside the budget, the wrapper logs an ERROR, marks the step `failed` via `manage-status mark-step-done`, and continues with the next step in the list (no abort, no re-throw). Inline-only steps are not timeout-wrapped because they execute in the main context where the host platform already manages call timeouts. Budgets:
 
 | Step | Budget | Rationale |
 |------|--------|-----------|
 | `default:sonar-roundtrip` | 15 min (900s) | Full Sonar gate roundtrip plus optional fix-task creation |
 | `default:automated-review` | 15 min (900s) | CI wait + review-bot buffer + comment triage |
 | `default:lessons-capture` | 5 min (300s) | Bounded `manage-lessons add` + Write workflow |
-| All other steps | no explicit budget | Fall under Claude Code's default per-call ceiling |
+| All other steps | no explicit budget | Fall under the host platform's default per-call ceiling |
 
 For each step reference:
 
@@ -442,7 +417,7 @@ FOR each step_id in manifest.phase_6.steps:
          c. Continue to the next step in the loop — DO NOT abort the pipeline.
 
      - BUILT-IN (inline-only: commit-push, branch-cleanup, record-metrics, archive-plan):
-       Read the standards document from dispatch table and follow all steps in main context. Inline steps are not timeout-wrapped — they execute under Claude Code's standard per-call ceiling.
+       Read the standards document from dispatch table and follow all steps in main context. Inline steps are not timeout-wrapped — they execute under the host platform's standard per-call ceiling.
 
      - PROJECT/SKILL: Load the skill with interface contract:
        Skill: {step_ref}
@@ -557,7 +532,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **This step ALWAYS runs** when a `short_description` was captured in the pre-archive snapshot — it is NOT configurable via the `steps` list.
 
-Emit a one-shot `✓ pm:done:{short_description}` OSC escape to the terminal so the session tab reflects plan completion. The emission is stateless: the OSC write sticks until the next Claude Code hook fires (`UserPromptSubmit` → running, `Stop` → idle, `SessionStart` → idle), at which point the next hook overwrites it. No session state file, clearing hook, or TTL is required.
+Emit a one-shot `✓ pm:done:{short_description}` OSC escape to the terminal so the session tab reflects plan completion. The emission is stateless: the OSC write sticks until the next terminal-title hook fires and overwrites it (the host platform's hook lifecycle owns that — see [`../plan-marshall/references/terminal-title.md`](../plan-marshall/references/terminal-title.md) for the underlying mechanism). No session state file, clearing hook, or TTL is required.
 
 **Why this runs AFTER `default:archive-plan`**: archive has already moved the live plan directory, so the normal cwd/status.json resolution chain would return `◯ claude`. The `--plan-label` argument bypasses that chain by accepting the label directly from the caller. The label value comes from item 7 of the pre-archive snapshot, captured while `status.json` was still live.
 

@@ -66,7 +66,7 @@ bash scripts/analyzer.py
 Load template: assets/template.html
 ```
 
-When a skill is loaded, Claude knows its installation directory and resolves relative paths from there.
+When a skill is loaded, the host platform knows its installation directory and resolves relative paths from there.
 
 ## Available References
 

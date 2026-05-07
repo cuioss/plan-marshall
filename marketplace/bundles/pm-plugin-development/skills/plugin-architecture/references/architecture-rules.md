@@ -241,7 +241,7 @@ description: |
 - 60-80% reduction in context usage
 - Faster skill selection
 - Allows very large knowledge bases
-- Claude only sees what's relevant to current step
+- The LLM only sees what's relevant to current step
 
 ## Rule 5: Goal-Based Organization
 

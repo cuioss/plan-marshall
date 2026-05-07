@@ -69,6 +69,15 @@ Read these documents in full **before touching anything**. Do not start the task
 - [ ] Implementation: write the no-op policy document (status, reason, alternative format; caller behaviour requirement)
 - [ ] Documentation: cross-link from `principles.md` and SKILL.md
 
+### 11. Remove temporary cluster-00 reference extracts (terminal-title + session-resolver)
+- [ ] Implementation: delete the three reference files cluster 00 carved out as temporary placeholders for the Claude-only plumbing prose, plus their pointer sections in the parent SKILL bodies, and replace the call sites with the equivalent `platform-runtime` operations introduced by this cluster:
+      - Delete `marketplace/bundles/plan-marshall/skills/plan-marshall/references/terminal-title.md` — the terminal-title hook + status-line description is replaced by `session configure-display --type terminal-title|status-line` (Claude-only; no-op on OpenCode). Remove the one-line "Terminal Title Integration" pointer section from `plan-marshall/SKILL.md` and route configuration through `platform-runtime` instead.
+      - Delete `marketplace/bundles/plan-marshall/skills/plan-marshall/references/session-id-resolver.md` — the hook-populated session-id cache pipeline is replaced by `session capture` (writes `session_id` to `.plan/status.json` via `manage-status`). Remove the one-line "Session ID Resolver" pointer section from `plan-marshall/SKILL.md`. Delete `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/manage_session.py` (and the executor mapping) once no caller remains.
+      - Delete `marketplace/bundles/plan-marshall/skills/phase-6-finalize/references/session-resolver.md` — the cluster-00 prose extract describing `session_id` + `transcript_path` resolution is replaced by `session capture` (called at phase entry) plus `metrics capture` reading `session_id` from `manage-status`. Remove the one-line "How to obtain session_id and transcript_path" pointer section from `phase-6-finalize/SKILL.md`; rewrite the `Input Contract` so phase-6-finalize gets `session_id` from `manage-status` rather than via a caller-supplied resolver.
+      - Audit `phase-6-finalize/SKILL.md` Step 6 ("Emit Done Terminal Title") — the OSC-emit path tied to the hook lifecycle should be re-expressed as a `session configure-display` invocation (or removed if the same display update is handled by the hook installed by `project initial-setup`).
+- [ ] Testing: grep `marketplace/bundles/*/skills/*/SKILL.md` and the deleted skills' references for residual mentions of `manage_session`, `~/.cache/plan-marshall/sessions`, `~/.claude/projects/`, and the deleted reference filenames; confirm zero hits. Re-run `plugin-doctor` quality gate over the affected skills.
+- [ ] Documentation: update `plan-marshall/SKILL.md` and `phase-6-finalize/SKILL.md` Related/Workflow tables so removed sections are not cross-referenced from elsewhere; mention in the cluster 01 PR body that the cluster-00 extracts have been retired.
+
 ## Quality Gate
 
 Run **once**, after every task above is complete. Do not run between tasks — the gate is a single pre-ship checkpoint, not a per-task check.

@@ -11,7 +11,7 @@ Practical applications of all 10 skill patterns to marketplace component develop
 **Why Pattern 1**:
 - File system traversal is deterministic
 - JSON output structure is predictable
-- Logic is testable outside Claude
+- Logic is testable outside the LLM
 
 **Implementation**:
 
@@ -54,7 +54,7 @@ Classify components by:
 - Health status (clean, needs attention, problematic)
 ```
 
-**Key Benefit**: Deterministic scanning logic in shell script, Claude interprets and categorizes results.
+**Key Benefit**: Deterministic scanning logic in shell script, the LLM interprets and categorizes results.
 
 ---
 
@@ -829,9 +829,9 @@ SKILL.md contains:
 ```
 
 **Why Wrong**:
-- Non-deterministic (Claude may parse differently each time)
+- Non-deterministic (the LLM may parse differently each time)
 - Not testable
-- Slow (Claude processes each time vs. script caching)
+- Slow (the LLM processes each time vs. script caching)
 
 **Fix**: Use Pattern 1 (Script Automation)
 

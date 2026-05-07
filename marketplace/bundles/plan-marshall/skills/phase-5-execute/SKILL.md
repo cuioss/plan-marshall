@@ -52,7 +52,7 @@ See `standards/operations.md` for the complete set of dispatch pattern templates
 
 ### Common anti-patterns to avoid (mirrored from dev-general-practices)
 
-Each Bash tool call dispatched during execute must contain exactly ONE command. Never combine with newlines, `&`, `&&`, `;`, or inline env-var assignment of the form `VAR=val cmd`. The `VAR=val cmd` shape combines the assignment and the command into one shell argument, which trips the Claude Code permission UI and obscures the env-var contract by hiding the variable inside the command line rather than declaring it explicitly.
+Each Bash tool call dispatched during execute must contain exactly ONE command. Never combine with newlines, `&`, `&&`, `;`, or inline env-var assignment of the form `VAR=val cmd`. The `VAR=val cmd` shape combines the assignment and the command into one shell argument, which trips the host platform's permission UI and obscures the env-var contract by hiding the variable inside the command line rather than declaring it explicitly.
 
 **Anti-pattern**: `MY_VAR=value python3 some_command.py ...`
 

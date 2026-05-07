@@ -497,4 +497,4 @@ Work silently during execution. Do not output tool usage or intermediate steps.
 
 **Test**: If output looks like a debug log, it's wrong. If output looks like a status report, it's right.
 
-**Implementation**: Output filtering is achieved through prompt design - explicit instructions in SKILL.md telling Claude what to display vs suppress.
+**Implementation**: Output filtering is achieved through prompt design - explicit instructions in SKILL.md telling the LLM what to display vs suppress.

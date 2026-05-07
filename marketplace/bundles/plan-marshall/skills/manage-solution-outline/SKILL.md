@@ -97,7 +97,7 @@ Examples provide starting points for different task categories:
 |---------|----------|
 | [examples/java-feature.md](examples/java-feature.md) | Java feature implementation |
 | [examples/javascript-feature.md](examples/javascript-feature.md) | JavaScript/frontend feature |
-| [examples/plugin-feature.md](examples/plugin-feature.md) | Claude Code plugin development |
+| [examples/plugin-feature.md](examples/plugin-feature.md) | Marketplace plugin development |
 | [examples/refactoring.md](examples/refactoring.md) | Code refactoring tasks |
 | [examples/bugfix.md](examples/bugfix.md) | Bug fix with root cause analysis |
 | [examples/documentation-task.md](examples/documentation-task.md) | Documentation creation/updates |

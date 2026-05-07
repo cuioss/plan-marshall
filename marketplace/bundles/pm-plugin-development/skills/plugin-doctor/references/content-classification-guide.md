@@ -4,7 +4,7 @@ Classification criteria for LLM-based content type identification in skill subdi
 
 ## Purpose
 
-Provides criteria for Claude to classify markdown files as reference, workflow, template, or mixed content.
+Provides criteria for the LLM to classify markdown files as reference, workflow, template, or mixed content.
 
 ## Classification Categories
 

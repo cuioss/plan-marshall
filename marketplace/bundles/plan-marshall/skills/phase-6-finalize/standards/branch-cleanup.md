@@ -26,7 +26,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Worktree Awareness
 
-If the plan was created with `use_worktree: true` (the default for `branch_strategy == feature`), the plan ran inside a git worktree at `{worktree_path}` rooted under `{main_checkout}/.claude/worktrees/{plan_id}/` — the canonical Claude Code worktree location inside the main git checkout. Both `{worktree_path}` and `{main_checkout}` were resolved at finalize entry (see SKILL.md Step 0) and are available throughout this workflow.
+If the plan was created with `use_worktree: true` (the default for `branch_strategy == feature`), the plan ran inside a git worktree at `{worktree_path}` rooted under `{main_checkout}/.claude/worktrees/{plan_id}/` — the canonical plan-marshall worktree location inside the main git checkout. Both `{worktree_path}` and `{main_checkout}` were resolved at finalize entry (see SKILL.md Step 0) and are available throughout this workflow.
 
 If `worktree_path` is absent (pre-worktree plan or `use_worktree == false`), substitute `{main_checkout}` in every `git -C {worktree_path}` command below — the plan ran directly against the main checkout, so all git work targets it.
 
