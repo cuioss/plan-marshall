@@ -1,10 +1,10 @@
 # Execution Behavior Standards
 
-Standards for ensuring Claude executes skill workflows rather than explaining them.
+Standards for ensuring the LLM executes skill workflows rather than explaining them.
 
 ## Problem Statement
 
-When commands load skills via the Skill tool, Claude may treat skill content as information to display rather than instructions to execute. This violates the command/skill architecture where:
+When commands load skills via the Skill tool, the LLM may treat skill content as information to display rather than instructions to execute. This violates the command/skill architecture where:
 - **Commands** = thin orchestrators that delegate
 - **Skills** = contain all logic to be executed immediately
 
@@ -42,7 +42,7 @@ Well-structured skills execute naturally without explicit directives. The key is
 ### Purpose
 
 Use MANDATORY and CRITICAL markers to:
-1. Force Claude's attention to essential steps
+1. Force the LLM's attention to essential steps
 2. Prevent skipping or summarizing
 3. Create execution checkpoints
 
@@ -82,7 +82,7 @@ Do not continue to Step 2 until this completes successfully.
 ### The Problem
 
 Ambiguous instructions like:
-- "See `script.py` for details" - Should Claude read it or run it?
+- "See `script.py` for details" - Should the LLM read it or run it?
 - "Use the analyzer script" - Read the code or execute it?
 
 ### The Solution
@@ -123,7 +123,7 @@ Document all scripts with explicit modes:
 
 ### Purpose
 
-Decision trees route Claude immediately to the correct action, preventing deliberation or explanation.
+Decision trees route the LLM immediately to the correct action, preventing deliberation or explanation.
 
 ### Structure
 

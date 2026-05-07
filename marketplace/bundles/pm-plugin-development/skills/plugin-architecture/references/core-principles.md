@@ -14,7 +14,7 @@ Skills are **specialized prompt templates that inject domain-specific instructio
 
 **Implications**:
 - Skills don't "run" like functions - they expand into prompts
-- Decision-making happens within Claude's reasoning based on skill descriptions
+- Decision-making happens within the LLM's reasoning based on skill descriptions
 - No algorithmic skill selection or AI-powered intent detection at code level
 - LLM reads all skill descriptions and selects based on semantic understanding
 
@@ -23,11 +23,11 @@ Skills are **specialized prompt templates that inject domain-specific instructio
 A single tool named "Skill" (capital S) acts as a dispatcher for individual skills.
 
 **How It Works**:
-1. System presents available skills to Claude through dynamic prompt generation
-2. Claude evaluates skill descriptions against user intent
-3. Claude chooses appropriate skill(s) based on language understanding
+1. System presents available skills to the LLM through dynamic prompt generation
+2. The LLM evaluates skill descriptions against user intent
+3. The LLM chooses appropriate skill(s) based on language understanding
 4. System injects chosen skill content into conversation
-5. Claude follows skill instructions
+5. The LLM follows skill instructions
 
 **Benefits**:
 - More flexible than keyword matching or rule-based routing
@@ -43,19 +43,19 @@ Every skill centers on a `SKILL.md` file with two required sections:
 
 **Required Fields**:
 - `name`: Skill identifier for invocation (hyphen-case, lowercase alphanumeric)
-- `description`: Brief summary helping Claude match user intent
+- `description`: Brief summary helping the LLM match user intent
 
 **Optional Fields**:
 - `allowed-tools`: Comma-separated list of permitted tools
 - `model`: Override default model selection
 - `license`: Attribution information
-- `disable-model-invocation`: Prevents automatic Claude selection
+- `disable-model-invocation`: Prevents automatic LLM selection
 
 **Example**:
 ```yaml
 ---
 name: my-skill
-description: Brief summary of what the skill does and when Claude should use it
+description: Brief summary of what the skill does and when the LLM should use it
 allowed-tools: [Read, Write, Bash]
 ---
 ```
@@ -105,7 +105,7 @@ Skills can be installed in different locations:
 - Project directory: `.claude/skills/`
 - Plugin bundles: `marketplace/bundles/{bundle}/skills/`
 
-Using relative paths ensures the skill works in all contexts. When a skill is loaded, Claude knows its installation directory and resolves relative paths from there.
+Using relative paths ensures the skill works in all contexts. When a skill is loaded, the host platform knows its installation directory and resolves relative paths from there.
 
 ### Relative Path Usage
 
@@ -163,19 +163,19 @@ my-skill/
 **scripts/**:
 - Executable Python/Bash scripts
 - Automation scripts, data processors, validators, code generators
-- Deterministic logic that Claude orchestrates
-- Output structured data (JSON/XML) for Claude to interpret
+- Deterministic logic that the LLM orchestrates
+- Output structured data (JSON/XML) for the LLM to interpret
 
 **references/**:
-- Text content loaded into Claude's context on-demand
+- Text content loaded into the LLM's context on-demand
 - Detailed documentation, large pattern libraries, checklists
 - Loaded via `Read references/file.md`
 - Can be any size (loaded progressively)
 
 **assets/**:
-- Templates and binary files that Claude references by path
+- Templates and binary files that the LLM references by path
 - HTML/CSS templates, images, configuration boilerplate
-- Claude generates content using these as templates
+- The LLM generates content using these as templates
 - Not loaded into context - used as input to scripts or templates
 
 ### When to Use Which Directory
@@ -189,9 +189,9 @@ my-skill/
 
 **Use references/** when:
 - Content is documentation or knowledge
-- Claude needs to interpret and apply
+- The LLM needs to interpret and apply
 - Information should load on-demand
-- Content helps Claude make decisions
+- Content helps the LLM make decisions
 
 **Use assets/** when:
 - Files are templates for generation
@@ -208,7 +208,7 @@ my-skill/
 1. **Frontmatter** (~2-3 lines)
    - Minimal metadata for skill discovery
    - Only name and description loaded initially
-   - Helps Claude decide whether to select skill
+   - Helps the LLM decide whether to select skill
 
 2. **SKILL.md** (~400-800 lines)
    - Full instructions loaded only after skill selection
@@ -235,7 +235,7 @@ Read references/quality-standards.md
 **Benefits**:
 - Reduces context usage by 60-80% compared to eager loading
 - Allows very large knowledge bases
-- Claude only sees what's relevant to current step
+- The LLM only sees what's relevant to current step
 - Faster skill selection (smaller frontmatter)
 
 ### Design for Progressive Disclosure
@@ -320,7 +320,7 @@ When this skill is invoked, only the listed tools are pre-approved.
 
 ### Separation of Concerns
 
-**Principle**: Execute deterministic logic in scripts while Claude processes results.
+**Principle**: Execute deterministic logic in scripts while the LLM processes results.
 
 **What Goes in Scripts**:
 - File parsing and analysis
@@ -346,7 +346,7 @@ When this skill is invoked, only the listed tools are pre-approved.
 bash scripts/analyze-structure.sh {file_path}
 
 # Script outputs JSON
-# Claude interprets the JSON and makes decisions
+# The LLM interprets the JSON and makes decisions
 ```
 
 **Script Output** (structured data):
@@ -364,7 +364,7 @@ bash scripts/analyze-structure.sh {file_path}
 }
 ```
 
-**Claude's Role**:
+**LLM's Role**:
 - Interpret JSON findings
 - Apply judgment to severity
 - Decide next actions
@@ -375,7 +375,7 @@ bash scripts/analyze-structure.sh {file_path}
 **Faster execution**: Native code vs LLM generation
 **Consistent results**: Deterministic algorithms
 **Easier testing**: Standard unit tests for scripts
-**Separation of concerns**: Logic (script) vs orchestration (Claude)
+**Separation of concerns**: Logic (script) vs orchestration (LLM)
 
 ### Script Best Practices
 
@@ -400,12 +400,12 @@ Skills inject two user messages into conversation:
 Purpose: Analyzes code for quality issues
 ```
 
-### 2. Hidden Message (Claude-Facing)
+### 2. Hidden Message (LLM-Facing)
 - `isMeta: true`
-- Provides full instructions to Claude
+- Provides full instructions to the LLM
 - Contains complete SKILL.md content
 
-**Claude sees** (additionally):
+**The LLM sees** (additionally):
 ```markdown
 # Code Analyzer Skill
 
@@ -441,11 +441,11 @@ System scans multiple sources and aggregates skills:
 
 1. **Discovery**: System scans all skill locations
 2. **Metadata Extraction**: Reads YAML frontmatter
-3. **Description Matching**: Claude evaluates descriptions against user intent
-4. **Selection**: Claude chooses appropriate skill(s)
+3. **Description Matching**: The LLM evaluates descriptions against user intent
+4. **Selection**: The LLM chooses appropriate skill(s)
 5. **Injection**: System injects skill content into conversation
 6. **Context Modification**: Applies tool permissions and model overrides
-7. **Execution**: Claude follows skill instructions
+7. **Execution**: The LLM follows skill instructions
 
 ## Best Practices Summary
 
@@ -467,7 +467,7 @@ System scans multiple sources and aggregates skills:
 ### 4. Scripts for Deterministic Logic
 - Move complex logic to scripts
 - Output structured data (JSON)
-- Claude orchestrates and interprets
+- The LLM orchestrates and interprets
 
 ### 5. Keep Prompts Focused
 - SKILL.md under 5,000 words

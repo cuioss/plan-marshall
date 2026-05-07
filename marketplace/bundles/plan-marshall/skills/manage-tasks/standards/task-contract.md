@@ -273,7 +273,7 @@ The `domain` field is inherited from the deliverable. Domains are arbitrary stri
 | `java` | Production Java code |
 | `javascript` | Production JavaScript code |
 | `javascript-testing` | JavaScript test code (Jest, Cypress) |
-| `plan-marshall-plugin-dev` | Claude Code marketplace plugin development |
+| `plan-marshall-plugin-dev` | Marketplace plugin development |
 
 ### Profile Field
 

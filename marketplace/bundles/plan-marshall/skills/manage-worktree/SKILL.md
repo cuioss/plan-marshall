@@ -7,7 +7,7 @@ scope: plan
 
 # Manage Worktree Skill
 
-Create, remove, resolve, and list per-plan git worktrees. Worktrees live under `<project_root>/.claude/worktrees/{plan-id}/` — the canonical Claude Code worktree location inside the main git checkout — and are isolated per plan so multiple plans can run in parallel on one repo. Anchoring worktrees inside the main checkout means project-level permission allow-lists and IDE indexing work without per-host customization. All plan-marshall runtime state lives at `<root>/.plan/local/` in the main checkout; each worktree's `.plan` is a symlink back to the main checkout's `.plan`, so tracked config, the executor, and runtime state are shared across every worktree.
+Create, remove, resolve, and list per-plan git worktrees. Worktrees live under `<project_root>/.claude/worktrees/{plan-id}/` — the canonical plan-marshall worktree location inside the main git checkout — and are isolated per plan so multiple plans can run in parallel on one repo. Anchoring worktrees inside the main checkout means project-level permission allow-lists and IDE indexing work without per-host customization. All plan-marshall runtime state lives at `<root>/.plan/local/` in the main checkout; each worktree's `.plan` is a symlink back to the main checkout's `.plan`, so tracked config, the executor, and runtime state are shared across every worktree.
 
 ## Enforcement
 

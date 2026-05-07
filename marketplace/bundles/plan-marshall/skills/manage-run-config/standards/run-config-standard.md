@@ -174,16 +174,16 @@ Adaptive timeout management for **synchronous command execution** (Maven, npm, G
 
 ### Two-Layer Timeout Concept
 
-**Key Insight**: Claude's Bash tool has a **default 120-second timeout**. Long-running builds need two timeout layers:
+**Key Insight**: the host platform's Bash tool has a **default 120-second timeout**. Long-running builds need two timeout layers:
 
-1. **Outer timeout**: Bash tool's `timeout` parameter (prevents Claude from canceling the operation)
+1. **Outer timeout**: Bash tool's `timeout` parameter (prevents the host platform from canceling the operation)
 2. **Inner timeout**: Shell `timeout` command (controls actual execution)
 
 ```
                 TWO-LAYER TIMEOUT ARCHITECTURE
 
     +-------------------------------------------------------------+
-    |  Claude Bash Tool                                           |
+    |  Host platform Bash tool                                    |
     |  timeout: INNER + 30 seconds                                |
     |  +-------------------------------------------------------+  |
     |  |  Shell timeout (inner, from run-config)               |  |
@@ -196,7 +196,7 @@ Adaptive timeout management for **synchronous command execution** (Maven, npm, G
     +-------------------------------------------------------------+
 
     Why two layers?
-    - Outer: Prevents Claude from canceling (must be > inner)
+    - Outer: Prevents the host platform from canceling (must be > inner)
     - Inner: Actual control from run-config (adaptive learning)
 ```
 

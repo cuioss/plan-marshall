@@ -228,7 +228,7 @@ implements: plan-marshall:extension-api/standards/ext-point-triage
 
 ### plugin.json Registration Convention
 
-**Not all skills need plugin.json registration.** Registration controls whether Claude Code loads the skill's SKILL.md as LLM context. Skills accessed only via the script executor (`python3 .plan/execute-script.py bundle:skill:script`) don't need their SKILL.md loaded — the executor resolves scripts by filesystem path.
+**Not all skills need plugin.json registration.** Registration controls whether the host platform loads the skill's SKILL.md as LLM context. Skills accessed only via the script executor (`python3 .plan/execute-script.py bundle:skill:script`) don't need their SKILL.md loaded — the executor resolves scripts by filesystem path.
 
 **Three categories of skills:**
 
@@ -345,7 +345,7 @@ Use the documented comma-separated form (`tools: Read, Write, Edit, Bash, Grep, 
 
 ### Issue 3: Task Tool in Agents
 
-Agents must not declare `Task` — Claude Code restricts Task from sub-agents and the agent will error at runtime. If orchestration is needed, create a command (commands may declare `Task` and invoke agents via `Task: subagent_type: {bundle}:{agent}`).
+Agents must not declare `Task` — the host platform restricts Task from sub-agents and the agent will error at runtime. If orchestration is needed, create a command (commands may declare `Task` and invoke agents via `Task: subagent_type: {bundle}:{agent}`).
 
 ### Issue 4: Unsupported Fields in Skills
 
@@ -395,7 +395,7 @@ marketplace/bundles/pm-plugin-development/skills/cui-marketplace-architecture/sc
 
 **Why This Matters**:
 1. Agents/commands use **runtime paths** in frontmatter (`./.claude/skills/...`)
-2. Claude Code mounts skills when loaded
+2. The host platform mounts skills when loaded
 3. This is NOT a relative path to "fix" - it's the correct runtime mount point
 4. Do NOT use physical marketplace paths in frontmatter
 

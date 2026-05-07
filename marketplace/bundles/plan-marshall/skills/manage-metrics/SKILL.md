@@ -9,7 +9,7 @@ scope: hybrid
 
 Collects wall-clock duration and token usage data per phase, generates incremental metrics.md reports in the plan directory.
 
-**Scope: hybrid** means this skill stores data per-plan (`.plan/plans/{plan_id}/`) but can also enrich from global session transcripts (`~/.claude/projects/`).
+**Scope: hybrid** means this skill stores data per-plan (`.plan/plans/{plan_id}/`) but can also enrich from the host platform's session transcripts on disk.
 
 ## Enforcement
 
@@ -213,10 +213,10 @@ See [data-format.md](standards/data-format.md) for the on-disk schema.
 
 Parse JSONL session transcript to extract token usage for main-context
 phases AND attribute subagent `<usage>` totals to the phase whose timestamp
-window contains each `Task` tool call. Searches `~/.claude/projects/` for
-JSONL files matching the `session_id`, sums main-context input/output
-tokens across all messages, and walks `tool_result` content for embedded
-`<usage>...</usage>` blocks.
+window contains each `Task` tool call. Searches the host platform's
+session-transcript directory for JSONL files matching the `session_id`,
+sums main-context input/output tokens across all messages, and walks
+`tool_result` content for embedded `<usage>...</usage>` blocks.
 
 Main-context tokens are attributed to the plan as a whole; subagent totals
 are attributed per-phase via the `start_time` / `end_time` recorded in
@@ -328,7 +328,7 @@ The `generate` command produces a markdown report with:
 
 - Wall-clock timing: bash timestamps via start-phase/end-phase
 - Token data: Task agent `<usage>` tags (total_tokens, duration_ms, tool_uses)
-- JSONL enrichment: `~/.claude/projects/` session transcripts
+- JSONL enrichment: host-platform session transcripts
 
 ## Standards
 

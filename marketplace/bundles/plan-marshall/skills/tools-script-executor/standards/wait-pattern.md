@@ -54,16 +54,16 @@ The wait pattern provides a **synchronous blocking** mechanism that:
 
 ## Two-Layer Timeout Concept
 
-**Key Insight**: Claude's Bash tool has a **default 120-second timeout**. Long-running polling operations need two timeout layers:
+**Key Insight**: the host platform's Bash tool has a **default 120-second timeout**. Long-running polling operations need two timeout layers:
 
-1. **Outer timeout**: Bash tool's `timeout` parameter (prevents Claude from canceling the operation)
+1. **Outer timeout**: Bash tool's `timeout` parameter (prevents the host platform from canceling the operation)
 2. **Inner timeout**: await_until's adaptive timeout (controls actual polling duration)
 
 ```
                 TWO-LAYER TIMEOUT ARCHITECTURE
 
     ┌─────────────────────────────────────────────────────────────┐
-    │  Claude Bash Tool                                           │
+    │  Host platform Bash tool                                    │
     │  timeout: 600000ms (set via tool parameter)                 │
     │  ┌───────────────────────────────────────────────────────┐  │
     │  │  Shell timeout wrapper (generous safety net)          │  │
@@ -235,7 +235,7 @@ result = await_until(
 
 The CLI provides two modes: **explicit** (manual timeout/interval) and **adaptive** (managed via run-config).
 
-**Important**: Always wrap in shell `timeout` as safety net for Claude's Bash tool.
+**Important**: Always wrap in shell `timeout` as safety net for the host platform's Bash tool.
 
 ```bash
 # ADAPTIVE MODE (recommended): timeout/interval managed internally via run-config

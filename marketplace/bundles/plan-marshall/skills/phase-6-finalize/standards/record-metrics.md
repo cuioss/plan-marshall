@@ -27,7 +27,7 @@ The script reads `work/metrics-accumulator-6-finalize.toon` and incorporates its
 
 ## Enrich Session Tokens
 
-Supplement the phase ledger with main-context token usage captured from the Claude Code transcript JSONL. `session_id` is the current Claude Code conversation ID, passed down from the skill caller (see SKILL.md "Input Parameters"):
+Supplement the phase ledger with main-context token usage captured from the host-platform transcript JSONL. `session_id` is the current host-platform session id, passed down from the skill caller (see SKILL.md "Input Parameters"):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics enrich \

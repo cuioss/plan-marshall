@@ -46,7 +46,7 @@ Covers typed-ID flags (`--lesson-id`, `--plan-id`, `--task-number`, `--module`, 
 
 Each Bash tool call must contain exactly ONE command. Never combine with newlines, `&`, `&&`, `;`, or inline env-var assignment of the form `VAR=val cmd`.
 
-The `VAR=val cmd` shape (e.g., `MY_VAR=value python3 some_command.py ...`) is forbidden for two reasons: it combines the assignment and the command into a single shell argument, which trips the Claude Code permission UI and produces a security prompt; and it obscures the env-var contract by hiding the variable inside the command line rather than declaring it explicitly.
+The `VAR=val cmd` shape (e.g., `MY_VAR=value python3 some_command.py ...`) is forbidden for two reasons: it combines the assignment and the command into a single shell argument, which trips the host platform's permission UI and produces a security prompt; and it obscures the env-var contract by hiding the variable inside the command line rather than declaring it explicitly.
 
 **Anti-pattern**: `MY_VAR=value python3 some_command.py ...`
 
@@ -82,7 +82,7 @@ Every repo-targeted git command MUST use the `git -C {path} <subcommand>` form. 
 
 Two reasons, both load-bearing:
 
-1. **Security prompt**: Claude Code treats `cd` followed by `git` in the same Bash call as a potential bare-repository-attack pattern and pops a permission prompt that disrupts the user. The `-C` form does not trip the heuristic.
+1. **Security prompt**: the host platform treats `cd` followed by `git` in the same Bash call as a potential bare-repository-attack pattern and pops a permission prompt that disrupts the user. The `-C` form does not trip the heuristic.
 2. **One-command-per-call**: `cd {path} && git ...` is two commands joined by `&&`, which already violates the [Bash: One command per call](#bash-one-command-per-call) rule above. Using `git -C {path} ...` is one command and satisfies both rules at once.
 
 When a plan runs in an isolated worktree, the canonical `{path}` is the worktree absolute path surfaced by `plan-marshall:phase-5-execute` in its `[STATUS] Active worktree: ...` work-log line. When operating against the main checkout, use `git -C .` — never `cd && git`.

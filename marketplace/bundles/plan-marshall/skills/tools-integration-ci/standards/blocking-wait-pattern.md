@@ -6,7 +6,7 @@ Reference for implementing blocking waits on external signals (PR comments, CI s
 
 ## 1. Purpose
 
-Replace bash `sleep` whenever a workflow needs to block until an external signal arrives. Claude Code's harness blocks long leading `sleep` durations, so any wait implemented as a raw shell pause (or a polled `until; do sleep …; done` loop in Bash) is unreliable and will fail in hosted runs.
+Replace bash `sleep` whenever a workflow needs to block until an external signal arrives. The host platform's harness blocks long leading `sleep` durations, so any wait implemented as a raw shell pause (or a polled `until; do sleep …; done` loop in Bash) is unreliable and will fail in hosted runs.
 
 All waits must be expressed as `tools-integration-ci` `wait-for-*` subcommands that run inside a Python handler on top of the shared `poll_until` framework. Shifting waits into the CI abstraction keeps the provider boundary clean, gives every caller the same timeout/interval contract, and lets the harness see a single bounded subprocess call per wait instead of a series of opaque sleeps.
 

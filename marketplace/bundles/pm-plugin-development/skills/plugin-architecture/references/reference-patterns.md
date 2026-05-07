@@ -8,7 +8,7 @@ Classification of allowed vs prohibited reference types in marketplace component
 
 **Why Relative Paths**:
 - Skills installed in different locations (global, project, bundle)
-- Claude resolves relative paths from the skill's installation directory
+- The host platform resolves relative paths from the skill's installation directory
 - Makes skills portable and distributable
 
 **Installation Contexts**:
@@ -86,7 +86,7 @@ FAIL python3 scripts/analyzer.py                 # Direct script path (bypasses 
 ```
 
 **Script Output**:
-- Scripts should output structured data (JSON) for Claude to interpret
+- Scripts should output structured data (JSON) for the LLM to interpret
 - Scripts should return exit code 0 for success, non-zero for failure
 - Output to stdout, errors to stderr
 

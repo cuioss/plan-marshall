@@ -8,7 +8,7 @@ Reference document for the manage-providers skill covering threat model, securit
 
 **Primary boundary**: `chmod 700` on `~/.plan-marshall-credentials/` directory. The OS prevents any process running as a different user from reading.
 
-**Defense-in-depth**: Claude Code deny rules covering `Read`, `Bash(cat)`, `Bash(head)`, `Bash(tail)`, `Bash(less)`, `Bash(more)`, `Bash(cp)`, `Bash(grep)`, `Bash(python3 -c)`, `Bash(base64)` — both `~` and absolute path forms.
+**Defense-in-depth**: host-platform deny rules covering `Read`, `Bash(cat)`, `Bash(head)`, `Bash(tail)`, `Bash(less)`, `Bash(more)`, `Bash(cp)`, `Bash(grep)`, `Bash(python3 -c)`, `Bash(base64)` — both `~` and absolute path forms.
 
 **Limitation acknowledged**: Deny rules are fundamentally a blocklist. New bypass vectors (e.g., new Bash commands, scripting runtimes) are always possible. `chmod 700` is the real security control.
 

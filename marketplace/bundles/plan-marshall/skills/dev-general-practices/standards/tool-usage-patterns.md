@@ -148,11 +148,11 @@ Use `.plan/temp/` for transient artifacts when a Bash redirect is genuinely nece
 
 ### No shell constructs
 
-`$()` substitution, `for` loops, `while` loops, and subshells all trigger Claude Code's security prompt. Make individual Bash calls per iteration instead.
+`$()` substitution, `for` loops, `while` loops, and subshells all trigger the host platform's security prompt. Make individual Bash calls per iteration instead.
 
 ### `cd <path> && <anything>` is forbidden for every tool, not just git
 
-`cd <path> && <anything>` is forbidden for every tool, not just git. The compound `cd && X` form has no legitimate use in a one-command-per-call regime — it (a) is two commands joined by `&&`, violating the [One command per call](#one-command-per-call) rule above, and (b) for `git` specifically trips Claude Code's bare-repository security heuristic and pops a permission prompt that disrupts the user.
+`cd <path> && <anything>` is forbidden for every tool, not just git. The compound `cd && X` form has no legitimate use in a one-command-per-call regime — it (a) is two commands joined by `&&`, violating the [One command per call](#one-command-per-call) rule above, and (b) for `git` specifically trips the host platform's bare-repository security heuristic and pops a permission prompt that disrupts the user.
 
 Use the tool's native cwd flag instead:
 
@@ -277,12 +277,12 @@ prompt — which is a workflow break, not a heuristic signal.
 Forbidden forms (all trigger the sandbox):
 
 - `echo "$ANY_VAR"` for any variable other than `TERM_PROGRAM` — including
-  plausible-looking names like `CLAUDE_SESSION_ID` that Claude Code does not
-  publish
+  plausible-looking names like `CLAUDE_SESSION_ID` that the host platform does
+  not publish
 - `printenv`, `env`, `env | grep` — any form of env-var listing
 - `$(...)` command substitution and backticks in Bash calls
 
-For Claude Code runtime state (session id, conversation id, plan id from main
+For host-platform runtime state (session id, conversation id, plan id from main
 context) the shell is **not** the source — the skill input contract plus the
 domain-specific resolver is. For `session_id` specifically, use:
 

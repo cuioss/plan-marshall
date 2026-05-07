@@ -6,7 +6,7 @@ user-invocable: true
 
 # Permission Doctor Skill
 
-Read-only permission analysis for Claude Code settings. Detects redundant permissions, security anti-patterns, and validates permission syntax without making changes.
+Read-only permission analysis for host-platform settings. Detects redundant permissions, security anti-patterns, and validates permission syntax without making changes.
 
 ## Enforcement
 

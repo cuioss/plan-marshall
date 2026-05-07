@@ -37,7 +37,7 @@ Commands parse parameters and make routing decisions:
 
 ### Skill Delegation with Critical Handoff
 
-Commands delegate heavy lifting to skills, but must include explicit handoff rules to ensure Claude EXECUTES the skill rather than explaining it. See `plugin-architecture:execution-directive` for the full pattern.
+Commands delegate heavy lifting to skills, but must include explicit handoff rules to ensure the LLM EXECUTES the skill rather than explaining it. See `plugin-architecture:execution-directive` for the full pattern.
 
 **Required pattern** — every command that loads a skill:
 ```markdown

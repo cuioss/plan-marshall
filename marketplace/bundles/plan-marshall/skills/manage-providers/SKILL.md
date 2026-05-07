@@ -46,7 +46,7 @@ Each provider module exports `get_provider_declarations()` returning a list of d
 | `verify` | HTTP connectivity test, writes `verified_at` timestamp into the credential file |
 | `list` | List configured skills by scanning `~/.plan-marshall-credentials/` (no secrets in output) |
 | `remove` | Remove credential file |
-| `ensure-denied` | Add deny rules to Claude Code settings |
+| `ensure-denied` | Add deny rules to the host platform's settings |
 
 ## Script Notation
 

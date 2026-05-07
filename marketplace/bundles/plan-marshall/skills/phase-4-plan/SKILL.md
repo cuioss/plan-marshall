@@ -29,7 +29,7 @@ Skill: plan-marshall:dev-general-practices
 
 **Anti-pattern: shell-substitution shortcuts for batch task payloads**
 
-When persisting the multi-task batch (Step 6 → 6a/6b), the following shell shortcuts are explicitly forbidden because they bypass the `--tasks-file` path-allocate flow and trip Claude Code's bash safety rules (one command per call, no shell constructs, no heredocs with `#` lines):
+When persisting the multi-task batch (Step 6 → 6a/6b), the following shell shortcuts are explicitly forbidden because they bypass the `--tasks-file` path-allocate flow and trip the host platform's bash safety rules (one command per call, no shell constructs, no heredocs with `#` lines):
 
 - `$(cat …)` command substitution (e.g. `manage-tasks batch-add --tasks-json "$(cat /tmp/tasks.json)"`) — violates the no-`$()` rule and silently quotes the JSON through the shell argument boundary.
 - Heredocs with `#` lines (e.g. `cat <<EOF | jq …` payloads that include `#`-prefixed comments) — heredocs containing `#` lines trigger the bash safety prompt and break execution.

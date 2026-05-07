@@ -29,7 +29,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
 
 ### Step 2: Wait for Review Bot Comments
 
-Poll for new review-bot comments using the dedicated CI subcommand. This replaces a previous bash `sleep` (blocked by the Claude Code harness for long leading durations) and exits as soon as a new comment arrives instead of always sleeping the full window.
+Poll for new review-bot comments using the dedicated CI subcommand. This replaces a previous bash `sleep` (blocked by the host platform's harness for long leading durations) and exits as soon as a new comment arrives instead of always sleeping the full window.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-for-comments \

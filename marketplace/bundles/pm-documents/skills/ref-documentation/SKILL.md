@@ -96,7 +96,7 @@ Script returns structured output with analysis data including files analyzed, qu
 
 **Step 5: Apply Deep Analysis**
 
-For each issue from script, apply Claude judgment:
+For each issue from script, apply LLM judgment:
 - Is the marketing language truly promotional or factual?
 - Can claims be verified from context?
 - Are TODOs appropriate (e.g., in development docs)?

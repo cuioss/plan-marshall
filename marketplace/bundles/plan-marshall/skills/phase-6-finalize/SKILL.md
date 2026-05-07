@@ -59,7 +59,7 @@ See [references/workflow-overview.md](references/workflow-overview.md) for the v
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `plan_id` | string | Yes | Plan identifier |
-| `session_id` | string | Yes | Current Claude Code conversation ID — forwarded to `default:record-metrics` for `manage-metrics enrich`, which reads the matching transcript JSONL to capture main-context token usage. Without it, `enrich` cannot locate the transcript and session tokens are lost from the final report. |
+| `session_id` | string | Yes | Current host-platform session id — forwarded to `default:record-metrics` for `manage-metrics enrich`, which reads the matching transcript JSONL to capture main-context token usage. Without it, `enrich` cannot locate the transcript and session tokens are lost from the final report. |
 
 ### How to obtain session_id and transcript_path
 
@@ -312,7 +312,7 @@ Iterate over `manifest.phase_6.steps` (read in Step 2). The list is the manifest
 
 #### Plugin self-modification
 
-Cached plugin definitions under `~/.claude/plugins/cache/` are the runtime source of truth for Task agent dispatch. When a plan's diff modifies bundled agents, commands, or skills (paths matching `marketplace/bundles/*/{agents,commands,skills}/**`), the worktree-side fix never reaches the cache until `project:finalize-step-sync-plugin-cache` runs. The default Phase 6 manifest places that step late (post `branch-cleanup`) — correct in the steady state ("publish after commit"), but wrong when the in-flight finalize itself dispatches `default:create-pr`, `default:automated-review`, or `default:lessons-capture` against the *pre-fix* cached agents.
+The host platform's plugin cache is the runtime source of truth for Task agent dispatch. When a plan's diff modifies bundled agents, commands, or skills (paths matching `marketplace/bundles/*/{agents,commands,skills}/**`), the worktree-side fix never reaches the cache until `project:finalize-step-sync-plugin-cache` runs. The default Phase 6 manifest places that step late (post `branch-cleanup`) — correct in the steady state ("publish after commit"), but wrong when the in-flight finalize itself dispatches `default:create-pr`, `default:automated-review`, or `default:lessons-capture` against the *pre-fix* cached agents.
 
 The manifest composer closes this window automatically: `manage-execution-manifest`'s `bundle_self_modification` stacked rule (see [manage-execution-manifest/standards/decision-rules.md](../manage-execution-manifest/standards/decision-rules.md) § "Stacked Rule — `bundle_self_modification`") inserts an extra `project:finalize-step-sync-plugin-cache` entry into `phase_6.steps` immediately before the earliest agent-dispatched step. The existing late-stage occurrence is preserved verbatim — duplicate occurrences are intentional (early sync feeds the in-flight finalize; late sync publishes the post-commit state).
 
@@ -338,14 +338,14 @@ git -C {worktree_path} rev-parse HEAD
 
 Do NOT cache the live HEAD across loop iterations — read it fresh per step so a step that advances HEAD mid-loop (e.g., a hypothetical inline commit) is observed correctly by every later step's check. All other finalize steps keep the general rule above verbatim; this special case applies only to `pre-push-quality-gate`.
 
-**Per-agent timeout wrapper**: Every Task agent dispatch in this loop runs under a per-agent timeout budget. If the dispatch does not return inside the budget, the wrapper logs an ERROR, marks the step `failed` via `manage-status mark-step-done`, and continues with the next step in the list (no abort, no re-throw). Inline-only steps are not timeout-wrapped because they execute in the main context where Claude Code already manages call timeouts. Budgets:
+**Per-agent timeout wrapper**: Every Task agent dispatch in this loop runs under a per-agent timeout budget. If the dispatch does not return inside the budget, the wrapper logs an ERROR, marks the step `failed` via `manage-status mark-step-done`, and continues with the next step in the list (no abort, no re-throw). Inline-only steps are not timeout-wrapped because they execute in the main context where the host platform already manages call timeouts. Budgets:
 
 | Step | Budget | Rationale |
 |------|--------|-----------|
 | `default:sonar-roundtrip` | 15 min (900s) | Full Sonar gate roundtrip plus optional fix-task creation |
 | `default:automated-review` | 15 min (900s) | CI wait + review-bot buffer + comment triage |
 | `default:lessons-capture` | 5 min (300s) | Bounded `manage-lessons add` + Write workflow |
-| All other steps | no explicit budget | Fall under Claude Code's default per-call ceiling |
+| All other steps | no explicit budget | Fall under the host platform's default per-call ceiling |
 
 For each step reference:
 
@@ -417,7 +417,7 @@ FOR each step_id in manifest.phase_6.steps:
          c. Continue to the next step in the loop — DO NOT abort the pipeline.
 
      - BUILT-IN (inline-only: commit-push, branch-cleanup, record-metrics, archive-plan):
-       Read the standards document from dispatch table and follow all steps in main context. Inline steps are not timeout-wrapped — they execute under Claude Code's standard per-call ceiling.
+       Read the standards document from dispatch table and follow all steps in main context. Inline steps are not timeout-wrapped — they execute under the host platform's standard per-call ceiling.
 
      - PROJECT/SKILL: Load the skill with interface contract:
        Skill: {step_ref}

@@ -161,7 +161,7 @@ For visual diagrams of domain propagation through phases, see:
 | Phase | Domain Source | How Determined |
 |-------|---------------|----------------|
 | **init** | None | No domain knowledge needed |
-| **outline** | All from marshal.json | Claude decides which are relevant (LLM reasoning) |
+| **outline** | All from marshal.json | The LLM decides which are relevant (LLM reasoning) |
 | **plan** | From deliverable | Script reads `deliverable.domain` |
 | **execute** | From task | Script reads `task.domain`, `task.profile` |
 | **finalize** | From references.json | Script reads `references.json.domains` |

@@ -34,7 +34,7 @@ Skill: plan-marshall:dev-general-practices
 Mirrors the Workflow Discipline hard rules from `plan-marshall:dev-general-practices` and the repository-level CLAUDE.md. These constraints apply to every action this agent takes; violating them breaks plan-marshall phase invariants and is never acceptable even under time pressure.
 
 **Prohibited actions:**
-- Never dispatch further work via `Agent(subagent_type="general-purpose")`. If delegation is needed, call a named plan-marshall agent or invoke a skill directly.
+- Never dispatch further work via an unconstrained generic subagent. If delegation is needed, call a named plan-marshall agent or invoke a skill directly.
 - Never access `.plan/` files with Read/Write/Edit. All `.plan/` operations MUST go through `python3 .plan/execute-script.py` manage-* scripts.
 - Never use `gh` or `glab` directly. All CI/Git-provider operations MUST go through `plan-marshall:tools-integration-ci`. All Sonar operations MUST go through `plan-marshall:workflow-integration-sonar`.
 - Never hard-code build commands (`./pw`, `mvn`, `npm`, `gradle`). Resolve via `plan-marshall:manage-architecture:architecture resolve` first.

@@ -272,7 +272,7 @@ Only after user provides direction:
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read --plan-id {plan_id} --type script
 ```
 
-Review the output for `[ERROR]` entries. This uses the manage-log API (the designed access pattern for `.plan` files) and avoids shell metacharacters that trigger Claude Code security prompts.
+Review the output for `[ERROR]` entries. This uses the manage-log API (the designed access pattern for `.plan` files) and avoids shell metacharacters that trigger host-platform security prompts.
 
 **B. If Errors Found**:
 

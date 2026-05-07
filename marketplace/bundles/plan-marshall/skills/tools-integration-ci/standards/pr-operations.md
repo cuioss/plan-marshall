@@ -95,7 +95,7 @@ Create a pull request using the three-step path-allocate pattern. The script
 owns path allocation — callers never invent scratch paths. Markdown bodies are
 written directly by the main context with its native Write tool, and the `pr
 create` subcommand consumes the prepared file. No multi-line markdown crosses
-the shell boundary, so Claude Code's shell-heading heuristic never fires.
+the shell boundary, so the host platform's shell-heading heuristic never fires.
 
 ### Step 1: Allocate Scratch Body Path
 

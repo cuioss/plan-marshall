@@ -19,7 +19,7 @@ After migrating business logic from agents to skills, several context issues eme
 - No isolation between different tasks
 
 **What Doesn't Work:**
-- Avoid: Agent-to-agent calls (architectural limitation in Claude Code)
+- Avoid: Agent-to-agent calls (architectural limitation on the host platform)
 - Avoid: Pure skill delegation without wrappers (context pollution)
 - Avoid: Fat agents with embedded business logic (maintenance nightmare)
 
@@ -386,7 +386,7 @@ python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
 ## Anti-Patterns to Avoid
 
 - **Fat wrappers (> 150 lines)** — Agents or commands that embed standards or verification logic. Causes context pollution, doubles maintenance burden, hurts testability, and blocks reuse. **Fix**: keep the wrapper to orchestration only; move all standards and logic into a skill.
-- **Agent-to-agent calls** — Not supported by Claude Code. Causes context confusion, unpredictable behavior, and loses isolation benefits. **Fix**: agents delegate exclusively to skills, not to other agents.
+- **Agent-to-agent calls** — Not supported by the host platform. Causes context confusion, unpredictable behavior, and loses isolation benefits. **Fix**: agents delegate exclusively to skills, not to other agents.
 - **Duplicate logic** — The same verification or parsing logic in both an agent and a skill. **Fix**: keep the logic in the skill and let the wrapper merely decide whether to invoke it.
 - **Direct business logic via raw tools** — e.g. an agent reading and parsing a Maven log line-by-line. **Fix**: delegate to the builder skill via its executor notation (`plan-marshall:build-maven:maven parse --log-file {log_file}`) so the parsing logic stays in one place.
 

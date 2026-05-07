@@ -6,7 +6,7 @@ user-invocable: true
 
 # Permission Fix Skill
 
-**PURPOSE**: Write operations for fixing and managing Claude Code permissions, including marketplace permission synchronization and executor pattern migration.
+**PURPOSE**: Write operations for fixing and managing host-platform permissions, including marketplace permission synchronization and executor pattern migration.
 
 **COMPLEMENTARY SKILL**: Use `plan-marshall:tools-permission-doctor` for read-only analysis before applying fixes.
 
@@ -267,7 +267,7 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fi
 The executor pattern uses a single permission for all marketplace scripts:
 - `Bash(python3 .plan/execute-script.py *)`
 
-This replaces individual script path permissions because the executor invokes scripts via subprocess (not checked by Claude Code permissions).
+This replaces individual script path permissions because the executor invokes scripts via subprocess (not checked by the host platform's permission system).
 
 ### Migration Path
 1. Run `ensure-executor` to add the executor permission
