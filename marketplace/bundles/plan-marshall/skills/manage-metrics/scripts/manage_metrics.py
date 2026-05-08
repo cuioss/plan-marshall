@@ -54,6 +54,14 @@ METRICS_FILE = FILE_WORK_METRICS
 METRICS_MD = 'metrics.md'
 PHASE_NAMES = list(PHASES)
 ACCUMULATOR_FILE_TEMPLATE = 'work/metrics-accumulator-{phase}.toon'
+DISPATCH_BOUNDARY_FILE_TEMPLATE = 'work/metrics-dispatch-boundaries-{phase}.toon'
+DISPATCH_TERMINATION_CAUSES = (
+    'voluntary_checkpoint',
+    'task_complete_returned_verbatim',
+    'harness_cancellation',
+    'error',
+    'unknown',
+)
 USAGE_TAG_RE = re.compile(r'<usage>([\s\S]*?)</usage>', re.MULTILINE)
 USAGE_FIELD_RE = re.compile(r'^\s*(total_tokens|tool_uses|duration_ms)\s*:\s*(\d+)', re.MULTILINE)
 
@@ -653,6 +661,95 @@ def cmd_accumulate_agent_usage(args: argparse.Namespace) -> dict:
     }
 
 
+def _dispatch_boundary_path(plan_id: str, phase: str) -> Path:
+    return get_plan_dir(plan_id) / DISPATCH_BOUNDARY_FILE_TEMPLATE.format(phase=phase)
+
+
+def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
+    """Record one tabular row per phase-agent dispatch termination.
+
+    Appends a TOON row to ``work/metrics-dispatch-boundaries-{phase}.toon``
+    capturing why a phase-agent dispatch ended (voluntary checkpoint,
+    bare task_complete return, harness cancellation, error, unknown) along
+    with the dispatched agent's <usage> totals at the time of return. The
+    accumulating file becomes the audit trail for diagnosing
+    `[OUTCOME]`-coverage gaps caused by agent-initiated re-dispatch — see
+    lesson 2026-05-08-14-001.
+
+    The file uses the same column layout for every row so plan-retrospective
+    fact extractors can ingest it without a schema lookup. Each row is a
+    single line in the form ``<timestamp>,<termination_cause>,
+    <total_tokens>,<tool_uses>,<duration_ms>``. The file's first line is a
+    TOON-tabular header declaring the column order.
+    """
+    plan_id = require_valid_plan_id(args)
+    phase = args.phase
+
+    if phase not in PHASE_NAMES:
+        return {
+            'status': 'error',
+            'error': 'invalid_phase',
+            'message': f'Invalid phase: {phase}. Must be one of: {", ".join(PHASE_NAMES)}',
+        }
+
+    cause = args.termination_cause
+    if cause not in DISPATCH_TERMINATION_CAUSES:
+        return {
+            'status': 'error',
+            'error': 'invalid_termination_cause',
+            'message': (
+                f'Invalid termination_cause: {cause}. '
+                f'Must be one of: {", ".join(DISPATCH_TERMINATION_CAUSES)}'
+            ),
+        }
+
+    total_tokens = args.total_tokens if args.total_tokens is not None else 0
+    tool_uses = args.tool_uses if args.tool_uses is not None else 0
+    duration_ms = args.duration_ms if args.duration_ms is not None else 0
+
+    path = _dispatch_boundary_path(plan_id, phase)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    timestamp = now_utc_iso()
+    row = f'{timestamp},{cause},{total_tokens},{tool_uses},{duration_ms}'
+
+    if path.exists():
+        existing = path.read_text(encoding='utf-8')
+        if not existing.endswith('\n'):
+            existing += '\n'
+        new_content = existing + row + '\n'
+    else:
+        # Header documents the column contract for downstream readers.
+        header = (
+            f'plan_id: {plan_id}\n'
+            f'phase: {phase}\n'
+            'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:\n'
+        )
+        new_content = header + row + '\n'
+
+    atomic_write_file(path, new_content)
+
+    # Count rows by counting the data lines (everything after the header lines).
+    row_count = sum(
+        1
+        for line in new_content.splitlines()
+        if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))
+    )
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'phase': phase,
+        'termination_cause': cause,
+        'total_tokens': total_tokens,
+        'tool_uses': tool_uses,
+        'duration_ms': duration_ms,
+        'timestamp': timestamp,
+        'rows_recorded': row_count,
+        'dispatch_boundary_file': str(path.relative_to(get_plan_dir(plan_id))),
+    }
+
+
 def _phase_window_lookup(plan_id: str) -> list[tuple[str, datetime, datetime]]:
     """Return [(phase, start, end), ...] for phases with full timestamps."""
     data = read_metrics_raw(plan_id)
@@ -950,6 +1047,51 @@ def main() -> int:
     acc.add_argument('--tool-uses', type=int, default=None, help='Subagent tool_uses to add to the running total')
     acc.add_argument('--duration-ms', type=int, default=None, help='Subagent duration_ms to add to the running total')
     acc.set_defaults(func=cmd_accumulate_agent_usage)
+
+    # record-dispatch-boundary
+    rdb = subparsers.add_parser(
+        'record-dispatch-boundary',
+        help='Record one tabular row per phase-agent dispatch termination',
+        description=(
+            'Append a TOON row to work/metrics-dispatch-boundaries-{phase}.toon '
+            'capturing the termination cause of a phase-agent dispatch '
+            '(voluntary_checkpoint | task_complete_returned_verbatim | '
+            'harness_cancellation | error | unknown) and the dispatched '
+            "agent's <usage> totals at the time of return. The orchestrator "
+            'invokes this on every phase-agent return so plan-retrospective '
+            'can correlate agent-initiated re-dispatch events with '
+            '[OUTCOME]-log coverage gaps (lesson 2026-05-08-14-001).'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(rdb)
+    add_phase_arg(rdb)
+    rdb.add_argument(
+        '--termination-cause',
+        required=True,
+        choices=list(DISPATCH_TERMINATION_CAUSES),
+        help='Why the phase-agent dispatch terminated.',
+    )
+    rdb.add_argument(
+        '--total-tokens',
+        type=int,
+        default=None,
+        help="Subagent total_tokens at termination (from the agent's <usage>).",
+    )
+    rdb.add_argument(
+        '--tool-uses',
+        type=int,
+        default=None,
+        help="Subagent tool_uses at termination (from the agent's <usage>).",
+    )
+    rdb.add_argument(
+        '--duration-ms',
+        type=int,
+        default=None,
+        help="Subagent duration_ms at termination (from the agent's <usage>).",
+    )
+    rdb.set_defaults(func=cmd_record_dispatch_boundary)
 
     # enrich
     enr = subparsers.add_parser('enrich', help='Enrich metrics from JSONL transcript', allow_abbrev=False)

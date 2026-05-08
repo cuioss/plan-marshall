@@ -75,3 +75,21 @@ Follow the loaded skill's workflow with all provided parameters. The skill conta
 
 **Worktree propagation**: When the plan runs in an isolated worktree (resolvable via `plan-marshall:manage-status:manage_status get-worktree-path --plan-id {plan_id}` returning a non-empty path), the loaded skill MUST resolve every Edit/Write/Read file operation against that path — no path may resolve against the main checkout. Additionally, any further subagent dispatch (Task, Skill with free-form prompt, nested phase-agent call) issued by the loaded skill MUST echo the path-free Worktree Header verbatim into its prompt, using the canonical template defined in `plan-marshall:phase-5-execute` § Dispatch Protocol — `WORKTREE: --plan-id {plan_id}` plus the resolution-and-rationale block. This guarantees the worktree context propagates through every level of delegation without leaking absolute paths into model context. See `workflow-integration-git/standards/worktree-handling.md` for the canonical `--plan-id` two-state binding.
 
+### Loop-to-completion contract for `plan-marshall:phase-5-execute`
+
+When the loaded skill is `plan-marshall:phase-5-execute`, this agent MUST drive the task loop to completion within the single dispatch. The dispatched skill is the only component allowed to terminate the loop, and it may only do so via one of three terminal outcomes:
+
+1. All pending tasks complete and the phase has been transitioned to `6-finalize` via `manage-status transition --completed 5-execute`.
+2. A fatal error captured via the skill's **Error Handling** section (including the pending-task drift error) — return a structured error TOON payload.
+3. A triage-driven `blocked` outcome that the skill itself acknowledges via `manage-tasks` status updates (the blocked task remains in the queue; the skill returns documenting the block).
+
+**Improvising a "progress checkpoint" return is a workflow violation.** Specifically, this agent MUST NOT:
+
+- Emit a "Returning control to orchestrator" / "checkpoint reached" / "partial-completion handoff" line and stop with pending tasks still in the queue.
+- Wrap the loaded skill's output in a partial-completion summary that asks the orchestrator to re-dispatch.
+- Truncate the loop early because of context-window concerns; the skill is responsible for managing its own context. (If a hard tooling limit is hit, that becomes a fatal error — outcome 2 — not a checkpoint.)
+
+This contract mirrors the **Auto-Continue Behavior → Forbidden: agent-initiated checkpoints** rule in `plan-marshall:phase-5-execute` § Auto-Continue Behavior. The motivating gap is documented in lesson `2026-05-08-14-001`: agent-initiated re-dispatch was the trigger for losing `[OUTCOME]` log coverage, and the underlying control-flow drift — agents deciding on their own to hand control back to the orchestrator — must be ruled out at both the skill prose level and at this agent's dispatch boundary.
+
+The same return-the-skill's-output-verbatim rule from the paragraph above still applies: this agent is not allowed to filter, summarise, or wrap the dispatched skill's terminal payload.
+
