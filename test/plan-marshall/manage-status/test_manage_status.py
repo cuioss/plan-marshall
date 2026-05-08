@@ -41,6 +41,7 @@ cmd_create, cmd_delete_plan = _lifecycle.cmd_create, _lifecycle.cmd_delete_plan
 cmd_transition = _lifecycle.cmd_transition
 cmd_archive = _lifecycle.cmd_archive
 cmd_get_context = _query.cmd_get_context
+cmd_get_worktree_path = _query.cmd_get_worktree_path
 cmd_metadata = _query.cmd_metadata
 cmd_progress = _query.cmd_progress
 cmd_read = _query.cmd_read
@@ -774,6 +775,302 @@ def test_archive_dry_run_leaves_status_unchanged(tmp_path):
             'dry-run mutated the live status.json — atomic-archive write '
             'block leaked into the dry-run path; verify the early-return '
             'on args.dry_run runs before the write_status call.'
+        )
+
+
+# =============================================================================
+# Test: Worktree State Persistence (cmd_create seeding)
+# =============================================================================
+#
+# TASK-1 made cmd_create accept --use-worktree, --worktree-path,
+# --worktree-branch and persist the trio into status.metadata so downstream
+# consumers (build wrappers, phase-entry assertions, get-worktree-path) can
+# resolve the active worktree from a plan-id alone. These tests pin the
+# three seeding scenarios called out in the driving lesson:
+#
+# 1. use_worktree=true with path+branch → metadata seeded with all three.
+# 2. use_worktree=false (or omitted) → metadata seeded with use_worktree:false
+#    only (symmetric contract — no path/branch fields written).
+# 3. Partial input (path without branch, or vice versa) → invalid_worktree_args
+#    error. Refusing partial input prevents silently-incoherent metadata.
+
+
+def test_create_seeds_worktree_metadata_when_use_worktree_true():
+    """use_worktree=true with path+branch must seed all three metadata fields."""
+    plan_id = 'wt-seed-true'
+    abs_path = '/tmp/worktrees/wt-seed-true'
+    branch = 'feature/wt-seed-true'
+    with PlanContext(plan_id=plan_id) as ctx:
+        result = cmd_create(
+            Namespace(
+                plan_id=plan_id,
+                title='Worktree Seed True',
+                phases='1-init,2-refine',
+                force=False,
+                use_worktree=True,
+                worktree_path=abs_path,
+                worktree_branch=branch,
+            )
+        )
+        assert result['status'] == 'success'
+        assert result['use_worktree'] is True
+        assert result['worktree_path'] == abs_path
+        assert result['worktree_branch'] == branch
+
+        # Verify status.json on disk contains the seeded metadata trio.
+        status = json.loads((ctx.plan_dir / 'status.json').read_text(encoding='utf-8'))
+        assert status['metadata']['use_worktree'] is True, (
+            f'metadata.use_worktree must be true, got {status["metadata"].get("use_worktree")!r}. '
+            f'TASK-1 cmd_create regressed: --use-worktree flag is not propagating into status.metadata.'
+        )
+        assert status['metadata']['worktree_path'] == abs_path, (
+            f'metadata.worktree_path must equal {abs_path!r}, got '
+            f'{status["metadata"].get("worktree_path")!r}.'
+        )
+        assert status['metadata']['worktree_branch'] == branch, (
+            f'metadata.worktree_branch must equal {branch!r}, got '
+            f'{status["metadata"].get("worktree_branch")!r}.'
+        )
+
+
+def test_create_seeds_use_worktree_false_when_omitted():
+    """No worktree flags → metadata.use_worktree=false, no path/branch fields.
+
+    The contract is symmetric: even without a worktree, cmd_create must seed
+    a definite ``use_worktree: false`` marker so downstream consumers don't
+    have to treat absence-of-metadata as 'main-checkout'.
+    """
+    plan_id = 'wt-seed-false'
+    with PlanContext(plan_id=plan_id) as ctx:
+        result = cmd_create(
+            Namespace(
+                plan_id=plan_id,
+                title='Worktree Seed False',
+                phases='1-init,2-refine',
+                force=False,
+                use_worktree=False,
+                worktree_path=None,
+                worktree_branch=None,
+            )
+        )
+        assert result['status'] == 'success'
+        assert result['use_worktree'] is False
+        # Result MUST NOT carry worktree_path / worktree_branch when no
+        # worktree was allocated — those keys are exclusive to the true case.
+        assert 'worktree_path' not in result
+        assert 'worktree_branch' not in result
+
+        status = json.loads((ctx.plan_dir / 'status.json').read_text(encoding='utf-8'))
+        assert status['metadata'] == {'use_worktree': False}, (
+            f'metadata must be exactly {{use_worktree: False}} when no worktree '
+            f'is seeded, got {status["metadata"]!r}. The false-state seeding '
+            f"contract prohibits writing path/branch keys when use_worktree is "
+            f'false.'
+        )
+
+
+def test_create_rejects_partial_worktree_args_path_only():
+    """use_worktree=true with path but missing branch → invalid_worktree_args."""
+    plan_id = 'wt-partial-path'
+    with PlanContext(plan_id=plan_id):
+        result = cmd_create(
+            Namespace(
+                plan_id=plan_id,
+                title='Partial Worktree',
+                phases='1-init,2-refine',
+                force=False,
+                use_worktree=True,
+                worktree_path='/tmp/worktrees/wt-partial-path',
+                worktree_branch=None,
+            )
+        )
+        assert result['status'] == 'error', (
+            f'Partial worktree input must error, got {result!r}. '
+            f'TASK-1 contract: --use-worktree requires both --worktree-path '
+            f'and --worktree-branch — refusing partial input prevents '
+            f'silently-incoherent metadata.'
+        )
+        assert result['error'] == 'invalid_worktree_args'
+
+
+def test_create_rejects_partial_worktree_args_branch_only():
+    """use_worktree=true with branch but missing path → invalid_worktree_args."""
+    plan_id = 'wt-partial-branch'
+    with PlanContext(plan_id=plan_id):
+        result = cmd_create(
+            Namespace(
+                plan_id=plan_id,
+                title='Partial Worktree',
+                phases='1-init,2-refine',
+                force=False,
+                use_worktree=True,
+                worktree_path=None,
+                worktree_branch='feature/wt-partial',
+            )
+        )
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_worktree_args'
+
+
+# =============================================================================
+# Test: cmd_get_worktree_path verb
+# =============================================================================
+#
+# TASK-1 added cmd_get_worktree_path which resolves status.metadata into the
+# canonical worktree path (or empty / error). The verb's contract:
+# - use_worktree==true and worktree_path set → worktree_path: <abs>
+# - use_worktree==false (or metadata absent) → worktree_path: '' (empty)
+# - use_worktree==true but worktree_path missing → error: worktree_unresolved
+#
+# These three tests pin all three branches so the contract cannot regress.
+
+
+def test_get_worktree_path_resolved_when_use_worktree_true():
+    """use_worktree=true → returns absolute worktree_path + branch."""
+    plan_id = 'wt-resolve-ok'
+    abs_path = '/tmp/worktrees/wt-resolve-ok'
+    branch = 'feature/wt-resolve-ok'
+    with PlanContext(plan_id=plan_id):
+        cmd_create(
+            Namespace(
+                plan_id=plan_id,
+                title='Resolve OK',
+                phases='1-init,2-refine',
+                force=False,
+                use_worktree=True,
+                worktree_path=abs_path,
+                worktree_branch=branch,
+            )
+        )
+        result = cmd_get_worktree_path(Namespace(plan_id=plan_id))
+        assert result['status'] == 'success'
+        assert result['use_worktree'] is True
+        assert result['worktree_path'] == abs_path, (
+            f'Expected resolved worktree_path={abs_path!r}, got '
+            f'{result.get("worktree_path")!r}. The verb must read '
+            f'metadata.worktree_path verbatim — no recomputation.'
+        )
+        assert result['worktree_branch'] == branch
+
+
+def test_get_worktree_path_empty_when_use_worktree_false():
+    """use_worktree=false → returns empty string (NOT an error).
+
+    Plans running against the main checkout legitimately have no worktree
+    path; the verb's empty-string contract lets callers branch cleanly on a
+    falsy value without parsing error envelopes.
+    """
+    plan_id = 'wt-resolve-false'
+    with PlanContext(plan_id=plan_id):
+        cmd_create(
+            Namespace(
+                plan_id=plan_id,
+                title='Resolve False',
+                phases='1-init,2-refine',
+                force=False,
+                use_worktree=False,
+                worktree_path=None,
+                worktree_branch=None,
+            )
+        )
+        result = cmd_get_worktree_path(Namespace(plan_id=plan_id))
+        assert result['status'] == 'success'
+        assert result['use_worktree'] is False
+        assert result['worktree_path'] == '', (
+            f"Expected empty worktree_path '', got "
+            f'{result.get("worktree_path")!r}. use_worktree=false MUST yield '
+            f'an empty string — never an error, never a missing key.'
+        )
+
+
+def test_get_worktree_path_error_when_partial_seed():
+    """Manually seeded use_worktree=true without worktree_path → worktree_unresolved.
+
+    cmd_create rejects partial input at write-time, but a status.json could
+    still arrive in a partial state via direct file edits or pre-TASK-1
+    history. The verb must surface that as a structured error rather than
+    returning silently-empty data.
+    """
+    plan_id = 'wt-resolve-partial'
+    with PlanContext(plan_id=plan_id) as ctx:
+        # Seed via cmd_create (false), then manually corrupt the metadata to
+        # the partial state we want to test. This avoids depending on
+        # cmd_create's validation order.
+        cmd_create(
+            Namespace(
+                plan_id=plan_id,
+                title='Resolve Partial',
+                phases='1-init,2-refine',
+                force=False,
+                use_worktree=False,
+                worktree_path=None,
+                worktree_branch=None,
+            )
+        )
+        status_path = ctx.plan_dir / 'status.json'
+        status = json.loads(status_path.read_text(encoding='utf-8'))
+        # Force the partial-seed shape: use_worktree=true but no path/branch.
+        status['metadata'] = {'use_worktree': True}
+        status_path.write_text(json.dumps(status), encoding='utf-8')
+
+        result = cmd_get_worktree_path(Namespace(plan_id=plan_id))
+        assert result['status'] == 'error', (
+            f'Partial seed must error, got {result!r}. The verb must surface '
+            f'use_worktree=true + missing worktree_path as worktree_unresolved '
+            f'rather than returning empty silently.'
+        )
+        assert result['error'] == 'worktree_unresolved'
+
+
+# =============================================================================
+# Test: CLI plumbing for create worktree flags + get-worktree-path subcommand
+# =============================================================================
+
+
+def test_cli_create_with_worktree_flags():
+    """End-to-end: CLI accepts --use-worktree/--worktree-path/--worktree-branch
+    and persists metadata that the get-worktree-path subcommand reads back.
+    """
+    plan_id = 'wt-cli-roundtrip'
+    abs_path = '/tmp/worktrees/wt-cli-roundtrip'
+    branch = 'feature/wt-cli-roundtrip'
+    with PlanContext():
+        create_result = run_script(
+            SCRIPT_PATH,
+            'create',
+            '--plan-id',
+            plan_id,
+            '--title',
+            'CLI Roundtrip',
+            '--phases',
+            '1-init,2-refine',
+            '--use-worktree',
+            '--worktree-path',
+            abs_path,
+            '--worktree-branch',
+            branch,
+        )
+        assert create_result.success, f'create failed: {create_result.stderr}'
+        assert 'status: success' in create_result.stdout
+
+        read_result = run_script(SCRIPT_PATH, 'get-worktree-path', '--plan-id', plan_id)
+        assert read_result.success, f'get-worktree-path failed: {read_result.stderr}'
+        assert 'status: success' in read_result.stdout
+        assert f'worktree_path: {abs_path}' in read_result.stdout, (
+            f'Expected worktree_path={abs_path!r} in stdout, got: {read_result.stdout!r}. '
+            f'CLI roundtrip regressed — manage_status.py is not wiring the '
+            f'create flags into cmd_create OR the get-worktree-path subparser '
+            f'is not registered.'
+        )
+
+
+def test_cli_get_worktree_path_help():
+    """get-worktree-path --help must succeed (subparser registration check)."""
+    with PlanContext():
+        result = run_script(SCRIPT_PATH, 'get-worktree-path', '--help')
+        assert result.success, (
+            f'get-worktree-path --help failed: {result.stderr!r}. '
+            f'Subparser is missing from manage_status.py.'
         )
 
 

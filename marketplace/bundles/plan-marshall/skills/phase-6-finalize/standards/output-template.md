@@ -131,10 +131,10 @@ Capture the following into in-memory state (no work file is written):
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view \
-     --project-dir {main_checkout}
+     --plan-id {plan_id}
    ```
 
-   Capture `state` and `number`. This call may return an error when no PR exists for the branch; treat as `state=n/a, number=n/a`.
+   The `--plan-id` form auto-resolves the active worktree (or falls back to the main checkout once the plan's worktree has been removed). Use `--project-dir {main_checkout}` instead if an explicit override is required (the two flags are mutually exclusive). Capture `state` and `number`. This call may return an error when no PR exists for the branch; treat as `state=n/a, number=n/a`.
 
 5. **Repository state** — branch name and porcelain status for the trailer.
 

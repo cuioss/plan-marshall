@@ -27,6 +27,7 @@ from file_ops import (
     get_base_dir,
     get_metadata_content_split,
     get_temp_dir,
+    get_worktree_root,
     output_error,
     output_success,
     parse_markdown_metadata,
@@ -417,3 +418,45 @@ def test_base_path_respects_custom_base():
         assert result == Path('/custom/base/plans/task')
     finally:
         set_base_dir(original)
+
+
+# =============================================================================
+# get_worktree_root tests
+# =============================================================================
+#
+# Worktrees migrated from ``<root>/.claude/worktrees/`` to
+# ``<root>/.plan/local/worktrees/`` so they inherit the existing
+# ``Write(.plan/**)`` permission and live alongside the rest of plan-local
+# runtime state. These tests pin the new layout to the constant
+# ``.plan/local/worktrees`` — no ``.claude/worktrees/`` fallback exists
+# (compatibility: breaking).
+
+
+def test_get_worktree_root_returns_plan_local_worktrees(tmp_path, monkeypatch):
+    """get_worktree_root anchors at <root>/.plan/local/worktrees."""
+    monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: tmp_path)
+    result = get_worktree_root()
+    assert result == tmp_path / '.plan' / 'local' / 'worktrees'
+
+
+def test_get_worktree_root_path_segments_match_new_constant(tmp_path, monkeypatch):
+    """The trailing segments are exactly ('.plan', 'local', 'worktrees')."""
+    monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: tmp_path)
+    result = get_worktree_root()
+    assert result.parts[-3:] == ('.plan', 'local', 'worktrees')
+
+
+def test_get_worktree_root_does_not_use_claude_worktrees(tmp_path, monkeypatch):
+    """The legacy .claude/worktrees/ path is no longer produced."""
+    monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: tmp_path)
+    result = get_worktree_root()
+    # No segment of the resolved path may be ``.claude`` — that prefix is
+    # gone now that worktrees live under ``.plan/local/``.
+    assert '.claude' not in result.parts
+
+
+def test_get_worktree_root_without_git_repo_raises(monkeypatch):
+    """When no git repo can be resolved, get_worktree_root raises RuntimeError."""
+    monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: None)
+    with pytest.raises(RuntimeError, match='git repository'):
+        get_worktree_root()

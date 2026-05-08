@@ -49,6 +49,7 @@ _EXECUTOR_MARKERS: tuple[str, ...] = (
 )
 
 _PROJECT_DIR_FLAG: str = '--project-dir'
+_PLAN_ID_FLAG: str = '--plan-id'
 
 
 def _find_notation_index(tokens: list[str]) -> int | None:
@@ -85,9 +86,11 @@ def inject_project_dir(command: str, worktree_path: str) -> tuple[str, bool]:
     Returns:
         A tuple ``(rewritten_command, injected)``. ``injected`` is ``True``
         only when the command was actually modified. Bucket A ``manage-*``
-        notations, non-Bucket-B notations, non-executor commands, and any
-        command that already contains ``--project-dir`` return the original
-        command string unchanged with ``injected=False``.
+        notations, non-Bucket-B notations, non-executor commands, any
+        command that already contains ``--project-dir``, and any command
+        that already contains ``--plan-id`` (the script will auto-resolve
+        via the two-state contract) return the original command string
+        unchanged with ``injected=False``.
     """
     try:
         tokens = shlex.split(command)
@@ -107,6 +110,13 @@ def inject_project_dir(command: str, worktree_path: str) -> tuple[str, bool]:
         return command, False
 
     if _PROJECT_DIR_FLAG in tokens:
+        return command, False
+
+    # If the command already supplies --plan-id, the target script's
+    # two-state contract resolves the worktree path itself. Injecting
+    # --project-dir on top would trigger ``mutually_exclusive_args`` and
+    # fail the run, so we leave the command untouched.
+    if _PLAN_ID_FLAG in tokens or any(t.startswith(f'{_PLAN_ID_FLAG}=') for t in tokens):
         return command, False
 
     # Executor contract: `{notation} run ...`. Only inject when `run` appears

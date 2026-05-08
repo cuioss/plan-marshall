@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from _handshake_store import (  # type: ignore[import-not-found]
@@ -25,6 +26,129 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 def _now_iso() -> str:
     return datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+def _is_truthy_metadata(value: Any) -> bool:
+    """Decide whether a metadata field expressing a boolean is true.
+
+    ``status.json`` metadata serializes booleans through TOON, which yields
+    Python ``bool`` after ``parse_toon``. Tolerates the string forms
+    ``'true'`` / ``'True'`` / ``'1'`` for robustness against future TOON
+    schema changes — never returns true for empty / missing values.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {'true', '1', 'yes'}
+    if isinstance(value, int):
+        return value != 0
+    return False
+
+
+def _resolve_worktree_assertion(metadata: dict[str, Any]) -> dict[str, Any] | None:
+    """Worktree-resolution phase-entry assertion.
+
+    Asserts that when ``metadata.use_worktree`` is true, the
+    ``metadata.worktree_path`` field is non-empty AND filesystem-resolvable
+    (the directory exists AND ``git -C {path} rev-parse --show-toplevel``
+    returns the same canonical path).
+
+    Returns ``None`` when the assertion passes (use_worktree is false or
+    the worktree resolves cleanly). Returns a structured TOON-shaped error
+    dict when the assertion fails — callers (``cmd_capture`` / ``cmd_verify``)
+    surface it verbatim and refuse to enter the phase.
+
+    Failure cases:
+        - ``use_worktree==true`` and ``worktree_path`` is missing/empty
+        - ``worktree_path`` is set but the directory does not exist
+        - ``worktree_path`` exists but is not a git worktree
+        - ``worktree_path`` exists, is a git worktree, but ``rev-parse
+          --show-toplevel`` resolves to a different path (stale link)
+
+    See ``workflow-integration-git/standards/worktree-handling.md`` for the
+    canonical worktree contract this assertion enforces at every phase
+    boundary.
+    """
+    if not _is_truthy_metadata(metadata.get('use_worktree')):
+        return None
+
+    raw = metadata.get('worktree_path')
+    path_str = str(raw).strip() if raw is not None else ''
+    if not path_str:
+        return {
+            'status': 'error',
+            'error': 'worktree_unresolved',
+            'reason': 'worktree_path_missing',
+            'message': (
+                'metadata.use_worktree==true but metadata.worktree_path is missing or empty; '
+                'phase entry refuses to advance until status metadata is repaired.'
+            ),
+        }
+
+    candidate = Path(path_str)
+    if not candidate.exists() or not candidate.is_dir():
+        return {
+            'status': 'error',
+            'error': 'worktree_unresolved',
+            'reason': 'worktree_path_not_found',
+            'worktree_path': path_str,
+            'message': (
+                f'metadata.worktree_path={path_str!r} does not exist on disk; '
+                'phase entry refuses to advance.'
+            ),
+        }
+
+    try:
+        result = subprocess.run(
+            ['git', '-C', path_str, 'rev-parse', '--show-toplevel'],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        return {
+            'status': 'error',
+            'error': 'worktree_unresolved',
+            'reason': 'git_invocation_failed',
+            'worktree_path': path_str,
+            'message': (
+                f'metadata.worktree_path={path_str!r} could not be probed via '
+                f'git rev-parse --show-toplevel: {exc}.'
+            ),
+        }
+
+    if result.returncode != 0:
+        stderr = (result.stderr or '').strip()
+        return {
+            'status': 'error',
+            'error': 'worktree_unresolved',
+            'reason': 'not_a_git_worktree',
+            'worktree_path': path_str,
+            'message': (
+                f'metadata.worktree_path={path_str!r} is not a git worktree '
+                f'(git rev-parse --show-toplevel exit={result.returncode}, stderr={stderr!r}).'
+            ),
+        }
+
+    resolved = (result.stdout or '').strip()
+    try:
+        same = resolved and Path(resolved).resolve() == candidate.resolve()
+    except OSError:
+        same = False
+    if not same:
+        return {
+            'status': 'error',
+            'error': 'worktree_unresolved',
+            'reason': 'worktree_path_stale',
+            'worktree_path': path_str,
+            'resolved_toplevel': resolved,
+            'message': (
+                f'metadata.worktree_path={path_str!r} resolves to a different toplevel '
+                f'({resolved!r}); the persisted path is stale.'
+            ),
+        }
+
+    return None
 
 
 def _load_status_metadata(plan_id: str) -> dict[str, Any]:
@@ -95,6 +219,12 @@ def cmd_capture(args: Any) -> dict[str, Any]:
     plan_id = args.plan_id
     phase = args.phase
     metadata = _load_status_metadata(plan_id)
+    worktree_error = _resolve_worktree_assertion(metadata)
+    if worktree_error is not None:
+        payload = dict(worktree_error)
+        payload['plan_id'] = plan_id
+        payload['phase'] = phase
+        return payload
     try:
         captured = capture_all(plan_id, metadata, phase)
     except PhaseStepsIncomplete as exc:
@@ -174,6 +304,12 @@ def cmd_verify(args: Any) -> dict[str, Any]:
         }
 
     metadata = _load_status_metadata(plan_id)
+    worktree_error = _resolve_worktree_assertion(metadata)
+    if worktree_error is not None:
+        payload = dict(worktree_error)
+        payload['plan_id'] = plan_id
+        payload['phase'] = phase
+        return payload
     try:
         observed = capture_all(plan_id, metadata, phase)
     except PhaseStepsIncomplete as exc:

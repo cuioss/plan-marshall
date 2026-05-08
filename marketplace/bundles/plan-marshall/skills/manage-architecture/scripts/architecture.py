@@ -15,12 +15,25 @@ from input_validation import (  # type: ignore[import-not-found]
     parse_args_with_toon_errors,
     validate_module_name,
 )
+from resolve_project_dir import (  # type: ignore[import-not-found]
+    MutuallyExclusiveArgsError,
+    WorktreeResolutionError,
+    add_plan_id_arg,
+    emit_mutually_exclusive_error,
+    emit_worktree_error,
+    resolve_project_dir,
+)
 
 
 @safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(description='Architecture analysis and enrichment operations', allow_abbrev=False)
-    parser.add_argument('--project-dir', default='.', help='Project directory (default: current directory)')
+    parser.add_argument(
+        '--project-dir',
+        default='.',
+        help='Project directory (default: current directory). Mutually exclusive with --plan-id.',
+    )
+    add_plan_id_arg(parser)
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # =========================================================================
@@ -345,6 +358,20 @@ def main() -> int:
     # =========================================================================
 
     args = parse_args_with_toon_errors(parser)
+
+    # Apply the two-state --plan-id / --project-dir routing. The helper
+    # is a no-op when --plan-id is unset and --project-dir keeps its
+    # default '.' (preserves the historical Bucket-A behaviour for
+    # subcommands that read the plan-architecture/_project.json from
+    # the current checkout).
+    try:
+        args.project_dir = resolve_project_dir(getattr(args, 'plan_id', None), args.project_dir, default='.')
+    except MutuallyExclusiveArgsError:
+        output_toon(emit_mutually_exclusive_error(getattr(args, 'plan_id', None), args.project_dir))
+        return 2
+    except WorktreeResolutionError as exc:
+        output_toon(emit_worktree_error(args.plan_id, exc))
+        return 2
 
     # Import command handlers
     from _cmd_client import (

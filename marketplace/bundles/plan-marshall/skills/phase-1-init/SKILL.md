@@ -41,6 +41,12 @@ Activate when:
 
 ---
 
+## Phase-Entry Worktree Assertion
+
+Phase 1-init has no preceding phase, so the Phase Entry Protocol's `phase_handshake verify` step is skipped (per [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md#q-gate-check-phases-2-6) Q-Gate / handshake checks are scoped to phases 2-6). However, the worktree-resolution contract enforced uniformly at every phase boundary by `phase_handshake` (see deliverable 8 in the originating lesson plan) is THIS phase's responsibility to satisfy: Step 6's worktree-allocation flow MUST persist `metadata.use_worktree`, `metadata.worktree_path`, and `metadata.worktree_branch` to `status.json` so that `phase_handshake capture --phase 1-init` (issued at phase completion) and every subsequent phase's verify can resolve the worktree cleanly. When `git_workflow worktree create` succeeds, those fields MUST be set; when it fails and the phase falls back to the main checkout, the phase MUST persist `metadata.use_worktree==false` so downstream assertions short-circuit. A future `phase_handshake verify --phase 1-init --strict` call against a plan with `use_worktree==true` and a missing/stale `worktree_path` returns `status: error, error: worktree_unresolved` and (under `--strict`) exits 1, refusing to enter the next phase.
+
+---
+
 ## Operation: create
 
 **Input** (exactly ONE required):
@@ -429,11 +435,11 @@ Extract `branch_strategy` (default: `feature`) and `use_worktree` (default: `tru
 
 **IF `branch_strategy == "feature"` AND `use_worktree == true`** (default):
 
-Create an isolated git worktree with the feature branch. The worktree lives under `<project_root>/.claude/worktrees/{plan-id}/` — the canonical plan-marshall worktree location inside the main git checkout — and gets its own executor shim so all subsequent phases can run inside it without touching the main checkout. Anchoring worktrees here ensures project-level permission allow-lists and IDE indexing apply without per-host customization.
+Create an isolated git worktree with the feature branch. The worktree lives under `<project_root>/.plan/local/worktrees/{plan-id}/` — the canonical plan-marshall worktree location inside the main git checkout — and gets its own executor shim so all subsequent phases can run inside it without touching the main checkout. Anchoring worktrees here ensures project-level permission allow-lists and IDE indexing apply without per-host customization.
 
 1. Create the worktree + feature branch + shim in one operation:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-worktree:manage-worktree create \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree create \
   --plan-id {plan_id} \
   --branch feature/{plan_id} \
   --base {branch_name}
@@ -479,15 +485,15 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 5. **CRITICAL cwd directive for subsequent phases**: Emit the following Bucket A/B-aware instruction verbatim in the phase completion output (see Step 12). It tells the orchestrating LLM exactly how to honor the worktree without reaching for `env -C`:
 
-   > _"This plan runs in an isolated git worktree at `{worktree_path}`. For `.plan/execute-script.py` calls, follow `plan-marshall:tools-script-executor/standards/cwd-policy.md`: `manage-*` scripts (Bucket A) are cwd-agnostic — call them from any cwd with NO `--project-dir` and never `env -C`. Build / CI / Sonar scripts (Bucket B) MUST pass `--project-dir {worktree_path}`. For raw `git`, `mvn`, `npm`, and Edit/Write/Read operations on source files, target paths under `{worktree_path}` — do not modify files in the original checkout."_
+   > _"This plan runs in an isolated git worktree at `{worktree_path}`. For `.plan/execute-script.py` calls, follow `plan-marshall:tools-script-executor/standards/cwd-policy.md`: `manage-*` scripts (Bucket A) are cwd-agnostic — call them from any cwd with NO routing flags and never `env -C`. Build / CI / Sonar scripts (Bucket B) MUST identify the worktree via either `--plan-id {plan_id}` (preferred — auto-resolves through `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (explicit override / escape hatch); the two flags are mutually exclusive. For raw `git`, `mvn`, `npm`, and Edit/Write/Read operations on source files, target paths under `{worktree_path}` — do not modify files in the original checkout."_
 
-6. **Fail-loud on worktree creation errors**: If `manage-worktree create` returns `status=error` — including `error=plan_symlink_failed`, `error=worktree_add_failed`, or any other worktree-creation failure — the phase MUST NOT silently fall back to running in the main checkout. Silent fallback destroys isolation without warning the user and is prohibited. Instead:
+6. **Fail-loud on worktree creation errors**: If `git_workflow worktree create` returns `status=error` — including `error=plan_symlink_failed`, `error=worktree_add_failed`, or any other worktree-creation failure — the phase MUST NOT silently fall back to running in the main checkout. Silent fallback destroys isolation without warning the user and is prohibited. Instead:
 
-   a. Roll back any partial worktree state (`manage-worktree remove --plan-id {plan_id} --force` if the worktree directory was created).
+   a. Roll back any partial worktree state (`git_workflow worktree remove --plan-id {plan_id} --force` if the worktree directory was created).
 
    b. Create and switch to `feature/{plan_id}` in the main checkout (same steps as the `use_worktree == false` branch below), so the plan can still proceed on a feature branch.
 
-   c. **Surface the original error via the phase return output**: add a top-level `warnings[]` entry (see Step 12) with the verbatim error message from `manage-worktree create`, plus a note that worktree isolation was lost and all subsequent phases will modify the main checkout directly. The warning text is not optional and is not buried in logs — it MUST appear in the phase return TOON so the calling workflow and the user see it immediately.
+   c. **Surface the original error via the phase return output**: add a top-level `warnings[]` entry (see Step 12) with the verbatim error message from `git_workflow worktree create`, plus a note that worktree isolation was lost and all subsequent phases will modify the main checkout directly. The warning text is not optional and is not buried in logs — it MUST appear in the phase return TOON so the calling workflow and the user see it immediately.
 
    d. Log the failure to decision.log:
    ```bash
@@ -633,9 +639,9 @@ warnings[N]:
   - "{one entry per non-fatal warning from Step 6, verbatim; empty list if none}"
 ```
 
-**If `worktree_path` is set**, append the Bucket A/B-aware cwd directive from Step 6 point 5 verbatim after the TOON output. The orchestrating LLM uses it to decide, per call, whether a `.plan/execute-script.py` invocation is Bucket A (no cwd pinning, no `--project-dir`, no `env -C`) or Bucket B (pass `--project-dir {worktree_path}`), and to target editor writes at `{worktree_path}` rather than the main checkout.
+**If `worktree_path` is set**, append the Bucket A/B-aware cwd directive from Step 6 point 5 verbatim after the TOON output. The orchestrating LLM uses it to decide, per call, whether a `.plan/execute-script.py` invocation is Bucket A (no cwd pinning, no routing flags, no `env -C`) or Bucket B (pass `--plan-id {plan_id}` or `--project-dir {worktree_path}` — mutually exclusive), and to target editor writes at `{worktree_path}` rather than the main checkout.
 
-**`warnings[]` field**: Top-level list surfacing non-fatal issues that the caller and user must see. Step 6 populates this when worktree creation fails and the phase falls back to the main checkout — each warning is the verbatim error detail from `manage-worktree create` plus a note that isolation was lost. The list is empty when no warnings apply. This is the contract Step 6d depends on: worktree failures must appear here, never silently in logs.
+**`warnings[]` field**: Top-level list surfacing non-fatal issues that the caller and user must see. Step 6 populates this when worktree creation fails and the phase falls back to the main checkout — each warning is the verbatim error detail from `git_workflow worktree create` plus a note that isolation was lost. The list is empty when no warnings apply. This is the contract Step 6d depends on: worktree failures must appear here, never silently in logs.
 
 ---
 

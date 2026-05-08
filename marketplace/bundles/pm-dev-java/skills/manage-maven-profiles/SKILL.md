@@ -186,7 +186,7 @@ python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles class
 python3 .plan/execute-script.py pm-dev-java:manage-maven-profiles:profiles suggest
 ```
 
-All subcommands accept `--project-dir {path}` (default: current directory).
+All subcommands accept either `--plan-id {plan_id}` (preferred — auto-resolves the worktree path via `manage-status get-worktree-path`) or `--project-dir {path}` (escape hatch / explicit override; default: current directory). The two flags are mutually exclusive — supplying both raises `mutually_exclusive_args`. See `plan-marshall:tools-script-executor/standards/cwd-policy.md` § "Bucket B" for the canonical two-state contract.
 
 ---
 

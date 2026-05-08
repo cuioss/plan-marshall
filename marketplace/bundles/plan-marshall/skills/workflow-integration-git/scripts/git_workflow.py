@@ -1,17 +1,28 @@
 #!/usr/bin/env python3
 """
-Git workflow operations - format commits and analyze diffs.
+Git workflow operations - format commits, analyze diffs, manage worktrees.
 
 Usage:
     git_workflow.py format-commit --type <type> --subject <subject> [options]
     git_workflow.py analyze-diff --worktree-path <worktree-path> [--cached]
     git_workflow.py detect-artifacts [--root <dir>]
+    git_workflow.py worktree-path --plan-id <plan-id>
+    git_workflow.py worktree-create --plan-id <plan-id> --branch <branch> [--base <ref>]
+    git_workflow.py worktree-remove --plan-id <plan-id> [--force]
+    git_workflow.py worktree-list
+    git_workflow.py worktree-rebase-to --plan-id <plan-id> --base <branch>
     git_workflow.py --help
 
 Subcommands:
     format-commit      Format commit message following conventional commits
     analyze-diff       Capture and analyze the worktree diff to suggest a commit message
     detect-artifacts   Scan for committable artifacts (build outputs, temp files)
+    worktree-path      Resolve the persisted worktree path for a plan
+    worktree-create    Create a worktree + feature branch + .plan symlink for a plan
+    worktree-remove    Remove a worktree (worktree first, then branch ref)
+    worktree-list      Enumerate plans whose status.json declares a worktree
+    worktree-rebase-to Rebase the worktree's branch onto --base, dispatching
+                       on the eight documented worktree states
 
 Examples:
     # Format a commit message
@@ -22,6 +33,13 @@ Examples:
 
     # Detect artifacts before committing
     git_workflow.py detect-artifacts --root /path/to/repo
+
+    # Worktree CRUD verbs
+    git_workflow.py worktree-path --plan-id my-plan
+    git_workflow.py worktree-create --plan-id my-plan --branch feature/my-plan
+    git_workflow.py worktree-remove --plan-id my-plan
+    git_workflow.py worktree-list
+    git_workflow.py worktree-rebase-to --plan-id my-plan --base main
 """
 
 import fnmatch
@@ -33,6 +51,10 @@ import textwrap
 from pathlib import Path
 from typing import Any
 
+from file_ops import get_worktree_root  # type: ignore[import-not-found]
+from git_provider import run_git  # type: ignore[import-not-found]
+from marketplace_paths import git_main_checkout_root  # type: ignore[import-not-found]
+from toon_parser import parse_toon, parse_toon_table  # type: ignore[import-not-found]
 from triage_helpers import (  # type: ignore[import-not-found]
     ErrorCode,
     create_workflow_cli,
@@ -570,6 +592,699 @@ def cmd_detect_artifacts(args):
 
 
 # ============================================================================
+# WORKTREE SUBCOMMANDS
+# ============================================================================
+#
+# Two-state contract per §9 of the solution outline:
+#   • ``--plan-id X`` is REQUIRED — every worktree subcommand operates on
+#     a worktree, so a plan id is non-negotiable.
+#   • Path resolution for ``worktree-path``/``worktree-remove``/``worktree-list``
+#     reads ``status.metadata.worktree_path`` via ``manage-status get-worktree-path``.
+#   • ``worktree-create`` computes the path from
+#     ``get_worktree_root() / plan_id`` (the only verb that materializes a
+#     new worktree on disk), runs ``git worktree add``, then writes
+#     ``metadata.worktree_path`` / ``worktree_branch`` / ``use_worktree``
+#     via ``manage-status metadata --set`` so subsequent verbs can
+#     resolve the path through the canonical channel.
+
+_PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
+
+_BOOTSTRAP_TIMEOUT_SECONDS = 120
+
+#: Gitignored subpaths under ``.plan/`` that must be shared across
+#: worktrees by symlinking into the main checkout. Everything else under
+#: ``.plan/`` is tracked and materialized natively by ``git worktree add``.
+_SHARED_PLAN_SUBPATHS: tuple[tuple[str, bool], ...] = (
+    ('local', True),
+    ('execute-script.py', False),
+)
+
+
+def _executor_path() -> Path | None:
+    """Locate the ``.plan/execute-script.py`` executor relative to the main checkout.
+
+    Returns ``None`` when the main checkout cannot be resolved (no git
+    repo) or the executor file is absent (fresh repo, before
+    ``/marshall-steward`` regeneration).
+    """
+    root = git_main_checkout_root()
+    if root is None:
+        return None
+    candidate = root / _PLAN_DIR_NAME / 'execute-script.py'
+    return candidate if candidate.exists() else None
+
+
+def _manage_status_call(
+    subcommand: str,
+    *extra_args: str,
+    timeout: int = 30,
+) -> tuple[int, str, str]:
+    """Invoke ``plan-marshall:manage-status:manage_status`` via the executor.
+
+    Returns ``(returncode, stdout, stderr)`` (raw, not stripped). When the
+    executor cannot be located, returns ``(127, '', '<reason>')`` so the
+    caller can surface a clean TOON error rather than crashing.
+    """
+    executor = _executor_path()
+    if executor is None:
+        return 127, '', 'plan-marshall executor not available (.plan/execute-script.py missing)'
+    try:
+        result = subprocess.run(
+            [
+                'python3',
+                str(executor),
+                'plan-marshall:manage-status:manage_status',
+                subcommand,
+                *extra_args,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except FileNotFoundError:
+        return 127, '', 'python3 executable not found on PATH'
+    except subprocess.TimeoutExpired:
+        return 124, '', f'manage-status {subcommand} timed out after {timeout} seconds'
+    return result.returncode, result.stdout, result.stderr
+
+
+def _read_metadata_field(plan_id: str, field: str) -> str:
+    """Best-effort read of ``status.metadata.<field>`` via manage-status.
+
+    Returns the string value when the field is present, or ``''`` when
+    the call fails, the field is absent, or parsing the TOON output
+    raises. Used by branch-name lookups during ``worktree-remove`` and
+    ``worktree-list`` where missing metadata is a soft signal, not a
+    hard error.
+    """
+    rc, stdout, _stderr = _manage_status_call(
+        'metadata', '--plan-id', plan_id, '--get', '--field', field
+    )
+    if rc != 0:
+        return ''
+    try:
+        parsed = parse_toon(stdout)
+    except Exception:  # noqa: BLE001 — defensive against TOON drift
+        return ''
+    if parsed.get('status') != 'success':
+        return ''
+    value = parsed.get('value')
+    return str(value) if value is not None else ''
+
+
+def _resolve_worktree_path_for_plan(plan_id: str) -> tuple[Path | None, dict | None]:
+    """Resolve ``status.metadata.worktree_path`` for ``plan_id``.
+
+    Returns ``(path, None)`` on success, ``(None, error_dict)`` on
+    failure. The error dict is a fully-formed TOON-shaped payload ready
+    to return from a subcommand handler.
+    """
+    rc, stdout, stderr = _manage_status_call('get-worktree-path', '--plan-id', plan_id)
+    if rc != 0:
+        return None, {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'plan_resolution_failed',
+            'message': (stderr or stdout).strip()
+            or 'manage-status get-worktree-path failed',
+        }
+
+    try:
+        parsed = parse_toon(stdout)
+    except Exception as exc:  # noqa: BLE001 — defensive against TOON drift
+        return None, {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'plan_resolution_failed',
+            'message': f'failed to parse manage-status output: {exc}',
+        }
+
+    if parsed.get('status') == 'error' or parsed.get('error'):
+        return None, {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': parsed.get('error') or 'plan_resolution_failed',
+            'message': parsed.get('message') or 'manage-status reported an error',
+        }
+
+    use_worktree = bool(parsed.get('use_worktree'))
+    worktree_path_value = parsed.get('worktree_path') or ''
+
+    if not use_worktree or not worktree_path_value:
+        return None, {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'plan_resolution_failed',
+            'message': (
+                'No worktree configured for this plan — '
+                'status.metadata.use_worktree is false or worktree_path is unset'
+            ),
+        }
+
+    return Path(str(worktree_path_value)), None
+
+
+def _detect_pw_wrapper(worktree: Path) -> Path | None:
+    """Locate a pyprojectx wrapper in the worktree, preferring Unix `pw`."""
+    for name in ('pw', 'pw.bat', 'pwx'):
+        candidate = worktree / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _bootstrap_pyprojectx(worktree: Path) -> tuple[str, str]:
+    """Best-effort pre-bootstrap of pyprojectx in a freshly-created worktree.
+
+    Runs ``./pw --version`` so pyprojectx populates ``.pyprojectx`` while ``uv``
+    is still on PATH. Returns ``(status, detail)`` where status is
+    ``ok``, ``skipped``, or ``warning``. The caller treats this strictly as
+    advisory — failures never fail ``cmd_worktree_create``.
+    """
+    wrapper = _detect_pw_wrapper(worktree)
+    if wrapper is None:
+        return 'skipped', 'no pw wrapper found in worktree'
+    try:
+        result = subprocess.run(
+            [str(wrapper), '--version'],
+            cwd=str(worktree),
+            capture_output=True,
+            text=True,
+            timeout=_BOOTSTRAP_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 'warning', f'bootstrap invocation failed: {exc}'
+    if result.returncode != 0:
+        stderr_tail = (result.stderr or '').strip().splitlines()[-1:]
+        detail = stderr_tail[0] if stderr_tail else f'exit {result.returncode}'
+        return 'warning', detail
+    return 'ok', ''
+
+
+def _ensure_worktree_plan_symlinks(worktree: Path) -> tuple[bool, str]:
+    """Link gitignored ``.plan/`` subpaths into the main checkout.
+
+    The worktree's ``.plan`` directory itself is left alone —
+    ``git worktree add`` already materializes any tracked content there.
+    Only the entries listed in :data:`_SHARED_PLAN_SUBPATHS` are linked
+    to the main checkout so runtime state and the executor stay in sync
+    across worktrees.
+
+    For each shared subpath:
+    - If it already exists as a symlink pointing at the expected target,
+      skip it.
+    - If it exists as a stale symlink, replace it.
+    - If it exists as a real file or directory, refuse with an error
+      that names the specific offending subpath.
+    - If it is missing, create the symlink.
+
+    Returns ``(success, error_message)``.
+    """
+    main_root = git_main_checkout_root()
+    if main_root is None:
+        return False, 'cannot resolve main git checkout root for .plan symlinks'
+
+    plan_dir = worktree / _PLAN_DIR_NAME
+    # Ensure .plan exists as a real directory. git worktree add creates
+    # it when tracked content lives there; fall back to mkdir otherwise.
+    plan_dir.mkdir(parents=True, exist_ok=True)
+
+    for subpath, is_dir in _SHARED_PLAN_SUBPATHS:
+        target = (main_root / _PLAN_DIR_NAME / subpath).resolve()
+        link_path = plan_dir / subpath
+        rel_display = f'{_PLAN_DIR_NAME}/{subpath}'
+
+        if link_path.is_symlink():
+            try:
+                if link_path.resolve() == target:
+                    continue
+            except OSError:
+                pass
+            link_path.unlink()
+        elif link_path.exists():
+            kind = 'directory' if link_path.is_dir() else 'file'
+            return False, (
+                f'{link_path} exists as a real {kind}; refusing to replace '
+                f'{rel_display} with symlink. Remove it manually or inspect '
+                'for user data.'
+            )
+
+        # Use a relative symlink so the worktree stays portable.
+        rel_target = os.path.relpath(target, link_path.parent)
+        try:
+            os.symlink(rel_target, link_path, target_is_directory=is_dir)
+        except OSError as exc:
+            return False, f'failed to create {rel_display} symlink: {exc}'
+    return True, ''
+
+
+def cmd_worktree_path(args):
+    """Resolve the persisted worktree path for a plan.
+
+    Two-state contract: ``--plan-id`` is required; resolution goes
+    through ``manage-status get-worktree-path``.
+    """
+    path, error = _resolve_worktree_path_for_plan(args.plan_id)
+    if error is not None:
+        return error
+
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'worktree_path': str(path),
+        'exists': path.is_dir(),
+    }
+
+
+def cmd_worktree_create(args):
+    """Create a worktree + feature branch + .plan symlinks for ``--plan-id``.
+
+    Path is computed from ``get_worktree_root() / plan_id`` — the only
+    verb that materializes a new worktree on disk. After ``git worktree
+    add`` succeeds, project state is bookkept by writing
+    ``metadata.use_worktree``/``worktree_path``/``worktree_branch`` via
+    ``manage-status metadata --set`` so subsequent verbs can resolve the
+    path through the canonical channel.
+    """
+    try:
+        target = get_worktree_root() / args.plan_id
+    except RuntimeError as exc:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'plan_resolution_failed',
+            'message': str(exc),
+        }
+
+    if target.exists():
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'worktree_exists',
+            'message': f'Worktree already exists: {target}',
+            'worktree_path': str(target),
+        }
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    main_root = git_main_checkout_root()
+    if main_root is None:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'plan_resolution_failed',
+            'message': 'cannot resolve main git checkout root for git worktree add',
+        }
+
+    git_args = ['-C', str(main_root), 'worktree', 'add']
+    if args.base:
+        git_args += ['-b', args.branch, str(target), args.base]
+    else:
+        git_args += ['-b', args.branch, str(target)]
+    rc, _stdout, stderr = run_git(git_args)
+    if rc != 0:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'worktree_add_failed',
+            'message': f'git worktree add failed: {stderr}',
+            'branch': args.branch,
+        }
+
+    ok, link_err = _ensure_worktree_plan_symlinks(target)
+    if not ok:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'plan_symlink_failed',
+            'message': f'Worktree created but .plan symlinks failed: {link_err}',
+            'worktree_path': str(target),
+        }
+
+    bootstrap_status, bootstrap_detail = _bootstrap_pyprojectx(target)
+
+    # Project-state bookkeeping: persist the resolved path/branch via
+    # manage-status so subsequent verbs can resolve through the canonical
+    # channel. The ``use_worktree`` field is a string here (manage-status
+    # metadata --set stores values as strings); ``cmd_get_worktree_path``
+    # treats the literal ``true`` as truthy so the round-trip is intact.
+    bookkeeping_warnings: list[str] = []
+    for field, value in (
+        ('use_worktree', 'true'),
+        ('worktree_path', str(target)),
+        ('worktree_branch', args.branch),
+    ):
+        rc, _out, err = _manage_status_call(
+            'metadata',
+            '--plan-id',
+            args.plan_id,
+            '--set',
+            '--field',
+            field,
+            '--value',
+            value,
+        )
+        if rc != 0:
+            bookkeeping_warnings.append(
+                f'manage-status metadata --set --field {field}: {err.strip() or "non-zero exit"}'
+            )
+
+    payload: dict[str, Any] = {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'worktree_path': str(target),
+        'branch': args.branch,
+        'plan_symlink': str(target / _PLAN_DIR_NAME),
+        'bootstrap': bootstrap_status,
+    }
+    if bootstrap_status == 'warning':
+        payload['bootstrap_warning'] = bootstrap_detail
+    if bookkeeping_warnings:
+        # Surface bookkeeping problems without failing the command — the
+        # worktree itself is on disk; status metadata can be fixed later.
+        payload['bookkeeping_warnings'] = bookkeeping_warnings
+    return payload
+
+
+def cmd_worktree_remove(args):
+    """Remove a worktree (worktree first, then branch ref).
+
+    Order matters: ``git worktree remove`` refuses to drop a branch ref
+    that is still checked out. We remove the worktree first, then delete
+    the branch ref so the cleanup is symmetric with ``cmd_worktree_create``.
+    """
+    target, error = _resolve_worktree_path_for_plan(args.plan_id)
+    if error is not None:
+        return error
+
+    main_root = git_main_checkout_root()
+    if main_root is None:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'plan_resolution_failed',
+            'message': 'cannot resolve main git checkout root for git worktree remove',
+        }
+
+    if not target.exists():
+        return {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'worktree_path': str(target),
+            'action': 'noop',
+            'message': 'Worktree does not exist',
+        }
+
+    # Step 1: remove the worktree itself.
+    git_args = ['-C', str(main_root), 'worktree', 'remove', str(target)]
+    if args.force:
+        git_args.append('--force')
+    rc, _out, err = run_git(git_args)
+    if rc != 0:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'worktree_remove_failed',
+            'message': f'git worktree remove failed: {err}',
+            'worktree_path': str(target),
+            'hint': 'Pass --force only after verifying the worktree is clean.',
+        }
+
+    # Step 2: delete the branch ref. Read the branch from status metadata
+    # (canonical source) and best-effort delete. Failure to delete the
+    # branch is reported but does not fail the command — the worktree is
+    # already gone and branch cleanup is recoverable.
+    branch_warning: str | None = None
+    branch_name = _read_metadata_field(args.plan_id, 'worktree_branch')
+    if branch_name:
+        rc, _out, err = run_git(['-C', str(main_root), 'branch', '-D', branch_name])
+        if rc != 0:
+            branch_warning = f'branch ref {branch_name} not deleted: {err}'
+
+    payload: dict[str, Any] = {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'worktree_path': str(target),
+        'action': 'removed',
+    }
+    if branch_name:
+        payload['branch'] = branch_name
+    if branch_warning:
+        payload['branch_warning'] = branch_warning
+    return payload
+
+
+def _detect_worktree_state(
+    worktree: Path,
+    base: str,
+    main_root: Path,
+) -> tuple[str, dict[str, Any]]:
+    """Inspect the worktree and return ``(state, evidence)``.
+
+    State is one of the eight documented worktree-state labels:
+
+    - ``missing-target`` — the worktree directory does not exist on disk.
+    - ``missing-base``  — the ``base`` ref cannot be resolved in the
+      shared object database.
+    - ``detached``      — HEAD is detached (no current branch).
+    - ``dirty``         — the worktree has uncommitted changes
+      (staged, unstaged, or untracked).
+    - ``ahead``         — the branch has commits the base does not
+      contain (and the base has none the branch lacks).
+    - ``behind``        — the base has commits the branch does not
+      contain (and the branch has none the base lacks).
+    - ``clean``         — the branch and base point at the same commit
+      (or a divergence with both ahead/behind counts zero).
+    - The eighth label, ``conflict``, is determined by the rebase
+      attempt itself, not this function.
+
+    ``evidence`` carries supplementary fields the dispatcher echoes back
+    in the TOON output (e.g., ``head_branch``, ``ahead``, ``behind``).
+    """
+    if not worktree.is_dir():
+        return 'missing-target', {'worktree_path': str(worktree)}
+
+    rc, _out, err = run_git(['-C', str(main_root), 'rev-parse', '--verify', f'{base}^{{commit}}'])
+    if rc != 0:
+        return 'missing-base', {'base': base, 'message': err.strip() or 'base ref not found'}
+
+    rc, head_branch_out, _err = run_git(
+        ['-C', str(worktree), 'symbolic-ref', '--quiet', '--short', 'HEAD']
+    )
+    if rc != 0:
+        return 'detached', {'message': 'HEAD is detached; rebase requires a checked-out branch'}
+    head_branch = head_branch_out.strip()
+
+    rc, status_out, _err = run_git(['-C', str(worktree), 'status', '--porcelain'])
+    if rc == 0 and status_out.strip():
+        return 'dirty', {
+            'head_branch': head_branch,
+            'message': 'worktree has uncommitted changes; stash, commit, or discard first',
+        }
+
+    # Compute ahead/behind counts relative to the resolved base commit.
+    rc, counts_out, _err = run_git(
+        ['-C', str(worktree), 'rev-list', '--left-right', '--count', f'{base}...HEAD']
+    )
+    ahead = behind = 0
+    if rc == 0 and counts_out.strip():
+        parts = counts_out.split()
+        if len(parts) >= 2:
+            try:
+                behind = int(parts[0])
+                ahead = int(parts[1])
+            except ValueError:
+                behind = ahead = 0
+
+    evidence: dict[str, Any] = {
+        'head_branch': head_branch,
+        'ahead': ahead,
+        'behind': behind,
+    }
+
+    if ahead > 0 and behind == 0:
+        return 'ahead', evidence
+    if behind > 0 and ahead == 0:
+        return 'behind', evidence
+    if ahead == 0 and behind == 0:
+        return 'clean', evidence
+    # Diverged — both ahead and behind. Treat as ``ahead`` for dispatch
+    # since the rebase needs to relocate the local commits onto base.
+    return 'ahead', evidence
+
+
+def cmd_worktree_rebase_to(args):
+    """Rebase the worktree's branch onto ``--base``.
+
+    Detects the current state per :func:`_detect_worktree_state`,
+    dispatches the rebase accordingly, and returns a TOON payload with
+    ``status`` (``success``, ``error``, ``conflict``) and ``state`` (one
+    of the eight documented labels). On conflict, the rebase is left in
+    progress with conflict markers so the caller can inspect or abort.
+    All git invocations use ``git -C {worktree_path}``; no working
+    directory is implicitly assumed.
+    """
+    target, error = _resolve_worktree_path_for_plan(args.plan_id)
+    if error is not None:
+        return error
+
+    main_root = git_main_checkout_root()
+    if main_root is None:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'plan_resolution_failed',
+            'state': 'missing-target',
+            'message': 'cannot resolve main git checkout root for rebase',
+        }
+
+    state, evidence = _detect_worktree_state(target, args.base, main_root)
+
+    base_payload: dict[str, Any] = {
+        'plan_id': args.plan_id,
+        'worktree_path': str(target),
+        'base': args.base,
+        'state': state,
+    }
+    base_payload.update(evidence)
+
+    # Reject states that require user action without touching git.
+    if state == 'missing-target':
+        return {
+            **base_payload,
+            'status': 'error',
+            'error': 'missing_target',
+            'message': f'worktree path does not exist: {target}',
+        }
+    if state == 'missing-base':
+        return {
+            **base_payload,
+            'status': 'error',
+            'error': 'missing_base',
+            'message': f'base ref not found: {args.base}',
+        }
+    if state == 'detached':
+        return {
+            **base_payload,
+            'status': 'error',
+            'error': 'detached_head',
+            'message': 'HEAD is detached; rebase requires a checked-out branch',
+        }
+    if state == 'dirty':
+        return {
+            **base_payload,
+            'status': 'error',
+            'error': 'dirty_worktree',
+            'message': (
+                'worktree has uncommitted changes; stash, commit, '
+                'or discard before rebasing'
+            ),
+        }
+
+    # ``clean`` — already up-to-date relative to base. No-op rebase.
+    if state == 'clean':
+        return {
+            **base_payload,
+            'status': 'success',
+            'action': 'noop',
+            'message': 'branch is already at base; no rebase needed',
+        }
+
+    # ``ahead`` and ``behind`` both attempt a rebase. The detected state
+    # is preserved in the response so callers can distinguish.
+    rc, _stdout, stderr = run_git(['-C', str(target), 'rebase', args.base])
+    if rc == 0:
+        return {
+            **base_payload,
+            'status': 'success',
+            'action': 'rebased',
+            'message': f'rebased {evidence.get("head_branch", "HEAD")} onto {args.base}',
+        }
+
+    # Non-zero exit means rebase produced conflicts (or another git
+    # error). Inspect for an in-progress rebase to surface the conflict
+    # state cleanly. Conflict markers are intentionally left in place
+    # so the caller can resolve manually.
+    rebase_state_dir = target / '.git' / 'rebase-merge'
+    rebase_apply_dir = target / '.git' / 'rebase-apply'
+    in_progress = rebase_state_dir.exists() or rebase_apply_dir.exists()
+
+    if in_progress:
+        # Enumerate conflicting paths via ``git diff --name-only --diff-filter=U``.
+        rc_d, conflicts_out, _err = run_git(
+            ['-C', str(target), 'diff', '--name-only', '--diff-filter=U']
+        )
+        conflicts = (
+            [line for line in conflicts_out.splitlines() if line.strip()]
+            if rc_d == 0
+            else []
+        )
+        return {
+            **base_payload,
+            'status': 'conflict',
+            'state': 'conflict',
+            'error': 'rebase_conflict',
+            'conflicts': conflicts,
+            'message': (
+                f'rebase produced conflicts ({len(conflicts)} file(s)); '
+                'resolve and run `git rebase --continue` or `git rebase --abort`'
+            ),
+        }
+
+    # Rebase failed for another reason (e.g., invalid args). Surface git's stderr.
+    return {
+        **base_payload,
+        'status': 'error',
+        'error': 'rebase_failed',
+        'message': f'git rebase failed: {stderr.strip() or "non-zero exit"}',
+    }
+
+
+def cmd_worktree_list(_args):
+    """Enumerate plans whose status.json declares a worktree.
+
+    Reads from ``manage-status list`` and filters on
+    ``metadata.use_worktree == true`` by calling
+    ``manage-status get-worktree-path`` per plan. Plans without a
+    configured worktree are silently skipped.
+    """
+    rc, stdout, stderr = _manage_status_call('list')
+    if rc != 0:
+        return {
+            'status': 'error',
+            'error': 'plan_resolution_failed',
+            'message': (stderr or stdout).strip() or 'manage-status list failed',
+        }
+
+    rows = parse_toon_table(stdout, 'plans')
+    plan_ids = [str(row.get('id')) for row in rows if row.get('id')]
+
+    worktrees: list[dict[str, str]] = []
+    for plan_id in plan_ids:
+        path, error = _resolve_worktree_path_for_plan(plan_id)
+        if error is not None or path is None:
+            continue
+        worktrees.append(
+            {
+                'plan_id': plan_id,
+                'path': str(path),
+                'branch': _read_metadata_field(plan_id, 'worktree_branch'),
+            }
+        )
+
+    try:
+        worktrees_root = str(get_worktree_root())
+    except RuntimeError:
+        worktrees_root = ''
+
+    return {
+        'status': 'success',
+        'worktrees_root': worktrees_root,
+        'count': len(worktrees),
+        'worktrees': worktrees,
+    }
+
+
+# ============================================================================
 # MAIN
 # ============================================================================
 
@@ -583,6 +1298,11 @@ Examples:
   git_workflow.py format-commit --type feat --scope auth --subject "add login"
   git_workflow.py analyze-diff --worktree-path /path/to/worktree [--cached]
   git_workflow.py detect-artifacts --root /path/to/repo
+  git_workflow.py worktree-path --plan-id my-plan
+  git_workflow.py worktree-create --plan-id my-plan --branch feature/my-plan
+  git_workflow.py worktree-remove --plan-id my-plan [--force]
+  git_workflow.py worktree-list
+  git_workflow.py worktree-rebase-to --plan-id my-plan --base main
 """,
         subcommands=[
             {
@@ -631,6 +1351,83 @@ Examples:
                         'flags': ['--no-gitignore'],
                         'action': 'store_true',
                         'help': 'Include gitignored files in results',
+                    },
+                ],
+            },
+            {
+                'name': 'worktree-path',
+                'help': 'Resolve the persisted worktree path for a plan',
+                'handler': cmd_worktree_path,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': True,
+                        'help': 'Plan identifier (mandatory — worktree subcommands operate on a worktree)',
+                    },
+                ],
+            },
+            {
+                'name': 'worktree-create',
+                'help': 'Create a worktree + feature branch + .plan symlink for a plan',
+                'handler': cmd_worktree_create,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': True,
+                        'help': 'Plan identifier (mandatory)',
+                    },
+                    {
+                        'flags': ['--branch'],
+                        'required': True,
+                        'help': 'Feature branch name to create',
+                    },
+                    {
+                        'flags': ['--base'],
+                        'help': 'Base ref for the new branch (default: current HEAD)',
+                    },
+                ],
+            },
+            {
+                'name': 'worktree-remove',
+                'help': 'Remove a worktree (worktree first, then branch ref)',
+                'handler': cmd_worktree_remove,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': True,
+                        'help': 'Plan identifier (mandatory)',
+                    },
+                    {
+                        'flags': ['--force'],
+                        'action': 'store_true',
+                        'help': 'Force removal (use only if worktree is clean)',
+                    },
+                ],
+            },
+            {
+                'name': 'worktree-list',
+                'help': 'Enumerate plans whose status.json declares a worktree',
+                'handler': cmd_worktree_list,
+                'args': [],
+            },
+            {
+                'name': 'worktree-rebase-to',
+                'help': "Rebase the worktree's branch onto --base, dispatching on the eight documented worktree states",
+                'handler': cmd_worktree_rebase_to,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': True,
+                        'help': 'Plan identifier (mandatory — resolves the worktree path via manage-status)',
+                    },
+                    {
+                        'flags': ['--base'],
+                        'required': True,
+                        'help': 'Base ref to rebase onto (e.g., main, origin/main)',
                     },
                 ],
             },

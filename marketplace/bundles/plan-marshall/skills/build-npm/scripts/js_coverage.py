@@ -18,6 +18,14 @@ import sys
 from typing import Any
 
 from _build_cli import safe_main
+from resolve_project_dir import (  # type: ignore[import-not-found]
+    MutuallyExclusiveArgsError,
+    WorktreeResolutionError,
+    add_plan_id_arg,
+    emit_mutually_exclusive_error,
+    emit_worktree_error,
+    resolve_project_dir,
+)
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 EXIT_SUCCESS = 0
@@ -284,11 +292,29 @@ def main() -> int:
         '--project-dir',
         dest='project_dir',
         default='.',
-        help='Project root directory for resolving relative report paths (default: current directory)',
+        help=(
+            'Project root directory for resolving relative report paths '
+            '(default: current directory). Mutually exclusive with --plan-id.'
+        ),
     )
+    add_plan_id_arg(analyze_parser)
     analyze_parser.set_defaults(func=cmd_analyze)
 
     args = parser.parse_args()
+
+    # Resolve --plan-id / --project-dir before the handler reads
+    # ``args.project_dir`` for relative-path joining.
+    try:
+        args.project_dir = resolve_project_dir(
+            getattr(args, 'plan_id', None), args.project_dir, default='.'
+        )
+    except MutuallyExclusiveArgsError:
+        print(serialize_toon(emit_mutually_exclusive_error(getattr(args, 'plan_id', None), args.project_dir)))
+        return 2
+    except WorktreeResolutionError as exc:
+        print(serialize_toon(emit_worktree_error(args.plan_id, exc)))
+        return 2
+
     result: int = args.func(args)
     return result
 

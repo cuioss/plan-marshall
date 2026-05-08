@@ -1,7 +1,7 @@
 """Git subprocess helpers for phase_handshake invariants.
 
-Uses plain subprocess matching the codebase convention (manage-worktree,
-workflow-integration-git). No external git library dependency.
+Uses plain subprocess matching the codebase convention (workflow-integration-git).
+No external git library dependency.
 """
 
 from __future__ import annotations

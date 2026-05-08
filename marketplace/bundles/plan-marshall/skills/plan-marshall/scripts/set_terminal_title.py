@@ -29,7 +29,7 @@ _STATUS_ICONS = {
 
 _FALLBACK_ICON = _STATUS_ICONS['idle']
 
-_WORKTREE_RE = re.compile(r'.*/\.claude/worktrees/(?P<id>[^/]+)(?:/.*)?$')
+_WORKTREE_RE = re.compile(r'.*/\.plan/local/worktrees/(?P<id>[^/]+)(?:/.*)?$')
 
 _COMMAND_TOKEN_RE = re.compile(r'^/([A-Za-z0-9][A-Za-z0-9:_-]*)')
 _COMMAND_MAX_LEN = 40

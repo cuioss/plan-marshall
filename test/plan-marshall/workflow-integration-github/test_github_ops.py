@@ -606,3 +606,81 @@ def test_format_checks_toon_clamps_runaway_aggregate(monkeypatch, capsys):
 
     # Ensure ci_base import survives the patching (sanity).
     assert ci_base is not None
+
+
+# =============================================================================
+# Two-state ``--plan-id`` / ``--project-dir`` routing in github_ops.main()
+# =============================================================================
+#
+# github_ops.main() consumes router-level --plan-id and --project-dir
+# via ci_base.extract_routing_args BEFORE delegating to argparse. The
+# resolved cwd is installed as the process-global default cwd via
+# set_default_cwd, so every subsequent gh subprocess inherits it.
+
+
+def test_main_routes_plan_id_via_extract_routing_args(monkeypatch):
+    """github_ops.main() MUST consume router-level --plan-id and set the default cwd."""
+    import resolve_project_dir as _routing
+    from ci_base import get_default_cwd
+
+    # Patch manage-status helper deterministically.
+    monkeypatch.setattr(_routing, '_query_worktree_path', lambda _pid: (True, '/tmp/wt-resolved'))
+    # Stub gh CLI invocations so we don't actually shell out.
+    captured_cwds: list = []
+
+    def fake_run_cli(_cli, _args, **kwargs):
+        captured_cwds.append(kwargs.get('cwd'))
+        return 0, '{"number": 1, "state": "OPEN"}', ''
+
+    # Redirect the test argv so main() sees the routing flag pair plus a
+    # safe subcommand that needs no real gh invocation. We swallow the
+    # argparse-required arguments by hitting a help-style path instead.
+    monkeypatch.setattr(
+        'sys.argv',
+        [
+            'github_ops.py',
+            '--plan-id',
+            'task-routing-canonical',
+            '--help',
+        ],
+    )
+
+    # main() will sys.exit(0) on --help; we just verify extract_routing_args
+    # was honoured (cwd default set BEFORE argparse runs).
+    import pytest as _pytest
+
+    with _pytest.raises(SystemExit):
+        github_ops.main()
+
+    # After main() returns, the default cwd must reflect the resolved worktree.
+    assert get_default_cwd() == '/tmp/wt-resolved', (
+        f'Expected default cwd to be set from --plan-id resolution; got {get_default_cwd()!r}'
+    )
+
+    # Cleanup — restore default cwd to None for downstream tests.
+    from ci_base import set_default_cwd
+
+    set_default_cwd(None)
+
+
+def test_main_emits_mutually_exclusive_error_on_both_flags(monkeypatch, capsys):
+    """github_ops.main() with both --plan-id and --project-dir → mutually_exclusive_args."""
+    monkeypatch.setattr(
+        'sys.argv',
+        [
+            'github_ops.py',
+            '--plan-id',
+            'task-routing-canonical',
+            '--project-dir',
+            '/tmp/explicit',
+            'pr',
+            'view',
+        ],
+    )
+    import pytest as _pytest
+
+    with _pytest.raises(SystemExit) as exc_info:
+        github_ops.main()
+    assert exc_info.value.code == 2
+    captured = capsys.readouterr()
+    assert 'mutually_exclusive_args' in captured.out

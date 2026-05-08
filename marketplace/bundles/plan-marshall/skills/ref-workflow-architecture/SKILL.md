@@ -26,6 +26,8 @@ Load specific standards on-demand based on what aspect you need to understand.
 | [phase-lifecycle.md](standards/phase-lifecycle.md) | Phase lifecycle patterns | Entry protocol, completion protocol, enforcement template, error convention |
 | [skill-inventory.md](standards/skill-inventory.md) | Complete skill inventory | 49 skills: registration status, categories, naming convention |
 
+The data-layer and manage-contract standards above define the cwd-agnostic Bucket A contract for `manage-*` scripts. See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (the complementary Bucket B `--plan-id` contract for working-tree-bound scripts).
+
 ## Core Principles
 
 1. **Domain-agnostic workflow** — Workflow skills contain no domain-specific logic. Domain knowledge comes from marshal.json at runtime.

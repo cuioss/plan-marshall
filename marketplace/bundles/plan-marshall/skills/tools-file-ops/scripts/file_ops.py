@@ -60,7 +60,9 @@ from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa
 # Plan-marshall runtime state (plans, archived-plans, run-configuration.json,
 # lessons-learned, logs) lives at ``<git_main_checkout_root>/.plan/local``
 # — project-local, covered by the existing ``Write(.plan/**)`` permission.
-# Worktrees are anchored separately at ``<root>/.claude/worktrees/``.
+# Worktrees are anchored under the same tree at
+# ``<git_main_checkout_root>/.plan/local/worktrees/`` so they inherit the
+# ``Write(.plan/**)`` permission and live alongside other plan-local state.
 
 # Runtime-overridable base directory (set by set_base_dir for tests).
 # None means "resolve from environment / git on each call".
@@ -159,10 +161,9 @@ def format_tokens_short(n: int) -> str:
 def get_worktree_root() -> Path:
     """Return the project-local worktree root for plan-marshall.
 
-    Resolves to ``<git_main_checkout_root>/.claude/worktrees`` — the canonical
-    location documented by Claude Code for per-feature worktrees. Worktrees
-    live under the main checkout so they inherit the project's existing
-    permission allow-list and IDE indexing.
+    Resolves to ``<git_main_checkout_root>/.plan/local/worktrees`` — worktrees
+    live under the existing plan-local tree so they inherit the
+    ``Write(.plan/**)`` permission and sit next to other plan-scoped state.
 
     Raises:
         RuntimeError: when not inside a git repository (worktrees require a
@@ -173,7 +174,7 @@ def get_worktree_root() -> Path:
         raise RuntimeError(
             'get_worktree_root() requires a git repository; no main checkout root could be resolved from cwd.'
         )
-    return root / '.claude' / 'worktrees'
+    return root / PLAN_DIR_NAME / 'local' / 'worktrees'
 
 
 def normalize_to_repo_relative(path: str) -> str:

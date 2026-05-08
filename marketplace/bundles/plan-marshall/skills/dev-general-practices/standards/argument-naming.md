@@ -86,7 +86,7 @@ The cross-cutting `--plan-id` and `--audit-plan-id` flags are accepted by virtua
 
 ### `tools-integration-ci:ci` (provider-agnostic CI router)
 
-The `pr`, `ci`, `issue`, and `branch` subcommand surfaces are common across providers; provider-specific extensions (e.g., `pr submit-review` on GitHub) follow the same flag conventions. The router consumes `--project-dir {path}` before delegating to the provider script.
+The `pr`, `ci`, `issue`, and `branch` subcommand surfaces are common across providers; provider-specific extensions (e.g., `pr submit-review` on GitHub) follow the same flag conventions. The router consumes the routing pair `--plan-id {id}` (preferred — auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir {path}` (escape hatch / legacy) before delegating to the provider script. The two flags are mutually exclusive — see `tools-script-executor/standards/cwd-policy.md` § "Bucket B" for the canonical two-state contract.
 
 | Operation | Canonical form |
 |---|---|

@@ -65,7 +65,7 @@ GITIGNORE_LOCAL_COMMENT = (
 GITIGNORE_PLAN_DIR = '.plan/*'
 GITIGNORE_MARSHAL_EXCEPTION = '!.plan/marshal.json'
 GITIGNORE_ARCHITECTURE_EXCEPTION = '!.plan/project-architecture/'
-GITIGNORE_CLAUDE_WORKTREES = '.claude/worktrees/'
+GITIGNORE_PLAN_LOCAL_WORKTREES = '.plan/local/worktrees/'
 
 
 def check_gitignore_status(gitignore_path: Path) -> dict:
@@ -87,7 +87,7 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
     has_plan_dir = False
     has_marshal_exception = False
     has_architecture_exception = False
-    has_claude_worktrees = False
+    has_plan_local_worktrees = False
     has_local_comment = False
     content = ''
 
@@ -104,9 +104,9 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
                 has_marshal_exception = True
             if stripped == GITIGNORE_ARCHITECTURE_EXCEPTION:
                 has_architecture_exception = True
-            # Accept .claude/worktrees/ (preferred) and .claude/worktrees (no trailing slash)
-            if stripped in ('.claude/worktrees/', '.claude/worktrees'):
-                has_claude_worktrees = True
+            # Accept .plan/local/worktrees/ (preferred) and .plan/local/worktrees (no trailing slash)
+            if stripped in ('.plan/local/worktrees/', '.plan/local/worktrees'):
+                has_plan_local_worktrees = True
             if stripped == GITIGNORE_LOCAL_COMMENT:
                 has_local_comment = True
 
@@ -115,7 +115,7 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
         'has_plan_dir': has_plan_dir,
         'has_marshal_exception': has_marshal_exception,
         'has_architecture_exception': has_architecture_exception,
-        'has_claude_worktrees': has_claude_worktrees,
+        'has_plan_local_worktrees': has_plan_local_worktrees,
         'has_local_comment': has_local_comment,
         'content': content,
     }
@@ -143,8 +143,8 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
         entries_to_add.append(GITIGNORE_MARSHAL_EXCEPTION)
     if not status['has_architecture_exception']:
         entries_to_add.append(GITIGNORE_ARCHITECTURE_EXCEPTION)
-    if not status['has_claude_worktrees']:
-        entries_to_add.append(GITIGNORE_CLAUDE_WORKTREES)
+    if not status['has_plan_local_worktrees']:
+        entries_to_add.append(GITIGNORE_PLAN_LOCAL_WORKTREES)
 
     needs_local_comment = not status['has_local_comment']
 
@@ -167,7 +167,7 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
             f'{GITIGNORE_PLAN_DIR}\n'
             f'{GITIGNORE_MARSHAL_EXCEPTION}\n'
             f'{GITIGNORE_ARCHITECTURE_EXCEPTION}\n'
-            f'{GITIGNORE_CLAUDE_WORKTREES}\n'
+            f'{GITIGNORE_PLAN_LOCAL_WORKTREES}\n'
         )
     else:
         # Update existing .gitignore

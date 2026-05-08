@@ -17,7 +17,7 @@ This step is **inline** (executed directly inside the finalize main context, not
 | Input | Source | Description |
 |-------|--------|-------------|
 | `{plan_id}` | dispatcher | Forwarded from `phase-6-finalize` Step 3. |
-| `{worktree_path}` | dispatcher | Resolved by `phase-6-finalize` Step 0 — the active git worktree (or main checkout when no worktree is in use). All `git -C` and build/CI/architecture script calls in this document MUST pass this value via `--project-dir`. |
+| `{worktree_path}` | dispatcher | Resolved by `phase-6-finalize` Step 0 — the active git worktree (or main checkout when no worktree is in use). All `git -C` calls use this path. Build/CI/architecture script calls accept either `--plan-id {plan_id}` (preferred — auto-resolves through `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (escape hatch); the two flags are mutually exclusive — see `tools-script-executor/standards/cwd-policy.md` § "Bucket B" for the canonical two-state contract. The literal `--project-dir {worktree_path}` examples below are the explicit-override form; callers may substitute `--plan-id {plan_id}` to use auto-resolution. |
 | `{main_checkout}` | dispatcher | Resolved by `phase-6-finalize` Step 0 — used post-worktree-removal only; this step ALWAYS runs against `{worktree_path}`. |
 | `architecture-pre/` snapshot | phase-1-init Step 5d | Pre-plan snapshot at `.plan/local/plans/{plan_id}/architecture-pre/`. Greenfield plans skipped the snapshot — see "Greenfield handling" below. |
 | `architecture_refresh.tier_0` | manage-run-config | `enabled` (default) | `disabled`. Read once at the top of Tier-0. |

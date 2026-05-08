@@ -678,6 +678,73 @@ class TestProjectDirForwarding(unittest.TestCase):
         self._run_main_with_argv(argv)
         self.assertIsNone(pr_doctor.get_project_dir())
 
+    # -- Two-state ``--plan-id`` / ``--project-dir`` routing contract ----
+
+    def test_main_plan_id_resolves_via_manage_status(self):
+        """Router-level --plan-id auto-resolves to the persisted worktree path."""
+        import resolve_project_dir as _routing  # type: ignore[import-not-found]
+
+        argv = [
+            'pr_doctor.py',
+            '--plan-id',
+            'task-routing-canonical',
+            'diagnose',
+            '--build-status',
+            'success',
+        ]
+        with patch.object(
+            _routing,
+            '_query_worktree_path',
+            return_value=(True, '/tmp/wt-pr-doctor'),
+        ):
+            self._run_main_with_argv(argv)
+        self.assertEqual(pr_doctor.get_project_dir(), '/tmp/wt-pr-doctor')
+
+    def test_main_emits_mutually_exclusive_error_on_both_flags(self):
+        """Both router-level --plan-id and --project-dir → mutually_exclusive_args."""
+        import io
+        from contextlib import redirect_stdout
+
+        argv = [
+            'pr_doctor.py',
+            '--plan-id',
+            'task-routing-canonical',
+            '--project-dir',
+            '/tmp/explicit',
+            'diagnose',
+            '--build-status',
+            'success',
+        ]
+        # main() may or may not propagate the SystemExit depending on
+        # how extract_routing_args handles the error — it calls
+        # sys.exit(2) directly. Wrap in assertRaises.
+        buf = io.StringIO()
+        with patch.object(sys, 'argv', argv):
+            with self.assertRaises(SystemExit) as ctx:
+                with redirect_stdout(buf):
+                    pr_doctor.main()
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn('mutually_exclusive_args', buf.getvalue())
+
+    def test_main_plan_id_use_worktree_false_falls_back_to_main_checkout(self):
+        """``use_worktree=false`` resolution surfaces the main checkout root."""
+        import resolve_project_dir as _routing  # type: ignore[import-not-found]
+
+        argv = [
+            'pr_doctor.py',
+            '--plan-id',
+            'task-routing-canonical',
+            'diagnose',
+            '--build-status',
+            'success',
+        ]
+        with (
+            patch.object(_routing, '_query_worktree_path', return_value=(False, '')),
+            patch.object(_routing, '_main_checkout_root', return_value='/tmp/main-stub'),
+        ):
+            self._run_main_with_argv(argv)
+        self.assertEqual(pr_doctor.get_project_dir(), '/tmp/main-stub')
+
 
 if __name__ == '__main__':
     unittest.main()

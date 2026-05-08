@@ -385,7 +385,8 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config warni
 - `--category` - Warning category (required)
 - `--pattern` - Pattern to match in warning messages (required)
 - `--build-system` - Build system (default: maven)
-- `--project-dir` - Project directory (default: current)
+- `--plan-id` - Plan identifier — auto-resolves the worktree path via `manage-status get-worktree-path`. Mutually exclusive with `--project-dir`.
+- `--project-dir` - Project directory (default: current). Escape hatch / explicit override; mutually exclusive with `--plan-id`.
 
 **Output (JSON):**
 ```json

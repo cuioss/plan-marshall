@@ -15,12 +15,12 @@ Provides git commit workflow following conventional commits specification. Inclu
 **Prohibited actions:**
 - Never commit secrets, credentials, or `.env` files
 - Never skip artifact cleanup step before committing (LLM must call detect-artifacts and act on results — the script detects but does not delete)
-- Never run raw `git <subcommand>` that relies on the current working directory. Agent cwd is unreliable under worktree isolation.
+- Never run raw `git <subcommand>` that relies on the current working directory.
 
 **Constraints:**
 - Commit messages must follow conventional commits format: `<type>(<scope>): <subject>` — see `standards/git-commit-standards.md` for types, rules, and examples
 - Push only when explicitly requested via parameters
-- All git invocations MUST use `git -C {worktree_path} <subcommand>`. No `cd` chaining, no implicit cwd. `{worktree_path}` is resolved from `status.metadata.worktree_path` in Step 0 of the Commit Changes workflow.
+- All git invocations MUST use `git -C {worktree_path} <subcommand>`. `{worktree_path}` is resolved from `status.metadata.worktree_path` in Step 0 of the Commit Changes workflow. See `standards/worktree-handling.md` for the worktree-specific application of this rule.
 - Temp files MUST be written under `.plan/temp/` per project policy — never `/tmp/`.
 
 ## Parameters
@@ -164,6 +164,12 @@ pushed: true
 | `format-commit` | `--type --subject [--scope] [--body] [--breaking] [--footer]` | Format commit message (Co-Authored-By NOT appended — caller adds it at `git commit` time per project convention) |
 | `analyze-diff` | `--worktree-path [--cached]` | Capture and analyze the worktree diff for commit suggestions |
 | `detect-artifacts` | `[--root]` | Scan for committable artifacts |
+| `worktree-path` | `--plan-id` | Resolve the persisted worktree path via `manage-status get-worktree-path` |
+| `worktree-create` | `--plan-id --branch [--base]` | Run `git worktree add` plus project-state bookkeeping (`metadata.use_worktree`/`worktree_path`/`worktree_branch`) |
+| `worktree-remove` | `--plan-id [--force]` | Remove the worktree first, then delete the branch ref |
+| `worktree-list` | _(none)_ | List plans whose `status.metadata.use_worktree == true` |
+
+The `worktree-*` subcommands implement the §9 two-state contract: `--plan-id` is mandatory (these verbs operate on a worktree), and path resolution flows through `manage-status get-worktree-path` so a single plan-id is sufficient — no `--project-dir`, no filesystem layout re-derivation. `worktree-create` is the only verb that materializes a path on disk; it computes `get_worktree_root() / <plan-id>`, runs `git worktree add`, and writes the resolved path back to status metadata so subsequent verbs resolve through the canonical channel.
 
 ### format-commit
 
@@ -251,6 +257,92 @@ total: 3
 status: success
 ```
 
+### worktree-path
+
+Resolve the persisted worktree path for a plan via `manage-status get-worktree-path`. Returns the absolute path plus an `exists` flag indicating whether the directory is currently materialized. The path is the value of `status.metadata.worktree_path` — set when the plan was created with `--use-worktree` or by a prior `worktree-create` invocation.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-path \
+  --plan-id my-plan
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier. Absence is rejected with `error: plan_resolution_failed` — the worktree subcommands operate on a worktree, so a plan id is mandatory.
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-plan
+worktree_path: /repo/.plan/local/worktrees/my-plan
+exists: true
+```
+
+### worktree-create
+
+Run `git worktree add <resolved-path> <branch>` against the main checkout, set up `.plan/local` and `.plan/execute-script.py` symlinks, best-effort bootstrap pyprojectx, and persist the resolved path/branch via `manage-status metadata --set` so subsequent verbs can resolve through the canonical channel. The path is computed from `get_worktree_root() / <plan-id>`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-create \
+  --plan-id my-plan --branch feature/my-plan [--base main]
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier (mandatory).
+- `--branch` (required): Feature branch name to create.
+- `--base`: Base ref for the new branch (default: current HEAD).
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-plan
+worktree_path: /repo/.plan/local/worktrees/my-plan
+branch: feature/my-plan
+plan_symlink: /repo/.plan/local/worktrees/my-plan/.plan
+bootstrap: ok
+```
+
+### worktree-remove
+
+Remove the worktree (`git worktree remove`) first, then delete the branch ref read from status metadata. Order matters: `git worktree remove` refuses to drop a branch ref that is still checked out, so cleanup is always worktree-first. Branch deletion failures surface as `branch_warning` rather than failing the command — the worktree is gone, branch cleanup is recoverable.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-remove \
+  --plan-id my-plan [--force]
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier (mandatory).
+- `--force`: Force removal (use only if worktree is clean).
+
+**Output** (TOON, success):
+```toon
+status: success
+plan_id: my-plan
+worktree_path: /repo/.plan/local/worktrees/my-plan
+action: removed
+branch: feature/my-plan
+```
+
+### worktree-list
+
+Enumerate plans whose `status.metadata.use_worktree == true`. Reads from `manage-status list`, then resolves each plan's worktree path via `manage-status get-worktree-path`; plans without a configured worktree are silently skipped.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-list
+```
+
+**Parameters**: _(none)_
+
+**Output** (TOON):
+```toon
+status: success
+worktrees_root: /repo/.claude/worktrees
+count: 2
+worktrees[2]{plan_id,path,branch}:
+  my-plan,/repo/.plan/local/worktrees/my-plan,feature/my-plan
+  other,/repo/.plan/local/worktrees/other,feature/other
+```
+
 ## Error Handling
 
 | Failure | Action |
@@ -261,11 +353,19 @@ status: success
 | Artifact cleanup uncertain | Ask user via `AskUserQuestion` before deleting. Never auto-delete uncertain files. |
 | git commit failure (hook rejection, conflict) | Report error with full output. Do not retry automatically. |
 | git push failure | Report error. Never force-push as fallback. |
+| `worktree-*` invoked without `--plan-id` | argparse rejects with non-zero exit. The verbs operate on a worktree; a plan id is mandatory. |
+| `worktree-path`/`worktree-remove` on plan without configured worktree | Return `error: plan_resolution_failed` — `status.metadata.use_worktree` is false or `worktree_path` is unset. |
+| `worktree-create` against a path that already exists | Return `error: worktree_exists` with the conflicting path. |
+| `worktree-create` `git worktree add` failure | Return `error: worktree_add_failed` with stderr from git. |
+| `worktree-create` `.plan` symlink helper rejects a real directory | Return `error: plan_symlink_failed`; the worktree exists but `.plan/local` is a real directory or file (refused so user data is never clobbered). |
+| `worktree-remove` worktree is dirty | Return `error: worktree_remove_failed` with hint to verify cleanliness before passing `--force`. |
+| `worktree-remove` branch ref delete fails | Return success with `branch_warning` — the worktree is gone, branch cleanup is recoverable. |
 
 ## Standards (Load On-Demand)
 
 | Standard | When to Load |
 |----------|-------------|
+| `standards/worktree-handling.md` | Canonical reference for worktree mechanism: path convention, dispatch protocol, `git -C` rule application, never-edit-main-checkout invariant, cleanup ordering, `--plan-id` two-state contract |
 | `standards/git-commit-standards.md` | Edge cases: breaking changes, multi-footer, scope guidelines, anti-patterns |
 | `standards/git-commit-config.json` | Adding/updating valid commit types, imperative mood allowlist, or length thresholds |
 | `standards/artifact-patterns.json` | Adding/updating artifact detection patterns and cleanup rules |

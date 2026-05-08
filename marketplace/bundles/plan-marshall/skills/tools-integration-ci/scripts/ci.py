@@ -32,10 +32,17 @@ from pathlib import Path
 
 from ci_base import (  # type: ignore[import-not-found]
     extract_project_dir,
+    extract_routing_args,
     output_error,
     safe_main,
     set_default_cwd,
 )
+
+# ``extract_project_dir`` is kept as a re-export for backward compatibility
+# with tests and external callers that imported it from ``ci`` directly.
+# New code should prefer ``extract_routing_args`` which also consumes
+# ``--plan-id`` and enforces the two-state contract.
+__all__ = ['extract_project_dir', 'extract_routing_args']
 
 
 def find_plan_dir() -> Path | None:
@@ -91,10 +98,13 @@ def get_provider() -> str | None:
 
 
 def main() -> int:
-    # Consume top-level router flags (currently only --project-dir) before
+    # Consume top-level router flags (--project-dir and --plan-id) before
     # delegating to the provider module. sys.argv is rewritten in place so the
-    # downstream provider parser sees only its own arguments.
-    project_dir, remaining = extract_project_dir(sys.argv[1:])
+    # downstream provider parser sees only its own arguments. The two flags
+    # implement the two-state contract: --plan-id auto-resolves via
+    # manage-status; --project-dir is the explicit override; both together
+    # is a hard error (handled inside extract_routing_args).
+    project_dir, remaining = extract_routing_args(sys.argv[1:])
     sys.argv = [sys.argv[0], *remaining]
     if project_dir is not None:
         set_default_cwd(project_dir)

@@ -22,6 +22,14 @@ from input_validation import (  # type: ignore[import-not-found]
     add_module_arg,
     parse_args_with_toon_errors,
 )
+from resolve_project_dir import (  # type: ignore[import-not-found]
+    MutuallyExclusiveArgsError,
+    WorktreeResolutionError,
+    add_plan_id_arg,
+    emit_mutually_exclusive_error,
+    emit_worktree_error,
+    resolve_project_dir,
+)
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # Extension defaults keys for profile configuration
@@ -369,7 +377,12 @@ def cmd_suggest(args: argparse.Namespace) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description='Maven profile management operations', allow_abbrev=False)
-    parser.add_argument('--project-dir', default='.', help='Project directory (default: current directory)')
+    parser.add_argument(
+        '--project-dir',
+        default='.',
+        help='Project directory (default: current directory). Mutually exclusive with --plan-id.',
+    )
+    add_plan_id_arg(parser)
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # list - List all profiles
@@ -389,6 +402,16 @@ def main() -> int:
     subparsers.add_parser('suggest', help='Suggest classifications for unmatched profiles', allow_abbrev=False)
 
     args = parse_args_with_toon_errors(parser)
+
+    # Two-state routing — see script_shared/scripts/resolve_project_dir.py.
+    try:
+        args.project_dir = resolve_project_dir(getattr(args, 'plan_id', None), args.project_dir, default='.')
+    except MutuallyExclusiveArgsError:
+        print(serialize_toon(emit_mutually_exclusive_error(getattr(args, 'plan_id', None), args.project_dir)))
+        return 2
+    except WorktreeResolutionError as exc:
+        print(serialize_toon(emit_worktree_error(args.plan_id, exc)))
+        return 2
 
     handlers = {
         'list': cmd_list,

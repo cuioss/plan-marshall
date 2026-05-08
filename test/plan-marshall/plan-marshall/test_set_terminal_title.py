@@ -42,19 +42,31 @@ class TestPlanIdResolution(ScriptTestCase):
     script = 'set_terminal_title.py'
 
     def test_worktree_cwd_matches(self):
-        cwd = '/Users/x/repo/.claude/worktrees/my-plan/marketplace'
+        cwd = '/Users/x/repo/.plan/local/worktrees/my-plan/marketplace'
         self.assertEqual(set_terminal_title._resolve_plan_id(cwd), 'my-plan')
 
     def test_worktree_cwd_without_trailing_path(self):
-        cwd = '/repo/.claude/worktrees/only-id'
+        cwd = '/repo/.plan/local/worktrees/only-id'
         self.assertEqual(set_terminal_title._resolve_plan_id(cwd), 'only-id')
+
+    def test_legacy_claude_worktrees_no_longer_matches(self):
+        """Legacy .claude/worktrees/ cwd is intentionally NOT recognized.
+
+        Worktrees migrated to ``.plan/local/worktrees/`` with no compatibility
+        fallback (compatibility: breaking). A legacy cwd must fall through to
+        $PLAN_ID or None — never extract a plan id from the old segment.
+        """
+        cwd = '/Users/x/repo/.claude/worktrees/old-plan/marketplace'
+        env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
+        with mock.patch.dict(os.environ, env, clear=True):
+            self.assertIsNone(set_terminal_title._resolve_plan_id(cwd))
 
     def test_env_fallback_when_no_worktree_match(self):
         with mock.patch.dict(os.environ, {'PLAN_ID': 'from-env'}, clear=False):
             self.assertEqual(set_terminal_title._resolve_plan_id('/tmp/not-a-worktree'), 'from-env')
 
     def test_worktree_wins_over_env(self):
-        cwd = '/r/.claude/worktrees/from-cwd'
+        cwd = '/r/.plan/local/worktrees/from-cwd'
         with mock.patch.dict(os.environ, {'PLAN_ID': 'from-env'}, clear=False):
             self.assertEqual(set_terminal_title._resolve_plan_id(cwd), 'from-cwd')
 

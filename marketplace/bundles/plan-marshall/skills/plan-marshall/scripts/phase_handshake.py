@@ -77,8 +77,14 @@ def main() -> int:
 
     output_toon(result)
 
-    if args.command == 'verify' and getattr(args, 'strict', False) and result.get('status') == 'drift':
-        return 1
+    if args.command == 'verify' and getattr(args, 'strict', False):
+        if result.get('status') == 'drift':
+            return 1
+        # worktree_unresolved is a phase-entry refusal — under --strict it
+        # MUST surface as a non-zero exit so calling tooling that swallows
+        # TOON output still sees the failure (mirrors the drift contract).
+        if result.get('error') == 'worktree_unresolved':
+            return 1
     if result.get('status') == 'error':
         return 0
     return 0

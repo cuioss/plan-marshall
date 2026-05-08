@@ -295,3 +295,66 @@ def test_router_rejects_empty_project_dir(tmp_path):
     result = run_script(SCRIPT_PATH, '--project-dir=', cwd=tmp_path)
     assert result.returncode == 2
     assert 'non-empty' in result.stderr or 'PATH' in result.stderr
+
+
+# =============================================================================
+# Two-state ``--plan-id`` / ``--project-dir`` routing contract
+# =============================================================================
+#
+# The CI router pre-parses both flags via
+# ``ci_base.extract_routing_args`` before delegating to the provider.
+# The same two-state contract applies: --plan-id auto-routes,
+# --project-dir is the explicit escape hatch, both → mutually exclusive,
+# neither → main checkout fallback.
+
+
+def test_router_rejects_both_plan_id_and_project_dir(tmp_path):
+    """End-to-end: providing both flags MUST surface mutually_exclusive_args."""
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    (plan_dir / 'marshal.json').write_text(json.dumps({'providers': []}))
+
+    result = run_script(
+        SCRIPT_PATH,
+        '--plan-id',
+        'task-routing-canonical',
+        '--project-dir',
+        str(tmp_path),
+        cwd=tmp_path,
+    )
+    # The router emits a TOON error payload via emit_mutually_exclusive_error
+    # before any provider lookup happens.
+    assert result.returncode == 2, f'Expected exit 2, got {result.returncode}; stdout={result.stdout!r}'
+    # The error payload is printed via serialize_toon — surface check rather
+    # than full TOON parse so we tolerate different formatting paths.
+    assert 'mutually_exclusive_args' in result.stdout, (
+        f'Expected mutually_exclusive_args in TOON output, got: {result.stdout!r}'
+    )
+
+
+def test_router_accepts_plan_id_only_flag(tmp_path):
+    """`--plan-id` alone must be parsed (auto-routes via manage-status).
+
+    With no real plan persisted at PLAN_BASE_DIR, the resolver fails — but
+    the failure mode is ``worktree_resolution_failed`` (not the legacy
+    "no provider configured" path), proving the routing flag was consumed
+    before the provider lookup.
+    """
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    (plan_dir / 'marshal.json').write_text(json.dumps({'providers': []}))
+
+    result = run_script(
+        SCRIPT_PATH,
+        '--plan-id',
+        'task-routing-canonical',
+        cwd=tmp_path,
+    )
+    # Either:
+    # - resolver runs and surfaces worktree_resolution_failed (exit 2), or
+    # - resolver succeeds against the test cwd's main checkout and we hit
+    #   the legacy "not configured" path (exit 0).
+    # Both are valid outcomes — the regression we're guarding against is
+    # an argparse failure at the router (exit 2 + argparse error to stderr).
+    assert result.returncode in (0, 2), f'Unexpected returncode {result.returncode}; stderr={result.stderr!r}'
+    assert 'unrecognized arguments' not in result.stderr, '--plan-id must be consumed by the router, not rejected'

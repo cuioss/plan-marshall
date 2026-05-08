@@ -129,6 +129,12 @@ def main() -> int:
         result = handler(args)
         if result is not None:
             output_toon(result)
+            # Surface non-zero exit when the handler returned a structured error
+            # so callers (and tests) can distinguish failures from successes
+            # without parsing TOON. This matches the convention used by the
+            # Bucket B consumers covered in the auto-routing rollout.
+            if isinstance(result, dict) and result.get('status') == 'error':
+                return 1
         return 0
     else:
         parser.print_help()

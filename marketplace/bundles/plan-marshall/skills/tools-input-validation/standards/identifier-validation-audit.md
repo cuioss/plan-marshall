@@ -2,11 +2,11 @@
 
 This document is the single source of truth for the canonical identifier-validator sweep across the marketplace. The validator foundation (regex constants, raising validators, `add_<id>_arg(parser)` builders, and the `parse_args_with_toon_errors()` helper) shipped via lesson-2026-04-28-12-001. The cross-bundle sweep that consumed those validators across 32 scripts in `plan-marshall`, `pm-dev-java`, and `pm-documents` landed via lesson-2026-04-29-08-003. Every entry below reflects the post-sweep state: which scripts were migrated, which were excluded and why, and the breaking-compat decisions that fell out of the audit. New scripts and new identifier-shaped flags MUST be reflected in both this document and the SKILL.md adoption table.
 
-## Migrated Scripts (31)
+## Migrated Scripts (30)
 
 Grouped by sweep wave. Each row records the script under sweep, its bundle, the in-scope identifier flags adopted via `add_<id>_arg(parser)` builders, the identifier-handling families covered (argparse-only / parse-then-rebuild / post-parse-normalize), and the corresponding test directory.
 
-### Wave A — plan-marshall manage-* (15)
+### Wave A — plan-marshall manage-* (14)
 
 | Script | Bundle | In-scope flags adopted | Families covered | Test directory |
 |--------|--------|------------------------|------------------|----------------|
@@ -24,7 +24,6 @@ Grouped by sweep wave. Each row records the script under sweep, its bundle, the 
 | `manage-solution-outline/scripts/manage-solution-outline.py` | plan-marshall | `--plan-id` | parse-then-rebuild | `test/plan-marshall/manage-solution-outline/` |
 | `manage-status/scripts/manage_status.py` | plan-marshall | `--plan-id`, `--phase`, `--field` | argparse-only, parse-then-rebuild | `test/plan-marshall/manage-status/` |
 | `manage-tasks/scripts/manage-tasks.py` | plan-marshall | `--plan-id`, `--task-number` (int-coerced post-validation), `--domain` | argparse-only, post-parse-normalize | `test/plan-marshall/manage-tasks/` |
-| `manage-worktree/scripts/manage-worktree.py` | plan-marshall | `--plan-id` | parse-then-rebuild | `test/plan-marshall/manage-worktree/` |
 
 ### Wave B — plan-marshall workflow / tools / skill-namespaced (14)
 
@@ -69,7 +68,7 @@ The classification certainty `CERTAIN_EXCLUDE` was assigned during phase-3 compo
 | `plan-marshall/skills/plan-marshall/scripts/` | `set_terminal_title.py` | Status-line helper — only `--statusline`/`--plan-label` |
 | `plan-marshall/skills/ref-toon-format/scripts/` | `toon_parser.py` | Pure parser library — no main entry |
 | `plan-marshall/skills/script-shared/scripts/` | `extension_base.py`, `marketplace_bundles.py`, `marketplace_paths.py`, `triage_helpers.py` | Shared utilities — no main entry |
-| `plan-marshall/skills/script-shared/scripts/query/` | `query-architecture.py`, `query-config.py` | Query utilities — only `--bundle`/`--path`/`--refresh`/`--project-dir` |
+| `plan-marshall/skills/script-shared/scripts/query/` | `query-architecture.py`, `query-config.py` | Query utilities — only `--bundle`/`--path`/`--refresh`/`--project-dir`/`--plan-id` (the `--plan-id` flag is the routing escape from the two-state contract documented in `tools-script-executor/standards/cwd-policy.md`; it is NOT used for plan-state lookup here) |
 | `plan-marshall/skills/tools-file-ops/scripts/` | `constants.py`, `file_ops.py`, `jsonl_store.py` | Pure utilities — no main entry |
 | `plan-marshall/skills/tools-input-validation/scripts/` | `input_validation.py`, `schema_validation.py` | Validator provider library / schema helpers — no consumer-side argparse |
 | `plan-marshall/skills/tools-integration-ci/scripts/` | `ci_base.py`, `ci_health.py` | Helper module / health verifier — no in-scope flags |

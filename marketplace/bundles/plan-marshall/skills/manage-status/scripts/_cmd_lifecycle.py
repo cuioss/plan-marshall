@@ -28,7 +28,19 @@ from file_ops import get_plan_dir  # type: ignore[import-not-found]
 
 
 def cmd_create(args: argparse.Namespace) -> dict:
-    """Create status.json for a new plan."""
+    """Create status.json for a new plan.
+
+    When the plan runs in an isolated worktree, the caller MUST pass
+    ``--use-worktree``, ``--worktree-path``, and ``--worktree-branch``
+    so the trio is seeded into ``status.metadata`` at creation time.
+    Downstream consumers (build wrappers, phase-entry assertions,
+    ``get-worktree-path``) read these fields without re-deriving the
+    path from filesystem layout.
+
+    When ``--use-worktree`` is omitted (or set to ``false``), no
+    worktree metadata is written and the plan is treated as running
+    against the main checkout.
+    """
     require_valid_plan_id(args)
 
     path = get_status_path(args.plan_id)
@@ -50,6 +62,20 @@ def cmd_create(args: argparse.Namespace) -> dict:
             'message': 'At least one phase is required',
         }
 
+    # Worktree metadata seeding — when use-worktree is true, both
+    # worktree-path and worktree-branch must be supplied. Refusing
+    # partial input prevents silently-incoherent metadata.
+    use_worktree = bool(getattr(args, 'use_worktree', False))
+    worktree_path_arg = getattr(args, 'worktree_path', None)
+    worktree_branch_arg = getattr(args, 'worktree_branch', None)
+    if use_worktree and (not worktree_path_arg or not worktree_branch_arg):
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'invalid_worktree_args',
+            'message': '--use-worktree requires both --worktree-path and --worktree-branch',
+        }
+
     now = now_utc_iso()
 
     status: dict[str, Any] = {
@@ -63,15 +89,34 @@ def cmd_create(args: argparse.Namespace) -> dict:
     # Mark first phase as in_progress
     status['phases'][0]['status'] = PHASE_STATUS_IN_PROGRESS
 
+    if use_worktree:
+        status['metadata'] = {
+            'use_worktree': True,
+            'worktree_path': worktree_path_arg,
+            'worktree_branch': worktree_branch_arg,
+        }
+    else:
+        # Explicit false-state seeding: even when no worktree is
+        # allocated, downstream consumers benefit from a definite
+        # ``use_worktree: false`` marker rather than having to treat
+        # absence-of-metadata as "main-checkout". Keeps the contract
+        # symmetric.
+        status['metadata'] = {'use_worktree': False}
+
     write_status(args.plan_id, status)
 
-    return {
+    result: dict[str, Any] = {
         'status': 'success',
         'plan_id': args.plan_id,
         'file': 'status.json',
         'created': True,
         'plan': {'title': args.title, 'current_phase': phases[0]},
+        'use_worktree': use_worktree,
     }
+    if use_worktree:
+        result['worktree_path'] = worktree_path_arg
+        result['worktree_branch'] = worktree_branch_arg
+    return result
 
 
 def _collect_modified_files(plan_id: str, status: dict, base_branch: str) -> list[str] | None:

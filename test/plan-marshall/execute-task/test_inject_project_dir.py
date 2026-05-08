@@ -391,3 +391,96 @@ def test_cli_entrypoint_emits_toon_on_non_executor(tmp_path):
     assert parsed['status'] == 'success'
     assert parsed['injected'] is False
     assert parsed['rewritten_command'] == expected_rewritten
+
+
+# =============================================================================
+# (9) Two-state interaction — commands with --plan-id skip injection
+# =============================================================================
+#
+# When a command already supplies ``--plan-id`` (router-level), the
+# target Bucket B script auto-resolves the worktree path via the shared
+# ``resolve_project_dir`` contract. Injecting ``--project-dir`` on top
+# would trip the resolver's mutually_exclusive_args branch and fail the
+# run. The helper MUST skip injection in that case.
+
+
+@pytest.mark.parametrize('notation', BUCKET_B_NOTATIONS)
+def test_skips_injection_when_plan_id_already_present(notation):
+    """A Bucket B command carrying --plan-id must not get --project-dir injected."""
+    # Arrange — router-level --plan-id is supplied by the caller.
+    command = f'python3 .plan/execute-script.py {notation} run --plan-id task-routing-canonical --command-args "verify"'
+
+    # Act
+    rewritten, injected = inject_project_dir(command, WORKTREE)
+
+    # Assert — the helper recognises --plan-id and leaves the command alone.
+    assert injected is False, (
+        f'inject_project_dir must NOT inject --project-dir when --plan-id is present; '
+        f'got rewritten={rewritten!r}'
+    )
+    # The original --plan-id must survive intact.
+    assert '--plan-id task-routing-canonical' in rewritten
+    # And no --project-dir was injected.
+    assert '--project-dir' not in rewritten
+
+
+def test_skips_injection_with_plan_id_equals_form():
+    """``--plan-id=ID`` (equals form) must also be detected as routing intent."""
+    # Arrange — equals-form router-level --plan-id.
+    command = (
+        'python3 .plan/execute-script.py plan-marshall:build-python:python_build '
+        'run --plan-id=task-routing-canonical --command-args "verify"'
+    )
+
+    # Act
+    rewritten, injected = inject_project_dir(command, WORKTREE)
+
+    # Assert — both detection forms must trigger the skip.
+    assert injected is False
+    assert '--plan-id=task-routing-canonical' in rewritten
+    assert '--project-dir' not in rewritten
+
+
+def test_injects_when_neither_plan_id_nor_project_dir_present():
+    """Sanity: the only path that triggers injection is "neither flag present"."""
+    # Arrange — Bucket B command without either routing flag.
+    command = (
+        'python3 .plan/execute-script.py plan-marshall:build-python:python_build '
+        'run --command-args "module-tests"'
+    )
+
+    # Act
+    rewritten, injected = inject_project_dir(command, WORKTREE)
+
+    # Assert
+    assert injected is True
+    assert f'--project-dir {WORKTREE}' in rewritten
+
+
+def test_cli_entrypoint_emits_toon_on_plan_id_present_passthrough(tmp_path):
+    """CLI surfaces injected=false + original command when --plan-id is present."""
+    # Arrange
+    command = (
+        'python3 .plan/execute-script.py plan-marshall:build-python:python_build '
+        'run --plan-id task-routing-canonical --command-args "module-tests"'
+    )
+    expected_rewritten, injected = inject_project_dir(command, WORKTREE)
+    assert injected is False  # sanity — --plan-id triggers the skip
+
+    # Act
+    result = run_script(
+        SCRIPT_PATH,
+        'run',
+        '--command',
+        command,
+        '--worktree-path',
+        WORKTREE,
+        cwd=tmp_path,
+    )
+
+    # Assert
+    assert result.success, f'CLI failed: {result.stderr}'
+    parsed = _parse_toon_output(result.stdout)
+    assert parsed['status'] == 'success'
+    assert parsed['injected'] is False
+    assert parsed['rewritten_command'] == expected_rewritten

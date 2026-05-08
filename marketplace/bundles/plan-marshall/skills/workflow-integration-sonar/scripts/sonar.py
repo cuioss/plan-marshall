@@ -18,7 +18,7 @@ Usage:
 import sys
 from typing import Any
 
-from ci_base import extract_project_dir, set_default_cwd  # type: ignore[import-not-found]
+from ci_base import extract_routing_args, set_default_cwd  # type: ignore[import-not-found]
 from triage_helpers import (  # type: ignore[import-not-found]
     create_workflow_cli,
     is_test_file,
@@ -264,11 +264,13 @@ def cmd_fetch_and_store(args):
 
 def main():
     """Main entry point."""
-    # Accept (and swallow) a top-level --project-dir for API uniformity with
-    # the github/gitlab workflow scripts. The Sonar REST client does not use
-    # cwd; the flag is preserved so future subprocess additions remain
-    # configurable.
-    project_dir, remaining = extract_project_dir(sys.argv[1:])
+    # Accept (and swallow) a top-level --plan-id / --project-dir pair for API
+    # uniformity with the github/gitlab workflow scripts. The Sonar REST
+    # client does not use cwd; the routing is preserved so future subprocess
+    # additions remain configurable. Two-state contract: --plan-id auto-
+    # resolves via manage-status; --project-dir is the explicit override;
+    # both together is a hard error.
+    project_dir, remaining = extract_routing_args(sys.argv[1:])
     sys.argv = [sys.argv[0], *remaining]
     if project_dir is not None:
         set_default_cwd(project_dir)

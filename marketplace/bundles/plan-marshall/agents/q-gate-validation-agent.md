@@ -39,6 +39,8 @@ Skill: plan-marshall:dev-general-practices
 plan_id: {plan_id}
 ```
 
+**Worktree binding**: This agent runs against the worktree resolved internally from `plan_id` via `plan-marshall:manage-status:manage_status get-worktree-path --plan-id {plan_id}`. No absolute path is forwarded — the path-free Worktree Header contract is canonical (see `plan-marshall:phase-5-execute` § Dispatch Protocol and `workflow-integration-git/standards/worktree-handling.md`). Every grep, file-existence check, and shell command issued below MUST resolve against the resolved worktree path, never the main checkout.
+
 ## Workflow
 
 ### Step 2: Log Start
@@ -510,6 +512,92 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Driving lesson**: `2026-05-04-08-001` (validate lesson narrative against current code during refine).
 
+#### 2.15 Worktree-Linter Validator
+
+Verify that no skill, agent, or script in `solution_outline.md`'s `affected_files` (or any deliverable's `Change per file` block) reintroduces the three stale worktree-handling patterns that the centralized [`worktree-handling.md`](../skills/workflow-integration-git/standards/worktree-handling.md) standard explicitly forbids. The centralized file (created in TASK-3 of plan `lesson-2026-05-07-11-001`) is the **single authoritative source** for worktree-handling rules — every check below cross-references it.
+
+**Activation condition**: Runs in the `3-outline` and `4-plan` phase contexts. Activates whenever a deliverable's `affected_files` contains at least one path matching `marketplace/bundles/*/skills/**/*.md`, `marketplace/bundles/*/agents/*.md`, `marketplace/bundles/*/skills/**/scripts/*.py`, or `marketplace/bundles/*/skills/**/scripts/*.sh`. Skips deliverables whose only affected files are tests, fixtures, or non-skill documentation.
+
+**Detection logic**: For each in-scope `{affected_path}`, run the three pattern sweeps below as **separate Bash invocations** (one command per call). Every match becomes a candidate finding unless the suppression rule applies.
+
+**Pattern WL-A — Direct `cd <worktree_path>` shell compounds**:
+
+The centralized standard forbids `cd {worktree_path} && <command>` shell compounds; all worktree-rooted operations MUST use the path-flag form documented in `worktree-handling.md` (e.g., `git -C`, `mvn -f`, `pytest --rootdir`, `--project-dir` for Bucket B notations).
+
+```bash
+rg -n "cd\s+[^\s]*worktree[^\s]*\s*&&" {affected_path}
+```
+
+Match also accepts the literal `cd "$WORKTREE"` / `cd ${worktree_path}` shapes. Any positive match is a violation.
+
+**Pattern WL-B — Hard-coded `.claude/worktrees/` references**:
+
+TASK-4 of plan `lesson-2026-05-07-11-001` migrated the worktree storage location from `.claude/worktrees/` to `.plan/local/worktrees/`. Hard-coded `.claude/worktrees/` substrings in skill/agent prose, script literals, or examples are now stale and MUST be rewritten.
+
+```bash
+rg -n "\.claude/worktrees/" {affected_path}
+```
+
+The centralized [`worktree-handling.md`](../skills/workflow-integration-git/standards/worktree-handling.md) is the only legitimate location to discuss the historical path, and only inside an explicit "Migration history" subsection. Matches outside that file are violations.
+
+**Pattern WL-C — Missing `--plan-id` on auto-routing scripts**:
+
+TASK-10 of plan `lesson-2026-05-07-11-001` extended the manage-* script contract so that worktree-aware scripts auto-route to the correct worktree when `--plan-id` is supplied. Skills and agents that invoke an auto-routing script without passing `--plan-id` will silently target the main checkout — defeating worktree isolation.
+
+```bash
+rg -n "execute-script\.py\s+plan-marshall:(manage-files|manage-tasks|manage-findings|manage-references|manage-solution-outline|manage-plan-documents|manage-logging|manage-status):[^\s]+\s+[^\s]+\s+(?!.*--plan-id)" {affected_path}
+```
+
+The whitelist of auto-routing notations matches the TASK-10 contract — see the centralized [`worktree-handling.md`](../skills/workflow-integration-git/standards/worktree-handling.md) "Auto-routing scripts" subsection for the authoritative list. Matches indicate a manage-* invocation that omits `--plan-id`.
+
+**Suppression rule**: A match in `{affected_path}` is suppressed (no finding emitted) when EITHER:
+- `{affected_path}` is the centralized `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md` itself (the standard quotes the forbidden patterns to define them), OR
+- The match line contains a fenced-off "Anti-pattern" / "Forbidden" / "Do NOT" marker on the same line or the immediately preceding line (the standard quotes the pattern to forbid it).
+
+Apply the suppression rule per match, not per file. Unsuppressed matches are violations.
+
+**Finding emission template**:
+
+For each unsuppressed match across patterns WL-A, WL-B, and WL-C:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate add --plan-id {plan_id} --phase {phase} \
+  --source qgate-worktree-linter --type triage \
+  --title "Q-Gate: worktree_linter — {pattern_letter} violation in {affected_path}" \
+  --detail "{affected_path}:{line} contains a stale worktree-handling pattern that violates the centralized standard at marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md. {pattern_explanation}. Either rewrite the cited line per the centralized standard, or — if the pattern is genuinely required (e.g., a quoted anti-pattern in another standard) — wrap it in an explicit 'Anti-pattern' / 'Forbidden' / 'Do NOT' marker on the same line so the linter suppresses it." \
+  --file-path "{affected_path}" \
+  --audit-plan-id {plan_id}
+```
+
+`{pattern_letter}` is `WL-A`, `WL-B`, or `WL-C`. `{pattern_explanation}` is the fixed string for each pattern:
+
+| Pattern | `{pattern_explanation}` |
+|---------|-------------------------|
+| WL-A | "Direct `cd <worktree_path>` shell compounds are forbidden — use `git -C`, `mvn -f`, `pytest --rootdir`, or the appropriate path-flag form documented in worktree-handling.md" |
+| WL-B | "Hard-coded `.claude/worktrees/` references are stale (TASK-4 migrated worktree storage to `.plan/local/worktrees/`) — update the reference per worktree-handling.md" |
+| WL-C | "manage-* invocation omits `--plan-id`; auto-routing scripts (TASK-10 contract) silently target the main checkout when `--plan-id` is missing — see worktree-handling.md 'Auto-routing scripts' subsection" |
+
+**Pass criteria** (silent — no finding emitted):
+- Every grep returns no matches across the three patterns, OR
+- Every match is suppressed per the suppression rule (centralized file or explicit anti-pattern marker).
+
+**Fail criteria**: At least one unsuppressed match exists across patterns WL-A, WL-B, or WL-C — emit one finding per unsuppressed match.
+
+**Positive example (WL-A)**: Outline deliverable modifies `marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md` and the diff introduces `cd /Users/foo/.claude/worktrees/my-plan && git status`. WL-A grep matches; line is not under an "Anti-pattern" marker; finding emitted citing `worktree-handling.md`.
+
+**Positive example (WL-B)**: Outline deliverable modifies an agent file that contains `worktree_path: /Users/oliver/git/plan-marshall/.claude/worktrees/foo`. WL-B grep matches; finding emitted citing the TASK-4 migration.
+
+**Positive example (WL-C)**: Outline deliverable modifies a skill that contains `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read --task-number 5` (no `--plan-id`). WL-C grep matches; finding emitted citing the TASK-10 auto-routing contract.
+
+**Negative example**: The centralized `worktree-handling.md` itself contains the forbidden patterns inside an "Anti-pattern" subsection ("Do NOT use `cd $WORKTREE && git status`"). Suppression rule applies — silent pass.
+
+**Cross-references**:
+- Authoritative source: [`worktree-handling.md`](../skills/workflow-integration-git/standards/worktree-handling.md) (created TASK-3 of plan `lesson-2026-05-07-11-001`)
+- WL-B migration source: TASK-4 of plan `lesson-2026-05-07-11-001` (`.claude/worktrees/` → `.plan/local/worktrees/`)
+- WL-C contract source: TASK-10 of plan `lesson-2026-05-07-11-001` (auto-routing `--plan-id` extension)
+- Driving lesson: `2026-05-07-11-001` (worktree-handling rules were duplicated and silently drifted across 10+ skill files; centralizing them caught a class of regressions invisible to per-skill review).
+
 ---
 
 ### Step 5: Check Missing Coverage
@@ -649,6 +737,7 @@ qgate_pending_count: {count}
 | Scope-Criterion Validator (3-outline / 4-plan) | Every operationalizable `success_criterion` agrees with `affected_files` after the structured query is run | Symmetric difference between query result set and affected_files (under-coverage or over-coverage), or marketplace-wide criterion paired with bundle-scoped query |
 | Tier-Delta Validator (3-outline) | Tiered/variant specs include a delta table contrasting every cross-tier field with rationale | Tiered sections present AND delta table missing or incomplete |
 | Narrative-vs-Code Validator (2-refine, lesson plans) | Every concrete code claim in the source lesson narrative matches current code state | Claim is `stale` (code moved) or `invalid` (cited path/symbol/shape never matched) |
+| Worktree-Linter Validator (3-outline / 4-plan) | Skills/agents/scripts touched by deliverables contain none of the three forbidden worktree-handling patterns documented in `worktree-handling.md` (direct `cd <worktree_path>`, hard-coded `.claude/worktrees/`, manage-* invocations missing `--plan-id`) | Any unsuppressed match for patterns WL-A, WL-B, or WL-C |
 | Missing Coverage | All assessed files in deliverables | Assessed files missing |
 
 ---

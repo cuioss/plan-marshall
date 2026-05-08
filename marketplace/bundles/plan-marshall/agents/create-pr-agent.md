@@ -4,7 +4,7 @@ description: |
   Named agent that performs the finalize-phase Create PR step. Loads plan-marshall:dev-general-practices into its own context, then delegates end-to-end to the authoritative standard phase-6-finalize/standards/create-pr.md, using plan-marshall:tools-integration-ci for PR creation.
 
   Examples:
-  - Input: plan_id=my-plan, worktree_path=/Users/x/repo/.claude/worktrees/my-plan
+  - Input: plan_id=my-plan
   - Output: TOON with status, pr_url, pr_number, commit_sha
 tools: Read, Write, Bash, Skill
 ---
@@ -26,8 +26,8 @@ Skill: plan-marshall:dev-general-practices
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `plan_id` | string | Yes | Plan identifier |
-| `worktree_path` | string | Conditional | Absolute path to the active git worktree root. Required when the plan runs in an isolated worktree. When provided, every Edit/Write/Read tool call MUST target paths rooted at this path, and every git invocation MUST use `git -C {worktree_path} <subcommand>`. |
+| `plan_id` | string | Yes | Plan identifier. The agent resolves the active worktree internally via `plan-marshall:manage-status:manage_status get-worktree-path --plan-id {plan_id}`; no absolute path is forwarded. See the path-free Worktree Header contract in `plan-marshall:phase-5-execute` § Dispatch Protocol and the canonical `--plan-id` two-state binding in `workflow-integration-git/standards/worktree-handling.md`. Every Edit/Write/Read tool call MUST target paths rooted at the resolved worktree, and every git invocation MUST use `git -C {resolved_worktree_path} <subcommand>`. |
+| `worktree_path` | string | Deprecated | **Deprecated** — kept only for backward compatibility with callers that still pass an absolute path. New callers MUST forward only `plan_id`. When supplied, the value MUST agree with the path resolved from `plan_id`; treat any disagreement as fail-loud. |
 
 ## Enforcement
 
@@ -38,7 +38,7 @@ Mirrors the Workflow Discipline hard rules from `plan-marshall:dev-general-pract
 - Never access `.plan/` files with Read/Write/Edit. All `.plan/` operations MUST go through `python3 .plan/execute-script.py` manage-* scripts.
 - Never use `gh` or `glab` directly. All CI/Git-provider operations MUST go through `plan-marshall:tools-integration-ci`.
 - Never hard-code build commands (`./pw`, `mvn`, `npm`, `gradle`). Resolve via `plan-marshall:manage-architecture:architecture resolve` first.
-- Never edit the main checkout when `worktree_path` is provided.
+- Never edit the main checkout when the `plan_id` resolves to an active worktree path. Resolve via `manage-status get-worktree-path --plan-id {plan_id}` and bind every Edit/Write/Read tool call and every git invocation to that resolved path.
 - Never marshal multi-line content (PR body, lesson body, memory entry, task YAML, request narrative) through the shell. Multi-line content MUST be written via the Write tool against the absolute path returned by the relevant `manage-*` script's path-allocate subcommand (`prepare-add`, `add`, `path`). Banned constructs: shell heredocs (`cat > file <<EOF`), `python3 -c "..."`, `python -c "..."`, and `printf > file`.
 
 **Bash constraints:**

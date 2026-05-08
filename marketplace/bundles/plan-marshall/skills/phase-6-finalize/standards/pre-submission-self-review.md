@@ -15,7 +15,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 ## Inputs
 
 - `references.modified_files` — list[string] of repo-relative paths recorded by Phase 5. Defines the change footprint the deterministic helper inspects.
-- `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). The deterministic helper invocation MUST pass `--project-dir {worktree_path}`; the staged diff is computed against the worktree's base branch.
+- `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). The deterministic helper invocation MUST identify the worktree via either `--plan-id {plan_id}` alone (preferred — `tools-self-review:self_review surface` auto-resolves the worktree path through `manage-status get-worktree-path`; `--plan-id` is also used for the modified-files lookup, so it is required either way) or by additionally supplying `--project-dir {worktree_path}` as an explicit override. The staged diff is computed against the worktree's base branch.
 
 ## Execution
 
@@ -25,8 +25,10 @@ Invoke the deterministic helper to surface concrete candidates from the staged d
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-self-review:self_review \
-  surface --plan-id {plan_id} --project-dir {worktree_path}
+  surface --plan-id {plan_id}
 ```
+
+(Auto-resolves the worktree from `--plan-id`. Add `--project-dir {worktree_path}` only when the explicit override is required.)
 
 Parse the TOON output. The candidate lists are:
 

@@ -25,7 +25,7 @@ There is no internal soft-timeout, polling cap, or partial-progress checkpoint i
 
 ## Inputs
 
-- `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All `sonar`, `ci`, build, and `manage-findings` script invocations below MUST pass `--project-dir {worktree_path}` for Bucket B notations (Bucket A `manage-*` scripts remain cwd-agnostic).
+- `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All `sonar`, `ci`, and build script invocations below MUST identify the worktree via either `--plan-id {plan_id}` (preferred — auto-resolves through `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (escape hatch / explicit override) for Bucket B notations; the two flags are mutually exclusive. Bucket A `manage-*` scripts (including `manage-findings`) remain cwd-agnostic and do NOT take routing flags. Examples below use the literal `--project-dir {worktree_path}` form; substitute `--plan-id {plan_id}` to use auto-resolution.
 
 ## Execution
 

@@ -353,3 +353,57 @@ def test_module_markdown_unknown_module_raises():
         _create_three_module_project(tmpdir)
         with pytest.raises(_architecture_core.ModuleNotFoundInProjectError):
             render_module_markdown('does-not-exist', tmpdir, budget=80)
+
+
+# =============================================================================
+# Two-state ``--plan-id`` / ``--project-dir`` routing for overview subcommand
+# =============================================================================
+
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-architecture', 'architecture.py')
+
+
+def test_overview_subcommand_inherits_routing_flags():
+    """The top-level argparse declares the routing flags; ``overview`` inherits them.
+
+    This regression-guards the ordering of subparser registration in
+    ``architecture.py`` — if a future refactor moves the ``add_plan_id_arg``
+    call into a per-subcommand block, the flag would silently disappear
+    from ``overview`` invocations.
+    """
+    result = run_script(SCRIPT_PATH, '--help')
+    assert result.success, f'--help failed: {result.stderr}'
+    # Top-level help must surface both flags before subcommand listing.
+    assert '--plan-id' in result.stdout
+    assert '--project-dir' in result.stdout
+
+
+def test_overview_rejects_both_routing_flags(tmp_path):
+    """``architecture --plan-id X --project-dir Y overview`` → mutually_exclusive_args."""
+    result = run_script(
+        SCRIPT_PATH,
+        '--plan-id',
+        'task-routing-canonical',
+        '--project-dir',
+        str(tmp_path),
+        'overview',
+    )
+    assert 'mutually_exclusive_args' in result.stdout, (
+        f'Expected mutually_exclusive_args TOON error, got: {result.stdout!r}'
+    )
+
+
+def test_overview_with_project_dir_only_runs_to_handler(tmp_path):
+    """Pre-existing --project-dir-only callers must reach the overview handler.
+
+    ``overview`` against an empty tmp_path returns a structured error
+    (no .plan/ tree). The point is to verify argparse accepts the flag
+    pair without crashing.
+    """
+    result = run_script(
+        SCRIPT_PATH,
+        '--project-dir',
+        str(tmp_path),
+        'overview',
+    )
+    # Argparse did not reject the flag.
+    assert 'unrecognized arguments' not in result.stderr

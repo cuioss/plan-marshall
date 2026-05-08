@@ -49,6 +49,7 @@ python3 .plan/execute-script.py {notation} run \
     [--timeout <seconds>] \
     [--mode <mode>] \
     [--format <toon|json>] \
+    [--plan-id <id>] \
     [--project-dir <path>]
 ```
 
@@ -61,7 +62,8 @@ python3 .plan/execute-script.py {notation} run \
 - `--timeout` — Timeout in seconds (default: 300, adaptive via run-config, min floor: 60s)
 - `--mode` — Output mode: `actionable` (default), `structured`, `errors`
 - `--format` — Output format: `toon` (default), `json`
-- `--project-dir` — Project root directory (default: `.`)
+- `--plan-id` — Plan identifier — auto-resolves the worktree path via `manage-status get-worktree-path`. Mutually exclusive with `--project-dir`.
+- `--project-dir` — Project root directory (default: `.`). Escape hatch / explicit override; mutually exclusive with `--plan-id`.
 
 **npm-specific additional parameters**:
 - `--working-dir` — Working directory for command execution (for nested frontend projects)

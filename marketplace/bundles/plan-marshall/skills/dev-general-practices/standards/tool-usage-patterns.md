@@ -88,7 +88,7 @@ Bash(command="git -C /path/to/worktree status")
 Bash(command="git -C /path/to/worktree log --oneline -10")
 ```
 
-When a plan runs in an isolated worktree, `{path}` is the worktree absolute path surfaced by `plan-marshall:phase-5-execute` in its `[STATUS] Active worktree: ...` work-log line. See [`cd <path> && <anything>` is forbidden for every tool, not just git](#cd-path--anything-is-forbidden-for-every-tool-not-just-git) below for the rule and rationale (the same `cd && X` prohibition applies to every tool, not just git).
+See [`cd <path> && <anything>` is forbidden for every tool, not just git](#cd-path--anything-is-forbidden-for-every-tool-not-just-git) below for the rule and rationale (the same `cd && X` prohibition applies to every tool, not just git). See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule.
 
 **CI/Git provider operations (PRs, issues, CI status, reviews):**
 
@@ -181,7 +181,7 @@ Bash(command="mvn -f /path/to/repo verify")
 Bash(command="npm --prefix /path/to/project test")
 ```
 
-When a plan runs in an isolated worktree, `<path>` is the worktree absolute path surfaced by `plan-marshall:phase-5-execute` in its `[STATUS] Active worktree: ...` work-log line. When operating against the main checkout, use the tool's cwd flag against `.` — never `cd && X`. The same rule applies inside `Skill: plan-marshall:workflow-integration-git` and any agent that delegates tool invocations to Bash.
+When operating against the main checkout, use the tool's cwd flag against `.` — never `cd && X`. The same rule applies inside `Skill: plan-marshall:workflow-integration-git` and any agent that delegates tool invocations to Bash. See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule.
 
 ### Authoring file contents via Bash is forbidden in every shape
 

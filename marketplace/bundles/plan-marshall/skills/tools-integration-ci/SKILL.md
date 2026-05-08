@@ -112,39 +112,47 @@ Load the relevant standard when performing specific operations:
 
 ---
 
-## Worktree-Aware Invocation (`--project-dir`)
+## Worktree-Aware Invocation (`--plan-id` / `--project-dir`)
 
-Every `ci` leaf subcommand accepts an optional top-level `--project-dir PATH`
-flag placed **before** the command/subcommand pair. When supplied, every
-underlying `gh`/`glab` subprocess runs with `cwd=PATH`, so branch-aware
-operations (`pr view`, `ci status`, `pr create`, `pr merge`, …) resolve HEAD
-against the specified checkout instead of the Python process cwd.
+Every `ci` leaf subcommand accepts an optional top-level routing flag
+placed **before** the command/subcommand pair. When supplied, every
+underlying `gh`/`glab` subprocess runs with `cwd=<resolved_path>`, so
+branch-aware operations (`pr view`, `ci status`, `pr create`, `pr merge`,
+…) resolve HEAD against the specified checkout instead of the Python
+process cwd.
+
+The router implements the canonical two-state contract:
+
+* `--plan-id X` and `--project-dir Y` together — error
+  `mutually_exclusive_args`. Pick one.
+* `--plan-id X` only — auto-resolve via `manage-status get-worktree-path`.
+  When `use_worktree=true` the persisted worktree path is used; when
+  `use_worktree=false` (or metadata absent) the main checkout is used.
+* `--project-dir Y` only — explicit override (legacy / escape hatch).
+* Neither — main checkout via `git rev-parse --show-toplevel`.
 
 ```bash
-# Run from the main checkout, but target a worktree-isolated plan branch:
+# Preferred: bind the call to a plan's worktree by id.
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
-  --project-dir /repo/.claude/worktrees/my-plan \
+  --plan-id my-plan \
+  pr view --head my-plan-branch
+
+# Escape hatch: bind to an explicit path (test fixtures, ad-hoc).
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
+  --project-dir <worktree_path> \
   pr view --head my-plan-branch
 ```
 
-**Semantics:**
+Both flags are consumed by the `ci.py` router before the provider
+script is dispatched; provider scripts behave unchanged. The router
+scans the entire argument vector and strips the routing flag before
+the provider parser runs.
 
-- The flag is consumed by the `ci.py` router before the provider script is
-  dispatched — provider scripts (github_ops, gitlab_ops) see their normal
-  argument vector and behave unchanged.
-- Under the hood the router calls `ci_base.set_default_cwd(PATH)`, and every
-  `run_cli` invocation threads that value into `subprocess.run(cwd=…)`.
-- When the flag is **omitted** behaviour is identical to before: subprocesses
-  inherit the Python process cwd.
-- Position-agnostic: `extract_project_dir` in `ci_base.py` scans the entire
-  argument vector and strips the flag before the provider parser runs, so
-  `--project-dir` may appear before or after the `pr` / `ci` / `issue`
-  command word. Placing it first is still the conventional style.
-
-Required when invoking CI operations from a checkout whose HEAD is not the
-branch you want to operate on — most notably during `phase-6-finalize` when
-the main agent runs in the main checkout but the plan branch lives in
-`.claude/worktrees/{plan_id}`.
+Required when invoking CI operations from a checkout whose HEAD is not
+the branch you want to operate on. See
+`workflow-integration-git/standards/worktree-handling.md` for the
+worktree-specific application of this rule (path convention, dispatch
+protocol, two-state contract reference).
 
 ---
 

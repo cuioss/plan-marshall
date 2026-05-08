@@ -75,7 +75,7 @@ from ci_base import (  # type: ignore[import-not-found]
     compute_total_elapsed,
     delete_consumed_body,
     dispatch,
-    extract_project_dir,
+    extract_routing_args,
     make_error,
     make_pr_number_handler,
     make_simple_handler,
@@ -1621,10 +1621,12 @@ def _cmd_issue_prepare_body(args: argparse.Namespace) -> dict:
 
 
 def main() -> int:
-    # Consume top-level --project-dir before argparse runs so the downstream
-    # provider parser never sees the router flag. Any cwd supplied here is
-    # installed as the process-global default for run_cli's gh invocations.
-    project_dir, remaining = extract_project_dir(sys.argv[1:])
+    # Consume top-level --plan-id / --project-dir before argparse runs so the
+    # downstream provider parser never sees the router flags. Two-state
+    # contract: --plan-id auto-resolves via manage-status; --project-dir is
+    # the explicit override; both together is a hard error. Any resolved cwd
+    # is installed as the process-global default for run_cli's gh invocations.
+    project_dir, remaining = extract_routing_args(sys.argv[1:])
     sys.argv = [sys.argv[0], *remaining]
     if project_dir is not None:
         set_default_cwd(project_dir)
