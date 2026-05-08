@@ -39,7 +39,7 @@ marketplace/targets/
 │   ├── target.py            # OpenCode target implementation (OpenCodeTarget class)
 │   ├── emitter.py           # OpenCode emitter
 │   ├── frontmatter.py       # Frontmatter transform engine
-│   ├── body-transforms.py   # Mechanical body-text transforms (Skill: rewrite, slash rewrite)
+│   ├── body_transforms.py   # Mechanical body-text transforms (Skill: rewrite, slash rewrite)
 │   ├── mapping.json         # Tool + model + layout mappings
 │   ├── frontmatter-rules.json  # Frontmatter transform rules
 │   ├── transforms.md        # Spec for the mechanical body-text transforms
@@ -208,7 +208,7 @@ Emitted **verbatim except for the mechanical line-level transforms documented in
 
 ### Body Transforms
 
-The OpenCode emitter applies two mechanical line-level transforms to skill and command bodies. Both are documented in `marketplace/targets/opencode/transforms.md` and implemented in `body-transforms.py`. Adding a new transform is a deliberate spec change — the emitter does not silently rewrite anything else.
+The OpenCode emitter applies two mechanical line-level transforms to skill and command bodies. Both are documented in `marketplace/targets/opencode/transforms.md` and implemented in `body_transforms.py`. Adding a new transform is a deliberate spec change — the emitter does not silently rewrite anything else.
 
 #### Transform 1: `Skill:` directive rewrite
 
