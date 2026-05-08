@@ -253,6 +253,32 @@ def build_parser() -> argparse.ArgumentParser:
     p_finalize.add_argument('--step', required=True, type=int, help='Step number')
     p_finalize.add_argument('--outcome', required=True, choices=['done', 'skipped', 'failed'], help='Step outcome')
     p_finalize.add_argument('--reason', help='Reason for skipping or failure (optional)')
+    # Optional overrides for the script-level [OUTCOME] emission. The defaults
+    # cover the common phase-5-execute path; non-default values let other
+    # orchestrators (or tests) shape the emitted line. See _cmd_step.py
+    # (cmd_finalize_step) and lesson 2026-05-08-14-001 for the contract.
+    p_finalize.add_argument(
+        '--outcome-task-title',
+        dest='outcome_task_title',
+        default=None,
+        help='Override the task title rendered in the [OUTCOME] log line (default: task.title from disk).',
+    )
+    p_finalize.add_argument(
+        '--outcome-step-count',
+        dest='outcome_step_count',
+        type=int,
+        default=None,
+        help='Override the step count rendered in the [OUTCOME] log line (default: len(task.steps)).',
+    )
+    p_finalize.add_argument(
+        '--outcome-caller',
+        dest='outcome_caller',
+        default=None,
+        help=(
+            'Override the bundle:skill caller marker rendered in the [OUTCOME] log line '
+            '(default: plan-marshall:phase-5-execute).'
+        ),
+    )
 
     # add-step
     p_add_step = subparsers.add_parser('add-step', help='Add a new step to a task', allow_abbrev=False)

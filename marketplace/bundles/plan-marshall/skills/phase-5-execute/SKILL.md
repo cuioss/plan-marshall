@@ -347,12 +347,32 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list \
   --plan-id {plan_id} --status pending
 ```
 
-Parse the row count from the returned `tasks_table` and substitute it as `{N}`. Then emit the phase-entry status line in the canonical format:
+Parse the row count from the returned `tasks_table` and substitute it as `{N}`.
+
+**Differentiate first entry from re-entry**: Read the persisted phase status from `manage-status read` to determine whether this is the first time phase-5-execute is being entered or a re-dispatch of an already-in-progress phase. The 5-execute phase row's `status` is `pending` on the very first entry and `in_progress` on every subsequent re-dispatch (the `manage-status transition --completed 4-plan` call sets it to `in_progress`).
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Starting execute phase — {N} tasks pending"
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+  --plan-id {plan_id}
 ```
+
+Locate the `phases[name=5-execute]` row in the returned TOON and read its `status` field. Then:
+
+- If `status == pending` (first entry) → emit:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Starting execute phase — {N} tasks pending"
+  ```
+
+- If `status == in_progress` (re-entry; e.g., orchestrator re-dispatched a phase-agent after a previous turn ended without completing the queue) → emit:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Re-entering execute phase — {N} tasks pending"
+  ```
+
+Both forms emit exactly one `[STATUS]` line; the wording difference makes it possible to grep for re-entries during retrospective gap analysis (lesson `2026-05-08-14-001`).
 
 **Surface the active worktree absolute path** so it remains visible in model context for every subsequent Edit/Write/Read call. Read the worktree path from status metadata:
 
@@ -401,14 +421,9 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 
 ### Step 8: Log Task Completion
 
-After each task completes:
+After each task completes, the canonical `[OUTCOME]` work-log line is emitted **inside `manage-tasks finalize-step`** — see `manage-tasks/SKILL.md` § "Script-Level [OUTCOME] Emission" for the contract. The script fires exactly one `[OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-NNN: {title} ({M} steps)` line on the task-closing finalize call. **Skills MUST NOT emit a manual `[OUTCOME]` line here** — duplicating the script-level guard creates double entries, and re-implementing the emission in skill prose was the failure mode that lesson `2026-05-08-14-001` documents (the line was lost whenever a phase-agent was re-dispatched and the original agent's working context was discarded before its caller-side `[OUTCOME]` could fire).
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[OUTCOME] (plan-marshall:phase-5-execute) Completed {task_id}: {task_title} ({steps_completed} steps)"
-```
-
-Immediately after the `[OUTCOME]` line, emit one `[ARTIFACT]` work-log entry per file the task changed by diffing the task-start SHA (recorded at `in_progress` transition as `task_start_sha`) against the current HEAD. See `standards/workflow.md` § **Artifact Emission at Task Completion** for the authoritative procedure, status-code mapping, and rename-handling rule. The artifact entries use a deliberate three-segment caller prefix `(plan-marshall:phase-5-execute:{task_number})` — a documented exception to the usual two-segment `(bundle:skill)` convention in [manage-logging/standards/log-format.md](../manage-logging/standards/log-format.md). Emit nothing when the diff is empty. This step precedes `manage-tasks next` so the audit trail for each task is flushed before the orchestrator advances.
+Immediately after the script-emitted `[OUTCOME]` line, emit one `[ARTIFACT]` work-log entry per file the task changed by diffing the task-start SHA (recorded at `in_progress` transition as `task_start_sha`) against the current HEAD. See `standards/workflow.md` § **Artifact Emission at Task Completion** for the authoritative procedure, status-code mapping, and rename-handling rule. The artifact entries use a deliberate three-segment caller prefix `(plan-marshall:phase-5-execute:{task_number})` — a documented exception to the usual two-segment `(bundle:skill)` convention in [manage-logging/standards/log-format.md](../manage-logging/standards/log-format.md). Emit nothing when the diff is empty. This step precedes `manage-tasks next` so the audit trail for each task is flushed before the orchestrator advances.
 
 ### Step 8b: Persist Per-Task Subagent Usage to Accumulator
 
@@ -693,6 +708,22 @@ Execute continuously without user prompts except:
 - Task transitions
 - Routine confirmations
 
+### Forbidden: agent-initiated checkpoints
+
+Phase-5-execute MUST drive the task loop to one of three terminal outcomes inside a single dispatch:
+
+1. All pending tasks complete and the phase transitions to `6-finalize`.
+2. A fatal error captured via the **Error Handling** section (including the pending-task drift error below).
+3. A triage-driven `blocked` outcome that the skill itself acknowledges via `manage-tasks` status updates.
+
+**Improvising a "progress checkpoint" return is a workflow violation.** Specifically, the dispatched agent MUST NOT:
+
+- Emit a "Returning control to orchestrator" / "checkpoint reached" / "partial-completion handoff" line and stop with pending tasks still in the queue.
+- Return a TOON payload that summarises "N of M tasks done, please re-dispatch" without one of the three terminal outcomes above.
+- Ask the user whether to continue when no genuine decision is required (loop fatigue is not a decision point).
+
+The motivating gap: lesson `2026-05-08-14-001` documents that agent-initiated re-dispatch was the trigger for losing `[OUTCOME]` log coverage. The script-level `[OUTCOME]` guard in `manage-tasks finalize-step` (D1) closes the audit-trail gap, but the underlying control-flow drift — agents deciding on their own to hand control back — also needs to be ruled out at the skill level. The orchestrator (`plan-marshall` workflows) is the single component allowed to start, re-dispatch, or terminate phase-5-execute; the dispatched agent does not get to vote.
+
 ---
 
 ## Phase Transition
@@ -741,6 +772,23 @@ Substitute `{notation}` with the failing script's `bundle:skill:script` notation
 After the emit:
 1. Capture error context (script path, exit code, stderr)
 2. Continue with normal error recovery (retry, fail task, etc.)
+
+### Pending-task drift (fatal)
+
+**ON `manage-tasks next` returning a `null` next while pending tasks remain**: this is a fatal control-flow drift, not a routine "no work to do" signal. The two known triggers are (a) a malformed `depends_on` graph that leaves every pending task waiting on a non-existent predecessor and (b) a misclassified `in_progress` task that the loop cannot advance. Either way, transitioning to finalize would silently abandon the pending tasks.
+
+When the loop receives `next: null` from `manage-tasks next`, immediately query `manage-tasks list --status pending`. If the pending count is non-zero, treat it as a fatal error:
+
+1. Emit the canonical `[ERROR]` line to work-log:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-5-execute) Pending-task drift: manage-tasks next returned null while {N} task(s) still pending — {ids}. This is a fatal control-flow error; do NOT transition to finalize."
+   ```
+
+2. Do NOT call `manage-status transition --completed 5-execute`. Do NOT auto-continue. Return a structured error payload (see **Error Handling** above) so the orchestrator can either re-enter execute (if the cause is a recoverable dependency-graph repair) or surface the failure for human review.
+
+The Step 12a "Pending-tasks transition guard" (in the Execution Loop) is the structural check that prevents the transition; this section names the failure mode at the error-taxonomy level so the orchestrator can route the recovery.
 
 ### Other Errors
 

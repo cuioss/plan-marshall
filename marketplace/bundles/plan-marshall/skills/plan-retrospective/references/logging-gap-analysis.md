@@ -7,6 +7,7 @@ Identifies places where the LLM or a component should have logged but didn't —
 - `work.log`, `decision.log`, `script.log` — what was actually logged.
 - Skill reference documents in scope (loaded from marketplace based on `references.json` domains).
 - `references.json` `affected_files` — evidence of actions that should produce log entries.
+- `work/metrics-dispatch-boundaries-5-execute.toon` (when present) — per-dispatch termination-cause audit trail written by `manage-metrics record-dispatch-boundary`. Used by the `DISPATCH_TERMINATION_CAUSE` rule below to detect agent-initiated re-dispatch and correlate it with `[OUTCOME]`-log coverage gaps. Plans whose execution preceded this artifact will not have the file; the rule is precondition-guarded so its absence is not a gap.
 
 ## Expected Log Patterns
 
@@ -30,10 +31,19 @@ expected_vs_actual[*]{category,expected_min,observed}:
   ARTIFACT,8,8
   VERIFY,6,6
   ERROR,any,3
+  OUTCOME_COVERAGE,{tasks_done},{outcome_lines}
+  RE_ENTRY_COVERAGE,{re_entry_count},{re_entry_count}
+  ARTIFACT_EMISSION,{outcome_with_changes},{artifacts_after_outcome}
+  DISPATCH_TERMINATION_CAUSE,{dispatch_rows},{dispatch_rows}
 gaps[*]{skill_or_phase,category,detail}:
   phase-3-outline,DECISION,"0 decision entries — deliverable packaging decisions not logged"
+  phase-5-execute,OUTCOME_COVERAGE,"3 tasks done but only 1 [OUTCOME] line — likely lost on agent-initiated re-dispatch"
+  phase-5-execute,RE_ENTRY_COVERAGE,"2 dispatch clusters detected but only 1 [STATUS] Re-entering line — orchestrator may have skipped re-entry logging"
+  phase-5-execute,ARTIFACT_EMISSION,"5 [OUTCOME] lines but only 2 [ARTIFACT] entries — task-completion artifact emission missing for 3 tasks"
+  phase-5-execute,DISPATCH_TERMINATION_CAUSE,"4 dispatches recorded with termination_cause=voluntary_checkpoint — agent-initiated re-dispatch is the dominant termination mode"
 findings[*]{severity,message}:
   warning,"Decision log sparse in outline phase"
+  error,"phase-5-execute [OUTCOME] coverage mismatch — see lesson 2026-05-08-14-001"
 ```
 
 ## LLM Interpretation Rules
@@ -43,12 +53,77 @@ findings[*]{severity,message}:
 - Zero `ARTIFACT` entries is an `error` — artifacts were produced but not announced. `phase-5-execute` is expected to emit one `[ARTIFACT]` entry per file operation at task completion, so the canonical check is `counts.artifact_entries > 0` whenever `references.modified_files` is non-empty; this is enforced programmatically by the retrospective pipeline rather than being treated as a known offender.
 - `ERROR` entries are expected to be zero; count them but do not flag count itself — the errors surface via log-analysis / script-failure-analysis.
 
+### Phase-5 invariants (precondition-guarded)
+
+The four rules below were added as part of the lesson-2026-05-08-14-001 cure
+for `[OUTCOME]`-log coverage loss on agent-initiated re-dispatch. Each rule
+is **precondition-guarded** so it does NOT false-positive on plans whose
+execution predates the corresponding deliverable. When the precondition is
+absent, the rule emits no finding.
+
+- **OUTCOME_COVERAGE** (category: `OUTCOME_COVERAGE`) — **Precondition**: at
+  least one `[OUTCOME] (plan-marshall:phase-5-execute) Completed` entry
+  exists in `work.log` (i.e. the plan ran on a build that includes the
+  script-level `[OUTCOME]` guard from D1). When the precondition holds,
+  count: number of tasks with `status: done` in `tasks_table` (`tasks_done`)
+  vs. number of `[OUTCOME] (plan-marshall:phase-5-execute) Completed
+  TASK-NNN` entries in `work.log` (`outcome_lines`). If
+  `outcome_lines < tasks_done`, emit an `error`-severity finding citing
+  lesson `2026-05-08-14-001`. Plans without any `[OUTCOME]` line skip this
+  rule entirely.
+
+- **RE_ENTRY_COVERAGE** (category: `RE_ENTRY_COVERAGE`) — **Precondition**:
+  at least one `[STATUS] (plan-marshall:phase-5-execute) Re-entering execute
+  phase` entry exists in `work.log` (i.e. the plan ran on a build that
+  differentiates first entry from re-entry per D2). When the precondition
+  holds, cluster `[STATUS] (plan-marshall:phase-5-execute) {Starting,
+  Re-entering} execute phase` lines using `gap_threshold_s = 30` (any two
+  status lines whose timestamps are more than 30 seconds apart belong to
+  separate dispatch clusters). For each cluster after the first, expect
+  exactly one `Re-entering` line. If `re_entry_count` (the number of
+  dispatch clusters minus one) does not match the number of `Re-entering`
+  lines observed, emit a `warning`-severity finding. Plans without any
+  `Re-entering` line skip this rule entirely.
+
+- **ARTIFACT_EMISSION** (category: `ARTIFACT_EMISSION`) — preserves the
+  pre-existing rule (zero `[ARTIFACT]` entries when
+  `references.modified_files` is non-empty is an `error`) and adds a new
+  branch keyed on the OUTCOME_COVERAGE precondition. **Precondition for the
+  new branch**: at least one `[OUTCOME] (plan-marshall:phase-5-execute)
+  Completed` entry exists. When the precondition holds, every `[OUTCOME]`
+  line emitted for a task that produced file changes (i.e. the task's
+  diff against its `task_start_sha` is non-empty) MUST be immediately
+  followed by at least one `[ARTIFACT] (plan-marshall:phase-5-execute:{N})`
+  line. If the count of `[OUTCOME]` lines with a non-empty diff
+  (`outcome_with_changes`) exceeds the count of `[ARTIFACT]` entries that
+  reference a task number `{N}` matching one of those `[OUTCOME]` lines
+  (`artifacts_after_outcome`), emit an `error`-severity finding. Plans
+  without any `[OUTCOME]` line skip the new branch (the existing branch
+  still applies).
+
+- **DISPATCH_TERMINATION_CAUSE** (category: `DISPATCH_TERMINATION_CAUSE`) —
+  **Precondition**: `work/metrics-dispatch-boundaries-5-execute.toon` exists
+  (i.e. the orchestrator was running a build that includes the
+  `record-dispatch-boundary` subcommand from D3 and the workflow change
+  from D4). When the precondition holds, parse the file and count rows by
+  `termination_cause`. Emit findings:
+
+  - One `info`-severity finding with the per-cause distribution (e.g.
+    `"4 voluntary_checkpoint, 1 task_complete_returned_verbatim,
+    0 harness_cancellation, 0 error, 1 unknown"`).
+  - A `warning`-severity finding when `voluntary_checkpoint`
+    + `task_complete_returned_verbatim` together account for more than
+    50 % of recorded dispatches — agent-initiated re-dispatch is the
+    failure mode lesson `2026-05-08-14-001` is meant to detect.
+
+  Plans without the artifact skip the rule entirely.
+
 ## Finding Shape
 
 ```toon
 aspect: logging_gap_analysis
 severity: info|warning|error
-category: STATUS|DECISION|ARTIFACT|VERIFY|ERROR
+category: STATUS|DECISION|ARTIFACT|VERIFY|ERROR|OUTCOME_COVERAGE|RE_ENTRY_COVERAGE|ARTIFACT_EMISSION|DISPATCH_TERMINATION_CAUSE
 skill_or_phase: "{scope}"
 message: "{one-line}"
 ```

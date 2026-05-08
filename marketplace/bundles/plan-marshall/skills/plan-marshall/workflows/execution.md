@@ -88,6 +88,57 @@ For each task:
 3. Mark task complete
 4. Repeat until all tasks done
 
+### After phase-agent returns
+
+After every `phase-agent` dispatch returns control to the orchestrator —
+whether the agent ran the full execute loop to completion, voluntarily
+emitted a "Returning control" line with pending tasks, was cancelled by the
+host platform, raised a fatal error, or returned for a reason the
+orchestrator cannot classify — the orchestrator MUST record the termination
+boundary by calling `manage-metrics record-dispatch-boundary` with parsed
+`<usage>` totals and a classified termination cause. The accumulating
+artifact at `work/metrics-dispatch-boundaries-5-execute.toon` is the
+audit trail that `plan-retrospective` correlates with `[OUTCOME]`-log
+coverage gaps to detect agent-initiated re-dispatch (lesson
+`2026-05-08-14-001`).
+
+**Termination-cause classification** — the orchestrator MUST classify every
+return into exactly one of the five values below. The detection rules apply
+to the agent's terminal payload (text + structured TOON return):
+
+| Cause | Detection rule |
+|-------|----------------|
+| `task_complete_returned_verbatim` | The agent returned the bare `task_complete` payload from `execute-task` verbatim, without wrapping it in a phase-5-execute terminal payload. (Implies the agent skipped the loop's bookkeeping after a single task.) |
+| `voluntary_checkpoint` | The agent emitted any of "Returning control to orchestrator", "progress checkpoint", "partial-completion handoff", or returned a non-error payload while pending tasks remain in the queue. |
+| `harness_cancellation` | The dispatch ended with a host-platform cancellation marker (timeout, context-window limit, etc.). |
+| `error` | The agent returned a structured error payload via the skill's Error Handling section (including the pending-task-drift fatal error). |
+| `unknown` | Fallback when the orchestrator cannot match any of the above; also the canonical value for clean exits where the loop drove to completion AND the queue is empty. |
+
+**Bash invocation** — issue the call **before** any subsequent dispatch or
+phase-boundary action so the audit trail captures the actual termination
+order:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics record-dispatch-boundary \
+  --plan-id {plan_id} --phase 5-execute --termination-cause {cause} \
+  --total-tokens {n} --tool-uses {n} --duration-ms {n}
+```
+
+Substitute `{cause}` with one of the five values from the table above and
+`{n}` with the integer parsed from the agent's `<usage>...</usage>` block
+(use `0` when the field is absent).
+
+**Boundary-call fence** — the existing `5-execute → 6-finalize` fused
+`phase-boundary` call MUST only fire on a clean exit, defined as
+`termination-cause == unknown` AND `manage-tasks list --status pending`
+returning zero pending tasks. For every other classified cause, the
+orchestrator MUST re-dispatch the phase-agent (recoverable cases) or escalate
+to the user (`error` / repeated `harness_cancellation`) — it MUST NOT
+transition to `6-finalize` while pending work remains. This fence is the
+control-flow analogue of the Step 12a "Pending-tasks transition guard" in
+`phase-5-execute` SKILL.md and is the structural complement to the
+script-level `[OUTCOME]` guard introduced in `manage-tasks finalize-step`.
+
 ### Execute Phase Completion
 
 After all tasks complete, transition and check auto-continue:

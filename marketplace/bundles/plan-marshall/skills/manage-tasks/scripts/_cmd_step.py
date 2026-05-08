@@ -88,6 +88,26 @@ def cmd_finalize_step(args) -> dict:
             'work', args.plan_id, 'INFO', f'[MANAGE-TASKS] TASK-{args.task_number:03d} step {args.step} {args.outcome}'
         )
 
+    # Script-level [OUTCOME] guard: emit a single canonical [OUTCOME] work-log
+    # entry whenever a finalize-step call closes a task as `done` via
+    # `--outcome done`. This guard runs unconditionally inside the script
+    # boundary so the line cannot be lost when an orchestrator skill
+    # re-dispatches a phase-5-execute agent and the original agent's working
+    # context is discarded before its own [OUTCOME] emission would fire.
+    # See lesson 2026-05-08-14-001 for the gap analysis.
+    if args.outcome == 'done' and all_terminal and not has_failed:
+        caller = getattr(args, 'outcome_caller', None) or 'plan-marshall:phase-5-execute'
+        title = getattr(args, 'outcome_task_title', None) or task.get('title', '')
+        step_count = getattr(args, 'outcome_step_count', None)
+        if step_count is None:
+            step_count = len(steps)
+        log_entry(
+            'work',
+            args.plan_id,
+            'INFO',
+            f'[OUTCOME] ({caller}) Completed TASK-{args.task_number:03d}: {title} ({step_count} steps)',
+        )
+
     # Calculate progress
     completed, total = calculate_progress(task)
 
