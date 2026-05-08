@@ -1,0 +1,4 @@
+{
+  "required_fields": ["description"],
+  "optional_fields": ["model", "mode"]
+}

@@ -17,6 +17,7 @@ import argparse
 import os
 import re
 import sys
+from pathlib import Path
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
@@ -334,12 +335,23 @@ def analyze_file(file_path: str, scope: str) -> list[dict]:
     return violations
 
 
+_EXCLUDED_DIR_NAMES = frozenset({'node_modules', 'dist', 'build'})
+
+
 def find_js_files(directory: str) -> list[str]:
-    """Find all JavaScript files in directory."""
-    js_files = []
+    """Find all JavaScript files in directory.
+
+    Skips standard build-output directories (``node_modules``, ``dist``,
+    ``build``) by exact path-component match — substring matching against
+    the full path would falsely exclude unrelated paths such as
+    ``cluster-02-build-system-deploy-target/`` whose ancestor names
+    coincidentally embed one of the excluded tokens.
+    """
+    js_files: list[str] = []
 
     for root, _, files in os.walk(directory):
-        if 'node_modules' in root or 'dist' in root or 'build' in root:
+        parts = set(Path(root).parts)
+        if parts & _EXCLUDED_DIR_NAMES:
             continue
 
         for file in files:

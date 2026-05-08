@@ -387,32 +387,40 @@ def test_list_finalize_steps_without_sync_skill_starts_with_built_ins(tmp_path):
     assert 'project:finalize-step-sync-plugin-cache' not in names
 
 
-def test_list_finalize_steps_with_sync_skill_places_it_first(tmp_path):
-    """When finalize-step-sync-plugin-cache project skill exists, it is placed first."""
-    sync_dir = tmp_path / '.claude' / 'skills' / 'finalize-step-sync-plugin-cache'
-    sync_dir.mkdir(parents=True)
-    (sync_dir / 'SKILL.md').write_text(
-        '---\nname: finalize-step-sync-plugin-cache\ndescription: Sync plugin cache\n---\n\n# Sync\n'
-    )
+def test_list_finalize_steps_special_case_branch_retired(tmp_path):
+    """After cluster 02 the resolver no longer special-cases sync-plugin-cache.
 
+    Pre-cluster-02, ``_discover_all_finalize_steps`` had a hard-coded branch
+    that placed ``project:finalize-step-sync-plugin-cache`` at index 0 of the
+    candidate list whenever ``.claude/skills/finalize-step-sync-plugin-cache/``
+    existed. Cluster 02 retired that branch — sync-plugin-cache is now an
+    ordinary project-local finalize-step skill (Source 2), discovered the same
+    way as ``finalize-step-plugin-doctor`` and ``finalize-step-regenerate-executor``.
+    """
     with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):
         steps = _run_discovery_in_cwd(tmp_path)
 
-    assert len(steps) > 0
-    assert steps[0]['name'] == 'project:finalize-step-sync-plugin-cache'
-    assert steps[0]['source'] == 'project'
+    names = [s['name'] for s in steps]
+
+    # Sync-plugin-cache is NOT a built-in default after relocation.
+    assert 'default:sync-plugin-cache' not in names
+    # Deploy-target is also NOT a built-in default.
+    assert 'default:deploy-target' not in names
+
+    # All entries before the first project: step (if any) must be built-ins —
+    # the special-case "sync skill first" branch is retired, so any project:
+    # skill (sync-plugin-cache included) flows through Source 2 and lands
+    # AFTER all built-ins.
+    project_indices = [i for i, s in enumerate(steps) if s['source'] == 'project']
+    if project_indices:
+        first_project_idx = min(project_indices)
+        for i in range(first_project_idx):
+            assert steps[i]['source'] == 'built-in'
 
 
 def test_list_finalize_steps_other_project_skills_remain_after_built_ins(tmp_path):
-    """sync-plugin-cache is first, then all built-ins, then other project skills."""
-    skills_root = tmp_path / '.claude' / 'skills'
-    sync_dir = skills_root / 'finalize-step-sync-plugin-cache'
-    sync_dir.mkdir(parents=True)
-    (sync_dir / 'SKILL.md').write_text(
-        '---\nname: finalize-step-sync-plugin-cache\ndescription: Sync plugin cache\n---\n\n# Sync\n'
-    )
-
-    other_dir = skills_root / 'finalize-step-zzz-other'
+    """All built-ins precede project skills (Source 2 ordering invariant)."""
+    other_dir = tmp_path / '.claude' / 'skills' / 'finalize-step-zzz-other'
     other_dir.mkdir(parents=True)
     (other_dir / 'SKILL.md').write_text(
         '---\nname: finalize-step-zzz-other\ndescription: Another project finalize step\n---\n\n# Other\n'
@@ -422,19 +430,12 @@ def test_list_finalize_steps_other_project_skills_remain_after_built_ins(tmp_pat
         steps = _run_discovery_in_cwd(tmp_path)
 
     names = [s['name'] for s in steps]
-    # sync must be at index 0
-    assert names[0] == 'project:finalize-step-sync-plugin-cache'
-
-    sync_idx = names.index('project:finalize-step-sync-plugin-cache')
     other_idx = names.index('project:finalize-step-zzz-other')
 
-    # Collect all built-in indices — they must all be after sync and before other
     built_in_indices = [i for i, s in enumerate(steps) if s['source'] == 'built-in']
     assert built_in_indices, 'Expected built-in steps in output'
-    assert min(built_in_indices) > sync_idx, 'Built-ins must come after sync skill'
     assert max(built_in_indices) < other_idx, (
-        'Built-ins must precede other project skills — other project skills must come last '
-        'among project/built-in sources'
+        'Built-ins must precede project skills'
     )
 
 
@@ -450,12 +451,13 @@ def test_list_finalize_steps_extension_steps_come_last(tmp_path):
 
     fake_extensions = [{'bundle': 'fake-bundle', 'module': _FakeExtModule()}]
 
-    # Also drop in sync skill to cover the full ordering contract
+    # Drop in a generic project finalize-step-* skill to cover the full
+    # ordering contract (built-ins → project skills → extension skills).
     skills_root = tmp_path / '.claude' / 'skills'
-    sync_dir = skills_root / 'finalize-step-sync-plugin-cache'
-    sync_dir.mkdir(parents=True)
-    (sync_dir / 'SKILL.md').write_text(
-        '---\nname: finalize-step-sync-plugin-cache\ndescription: Sync plugin cache\n---\n\n# Sync\n'
+    other_dir = skills_root / 'finalize-step-zzz-other'
+    other_dir.mkdir(parents=True)
+    (other_dir / 'SKILL.md').write_text(
+        '---\nname: finalize-step-zzz-other\ndescription: Other project finalize step\n---\n\n# Other\n'
     )
 
     with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=fake_extensions):

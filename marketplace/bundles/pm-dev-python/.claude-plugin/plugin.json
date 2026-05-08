@@ -9,12 +9,18 @@
   "license": "AGPL-3.0-only",
   "homepage": "https://github.com/cuioss/plan-marshall",
   "repository": "https://github.com/cuioss/plan-marshall.git",
-  "keywords": ["python", "pyprojectx", "build", "standards"],
+  "keywords": [
+    "python",
+    "pyprojectx",
+    "build",
+    "standards"
+  ],
   "agents": [],
   "commands": [],
   "skills": [
-    "./skills/python-core",
+    "./skills/ext-triage-python",
+    "./skills/plan-marshall-plugin",
     "./skills/pytest-testing",
-    "./skills/ext-triage-python"
+    "./skills/python-core"
   ]
 }

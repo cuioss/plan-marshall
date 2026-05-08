@@ -2,7 +2,7 @@
 """Tests for the argparse_safety rule in plugin-doctor.
 
 The rule statically scans Python scripts under
-``marketplace/bundles/*/skills/*/scripts/`` and ``marketplace/adapters/``
+``marketplace/bundles/*/skills/*/scripts/`` and ``marketplace/targets/``
 for ``ArgumentParser(...)`` and ``subparsers.add_parser(...)`` calls that
 are missing ``allow_abbrev=False``. Missing the flag silently enables
 argparse's prefix-matching behavior, which lets retired or renamed flags
@@ -151,7 +151,7 @@ def test_unrelated_parser_names_not_flagged(tmp_path):
 
     The rule is a static pattern match and intentionally does not resolve
     identifiers. In practice this is acceptable because the rule scope is
-    ``scripts/`` and ``adapters/``, where the short names are reserved for
+    ``scripts/`` and ``targets/``, where the short names are reserved for
     argparse usage. The test documents the behavior: any ``ArgumentParser``
     call gets flagged, ensuring no false negatives for the target case.
     """
@@ -217,15 +217,19 @@ def test_scan_argparse_safety_on_fixture(tmp_path):
     test_dir.mkdir()
     (test_dir / 'nested.py').write_text('import argparse\nparser = argparse.ArgumentParser()\n')
 
-    # Adapter tree alongside bundles/
-    adapters_dir = tmp_path / 'marketplace' / 'adapters'
-    adapters_dir.mkdir()
-    (adapters_dir / 'adapter_bad.py').write_text('import argparse\nparser = argparse.ArgumentParser()\n')
+    # Targets tree alongside bundles/
+    targets_dir = tmp_path / 'marketplace' / 'targets'
+    targets_dir.mkdir()
+    (targets_dir / 'generate.py').write_text('import argparse\nparser = argparse.ArgumentParser()\n')
+    # Nested module under a per-target package
+    nested = targets_dir / 'opencode'
+    nested.mkdir()
+    (nested / 'emitter.py').write_text('import argparse\nparser = argparse.ArgumentParser()\n')
 
     findings = scan_argparse_safety(marketplace_root)
     flagged_files = {Path(f['file']).name for f in findings}
-    assert flagged_files == {'bad.py', 'adapter_bad.py'}, (
-        f'Expected bad.py and adapter_bad.py to be flagged, got {flagged_files}'
+    assert flagged_files == {'bad.py', 'generate.py', 'emitter.py'}, (
+        f'Expected bad.py, generate.py, and emitter.py to be flagged, got {flagged_files}'
     )
     assert all(f['type'] == 'argparse_safety' for f in findings)
     assert all(f['severity'] == 'error' for f in findings)

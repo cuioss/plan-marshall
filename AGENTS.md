@@ -62,7 +62,7 @@ Examples:
 ```
 marketplace/
 ├── .claude-plugin/marketplace.json    # Master marketplace manifest
-├── adapters/                          # Multi-target export (being retired)
+├── targets/                           # Multi-target generators (claude, opencode)
 └── bundles/                           # 10 production bundles
     └── {bundle}/
         ├── .claude-plugin/plugin.json # Bundle manifest
@@ -104,7 +104,7 @@ See `doc/refactor/` for the 7-cluster plan to distribute to both Claude Code and
 | 05 | `05-distribution/plan.md` | CI/CD, artifact hosting, installation |
 | 06 | `06-developer-workflow/plan.md` | Developer inner loop (both platforms) |
 
-**Current state**: `marketplace/adapters/opencode_adapter.py` generates OpenCode output but is being replaced by `marketplace/targets/` framework per the refactor plan.
+**Current state**: `marketplace/targets/` is the authoritative multi-target generator framework. Run `python3 marketplace/targets/generate.py --target {claude,opencode,all} --output {dir}` to emit per-target output trees.
 
 ## Key Files for Context
 

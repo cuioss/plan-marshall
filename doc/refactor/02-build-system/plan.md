@@ -78,18 +78,20 @@ TARGET_REGISTRY = {
 
 Adding a target: implement `TargetBase`, register in `TARGET_REGISTRY`.
 
-## Claude Target (Drift Detection)
+## Claude Target (Dual-Mode: Verbatim Mirror + Always-Generate plugin.json)
 
-**Behavior:** Validation only. The source of truth is already Claude Code format in `marketplace/bundles/`. This target:
-1. Reads each bundle's `plugin.json` and `.claude-plugin/`
-2. Compares committed manifests to what it would generate from source
-3. Reports drift as TOON and exits with code 2 if any mismatch found
+**Behavior:** Dual-mode generator selected by whether the caller passes `--output`:
 
-**Why drift matters:** If someone edits a skill but forgets to update `plugin.json` (orphan reference), the Claude target catches it.
+1. **Validate mode** (`--output` omitted): regenerate `plugin.json` for every bundle in-memory and diff against the committed `marketplace/bundles/{bundle}/.claude-plugin/plugin.json`. Exit 0 on match, exit 2 with a TOON drift report on mismatch.
+2. **Emit mode** (`--output` provided): walk `marketplace/bundles/{bundle}/**`, copy bundle content byte-for-byte into `{output}/{bundle}/`, AND always (re)generate `{output}/{bundle}/.claude-plugin/plugin.json` from source frontmatter. After emit, run the same equality check against the committed `plugin.json` so drift is surfaced in the same return.
 
-**Output:** Drift report as TOON. Exit 0 if no drift, exit 2 if drift detected.
+**Always-generate semantics:** `plugin_json_gen.py` scans `agents/*.md`, `commands/*.md`, and `skills/*/SKILL.md` to produce a deterministic, sorted-array `plugin.json`. Top-level fields (`name`, `version`, `description`, `author`, `license`, `homepage`, `repository`, `keywords`) are read from the existing committed `plugin.json` and pass through unchanged — only the component arrays come from the frontmatter scan. The output is byte-stable across runs so the equality check produces stable diffs.
 
-**Not a deployment target:** The Claude target does NOT produce deployable artifacts — it only validates that the committed Claude Code format is internally consistent. Claude Code consumes `marketplace/bundles/` directly from the GitHub repo (see [05 — Distribution](05-distribution)).
+**Equality check** (single mechanism — no separate orphan/missing partition logic): regenerate in-memory, compare to the committed file, surface mismatches as TOON. The check drives both the standalone validation mode and the CI/PR equality gate. If someone adds a skill but forgets to update `plugin.json`, or vice-versa, the equality check catches it on the next CI run.
+
+**Output:** TOON return with `status`, `emitted_count`, `plugin_json_diff_count`, `equality_check_result`. Exit 0 on success, exit 2 on equality drift or any other failure.
+
+**Future variant emission.** The door stays open for per-target frontmatter layering (e.g., variant `plugin.json` content for staging vs production). Extending `plugin_json_gen.py` to layer target-specific fields does not change the equality-check contract — the regenerator remains deterministic, and the committed `plugin.json` continues to be the equality-baseline.
 
 ## OpenCode Target (Format Emitter)
 
@@ -323,19 +325,82 @@ target/claude/
 .codex-plugin/
 ```
 
-`.claude-plugin/` inside bundles remains **committed** — it is the current source of truth for Claude Code runtime. The Claude target validates it; it does not regenerate it.
+`.claude-plugin/` inside bundles remains **committed** — it is the current source of truth for Claude Code runtime. The Claude target both regenerates it (under `target/claude/`) and verifies that the committed copy matches that regeneration via the equality check.
 
 ## Verification
 
 This cluster is complete when:
 1. `marketplace/targets/` exists with `TargetBase`, registry, and CLI
-2. Claude target produces zero drift on committed source
+2. Claude target equality check passes on committed source AND `--target claude --output target/claude` produces a verbatim mirror plus a freshly-regenerated `plugin.json` per bundle under `target/claude/{bundle}/.claude-plugin/`
 3. OpenCode target produces valid output under `target/opencode/` with `skill/`, `agent/`, `command/`, and `opencode.json`
 4. Every Claude source skill with `user-invocable: true` produces both a `skill/{bundle}-{skill}/SKILL.md` and a `command/{bundle}-{skill}.md` wrapper
 5. `Skill:` directives in OpenCode-emitted bodies are rewritten to `Call the \`skill\` tool …` form per `transforms.md`
 6. `/skill-name` slash references in OpenCode-emitted bodies are rewritten to `/{bundle}-{skill-name}` for every `user-invocable: true` skill
 7. `./pw generate -- --target {claude,opencode}` works
 8. `marketplace/adapters/` retired
+
+## Deploy + Sync Integration
+
+Cluster 02 wires the new target framework into the standard Phase 6
+finalize manifest so that every plan in **this meta-project** (the
+plan-marshall repo itself) that touches marketplace sources
+automatically refreshes the per-target output trees and the host plugin
+cache. None of the integration ships to consumer projects — they
+install the plan-marshall plugin via Claude Code's standard channel
+and never run a generator or push to a cache.
+
+The integration has four moving parts:
+
+1. **`project:finalize-step-deploy-target`** (order 12, project-local
+   at `.claude/skills/finalize-step-deploy-target/SKILL.md`) — always
+   invokes `python3 marketplace/targets/generate.py --target claude
+   --output target/claude` from the plan's worktree. There is no skip
+   detector — the generator's per-bundle equality engine handles the
+   no-op case (when output equals committed plugin.json, nothing is
+   written).
+
+2. **`project:finalize-step-sync-plugin-cache`** (order 14,
+   project-local at
+   `.claude/skills/finalize-step-sync-plugin-cache/SKILL.md`) —
+   invokes the consolidated `sync.py` engine at
+   `.claude/skills/sync-plugin-cache/scripts/sync.py`, which reads
+   `target/claude/`, runs the staleness guard, fans out parallel rsync
+   calls per bundle, and aggregates the results. Order 14 places it
+   immediately after `project:finalize-step-deploy-target` (12) and
+   before `default:create-pr` (20), so the cache is fresh before any
+   agent-dispatched step runs.
+
+3. **Project-local `sync-plugin-cache` skill** at
+   `.claude/skills/sync-plugin-cache/`. The consolidated `sync.py`
+   engine serves both the user-invocable workflow
+   (`/sync-plugin-cache`) and the project-local finalize step. The
+   `list_bundles_and_versions.py` helper sits alongside it; both
+   default `--source-root` to `target/claude/` so the canonical source
+   is the multi-target generator output rather than the raw bundles
+   tree. Why project-local: the engine only makes sense in repos that
+   own marketplace bundle sources, which is just this one. Consumer
+   projects of plan-marshall do not need (and would be confused by) a
+   `/sync-plugin-cache` slash command.
+
+4. **Always-generate plugin.json with equality gate** — the Claude
+   target's per-bundle `plugin_json_gen.py` always produces the
+   complete, sorted plugin.json from on-disk components, then the
+   `equality_check.py` engine compares it against the committed
+   `marketplace/bundles/{bundle}/.claude-plugin/plugin.json`. When they
+   match, the per-bundle write is short-circuited. The always-generate
+   design supersedes the previous drift-detection narrative; the
+   equality gate is what makes "always run" free.
+
+**`bundle_self_modification` rule removal.** The previous design relied
+on a stacked rule in `manage-execution-manifest` that detected bundle
+source modifications and inserted an early
+`project:finalize-step-sync-plugin-cache` step before the first
+agent-dispatched step. Cluster 02 retires that rule entirely — the
+project-local marshal.json ordering already places
+`project:finalize-step-sync-plugin-cache` unconditionally before agent
+dispatches, so the same outcome is achieved structurally rather than
+by a mutation. See the historical lesson `2026-04-26-23-003` for the
+rule's original motivation.
 
 ## Dependencies
 

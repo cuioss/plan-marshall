@@ -749,7 +749,7 @@ def _iter_argparse_safety_targets(marketplace_root: Path) -> list[Path]:
 
     Scope:
     - ``<marketplace_root>/*/skills/*/scripts/**/*.py`` (marketplace bundle scripts)
-    - ``<marketplace_root>/../adapters/**/*.py`` (adapter tree)
+    - ``<marketplace_root>/../targets/**/*.py`` (multi-target generator tree)
 
     Tests (files under ``test/``/``tests/`` directories, or named
     ``test_*.py`` / ``*_test.py``) are excluded — they may intentionally
@@ -763,10 +763,10 @@ def _iter_argparse_safety_targets(marketplace_root: Path) -> list[Path]:
             if py_file.is_file() and not _is_test_path(py_file):
                 targets.append(py_file)
 
-    # Adapter tree (lives alongside bundles/)
-    adapters_root = marketplace_root.parent / 'adapters'
-    if adapters_root.is_dir():
-        for py_file in adapters_root.rglob('*.py'):
+    # Targets tree (lives alongside bundles/)
+    targets_root = marketplace_root.parent / 'targets'
+    if targets_root.is_dir():
+        for py_file in targets_root.rglob('*.py'):
             if py_file.is_file() and not _is_test_path(py_file):
                 targets.append(py_file)
 

@@ -49,13 +49,20 @@ lint-fix = "ruff check marketplace/bundles/ test/ .claude/ --fix"
 fmt = "ruff format marketplace/bundles/ test/ .claude/"
 format = "ruff format marketplace/bundles/ test/ .claude/"
 
+# Multi-target generator (Claude Code, OpenCode, …) — see marketplace/targets/.
+generate = "uv run python marketplace/targets/generate.py"
+generate-claude = "uv run python marketplace/targets/generate.py --target claude"
+generate-opencode = "uv run python marketplace/targets/generate.py --target opencode"
+
 # =============================================================================
 # Tool Configurations
 # =============================================================================
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
-pythonpath = ["test"]
+# Project root on pythonpath so ``marketplace.targets.*`` (the multi-target
+# generator package) imports cleanly during pytest collection.
+pythonpath = [".", "test"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
@@ -90,6 +97,9 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "test/*" = ["B011"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["marketplace"]
 
 [tool.ruff.format]
 quote-style = "single"

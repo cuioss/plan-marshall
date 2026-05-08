@@ -73,6 +73,7 @@ Output (TOON format):
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -591,6 +592,52 @@ def cmd_seed_blocking_finding_types(args: argparse.Namespace) -> dict:
     return result
 
 
+def detect_missing_default_finalize_steps(plan_dir: Path) -> list[str]:
+    """Compare ``marshal.json::plan["phase-6-finalize"]["steps"]`` against the
+    canonical ``BUILT_IN_FINALIZE_STEPS`` list and return any built-ins missing
+    from the project's array.
+
+    Returns an empty list when:
+
+    - ``marshal.json`` is absent (nothing to compare against)
+    - the project's ``phase-6-finalize.steps`` already includes every built-in
+    - the canonical list cannot be imported (the helper degrades gracefully
+      so the wizard never crashes on an unexpected import topology)
+    """
+    marshal_path = plan_dir / 'marshal.json'
+    if not marshal_path.exists():
+        return []
+    try:
+        data = json.loads(marshal_path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    plan_section = data.get('plan', {}) if isinstance(data, dict) else {}
+    finalize = plan_section.get('phase-6-finalize', {}) if isinstance(plan_section, dict) else {}
+    existing = finalize.get('steps', []) if isinstance(finalize, dict) else []
+    if not isinstance(existing, list):
+        return []
+
+    try:
+        from _config_defaults import BUILT_IN_FINALIZE_STEPS  # type: ignore[import-not-found]
+    except ImportError:
+        return []
+
+    return [step for step in BUILT_IN_FINALIZE_STEPS if step not in existing]
+
+
+def cmd_check_missing_finalize_steps(args: argparse.Namespace) -> dict:
+    """Handle the 'check-missing-finalize-steps' subcommand."""
+    missing = detect_missing_default_finalize_steps(Path(args.plan_dir))
+    if missing:
+        return {
+            'status': 'missing',
+            'missing_count': len(missing),
+            'missing_default_finalize_steps': ','.join(missing),
+        }
+    return {'status': 'ok', 'missing_count': 0}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description='Plan-marshall helper for mode detection and documentation checks',
@@ -635,6 +682,22 @@ def main() -> int:
         help='Directory containing marshal.json (default: .plan)',
     )
 
+    # check-missing-finalize-steps subcommand
+    missing_parser = subparsers.add_parser(
+        'check-missing-finalize-steps',
+        help=(
+            'Detect built-in default finalize steps absent from an existing '
+            'marshal.json — surfaces newly-added defaults so the wizard can prompt for them.'
+        ),
+        allow_abbrev=False,
+    )
+    missing_parser.add_argument(
+        '--plan-dir',
+        type=str,
+        default='.plan',
+        help='Directory containing marshal.json (default: .plan)',
+    )
+
     args = parser.parse_args()
 
     if args.command == 'mode':
@@ -647,6 +710,8 @@ def main() -> int:
         result = cmd_check_structure(args)
     elif args.command == 'seed-blocking-finding-types':
         result = cmd_seed_blocking_finding_types(args)
+    elif args.command == 'check-missing-finalize-steps':
+        result = cmd_check_missing_finalize_steps(args)
     else:
         parser.print_help()
         return 1

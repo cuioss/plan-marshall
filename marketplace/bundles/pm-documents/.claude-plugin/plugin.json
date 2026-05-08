@@ -9,13 +9,23 @@
   "license": "AGPL-3.0-only",
   "homepage": "https://github.com/cuioss/plan-marshall",
   "repository": "https://github.com/cuioss/plan-marshall.git",
-  "keywords": ["documentation", "asciidoc", "standards", "review", "validation", "formatting"],
+  "keywords": [
+    "documentation",
+    "asciidoc",
+    "standards",
+    "review",
+    "validation",
+    "formatting"
+  ],
   "agents": [],
   "commands": [],
   "skills": [
     "./skills/ext-triage-docs",
     "./skills/manage-adr",
     "./skills/manage-interface",
+    "./skills/plan-marshall-plugin",
+    "./skills/recipe-doc-verify",
+    "./skills/recipe-verify-architecture-diagrams",
     "./skills/ref-asciidoc",
     "./skills/ref-documentation"
   ]

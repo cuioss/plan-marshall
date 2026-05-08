@@ -209,6 +209,33 @@ Then execute the workflow described in that file. Each reference file is loaded 
 
 ---
 
+## Phase 6 Finalize Step Seeding
+
+The wizard seeds `phase-6-finalize.steps` in `marshal.json` from the
+authoritative `BUILT_IN_FINALIZE_STEPS` list defined in
+`manage-config/scripts/_config_defaults.py`. The list intentionally
+covers only steps that are sensible defaults for **any** plan-marshall
+consumer (commit-push, create-pr, automated-review, sonar-roundtrip,
+lessons-capture, branch-cleanup, record-metrics, archive-plan, plus the
+opt-in pre-push-quality-gate gate).
+
+Steps that are **meta-project-only** — e.g. running the multi-target
+generator and pushing the host plugin cache — are NOT in
+`BUILT_IN_FINALIZE_STEPS`. They live as project-local skills under
+`.claude/skills/finalize-step-{name}/SKILL.md` in the meta-project that
+needs them, and that meta-project's `marshal.json` registers them
+explicitly with `project:finalize-step-{name}` references. Consumer
+projects don't see them and don't have them seeded.
+
+**Missing-default detection.** When the wizard runs against an existing
+project, `determine_mode.py` compares the existing
+`marshal.json::plan["phase-6-finalize"]["steps"]` array against the
+current `BUILT_IN_FINALIZE_STEPS` list. Any built-in step missing from
+the project's array is surfaced as `missing_default_finalize_steps` so
+the wizard can prompt the user to add it. This protects existing
+projects from quietly missing newly-added consumer-applicable defaults
+when their `marshal.json` predates the additions.
+
 ## Blocking-Finding Partition Seed (Wizard Step)
 
 After `marshal.json` is initialised the wizard seeds a default per-phase **blocking-finding partition** into each phase slot. The partition drives the `pending_findings_blocking_count` invariant in `phase-handshake` (see [`plan-marshall:plan-marshall/references/phase-handshake.md`](../plan-marshall/references/phase-handshake.md)) — it determines which finding types refuse the phase boundary advance when their `pending` count is non-zero.

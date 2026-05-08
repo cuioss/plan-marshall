@@ -9,12 +9,20 @@
   "license": "AGPL-3.0-only",
   "homepage": "https://github.com/cuioss/plan-marshall",
   "repository": "https://github.com/cuioss/plan-marshall.git",
-  "keywords": ["oci", "containers", "docker", "security", "owasp", "standards"],
+  "keywords": [
+    "oci",
+    "containers",
+    "docker",
+    "security",
+    "owasp",
+    "standards"
+  ],
   "agents": [],
   "commands": [],
   "skills": [
-    "./skills/oci-standards",
+    "./skills/ext-triage-oci",
     "./skills/oci-security",
-    "./skills/ext-triage-oci"
+    "./skills/oci-standards",
+    "./skills/plan-marshall-plugin"
   ]
 }

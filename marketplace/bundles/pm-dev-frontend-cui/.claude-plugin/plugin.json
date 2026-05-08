@@ -9,10 +9,17 @@
   "license": "AGPL-3.0-only",
   "homepage": "https://github.com/cuioss/plan-marshall",
   "repository": "https://github.com/cuioss/plan-marshall.git",
-  "keywords": ["javascript", "cui", "maven", "quarkus", "nifi"],
+  "keywords": [
+    "javascript",
+    "cui",
+    "maven",
+    "quarkus",
+    "nifi"
+  ],
   "agents": [],
   "commands": [],
   "skills": [
-    "./skills/cui-javascript-project"
+    "./skills/cui-javascript-project",
+    "./skills/plan-marshall-plugin"
   ]
 }

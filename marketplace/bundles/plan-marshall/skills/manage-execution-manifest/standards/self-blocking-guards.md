@@ -122,14 +122,6 @@ no stable anchor exists for the invariant in question.
 
 ## Cross-References
 
-- `decision-rules.md` — Stacked Rule `bundle_self_modification`. The
-  early-`sync-plugin-cache` insertion is the same meta-pattern applied to a
-  different self-modification surface: the manifest composer detects that the
-  plan's diff touches bundled agents/commands/skills and inserts an early
-  sync to keep the in-flight finalize from dispatching stale cached
-  definitions. Conceptually the same anchor-relative contract — the early
-  sync is positioned relative to the first agent-dispatched step, with the
-  exclusion zone implied by "must run before the first dispatch".
 - Originating lessons:
   - `2026-04-28-09-002` — first-run bootstrap problem when a plan adds a
     finalize step that depends on a new helper script (superseded).

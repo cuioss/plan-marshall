@@ -9,10 +9,18 @@
   "license": "AGPL-3.0-only",
   "homepage": "https://github.com/cuioss/plan-marshall",
   "repository": "https://github.com/cuioss/plan-marshall.git",
-  "keywords": ["requirements", "specifications", "planning", "traceability", "setup"],
+  "keywords": [
+    "requirements",
+    "specifications",
+    "planning",
+    "traceability",
+    "setup"
+  ],
   "agents": [],
+  "commands": [],
   "skills": [
     "./skills/ext-triage-reqs",
+    "./skills/plan-marshall-plugin",
     "./skills/planning",
     "./skills/requirements-authoring",
     "./skills/setup",

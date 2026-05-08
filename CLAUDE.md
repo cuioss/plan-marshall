@@ -201,6 +201,8 @@ When modifying plugin source files (skills, agents, commands), changes won't tak
 
 This synchronizes all bundles from `marketplace/bundles/` to `~/.claude/plugins/cache/plan-marshall/` using rsync with `--delete` to ensure exact mirroring.
 
+Cluster 02 onward, the slash command and its finalize-step counterpart are project-local under `.claude/skills/` (`.claude/skills/sync-plugin-cache/` for the engine + `/sync-plugin-cache` invocable, `.claude/skills/finalize-step-{deploy-target,sync-plugin-cache}/` for the phase-6 bodies). They read from `target/claude/` (populated by `python3 marketplace/targets/generate.py --target claude --output target/claude`, or by the project-local `project:finalize-step-deploy-target` step) and refuse to sync when that directory is missing or stale relative to `marketplace/bundles/`. Consumer projects of plan-marshall do not get any of this surface — it is meta-project-only.
+
 ## Multi-Assistant Support
 
 The marketplace uses an adapter system to export bundles to other AI assistant formats while keeping Claude Code as the primary, native format. **Only Claude Code is tested as a runtime.** The OpenCode adapter generates output conforming to the OpenCode specification but has not been validated in a live OpenCode environment.
@@ -218,10 +220,10 @@ Source of truth:     marketplace/bundles/*  (Claude Code format)
 
 ```bash
 # Export all bundles
-python3 marketplace/adapters/generate.py --target opencode --output .opencode/
+python3 marketplace/targets/generate.py --target opencode --output target/opencode
 
 # Export specific bundles
-python3 marketplace/adapters/generate.py --target opencode --output .opencode/ --bundles pm-dev-java,plan-marshall
+python3 marketplace/targets/generate.py --target opencode --output target/opencode --bundles pm-dev-java,plan-marshall
 ```
 
 The adapter transforms frontmatter, maps tool names, handles `Skill:` directives, and copies standards/scripts verbatim. Agents that rely on Claude-specific tools (`Task`, `Skill`) are excluded from export.
@@ -255,9 +257,9 @@ After running the adapter:
 - The `execute-script.py` executor is Claude Code specific — scripts are copied verbatim but the executor integration does not apply
 - Standards and reference documents are portable (pure markdown) and work as-is
 
-### Adding New Adapters
+### Adding New Targets
 
-Implement `marketplace.adapters.adapter_base.AdapterBase` and register in `marketplace/adapters/generate.py`.
+Implement `marketplace.targets.base.TargetBase` and register the concrete class in `marketplace/targets/generate.py`'s `TARGET_REGISTRY`. Each target owns its frontmatter mapping, body transforms (if any), and per-target output layout under `target/{name}/`.
 
 ## Integration Points
 
