@@ -34,7 +34,7 @@ If you have Settings Sync enabled, the change propagates across all your VS Code
 === Verification
 
 1. Restart VS Code (or reload the window) so the setting takes effect.
-2. Open a fresh terminal tab and `cd` into a plan worktree under `.claude/worktrees/<plan-id>/`, or `export PLAN_ID=<plan-id>` for a non-worktree shell.
+2. Open a fresh terminal tab whose working directory resolves to a plan worktree under `.plan/local/worktrees/<plan-id>/`, or `export PLAN_ID=<plan-id>` for a non-worktree shell.
 3. Run `claude`. The tab should flip through `◯ <plan>:<phase>` → `▶` → `?` → `◯` across a session turn.
 4. Confirm Claude Code's version string (e.g. `2.1.114`) never reappears in the tab — that indicates `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` is in effect.
 

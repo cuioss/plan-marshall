@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Tests for git_workflow.py worktree-* subcommands.
 
-These verbs were ported from ``plan-marshall:manage-worktree`` (PR #345 era)
-into ``git_workflow.py`` with a stricter contract: ``--plan-id`` is mandatory
+These verbs live under ``plan-marshall:workflow-integration-git`` with a
+stricter contract than the historical scattered helpers: ``--plan-id`` is mandatory
 for ``worktree-path``/``worktree-create``/``worktree-remove`` and resolution
 flows through ``manage-status get-worktree-path`` so the persisted
 ``status.metadata.worktree_path`` is the single source of truth.

@@ -37,8 +37,6 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-wo
 
 The script returns the absolute path when `metadata.use_worktree == true` and an empty string when the plan runs against the main checkout.
 
-> **Note**: legacy code paths may still reference `<project_root>/.claude/worktrees/{plan-id}/`. The constant is being migrated; the target convention is `.plan/local/worktrees/`. New code MUST emit the new path; readers MUST treat the new path as authoritative.
-
 ## Dispatch Protocol (Subagent Header Propagation)
 
 When the plan runs in an isolated worktree, every subagent dispatch — `Task:`, `Skill:` invocations that accept free-form prompts, and `phase-agent` delegations — MUST embed the **Worktree Header** as the first lines of the dispatch prompt:
@@ -57,7 +55,7 @@ Two requirements coexist:
 - **Prompt embedding** — the header propagates the constraint through free-form delegation so child agents inherit the worktree binding even when they call further subagents.
 - **Parameter passing** — the structured input contract of the dispatched skill (e.g., `execute-task`, `phase-agent`) takes `plan_id` as an explicit parameter; the embedded header does not replace the parameter, it reinforces it.
 
-The path-free `--plan-id` form is the **target contract**. It replaces earlier path-leaking forms (`--project-dir <abs>`, `--worktree-path <abs>`) so the worktree absolute path no longer leaks into model context. The dispatched script resolves the path internally via `manage-status get-worktree-path`. Until auto-routing has fully landed, callers may still see `--project-dir` references in standards — those references will migrate to `--plan-id` and the header MUST track the canonical form once the migration completes.
+The path-free `--plan-id` form is the **preferred contract** for Bucket B scripts (build wrappers, CI integration, Sonar). It replaces earlier path-leaking forms (`--worktree-path <abs>`) so the worktree absolute path no longer leaks into model context. The dispatched script resolves the path internally via `manage-status get-worktree-path`. The `--project-dir <abs>` flag remains as an **explicit override / escape hatch** for the rare case where a caller already holds an absolute path (e.g., post-worktree-removal cleanup, fixture-driven test invocations). `--plan-id` and `--project-dir` are mutually exclusive at every call site; passing both is a hard error.
 
 Child agents MUST echo the same header verbatim into any further dispatches they issue.
 
@@ -108,16 +106,17 @@ On any plan abort or failure path, do NOT auto-remove the worktree — leave it 
 
 ## The `--plan-id` Two-State Contract
 
-Build wrappers (`build-maven`, `build-python`, `build-npm`, `build-gradle`), CI scripts (`tools-integration-ci`), the Sonar wrapper (`workflow-integration-sonar`), and any other Bucket B script that touches a working tree accept `--plan-id` as their working-tree binding flag.
+Build wrappers (`build-maven`, `build-python`, `build-npm`, `build-gradle`), CI scripts (`tools-integration-ci`), the Sonar wrapper (`workflow-integration-sonar`), and any other Bucket B script that touches a working tree accept `--plan-id` as their working-tree binding flag, with `--project-dir` retained as an explicit override.
 
-The flag has exactly two states with no in-between:
+The contract has three states:
 
-| `--plan-id` | Resolution | Effective working tree |
-|-------------|-----------|------------------------|
-| **Present** (`--plan-id X`) | Script calls `manage-status get-worktree-path --plan-id X` internally, binds subprocesses to the resolved path. | The worktree at `<project_root>/.plan/local/worktrees/X/`. |
-| **Absent** | Script binds subprocesses to the main checkout (the project root resolved via `git rev-parse --show-toplevel`). | The main checkout. |
+| Invocation | Resolution | Effective working tree |
+|------------|-----------|------------------------|
+| `--plan-id X` (preferred) | Script calls `manage-status get-worktree-path --plan-id X` internally, binds subprocesses to the resolved path. | The worktree at `<project_root>/.plan/local/worktrees/X/`. |
+| `--project-dir <abs>` (override) | Script binds subprocesses verbatim to `<abs>`. Used when a caller already holds an absolute path — e.g., post-worktree-removal cleanup, fixture-driven test invocations. | The supplied absolute path. |
+| Neither flag | Script binds subprocesses to the main checkout (the project root resolved via `git rev-parse --show-toplevel`). | The main checkout. |
 
-The contract is **bivalent**: a script either has a `--plan-id` (and binds to the worktree) or it does not (and binds to the main checkout). There is no "no `--plan-id` but still target the worktree" mode and no "explicit path override" — the path-leaking `--project-dir` and `--worktree-path` flags are removed so callers cannot accidentally bind to a stale path.
+`--plan-id` and `--project-dir` are **mutually exclusive at every call site**; passing both is a hard error. The path-leaking `--worktree-path` flag is removed; callers that previously used it MUST migrate to `--plan-id` (or `--project-dir` for the explicit-override case).
 
 When a script invoked with `--plan-id X` resolves an empty path (i.e., the plan exists but `metadata.use_worktree == false`), the script falls back to the main checkout — the plan opted out of worktree mode at init time, and the caller's `--plan-id` becomes a no-op for path resolution.
 
