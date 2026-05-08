@@ -74,7 +74,7 @@ Four detection modes:
 
 ## Script Rules
 
-**argparse_safety** (severity: error): Flags every `argparse.ArgumentParser(...)` constructor call and every `subparsers.add_parser(...)` call in marketplace Python scripts that does not pass `allow_abbrev=False`. Scope: files under `marketplace/bundles/*/skills/*/scripts/` and `marketplace/adapters/`. Tests are exempt (files under `test/`/`tests/` directories or named `test_*.py` / `*_test.py`).
+**argparse_safety** (severity: error): Flags every `argparse.ArgumentParser(...)` constructor call and every `subparsers.add_parser(...)` call in marketplace Python scripts that does not pass `allow_abbrev=False`. Scope: files under `marketplace/bundles/*/skills/*/scripts/` and `marketplace/targets/**/*.py`. Tests are exempt (files under `test/`/`tests/` directories or named `test_*.py` / `*_test.py`).
 
 - **Rationale**: Without `allow_abbrev=False`, argparse matches unknown long options by unique prefix. When a flag is renamed or retired, old callers keep working silently via prefix binding — the contract rot is invisible until something behaves wrong under a rename. See driving lesson 2026-04-17-012 (argparse prefix-matching silently binds retired flags).
 - **Fix**: Add `allow_abbrev=False` to the constructor or `add_parser(...)` call. The rule is a lightweight AST walk (no parser execution); it flags the exact line and call name (`ArgumentParser` or `add_parser`).

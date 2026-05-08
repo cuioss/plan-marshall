@@ -8,8 +8,12 @@
 **/.classpath
 **/.settings/
 
-# Build output
+# Build output (covers per-target generator output: target/claude/, target/opencode/, …)
 target/
+
+# Future per-target output trees alongside target/ (forward-looking)
+.cursor-plugin/
+.codex-plugin/
 
 # Python cache
 **/__pycache__/

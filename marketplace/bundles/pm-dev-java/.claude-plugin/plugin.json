@@ -9,7 +9,15 @@
   "license": "AGPL-3.0-only",
   "homepage": "https://github.com/cuioss/plan-marshall",
   "repository": "https://github.com/cuioss/plan-marshall.git",
-  "keywords": ["java", "cdi", "quarkus", "testing", "standards", "patterns", "agents"],
+  "keywords": [
+    "java",
+    "cdi",
+    "quarkus",
+    "testing",
+    "standards",
+    "patterns",
+    "agents"
+  ],
   "agents": [],
   "commands": [],
   "skills": [
@@ -24,6 +32,7 @@
     "./skills/junit-core",
     "./skills/junit-integration",
     "./skills/junit-weld-testing",
-    "./skills/manage-maven-profiles"
+    "./skills/manage-maven-profiles",
+    "./skills/plan-marshall-plugin"
   ]
 }

@@ -63,3 +63,37 @@ The `script-executor` skill generates `.plan/execute-script.py` with embedded sc
 ### TOON Format
 
 The `toon-usage` skill documents the Tab-separated Object Notation format used for agent communication and persistent storage.
+
+## Plugin cache sync — meta-project tooling (project-local)
+
+In **this meta-project** (the plan-marshall repo itself), the host
+plugin cache is mirrored from the multi-target generator output at
+`target/claude/`. Both the slash command and the finalize-step
+plumbing live as project-local skills under `.claude/skills/`, not in
+this bundle — they only make sense for the repo that owns marketplace
+bundle sources.
+
+| Component | Path |
+|-----------|------|
+| `/sync-plugin-cache` slash command + engine | `.claude/skills/sync-plugin-cache/` |
+| Phase-6 cache-sync finalize body | `.claude/skills/finalize-step-sync-plugin-cache/` |
+| Phase-6 generator finalize body | `.claude/skills/finalize-step-deploy-target/` |
+| Multi-target generator | `marketplace/targets/` (repo root, outside any bundle) |
+
+**First-time bootstrap on a fresh checkout** (one-time, before this
+repo's first finalize):
+
+```bash
+python3 marketplace/targets/generate.py --target claude --output target/claude
+rsync -av --delete target/claude/plan-marshall/ ~/.claude/plugins/cache/plan-marshall/{version}/
+```
+
+`{version}` comes from `.claude-plugin/plugin.json` (this file's
+sibling). After this bootstrap, every subsequent finalize cycle in this
+repo runs `project:finalize-step-deploy-target` → `project:finalize-step-sync-plugin-cache`
+automatically and keeps the cache fresh.
+
+Consumer projects do not need any of this — they install the
+plan-marshall plugin via Claude Code's standard plugin path, which
+populates `~/.claude/plugins/cache/plan-marshall/` directly. They have
+nothing to publish.

@@ -24,7 +24,7 @@ This refactor is organized into 7 clusters plus cross-cutting principles:
 | [Principles](principles.md) | Rules that govern all clusters | Shared contract |
 | [00 — Cleanup / Precondition](00-cleanup-precondition/plan.md) | One-time source-side prose cleanup of skill bodies (Claude-only plumbing prose, tool-name rules) | Cleaned skill bodies + `references/{topic}.md` files; benefits Claude Code today, unblocks OpenCode tomorrow |
 | [01 — Design Platform API](01-design-platform-api/plan.md) | Goal-based platform-runtime abstraction | API contract + router spec |
-| [02 — Build System](02-build-system/plan.md) | Target generator, drift detection, OpenCode emitter | `marketplace/targets/` framework |
+| [02 — Build System](02-build-system/plan.md) ✅ | Target generator, dual-mode Claude target (drift + verbatim emit), OpenCode emitter, deploy/sync finalize integration | `marketplace/targets/` framework |
 | [03 — Refactor for Portability](03-refactor-for-portability/plan.md) | Clean code of platform leakage | Updated skills + marshal.json |
 | [04 — Validate and Document](04-validate-and-document/plan.md) | Know when we're done + document it | Test plan + architecture doc |
 | [05 — Distribution](05-distribution/plan.md) | CI/CD, artifact hosting, end-user installation | Release pipeline + install docs |

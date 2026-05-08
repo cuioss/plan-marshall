@@ -1,5 +1,13 @@
 # 02 — Build System — TODO
 
+> **Status: Complete.** Cluster 02 landed via plan
+> `cluster-02-build-system-deploy-target`. The framework, both targets,
+> the deploy/sync finalize integration, and the `bundle_self_modification`
+> rule removal are merged. Outstanding checkboxes below remain only as a
+> historical record of the work that was performed; treat them as
+> informational. New work on cluster 02 should open a follow-up plan
+> rather than reopening this todo list.
+
 ## Core Rules
 
 - Work **one item at a time**. Do not start the next item until the current one is fully implemented, tested, and documented.

@@ -136,7 +136,7 @@ Each category references a standard from `plugin-script-architecture`. The check
 **Check Criteria**:
 1. Every `ArgumentParser(...)` call includes `allow_abbrev=False` as a keyword argument.
 2. Every `subparsers.add_parser(...)` call includes `allow_abbrev=False`.
-3. Scope: files under `marketplace/bundles/*/skills/*/scripts/` and `marketplace/adapters/`.
+3. Scope: files under `marketplace/bundles/*/skills/*/scripts/` and `marketplace/targets/**/*.py`.
 
 **Exclusions**: Tests (files under `test/`/`tests/` directories, or named `test_*.py` / `*_test.py`) may intentionally exercise default argparse behavior and are skipped.
 

@@ -82,43 +82,9 @@ DEFAULT_PHASE_6_STEPS = (
     'archive-plan',
 )
 
-# Bundle source globs evaluated by `bundle_self_modification`. A modified-file
-# entry matching ANY of these triggers an early `sync-plugin-cache` insertion
-# in `phase_6.steps`. Cached plugin definitions are the runtime source of truth
-# for Task agent dispatch, so when the plan's diff edits these surfaces the
-# in-flight finalize must publish the worktree to the cache before the first
-# agent-dispatched step. See lesson 2026-04-26-23-003.
-_BUNDLE_SOURCE_GLOBS = (
-    'marketplace/bundles/*/agents/*',
-    'marketplace/bundles/*/agents/**',
-    'marketplace/bundles/*/commands/*',
-    'marketplace/bundles/*/commands/**',
-    'marketplace/bundles/*/skills/*',
-    'marketplace/bundles/*/skills/**',
-)
-
-# Phase 6 steps that dispatch Task subagents loaded from the plugin cache. The
-# bundle_self_modification rule inserts `sync-plugin-cache` immediately before
-# the earliest occurrence of ANY entry in this set. Stored as bare names — the
-# candidate list reaching the matcher has been boundary-normalized in
-# ``cmd_compose`` (any leading ``default:`` is stripped once at intake), so the
-# matcher compares plain strings without re-stripping per call site.
-_AGENT_DISPATCHED_STEPS = frozenset(
-    {
-        'create-pr',
-        'automated-review',
-        'sonar-roundtrip',
-        'lessons-capture',
-    }
-)
-
-
 def _strip_default_prefix(step: str) -> str:
     """Return the bare step name regardless of the optional ``default:`` prefix."""
     return step[len('default:') :] if step.startswith('default:') else step
-
-
-_EARLY_SYNC_STEP = 'project:finalize-step-sync-plugin-cache'
 
 
 # =============================================================================
@@ -277,16 +243,6 @@ def _decide(
     return body, 'default'
 
 
-def _bundle_self_modification(modified_files: list[str]) -> bool:
-    """Return True when any modified file matches a bundle source glob.
-
-    Globs are evaluated with ``fnmatch.fnmatchcase`` (POSIX semantics, no regex).
-    The triggering surfaces are bundled agents, commands, and skills — the
-    runtime source of truth for Task dispatch. See lesson 2026-04-26-23-003.
-    """
-    return any(fnmatch.fnmatchcase(path, glob) for path in modified_files for glob in _BUNDLE_SOURCE_GLOBS)
-
-
 def _read_bundle_change_paths(plan_id: str) -> list[str]:
     """Read the union of bundle change paths from references.json + solution outline.
 
@@ -391,64 +347,6 @@ def _read_solution_outline_affected_files(plan_id: str) -> list[str]:
                 seen.add(f)
                 flat.append(f)
     return flat
-
-
-def _apply_bundle_self_modification(plan_id: str, body: dict[str, Any], modified_files: list[str]) -> str | None:
-    """Insert an early ``sync-plugin-cache`` step when the rule fires.
-
-    Mutates ``body['phase_6']['steps']`` in place and returns the inserting
-    step name (the agent-dispatched step that the new entry was placed before)
-    when the rule fires. Returns ``None`` when the rule does not fire — either
-    because no bundle source matched or no agent-dispatched step is present in
-    the resolved phase_6 list.
-
-    Idempotent: if ``project:finalize-step-sync-plugin-cache`` already sits
-    immediately before the first agent-dispatched step, no insertion occurs.
-    The existing late-stage occurrence (if any) is preserved verbatim — the
-    rule stacks an additional early occurrence rather than relocating.
-    """
-    if not _bundle_self_modification(modified_files):
-        return None
-
-    phase_6 = body.get('phase_6')
-    if not isinstance(phase_6, dict):
-        return None
-    steps = phase_6.get('steps')
-    if not isinstance(steps, list) or not steps:
-        return None
-
-    early_index: int | None = None
-    for i, step in enumerate(steps):
-        if not isinstance(step, str):
-            continue
-        # ``steps`` was boundary-normalized in ``cmd_compose`` before reaching
-        # ``_decide``, so entries are bare and match ``_AGENT_DISPATCHED_STEPS``
-        # directly without per-site stripping.
-        if step in _AGENT_DISPATCHED_STEPS:
-            early_index = i
-            break
-    if early_index is None:
-        return None
-
-    # Idempotency guard: already inserted immediately before the first agent step.
-    if early_index > 0 and steps[early_index - 1] == _EARLY_SYNC_STEP:
-        return None
-
-    inserting_before = steps[early_index]
-    if not isinstance(inserting_before, str):
-        return None
-    steps.insert(early_index, _EARLY_SYNC_STEP)
-    phase_6['steps'] = steps
-    return inserting_before
-
-
-def _log_bundle_self_modification(plan_id: str, inserting_before: str) -> None:
-    """Emit the decision-log entry for the ``bundle_self_modification`` rule."""
-    message = (
-        '(plan-marshall:manage-execution-manifest:compose) Rule bundle_self_modification fired — '
-        f'inserted {_EARLY_SYNC_STEP} before {inserting_before}'
-    )
-    _emit_decision_log(plan_id, message)
 
 
 def _looks_docs_only(phase_5_candidates: list[str]) -> bool:
@@ -811,11 +709,9 @@ def _apply_bot_enforcement_guard(phase_6_steps: list[str], plan_id: str) -> str 
     provider = _read_ci_provider()
     if provider not in {'github', 'gitlab'}:
         return None
-    # ``phase_6_steps`` is the matrix output. Its bare-name entries flow from
-    # the boundary-normalized candidate list in ``cmd_compose``; the only
-    # non-bare entry that may have been inserted upstream is the project-
-    # prefixed ``project:finalize-step-sync-plugin-cache``, which never matches
-    # ``automated-review``. Compare bare strings without per-site stripping.
+    # ``phase_6_steps`` is the matrix output. Its entries are bare names —
+    # ``cmd_compose`` boundary-normalized the candidate list before the matrix
+    # ran. Compare bare strings without per-site stripping.
     if 'automated-review' in phase_6_steps:
         return None
     insert_index = _bot_enforcement_insert_index(phase_6_steps)
@@ -871,12 +767,10 @@ def _validate_automated_review_placement(phase_6_steps: list[str]) -> str | None
 
     Comparison runs against bare names: by the time this validator is
     invoked, ``cmd_compose`` has already boundary-normalized
-    ``phase_6_candidates`` and the matrix output preserves the same shape,
-    so the only non-bare entry that may appear is the project-prefixed
-    early ``project:finalize-step-sync-plugin-cache`` step (which never
-    matches any of the anchors here). Both the bare ``automated-review``
-    name and its ``default:automated-review`` form are detected so future
-    callers cannot silently slip past the check by re-prefixing.
+    ``phase_6_candidates`` and the matrix output preserves the same shape.
+    Both the bare ``automated-review`` name and its
+    ``default:automated-review`` form are detected so future callers cannot
+    silently slip past the check by re-prefixing.
 
     Returns a diagnostic string naming both the offending
     ``automated-review`` index and the first plan-mutating anchor that
@@ -1000,14 +894,6 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         phase_6_candidates=phase_6_candidates,
     )
 
-    # Bundle self-modification rule (stacks on top of the seven-row matrix):
-    # when the plan's diff edits cached agent/command/skill sources, prepend
-    # an early `sync-plugin-cache` step before the first agent-dispatched
-    # finalize step so Phase 6 agent dispatches see the worktree's definition,
-    # not the stale cache. See lesson 2026-04-26-23-003.
-    bundle_change_paths = _read_bundle_change_paths(plan_id)
-    bundle_rule_inserted_before = _apply_bundle_self_modification(plan_id, body, bundle_change_paths)
-
     # Bot-enforcement guard runs AFTER the seven-row matrix and BEFORE manifest
     # persistence. On GitHub/GitLab plans where `automated-review` is missing
     # from `phase_6.steps`, the guard remediates in-place (appends the step and
@@ -1061,8 +947,6 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     if pre_submission_self_review_omitted:
         _log_pre_submission_self_review_omitted(plan_id)
     _log_decision(plan_id, rule, body)
-    if bundle_rule_inserted_before is not None:
-        _log_bundle_self_modification(plan_id, bundle_rule_inserted_before)
 
     return {
         'status': 'success',
@@ -1082,7 +966,6 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'commit_push_omitted': commit_push_omitted,
         'pre_push_quality_gate_omitted': pre_push_quality_gate_omitted,
         'pre_submission_self_review_omitted': pre_submission_self_review_omitted,
-        'bundle_self_modification_inserted_before': bundle_rule_inserted_before or '',
     }
 
 

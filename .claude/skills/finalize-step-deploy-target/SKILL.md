@@ -1,0 +1,97 @@
+---
+name: finalize-step-deploy-target
+description: Generate Claude Code target output via the multi-target generator
+order: 12
+---
+
+# Finalize Step — Deploy Target (project-local)
+
+Project-local executor for `project:finalize-step-deploy-target`.
+Always invokes the multi-target generator to emit the Claude Code
+output tree at `target/claude/`. The generator itself handles the
+no-op case (when output already matches sources, the equality engine
+inside the `claude` target short-circuits the per-bundle write), so
+this step has **no skip detector**: it always runs, the generator
+always returns a status, and this executor records the outcome from
+that status.
+
+This step is **project-local** (under `.claude/skills/`) rather than a
+`default:` built-in because the generator pipeline only makes sense for
+this repo (the plan-marshall meta-project): consumer projects that
+install plan-marshall as a plugin do not have a `marketplace/bundles/`
+tree to generate from. The generator entry point
+(`marketplace/targets/generate.py`) is also meta-project-only — it sits
+at the repo root, outside `marketplace/bundles/`, so it never ships to
+consumers via plugin install.
+
+## Ordering
+
+The canonical Phase 6 ordering surrounding this step is:
+
+```
+default:commit-push (10) →
+project:finalize-step-deploy-target (12) →
+project:finalize-step-sync-plugin-cache (14) →
+default:create-pr (20)
+```
+
+`order: 12` places this step immediately before
+`project:finalize-step-sync-plugin-cache` and before
+`default:create-pr`. The generator must run before the cache sync (so
+the cache has fresh `target/claude/` content) and before the PR is
+created (so the diff visible to reviewers includes the target output
+that downstream steps pick up).
+
+## Inputs
+
+- `{worktree_path}` — resolved at finalize entry. The generator MUST
+  be invoked from `{worktree_path}` so output lands under
+  `{worktree_path}/target/claude/`.
+- `{plan_id}` — for logging.
+
+## Execution
+
+Inline-only — this step does NOT delegate to a Task agent. The
+generator is a fast, deterministic Python script.
+
+### 1. Invoke the generator
+
+```bash
+python3 marketplace/targets/generate.py --target claude --output target/claude
+```
+
+The script returns a TOON document on stdout describing the run.
+Capture exit code and stdout.
+
+### 2. Parse the result
+
+| Field | Meaning |
+|-------|---------|
+| `status: success` | Generation completed; record `outcome=done` and use `emitted_count` for the display detail |
+| `status: error` | Generation failed; record `outcome=failed` and surface the `error` field in `display_detail` |
+
+### 3. Mark step complete
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+  finalize-step --plan-id {plan_id} --step project:finalize-step-deploy-target \
+  --outcome {done|failed} --display-detail "{N} files emitted to target/claude/"
+```
+
+On `status: success`, `{N}` is the integer from `emitted_count` and the
+`display_detail` reads `"{N} files emitted to target/claude/"`. On
+`status: error`, set `--outcome failed` and surface the generator's
+`error` field verbatim in `--display-detail` so the renderer shows the
+underlying failure.
+
+## Why "always run" instead of a skip detector
+
+The equality-check engine inside the Claude target already
+short-circuits per-bundle when the generated output equals the
+committed plugin.json (no write, no diff). Asking the dispatcher to
+second-guess this is duplicate logic that drifts. Even when the diff
+is empty for marketplace sources, the generator's output may be stale
+on disk (e.g. user ran `target/` cleanup manually). Always running
+guarantees the on-disk `target/claude/` state matches sources before
+the cache sync and PR steps consume it. The generator's idempotence is
+the contract that makes "always run" free.

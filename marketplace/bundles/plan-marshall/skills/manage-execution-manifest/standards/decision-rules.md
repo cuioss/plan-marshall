@@ -201,49 +201,6 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 
 **Why**: This is the safe baseline for code-shaped features and broader changes. The full canonical Phase 5 verification fires; Phase 6 dispatches every step `marshal.json` lists.
 
-## Stacked Rule — `bundle_self_modification`
-
-After the seven-row matrix has selected a base manifest, the composer applies one stacked rule that mutates `phase_6.steps` independently of the row that fired. This rule does NOT replace any row — it stacks an extra step on top of whatever the matrix produced.
-
-**Condition**: any entry in the **union** of three sources (see "Bundle source detection" below) matches one of the bundle source globs:
-
-- `marketplace/bundles/*/agents/*` (or `**`)
-- `marketplace/bundles/*/commands/*` (or `**`)
-- `marketplace/bundles/*/skills/*` (or `**`)
-
-Globs are matched with `fnmatch.fnmatchcase` (POSIX semantics, no regex).
-
-**Effect**: `project:finalize-step-sync-plugin-cache` is inserted into `phase_6.steps` immediately before the **earliest** entry in the resolved list whose **bare name** belongs to the agent-dispatched set:
-
-- `create-pr`
-- `automated-review`
-- `sonar-roundtrip`
-- `lessons-capture`
-
-The matcher strips an optional `default:` prefix before checking membership, so the rule fires regardless of whether the resolved candidate list arrived prefixed (production marshal.json passes `default:create-pr`, etc.) or bare (the script's `DEFAULT_PHASE_6_STEPS` fallback emits `create-pr`, etc.).
-
-If the resolved `phase_6.steps` contains no agent-dispatched step, the rule does not fire (no insertion, no log line). If `project:finalize-step-sync-plugin-cache` already sits immediately before the first agent-dispatched step, the rule is idempotent and skips reinsertion. The existing late-stage occurrence (when present in `phase_6_candidates`) is preserved verbatim — the rule stacks an additional early occurrence rather than relocating the late one.
-
-**Why this stacks instead of replacing a row**: cached plugin definitions under `~/.claude/plugins/cache/` are the runtime source of truth for Task agent dispatch. When the plan's diff edits bundled agents, commands, or skills, the worktree-side fix never reaches the cache until `project:finalize-step-sync-plugin-cache` runs — which by default sits late in the manifest (post `branch-cleanup`). That ordering is correct in the steady state ("publish after commit"), but when the in-flight finalize itself dispatches agents loaded from that cache (`create-pr`, `automated-review`, `lessons-capture`), it sees the *pre-fix* definitions for the duration of the run. The stacked rule closes the staleness window by inserting an early sync immediately before the first agent dispatch. The existing late-stage occurrence is preserved verbatim — duplicate occurrences are intentional (early sync feeds the in-flight run; late sync publishes the post-commit state).
-
-**Why a stacked rule, not an eighth row**: the seven-row matrix is keyed off change-type / scope / recipe semantics — orthogonal to which bundle surfaces the diff touches. Adding a `bundle_self_modification` row would force every other row to negotiate with it; modeling it as a post-matrix mutation keeps the matrix focused and lets multiple base rows benefit from the early-sync insertion.
-
-**Decision log line** (in addition to the row's own log line):
-
-```
-(plan-marshall:manage-execution-manifest:compose) Rule bundle_self_modification fired — inserted project:finalize-step-sync-plugin-cache before {first_agent_step}
-```
-
-**Bundle source detection**: the composer reads from three sources, unions their entries (de-duplicated, order-preserving), and matches the union against the bundle source globs:
-
-1. `references.json::affected_files` — populated by upstream phases when they explicitly persist the outline-derived list to references. Empty by default in the current pipeline (no phase writes it today).
-2. `references.json::modified_files` — populated by `manage-status transition` on Phase 5 completion. Empty at the first `compose` invocation but becomes non-empty for any later re-compose (e.g., a finalize-loop fix task that re-enters Phase 4).
-3. **Solution-outline fallback** — when neither references field surfaces bundle paths, the composer parses `solution_outline.md`, walks every deliverable's `**Affected files:**` block, and flattens those lists into the union. This source is the canonical pre-execute view of the diff at `phase-4-plan` Step 8b time and is the only source guaranteed to be populated for normal plans on the first compose.
-
-Reading all three sources and unioning their entries closes the timing gap so the rule fires on the first compose (via the solution-outline fallback) AND on any later re-compose (via `modified_files`). Relying on `references.json::affected_files` alone would silently no-op for normal plans because nothing in the current pipeline persists outline-derived `Affected files:` bullets to that field. The fallback degrades gracefully: when `solution_outline.md` is missing, malformed, or `_plan_parsing` is unavailable on `sys.path`, the helper returns an empty list and the rule simply does not fire.
-
-**Cross-references**: lesson `2026-04-26-23-003` (the recurrence that drove this rule), lesson `2026-04-27-21-001` (the empirical reproducer where `references.json::affected_files` was unset and the rule no-opped), lesson `2026-04-24-17-002` (parent — agents falling back to `python -c open(...)` due to missing tools, which this rule prevents from re-occurring under stale-cache dispatch).
-
 ## Decision Log Format
 
 For each rule fired, the composer emits one line via `manage-logging decision`:

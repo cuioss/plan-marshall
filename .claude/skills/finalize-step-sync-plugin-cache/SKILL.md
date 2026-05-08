@@ -1,45 +1,79 @@
 ---
 name: finalize-step-sync-plugin-cache
-description: Finalize-phase wrapper that syncs marketplace bundles to the Claude plugin cache by delegating to the sync-plugin-cache skill
-user-invocable: false
-allowed-tools: Skill
-order: 5
+description: Synchronize the Claude plugin cache from target/claude/ via the consolidated sync engine
+order: 14
 ---
 
-# Finalize Step: sync-plugin-cache
+# Finalize Step — Sync Plugin Cache (project-local)
 
-## Purpose
+Project-local executor for `project:finalize-step-sync-plugin-cache`.
+Invokes the consolidated `sync.py` engine in the project-local
+`.claude/skills/sync-plugin-cache/` skill to mirror `target/claude/`
+into the host plugin cache.
 
-Keep `~/.claude/plugins/cache/plan-marshall/` in sync with the merged state of `marketplace/bundles/` after a plan finalizes. Without this step, Claude Code plugins silently load stale bundle code after a finalize completes, producing behavior that diverges from the freshly merged source tree until the cache is manually re-synced.
+This step is **project-local** rather than a `default:` built-in for
+the same reason as `project:finalize-step-deploy-target`: the cache-
+sync only makes sense for this repo (the plan-marshall meta-project).
+Consumer projects have nothing to publish, so they don't get this step
+seeded into their `marshal.json` defaults.
 
-## Interface Contract
+## Ordering
 
-Invoked by `plan-marshall:phase-6-finalize` for projects that include `project:finalize-step-sync-plugin-cache` in their `phase-6-finalize.steps` list.
-
-Accepts the standard finalize-step arguments:
-
-- `--plan-id` — plan identifier (ignored; rsync is stateless)
-- `--iteration` — finalize iteration counter (ignored; rsync is idempotent)
-
-Both arguments are accepted for discovery-contract compliance but have no effect on execution. The underlying rsync operation is fully idempotent and can be re-run safely.
-
-## Workflow
-
-Load and run the underlying sync skill:
+The canonical Phase 6 ordering surrounding this step is:
 
 ```
-Skill: project:sync-plugin-cache
+default:commit-push (10) →
+project:finalize-step-deploy-target (12) →
+project:finalize-step-sync-plugin-cache (14) →
+default:create-pr (20)
 ```
 
-The `project:` prefix matches the notation used by phase-6-finalize when dispatching project-local skills (see `marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md` line 88), and is consistent with how this wrapper itself is referenced as `project:finalize-step-sync-plugin-cache` in `phase-6-finalize.steps`.
+`order: 14` places this step immediately after
+`project:finalize-step-deploy-target` (so the cache mirrors the
+just-generated `target/claude/` content) and before
+`default:create-pr` (so the fresh cache is in place when downstream
+agent-dispatched steps run).
 
-That skill performs parallel rsync of every bundle under `marketplace/bundles/` into `~/.claude/plugins/cache/plan-marshall/` with `--delete` semantics.
+## Inputs
 
-## Error Handling
+- `{plan_id}` — for logging.
+- `{worktree_path}` — resolved at finalize entry. The sync engine
+  resolves the source root from cwd by default; the executor invokes
+  it from `{worktree_path}` so it reads the worktree's
+  `target/claude/`.
 
-rsync failures are **non-fatal**. Log the failure and continue — finalize must not block on a cache mismatch, because the cache can always be re-synced manually via the `/sync-plugin-cache` command after the plan is merged.
+## Execution
 
-## Related
+Inline-only — this step does NOT delegate to a Task agent. The sync
+engine is a fast Python script with deterministic output.
 
-- [.claude/skills/sync-plugin-cache/SKILL.md](../sync-plugin-cache/SKILL.md) — underlying rsync implementation
-- [marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md) — finalize phase that invokes this wrapper
+### 1. Invoke the consolidated sync engine
+
+```bash
+python3 .claude/skills/sync-plugin-cache/scripts/sync.py
+```
+
+The script returns a TOON document with `status` (`success` |
+`partial` | `error`), `synced_count`, `failed_count`,
+`summary_message`, and a `synced[N]{bundle,version,status}` table.
+
+### 2. Parse the result
+
+| Field | Meaning |
+|-------|---------|
+| `status: success` | All bundles synced; record `outcome=done` and use `synced_count` for the display detail |
+| `status: partial` | Some bundles failed; record `outcome=failed` and surface `summary_message` in `display_detail` |
+| `status: error` | Hard failure (no bundles synced); record `outcome=failed` and surface `summary_message` |
+
+### 3. Mark step complete
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+  finalize-step --plan-id {plan_id} --step project:finalize-step-sync-plugin-cache \
+  --outcome {done|failed} --display-detail "{display_detail}"
+```
+
+On `status: success`, `{display_detail}` is `"{synced_count} bundles synced"`.
+On `status: partial` or `status: error`, surface the engine's
+`summary_message` field verbatim in `--display-detail` so the renderer
+shows the underlying failure for triage.

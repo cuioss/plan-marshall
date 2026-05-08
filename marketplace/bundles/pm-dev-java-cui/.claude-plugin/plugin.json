@@ -9,14 +9,22 @@
   "license": "AGPL-3.0-only",
   "homepage": "https://github.com/cuioss/plan-marshall",
   "repository": "https://github.com/cuioss/plan-marshall.git",
-  "keywords": ["java", "cui", "logging", "testing", "generators", "http-client"],
+  "keywords": [
+    "java",
+    "cui",
+    "logging",
+    "testing",
+    "generators",
+    "http-client"
+  ],
   "agents": [],
   "commands": [],
   "skills": [
     "./skills/cui-http",
+    "./skills/cui-http-testing",
     "./skills/cui-logging",
     "./skills/cui-testing",
-    "./skills/cui-http-testing",
+    "./skills/plan-marshall-plugin",
     "./skills/recipe-cui-logging-enforce"
   ]
 }

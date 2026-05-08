@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
-"""Enumerate marketplace bundles and emit TOON bundle:version pairs.
+"""Enumerate bundles + versions from ``target/claude/`` and emit a TOON table.
 
-Reads `marketplace/bundles/*/.claude-plugin/plugin.json` from the configured
-source root (defaulting to the current working directory) and prints a TOON
-table consumable by Step 3 of `.claude/skills/sync-plugin-cache/SKILL.md`
-(parallel rsync calls).
+Reads ``{source_root}/<bundle>/.claude-plugin/plugin.json`` from the
+configured source root (defaulting to ``{cwd}/target/claude``) and
+prints a TOON table consumable by ``sync.py``.
 
-A missing or malformed manifest yields `version: unknown`, matching the
-fallback semantics of the original shell snippet this script replaces.
+A missing or malformed manifest yields ``version: unknown``.
 
-The `--source-root PATH` flag points at an alternate marketplace tree (e.g.
-a worktree's `marketplace/bundles/` parent), used by the
-`--from-worktree` flow documented in the SKILL. When the flag is omitted,
-behaviour is identical to the prior cwd-relative scan.
+The ``--source-root PATH`` flag overrides the default. The default
+points at the multi-target generator output (``target/claude/``); pass
+``--source-root <worktree>/target/claude`` to read from a worktree-local
+generator output.
 """
 
 from __future__ import annotations
@@ -21,6 +19,8 @@ import argparse
 import json
 import sys
 from pathlib import Path
+
+DEFAULT_SOURCE_SUBDIR = Path('target') / 'claude'
 
 
 def _read_version(manifest: Path) -> str:
@@ -33,15 +33,19 @@ def _read_version(manifest: Path) -> str:
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description='List marketplace bundles and their versions in TOON format.')
+    parser = argparse.ArgumentParser(
+        description='List bundles and their versions in TOON format.',
+        allow_abbrev=False,
+    )
     parser.add_argument(
         '--source-root',
         type=Path,
         default=None,
         metavar='PATH',
         help=(
-            'Directory whose `marketplace/bundles/` subtree should be scanned. '
-            'When omitted, scan is rooted at cwd (legacy behaviour).'
+            'Directory whose immediate subdirectories are bundles. When '
+            'omitted, defaults to {cwd}/target/claude/. Pass --source-root '
+            '<worktree>/target/claude to read from a worktree-local generator output.'
         ),
     )
     return parser.parse_args(argv)
@@ -49,11 +53,11 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv if argv is not None else sys.argv[1:])
-    base = args.source_root if args.source_root is not None else Path.cwd()
-    bundles_root = base / 'marketplace' / 'bundles'
+    base = args.source_root if args.source_root is not None else Path.cwd() / DEFAULT_SOURCE_SUBDIR
+
     pairs: list[tuple[str, str]] = []
-    if bundles_root.is_dir():
-        for bundle_dir in sorted(p for p in bundles_root.iterdir() if p.is_dir()):
+    if base.is_dir():
+        for bundle_dir in sorted(p for p in base.iterdir() if p.is_dir()):
             manifest = bundle_dir / '.claude-plugin' / 'plugin.json'
             pairs.append((bundle_dir.name, _read_version(manifest)))
 

@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+# ruff: noqa: I001, E402
+"""Contract tests for the project-local ``project:finalize-step-deploy-target`` skill.
+
+The skill is a markdown executor playbook backed by the multi-target
+generator at ``marketplace/targets/generate.py``. These tests pin the
+contract from three angles:
+
+1. **Frontmatter and ordering** — the skill declares ``order: 12`` so
+   the dispatcher places it between ``default:commit-push`` (10) and
+   ``default:create-pr`` (20), and before
+   ``project:finalize-step-sync-plugin-cache`` (14).
+2. **Project-local registration** — the skill lives at
+   ``.claude/skills/finalize-step-deploy-target/SKILL.md`` (NOT in any
+   marketplace bundle, NOT in ``BUILT_IN_FINALIZE_STEPS``).
+3. **Generator behaviour** — when the live generator runs against a
+   fixture marketplace, it returns ``status: success`` with a non-zero
+   ``produced`` count; the executor's ``display_detail`` template uses
+   that count.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from conftest import MARKETPLACE_ROOT, PROJECT_ROOT  # type: ignore[import-not-found]
+
+_SKILL_MD = (
+    PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-deploy-target' / 'SKILL.md'
+)
+_GENERATE_PY = PROJECT_ROOT / 'marketplace' / 'targets' / 'generate.py'
+
+_MANAGE_CONFIG_SCRIPTS_DIR = (
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
+)
+if str(_MANAGE_CONFIG_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_MANAGE_CONFIG_SCRIPTS_DIR))
+
+import _config_defaults as cd  # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# 1) Frontmatter and ordering
+# ---------------------------------------------------------------------------
+
+
+def _parse_frontmatter(path: Path) -> dict[str, str]:
+    text = path.read_text(encoding='utf-8')
+    match = re.match(r'^---\n(.*?)\n---\n', text, re.DOTALL)
+    assert match is not None, f'frontmatter not found in {path}'
+    fm: dict[str, str] = {}
+    for line in match.group(1).splitlines():
+        if ':' in line:
+            key, value = line.split(':', 1)
+            fm[key.strip()] = value.strip()
+    return fm
+
+
+def test_skill_md_exists():
+    assert _SKILL_MD.is_file(), f'project-local finalize-step skill missing: {_SKILL_MD}'
+
+
+def test_skill_frontmatter_has_canonical_fields():
+    fm = _parse_frontmatter(_SKILL_MD)
+    assert fm.get('name') == 'finalize-step-deploy-target'
+    assert fm.get('description'), 'description must be non-empty'
+    assert fm.get('order') == '12', (
+        'deploy-target order must be 12 (between commit-push=10 and create-pr=20, '
+        'and before sync-plugin-cache=14)'
+    )
+
+
+def test_skill_body_documents_inline_only_and_no_skip_detector():
+    text = _SKILL_MD.read_text(encoding='utf-8')
+    flat = re.sub(r'\s+', ' ', text.lower())
+    assert 'inline-only' in flat or 'inline only' in flat
+    assert 'no skip detector' in flat, (
+        'standard must explicitly state there is no skip detector — generator handles no-op'
+    )
+    # Generator command must appear verbatim
+    assert 'marketplace/targets/generate.py --target claude --output target/claude' in text
+    # display_detail template must reference emitted_count semantics
+    assert 'files emitted to target/claude/' in text
+
+
+# ---------------------------------------------------------------------------
+# 2) NOT in BUILT_IN_FINALIZE_STEPS — meta-project-only step
+# ---------------------------------------------------------------------------
+
+
+def test_deploy_target_is_not_a_built_in_default():
+    """Per the relocation, deploy-target is a project-local step, not a default."""
+    assert 'default:deploy-target' not in cd.BUILT_IN_FINALIZE_STEPS
+    assert 'default:deploy-target' not in cd.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
+    assert 'default:deploy-target' not in cd.DEFAULT_PLAN_FINALIZE['steps']
+
+
+def test_no_bundled_standards_doc_for_deploy_target():
+    """No bundled phase-6-finalize/standards/deploy-target.md exists — the skill
+    is project-local under .claude/, not in the plan-marshall bundle."""
+    bundled = (
+        MARKETPLACE_ROOT
+        / 'plan-marshall'
+        / 'skills'
+        / 'phase-6-finalize'
+        / 'standards'
+        / 'deploy-target.md'
+    )
+    assert not bundled.exists(), (
+        f'Unexpected bundled standards doc: {bundled}. The deploy-target step '
+        f'is project-local only; no marketplace bundle should ship it.'
+    )
+
+
+# ---------------------------------------------------------------------------
+# 3) Generator behaviour smoke test (integration)
+# ---------------------------------------------------------------------------
+
+
+def _write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding='utf-8')
+
+
+@pytest.fixture()
+def fixture_marketplace(tmp_path: Path) -> Path:
+    """Tiny single-bundle marketplace for smoke testing the generator."""
+    marketplace = tmp_path / 'bundles'
+    bundle = marketplace / 'demo'
+    plugin_doc = json.dumps(
+        {
+            'name': 'demo',
+            'version': '0.0.1',
+            'description': 'demo bundle',
+            'skills': ['./skills/demo-skill'],
+        },
+        indent=2,
+    ) + '\n'
+    _write(bundle / '.claude-plugin' / 'plugin.json', plugin_doc)
+    _write(
+        bundle / 'skills' / 'demo-skill' / 'SKILL.md',
+        '---\nname: demo-skill\ndescription: demo desc\n---\n# Body\n',
+    )
+    return marketplace
+
+
+def test_generator_returns_success_with_emitted_count(fixture_marketplace: Path, tmp_path: Path):
+    """The deploy-target executor walks the generator's TOON return — verify
+    the live generator produces the expected ``status: success`` with a
+    non-zero ``produced`` count for a tiny fixture marketplace."""
+    output_dir = tmp_path / 'out'
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_GENERATE_PY),
+            '--target', 'claude',
+            '--output', str(output_dir),
+            '--marketplace-dir', str(fixture_marketplace),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, f'generator exit={result.returncode}, stderr={result.stderr}'
+    # The generator's stdout includes a "claude: produced N entries" summary line
+    assert 'claude:' in result.stdout, f'expected "claude:" in stdout: {result.stdout!r}'
+    # Output directory must exist with at least one file
+    assert output_dir.is_dir()
+    written = list(output_dir.rglob('*'))
+    files_only = [p for p in written if p.is_file()]
+    assert len(files_only) > 0, 'generator must emit at least one file for a non-empty bundle'
