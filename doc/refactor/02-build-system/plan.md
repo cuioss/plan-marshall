@@ -402,6 +402,80 @@ dispatches, so the same outcome is achieved structurally rather than
 by a mutation. See the historical lesson `2026-04-26-23-003` for the
 rule's original motivation.
 
+## Variant Emission
+
+The Claude target's emitter performs more than a verbatim copy: agents that opt into the variant-emission system have one canonical no-suffix file plus per-level variant files emitted under `target/claude/{bundle}/agents/`. This section is the contributor reference for the build-target side of the contract. The user-facing guide lives at [`marketplace/bundles/plan-marshall/skills/plan-marshall/standards/role-variants.md`](../../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/role-variants.md); the canonical extension-point definition lives at [`marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-dynamic-level-executor.md`](../../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-dynamic-level-executor.md).
+
+### Opt-In Declaration
+
+A canonical agent opts into variant emission by declaring in its YAML frontmatter:
+
+```yaml
+implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor
+```
+
+This is the single switch. The plugin-doctor `hardcoded-model-on-canonical` rule (see [`marketplace/bundles/pm-plugin-development/skills/plugin-doctor/standards/doctor-agents.md`](../../../marketplace/bundles/pm-plugin-development/skills/plugin-doctor/standards/doctor-agents.md)) refuses the canonical when `implements:` AND `model:`/`effort:` are both present — the build target sets those on emitted variants and silent shadowing is prohibited.
+
+An optional `levels:` whitelist restricts which variants are emitted:
+
+```yaml
+levels: [high, xxhigh]
+```
+
+When `levels:` is omitted, all five ordinal levels (`low`, `medium`, `high`, `xhigh`, `xxhigh`) are emitted. The canonical no-suffix file is always emitted, regardless of `levels:`.
+
+### Variant Generation Algorithm
+
+For each canonical agent at `marketplace/bundles/{bundle}/agents/{name}.md` declaring the extension point, the build target writes:
+
+| Output File | Frontmatter Modification |
+|-------------|--------------------------|
+| `target/claude/{bundle}/agents/{name}.md` | Canonical: `implements:` and `levels:` stripped. Serves the `inherit` resolution case. |
+| `target/claude/{bundle}/agents/{name}-low.md` | `name: {name}-low`, `model: haiku`, no `effort:` (haiku does not accept effort). |
+| `target/claude/{bundle}/agents/{name}-medium.md` | `name: {name}-medium`, `model: sonnet`, `effort: medium`. |
+| `target/claude/{bundle}/agents/{name}-high.md` | `name: {name}-high`, `model: sonnet`, `effort: high`. |
+| `target/claude/{bundle}/agents/{name}-xhigh.md` | `name: {name}-xhigh`, `model: opus`, `effort: high`. |
+| `target/claude/{bundle}/agents/{name}-xxhigh.md` | `name: {name}-xxhigh`, `model: opus`, `effort: xhigh`. |
+
+The level → primitive table is the single source of truth in [`marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-levels.md`](../../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-levels.md). The build target reads it via the alias mapping in `marketplace/targets/opencode/mapping.json::model_map`.
+
+### `xxhigh` Model-Support Guard
+
+`xxhigh` resolves to `(opus, xhigh)`. Currently only the `opus` alias resolves to a model that accepts `effort: xhigh` (Opus 4.7). The build target enforces this at emission time:
+
+1. When the canonical has `levels: [..., xxhigh, ...]` (or no whitelist) AND the target alias does not accept `xhigh`, the `xxhigh` variant file is skipped.
+2. A build warning names the canonical and the missing capability.
+3. Other variants (and the canonical) continue to emit normally.
+
+At dispatch time, sites resolving to a missing variant fall back to the canonical (`inherit`) at runtime — degraded but functional, never a runtime crash. The fallback is observable in the `manage-config models read --role` decision log line.
+
+### Drift-Check Semantics
+
+`equality_check.py` regenerates `plugin.json` for every bundle in-memory and diffs the result against the committed `marketplace/bundles/{bundle}/.claude-plugin/plugin.json`. Because role-eligible agents expand into multiple `agents` array entries (canonical + per-level), the diff is variant-aware:
+
+- Adding `implements:` to a canonical without regenerating `plugin.json` → drift in `agents` array.
+- Changing the `levels:` whitelist → drift.
+- A model release that flips the `xxhigh` capability flag in `mapping.json` → drift (the regenerated array no longer lists the suppressed `xxhigh` variant).
+
+The fix in every case is the documented one: regenerate via the Claude target and copy the updated `plugin.json` over the committed file. The CI/PR equality gate fails fast when contributors add `implements:` to a canonical without running the build target afterwards.
+
+### Deploy-Step Integration
+
+The `default:deploy-target` finalize step (cluster-02 step body in `.claude/skills/finalize-step-deploy-target/`) invokes the Claude target via `python3 marketplace/targets/generate.py --target claude --output target/claude`. Variant emission is a transparent extension of the verbatim mirror: contributors who add `implements:` to a canonical or change a `levels:` whitelist see the new variant files in `target/claude/{bundle}/agents/` after the next deploy-step run, with no additional configuration required.
+
+### Sync-Skill Integration
+
+The `default:sync-plugin-cache` finalize step (cluster-02 step body in `.claude/skills/finalize-step-sync-plugin-cache/`) syncs `target/claude/` into `~/.claude/plugins/cache/plan-marshall/` via rsync with `--delete`. The deploy step runs unconditionally before sync — `target/claude/` is regenerated with the new variants and the canonical no-suffix file BEFORE sync rebuilds the plugin cache. Live Claude Code sessions need a restart to pick up the new agent files (per code.claude.com — agents loaded at session start); the wizard prints this hint after every Models-block save and `role-variants.md` documents it.
+
+### Authoring a New Role-Eligible Agent
+
+1. Add `implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor` to the canonical's frontmatter. Optionally add `levels: [...]` to constrain emission.
+2. Remove any existing `model:` or `effort:` lines from the canonical (the plugin-doctor rule will refuse the file otherwise).
+3. Add a row to [`marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-roles.md`](../../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-roles.md) linking a role key to the new agent.
+4. Patch dispatch sites to resolve via `manage-config models read --role <role>` and dispatch the canonical (`inherit`) or `<base>-<level>` variant.
+5. Run `python3 marketplace/targets/generate.py --target claude --output target/claude` and copy the regenerated `target/claude/{bundle}/.claude-plugin/plugin.json` over the committed file.
+6. Restart Claude Code so the new agent files load.
+
 ## Dependencies
 
 - `01-design-platform-api` — target engine needs to know the API surface to generate valid platform instructions

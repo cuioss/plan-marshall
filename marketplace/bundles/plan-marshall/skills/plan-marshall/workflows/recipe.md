@@ -107,10 +107,10 @@ AskUserQuestion:
 
 ### Step 2: Create Plan via Init Agent
 
-Use the selected recipe to create a plan:
+Use the selected recipe to create a plan. Resolve the level for role `phase_init` (`manage-config models read --role phase_init`); compute `target = phase-agent` when level is `inherit`/empty, else `target = phase-agent-{level}`. Dispatch:
 
 ```
-Task: plan-marshall:phase-agent
+Task: plan-marshall:{target}
   Input: skill=plan-marshall:phase-1-init, source=recipe, content={recipe_key}
   Output: plan_id, domains array
 ```

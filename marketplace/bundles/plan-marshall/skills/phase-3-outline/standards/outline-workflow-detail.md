@@ -158,8 +158,21 @@ The recipe skill handles: discovery, deliverable creation, and solution outline 
 
 ### Spawn Detection Agent
 
+(1) Resolve the level for role `change_type_detection`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models read --role change_type_detection
 ```
-Task: plan-marshall:detect-change-type-agent
+
+(2) Compute the target:
+- `level == "inherit"` or empty → `target = detect-change-type-agent`
+- otherwise → `target = detect-change-type-agent-<level>`
+
+(3) Dispatch:
+
+```
+Task: plan-marshall:{target}
   Input:
     plan_id: {plan_id}
 ```
@@ -636,10 +649,23 @@ The worked-examples table in Step 8 (above) applies verbatim to Step 11 — the 
 
 #### Spawn Q-Gate Agent
 
-If the bypass rule above did NOT fire, spawn the Q-Gate validation agent:
+If the bypass rule above did NOT fire, spawn the Q-Gate validation agent.
+
+(1) Resolve the level for role `q_gate_validation`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models read --role q_gate_validation
+```
+
+(2) Compute the target:
+- `level == "inherit"` or empty → `target = q-gate-validation-agent`
+- otherwise → `target = q-gate-validation-agent-<level>`
+
+(3) Dispatch:
 
 ```
-Task: plan-marshall:q-gate-validation-agent
+Task: plan-marshall:{target}
   Input:
     plan_id: {plan_id}
 ```

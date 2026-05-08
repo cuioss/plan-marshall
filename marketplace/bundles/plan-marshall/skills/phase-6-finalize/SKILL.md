@@ -362,12 +362,25 @@ For each step reference:
 
 **Agent-suitable built-in steps** (self-contained, no user interaction) — each dispatches to a named, enforcement-bearing agent (NOT a generic Task agent):
 
-| Step reference | Dispatch target (agent) |
-|----------------|-------------------------|
-| `default:create-pr` | `plan-marshall:create-pr-agent` |
-| `default:automated-review` | `plan-marshall:automated-review-agent` |
-| `default:sonar-roundtrip` | `plan-marshall:sonar-roundtrip-agent` |
-| `default:lessons-capture` | `plan-marshall:lessons-capture-agent` |
+| Step reference | Canonical agent (role) | Variant suffix resolution |
+|----------------|------------------------|---------------------------|
+| `default:create-pr` | `plan-marshall:create-pr-agent` (role: `pr_creation`) | resolved via `manage-config models read --role pr_creation` |
+| `default:automated-review` | `plan-marshall:automated-review-agent` (role: `automated_review`) | resolved via `manage-config models read --role automated_review` |
+| `default:sonar-roundtrip` | `plan-marshall:sonar-roundtrip-agent` (role: `sonar_roundtrip`) | resolved via `manage-config models read --role sonar_roundtrip` |
+| `default:lessons-capture` | `plan-marshall:lessons-capture-agent` (role: `lessons_capture`) | resolved via `manage-config models read --role lessons_capture` |
+
+**Variant resolution pattern** (applies to every row above): before dispatching, resolve the role's level and compute the target agent name:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models read --role <role>
+```
+
+Read the `level` field from the TOON output. Compute the target agent:
+- `level == "inherit"` or empty → `target = <canonical>` (no suffix)
+- otherwise → `target = <canonical>-<level>` (variant)
+
+Dispatch via `Task: plan-marshall:<target>` with the existing prompt and timeout unchanged. See [`plan-marshall:plan-marshall/standards/role-variants.md`](../plan-marshall/standards/role-variants.md) for the full variant-routing contract.
 
 **Inline-only built-in steps** (require user interaction or sequential dependency):
 - `commit-push` (git working directory state), `architecture-refresh` (AskUserQuestion for Tier-1 prompt mode; consumes `architecture-pre/` snapshot from phase-1-init Step 5d), `branch-cleanup` (AskUserQuestion), `record-metrics` (must run immediately before `archive-plan` on the still-live plan directory), `archive-plan` (must be last, moves plan files)
@@ -410,11 +423,26 @@ FOR each step_id in manifest.phase_6.steps:
   5. Dispatch with timeout wrapper:
      Resolve the per-agent timeout budget from the table above (15 min for sonar/automated-review, 5 min for knowledge/lessons; no explicit budget for other steps).
 
-     - BUILT-IN (agent-suitable) — route each step_ref to its named agent via the Task tool, wrapped with the resolved timeout. Dispatch MUST name the specific agent below so the step's enforcement envelope (input contract, required skill loads, prohibited actions) is carried into the subagent context; a generic unscoped agent selection is NOT valid:
-         * default:create-pr        -> Task(subagent_type: plan-marshall:create-pr-agent)
-         * default:automated-review -> Task(subagent_type: plan-marshall:automated-review-agent, timeout: 900s)
-         * default:sonar-roundtrip  -> Task(subagent_type: plan-marshall:sonar-roundtrip-agent, timeout: 900s)
-         * default:lessons-capture  -> Task(subagent_type: plan-marshall:lessons-capture-agent, timeout: 300s)
+     - BUILT-IN (agent-suitable) — route each step_ref to its named agent via the Task tool, wrapped with the resolved timeout. Dispatch MUST name the specific agent below so the step's enforcement envelope (input contract, required skill loads, prohibited actions) is carried into the subagent context; a generic unscoped agent selection is NOT valid.
+
+       **Three-step role-aware dispatch** (applies to all four built-in agent-suitable steps):
+
+       (1) Resolve the role's level via the resolver:
+           ```
+           level = python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+             models read --role <role>
+           ```
+       (2) Compute the target agent name:
+           - `level == "inherit"` or empty → `target = <canonical>`
+           - otherwise → `target = <canonical>-<level>`
+       (3) Dispatch via `Task(subagent_type: plan-marshall:<target>, …)`.
+
+       Per-step canonical agents and roles:
+         * default:create-pr        -> canonical: create-pr-agent          | role: pr_creation
+         * default:automated-review -> canonical: automated-review-agent   | role: automated_review   | timeout: 900s
+         * default:sonar-roundtrip  -> canonical: sonar-roundtrip-agent    | role: sonar_roundtrip    | timeout: 900s
+         * default:lessons-capture  -> canonical: lessons-capture-agent    | role: lessons_capture    | timeout: 300s
+
        Each agent reads its corresponding standards document (standards/{name}.md) and executes all steps within the agent context. Pass `--plan-id {plan_id}` and, when an `{iteration}` counter applies, `--iteration {iteration}`. Embed the Worktree Header from `plan-marshall:phase-5-execute` Dispatch Protocol in every agent prompt so the worktree constraint propagates.
 
        **On timeout** (the dispatch does not return within the budget):

@@ -276,6 +276,83 @@ def check_command_self_containment(content: str) -> dict:
     }
 
 
+DYNAMIC_LEVEL_EXECUTOR_REF = (
+    'plan-marshall:extension-api/standards/ext-point-dynamic-level-executor'
+)
+
+
+def check_hardcoded_model_on_canonical(frontmatter: str, file_path: str) -> list:
+    """Check the ``hardcoded-model-on-canonical`` rule on canonical agent files.
+
+    Two error branches:
+
+    1. The agent declares ``model:`` or ``effort:`` AND lacks
+       ``implements: <ext-point>``. Either remove the model pin (so the
+       agent inherits the parent session's model) or opt into the variant
+       system by adding the ``implements:`` declaration; pinning a model
+       on a non-eligible canonical defeats the role-variants system.
+    2. The agent declares ``implements: <ext-point>`` AND has ``model:``
+       or ``effort:``. The build target sets these on emitted variants;
+       silent shadowing on the canonical is prohibited.
+
+    Variants emitted by the build target live under ``target/claude/``,
+    outside the doctor's source-of-truth scan path
+    (``marketplace/bundles/``), so they are exempt.
+
+    Returns a list of finding dicts: ``{branch, code, message}`` — empty
+    when neither branch fires.
+    """
+    findings: list = []
+
+    # Build target output is exempt — the rule only fires on source-of-truth files.
+    if 'target/claude/' in file_path:
+        return findings
+
+    has_model = bool(re.search(r'^model:', frontmatter, re.MULTILINE))
+    has_effort = bool(re.search(r'^effort:', frontmatter, re.MULTILINE))
+    has_implements = bool(re.search(r'^implements:', frontmatter, re.MULTILINE))
+    implements_value = ''
+    if has_implements:
+        match = re.search(r'^implements:\s*(\S+)', frontmatter, re.MULTILINE)
+        if match:
+            implements_value = match.group(1).strip()
+
+    declares_role = implements_value == DYNAMIC_LEVEL_EXECUTOR_REF
+
+    # Branch 1: model/effort without implements: ext-point.
+    if (has_model or has_effort) and not declares_role:
+        offenders = ', '.join(filter(None, ['model:' if has_model else '', 'effort:' if has_effort else '']))
+        findings.append(
+            {
+                'branch': 'missing_implements',
+                'code': 'HARDCODED_MODEL_ON_CANONICAL',
+                'message': (
+                    f"Canonical agent declares {offenders} without "
+                    f"'implements: {DYNAMIC_LEVEL_EXECUTOR_REF}'. "
+                    'Either remove the hardcoded pin or add the implements declaration '
+                    'to opt into role-based variant emission.'
+                ),
+            }
+        )
+
+    # Branch 2: implements: <ext-point> AND model/effort present.
+    if declares_role and (has_model or has_effort):
+        offenders = ', '.join(filter(None, ['model:' if has_model else '', 'effort:' if has_effort else '']))
+        findings.append(
+            {
+                'branch': 'shadowing_with_implements',
+                'code': 'HARDCODED_MODEL_ON_CANONICAL',
+                'message': (
+                    f"Canonical agent declares 'implements: {DYNAMIC_LEVEL_EXECUTOR_REF}' "
+                    f'AND {offenders}. The build target sets these on emitted variants; '
+                    'silent shadowing on the canonical is prohibited.'
+                ),
+            }
+        )
+
+    return findings
+
+
 def check_skill_tool_visibility(frontmatter: str, has_tools: bool) -> bool:
     """Check agent-skill-tool-visibility: Agent tools missing Skill — invisible to Task dispatcher.
 
@@ -691,6 +768,11 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
     # --display-detail ASCII contract validation (phase-6 finalize renderer)
     display_detail_violations = check_display_detail_violations(content)
 
+    # hardcoded-model-on-canonical rule (agents only)
+    hardcoded_model_on_canonical_violations: list = []
+    if component_type == 'agent':
+        hardcoded_model_on_canonical_violations = check_hardcoded_model_on_canonical(frontmatter, file_path)
+
     return {
         'agent_task_tool_prohibited': agent_task_tool_prohibited,
         'agent_maven_restricted': agent_maven_restricted,
@@ -702,6 +784,7 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
         'mark_step_done_violations': mark_step_done_violations,
         'resolver_gap_violations': resolver_gap_violations,
         'display_detail_violations': display_detail_violations,
+        'hardcoded_model_on_canonical_violations': hardcoded_model_on_canonical_violations,
     }
 
 

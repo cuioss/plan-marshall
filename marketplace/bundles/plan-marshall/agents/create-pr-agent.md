@@ -7,6 +7,7 @@ description: |
   - Input: plan_id=my-plan
   - Output: TOON with status, pr_url, pr_number, commit_sha
 tools: Read, Write, Bash, Skill
+implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor
 ---
 
 # Create PR Agent

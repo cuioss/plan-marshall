@@ -7,6 +7,7 @@ description: |
   - Input: plan_id=my-plan
   - Output: TOON with validation results per deliverable (passed/failed, findings)
 tools: Read, Bash, Skill
+implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor
 ---
 
 # Q-Gate Validation Agent

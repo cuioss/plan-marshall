@@ -75,10 +75,23 @@ AskUserQuestion:
 
 Create a new plan and automatically continue to 2-refine/3-outline/4-plan phases.
 
-**1-Init Phase** uses a single agent:
+**1-Init Phase** uses a single agent.
+
+(1) Resolve the level for role `phase_init`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models read --role phase_init
+```
+
+(2) Compute the target:
+- `level == "inherit"` or empty → `target = phase-agent`
+- otherwise → `target = phase-agent-<level>`
+
+(3) Dispatch:
 
 ```
-Task: plan-marshall:phase-agent
+Task: plan-marshall:{target}
   Input: skill=plan-marshall:phase-1-init, source={source}, content={content}
   Output: plan_id, domains array
 ```
@@ -372,8 +385,10 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake veri
   --plan-id {plan_id} --phase 3-outline --strict
 ```
 
+Resolve the level for role `phase_plan` (`manage-config models read --role phase_plan`); compute `target = phase-agent` when level is `inherit`/empty, else `target = phase-agent-{level}`. Dispatch:
+
 ```
-Task: plan-marshall:phase-agent
+Task: plan-marshall:{target}
   Input: skill=plan-marshall:phase-4-plan, plan_id={plan_id}
   Output: tasks created with domain, profile, skills
 ```
@@ -556,10 +571,10 @@ AskUserQuestion:
 
 ### Convert lesson to plan
 
-When a specific lesson is selected, convert it to a plan using the canonical `phase-agent` invocation with a `lesson_id` reference:
+When a specific lesson is selected, convert it to a plan using the canonical `phase-agent` invocation with a `lesson_id` reference. Resolve the level for role `phase_init` (`manage-config models read --role phase_init`); compute `target = phase-agent` when level is `inherit`/empty, else `target = phase-agent-{level}`. Dispatch:
 
 ```
-Task: plan-marshall:phase-agent
+Task: plan-marshall:{target}
   Input: skill=plan-marshall:phase-1-init, lesson_id={lesson_id}
   Output: plan_id, domain
 ```

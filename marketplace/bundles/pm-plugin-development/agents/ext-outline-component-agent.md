@@ -5,6 +5,7 @@ description: |
   Input: plan_id, component_type, request_text, files list.
   Output: TOON summary with status, counts of certain_include/certain_exclude/uncertain, assessments_logged.
 tools: Read, Bash, Skill
+implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor
 ---
 
 # Ext-Outline Component Agent

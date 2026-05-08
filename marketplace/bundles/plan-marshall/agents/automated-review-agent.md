@@ -7,6 +7,7 @@ description: |
   - Input: plan_id=my-plan
   - Output: TOON with status, comments_processed, comments_resolved, fix_tasks_created
 tools: Read, Write, Bash, Skill
+implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor
 ---
 
 # Automated Review Agent

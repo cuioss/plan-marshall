@@ -7,6 +7,7 @@ description: |
   - Input: plan_id=my-plan
   - Output: TOON with status, issues_fetched, issues_fixed, issues_suppressed, issues_accepted
 tools: Read, Write, Bash, Skill
+implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor
 ---
 
 # Sonar Roundtrip Agent

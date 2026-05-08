@@ -367,6 +367,20 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
             }
         )
 
+    # hardcoded-model-on-canonical (agent-only rule introduced by role-variants plan)
+    for violation in rules.get('hardcoded_model_on_canonical_violations', []):
+        issues.append(
+            {
+                'type': 'HARDCODED_MODEL_ON_CANONICAL',
+                'file': file_path,
+                'severity': 'error',
+                'fixable': False,
+                'branch': violation.get('branch'),
+                'description': violation.get('message', 'hardcoded-model-on-canonical violation'),
+                'details': violation,
+            }
+        )
+
     # Check CI rule
     ci = analysis.get('continuous_improvement_rule', {})
     if ci.get('format', {}).get('agent_lessons_via_skill'):

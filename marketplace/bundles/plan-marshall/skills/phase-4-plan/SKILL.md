@@ -609,10 +609,23 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Cross-reference (lesson-ID validation)**: The lesson-id-validator that was originally part of the umbrella lesson `2026-05-03-21-002` is intentionally NOT spawned here. PR #323 ships lesson-ID validation at **write time** in `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_tasks_crud.py` (via `tools-input-validation/scripts/input_validation.py`). Every `TASK-*.json` write hits the validator before disk and **hard-fails** with `validation_error: lesson_id_not_found` when a phantom ID is cited — distinct from this Step 9b's q-gate auto-loop placement. Future maintainers extending phase-4-plan validation should preserve the placement split: write-time hard-fail for lesson-ID lookup against `manage-lessons list`; q-gate auto-loop for structural cross-checks (module mapping, scope criterion).
 
-**Dispatch the validator agent**:
+**Dispatch the validator agent**.
+
+(1) Resolve the level for role `q_gate_validation`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models read --role q_gate_validation
+```
+
+(2) Compute the target:
+- `level == "inherit"` or empty → `target = q-gate-validation-agent`
+- otherwise → `target = q-gate-validation-agent-<level>`
+
+(3) Dispatch:
 
 ```
-Task: plan-marshall:q-gate-validation-agent
+Task: plan-marshall:{target}
   Input:
     plan_id: {plan_id}
     activation_context: 4-plan

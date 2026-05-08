@@ -159,7 +159,9 @@ AskUserQuestion:
       description: "Verify setup, diagnose issues"
     - label: "3. Configuration"
       description: "Build systems, skill domains"
-    - label: "4. Quit"
+    - label: "4. Models"
+      description: "Configure per-role model levels (variant routing)"
+    - label: "5. Quit"
       description: "Exit plan-marshall"
   multiSelect: false
 ```
@@ -171,7 +173,8 @@ AskUserQuestion:
 | "1. Maintenance" | Load: `Read references/menu-maintenance.md` → Execute |
 | "2. Health Check" | Load: `Read references/menu-healthcheck.md` → Execute |
 | "3. Configuration" | Load: `Read references/menu-configuration.md` → Execute |
-| "4. Quit" | Output "Good bye!" → STOP |
+| "4. Models" | Load: `Read standards/models-menu.md` → Execute |
+| "5. Quit" | Output "Good bye!" → STOP |
 
 After any menu option completes, return to Main Menu (except Quit).
 
@@ -203,6 +206,7 @@ Then execute the workflow described in that file. Each reference file is loaded 
 | `menu-maintenance.md` | Regenerate executor, cleanup | Menu option 1 |
 | `menu-healthcheck.md` | Verify setup, diagnose issues | Menu option 2 |
 | `menu-configuration.md` | Build systems, skill domains, architecture refresh tier knobs | Menu option 3 |
+| `standards/models-menu.md` | Per-role model variant configuration (Models submenu) | Menu option 4 |
 | `menu-recipes.md` | Built-in recipes available in the wizard | Linked from `menu-configuration.md` |
 | `shared-settings.md` | **DEPRECATED** — Plan phases, review gates, quality pipelines now delegate to `manage-config` | Retained for transition reference only |
 | `error-handling.md` | Error types and recovery | On error conditions |
