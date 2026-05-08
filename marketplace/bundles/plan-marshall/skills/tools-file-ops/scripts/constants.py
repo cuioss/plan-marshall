@@ -162,6 +162,9 @@ VALID_PROFILES = (
 # ---------------------------------------------------------------------------
 # Plan directory structure
 # ---------------------------------------------------------------------------
+# Note: the worktree root is intentionally NOT a constant here. It is computed
+# in file_ops.get_worktree_root() as `<git_main_checkout_root>/.plan/local/worktrees`
+# so it stays anchored to the resolved git root rather than a hard-coded literal.
 DIR_PLANS = 'plans'
 DIR_ARTIFACTS = 'artifacts'
 DIR_ARCHIVED = 'archived-plans'

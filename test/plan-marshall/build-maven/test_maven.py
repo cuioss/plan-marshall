@@ -159,5 +159,59 @@ def test_help_main():
 
 
 # =============================================================================
+# Two-state ``--plan-id`` / ``--project-dir`` routing contract
+# =============================================================================
+#
+# maven.py uses the shared ``build_main()`` from ``_build_cli.py``,
+# which delegates to ``resolve_project_dir`` for the four-state contract.
+# The resolver semantics are pinned in
+# ``test/plan-marshall/script-shared/test_build_cli.py``; here we only
+# verify the parser surface so a future regression that drops one of the
+# routing flags from maven's argv still fails loudly.
+
+
+def test_run_subcommand_accepts_plan_id_flag():
+    """maven.py's `run` subcommand MUST accept --plan-id (auto-routing flag).
+
+    Help text is checked rather than running the full pipeline so the
+    test stays hermetic — pinning the surface is enough; the resolver's
+    behaviour is exercised at the unit level in test_build_cli.py.
+    """
+    result = run_script(SCRIPT_PATH, 'run', '--help')
+    assert result.success, f'Script failed: {result.stderr}'
+    assert '--plan-id' in result.stdout, 'maven run must declare --plan-id'
+    assert '--project-dir' in result.stdout, 'maven run must keep --project-dir as escape hatch'
+
+
+def test_run_rejects_both_plan_id_and_project_dir():
+    """Both --plan-id and --project-dir together MUST yield mutually_exclusive_args."""
+    result = run_script(
+        SCRIPT_PATH,
+        'run',
+        '--command-args',
+        'verify',
+        '--plan-id',
+        'task-routing-canonical',
+        '--project-dir',
+        '/tmp/explicit',
+    )
+    # The resolver branch prints a TOON error payload and returns exit 2.
+    assert result.returncode == 2, f'Expected exit 2 (mutually_exclusive_args), got {result.returncode}'
+    data = result.toon_or_error()
+    assert data.get('status') == 'error'
+    assert data.get('error') == 'mutually_exclusive_args'
+
+
+def test_parse_subcommand_independent_of_routing_flags():
+    """parse must keep working without either routing flag (no project_dir)."""
+    # Pre-existing behaviour: ``parse --log <missing>`` returns a
+    # structured error. The resolver is a no-op here because the parse
+    # subparser does not declare project_dir/plan_id at all.
+    result = run_script(SCRIPT_PATH, 'parse', '--log', 'nonexistent.log', '--mode', 'structured')
+    data = result.toon()
+    assert data['status'] == 'error', 'parse without routing flags must still produce a structured error'
+
+
+# =============================================================================
 # Main
 # =============================================================================

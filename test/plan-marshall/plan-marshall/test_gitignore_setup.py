@@ -18,10 +18,22 @@ from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts' / 'gitignore_setup.py'
 
 # Tier 2 direct imports — conftest sets up PYTHONPATH for cross-skill imports
-from gitignore_setup import (  # type: ignore[import-not-found]  # noqa: E402
+from gitignore_setup import (  # type: ignore[import-not-found]  # noqa: E402, I001
+    GITIGNORE_PLAN_LOCAL_WORKTREES,
     check_gitignore_status,
     setup_gitignore,
 )
+
+
+# =============================================================================
+# Constant pin: worktree path migrated from .claude/worktrees/ to
+# .plan/local/worktrees/ (compatibility: breaking — no fallback retained)
+# =============================================================================
+
+
+def test_gitignore_plan_local_worktrees_constant_value():
+    """The exported constant pins to the new .plan/local/worktrees/ path."""
+    assert GITIGNORE_PLAN_LOCAL_WORKTREES == '.plan/local/worktrees/'
 
 
 class TestGitignoreSetupCreate(ScriptTestCase):
@@ -35,7 +47,7 @@ class TestGitignoreSetupCreate(ScriptTestCase):
         """Should create new .gitignore with planning entries."""
         result = setup_gitignore(self.temp_dir)
         self.assertEqual(result['status'], 'created')
-        # .plan/*, !marshal.json, !project-architecture/, .claude/worktrees/
+        # .plan/*, !marshal.json, !project-architecture/, .plan/local/worktrees/
         self.assertEqual(result['entries_added'], 4)
 
         # Verify file was created
@@ -46,7 +58,8 @@ class TestGitignoreSetupCreate(ScriptTestCase):
         self.assertIn('.plan/', content)
         self.assertIn('!.plan/marshal.json', content)
         self.assertIn('!.plan/project-architecture/', content)
-        self.assertIn('.claude/worktrees/', content)
+        self.assertIn('.plan/local/worktrees/', content)
+        self.assertNotIn('.claude/worktrees/', content)
         self.assertIn('# Planning system', content)
 
 
@@ -73,7 +86,8 @@ class TestGitignoreSetupUpdate(ScriptTestCase):
         self.assertIn('.plan/', content)
         self.assertIn('!.plan/marshal.json', content)
         self.assertIn('!.plan/project-architecture/', content)
-        self.assertIn('.claude/worktrees/', content)
+        self.assertIn('.plan/local/worktrees/', content)
+        self.assertNotIn('.claude/worktrees/', content)
 
     def test_adds_only_missing_entries(self):
         """Should only add entries that are missing."""
@@ -82,13 +96,14 @@ class TestGitignoreSetupUpdate(ScriptTestCase):
 
         result = setup_gitignore(self.temp_dir)
         self.assertEqual(result['status'], 'updated')
-        # !marshal.json + !project-architecture/ + .claude/worktrees/
+        # !marshal.json + !project-architecture/ + .plan/local/worktrees/
         self.assertEqual(result['entries_added'], 3)
 
         content = gitignore_path.read_text()
         self.assertIn('!.plan/marshal.json', content)
         self.assertIn('!.plan/project-architecture/', content)
-        self.assertIn('.claude/worktrees/', content)
+        self.assertIn('.plan/local/worktrees/', content)
+        self.assertNotIn('.claude/worktrees/', content)
 
 
 class TestGitignoreSetupUnchanged(ScriptTestCase):
@@ -104,7 +119,7 @@ class TestGitignoreSetupUnchanged(ScriptTestCase):
         gitignore_path.write_text(
             '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
             '— managed by plan-marshall)\n'
-            '.plan/\n!.plan/marshal.json\n!.plan/project-architecture/\n.claude/worktrees/\n'
+            '.plan/\n!.plan/marshal.json\n!.plan/project-architecture/\n.plan/local/worktrees/\n'
         )
 
         result = setup_gitignore(self.temp_dir)
@@ -117,27 +132,27 @@ class TestGitignoreSetupUnchanged(ScriptTestCase):
         gitignore_path.write_text(
             '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
             '— managed by plan-marshall)\n'
-            '.plan\n!.plan/marshal.json\n!.plan/project-architecture/\n.claude/worktrees/\n'
+            '.plan\n!.plan/marshal.json\n!.plan/project-architecture/\n.plan/local/worktrees/\n'
         )
 
         result = setup_gitignore(self.temp_dir)
         # .plan (without slash) should be recognized as .plan/
         self.assertEqual(result['entries_added'], 0)
 
-    def test_recognizes_claude_worktrees_without_trailing_slash(self):
-        """Should recognize .claude/worktrees without trailing slash."""
+    def test_recognizes_plan_local_worktrees_without_trailing_slash(self):
+        """Should recognize .plan/local/worktrees without trailing slash."""
         gitignore_path = self.temp_dir / '.gitignore'
         gitignore_path.write_text(
             '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
             '— managed by plan-marshall)\n'
-            '.plan/\n!.plan/marshal.json\n!.plan/project-architecture/\n.claude/worktrees\n'
+            '.plan/\n!.plan/marshal.json\n!.plan/project-architecture/\n.plan/local/worktrees\n'
         )
 
         result = setup_gitignore(self.temp_dir)
         self.assertEqual(result['entries_added'], 0)
 
-    def test_adds_claude_worktrees_when_missing(self):
-        """Should add .claude/worktrees/ entry when only planning entries exist."""
+    def test_adds_plan_local_worktrees_when_missing(self):
+        """Should add .plan/local/worktrees/ entry when only planning entries exist."""
         gitignore_path = self.temp_dir / '.gitignore'
         gitignore_path.write_text('.plan/*\n!.plan/marshal.json\n!.plan/project-architecture/\n')
 
@@ -146,7 +161,8 @@ class TestGitignoreSetupUnchanged(ScriptTestCase):
         self.assertEqual(result['entries_added'], 1)
 
         content = gitignore_path.read_text()
-        self.assertIn('.claude/worktrees/', content)
+        self.assertIn('.plan/local/worktrees/', content)
+        self.assertNotIn('.claude/worktrees/', content)
 
 
 class TestGitignoreSetupDryRun(ScriptTestCase):
@@ -209,7 +225,7 @@ class TestGitignoreSetupEdgeCases(ScriptTestCase):
         self.assertTrue(status['has_plan_dir'])
         self.assertTrue(status['has_marshal_exception'])
         self.assertFalse(status['has_architecture_exception'])
-        self.assertFalse(status['has_claude_worktrees'])
+        self.assertFalse(status['has_plan_local_worktrees'])
 
 
 # =============================================================================

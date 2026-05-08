@@ -18,19 +18,40 @@ from _build_shared import ParserFn, cmd_discover_common, cmd_parse_common
 
 
 def add_project_dir_arg(parser) -> None:
-    """Attach the standard --project-dir argument to a subparser.
+    """Attach the standard --project-dir / --plan-id argument pair to a subparser.
 
-    All build subcommands accept --project-dir so invocations from an
-    isolated worktree (or any non-cwd directory) can pin subprocess cwd
-    without relying on the caller's working directory. Default is '.'
-    so existing invocations remain unchanged.
+    All build subcommands accept ``--project-dir`` and ``--plan-id`` so
+    invocations from an isolated worktree (or any non-cwd directory)
+    can pin subprocess cwd without relying on the caller's working
+    directory. The two flags implement the two-state contract documented
+    in ``script_shared/scripts/resolve_project_dir.py``:
+
+    * ``--plan-id X`` and ``--project-dir Y`` together — error
+      ``mutually_exclusive_args``.
+    * ``--plan-id X`` only — auto-resolve via
+      ``manage-status get-worktree-path``.
+    * ``--project-dir Y`` only — explicit override (legacy / escape
+      hatch).
+    * Neither — main checkout via ``git rev-parse --show-toplevel``.
+
+    The ``--project-dir`` default stays ``'.'`` so the existing
+    ``execute_direct(project_dir=args.project_dir, ...)`` call sites
+    keep compiling. ``apply_plan_id_routing`` (called by the run / parse
+    / coverage / check-warnings handlers via ``_build_shared``)
+    rewrites ``args.project_dir`` to the resolved value before
+    subprocess execution.
     """
     parser.add_argument(
         '--project-dir',
         dest='project_dir',
         default='.',
-        help='Project root directory (default: current directory)',
+        help='Project root directory (default: current directory). Mutually exclusive with --plan-id.',
     )
+    # The companion --plan-id flag is added by the shared helper so the
+    # help text and default stay aligned with the canonical contract.
+    from resolve_project_dir import add_plan_id_arg  # type: ignore[import-not-found]
+
+    add_plan_id_arg(parser)
 
 
 def add_run_subparser(
@@ -82,18 +103,14 @@ def add_run_subparser(
         default='toon',
         help='Output format (default: toon)',
     )
+    # ``add_project_dir_arg`` adds BOTH ``--project-dir`` and ``--plan-id``
+    # so the run subparser inherits the canonical two-state routing
+    # contract automatically. The same ``--plan-id`` value also drives
+    # the producer-side auto-storage of parsed issues into the per-type
+    # finding store via manage-findings (always-on when set; when unset,
+    # the historical silent behaviour is preserved — parse + format
+    # only). The flag is therefore declared exactly once.
     add_project_dir_arg(run_parser)
-    # --plan-id is the producer-side opt-in for auto-storing build issues as
-    # findings. When set, every parsed build-error / test-failure / lint-issue
-    # is appended to the per-type finding store via manage-findings (always-on
-    # — no separate --store-findings flag). When unset, the historical silent
-    # behaviour is preserved (parse + format only).
-    run_parser.add_argument(
-        '--plan-id',
-        dest='plan_id',
-        default=None,
-        help='Plan ID — when set, parsed issues are stored as findings via manage-findings (always-on)',
-    )
     if extra_args_fn:
         extra_args_fn(run_parser)
     return run_parser
@@ -381,6 +398,34 @@ def build_main(
         register_fn(subparsers)
 
     args = parser.parse_args()
+
+    # Two-state ``--plan-id`` / ``--project-dir`` resolution. Bucket B
+    # build scripts uniformly opt in via ``add_project_dir_arg`` so the
+    # routing happens here, before any handler reads ``args.project_dir``.
+    # Subcommands that do not declare the pair (e.g., ``parse``) simply
+    # lack ``args.plan_id`` and ``args.project_dir`` — the helper is a
+    # no-op for those namespaces.
+    from resolve_project_dir import (  # type: ignore[import-not-found]
+        MutuallyExclusiveArgsError,
+        WorktreeResolutionError,
+        emit_mutually_exclusive_error,
+        emit_worktree_error,
+        resolve_project_dir,
+    )
+
+    plan_id = getattr(args, 'plan_id', None)
+    project_dir = getattr(args, 'project_dir', None)
+    if hasattr(args, 'project_dir'):
+        try:
+            args.project_dir = resolve_project_dir(plan_id, project_dir, default='.')
+        except MutuallyExclusiveArgsError:
+            print(format_toon(emit_mutually_exclusive_error(plan_id, project_dir)))
+            return 2
+        except WorktreeResolutionError as exc:
+            assert plan_id is not None  # only reachable when plan_id was supplied
+            print(format_toon(emit_worktree_error(plan_id, exc)))
+            return 2
+
     result: int = args.func(args)
     return result
 

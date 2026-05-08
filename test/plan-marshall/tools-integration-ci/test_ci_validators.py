@@ -128,3 +128,56 @@ def test_pr_prepare_body_with_project_dir_still_validates_plan_id(tmp_path):
         cwd=tmp_path,
     )
     assert_invalid_field(result, 'invalid_plan_id')
+
+
+# =============================================================================
+# Two-state routing contract — both --plan-id and --project-dir at router
+# =============================================================================
+#
+# The router-level ``--plan-id`` is consumed by ``extract_routing_args`` for
+# worktree resolution. Supplying it together with router-level
+# ``--project-dir`` MUST surface mutually_exclusive_args before the
+# canonical validator ever runs (the validator only sees
+# subcommand-level identifiers).
+
+
+def test_router_level_plan_id_with_project_dir_yields_mutually_exclusive_error(tmp_path):
+    """Router-level --plan-id + --project-dir → mutually_exclusive_args TOON error."""
+    _seed_github_marshal(tmp_path)
+    result = run_script(
+        SCRIPT_PATH,
+        '--plan-id',
+        HAPPY_VALUES['plan_id'],
+        '--project-dir',
+        str(tmp_path),
+        'pr',
+        'prepare-body',
+        '--plan-id',
+        HAPPY_VALUES['plan_id'],
+        cwd=tmp_path,
+    )
+    assert result.returncode == 2, f'Expected exit 2 (mutually_exclusive_args), got {result.returncode}'
+    assert 'mutually_exclusive_args' in result.stdout, (
+        f'Expected mutually_exclusive_args in TOON output, got: {result.stdout!r}'
+    )
+
+
+def test_router_level_project_dir_only_continues_to_subcommand_validator(tmp_path):
+    """Router-level --project-dir alone is consumed; subcommand validator still runs.
+
+    Confirms the pre-existing escape-hatch path keeps working under the
+    new auto-routing wiring — a malformed subcommand --plan-id still
+    yields invalid_plan_id (not the routing error).
+    """
+    _seed_github_marshal(tmp_path)
+    result = run_script(
+        SCRIPT_PATH,
+        '--project-dir',
+        str(tmp_path),
+        'pr',
+        'prepare-body',
+        '--plan-id',
+        'BAD!ID',
+        cwd=tmp_path,
+    )
+    assert_invalid_field(result, 'invalid_plan_id')

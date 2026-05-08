@@ -126,7 +126,7 @@ Terminal title configured.
 
 Try it out:
   1. Open a new VS Code / Ghostty / iTerm terminal tab.
-  2. `cd` into a plan worktree (e.g. `.claude/worktrees/<plan-id>`)
+  2. `cd` into a plan worktree (e.g. `.plan/local/worktrees/<plan-id>`)
      OR: `export PLAN_ID=<plan-id>` for a non-worktree shell.
   3. Start `claude`.
   4. Watch the tab title flip between ▶ (running), ? (waiting), ◯ (idle),

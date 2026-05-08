@@ -15,7 +15,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 - `references.modified_files` — list[string] of repo-relative paths recorded by Phase 5. This is the **append-only intent ledger**: entries accumulate as Phase 5 tasks call `manage-references add-file ...` and are never pruned when a file is `git restore`'d or touched-then-reverted. The ledger is therefore NOT a faithful view of the live working tree.
 - `git working-tree state` — the live diff (`git diff --name-only {base_ref}...HEAD`) plus uncommitted changes (`git status --porcelain`). Combined with the intent ledger via the `manage-references diff-files` query (below) to produce the canonical "what's actually modified now" view.
 - `phase-6-finalize.pre_push_quality_gate.activation_globs` — list[string] of fnmatch globs. The manifest composer already gated activation on this list; the executor re-reads it to scope which live-and-intended entries should contribute to bundle derivation (defense-in-depth — only entries that match a configured glob feed bundle derivation).
-- `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All build invocations below MUST pass `--project-dir {worktree_path}` (Bucket B requirement).
+- `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All build invocations below MUST identify the worktree via either `--plan-id {plan_id}` (preferred — auto-resolves through `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (escape hatch / explicit override). The two flags are mutually exclusive (Bucket B two-state contract). Examples below use the literal `--project-dir {worktree_path}` form; substitute `--plan-id {plan_id}` to use auto-resolution.
 
 ## Execution
 

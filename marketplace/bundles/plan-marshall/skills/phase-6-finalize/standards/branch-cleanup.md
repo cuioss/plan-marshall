@@ -14,7 +14,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 - Branch name available from references context (`branch` field)
 - The manifest's `phase_6.steps` list has been read in SKILL.md Step 2 (used here for Mode Detection only)
-- `{worktree_path}` and `{main_checkout}` have been resolved at finalize entry (see SKILL.md Step 0). All pre-removal git commands use `git -C {worktree_path}`. Post-removal git commands (after worktree is gone) use `git -C {main_checkout}`. All `ci` invocations pass `--project-dir {worktree_path}` while the worktree exists, and `--project-dir {main_checkout}` after removal.
+- `{worktree_path}` and `{main_checkout}` have been resolved at finalize entry (see SKILL.md Step 0). All pre-removal git commands use `git -C {worktree_path}`. Post-removal git commands (after worktree is gone) use `git -C {main_checkout}`. All `ci` invocations identify the worktree via either `--plan-id {plan_id}` (preferred — auto-resolves through `manage-status get-worktree-path`; auto-resolution falls back to the main checkout when `use_worktree=false`, so `--plan-id` keeps working post-removal) or `--project-dir {worktree_path}` / `--project-dir {main_checkout}` (escape hatch / explicit override). The two flags are mutually exclusive.
 
 ## Constraints
 
@@ -26,15 +26,11 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Worktree Awareness
 
-If the plan was created with `use_worktree: true` (the default for `branch_strategy == feature`), the plan ran inside a git worktree at `{worktree_path}` rooted under `{main_checkout}/.claude/worktrees/{plan_id}/` — the canonical plan-marshall worktree location inside the main git checkout. Both `{worktree_path}` and `{main_checkout}` were resolved at finalize entry (see SKILL.md Step 0) and are available throughout this workflow.
+Both `{worktree_path}` and `{main_checkout}` were resolved at finalize entry (see SKILL.md Step 0) and are available throughout this workflow. If `worktree_path` is absent (`use_worktree == false`), substitute `{main_checkout}` in every `git -C {worktree_path}` command below — the plan ran directly against the main checkout, so all git work targets it.
 
-If `worktree_path` is absent (pre-worktree plan or `use_worktree == false`), substitute `{main_checkout}` in every `git -C {worktree_path}` command below — the plan ran directly against the main checkout, so all git work targets it.
+The cleanup ordering — **remove worktree first, then delete branch** — is enforced here at the call site because `git worktree remove` refuses to operate on a worktree that is the cwd of any shell, and the local branch cannot be deleted while still checked out in a worktree. After worktree removal, every git call MUST switch from `git -C {worktree_path}` to `git -C {main_checkout}` because `{worktree_path}` no longer exists on disk.
 
-Before any branch deletion, the worktree MUST be removed. The order is:
-
-1. `{worktree_path}` is already in scope from SKILL.md Step 0.
-2. If set: invoke `manage-worktree remove`. The script internally operates on `{main_checkout}`, so no `cd` is required.
-3. Proceed with base branch checkout and local branch deletion — switching to `git -C {main_checkout}` for all post-removal git calls.
+See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (path convention, never-edit-main-checkout invariant, cleanup ordering rationale).
 
 ## Mode Detection
 
@@ -244,10 +240,10 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 The worktree must be removed BEFORE executing any post-removal git operations — `git worktree remove` refuses to operate on a worktree that is the current working directory of any shell, and the local branch cannot be deleted while still checked out in a worktree.
 
-The `manage-worktree remove` script operates on the main checkout internally and does not rely on the caller's cwd:
+The `git_workflow worktree remove` script operates on the main checkout internally and does not rely on the caller's cwd:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-worktree:manage-worktree remove \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree remove \
   --plan-id {plan_id}
 ```
 
@@ -358,7 +354,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 **Only if `{worktree_path}` is set** (from the Worktree Awareness section).
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-worktree:manage-worktree remove \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree remove \
   --plan-id {plan_id}
 ```
 

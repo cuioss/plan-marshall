@@ -988,5 +988,109 @@ def test_issue_wait_for_label_rejects_invalid_mode_value():
         )
 
 
+# =============================================================================
+# extract_routing_args — two-state ``--plan-id`` / ``--project-dir`` contract
+# =============================================================================
+#
+# ``extract_routing_args`` is the router-side wrapper that combines
+# ``extract_project_dir`` and ``extract_plan_id``. It enforces:
+#
+# * router-level ``--plan-id`` is consumed for worktree resolution
+# * subcommand-level ``--plan-id`` (after pr/ci/issue/branch) is left in place
+# * supplying both flags at the router → exit 2 + mutually_exclusive_args
+# * supplying only ``--plan-id`` → manage-status get-worktree-path resolves
+# * supplying only ``--project-dir`` → returned verbatim (legacy escape hatch)
+# * supplying neither → returns (None, argv)
+
+
+def test_extract_routing_args_neither_flag_returns_none():
+    """No routing flags → (None, argv) so the legacy "inherit cwd" path runs."""
+    from ci_base import extract_routing_args
+
+    resolved, remaining = extract_routing_args(['pr', 'view'])
+    assert resolved is None
+    assert remaining == ['pr', 'view']
+
+
+def test_extract_routing_args_project_dir_only_returns_path():
+    """--project-dir alone is returned verbatim as the resolved cwd."""
+    from ci_base import extract_routing_args
+
+    resolved, remaining = extract_routing_args(['--project-dir', '/tmp/explicit', 'pr', 'view'])
+    # The resolver normalizes to absolute paths; we assert the input survived.
+    assert resolved is not None
+    assert resolved.endswith('explicit'), f'Expected absolute path ending in explicit, got: {resolved!r}'
+    assert remaining == ['pr', 'view']
+
+
+def test_extract_routing_args_plan_id_only_resolves_via_manage_status(monkeypatch):
+    """--plan-id alone is resolved via the patched manage-status helper."""
+    import resolve_project_dir as _routing
+    from ci_base import extract_routing_args
+
+    monkeypatch.setattr(_routing, '_query_worktree_path', lambda _pid: (True, '/tmp/worktree-resolved'))
+    resolved, remaining = extract_routing_args(['--plan-id', 'task-routing-canonical', 'pr', 'view'])
+    assert resolved is not None
+    assert resolved.endswith('worktree-resolved'), f'Expected worktree path, got: {resolved!r}'
+    assert remaining == ['pr', 'view']
+
+
+def test_extract_routing_args_plan_id_use_worktree_false_falls_back(monkeypatch):
+    """--plan-id with use_worktree=false falls back to main checkout root."""
+    import resolve_project_dir as _routing
+    from ci_base import extract_routing_args
+
+    monkeypatch.setattr(_routing, '_query_worktree_path', lambda _pid: (False, ''))
+    monkeypatch.setattr(_routing, '_main_checkout_root', lambda: '/tmp/main-checkout')
+    resolved, remaining = extract_routing_args(['--plan-id', 'task-routing-canonical', 'pr', 'view'])
+    assert resolved == '/tmp/main-checkout'
+    assert remaining == ['pr', 'view']
+
+
+def test_extract_routing_args_both_flags_exits_with_mutually_exclusive_error(capsys):
+    """Both --plan-id and --project-dir at the router → exit 2 + TOON error."""
+    from ci_base import extract_routing_args
+
+    with pytest.raises(SystemExit) as exc_info:
+        extract_routing_args(
+            [
+                '--plan-id',
+                'task-routing-canonical',
+                '--project-dir',
+                '/tmp/explicit',
+                'pr',
+                'view',
+            ]
+        )
+    assert exc_info.value.code == 2
+    captured = capsys.readouterr()
+    assert 'mutually_exclusive_args' in captured.out
+
+
+def test_extract_routing_args_subcommand_plan_id_left_in_place(monkeypatch):
+    """``--plan-id`` AFTER a subcommand token MUST NOT be consumed by routing."""
+    import resolve_project_dir as _routing
+    from ci_base import extract_routing_args
+
+    # The router-level argv has no --plan-id; only the subcommand-level one
+    # exists. The patched helper should NOT be called because no router-level
+    # --plan-id is present. Use a sentinel to flag accidental invocation.
+    called: list[bool] = []
+
+    def fake_query(_pid):
+        called.append(True)
+        return (True, '/tmp/should-not-resolve')
+
+    monkeypatch.setattr(_routing, '_query_worktree_path', fake_query)
+    resolved, remaining = extract_routing_args(
+        ['pr', 'prepare-body', '--plan-id', 'subcommand-context'],
+    )
+    # No router-level routing → resolved is None, subcommand --plan-id preserved.
+    assert resolved is None
+    assert '--plan-id' in remaining
+    assert 'subcommand-context' in remaining
+    assert called == [], 'extract_routing_args must not invoke manage-status for subcommand --plan-id'
+
+
 # Silence unused-import warnings caused by the fixtures above.
 _ = (os, tempfile, subprocess)

@@ -616,7 +616,7 @@ Examples:
 
     marketplace_root_help = (
         'Override the marketplace root directory (parent of bundles/). '
-        'Use the worktree path (e.g., /abs/.claude/worktrees/{plan_id}/marketplace) '
+        'Use the worktree path (e.g., /abs/.plan/local/worktrees/{plan_id}/marketplace) '
         'when verifying edits inside an isolated plan worktree before merge-back. '
         'NOT bundles/ itself.'
     )

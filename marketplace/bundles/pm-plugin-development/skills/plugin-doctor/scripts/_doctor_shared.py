@@ -61,7 +61,7 @@ def find_marketplace_root(marketplace_root_override: str | None = None) -> Path 
     The override value (whether passed via the function argument or via the
     ``PM_MARKETPLACE_ROOT`` environment variable) is the **marketplace root**,
     i.e., the parent directory of ``bundles/``. NOT ``bundles/`` itself.
-    Example: ``/abs/path/to/.claude/worktrees/{plan_id}/marketplace``, where
+    Example: ``/abs/path/to/.plan/local/worktrees/{plan_id}/marketplace``, where
     the directory layout is ``marketplace/bundles/{bundle_name}/...``. The
     function validates the override contains a ``bundles/`` subdirectory and
     returns the resolved ``{override}/bundles`` path so downstream callers

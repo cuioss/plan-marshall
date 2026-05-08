@@ -800,3 +800,119 @@ class TestProjectDirPropagation:
 
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs['cwd'] == worktree_path
+
+
+# =============================================================================
+# Two-state ``--plan-id`` / ``--project-dir`` routing — execute_direct_base
+# =============================================================================
+#
+# ``execute_direct_base`` itself is a Bucket B foundation primitive; it
+# accepts the resolved ``project_dir`` as a string and uses it as the
+# subprocess ``cwd``. The two-state contract is enforced by the layer
+# above (``build_main`` via ``resolve_project_dir``), so the test here
+# simply locks in that any path the resolver returns is honoured by
+# execute_direct_base.
+
+
+def test_execute_direct_base_honours_resolved_worktree_path(monkeypatch):
+    """A ``project_dir`` resolved from --plan-id must propagate to subprocess cwd.
+
+    Mirrors the production flow: build_main rewrites args.project_dir to
+    the worktree path returned by resolve_project_dir, then the handler
+    calls execute_direct_base with that value. The subprocess cwd must
+    match exactly so the build runs against the worktree, not the main
+    checkout.
+    """
+    import resolve_project_dir as _routing
+    from resolve_project_dir import resolve_project_dir
+
+    # Patch the manage-status helper to return a deterministic path.
+    monkeypatch.setattr(_routing, '_query_worktree_path', lambda _pid: (True, '/tmp/wt-resolved'))
+    resolved = resolve_project_dir('task-routing-canonical', '.', default='.')
+    assert resolved.endswith('wt-resolved')
+
+    with tempfile.TemporaryDirectory():
+        with patch('subprocess.run') as mock_run:
+            mock_proc = MagicMock()
+            mock_proc.returncode = 0
+            mock_run.return_value = mock_proc
+
+            execute_direct_base(
+                args='verify',
+                command_key='test:routing',
+                default_timeout=300,
+                project_dir=resolved,
+                tool_name='test',
+                build_command_fn=_build_command_fn,
+                wrapper='/usr/bin/test-tool',
+                capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
+            )
+
+            call_kwargs = mock_run.call_args[1]
+            assert call_kwargs['cwd'] == resolved, (
+                f'subprocess cwd must match the resolver output {resolved!r}, '
+                f'got {call_kwargs["cwd"]!r}'
+            )
+
+
+def test_execute_direct_base_honours_main_checkout_fallback(monkeypatch):
+    """When the resolver falls back to the main checkout, execute_direct_base honours it."""
+    import resolve_project_dir as _routing
+    from resolve_project_dir import resolve_project_dir
+
+    monkeypatch.setattr(_routing, '_main_checkout_root', lambda: '/tmp/main-stub')
+    resolved = resolve_project_dir(None, '.', default='.')
+    assert resolved == '/tmp/main-stub'
+
+    with tempfile.TemporaryDirectory():
+        with patch('subprocess.run') as mock_run:
+            mock_proc = MagicMock()
+            mock_proc.returncode = 0
+            mock_run.return_value = mock_proc
+
+            execute_direct_base(
+                args='verify',
+                command_key='test:fallback',
+                default_timeout=300,
+                project_dir=resolved,
+                tool_name='test',
+                build_command_fn=_build_command_fn,
+                wrapper='/usr/bin/test-tool',
+                capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
+            )
+
+            call_kwargs = mock_run.call_args[1]
+            assert call_kwargs['cwd'] == '/tmp/main-stub'
+
+
+def test_execute_direct_base_preserves_explicit_project_dir(monkeypatch):
+    """Pre-existing --project-dir-only callers must keep working.
+
+    The legacy escape-hatch flow: the caller supplies an explicit
+    ``project_dir`` string, the resolver returns it verbatim, and the
+    subprocess cwd uses it directly.
+    """
+    from resolve_project_dir import resolve_project_dir
+
+    resolved = resolve_project_dir(None, '/tmp/explicit-cwd', default='.')
+    assert resolved.endswith('explicit-cwd')
+
+    with tempfile.TemporaryDirectory():
+        with patch('subprocess.run') as mock_run:
+            mock_proc = MagicMock()
+            mock_proc.returncode = 0
+            mock_run.return_value = mock_proc
+
+            execute_direct_base(
+                args='verify',
+                command_key='test:explicit',
+                default_timeout=300,
+                project_dir=resolved,
+                tool_name='test',
+                build_command_fn=_build_command_fn,
+                wrapper='/usr/bin/test-tool',
+                capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
+            )
+
+            call_kwargs = mock_run.call_args[1]
+            assert call_kwargs['cwd'] == resolved

@@ -77,7 +77,7 @@ from ci_base import (  # type: ignore[import-not-found]
     compute_total_elapsed,
     delete_consumed_body,
     dispatch,
-    extract_project_dir,
+    extract_routing_args,
     get_default_cwd,
     make_error,
     make_pr_number_handler,
@@ -1430,10 +1430,12 @@ def cmd_issue_wait_for_label(args: argparse.Namespace) -> dict:
 
 
 def main() -> int:
-    # Consume top-level --project-dir before argparse runs so the downstream
-    # provider parser never sees the router flag. Any cwd supplied here is
-    # installed as the process-global default for run_cli's glab invocations.
-    project_dir, remaining = extract_project_dir(sys.argv[1:])
+    # Consume top-level --plan-id / --project-dir before argparse runs so
+    # the downstream provider parser never sees the router flags. Two-state
+    # contract: --plan-id auto-resolves via manage-status; --project-dir is
+    # the explicit override; both together is a hard error. Resolved cwd
+    # is installed as the process-global default for run_cli's glab calls.
+    project_dir, remaining = extract_routing_args(sys.argv[1:])
     sys.argv = [sys.argv[0], *remaining]
     if project_dir is not None:
         set_default_cwd(project_dir)

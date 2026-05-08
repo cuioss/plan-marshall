@@ -267,3 +267,76 @@ class TestRegisterStandardSubparsersPropagation:
         parser = self._build_full_parser()
         ns = _parse(parser, ['parse', '--log', '/tmp/log', '--project-dir', '/plan/wt'])
         assert ns.project_dir == '/plan/wt'
+
+
+class TestRegisterStandardSubparsersPlanIdPropagation:
+    """Mirror of TestRegisterStandardSubparsersPropagation for the --plan-id flag.
+
+    ``add_project_dir_arg`` registers BOTH ``--project-dir`` and ``--plan-id``
+    so the four-state routing contract is uniform. These tests are the
+    regression net: if a new subparser is added without
+    ``add_project_dir_arg``, ``--plan-id`` would silently fall off and
+    auto-routing breaks for that subcommand. The pre-existing
+    ``--project-dir`` tests above continue to cover the escape-hatch path.
+    """
+
+    def _build_full_parser(self) -> argparse.ArgumentParser:
+        fns = register_standard_subparsers(
+            run_handler=_noop,
+            parse_handler=_parse_log_stub,
+            coverage_handler=_noop,
+            check_warnings_handler=_noop,
+        )
+        parser = argparse.ArgumentParser()
+        subs = parser.add_subparsers(dest='command', required=True)
+        for fn in fns:
+            fn(subs)
+        return parser
+
+    def test_run_default_plan_id_is_none(self):
+        parser = self._build_full_parser()
+        ns = _parse(parser, ['run', '--command-args', 'verify'])
+        assert ns.plan_id is None
+
+    def test_run_accepts_plan_id_override(self):
+        parser = self._build_full_parser()
+        ns = _parse(parser, ['run', '--command-args', 'verify', '--plan-id', 'task-routing-canonical'])
+        assert ns.plan_id == 'task-routing-canonical'
+
+    def test_parse_default_plan_id_is_none(self):
+        parser = self._build_full_parser()
+        ns = _parse(parser, ['parse', '--log', '/tmp/log'])
+        assert ns.plan_id is None
+
+    def test_parse_accepts_plan_id_override(self):
+        parser = self._build_full_parser()
+        ns = _parse(parser, ['parse', '--log', '/tmp/log', '--plan-id', 'task-routing-canonical'])
+        assert ns.plan_id == 'task-routing-canonical'
+
+    def test_coverage_accepts_plan_id_override(self):
+        parser = self._build_full_parser()
+        ns = _parse(parser, ['coverage-report', '--plan-id', 'task-routing-canonical'])
+        assert ns.plan_id == 'task-routing-canonical'
+
+    def test_check_warnings_accepts_plan_id_override(self):
+        parser = self._build_full_parser()
+        ns = _parse(parser, ['check-warnings', '--plan-id', 'task-routing-canonical'])
+        assert ns.plan_id == 'task-routing-canonical'
+
+    def test_run_accepts_both_flags_at_argparse_level(self):
+        """Argparse accepts both flags; the resolver enforces mutual exclusion later."""
+        parser = self._build_full_parser()
+        ns = _parse(
+            parser,
+            [
+                'run',
+                '--command-args',
+                'verify',
+                '--plan-id',
+                'task-routing-canonical',
+                '--project-dir',
+                '/plan/wt',
+            ],
+        )
+        assert ns.plan_id == 'task-routing-canonical'
+        assert ns.project_dir == '/plan/wt'

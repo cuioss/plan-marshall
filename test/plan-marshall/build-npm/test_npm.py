@@ -109,5 +109,43 @@ def test_api_execute_direct_npx_command():
 
 
 # =============================================================================
+# Two-state ``--plan-id`` / ``--project-dir`` routing contract
+# =============================================================================
+#
+# npm.py uses the shared ``build_main()`` from ``_build_cli.py``. The
+# resolver semantics are pinned in
+# ``test/plan-marshall/script-shared/test_build_cli.py``; here we only
+# verify the parser surface.
+
+from conftest import run_script  # noqa: E402
+
+
+def test_run_subcommand_accepts_plan_id_flag():
+    """npm.py's `run` subcommand MUST accept --plan-id (auto-routing flag)."""
+    result = run_script(SCRIPT_PATH, 'run', '--help')
+    assert result.success, f'Script failed: {result.stderr}'
+    assert '--plan-id' in result.stdout, 'npm run must declare --plan-id'
+    assert '--project-dir' in result.stdout, 'npm run must keep --project-dir as escape hatch'
+
+
+def test_run_rejects_both_plan_id_and_project_dir():
+    """Both --plan-id and --project-dir together MUST yield mutually_exclusive_args."""
+    result = run_script(
+        SCRIPT_PATH,
+        'run',
+        '--command-args',
+        'install',
+        '--plan-id',
+        'task-routing-canonical',
+        '--project-dir',
+        '/tmp/explicit',
+    )
+    assert result.returncode == 2, f'Expected exit 2, got {result.returncode} (stdout={result.stdout!r})'
+    data = result.toon_or_error()
+    assert data.get('status') == 'error'
+    assert data.get('error') == 'mutually_exclusive_args'
+
+
+# =============================================================================
 # Runner
 # =============================================================================

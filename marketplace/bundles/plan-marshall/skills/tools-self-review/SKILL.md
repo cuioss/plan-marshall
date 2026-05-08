@@ -34,8 +34,8 @@ Surfaces four candidate lists from the worktree's staged diff against the base b
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `--plan-id PLAN_ID` | Yes | Plan identifier (kebab-case). Used to read `references.modified_files`. |
-| `--project-dir PROJECT_DIR` | Yes | Absolute path to the active git worktree. All `git` calls run as `git -C {project_dir} ...`. |
+| `--plan-id PLAN_ID` | Yes | Plan identifier (kebab-case). Used to read `references.modified_files` and (when `--project-dir` is omitted) to auto-resolve the worktree path via `manage-status get-worktree-path`. |
+| `--project-dir PROJECT_DIR` | No | Absolute path to the active git worktree (escape hatch). When omitted, the path is auto-resolved from `--plan-id`. All `git` calls run as `git -C {project_dir} ...`. |
 | `--base-branch BRANCH` | No | Base branch for diff computation. Defaults to `main`. |
 | `--contract-radius N` | No | Directory levels to walk up when collecting schema-bearing markdown files (default: 3). |
 
@@ -119,7 +119,7 @@ schema_bearing_files[N6]{file,format}:
 
 ## Cwd Policy
 
-This script is **Bucket B** (per `tools-script-executor/standards/cwd-policy.md`): callers MUST pass `--project-dir {worktree_path}`. The script does NOT call `git rev-parse --git-common-dir` to discover its own root — `--project-dir` is the only authoritative source.
+This script is **Bucket B** (per `tools-script-executor/standards/cwd-policy.md`): callers MUST identify the worktree via either `--plan-id {plan_id}` (auto-resolved through `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (explicit override / escape hatch). The script does NOT call `git rev-parse --git-common-dir` to discover its own root — the resolved path from those flags is the only authoritative source.
 
 `manage-references` and `manage-status` reads (Bucket A) inside this script do NOT receive `--project-dir`; they discover `.plan/` via `git rev-parse --git-common-dir` from the script's own cwd.
 

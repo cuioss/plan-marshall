@@ -32,7 +32,7 @@ The agent layer is intentionally thin. Rather than creating a specialized agent 
 | `source` | string | No | Source type for phase-1-init |
 | `content` | string | No | Content for phase-1-init |
 | `task_number` | number | No | Task number for phase-5-execute |
-| `worktree_path` | string | Conditional | Absolute path to the active git worktree root. Required whenever the plan runs in an isolated worktree. When provided, the loaded skill MUST use this path as the mandatory root for all Edit/Write/Read operations and MUST echo the constraint into any further subagent dispatch using the Worktree Header protocol defined in `plan-marshall:phase-5-execute`. |
+| `worktree_path` | string | Deprecated | **Deprecated** — kept only for backward compatibility with callers that still pass an absolute path. New callers MUST forward only `plan_id`; the loaded skill resolves the active worktree internally via `manage-status get-worktree-path --plan-id {plan_id}`. See the path-free Worktree Header contract in `plan-marshall:phase-5-execute` § Dispatch Protocol and the canonical `--plan-id` two-state binding in `workflow-integration-git/standards/worktree-handling.md`. When the deprecated `worktree_path` is supplied, it MUST agree with the resolved path; treat any disagreement as fail-loud. |
 
 ## Step 1: Load Foundational Practices
 
@@ -73,5 +73,5 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Follow the loaded skill's workflow with all provided parameters. The skill contains the complete logic — do not add, skip, or modify steps. Return the skill's output verbatim.
 
-**Worktree propagation**: When `worktree_path` is provided as input, the loaded skill MUST use it as the mandatory root for every Edit/Write/Read file operation — no path may resolve against the main checkout. Additionally, any further subagent dispatch (Task, Skill with free-form prompt, nested phase-agent call) issued by the loaded skill MUST echo the constraint verbatim into its prompt, using the Worktree Header template defined in `plan-marshall:phase-5-execute` (Dispatch Protocol section). This guarantees the worktree context propagates through every level of delegation.
+**Worktree propagation**: When the plan runs in an isolated worktree (resolvable via `plan-marshall:manage-status:manage_status get-worktree-path --plan-id {plan_id}` returning a non-empty path), the loaded skill MUST resolve every Edit/Write/Read file operation against that path — no path may resolve against the main checkout. Additionally, any further subagent dispatch (Task, Skill with free-form prompt, nested phase-agent call) issued by the loaded skill MUST echo the path-free Worktree Header verbatim into its prompt, using the canonical template defined in `plan-marshall:phase-5-execute` § Dispatch Protocol — `WORKTREE: --plan-id {plan_id}` plus the resolution-and-rationale block. This guarantees the worktree context propagates through every level of delegation without leaking absolute paths into model context. See `workflow-integration-git/standards/worktree-handling.md` for the canonical `--plan-id` two-state binding.
 

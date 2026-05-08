@@ -52,6 +52,47 @@ class TestSonarRestCLI:
         assert result.returncode == 0, result.stderr
         assert 'unrecognized arguments' not in result.stderr
 
+    def test_plan_id_accepted_as_noop_with_help(self):
+        """sonar_rest.py accepts --plan-id as a top-level routing flag.
+
+        The pre-parse strips it before argparse runs (auto-resolves the
+        worktree path via manage-status), so combining it with --help
+        must succeed regardless of whether the plan exists.
+        """
+        result = run_script(SCRIPT_PATH, '--plan-id', 'task-routing-canonical', '--help')
+        # --help triggers SystemExit(0). The resolver may fail with worktree
+        # resolution errors before --help runs (no real plan persisted), so
+        # we accept either 0 (help reached) or 2 (resolver error) — the
+        # regression we're guarding is "argparse rejects --plan-id".
+        assert 'unrecognized arguments' not in result.stderr, (
+            f'--plan-id must be consumed by the router, not rejected by argparse: {result.stderr!r}'
+        )
+
+    def test_both_plan_id_and_project_dir_yields_mutually_exclusive_error(self, tmp_path):
+        """Router-level --plan-id + --project-dir → mutually_exclusive_args TOON error."""
+        result = run_script(
+            SCRIPT_PATH,
+            '--plan-id',
+            'task-routing-canonical',
+            '--project-dir',
+            str(tmp_path),
+            '--help',
+        )
+        # The resolver branch emits a TOON error and exits 2 BEFORE --help
+        # is processed.
+        assert result.returncode == 2, f'Expected exit 2, got {result.returncode}; stdout={result.stdout!r}'
+        assert 'mutually_exclusive_args' in result.stdout, (
+            f'Expected mutually_exclusive_args TOON error, got: {result.stdout!r}'
+        )
+
+    def test_neither_routing_flag_keeps_legacy_behaviour(self):
+        """Neither flag → no auto-routing, no error; legacy "inherit cwd" preserved."""
+        result = run_script(SCRIPT_PATH, '--help')
+        assert result.returncode == 0
+        # No TOON error payload on stdout.
+        assert 'mutually_exclusive_args' not in result.stdout
+        assert 'worktree_resolution_failed' not in result.stdout
+
 
 class TestSonarSearchLogic:
     """Tests for search subcommand logic."""

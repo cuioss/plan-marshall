@@ -26,7 +26,7 @@ There is no internal soft-timeout, polling cap, or partial-progress checkpoint i
 ## Inputs
 
 - A PR exists (from `create-pr` earlier in the manifest list, or pre-existing on the branch)
-- `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All `ci`, `github_pr`, and build-script invocations below MUST pass `--project-dir {worktree_path}`.
+- `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All `ci`, `github_pr`, and build-script invocations below MUST identify the worktree via either `--plan-id {plan_id}` (preferred — auto-resolves through `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (escape hatch / explicit override). The two flags are mutually exclusive. Examples below use the literal `--project-dir {worktree_path}` form; substitute `--plan-id {plan_id}` to use auto-resolution.
 
 ## Execution
 

@@ -24,6 +24,7 @@ import argparse
 from pathlib import Path
 from typing import Any, cast
 
+import resolve_project_dir as _routing  # type: ignore[import-not-found]
 from _architecture_core import (  # type: ignore[import-not-found]
     DataNotFoundError,
     get_project_meta_path,
@@ -792,8 +793,12 @@ def main() -> int:
     context_parser.add_argument(
         '--project-dir',
         default='.',
-        help='Project directory containing .plan/project-architecture/ (default: current directory)',
+        help=(
+            'Project directory containing .plan/project-architecture/ '
+            '(default: current directory). Mutually exclusive with --plan-id.'
+        ),
     )
+    _routing.add_plan_id_arg(context_parser)
     context_parser.set_defaults(func=cmd_get_module_context)
 
     args = parse_args_with_toon_errors(parser)
@@ -801,6 +806,19 @@ def main() -> int:
     if not args.command:
         parser.print_help()
         return 1
+
+    # Apply two-state routing only when the active subcommand declares
+    # --project-dir (i.e., get-module-context). Other subcommands keep
+    # their original argument shape unchanged.
+    if hasattr(args, 'project_dir'):
+        try:
+            args.project_dir = _routing.resolve_project_dir(getattr(args, 'plan_id', None), args.project_dir, default='.')
+        except _routing.MutuallyExclusiveArgsError:
+            output_toon(_routing.emit_mutually_exclusive_error(getattr(args, 'plan_id', None), args.project_dir))
+            return 2
+        except _routing.WorktreeResolutionError as exc:
+            output_toon(_routing.emit_worktree_error(args.plan_id, exc))
+            return 2
 
     result = args.func(args)
     output_toon(result)

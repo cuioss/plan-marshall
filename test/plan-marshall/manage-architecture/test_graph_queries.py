@@ -494,3 +494,58 @@ def test_impact_deterministic_sorted_output():
         second = get_module_impact('api', tmpdir)
         assert first == second
         assert first == sorted(first)
+
+
+# =============================================================================
+# Two-state ``--plan-id`` / ``--project-dir`` routing contract
+# =============================================================================
+#
+# architecture.py (Bucket B) routes via ``resolve_project_dir`` before
+# any graph-query handler runs. The four-state contract applies to every
+# subcommand (path, neighbors, impact, files, etc.).
+
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-architecture', 'architecture.py')
+
+
+def test_architecture_help_declares_routing_flags():
+    """architecture.py top-level --help MUST declare --plan-id and --project-dir."""
+    result = run_script(SCRIPT_PATH, '--help')
+    assert result.success, f'--help failed: {result.stderr}'
+    assert '--plan-id' in result.stdout, 'architecture must declare --plan-id'
+    assert '--project-dir' in result.stdout, 'architecture must keep --project-dir as escape hatch'
+
+
+def test_architecture_rejects_both_routing_flags(tmp_path):
+    """Both --plan-id and --project-dir together → mutually_exclusive_args TOON error."""
+    result = run_script(
+        SCRIPT_PATH,
+        '--plan-id',
+        'task-routing-canonical',
+        '--project-dir',
+        str(tmp_path),
+        'overview',
+    )
+    # The router emits a TOON error and returns non-zero. Some failure
+    # paths exit with 0 + TOON error (legacy contract); accept either as
+    # long as the structured error is present.
+    assert 'mutually_exclusive_args' in result.stdout, (
+        f'Expected mutually_exclusive_args TOON error, got: {result.stdout!r}'
+    )
+
+
+def test_architecture_accepts_project_dir_only(tmp_path):
+    """Pre-existing --project-dir-only callers must keep working."""
+    # `overview` is a discovery subcommand that gracefully handles a
+    # blank tmp_path (no .plan/) by emitting a structured error rather
+    # than crashing — this lets us verify the parser surface without
+    # seeding the entire architecture index.
+    result = run_script(
+        SCRIPT_PATH,
+        '--project-dir',
+        str(tmp_path),
+        'overview',
+    )
+    # No argparse errors → routing parser surface accepted the flag.
+    assert 'unrecognized arguments' not in result.stderr, (
+        f'--project-dir was rejected by argparse: {result.stderr!r}'
+    )

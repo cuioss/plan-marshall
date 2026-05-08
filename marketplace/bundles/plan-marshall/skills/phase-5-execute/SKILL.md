@@ -28,27 +28,35 @@ Skill: plan-marshall:dev-general-practices
 - Never access `.plan/` files directly — use manage-* scripts via Bash (Edit/Write tools trigger permission prompts on `.plan/` directories)
 - Never skip the phase transition — use `manage-status transition`
 - Never improvise script subcommands — use only those documented below
-- Never target file paths outside the active git worktree. When a plan runs in an isolated worktree, all Edit/Write/Read tool calls during execution MUST use the worktree's absolute path (e.g., `<root>/.claude/worktrees/{plan_id}/...`), never the main checkout (e.g., `/Users/oliver/git/{repo}/...`). Editing the main checkout pollutes uncommitted state, bypasses worktree isolation, and lets tests silently load stale source via PYTHONPATH.
+- Never target file paths outside the active git worktree.
 
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
-- On phase entry (Step 4), resolve the active worktree absolute path and surface it as a `[STATUS]` work-log line so it stays visible in model context throughout the run. If present, every subsequent Edit/Write/Read must reference that path as the root.
-- Every subagent dispatch (Task / Skill / phase-agent invocation) MUST embed the `worktree_path` directly in the dispatch prompt when a worktree is active (see **Dispatch Protocol** below) AND MUST pass it as an input parameter to satisfy the subagent's Input Contract (e.g., `execute-task`, `phase-agent`). Prompt embedding and parameter passing are both required — the former propagates the constraint through free-form delegation, the latter satisfies the structured interface.
+- On phase entry (Step 4), resolve the active worktree absolute path and surface it as a `[STATUS]` work-log line so it stays visible in model context throughout the run.
+- Every subagent dispatch (Task / Skill / phase-agent invocation) MUST embed the Worktree Header in the dispatch prompt when a worktree is active (see **Dispatch Protocol** below) AND MUST pass `plan_id` as an input parameter to satisfy the subagent's Input Contract (e.g., `execute-task`, `phase-agent`). Prompt embedding and parameter passing are both required — the former propagates the constraint through free-form delegation, the latter satisfies the structured interface.
+
+See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (path convention, never-edit-main-checkout invariant, dispatch header propagation, `--plan-id` two-state contract).
+
+## Phase-Entry Worktree Assertion
+
+The Phase Entry Protocol's `phase_handshake verify --phase {previous_phase_key} --strict` call (see [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md#phase-handshake-verify-phases-2-6)) asserts the worktree-resolution contract before any phase-5 work begins: when `metadata.use_worktree==true`, `metadata.worktree_path` MUST be non-empty AND filesystem-resolvable (the directory exists AND `git -C {path} rev-parse --show-toplevel` returns the same canonical path). When the assertion fails, the script returns `status: error, error: worktree_unresolved` and (under `--strict`) exits 1 — phase entry refuses to advance until the persisted metadata is repaired. Plans with `metadata.use_worktree==false` skip the assertion (main-checkout flow). The assertion fires uniformly at every phase boundary; see deliverable 8 in the originating lesson plan for the full contract.
 
 ## Dispatch Protocol (Worktree Header)
 
-**REQUIREMENT**: When the plan runs in an isolated worktree (see the `[STATUS] Active worktree` work-log line from Step 4), every subagent dispatch prompt — including `Task:`, `Skill:` invocations that accept free-form prompts, and `phase-agent` delegations — MUST begin with the following header:
+**REQUIREMENT**: When the plan runs in an isolated worktree (see the `[STATUS] Active worktree` work-log line from Step 4), every subagent dispatch prompt — including `Task:`, `Skill:` invocations that accept free-form prompts, and `phase-agent` delegations — MUST begin with the canonical path-free Worktree Header:
 
 ```
-WORKTREE: {worktree_path}
-All Edit/Write/Read tool calls MUST target paths under this worktree. Raw git/mvn/npm commands MUST operate against this path. Bucket B .plan/execute-script.py invocations (build/CI/Sonar) MUST pass --project-dir {worktree_path}; Bucket A manage-* scripts remain cwd-agnostic and MUST NOT receive --project-dir. NEVER edit the main checkout.
+WORKTREE: --plan-id {plan_id}
+Resolved internally via `manage-status get-worktree-path`. All Edit/Write/Read tool calls and tool invocations (git -C, mvn -f, etc.) MUST target the resolved worktree path, NOT the main checkout. See workflow-integration-git/standards/worktree-handling.md for the canonical contract.
 ```
 
-The `[STATUS] Active worktree: ...` work-log line remains the observability signal that the worktree was detected, but it is informational only — the active propagation mechanism is embedding the header in every dispatch prompt. Skip the header only when no worktree is active.
+The header is **path-free**: it carries `--plan-id {plan_id}` rather than the absolute worktree path. The dispatched skill resolves the path internally via `manage-status get-worktree-path --plan-id {plan_id}`. This replaces earlier path-leaking forms (`--project-dir <abs>`, `--worktree-path <abs>`) so the worktree absolute path no longer appears in dispatch prompts. The complete contract — header semantics, propagation rules, the `--plan-id` two-state binding, and rationale — is documented in `workflow-integration-git/standards/worktree-handling.md` § Dispatch Protocol.
 
-This applies to every dispatch in the execution loop, including (but not limited to) **Step 6 (Execute Steps)** task dispatches and **Step 9 (Independent Change Verification)** subagent invocations. Child agents must echo the same header verbatim into any further dispatches they issue. The Bucket B `--project-dir` clause exists so that verification commands resolved by `task-executor` (`module-tests`, `compile`, `quality-gate`, etc.) run against the worktree's uncommitted state rather than the main checkout — without it, pytest silently collects tests from the main working tree and reports green while leaving the worktree's new tests entirely unexercised. See `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the authoritative Bucket A/B split.
+The `[STATUS] Active worktree: ...` work-log line is the observability signal that the worktree was detected; embedding the header in every dispatch prompt is the active propagation mechanism. Skip the header only when no worktree is active.
 
-See `standards/operations.md` for the complete set of dispatch pattern templates updated with this header.
+This applies to every dispatch in the execution loop, including (but not limited to) **Step 6 (Execute Steps)** task dispatches and **Step 9 (Independent Change Verification)** subagent invocations. Child agents must echo the same header verbatim into any further dispatches they issue.
+
+See `standards/operations.md` for the complete set of dispatch pattern templates and `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule.
 
 ### Common anti-patterns to avoid (mirrored from dev-general-practices)
 
@@ -66,7 +74,7 @@ See [`dev-general-practices` Hard Rules](../dev-general-practices/SKILL.md#bash-
 
 ## cwd for `.plan/execute-script.py` calls
 
-> `manage-*` scripts (Bucket A) resolve `.plan/` via `git rev-parse --git-common-dir` and work from any cwd — do **NOT** pin cwd, do **NOT** pass `--project-dir`, and never use `env -C`. Build / CI / Sonar scripts (Bucket B) take `--project-dir {worktree_path}` explicitly when a worktree is active. `{worktree_path}` is the `[STATUS] Active worktree` line surfaced at Step 4 entry. See `plan-marshall:tools-script-executor/standards/cwd-policy.md`.
+> `manage-*` scripts (Bucket A) resolve `.plan/` via `git rev-parse --git-common-dir` and work from any cwd. Build / CI / Sonar scripts (Bucket B) bind to a working tree via `--plan-id` when a worktree is active. See `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the Bucket A/B split and `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule.
 
 ---
 
@@ -357,12 +365,10 @@ Extract `worktree_path` from the output. If present (plan runs in an isolated wo
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Active worktree: {worktree_path} — all Edit/Write/Read tool calls MUST target this path, NOT the main checkout. ALL tool invocations (git, mvn, npm, uv, pytest, ruff, …) MUST use the tool's native cwd flag against {worktree_path} (git -C, mvn -f, npm --prefix, uv --directory, pytest --rootdir, ruff <path> positional) — NEVER 'cd {worktree_path} && <tool> ...' (compound form trips the bare-repository security prompt for git and violates Bash one-command-per-call for every tool). File contents MUST be written via Write/Edit, never via Bash redirects (echo >>, cat <<EOF >, python3 -c \"open(...).write(...)\", printf >). See dev-general-practices/standards/tool-usage-patterns.md for the full rule and the native-cwd-flag table."
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Active worktree: {worktree_path} — all Edit/Write/Read tool calls MUST target this path. See workflow-integration-git/standards/worktree-handling.md for the full worktree contract."
 ```
 
-If `worktree_path` is absent (plan runs against the main checkout), skip emission. If present, every file path used in Edit/Write/Read from this point on MUST be resolved against `{worktree_path}` rather than the main checkout, every tool invocation MUST use the tool's native cwd flag against `{worktree_path}` (e.g., `git -C {worktree_path} <subcommand>`, `mvn -f {worktree_path} <goal>`, `pytest --rootdir {worktree_path} <args>`) rather than `cd {worktree_path} && <tool> ...`, and file contents MUST be written via the Write/Edit tools rather than Bash redirects.
-
-When `worktree_path` is absent (main-checkout mode), the `cd && <tool>` prohibition still applies for every tool — use the tool's native cwd flag against `.` (`git -C .`, `mvn -f .`, etc.). The rule is enforced at the foundational layer in [`dev-general-practices` Hard Rules](../dev-general-practices/SKILL.md#git-always-use-git--c-path-never-cd-path--git-) (anchored on git, but the structural prohibition extends to every tool — see [`tool-usage-patterns.md`](../dev-general-practices/standards/tool-usage-patterns.md) for the full table) and reinforced inline here so agents see it next to the worktree path they would use it with.
+If `worktree_path` is absent (plan runs against the main checkout), skip emission. See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (path binding, tool cwd flags, Write/Edit-only file authoring, never-edit-main-checkout invariant).
 
 For each task in current phase:
 

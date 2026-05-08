@@ -34,11 +34,19 @@ Diagnose and fix pull request issues with parameterized checks.
 | `wait` | optional | Wait for CI/Sonar to complete (default: true). `--no-wait` takes precedence over `--wait` if both are provided |
 | `handoff` | optional | Handoff structure from previous phase (JSON, see schema below) |
 | `max-fix-attempts` | optional | Maximum fix-verify-commit cycles before giving up (default: 3) |
-| `project-dir` | optional | Absolute path to the checkout/worktree to operate against. When set, pr-doctor forwards `--project-dir {value}` to every child script invocation (ci, build, sonar, github/gitlab). Omit for default behavior (inherited cwd). |
+| `plan-id` | optional | Plan identifier — when set, pr-doctor resolves the active worktree via `manage-status get-worktree-path` and forwards `--project-dir {resolved}` to every child script. Mutually exclusive with `project-dir`. |
+| `project-dir` | optional | Absolute path to the checkout/worktree to operate against (legacy / escape hatch). When set, pr-doctor forwards `--project-dir {value}` to every child script invocation (ci, build, sonar, github/gitlab). Mutually exclusive with `plan-id`. Omit both for default behavior (inherited cwd). |
 
-## --project-dir Forwarding Contract
+## --plan-id / --project-dir Forwarding Contract
 
-When pr-doctor is invoked with `--project-dir {path}`, that value MUST be forwarded uniformly to every child script invocation it makes:
+pr-doctor accepts both routing flags at the top level. The two-state contract is:
+
+* `--plan-id X` and `--project-dir Y` together — error `mutually_exclusive_args`. Pick one.
+* `--plan-id X` only — auto-resolve via `manage-status get-worktree-path`. The resolved path is forwarded to every child as `--project-dir {resolved}`.
+* `--project-dir Y` only — explicit override. Forwarded verbatim to every child as `--project-dir Y`.
+* Neither — child invocations omit the flag and inherited cwd behavior is preserved.
+
+The resolved path MUST be forwarded uniformly to every child script invocation it makes:
 
 - `plan-marshall:tools-integration-ci:ci ...`
 - `plan-marshall:build-*:* run ...`
@@ -47,7 +55,7 @@ When pr-doctor is invoked with `--project-dir {path}`, that value MUST be forwar
 - `plan-marshall:workflow-integration-gitlab:gitlab_pr ...`
 - `plan-marshall:manage-architecture:architecture resolve ...`
 
-The script captures the value at top-level pre-parse (see `pr_doctor.py` `main()`) and exposes it to forwarding helpers via `forward_project_dir(cmd)` / `run_child_cmd(cmd, ...)`. Every child-script bash block in the workflow below MUST include `--project-dir {project_dir}` when the flag is set. When absent, child commands omit the flag and default cwd behavior is preserved.
+The script captures and resolves both flags at top-level pre-parse (see `pr_doctor.py` `main()` and `ci_base.extract_routing_args`) and exposes the resolved path to forwarding helpers via `forward_project_dir(cmd)` / `run_child_cmd(cmd, ...)`. Every child-script bash block in the workflow below MUST include `--project-dir {project_dir}` when the resolution yielded a non-None value. When both flags were absent, child commands omit the flag and default cwd behavior is preserved.
 
 ## Mode Selection
 

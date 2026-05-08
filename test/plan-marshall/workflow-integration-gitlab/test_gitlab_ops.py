@@ -466,3 +466,75 @@ def test_format_jobs_toon_clamps_runaway_aggregate(monkeypatch, capsys):
     # ci_wait path: duration_ceiling=42 → clamp substitutes 42.
     _, total_elapsed_wait = gitlab_ops.format_checks_toon(jobs, duration_ceiling=42)
     assert total_elapsed_wait == 42
+
+
+# =============================================================================
+# Two-state ``--plan-id`` / ``--project-dir`` routing in gitlab_ops.main()
+# =============================================================================
+#
+# gitlab_ops.main() mirrors github_ops.main(): router-level --plan-id is
+# consumed by ci_base.extract_routing_args BEFORE argparse runs, with
+# the resolved cwd installed via set_default_cwd. Both flags together
+# → mutually_exclusive_args TOON error + exit 2.
+
+
+def test_gitlab_main_routes_plan_id_via_extract_routing_args(monkeypatch):
+    """gitlab_ops.main() MUST consume router-level --plan-id and set the default cwd."""
+    import resolve_project_dir as _routing
+    from ci_base import get_default_cwd, set_default_cwd
+
+    monkeypatch.setattr(_routing, '_query_worktree_path', lambda _pid: (True, '/tmp/wt-gitlab-resolved'))
+
+    monkeypatch.setattr('sys.argv', ['gitlab_ops.py', '--plan-id', 'task-routing-canonical', '--help'])
+
+    import pytest as _pytest
+
+    with _pytest.raises(SystemExit):
+        gitlab_ops.main()
+
+    assert get_default_cwd() == '/tmp/wt-gitlab-resolved'
+    set_default_cwd(None)
+
+
+def test_gitlab_main_emits_mutually_exclusive_error_on_both_flags(monkeypatch, capsys):
+    """gitlab_ops.main() with both --plan-id and --project-dir → mutually_exclusive_args."""
+    monkeypatch.setattr(
+        'sys.argv',
+        [
+            'gitlab_ops.py',
+            '--plan-id',
+            'task-routing-canonical',
+            '--project-dir',
+            '/tmp/explicit',
+            'pr',
+            'view',
+        ],
+    )
+    import pytest as _pytest
+
+    with _pytest.raises(SystemExit) as exc_info:
+        gitlab_ops.main()
+    assert exc_info.value.code == 2
+    captured = capsys.readouterr()
+    assert 'mutually_exclusive_args' in captured.out
+
+
+def test_gitlab_main_project_dir_only_keeps_legacy_path(monkeypatch):
+    """Pre-existing --project-dir-only callers must continue working."""
+    from ci_base import get_default_cwd, set_default_cwd
+
+    monkeypatch.setattr(
+        'sys.argv',
+        [
+            'gitlab_ops.py',
+            '--project-dir',
+            '/tmp/wt-gitlab-explicit',
+            '--help',
+        ],
+    )
+    import pytest as _pytest
+
+    with _pytest.raises(SystemExit):
+        gitlab_ops.main()
+    assert get_default_cwd() == '/tmp/wt-gitlab-explicit'
+    set_default_cwd(None)

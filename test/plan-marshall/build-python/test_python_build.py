@@ -423,3 +423,126 @@ def test_quality_gate_module_scoped_skips_plugin_doctor():
     assert len(plugin_doctor_calls) == 0, (
         f'Module-scoped quality-gate must skip plugin-doctor sweep, got: {invocations}'
     )
+
+
+# =============================================================================
+# Test: Two-state ``--plan-id`` / ``--project-dir`` routing contract
+# =============================================================================
+#
+# python_build.py uses the shared ``build_main()`` from ``_build_cli.py``,
+# which delegates to ``resolve_project_dir`` for the four-state contract.
+# The Bucket B build CLI is the canonical caller, so these tests both
+# assert the parser surface and pin the resolver behaviour at the unit
+# level. End-to-end coverage of the resolver internals lives in
+# ``test/plan-marshall/script-shared/test_build_cli.py``.
+
+from _resolve_project_dir_fixtures import (  # noqa: E402
+    CANONICAL_PLAN_ID,
+    CANONICAL_PROJECT_DIR,
+    CANONICAL_WORKTREE,
+    patch_main_checkout_root,
+    patch_query_worktree_path,
+)
+
+
+def _python_run_args(*extra: str) -> list[str]:
+    """Build the canonical ``run`` argv with the required ``--command-args``.
+
+    All build skill ``run`` subparsers require ``--command-args`` so we
+    never shape-hop on argparse's required-arg machinery.
+    """
+    return ['run', '--command-args', 'verify', *extra]
+
+
+def _build_python_parser():
+    """Materialise python_build's argparse parser via build_main wiring.
+
+    Importing the module directly would auto-load it via _load_python_build
+    above, but python_build.py builds its parser inside main(). To avoid
+    side effects we register the same subparsers using ``_build_cli`` and
+    add the project-dir/plan-id flag pair the same way python_build does.
+    """
+    import argparse
+
+    from _build_cli import add_run_subparser
+
+    parser = argparse.ArgumentParser(allow_abbrev=False)
+    sub = parser.add_subparsers(dest='command', required=True)
+    add_run_subparser(sub, command_args_help='Test')
+    return parser
+
+
+def test_run_parser_accepts_plan_id_flag():
+    """python_build run parser MUST accept --plan-id (auto-routing flag)."""
+    parser = _build_python_parser()
+    args = parser.parse_args(_python_run_args('--plan-id', CANONICAL_PLAN_ID))
+    assert args.plan_id == CANONICAL_PLAN_ID
+    # Default project_dir must remain '.' so the resolver detects "user
+    # did not pass --project-dir".
+    assert args.project_dir == '.'
+
+
+def test_run_parser_accepts_project_dir_flag():
+    """Pre-existing --project-dir-only callers must keep parsing."""
+    parser = _build_python_parser()
+    args = parser.parse_args(_python_run_args('--project-dir', CANONICAL_PROJECT_DIR))
+    assert args.project_dir == CANONICAL_PROJECT_DIR
+    assert args.plan_id is None
+
+
+def test_run_parser_accepts_neither_routing_flag():
+    """Neither flag is allowed; the resolver falls back to main checkout."""
+    parser = _build_python_parser()
+    args = parser.parse_args(_python_run_args())
+    assert args.plan_id is None
+    assert args.project_dir == '.'
+
+
+def test_resolve_project_dir_uses_worktree_when_plan_id_set():
+    """``--plan-id`` with use_worktree=true returns the worktree path."""
+    from resolve_project_dir import resolve_project_dir
+
+    with patch_query_worktree_path(use_worktree=True, worktree_path=CANONICAL_WORKTREE):
+        resolved = resolve_project_dir(CANONICAL_PLAN_ID, '.', default='.')
+    # ``resolve_project_dir`` always returns an absolute path string.
+    assert resolved.endswith(CANONICAL_WORKTREE.lstrip('/'))
+
+
+def test_resolve_project_dir_falls_back_to_main_when_use_worktree_false():
+    """``--plan-id`` with use_worktree=false returns the main checkout."""
+    from resolve_project_dir import resolve_project_dir
+
+    with (
+        patch_query_worktree_path(use_worktree=False),
+        patch_main_checkout_root('/tmp/main-checkout-stub') as mock_main,
+    ):
+        resolved = resolve_project_dir(CANONICAL_PLAN_ID, '.', default='.')
+    assert resolved == '/tmp/main-checkout-stub'
+    mock_main.assert_called_once()
+
+
+def test_resolve_project_dir_returns_explicit_project_dir():
+    """``--project-dir`` only returns the path verbatim (escape hatch)."""
+    from resolve_project_dir import resolve_project_dir
+
+    resolved = resolve_project_dir(None, CANONICAL_PROJECT_DIR, default='.')
+    # absolute-path normalisation only — content must be unchanged.
+    assert resolved.endswith(CANONICAL_PROJECT_DIR.lstrip('/'))
+
+
+def test_resolve_project_dir_rejects_both_flags():
+    """``--plan-id`` AND ``--project-dir`` raises MutuallyExclusiveArgsError."""
+    import pytest as _pytest
+    from resolve_project_dir import MutuallyExclusiveArgsError, resolve_project_dir
+
+    with _pytest.raises(MutuallyExclusiveArgsError):
+        resolve_project_dir(CANONICAL_PLAN_ID, CANONICAL_PROJECT_DIR, default='.')
+
+
+def test_resolve_project_dir_neither_flag_uses_main_checkout():
+    """Neither flag set → main checkout via ``git rev-parse``."""
+    from resolve_project_dir import resolve_project_dir
+
+    with patch_main_checkout_root('/tmp/main-checkout-stub'):
+        resolved = resolve_project_dir(None, '.', default='.')
+    assert resolved == '/tmp/main-checkout-stub'

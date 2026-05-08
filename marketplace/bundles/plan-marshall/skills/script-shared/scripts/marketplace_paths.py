@@ -62,6 +62,12 @@ def git_main_checkout_root() -> Path | None:
     resolve to the same main checkout as the primary working tree. The
     result is cached per cwd to avoid spawning a git subprocess on every
     base-dir lookup.
+
+    Note: this resolution is location-independent — it works identically
+    whether worktrees live under ``<root>/.claude/worktrees/`` (legacy)
+    or ``<root>/.plan/local/worktrees/`` (current). See the
+    ``plan-marshall:workflow-integration-git`` skill for the canonical
+    worktree layout and lifecycle.
     """
     return _resolve_git_main_checkout_root(os.getcwd())
 

@@ -9,12 +9,25 @@ commands, resolve, siblings, profiles.
 import argparse
 
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
+from resolve_project_dir import (  # type: ignore[import-not-found]
+    MutuallyExclusiveArgsError,
+    WorktreeResolutionError,
+    add_plan_id_arg,
+    emit_mutually_exclusive_error,
+    emit_worktree_error,
+    resolve_project_dir,
+)
 
 
 @safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(description='Read-only project architecture queries', allow_abbrev=False)
-    parser.add_argument('--project-dir', default='.', help='Project directory (default: current directory)')
+    parser.add_argument(
+        '--project-dir',
+        default='.',
+        help='Project directory (default: current directory). Mutually exclusive with --plan-id.',
+    )
+    add_plan_id_arg(parser)
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # info - Project summary
@@ -70,6 +83,18 @@ def main() -> int:
     )
 
     args = parser.parse_args()
+
+    # Two-state resolution: --plan-id auto-routes via manage-status;
+    # --project-dir is the explicit override; both together is an
+    # error; neither falls back to the main checkout.
+    try:
+        args.project_dir = resolve_project_dir(getattr(args, 'plan_id', None), args.project_dir, default='.')
+    except MutuallyExclusiveArgsError:
+        output_toon(emit_mutually_exclusive_error(getattr(args, 'plan_id', None), args.project_dir))
+        return 2
+    except WorktreeResolutionError as exc:
+        output_toon(emit_worktree_error(args.plan_id, exc))
+        return 2
 
     # Import command handlers from manage-architecture's _cmd_client
     from _cmd_client import (

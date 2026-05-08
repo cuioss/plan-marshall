@@ -30,6 +30,11 @@ from input_validation import (  # type: ignore[import-not-found]
     parse_args_with_toon_errors,
     require_valid_plan_id,
 )
+from resolve_project_dir import (  # type: ignore[import-not-found]
+    WorktreeResolutionError,
+    emit_worktree_error,
+    resolve_project_dir,
+)
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 # =============================================================================
@@ -523,7 +528,24 @@ def _detect_symmetric_pairs(added: list[tuple[str, int, str]]) -> list[dict[str,
 
 def _cmd_surface(args: argparse.Namespace) -> int:
     plan_id = require_valid_plan_id(args)
-    project_dir = Path(args.project_dir).resolve()
+
+    # Routing: when --project-dir is supplied, use it verbatim (escape hatch).
+    # When omitted, auto-resolve via manage-status get-worktree-path. Both
+    # paths are funneled through resolve_project_dir so the two-state
+    # contract is enforced consistently — note that self_review legitimately
+    # needs --plan-id for modified-files lookup as well, so an explicit
+    # --project-dir alongside is allowed here only as a tie-break (the
+    # helper would normally reject the pair via MutuallyExclusiveArgsError;
+    # we resolve manually instead).
+    if args.project_dir is not None:
+        project_dir = Path(args.project_dir).resolve()
+    else:
+        try:
+            resolved = resolve_project_dir(plan_id, None, default=None)
+        except WorktreeResolutionError as exc:
+            output_toon(emit_worktree_error(plan_id, exc))
+            return 2
+        project_dir = Path(resolved).resolve()
     base_branch = args.base_branch or 'main'
 
     if not project_dir.is_dir():
@@ -608,8 +630,15 @@ def _build_parser() -> argparse.ArgumentParser:
     add_plan_id_arg(p_surface)
     p_surface.add_argument(
         '--project-dir',
-        required=True,
-        help='Absolute path to the active git worktree (Bucket B).',
+        required=False,
+        default=None,
+        help=(
+            'Absolute path to the active git worktree (Bucket B). Optional — '
+            'when omitted, the worktree path is auto-resolved from --plan-id '
+            'via manage-status get-worktree-path. Supplying both is allowed '
+            'here because --plan-id also drives modified-files lookup; the '
+            'mutual-exclusivity check applies only to routing.'
+        ),
     )
     p_surface.add_argument(
         '--base-branch',

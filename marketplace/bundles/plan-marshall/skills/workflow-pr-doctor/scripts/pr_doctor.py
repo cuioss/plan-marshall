@@ -28,7 +28,7 @@ import subprocess
 import sys
 from typing import Any
 
-from ci_base import extract_project_dir  # type: ignore[import-not-found]
+from ci_base import extract_routing_args  # type: ignore[import-not-found]
 from triage_helpers import (  # type: ignore[import-not-found]
     ErrorCode,
     create_workflow_cli,
@@ -423,12 +423,15 @@ def cmd_parse_handoff(args):
 
 def main():
     """Main entry point."""
-    # Pre-parse top-level ``--project-dir PATH`` before handing off to the
-    # subcommand parsers, mirroring the ci.py router pattern. The flag is
-    # stripped from argv so downstream argparse layers never see it; the value
-    # is stored in the module-global _PROJECT_DIR and forwarded uniformly to
-    # every child script invocation via forward_project_dir.
-    project_dir, remaining = extract_project_dir(sys.argv[1:])
+    # Pre-parse top-level ``--plan-id ID`` and ``--project-dir PATH`` before
+    # handing off to the subcommand parsers, mirroring the ci.py router
+    # pattern. Two-state contract: --plan-id auto-resolves via manage-status;
+    # --project-dir is the explicit override; both together is a hard error.
+    # Both flags are stripped from argv so downstream argparse layers never
+    # see them; the resolved value is stored in the module-global
+    # _PROJECT_DIR and forwarded uniformly to every child script invocation
+    # via forward_project_dir.
+    project_dir, remaining = extract_routing_args(sys.argv[1:])
     sys.argv = [sys.argv[0], *remaining]
     set_project_dir(project_dir)
 

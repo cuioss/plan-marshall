@@ -317,5 +317,75 @@ class TestPRProjectDirPlumbing(unittest.TestCase):
             ci_base.set_default_cwd(saved_cwd)
 
 
+class TestPRTwoStateRoutingContract(unittest.TestCase):
+    """Two-state ``--plan-id`` / ``--project-dir`` routing for github_pr.main().
+
+    Mirrors the github_ops.main() contract: router-level --plan-id is
+    consumed by extract_routing_args and resolved via manage-status to
+    install the default cwd; --project-dir keeps working as the legacy
+    escape hatch; both together → mutually_exclusive_args TOON error.
+    """
+
+    def test_main_plan_id_sets_default_cwd_via_manage_status_resolution(self):
+        """Router-level --plan-id auto-routes to the persisted worktree path."""
+        import ci_base  # type: ignore[import-not-found]
+        import resolve_project_dir as _routing  # type: ignore[import-not-found]
+
+        saved_argv = sys.argv
+        saved_cwd = ci_base.get_default_cwd()
+        try:
+            ci_base.set_default_cwd(None)
+            sys.argv = [
+                'github_pr.py',
+                '--plan-id',
+                'task-routing-canonical',
+                'fetch-comments',
+                '--pr',
+                '999',
+            ]
+            with (
+                patch.object(_routing, '_query_worktree_path', return_value=(True, '/tmp/wt-pr-resolved')),
+                patch('github_pr._github.fetch_pr_comments_data') as mock_fetch,
+            ):
+                mock_fetch.return_value = {
+                    'status': 'success',
+                    'provider': 'github',
+                    'comments': [],
+                    'total': 0,
+                    'unresolved': 0,
+                }
+                github_pr.main()
+            self.assertEqual(ci_base.get_default_cwd(), '/tmp/wt-pr-resolved')
+        finally:
+            sys.argv = saved_argv
+            ci_base.set_default_cwd(saved_cwd)
+
+    def test_main_emits_mutually_exclusive_error_on_both_flags(self):
+        """Both router-level routing flags → mutually_exclusive_args + exit 2."""
+        import io
+        from contextlib import redirect_stdout
+
+        saved_argv = sys.argv
+        try:
+            sys.argv = [
+                'github_pr.py',
+                '--plan-id',
+                'task-routing-canonical',
+                '--project-dir',
+                '/tmp/explicit',
+                'fetch-comments',
+                '--pr',
+                '999',
+            ]
+            buf = io.StringIO()
+            with self.assertRaises(SystemExit) as ctx:
+                with redirect_stdout(buf):
+                    github_pr.main()
+            self.assertEqual(ctx.exception.code, 2)
+            self.assertIn('mutually_exclusive_args', buf.getvalue())
+        finally:
+            sys.argv = saved_argv
+
+
 if __name__ == '__main__':
     unittest.main()

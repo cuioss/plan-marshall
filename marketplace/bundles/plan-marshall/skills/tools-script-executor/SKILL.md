@@ -22,7 +22,7 @@ user-invocable: false
 - All scripts use `python3 .plan/execute-script.py {notation} {subcommand} {args}`
 - Bootstrap pattern is only for first run when executor does not exist yet
 - Plan-scoped logging requires `--plan-id` or `--audit-plan-id`
-- Plan-metadata scripts resolve `.plan/` via `script_shared.marketplace_paths.get_plan_dir()`; worktree-scoped scripts accept an explicit `--project-dir` or use `git -C {worktree_path}`; meta-tools always run against the main checkout
+- Plan-metadata scripts resolve `.plan/` via `script_shared.marketplace_paths.get_plan_dir()`; worktree-scoped scripts accept either `--plan-id` (auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir` (explicit override / escape hatch — the two flags are mutually exclusive) or use `git -C {worktree_path}`; meta-tools always run against the main checkout
 
 ---
 

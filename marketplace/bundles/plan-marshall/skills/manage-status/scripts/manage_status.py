@@ -31,6 +31,7 @@ from _cmd_mark_step import cmd_mark_step_done
 from _cmd_routing import cmd_get_routing_context, cmd_route, cmd_self_test
 from _status_query import (
     cmd_get_context,
+    cmd_get_worktree_path,
     cmd_list,
     cmd_metadata,
     cmd_progress,
@@ -64,6 +65,31 @@ def main() -> int:
         help='Comma-separated phase names (e.g., 1-init,2-refine,3-outline,4-plan,5-execute,6-finalize)',
     )
     create_parser.add_argument('--force', action='store_true', help='Overwrite existing status')
+    create_parser.add_argument(
+        '--use-worktree',
+        action='store_true',
+        help=(
+            'Mark the plan as running in an isolated git worktree. When set, '
+            '--worktree-path and --worktree-branch are required and are seeded '
+            'into status.metadata for downstream resolution by --plan-id.'
+        ),
+    )
+    create_parser.add_argument(
+        '--worktree-path',
+        default=None,
+        help=(
+            'Absolute path to the worktree root (required with --use-worktree). '
+            'Persisted as status.metadata.worktree_path.'
+        ),
+    )
+    create_parser.add_argument(
+        '--worktree-branch',
+        default=None,
+        help=(
+            'Feature branch ref checked out in the worktree (required with '
+            '--use-worktree). Persisted as status.metadata.worktree_branch.'
+        ),
+    )
     create_parser.set_defaults(func=cmd_create)
 
     # read
@@ -104,6 +130,15 @@ def main() -> int:
     get_context_parser = subparsers.add_parser('get-context', help='Get combined status context', allow_abbrev=False)
     add_plan_id_arg(get_context_parser)
     get_context_parser.set_defaults(func=cmd_get_context)
+
+    # get-worktree-path
+    get_worktree_path_parser = subparsers.add_parser(
+        'get-worktree-path',
+        help='Resolve the persisted worktree path for a plan (returns empty when use_worktree==false)',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(get_worktree_path_parser)
+    get_worktree_path_parser.set_defaults(func=cmd_get_worktree_path)
 
     # list
     list_parser = subparsers.add_parser('list', help='Discover all plans', allow_abbrev=False)

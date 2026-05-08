@@ -32,7 +32,7 @@ Skill: plan-marshall:tools-integration-ci
 - Never improvise script subcommands — use only those documented in this skill's workflow steps
 - Never skip a step in the manifest list based on PR state, CI state, or earlier step outcomes. The ONLY valid skip condition is the resumable re-entry check (skip if already marked `done` from a previous invocation). Standards documents handle their own runtime state decisions inside their dispatched bodies.
 - Never issue a raw `git` Bash call without `git -C {worktree_path}` (pre-worktree-removal) or `git -C {main_checkout}` (post-worktree-removal). No `cd` chaining, no implicit cwd. `{worktree_path}` and `{main_checkout}` MUST be resolved by the Step 0 entry step before any standards document runs.
-- Never invoke a build, CI, Sonar, or GitHub/GitLab script (`ci`, `python_build`, `sonar`, `workflow-integration-*`) without forwarding `--project-dir {worktree_path}` (or `--project-dir {main_checkout}` after worktree removal). The executor is cwd-pass-through; cwd control is explicit at the call site.
+- Never invoke a build, CI, Sonar, or GitHub/GitLab script (`ci`, `python_build`, `sonar`, `workflow-integration-*`) without an explicit routing flag. Forward `--plan-id {plan_id}` (preferred — auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir {worktree_path}` / `--project-dir {main_checkout}` (escape hatch / explicit override after worktree removal). The two flags are mutually exclusive. The executor is cwd-pass-through; routing must be explicit at every call site.
 
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
@@ -64,6 +64,10 @@ See [references/workflow-overview.md](references/workflow-overview.md) for the v
 ### How to obtain session_id and transcript_path
 
 Both are resolved via `manage_session` (`current` + `transcript-path` subcommands). Resolver-pipeline mechanism — cache layout, hook source, error contract, forbidden Bash-sandbox patterns — lives in [`references/session-resolver.md`](references/session-resolver.md). Callers obtain `session_id` first, then `transcript_path` keyed by it.
+
+## Phase-Entry Worktree Assertion
+
+The Phase Entry Protocol's `phase_handshake verify --phase 5-execute --strict` call (see [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md#phase-handshake-verify-phases-2-6)) asserts the worktree-resolution contract before any phase-6 work begins: when `metadata.use_worktree==true`, `metadata.worktree_path` MUST be non-empty AND filesystem-resolvable (the directory exists AND `git -C {path} rev-parse --show-toplevel` returns the same canonical path). When the assertion fails, the script returns `status: error, error: worktree_unresolved` and (under `--strict`) exits 1 — phase entry refuses to advance until the persisted metadata is repaired. Plans with `metadata.use_worktree==false` skip the assertion (main-checkout flow). The assertion is particularly load-bearing here: phase-6's branch-cleanup step removes the worktree, so a stale `worktree_path` at entry would point at a directory cleanup is about to delete or has already deleted on a re-entry. The assertion fires uniformly at every phase boundary; see deliverable 8 in the originating lesson plan for the full contract.
 
 ## Configuration Sources
 
@@ -203,7 +207,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
 
 Extract `metadata.worktree_path`:
 
-- **If present**: the plan ran in an isolated worktree. Capture the value as `{worktree_path}`. The main checkout is the parent of `.claude/worktrees/{plan_id}/` — derive `{main_checkout}` by stripping the trailing `/.claude/worktrees/{plan_id}` segment from `{worktree_path}`, or resolve it explicitly:
+- **If present**: the plan ran in an isolated worktree. Capture the value as `{worktree_path}`. The main checkout is the parent of `.plan/local/worktrees/{plan_id}/` — derive `{main_checkout}` by stripping the trailing `/.plan/local/worktrees/{plan_id}` segment from `{worktree_path}`, or resolve it explicitly:
 
 ```bash
 git -C {worktree_path} rev-parse --path-format=absolute --git-common-dir
@@ -221,7 +225,7 @@ Log the resolved paths so they remain visible in model context for every subsequ
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Finalize cwd context: worktree_path={worktree_path} main_checkout={main_checkout} — all git calls MUST use 'git -C' with one of these paths, all script calls MUST pass '--project-dir'"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Finalize cwd context: worktree_path={worktree_path} main_checkout={main_checkout} — all git calls MUST use 'git -C' with one of these paths, all Bucket B script calls MUST pass '--plan-id {plan_id}' or '--project-dir <path>' (mutually exclusive)"
 ```
 
 From this point on, every standards document loaded by the finalize pipeline inherits `{worktree_path}` and `{main_checkout}` from this step. Standards documents MUST NOT re-resolve these values.
@@ -465,7 +469,7 @@ Capture the following values:
 2. **Deliverables list** — from `manage-solution-outline read --plan-id {plan_id}` (ordered list of titles and per-deliverable state).
 3. **Manifest `phase_6.steps` list** — from `manage-execution-manifest read --plan-id {plan_id}` (already fetched in Step 2; capture the bare-name list for renderer ordering).
 4. **Repository state** — branch via `git -C {main_checkout} branch --show-current`, porcelain via `git -C {main_checkout} status --porcelain`.
-5. **PR state + number** — via `ci pr view --project-dir {main_checkout}`. Treat error (no PR for branch) as `state=n/a, number=n/a`.
+5. **PR state + number** — via `ci pr view --plan-id {plan_id}` (preferred) or `ci pr view --project-dir {main_checkout}` (escape hatch). Treat error (no PR for branch) as `state=n/a, number=n/a`.
 6. **Solution outline Summary** — the 2-3 sentence Summary body that feeds the Goal block. Fetch via `manage-solution-outline read --plan-id {plan_id} --section summary` and extract the `content` field. On `section_not_found` or empty content, store the sentinel value `None`; the emission procedure substitutes the defensive placeholder `(no summary recorded)`.
 7. **Plan `short_description`** — the compact label used by Step 6's terminal `done` emission. Extract `plan.short_description` from `manage-status read --plan-id {plan_id}` (already fetched in item 1). Store the raw string, or `None` when the field is absent/empty. This value is captured **before** archive so it remains available after `status.json` is moved.
 

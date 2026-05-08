@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 # Direct import - executor sets up PYTHONPATH for cross-skill imports
+import resolve_project_dir as _routing  # type: ignore[import-not-found]
 from marketplace_bundles import resolve_bundles_root  # type: ignore[import-not-found]
 from plan_logging import log_entry
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
@@ -390,10 +391,29 @@ def main() -> int:
         help='Apply config_defaults() callback for all extensions',
         allow_abbrev=False,
     )
-    defaults_parser.add_argument('--project-dir', default='.', help='Project directory (default: current directory)')
+    defaults_parser.add_argument(
+        '--project-dir',
+        default='.',
+        help='Project directory (default: current directory). Mutually exclusive with --plan-id.',
+    )
+    _routing.add_plan_id_arg(defaults_parser)
     defaults_parser.set_defaults(func=cmd_apply_config_defaults)
 
     args = parser.parse_args()
+
+    # Two-state routing: --plan-id auto-resolves; --project-dir is the
+    # explicit override; both together is a hard error.
+    try:
+        args.project_dir = _routing.resolve_project_dir(
+            getattr(args, 'plan_id', None), args.project_dir, default='.'
+        )
+    except _routing.MutuallyExclusiveArgsError:
+        print(serialize_toon(_routing.emit_mutually_exclusive_error(getattr(args, 'plan_id', None), args.project_dir)))
+        return 2
+    except _routing.WorktreeResolutionError as exc:
+        print(serialize_toon(_routing.emit_worktree_error(args.plan_id, exc)))
+        return 2
+
     result: int = args.func(args)
     return result
 

@@ -2,14 +2,9 @@
 
 Pull request lifecycle operations: create, view, merge, auto-merge, close, ready, edit. Also covers the `branch delete` leaf, which supports post-merge remote branch cleanup.
 
-## Worktree-Isolated Plans
+## Branch-Aware Operations: `--head BRANCH`
 
-Several operations identify a PR by source branch, and the underlying `gh`/`glab` CLI
-derives that branch from `git symbolic-ref HEAD` in the cwd. When a plan runs in an
-isolated git worktree (`.claude/worktrees/{plan_id}`) but the Bash tool executes from
-the main checkout, the cwd HEAD is the main branch, not the worktree's feature branch —
-so cwd-based derivation picks the wrong branch and operations fail (e.g. `pr create`
-returns *"No commits between main and main"*).
+Several operations identify a PR by source branch, and the underlying `gh`/`glab` CLI derives that branch from `git symbolic-ref HEAD` in the cwd. When the Bash tool's cwd HEAD is not the branch the operation should target, cwd-based derivation picks the wrong branch and operations fail (e.g. `pr create` returns *"No commits between main and main"*).
 
 To handle this, branch-aware operations accept an explicit `--head BRANCH` argument:
 
@@ -25,9 +20,7 @@ For `pr merge`, `pr auto-merge`, and `ci status`, supply **exactly one** of `--p
 or `--head`. Supplying both returns `status: error` with message `specify exactly one of --pr-number or --head`.
 Supplying neither returns `status: error` with message `specify either --pr-number or --head`.
 
-Callers running from the main checkout against a worktree-isolated plan branch MUST
-pass `--head {plan_branch}` on every branch-aware operation. Callers running from inside
-the worktree itself can omit `--head`.
+Callers whose cwd HEAD does not match the operation target branch MUST pass `--head {branch}`. See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (worktree-isolated plans run from the main checkout against a feature branch and MUST always pass `--head {plan_branch}`).
 
 ---
 
@@ -121,9 +114,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create 
 ```
 
 The subcommand reads the body from the prepared scratch file, creates the PR,
-and deletes the scratch on success. When invoking from the main checkout
-against a worktree-isolated plan, pass `--head {plan_branch}` to bypass
-cwd-based source-branch derivation. See *Worktree-Isolated Plans* above.
+and deletes the scratch on success. See *Branch-Aware Operations: `--head BRANCH`* above for when `--head` is required.
 
 ### Step 4: Process Result
 
@@ -149,8 +140,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge \
     (--pr-number 123 | --head feature/x) [--strategy merge|squash|rebase] [--delete-branch]
 ```
 
-Supply exactly one of `--pr-number` or `--head`. From a worktree-isolated plan invoked
-from the main checkout, prefer `--head {plan_branch}`.
+Supply exactly one of `--pr-number` or `--head`. See *Branch-Aware Operations: `--head BRANCH`* above for when `--head` is required.
 
 ### Step 2: Process Result
 
@@ -304,9 +294,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci branch del
     --remote-only --branch {branch_name}
 ```
 
-When invoking from the main checkout against a worktree-isolated plan, use the
-standard `--project-dir` router flag to target the worktree's remote
-configuration, exactly as with other CI leaves.
+When the cwd's remote configuration does not match the target, bind subprocesses to a different checkout via the standard router flags: prefer `--plan-id <plan>` (auto-resolves the worktree via `manage-status get-worktree-path`), or fall back to the legacy `--project-dir <path>` escape hatch. The two flags are mutually exclusive — see `tools-integration-ci/SKILL.md` § "Worktree-Aware Invocation" for the full two-state contract and `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific path convention.
 
 ### Step 2: Process Result
 

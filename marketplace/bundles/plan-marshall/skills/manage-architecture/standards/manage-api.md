@@ -443,7 +443,8 @@ What the orchestrator does NOT do:
 ### Discovery Flow
 
 ```
-architecture.py discover --project-dir /path/to/project
+architecture.py discover --plan-id my-plan         # preferred — auto-resolves the worktree
+architecture.py discover --project-dir /path/...   # escape hatch (mutually exclusive with --plan-id)
                             │
                             ▼
   1. EXTENSION DISCOVERY (extension_discovery.py)

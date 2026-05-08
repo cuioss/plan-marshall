@@ -255,6 +255,10 @@ def extract_project_dir(argv: list[str]) -> tuple[str | None, list[str]]:
     (``github_pr.py``, ``github_ops.py``, ``gitlab_pr.py``, ``gitlab_ops.py``,
     ``sonar.py``, ``sonar_rest.py``). Pre-parsing avoids forcing every
     downstream ``argparse`` layer to know about the router flag.
+
+    See :func:`extract_routing_args` for the canonical entry point that
+    consumes both ``--project-dir`` and ``--plan-id`` together and
+    enforces the two-state contract (mutually exclusive flags).
     """
     project_dir: str | None = None
     out: list[str] = []
@@ -289,6 +293,106 @@ def extract_project_dir(argv: list[str]) -> tuple[str | None, list[str]]:
         out.append(token)
         i += 1
     return project_dir, out
+
+
+_SUBCOMMAND_TOKENS: frozenset[str] = frozenset({'pr', 'ci', 'issue', 'branch'})
+
+
+def extract_routing_args(argv: list[str]) -> tuple[str | None, list[str]]:
+    """Pre-parse ``--project-dir`` AND ``--plan-id`` and return the resolved cwd.
+
+    Implements the two-state contract documented in
+    ``script_shared/scripts/resolve_project_dir.py`` for the CI router
+    and provider front-ends. Wraps :func:`extract_project_dir` and
+    :func:`script_shared.resolve_project_dir.extract_plan_id` so that
+    callers can swap a single ``extract_project_dir`` line for one
+    ``extract_routing_args`` call and gain ``--plan-id`` support.
+
+    Routing-vs-subcommand disambiguation: ``--plan-id`` at the **router
+    level** (i.e., before the first known CI subcommand token: ``pr``,
+    ``ci``, ``issue``, ``branch``) is consumed for worktree resolution.
+    ``--plan-id`` that appears AFTER a subcommand token is left in
+    place — the downstream argparse subcommand consumes it for its own
+    purpose (e.g., ``pr prepare-body --plan-id`` for plan-context
+    interpolation, never for routing).
+
+    Returns:
+        ``(resolved_project_dir, remaining_argv)``. ``resolved_project_dir``
+        is ``None`` when neither flag was supplied (callers preserve the
+        previous "inherit cwd" behaviour); otherwise it is an absolute
+        path resolved via ``manage-status get-worktree-path`` for
+        ``--plan-id`` or returned verbatim for ``--project-dir``.
+
+    Side effects:
+        Prints a structured TOON error and exits with code 2 when both
+        flags are supplied or when ``--plan-id`` resolution fails.
+        Mirrors the historical behaviour of :func:`extract_project_dir`
+        which also calls ``sys.exit(2)`` on malformed input.
+    """
+    project_dir, after_project = extract_project_dir(argv)
+
+    # Slice the argv at the first known subcommand token. Only the prefix
+    # is searched for ``--plan-id`` (router-level); the suffix (subcommand
+    # arguments) is preserved verbatim so its own ``--plan-id`` survives.
+    pre, post = _split_at_subcommand(after_project)
+
+    # Lazy import — keeps the dependency optional so older test fixtures
+    # that monkeypatch ci_base in isolation do not need to satisfy the
+    # full PYTHONPATH for resolve_project_dir.
+    try:
+        from resolve_project_dir import (  # type: ignore[import-not-found]
+            MutuallyExclusiveArgsError,
+            WorktreeResolutionError,
+            emit_mutually_exclusive_error,
+            emit_worktree_error,
+            extract_plan_id,
+            resolve_project_dir,
+        )
+    except ImportError:
+        # Fall back to the legacy single-flag behaviour when the helper
+        # is not on the import path (e.g., minimal smoke tests). Callers
+        # that opt into ``--plan-id`` must ship the helper alongside.
+        return project_dir, after_project
+
+    plan_id, pre_remaining = extract_plan_id(pre)
+    remaining = pre_remaining + post
+
+    if plan_id is None and project_dir is None:
+        return None, remaining
+
+    try:
+        resolved = resolve_project_dir(plan_id, project_dir, default=None)
+    except MutuallyExclusiveArgsError:
+        # Local fallback for output_error — defer to print() so we don't
+        # introduce a cycle with the format_toon helper that may live in
+        # a sibling module.
+        from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
+        print(serialize_toon(emit_mutually_exclusive_error(plan_id, project_dir)))
+        sys.exit(2)
+    except WorktreeResolutionError as exc:
+        from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
+        assert plan_id is not None  # only reachable when plan_id was supplied
+        print(serialize_toon(emit_worktree_error(plan_id, exc)))
+        sys.exit(2)
+
+    return resolved, remaining
+
+
+def _split_at_subcommand(argv: list[str]) -> tuple[list[str], list[str]]:
+    """Return ``(pre_subcommand, post_subcommand_inclusive)``.
+
+    Walks ``argv`` until the first token in ``_SUBCOMMAND_TOKENS`` is
+    encountered. Returns the prefix (router-level args) and the
+    inclusive suffix (subcommand + its own args). When no subcommand is
+    found, the entire argv is returned as the prefix and the suffix is
+    empty — matching the historical "no subcommand" behaviour.
+    """
+    for index, token in enumerate(argv):
+        if token in _SUBCOMMAND_TOKENS:
+            return argv[:index], argv[index:]
+    return list(argv), []
 
 
 def set_default_cwd(cwd: str | None) -> None:

@@ -30,7 +30,7 @@ Source: [pr-operations.md](pr-operations.md)
 | `pr edit` | `--pr-number`, `--plan-id` | `--title`, `--slot {name}` | Edit PR title and/or body. Body (if updated) is consumed from the scratch file allocated by `pr prepare-body --for edit`. |
 
 **Worktree-isolated plans**: When invoking from the main checkout against a plan running
-in `.claude/worktrees/{plan_id}`, pass `--head {plan_branch}` on every branch-aware
+in `.plan/local/worktrees/{plan_id}`, pass `--head {plan_branch}` on every branch-aware
 operation (`pr create`, `pr view`, `pr merge`, `pr auto-merge`, `ci status`). The
 underlying gh/glab CLIs derive the source branch from cwd HEAD, which would otherwise
 resolve to `main`. Examples:

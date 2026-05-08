@@ -188,6 +188,59 @@ def cmd_get_context(args: argparse.Namespace) -> dict | None:
     return context
 
 
+def cmd_get_worktree_path(args: argparse.Namespace) -> dict | None:
+    """Return the persisted worktree path for a plan.
+
+    Reads ``status.metadata.use_worktree`` and ``status.metadata.worktree_path``
+    and returns the path so that callers (build wrappers, git_workflow,
+    phase-entry assertions) can resolve the active worktree from a
+    plan-id alone — no ``--project-dir``, no filesystem layout
+    re-derivation.
+
+    Output contract:
+    - ``use_worktree == true`` and ``worktree_path`` set → ``worktree_path: <abs>``
+    - ``use_worktree == false`` (or metadata absent) → ``worktree_path: ''`` (empty)
+    - ``use_worktree == true`` but ``worktree_path`` missing → ``error: worktree_unresolved``
+    """
+    status = require_status(args)
+    if status is None:
+        return None
+
+    metadata = status.get('metadata') or {}
+    use_worktree = bool(metadata.get('use_worktree', False))
+
+    if not use_worktree:
+        return {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'use_worktree': False,
+            'worktree_path': '',
+        }
+
+    worktree_path = metadata.get('worktree_path')
+    if not worktree_path:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'worktree_unresolved',
+            'message': (
+                "metadata.use_worktree is true but metadata.worktree_path is missing — "
+                'plan was created without seeding the worktree path.'
+            ),
+        }
+
+    result: dict[str, Any] = {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'use_worktree': True,
+        'worktree_path': worktree_path,
+    }
+    worktree_branch = metadata.get('worktree_branch')
+    if worktree_branch:
+        result['worktree_branch'] = worktree_branch
+    return result
+
+
 def cmd_list(args: argparse.Namespace) -> dict:
     """Discover all plans."""
     plans_dir = get_plans_dir()

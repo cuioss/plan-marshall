@@ -51,7 +51,10 @@ JSON format for storage:
     {"name": "6-finalize", "status": "pending"}
   ],
   "metadata": {
-    "change_type": "feature"
+    "change_type": "feature",
+    "use_worktree": true,
+    "worktree_path": "/abs/path/.plan/local/worktrees/my-feature",
+    "worktree_branch": "feature/my-feature"
   },
   "created": "2025-01-15T10:00:00Z",
   "updated": "2025-01-15T14:30:00Z"
@@ -65,7 +68,7 @@ JSON format for storage:
 | `title` | string | Plan title |
 | `current_phase` | string | Current active phase |
 | `phases` | list | Phase objects with name and status |
-| `metadata` | table | Key-value metadata (common fields: `change_type`, `confidence`, `domain`) |
+| `metadata` | table | Key-value metadata (common fields: `change_type`, `confidence`, `domain`, `use_worktree`, `worktree_path`, `worktree_branch`) |
 | `created` | string | ISO timestamp of creation |
 | `updated` | string | ISO timestamp of last update |
 
@@ -77,6 +80,23 @@ JSON format for storage:
 | `in_progress` | Phase currently active |
 | `done` | Phase completed |
 
+### Worktree Metadata Convention
+
+`status.metadata` is the canonical source of truth for whether a plan
+runs in an isolated git worktree. Three fields work together; `create`
+seeds them atomically and `get-worktree-path` reads them:
+
+| Field | Type | When set | Description |
+|-------|------|----------|-------------|
+| `use_worktree` | bool | Always (seeded by `create`) | `true` when the plan runs in an isolated worktree, `false` when it runs against the main checkout. Never absent on plans created via `create`. |
+| `worktree_path` | string | Only when `use_worktree==true` | Absolute path to the worktree root. Used by `get-worktree-path`, build wrappers (`--plan-id` resolution), and phase-entry assertions. |
+| `worktree_branch` | string | Only when `use_worktree==true` | Feature branch ref checked out in the worktree. Recorded for the audit trail and consumed by `workflow-integration-git` worktree subcommands. |
+
+Downstream consumers MUST read these fields via `get-worktree-path`
+rather than re-deriving the path from filesystem layout. Re-derivation
+breaks if the platform-neutral worktree root constant ever changes
+again, and it duplicates logic that `manage-status` already owns.
+
 ---
 
 ## Operations
@@ -85,14 +105,18 @@ Script: `plan-marshall:manage-status:manage_status`
 
 ### create
 
-Create status.json with initial phases.
+Create status.json with initial phases. Optionally seeds the worktree
+trio (`use_worktree`, `worktree_path`, `worktree_branch`) into
+`status.metadata` so downstream consumers can resolve the active
+worktree from the plan id alone.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status create \
   --plan-id {plan_id} \
   --title {title} \
   --phases {comma-separated-phases} \
-  [--force]
+  [--force] \
+  [--use-worktree --worktree-path {abs_path} --worktree-branch {ref}]
 ```
 
 **Parameters**:
@@ -100,8 +124,11 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status create
 - `--title` (required): Plan title
 - `--phases` (required): Comma-separated phase names in execution order (e.g., `1-init,2-refine,3-outline,4-plan,5-execute,6-finalize`). Order matters — it determines progress calculation and transition sequence.
 - `--force`: Overwrite existing status.json
+- `--use-worktree` (optional): Mark the plan as running in an isolated git worktree. When set, both `--worktree-path` and `--worktree-branch` are required. Seeds `status.metadata.use_worktree=true` and persists the path and branch alongside it. When omitted, `status.metadata.use_worktree=false` is seeded explicitly so downstream resolvers never have to treat absence-of-metadata as "main-checkout".
+- `--worktree-path` (required with `--use-worktree`): Absolute path to the worktree root. Persisted as `status.metadata.worktree_path`.
+- `--worktree-branch` (required with `--use-worktree`): Feature branch ref checked out in the worktree. Persisted as `status.metadata.worktree_branch`.
 
-**Output** (TOON):
+**Output — main-checkout** (TOON):
 ```toon
 status: success
 plan_id: my-feature
@@ -110,6 +137,29 @@ created: true
 plan:
   title: My Feature
   current_phase: 1-init
+use_worktree: false
+```
+
+**Output — worktree** (TOON):
+```toon
+status: success
+plan_id: my-feature
+file: status.json
+created: true
+plan:
+  title: My Feature
+  current_phase: 1-init
+use_worktree: true
+worktree_path: /abs/path/.plan/local/worktrees/my-feature
+worktree_branch: feature/my-feature
+```
+
+**Error — partial worktree args** (TOON):
+```toon
+status: error
+plan_id: my-feature
+error: invalid_worktree_args
+message: --use-worktree requires both --worktree-path and --worktree-branch
 ```
 
 ### read
@@ -340,6 +390,52 @@ change_type: feature
 
 **Note**: All metadata fields are promoted to top level for convenience (flattened from `metadata` object). The fields shown depend on what has been set via `metadata --set`.
 
+### get-worktree-path
+
+Resolve the persisted worktree path for a plan from `status.metadata`.
+Allows callers (build wrappers, `git_workflow`, phase-entry assertions)
+to look up the active worktree by `--plan-id` alone — without
+re-deriving the path from filesystem layout, and without taking a
+`--project-dir` argument.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-worktree-path \
+  --plan-id {plan_id}
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+
+**Behavior**:
+- When `metadata.use_worktree == true` and `metadata.worktree_path` is set → returns the absolute path.
+- When `metadata.use_worktree == false` (or metadata is absent) → returns `worktree_path: ''` (empty string). Callers interpret this as "plan runs against the main checkout".
+- When `metadata.use_worktree == true` but `metadata.worktree_path` is missing → returns `error: worktree_unresolved` (data integrity failure: the seed at create time is missing).
+
+**Output — worktree resolved** (TOON):
+```toon
+status: success
+plan_id: my-feature
+use_worktree: true
+worktree_path: /abs/path/.plan/local/worktrees/my-feature
+worktree_branch: feature/my-feature
+```
+
+**Output — main checkout** (TOON):
+```toon
+status: success
+plan_id: my-feature
+use_worktree: false
+worktree_path: ""
+```
+
+**Output — unresolved** (TOON):
+```toon
+status: error
+plan_id: my-feature
+error: worktree_unresolved
+message: metadata.use_worktree is true but metadata.worktree_path is missing — plan was created without seeding the worktree path.
+```
+
 ### list
 
 Discover all plans, optionally filtered by current phase.
@@ -496,7 +592,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `create` | `--plan-id --title --phases [--force]` | Create status.json |
+| `create` | `--plan-id --title --phases [--force] [--use-worktree --worktree-path --worktree-branch]` | Create status.json (seeds worktree metadata when `--use-worktree` is present) |
 | `read` | `--plan-id` | Read full status |
 | `set-phase` | `--plan-id --phase` | Set current phase (marks as in_progress) |
 | `update-phase` | `--plan-id --phase --status` | Update specific phase status |
@@ -504,6 +600,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `metadata` | `--plan-id --get/--set --field [--value]` | Get/set metadata fields |
 | `mark-step-done` | `--plan-id --phase --step --outcome [--display-detail] [--force]` | Record phase step outcome (+ optional display detail) in `metadata.phase_steps` |
 | `get-context` | `--plan-id` | Get combined status context |
+| `get-worktree-path` | `--plan-id` | Resolve persisted worktree path (returns empty string when `use_worktree==false`) |
 | `list` | `[--filter PHASE]` | Discover all plans, optionally filtered by phase |
 | `transition` | `--plan-id --completed` | Mark phase done, advance to next |
 | `archive` | `--plan-id [--dry-run]` | Archive completed plan |
@@ -533,6 +630,8 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `legacy_string_entry` | 1 | `mark-step-done`: existing entry uses the pre-migration bare-string shape; caller must migrate to dict shape before retrying |
 | `invalid_outcome` | 1 | `mark-step-done`: outcome not in `done`/`skipped` |
 | `invalid_argument` | 1 | `mark-step-done`: empty `--phase` or `--step` |
+| `invalid_worktree_args` | 1 | `create`: `--use-worktree` set without both `--worktree-path` and `--worktree-branch` |
+| `worktree_unresolved` | 1 | `get-worktree-path`: `metadata.use_worktree==true` but `metadata.worktree_path` is missing (data integrity failure from a partial seed at create time) |
 
 ---
 
