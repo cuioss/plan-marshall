@@ -558,7 +558,27 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 **11e**: Triage each finding:
 - **FIX** → create fix task (`origin: fix`, `profile: implementation`, depends on nothing)
 - **SUPPRESS** → log suppression, resolve finding
-- **ACCEPT** → log as technical debt, resolve finding
+- **ACCEPT** → log as technical debt, resolve finding (see Scope-Deviation Escalation guard below — ACCEPT cannot be auto-selected when the finding represents a softening of a request-level hard requirement)
+
+#### Scope-Deviation Escalation (Step 11 guard)
+
+Before recording any FIX/SUPPRESS/ACCEPT decision that would soften a request-level hard requirement (zero-hit grep gates, "no transition window" intents, "remove flag entirely" cutovers, etc.), this step MUST raise an `AskUserQuestion` per the canonical contract in [`../ref-workflow-architecture/standards/scope-deviation-escalation.md`](../ref-workflow-architecture/standards/scope-deviation-escalation.md). The standard is the single source of truth for the deviation taxonomy, the three-option AskUserQuestion shape (Hold / Accept-with-rationale / Split), and the prohibited "log-and-continue" anti-pattern.
+
+**Detection**: The decision softens a hard requirement when the finding cites a deviation from a measurable gate or structural intent declared in the plan's request, solution outline, or deliverable narrative. Use the standard's "Hard-Requirement Softening: Definition" section to classify.
+
+**Guard application**:
+
+- **FIX** branch → no escalation needed (the dispatcher is already enforcing the requirement by creating a fix task).
+- **SUPPRESS** branch → escalate when the suppression would cause the requirement to fail in a future verification run. Pure noise suppression (linter false positives, etc.) does not require escalation.
+- **ACCEPT** branch → escalate whenever the finding cites a hard requirement. ACCEPT-as-technical-debt is NOT auto-selectable for hard-requirement softenings; the user must explicitly choose "Accept with rationale" via the canonical AskUserQuestion and supply the mandatory written rationale.
+
+**Resolution**: On user resolution, follow the side-effect contract in `scope-deviation-escalation.md`:
+
+- **Hold** → re-route through FIX or BLOCKED (no scope reduction recorded).
+- **Accept-with-rationale** → persist the rationale to `decision.log` at INFO level using the canonical `(scope-deviation:accept)` caller-name marker (downstream tooling — PR-body emitter, retrospective scanner — keys off this exact marker to find recorded deviations) AND surface the rationale verbatim in the PR body under a "Scope Deviation Accepted" subsection.
+- **Split** → seed a successor lesson via `manage-lessons add` capturing the deferred portion.
+
+The work-log line `[STATUS] Gate N deferred status accepted` is forbidden as a stand-in for the AskUserQuestion thread — the escalation MUST happen first; logging confirms the user's decision afterward.
 
 **11f**: If fix tasks created → increment `verify_iteration` in task metadata, reset verification task to `pending`, continue execution loop (fix tasks will execute before the re-queued verification task via `depends_on`).
 

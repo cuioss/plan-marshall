@@ -598,6 +598,55 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 - WL-C contract source: TASK-10 of plan `lesson-2026-05-07-11-001` (auto-routing `--plan-id` extension)
 - Driving lesson: `2026-05-07-11-001` (worktree-handling rules were duplicated and silently drifted across 10+ skill files; centralizing them caught a class of regressions invisible to per-skill review).
 
+#### 2.16 Self-Modifying Phased-Rollout Validator
+
+Verify that every deliverable in `solution_outline.md` whose `Affected files` list touches the plan-marshall runtime infrastructure AND whose plan declares `compatibility: breaking` AND whose narrative contains hard-cutover language carries a documented phasing rationale per the centralized [`self-modifying-classification.md`](../skills/ref-workflow-architecture/standards/self-modifying-classification.md) standard. Without this validator, plans like `lesson-2026-05-07-11-001` (PR #346) silently descope breaking-flag deletions mid-execution and ship with both surfaces alive.
+
+**Activation condition**: Runs in the `3-outline` phase context. Activates whenever the solution outline header declares `compatibility: breaking`. Skips silently otherwise — additive plans cannot trigger the descoping failure mode this validator guards against.
+
+**Detection logic**: For each deliverable in `solution_outline.md`:
+
+1. Extract the `**Affected files:**` block. Match each entry against the path heuristic from [`self-modifying-classification.md` § Path Heuristic](../skills/ref-workflow-architecture/standards/self-modifying-classification.md#path-heuristic). The deliverable is **path-matched** when at least one affected file matches.
+2. Extract the deliverable's narrative (`**Change per file:**`, `**Success Criteria:**`, surrounding prose). The deliverable is **hard-cutover** when the narrative contains any of: "remove ... entirely", "delete the ...", "drop the ...", "retire the ...", "no escape hatch", "no transition window", "zero-hit grep", "zero hits", "returns zero", or equivalent phrasing applied to a public surface (CLI flag, public API, exported symbol, manage-* subcommand, etc.).
+3. The deliverable triggers the validator when **path-matched AND hard-cutover** both hold (the plan-level `compatibility: breaking` is the activation guard, so it is already true at this point).
+4. For each triggered deliverable, search its narrative for a `**Phasing Rationale:**` block. The block satisfies the contract when it explicitly addresses all three points from [`self-modifying-classification.md` § Phasing-Rationale Contract](../skills/ref-workflow-architecture/standards/self-modifying-classification.md#phasing-rationale-contract): cache-sync ordering, verification-gate target, narrative consistency. Missing block OR a block that omits any of the three points is a violation.
+
+**Finding emission template**:
+
+For each triggered deliverable that lacks a complete Phasing Rationale block:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate add --plan-id {plan_id} --phase 3-outline \
+  --source qgate-self-modifying-rollout --type triage \
+  --title "Q-Gate: self-modifying-rollout — deliverable {N} ({title}) lacks phasing rationale" \
+  --detail "Deliverable {N} matches the self-modifying path heuristic ({matched_paths}) AND the plan declares compatibility: breaking AND the deliverable describes a hard cutover ({cutover_phrase}). Without a documented phasing rationale, this combination historically descopes silently mid-execution (lesson 2026-05-08-09-004 / PR #346 reference). Add a **Phasing Rationale:** block to the deliverable addressing all three points from self-modifying-classification.md (cache-sync ordering, verification-gate target, narrative consistency), OR split the deletion portion into a follow-up plan per the PLAN A / PLAN B pattern, OR switch the plan-level compatibility from breaking to deprecation." \
+  --audit-plan-id {plan_id}
+```
+
+`{matched_paths}` is the comma-separated list of affected files that hit the path heuristic. `{cutover_phrase}` is the matching language from the deliverable narrative (truncate to ≤120 chars).
+
+**Pass criteria** (silent — no finding emitted):
+- The plan declares `compatibility: deprecation` or `compatibility: smart_and_ask` (validator does not activate), OR
+- No deliverable matches the path heuristic, OR
+- Every triggered deliverable carries a complete `**Phasing Rationale:**` block.
+
+**Fail criteria**: At least one triggered deliverable lacks a complete Phasing Rationale block — emit one finding per deliverable.
+
+**Positive example**: A plan declares `compatibility: breaking` and contains a deliverable whose Affected files list `marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_build_cli.py` and whose Change per file says "remove the `--project-dir` flag entirely; no escape hatch". The deliverable has no `**Phasing Rationale:**` block. Validator emits a finding citing both the matched path and the cutover phrase.
+
+**Positive example (rationale present, complete)**: Same deliverable as above, but it now carries a `**Phasing Rationale:**` block stating: (1) the cache-sync ordering is safe because the deletion edit lands before any in-flight task that would invoke the old flag; (2) the verification gate (TASK-N grep) executes against worktree source post-deletion-edit; (3) the central narrative carries no transition hedges. Validator passes silently.
+
+**Negative example (additive plan)**: A plan declares `compatibility: breaking` but every deliverable creates new files under `marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/`. No affected file matches the runtime path heuristic; validator does not trigger.
+
+**Negative example (deprecation strategy)**: A plan declares `compatibility: deprecation` and modifies `marketplace/bundles/plan-marshall/skills/execute-task/SKILL.md`. The activation guard (`compatibility: breaking`) does not hold; validator does not run.
+
+**Cross-references**:
+- Authoritative source: [`self-modifying-classification.md`](../skills/ref-workflow-architecture/standards/self-modifying-classification.md)
+- Companion validator: § 2.15 Worktree-Linter Validator (covers stale worktree-handling patterns; this validator covers the orthogonal phasing concern)
+- Companion procedure: phase-3-outline Step 10b (Self-Modifying Classification) — outline-time author prompt that this validator backstops at q-gate time
+- Driving lesson: `2026-05-08-09-004` (PR #346 silently descoped a "no transition window" requirement because no q-gate validator caught the missing phasing rationale)
+
 ---
 
 ### Step 5: Check Missing Coverage
@@ -738,6 +787,7 @@ qgate_pending_count: {count}
 | Tier-Delta Validator (3-outline) | Tiered/variant specs include a delta table contrasting every cross-tier field with rationale | Tiered sections present AND delta table missing or incomplete |
 | Narrative-vs-Code Validator (2-refine, lesson plans) | Every concrete code claim in the source lesson narrative matches current code state | Claim is `stale` (code moved) or `invalid` (cited path/symbol/shape never matched) |
 | Worktree-Linter Validator (3-outline / 4-plan) | Skills/agents/scripts touched by deliverables contain none of the three forbidden worktree-handling patterns documented in `worktree-handling.md` (direct `cd <worktree_path>`, hard-coded `.claude/worktrees/`, manage-* invocations missing `--plan-id`) | Any unsuppressed match for patterns WL-A, WL-B, or WL-C |
+| Self-Modifying Phased-Rollout Validator (3-outline) | Plan declares `compatibility: breaking` AND a deliverable matches the runtime path heuristic AND describes a hard cutover → deliverable carries a complete `**Phasing Rationale:**` block per `self-modifying-classification.md` | Triggered deliverable lacks a Phasing Rationale block OR the block omits cache-sync ordering, verification-gate target, or narrative-consistency points |
 | Missing Coverage | All assessed files in deliverables | Assessed files missing |
 
 ---

@@ -552,6 +552,65 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **If workflow fails**: HALT and return error. Do NOT fall back to grep/search.
 
+### Step 10b: Self-Modifying Classification
+
+**Purpose**: Classify each deliverable as self-modifying (touches plan-marshall runtime infrastructure) and surface the phasing decision before Q-Gate locks the outline. The classification rule, path heuristic, and phasing-rationale contract live in [`../../ref-workflow-architecture/standards/self-modifying-classification.md`](../../ref-workflow-architecture/standards/self-modifying-classification.md) — this step wires that standard into outline workflow.
+
+**Activation**: Runs after Step 10 (Execute Change-Type Workflow and Write Solution) and BEFORE Step 11 (Q-Gate Verification). Applies to every deliverable in `solution_outline.md`, regardless of track (Simple or Complex) or change type.
+
+#### Detection
+
+For each deliverable, scan its `**Affected files:**` block for paths matching the path heuristic. The path list is the single source of truth in [`../../ref-workflow-architecture/standards/self-modifying-classification.md` § Path Heuristic](../../ref-workflow-architecture/standards/self-modifying-classification.md#path-heuristic) — do not duplicate the list inline; read it from the standard. Treat the standard as authoritative for both the path patterns and the per-pattern rationale.
+
+A deliverable is **self-modifying + breaking** when ALL three predicates hold:
+
+1. At least one affected path matches the heuristic from the standard, AND
+2. The plan declares `compatibility: breaking` (read once for the whole plan from the solution outline header), AND
+3. The deliverable's `Change per file:` or surrounding narrative contains hard-cutover language. The full keyword list is owned by the q-gate validator — see [q-gate-validation-agent.md § 2.16 Self-Modifying Phased-Rollout Validator](../../../agents/q-gate-validation-agent.md) Detection Logic step 2 for the canonical phrasing list (`remove ... entirely`, `delete the ...`, `drop the ...`, `retire the ...`, `no escape hatch`, `no transition window`, `zero-hit grep`, `zero hits`, `returns zero`, or equivalent applied to a public surface). Both the validator and this step consume the same list to keep outline-time and q-gate-time detection in lockstep.
+
+#### Author Prompt (when all three hold)
+
+When the predicate fires AND the deliverable does NOT already contain a `**Phasing Rationale:**` block, prompt the author via `AskUserQuestion`:
+
+```yaml
+question: |
+  Deliverable {N} ({title}) is self-modifying and declares a breaking deletion/cutover.
+
+  **Affected runtime path(s):** {matched paths}
+  **Compatibility:** breaking
+  **Hard-cutover signal:** {one-line — what the deliverable removes}
+
+  Without a phasing strategy this combination historically descopes silently. How should the plan proceed?
+
+header: "Self-Modifying"
+options:
+  - label: "Split into PLAN A + PLAN B"
+    description: "Recommended. PLAN A ships only the additive surface; PLAN B (a follow-up plan) ships the deletion against the already-merged additive base. The current plan retains only additive deliverables; the deletion seeds a successor lesson via manage-lessons add."
+  - label: "Document phasing rationale inline"
+    description: "Single-plan path. Add a `**Phasing Rationale:**` block to deliverable {N} addressing all three points from self-modifying-classification.md (cache-sync ordering, verification-gate target, narrative consistency). Q-Gate validator §2.16 verifies the block content."
+  - label: "Switch compatibility to additive"
+    description: "Change the plan-level `compatibility:` from `breaking` to `deprecation`. The deliverable retains both surfaces with explicit deprecation markers; the hard-cutover language is dropped from the narrative."
+multiSelect: false
+```
+
+#### Resolution Handling
+
+| Option | Side Effect |
+|--------|-------------|
+| **Split into PLAN A + PLAN B** | Remove the deletion-bearing portion of the deliverable from `solution_outline.md` (or remove the entire deliverable when it is purely deletion). Capture the removed scope as a successor lesson via `manage-lessons add`. Re-emit the outline with only the additive scope. |
+| **Document phasing rationale inline** | Insert a `**Phasing Rationale:**` block into the deliverable. The block MUST address the three points from `self-modifying-classification.md` § Phasing-Rationale Contract. Re-write the outline with the new block in place. |
+| **Switch compatibility to additive** | Edit the solution outline header to set `compatibility: deprecation — Add deprecation markers to old code, provide migration path`. Strip hard-cutover language from the affected deliverable's narrative. The classification predicate no longer fires (compatibility is no longer `breaking`); Step 11 proceeds normally. |
+
+Log the resolution to `decision.log`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-3-outline) Self-modifying classification fired for deliverable {N} ({title}); resolution: {chosen_option}"
+```
+
+When the predicate does NOT fire (deliverable is additive or matches the heuristic but is not breaking), no prompt is raised — proceed directly to Step 11.
+
 ### Step 11: Q-Gate Verification
 
 **Purpose**: Verify skill output meets quality standards.
@@ -605,6 +664,7 @@ The agent applies the following mechanical validators automatically when invoked
 | Consumer Sweep Completeness (§ 2.9) — shipped by PR #323 | `solution_outline.md`, worktree grep results | `qgate` (legacy unscoped source — preserved for backwards compatibility) |
 | Argparse Validator (§ 2.10) | `solution_outline.md` (every embedded `python3 .plan/execute-script.py ...` invocation), live `--help` output of each cited script | `qgate-argparse` |
 | Tier-Delta Validator (§ 2.13) | `solution_outline.md` (tiered/variant section pairs and their delta tables) | `qgate-tier-delta` |
+| Self-Modifying Phased-Rollout Validator (§ 2.16) | `solution_outline.md` (each deliverable's Affected files + compatibility header + narrative), `self-modifying-classification.md` heuristic | `qgate-self-modifying-rollout` |
 
 The remaining validators (`module-mapping`, `scope-criterion`, `narrative-vs-code`) are scoped to other phases (4-plan or 2-refine) and do NOT activate when the agent is invoked from phase-3-outline. See `q-gate-validation-agent.md` for their canonical activation conditions.
 
