@@ -154,6 +154,16 @@ Where `{resolve_command}` depends on profile: `implementation` → `quality-gate
 
 If still failing after max iterations: mark task as `blocked` and record details in work.log.
 
+#### Scope-Deviation Escalation (per-task guard)
+
+Before recording any per-task verification deviation that would soften a request-level hard requirement, this step MUST raise an `AskUserQuestion` per the canonical contract in [`../ref-workflow-architecture/standards/scope-deviation-escalation.md`](../ref-workflow-architecture/standards/scope-deviation-escalation.md). The standard is the single source of truth for the deviation taxonomy, the three-option AskUserQuestion shape (Hold / Accept-with-rationale / Split), and the prohibited "log-and-continue" anti-pattern.
+
+**Detection**: A deviation softens a hard requirement when, mid-fix-iteration, the implementor concludes that satisfying the request as written is structurally riskier than estimated and the conservative response would be to keep both the old and new surfaces. Concrete signals: verification command reports a non-zero hit count against a "zero-hit grep" gate; tests pass against a legacy code path the deliverable was meant to delete; the implementor is about to add a transition hedge ("until X has fully landed", "callers may still see Y") to satisfy the test gate.
+
+**Integration shape**: This guard mirrors the per-task `compatibility` AskUserQuestion already used by the `smart_and_ask` Compatibility Strategy in the implementation profile (Step: Compatibility Strategy above). Both guards are AskUserQuestion gates that fire BEFORE the deviation is committed; both pause the per-task fix loop until the user resolves the prompt; both persist the resolution to `decision.log`. The new guard adds one element the compatibility AskUserQuestion does not: when the user chooses "Accept with rationale", the rationale text is also surfaced in the PR body (the compatibility AskUserQuestion does not require this because compatibility decisions land in commit messages instead).
+
+**Resolution**: On user resolution, follow the side-effect contract in `scope-deviation-escalation.md`. The `[VERIFY]`, `[STATUS]`, or `[OUTCOME]` work-log line confirming the user's chosen option IS allowed AFTER the AskUserQuestion has resolved — never as a stand-in for it. When the user chooses "Hold the line", the per-task fix loop resumes (do NOT mark the task `blocked` on the same iteration just because the user refused the softening).
+
 ### Step: Record Lessons
 
 On issues or unexpected patterns, use the two-step path-allocate flow:
