@@ -560,20 +560,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 #### Detection
 
-For each deliverable, scan its `**Affected files:**` block for paths matching the path heuristic in `self-modifying-classification.md`:
-
-- `marketplace/bundles/plan-marshall/skills/phase-{1..6}-*/`
-- `marketplace/bundles/plan-marshall/skills/execute-task/`
-- `marketplace/bundles/plan-marshall/skills/manage-status/`
-- `marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_build_cli.py`
-- `marketplace/bundles/plan-marshall/skills/tools-script-executor/`
-- `marketplace/bundles/plan-marshall/skills/tools-integration-ci/scripts/ci.py` or `ci_base.py`
+For each deliverable, scan its `**Affected files:**` block for paths matching the path heuristic. The path list is the single source of truth in [`../../ref-workflow-architecture/standards/self-modifying-classification.md` § Path Heuristic](../../ref-workflow-architecture/standards/self-modifying-classification.md#path-heuristic) — do not duplicate the list inline; read it from the standard. Treat the standard as authoritative for both the path patterns and the per-pattern rationale.
 
 A deliverable is **self-modifying + breaking** when ALL three predicates hold:
 
-1. At least one affected path matches the heuristic, AND
+1. At least one affected path matches the heuristic from the standard, AND
 2. The plan declares `compatibility: breaking` (read once for the whole plan from the solution outline header), AND
-3. The deliverable's `Change per file:` or surrounding narrative describes a deletion, rename, or hard-cutover (zero-hit grep gate, "remove flag entirely", "no escape hatch", etc.). Use the `narrative-vs-code-validator` heuristic: presence of words like "remove", "delete", "drop", "retire" applied to a public surface trigger this predicate.
+3. The deliverable's `Change per file:` or surrounding narrative contains hard-cutover language. The full keyword list is owned by the q-gate validator — see [q-gate-validation-agent.md § 2.16 Self-Modifying Phased-Rollout Validator](../../../agents/q-gate-validation-agent.md) Detection Logic step 2 for the canonical phrasing list (`remove ... entirely`, `delete the ...`, `drop the ...`, `retire the ...`, `no escape hatch`, `no transition window`, `zero-hit grep`, `zero hits`, `returns zero`, or equivalent applied to a public surface). Both the validator and this step consume the same list to keep outline-time and q-gate-time detection in lockstep.
 
 #### Author Prompt (when all three hold)
 

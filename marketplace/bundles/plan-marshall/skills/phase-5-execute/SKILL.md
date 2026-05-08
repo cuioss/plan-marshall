@@ -572,7 +572,13 @@ Before recording any FIX/SUPPRESS/ACCEPT decision that would soften a request-le
 - **SUPPRESS** branch → escalate when the suppression would cause the requirement to fail in a future verification run. Pure noise suppression (linter false positives, etc.) does not require escalation.
 - **ACCEPT** branch → escalate whenever the finding cites a hard requirement. ACCEPT-as-technical-debt is NOT auto-selectable for hard-requirement softenings; the user must explicitly choose "Accept with rationale" via the canonical AskUserQuestion and supply the mandatory written rationale.
 
-**Resolution**: On user resolution, follow the side-effect contract in `scope-deviation-escalation.md` (Hold → re-route through FIX or BLOCKED; Accept-with-rationale → persist rationale to `decision.log` and surface in PR body; Split → seed a successor lesson via `manage-lessons add`). The work-log line `[STATUS] Gate N deferred status accepted` is forbidden as a stand-in for the AskUserQuestion thread — the escalation MUST happen first; logging confirms the user's decision afterward.
+**Resolution**: On user resolution, follow the side-effect contract in `scope-deviation-escalation.md`:
+
+- **Hold** → re-route through FIX or BLOCKED (no scope reduction recorded).
+- **Accept-with-rationale** → persist the rationale to `decision.log` at INFO level using the canonical `(scope-deviation:accept)` caller-name marker (downstream tooling — PR-body emitter, retrospective scanner — keys off this exact marker to find recorded deviations) AND surface the rationale verbatim in the PR body under a "Scope Deviation Accepted" subsection.
+- **Split** → seed a successor lesson via `manage-lessons add` capturing the deferred portion.
+
+The work-log line `[STATUS] Gate N deferred status accepted` is forbidden as a stand-in for the AskUserQuestion thread — the escalation MUST happen first; logging confirms the user's decision afterward.
 
 **11f**: If fix tasks created → increment `verify_iteration` in task metadata, reset verification task to `pending`, continue execution loop (fix tasks will execute before the re-queued verification task via `depends_on`).
 

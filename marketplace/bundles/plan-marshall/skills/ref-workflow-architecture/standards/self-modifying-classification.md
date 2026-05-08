@@ -12,7 +12,7 @@ A deliverable is **self-modifying** when its `Affected files` list contains any 
 
 | Pattern | Rationale |
 |---------|-----------|
-| `marketplace/bundles/plan-marshall/skills/phase-{1..6}-*/` | Phase skills orchestrate the plan loop; mid-flight edits change dispatch behavior |
+| `marketplace/bundles/plan-marshall/skills/phase-[1-6]-*/` | Phase skills orchestrate the plan loop; mid-flight edits change dispatch behavior |
 | `marketplace/bundles/plan-marshall/skills/execute-task/` | Per-task executor; mid-flight edits change verification flow |
 | `marketplace/bundles/plan-marshall/skills/manage-status/` | Plan/phase state; mid-flight edits change transition behavior |
 | `marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_build_cli.py` | Build wrappers that dispatch every Bucket B verification |

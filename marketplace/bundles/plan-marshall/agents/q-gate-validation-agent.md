@@ -620,7 +620,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} --phase 3-outline \
   --source qgate-self-modifying-rollout --type triage \
   --title "Q-Gate: self-modifying-rollout — deliverable {N} ({title}) lacks phasing rationale" \
-  --detail "Deliverable {N} matches the self-modifying path heuristic ({matched_paths}) AND the plan declares compatibility: breaking AND the deliverable describes a hard cutover ({cutover_phrase}). Without a documented phasing rationale, this combination historically descopes silently mid-execution (lesson 2026-05-08-09-004 / PR #346 reference). Add a `**Phasing Rationale:**` block to the deliverable addressing all three points from self-modifying-classification.md (cache-sync ordering, verification-gate target, narrative consistency), OR split the deletion portion into a follow-up plan per the PLAN A / PLAN B pattern, OR switch the plan-level compatibility from `breaking` to `deprecation`." \
+  --detail "Deliverable {N} matches the self-modifying path heuristic ({matched_paths}) AND the plan declares compatibility: breaking AND the deliverable describes a hard cutover ({cutover_phrase}). Without a documented phasing rationale, this combination historically descopes silently mid-execution (lesson 2026-05-08-09-004 / PR #346 reference). Add a **Phasing Rationale:** block to the deliverable addressing all three points from self-modifying-classification.md (cache-sync ordering, verification-gate target, narrative consistency), OR split the deletion portion into a follow-up plan per the PLAN A / PLAN B pattern, OR switch the plan-level compatibility from breaking to deprecation." \
   --audit-plan-id {plan_id}
 ```
 
