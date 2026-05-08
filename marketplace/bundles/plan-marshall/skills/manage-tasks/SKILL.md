@@ -71,10 +71,50 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `tasks-by-domain` | `--plan-id --domain` | List tasks filtered by domain |
 | `tasks-by-profile` | `--plan-id --profile` | List tasks filtered by profile |
 | `next-tasks` | `--plan-id` | Get all tasks ready for parallel execution |
-| `finalize-step` | `--plan-id --task-number --step --outcome [--reason]` | Complete step with outcome (done/skipped/failed) |
+| `finalize-step` | `--plan-id --task-number --step --outcome [--reason] [--outcome-task-title] [--outcome-step-count] [--outcome-caller]` | Complete step with outcome (done/skipped/failed). When the call closes a task as `done`, the script emits one canonical `[OUTCOME] ({caller}) Completed TASK-NNN: {title} ({M} steps)` work-log line — see "Script-Level [OUTCOME] Emission" below for the contract and overrides. |
 | `add-step` | `--plan-id --task-number --target [--after]` | Add step to task |
 | `remove-step` | `--plan-id --task-number --step` | Remove step from task |
 | `rename-path` | `--plan-id --old-path --new-path` | Record path rename and rewrite step targets |
+
+### Script-Level `[OUTCOME]` Emission (`finalize-step`)
+
+When a `finalize-step --outcome done` call closes the targeted task (i.e. all
+steps are `done` AND no step is `failed`), the script emits exactly one
+canonical work-log entry **before returning**:
+
+```
+[OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-NNN: {task_title} ({M} steps)
+```
+
+This emission is **unconditional and lives inside the script boundary** — it
+fires for every task completion regardless of which orchestrator dispatched
+the closing call. The motivating gap (lesson `2026-05-08-14-001`) was that the
+caller-side emission in `phase-5-execute` was lost whenever a phase-agent was
+re-dispatched and the original agent's working context was discarded before
+its `[OUTCOME]` line could be written. Moving the emission into the script
+removes the dependency on the caller's working context.
+
+**Defaults** (used when the optional overrides below are omitted):
+
+| Field | Default |
+|-------|---------|
+| `caller` | `plan-marshall:phase-5-execute` |
+| `task_title` | The `title` field of the task on disk |
+| `step_count` | `len(task.steps)` |
+
+**Optional overrides** (rarely needed; mainly for tests and non-default callers):
+
+| Flag | Effect |
+|------|--------|
+| `--outcome-task-title TEXT` | Override `{task_title}` in the rendered line. |
+| `--outcome-step-count N` | Override `{M}` (the step count) in the rendered line. |
+| `--outcome-caller BUNDLE:SKILL` | Override the `({caller})` marker in the rendered line. |
+
+The emission only fires for the *task-closing* call (the final step that
+flips the task to `done`). It does NOT fire for `--outcome skipped`,
+`--outcome failed`, or for intermediate `--outcome done` calls that leave the
+task `in_progress`. Caller-side `[OUTCOME]` emissions in skills MUST NOT
+duplicate this line — the script-level guard is the single source of truth.
 
 ### Add Flow — Three-Step Path-Allocate Pattern
 

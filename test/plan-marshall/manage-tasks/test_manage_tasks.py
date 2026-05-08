@@ -1052,6 +1052,152 @@ def test_finalize_step_all_done_no_failed_marks_task_done():
         assert result['task_status'] == 'done'
 
 
+# =============================================================================
+# Tests: finalize-step script-level [OUTCOME] emission
+# =============================================================================
+#
+# Lesson 2026-05-08-14-001: phase-5-execute lost log coverage on agent-initiated
+# re-dispatch because [OUTCOME] emissions lived in skill prose. The cure was to
+# move [OUTCOME] emission into manage-tasks finalize-step itself, where it
+# fires unconditionally inside the script boundary on the task-closing call.
+# These four tests pin down the contract.
+
+
+def _read_work_log(plan_dir: Path) -> str:
+    """Read the plan-scoped work.log file as text (empty string if missing)."""
+    log_path = plan_dir / 'logs' / 'work.log'
+    if not log_path.exists():
+        return ''
+    return log_path.read_text(encoding='utf-8')
+
+
+class TestFinalizeStepOutcomeEmission:
+    """Pin down the script-level [OUTCOME] guard in cmd_finalize_step.
+
+    Contract (from lesson 2026-05-08-14-001):
+      - On finalize-step --outcome done that closes a task (all steps done,
+        none failed), the script emits exactly one
+        '[OUTCOME] (caller) Completed TASK-NNN: {title} ({M} steps)' line.
+      - Defaults: caller='plan-marshall:phase-5-execute', title=task.title,
+        step_count=len(task.steps).
+      - Optional --outcome-task-title / --outcome-step-count / --outcome-caller
+        flags override the rendered fields.
+      - No [OUTCOME] line on intermediate done calls or on --outcome failed.
+    """
+
+    def test_emits_outcome_with_defaults_on_task_close(self):
+        """[OUTCOME] is emitted with default caller/title/count when the
+        closing call uses --outcome done and supplies no overrides."""
+        with PlanContext(plan_id='outcome-default') as ctx:
+            add_basic_task(
+                plan_id='outcome-default',
+                title='My Closing Task',
+                deliverable=1,
+                steps=['src/main/java/A.java', 'src/main/java/B.java'],
+            )
+
+            # Intermediate close (step 1) — must NOT emit [OUTCOME].
+            cmd_finalize_step(_finalize_step_ns(plan_id='outcome-default', task=1, step=1, outcome='done'))
+            log_after_intermediate = _read_work_log(ctx.plan_dir)
+            assert '[OUTCOME]' not in log_after_intermediate, (
+                'Script-level [OUTCOME] must not fire on intermediate task-not-yet-done step finalization'
+            )
+
+            # Closing call (step 2) — must emit one [OUTCOME] line with defaults.
+            cmd_finalize_step(_finalize_step_ns(plan_id='outcome-default', task=1, step=2, outcome='done'))
+            log_after_close = _read_work_log(ctx.plan_dir)
+
+            assert '[OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-001: My Closing Task (2 steps)' in (
+                log_after_close
+            )
+
+    def test_emits_outcome_with_overrides(self):
+        """When --outcome-task-title / --outcome-step-count / --outcome-caller
+        are supplied, the rendered [OUTCOME] line uses them verbatim."""
+        with PlanContext(plan_id='outcome-overrides') as ctx:
+            add_basic_task(
+                plan_id='outcome-overrides',
+                title='Original Disk Title',
+                deliverable=1,
+                steps=['src/main/java/A.java'],
+            )
+
+            ns = Namespace(
+                plan_id='outcome-overrides',
+                task_number=1,
+                step=1,
+                outcome='done',
+                reason=None,
+                outcome_task_title='Overridden Title',
+                outcome_step_count=42,
+                outcome_caller='custom-bundle:custom-skill',
+            )
+            cmd_finalize_step(ns)
+
+            log_text = _read_work_log(ctx.plan_dir)
+            assert (
+                '[OUTCOME] (custom-bundle:custom-skill) Completed TASK-001: Overridden Title (42 steps)'
+                in log_text
+            )
+            # The default caller/title MUST NOT appear when overrides win.
+            assert 'plan-marshall:phase-5-execute' not in log_text.split('[OUTCOME]', 1)[1], (
+                'Default caller leaked into [OUTCOME] line despite override'
+            )
+            assert 'Original Disk Title' not in log_text.split('[OUTCOME]', 1)[1], (
+                'Default title leaked into [OUTCOME] line despite override'
+            )
+
+    def test_no_outcome_on_intermediate_done_step(self):
+        """An intermediate --outcome done call (task still in_progress)
+        must not emit any [OUTCOME] line."""
+        with PlanContext(plan_id='outcome-intermediate') as ctx:
+            add_basic_task(
+                plan_id='outcome-intermediate',
+                title='Multi Step Task',
+                deliverable=1,
+                steps=[
+                    'src/main/java/A.java',
+                    'src/main/java/B.java',
+                    'src/main/java/C.java',
+                ],
+            )
+
+            cmd_finalize_step(_finalize_step_ns(plan_id='outcome-intermediate', task=1, step=1, outcome='done'))
+            cmd_finalize_step(_finalize_step_ns(plan_id='outcome-intermediate', task=1, step=2, outcome='done'))
+
+            log_text = _read_work_log(ctx.plan_dir)
+            assert '[OUTCOME]' not in log_text, (
+                'No [OUTCOME] line should be emitted while the task is still in_progress'
+            )
+
+    def test_no_outcome_on_failed_close(self):
+        """When the closing finalize uses --outcome failed (task ends in
+        status=failed), no [OUTCOME] line is emitted — only the existing
+        WARNING marker fires."""
+        with PlanContext(plan_id='outcome-failed') as ctx:
+            add_basic_task(
+                plan_id='outcome-failed',
+                title='Doomed Task',
+                deliverable=1,
+                steps=['src/main/java/A.java'],
+            )
+
+            cmd_finalize_step(
+                _finalize_step_ns(
+                    plan_id='outcome-failed',
+                    task=1,
+                    step=1,
+                    outcome='failed',
+                    reason='Verification broke',
+                )
+            )
+
+            log_text = _read_work_log(ctx.plan_dir)
+            assert '[OUTCOME]' not in log_text, (
+                '[OUTCOME] must not be emitted on a failed-status closing finalize'
+            )
+
+
 def test_list_surfaces_failed_count():
     """List command includes failed count in counts."""
     with PlanContext(plan_id='list-fail-count'):

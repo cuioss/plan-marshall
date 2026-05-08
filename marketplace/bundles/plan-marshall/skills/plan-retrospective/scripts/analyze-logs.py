@@ -221,6 +221,221 @@ def top_n(counter: Counter, n: int) -> list[dict[str, Any]]:
     return [{'tag': tag, 'count': count} for tag, count in counter.most_common(n)]
 
 
+# =============================================================================
+# Phase-5 logging-gap fact extractors (lesson 2026-05-08-14-001)
+# =============================================================================
+#
+# These extractors are pure fact-gathering: they count and pair, never judge.
+# Judgement happens in the LLM rules in `references/logging-gap-analysis.md`.
+# Each extractor returns a small dict whose shape is documented inline so the
+# downstream rule application is unambiguous.
+
+# Bracketed marker the `[OUTCOME]` work-log lines emitted by manage-tasks
+# finalize-step (see manage-tasks/SKILL.md § "Script-Level [OUTCOME] Emission").
+_OUTCOME_TASK_RE = re.compile(r'\[OUTCOME\]\s*\([^)]*\)\s*Completed\s+(TASK-\d+)')
+
+# Bracketed marker for manage-tasks completion confirmations (one per task close).
+_MANAGE_TASKS_COMPLETED_RE = re.compile(r'\[MANAGE-TASKS\]\s+Completed\s+(TASK-\d+)')
+
+# Bracketed marker for the new "Re-entering execute phase" status line (D2).
+_RE_ENTERING_RE = re.compile(
+    r'\[STATUS\]\s*\(plan-marshall:phase-5-execute\)\s*Re-entering execute phase'
+)
+
+# Bracketed marker for the standard "Starting execute phase" status line.
+_STARTING_RE = re.compile(
+    r'\[STATUS\]\s*\(plan-marshall:phase-5-execute\)\s*Starting execute phase'
+)
+
+# `[ARTIFACT] (plan-marshall:phase-5-execute:{N})` — the three-segment caller
+# is the documented exception for per-task artifact emission.
+_ARTIFACT_TASK_RE = re.compile(
+    r'\[ARTIFACT\]\s*\(plan-marshall:phase-5-execute:(\d+)\)'
+)
+
+# Production work-log lines start with an ISO-8601 timestamp inside square
+# brackets, e.g. `[2026-05-08T14:23:11.123Z] [INFO] [hash] [STATUS] ...`.
+_LINE_TIMESTAMP_RE = re.compile(r'\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)\]')
+
+
+def _parse_iso_seconds(timestamp: str) -> float | None:
+    """Convert an ISO-8601 timestamp into UNIX seconds. Best-effort; returns None on failure."""
+    from datetime import datetime
+
+    try:
+        cleaned = timestamp.replace('Z', '+00:00')
+        return datetime.fromisoformat(cleaned).timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
+def pair_outcome_emissions(work_log_lines: list[str]) -> dict[str, Any]:
+    """Pair `[OUTCOME]` lines with `[MANAGE-TASKS] Completed` confirmations.
+
+    Returns a dict with three keys:
+      - paired: number of TASK-NNN values present in BOTH outcome and completed sets
+      - unpaired_completed: TASK-NNN ids present in [MANAGE-TASKS] Completed
+            but missing from [OUTCOME] (the failure mode lesson 2026-05-08-14-001
+            describes — the script-level guard fires but the orchestrator/agent
+            failed to emit the [OUTCOME] line, OR vice versa on stale builds).
+      - unpaired_outcome: TASK-NNN ids present in [OUTCOME] but missing from
+            [MANAGE-TASKS] Completed (mostly happens on hand-emitted [OUTCOME]
+            lines without a corresponding finalize-step call — an orchestrator
+            anti-pattern).
+    """
+    outcomes: set[str] = set()
+    for line in work_log_lines:
+        match = _OUTCOME_TASK_RE.search(line)
+        if match:
+            outcomes.add(match.group(1))
+
+    completed: set[str] = set()
+    for line in work_log_lines:
+        match = _MANAGE_TASKS_COMPLETED_RE.search(line)
+        if match:
+            completed.add(match.group(1))
+
+    paired = outcomes & completed
+    return {
+        'paired': len(paired),
+        'unpaired_completed': sorted(completed - outcomes),
+        'unpaired_outcome': sorted(outcomes - completed),
+    }
+
+
+def cluster_dispatches(
+    work_log_lines: list[str],
+    script_log_lines: list[str],
+    gap_threshold_s: float = 30.0,
+) -> dict[str, Any]:
+    """Cluster phase-5 dispatches by inter-line gap to infer dispatch boundaries.
+
+    Returns a dict with:
+      - inferred_dispatches: number of dispatch clusters detected (a cluster is
+            a contiguous run of phase-5-related log lines whose timestamps are
+            all within `gap_threshold_s` of the previous line in the run).
+      - starting_markers: count of `[STATUS] ... Starting execute phase` lines.
+      - re_entering_markers: count of `[STATUS] ... Re-entering execute phase` lines.
+
+    The cluster count gives the LLM rule a way to flag plans where the
+    orchestrator re-dispatched the phase-agent more times than there are
+    Re-entering markers (the symptom of D2's re-entry logging being skipped).
+    """
+    timestamps: list[float] = []
+    for line in work_log_lines + script_log_lines:
+        # Restrict to lines that mention the phase-5 caller — non-phase-5 lines
+        # do not contribute to phase-5 dispatch counting.
+        if 'plan-marshall:phase-5-execute' not in line:
+            continue
+        ts_match = _LINE_TIMESTAMP_RE.search(line)
+        if not ts_match:
+            continue
+        seconds = _parse_iso_seconds(ts_match.group(1))
+        if seconds is None:
+            continue
+        timestamps.append(seconds)
+
+    timestamps.sort()
+    inferred = 0
+    last_ts: float | None = None
+    for ts in timestamps:
+        if last_ts is None or (ts - last_ts) > gap_threshold_s:
+            inferred += 1
+        last_ts = ts
+
+    starting = sum(1 for line in work_log_lines if _STARTING_RE.search(line))
+    re_entering = sum(1 for line in work_log_lines if _RE_ENTERING_RE.search(line))
+
+    return {
+        'inferred_dispatches': inferred,
+        'starting_markers': starting,
+        're_entering_markers': re_entering,
+    }
+
+
+def detect_outcome_for_diffed_tasks(
+    work_log_lines: list[str], plan_dir: Path
+) -> dict[str, Any]:
+    """For each task whose status is `done` in the persisted task files,
+    decide whether an `[OUTCOME]` line was emitted. Pure counting — no
+    judgement on whether absence is a defect.
+
+    Returns:
+      - tasks_with_diff_no_outcome: list of `TASK-NNN` ids that the persisted
+            task state declares `status: done` AND for which no
+            `[OUTCOME] (...) Completed TASK-NNN` line appears in `work.log`.
+
+    The fact extractor cannot know the per-task git diff cheaply (the SHA
+    range is not persisted in a stable place), so it uses the persisted task
+    `status: done` as a proxy for "the task closed successfully and would have
+    emitted [ARTIFACT] entries had its diff been non-empty". This is
+    intentionally over-inclusive — the LLM rule applies the diff guard.
+    """
+    outcomes: set[str] = set()
+    for line in work_log_lines:
+        match = _OUTCOME_TASK_RE.search(line)
+        if match:
+            outcomes.add(match.group(1))
+
+    done_tasks: set[str] = set()
+    tasks_dir = plan_dir / 'tasks'
+    if tasks_dir.exists():
+        for task_path in sorted(tasks_dir.glob('TASK-*.json')):
+            try:
+                task_data = json.loads(task_path.read_text(encoding='utf-8'))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if task_data.get('status') == 'done':
+                # File names are TASK-NNN.json — strip the suffix.
+                done_tasks.add(task_path.stem)
+
+    missing = sorted(done_tasks - outcomes)
+    return {'tasks_with_diff_no_outcome': missing}
+
+
+def read_dispatch_boundaries(plan_dir: Path) -> dict[str, Any]:
+    """Read `work/metrics-dispatch-boundaries-5-execute.toon` if present.
+
+    Returns:
+      - present: bool — false when the artifact does not exist (precondition
+            guard for the LLM rule; lesson-2026-05-08-14-001 § DISPATCH_TERMINATION_CAUSE).
+      - rows: list of {timestamp, termination_cause, total_tokens, tool_uses, duration_ms}
+            dicts; empty list when present == false.
+      - unknown_count: number of rows with termination_cause == "unknown".
+    """
+    artifact = plan_dir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
+    if not artifact.exists():
+        return {'present': False, 'rows': [], 'unknown_count': 0}
+
+    try:
+        content = artifact.read_text(encoding='utf-8')
+    except OSError:
+        return {'present': False, 'rows': [], 'unknown_count': 0}
+
+    rows: list[dict[str, Any]] = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith(('plan_id:', 'phase:', 'rows[]')):
+            continue
+        parts = stripped.split(',')
+        if len(parts) != 5:
+            continue
+        try:
+            row = {
+                'timestamp': parts[0],
+                'termination_cause': parts[1],
+                'total_tokens': int(parts[2]),
+                'tool_uses': int(parts[3]),
+                'duration_ms': int(parts[4]),
+            }
+        except (ValueError, IndexError):
+            continue
+        rows.append(row)
+
+    unknown_count = sum(1 for row in rows if row['termination_cause'] == 'unknown')
+    return {'present': True, 'rows': rows, 'unknown_count': unknown_count}
+
+
 def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     plan_dir = resolve_plan_dir(args.mode, args.plan_id, args.archived_plan_path)
     logs_dir = plan_dir / 'logs'
@@ -253,6 +468,15 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             }
         )
 
+    # Phase-5 logging-gap fact extractors (lesson 2026-05-08-14-001).
+    # Pure counting/pairing — judgement lives in the LLM rules.
+    phase5_logging_gaps = {
+        'outcome_pairing': pair_outcome_emissions(work),
+        'dispatch_clustering': cluster_dispatches(work, script),
+        'outcome_for_diffed_tasks': detect_outcome_for_diffed_tasks(work, plan_dir),
+        'dispatch_boundaries': read_dispatch_boundaries(plan_dir),
+    }
+
     return {
         'status': 'success',
         'aspect': 'log_analysis',
@@ -274,6 +498,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         'slowest_scripts': [{'notation': notation, 'duration_ms': round(ms, 3)} for notation, ms in slowest],
         'top_tags': top_n(tag_counter, 5),
         'top_error_tags': top_n(error_tags, 5),
+        'phase5_logging_gaps': phase5_logging_gaps,
         'findings': findings,
     }
 

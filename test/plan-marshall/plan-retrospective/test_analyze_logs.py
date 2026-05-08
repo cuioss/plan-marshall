@@ -264,3 +264,218 @@ class TestRegression:
         captured = capsys.readouterr()
         assert 'WARN' in captured.err, f'read_log on missing path must emit stderr WARN; got stderr: {captured.err!r}'
         assert str(missing_path) in captured.err, 'WARN line must include the missing path for operator debugging'
+
+
+# =============================================================================
+# Phase-5 logging-gap fact extractors (lesson 2026-05-08-14-001)
+# =============================================================================
+
+
+class TestPhase5LoggingGapExtractors:
+    """Pin down the four phase-5 fact extractors.
+
+    The extractors are pure counting/pairing — never judging. These tests
+    therefore assert the shape of the returned dicts on (a) clean fixtures
+    and (b) regression fixtures that mirror the cluster-02 gap pattern that
+    motivated lesson 2026-05-08-14-001 (missing OUTCOME, ghost dispatches,
+    no dispatch-boundary file).
+    """
+
+    # ------------------------------------------------------------------
+    # pair_outcome_emissions
+    # ------------------------------------------------------------------
+
+    def test_pair_outcome_emissions_clean(self):
+        """Clean fixture: every Completed has a paired [OUTCOME]."""
+        lines = [
+            '[2026-05-08T14:00:00Z] [INFO] [abc] [MANAGE-TASKS] Completed TASK-001',
+            '[2026-05-08T14:00:01Z] [INFO] [def] [OUTCOME] (plan-marshall:phase-5-execute) '
+            'Completed TASK-001: Title (3 steps)',
+            '[2026-05-08T14:01:00Z] [INFO] [ghi] [MANAGE-TASKS] Completed TASK-002',
+            '[2026-05-08T14:01:01Z] [INFO] [jkl] [OUTCOME] (plan-marshall:phase-5-execute) '
+            'Completed TASK-002: Other (1 steps)',
+        ]
+        result = _analyze_logs.pair_outcome_emissions(lines)
+        assert result['paired'] == 2
+        assert result['unpaired_completed'] == []
+        assert result['unpaired_outcome'] == []
+
+    def test_pair_outcome_emissions_regression_missing_outcome(self):
+        """Regression fixture: TASK-002 closed but [OUTCOME] line lost on re-dispatch."""
+        lines = [
+            '[2026-05-08T14:00:00Z] [INFO] [abc] [MANAGE-TASKS] Completed TASK-001',
+            '[2026-05-08T14:00:01Z] [INFO] [def] [OUTCOME] (plan-marshall:phase-5-execute) '
+            'Completed TASK-001: Title (3 steps)',
+            '[2026-05-08T14:01:00Z] [INFO] [ghi] [MANAGE-TASKS] Completed TASK-002',
+            # No [OUTCOME] line for TASK-002 — the lesson-2026-05-08-14-001 gap pattern.
+        ]
+        result = _analyze_logs.pair_outcome_emissions(lines)
+        assert result['paired'] == 1
+        assert result['unpaired_completed'] == ['TASK-002']
+        assert result['unpaired_outcome'] == []
+
+    # ------------------------------------------------------------------
+    # cluster_dispatches
+    # ------------------------------------------------------------------
+
+    def test_cluster_dispatches_single_cluster(self):
+        """All phase-5 lines within `gap_threshold_s` form one cluster."""
+        work = [
+            '[2026-05-08T14:00:00Z] [INFO] [abc] '
+            '[STATUS] (plan-marshall:phase-5-execute) Starting execute phase — 3 tasks pending',
+            '[2026-05-08T14:00:10Z] [INFO] [def] '
+            '[OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-001: x (1 steps)',
+            '[2026-05-08T14:00:20Z] [INFO] [ghi] '
+            '[OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-002: y (1 steps)',
+        ]
+        script: list[str] = []
+        result = _analyze_logs.cluster_dispatches(work, script, gap_threshold_s=30.0)
+        assert result['inferred_dispatches'] == 1
+        assert result['starting_markers'] == 1
+        assert result['re_entering_markers'] == 0
+
+    def test_cluster_dispatches_regression_ghost_re_entry(self):
+        """Two clusters with a gap > 30s but only one Re-entering marker — the
+        cluster-02 ghost-re-entry pattern."""
+        work = [
+            '[2026-05-08T14:00:00Z] [INFO] [abc] '
+            '[STATUS] (plan-marshall:phase-5-execute) Starting execute phase — 3 tasks pending',
+            '[2026-05-08T14:00:10Z] [INFO] [def] '
+            '[OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-001: x (1 steps)',
+            # 5-minute gap → second dispatch cluster.
+            '[2026-05-08T14:05:10Z] [INFO] [ghi] '
+            '[OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-002: y (1 steps)',
+        ]
+        script: list[str] = []
+        result = _analyze_logs.cluster_dispatches(work, script, gap_threshold_s=30.0)
+        assert result['inferred_dispatches'] == 2
+        assert result['starting_markers'] == 1
+        # No "Re-entering" line was emitted for the second cluster — the
+        # symptom the LLM rule is meant to flag.
+        assert result['re_entering_markers'] == 0
+
+    # ------------------------------------------------------------------
+    # detect_outcome_for_diffed_tasks
+    # ------------------------------------------------------------------
+
+    def test_detect_outcome_for_diffed_tasks_clean(self, tmp_path):
+        """Every done task has a matching [OUTCOME] — no missing entries."""
+        plan_dir = tmp_path / 'plans' / 'clean'
+        (plan_dir / 'tasks').mkdir(parents=True)
+        (plan_dir / 'tasks' / 'TASK-001.json').write_text(
+            json.dumps({'number': 1, 'title': 'A', 'status': 'done'}),
+            encoding='utf-8',
+        )
+        (plan_dir / 'tasks' / 'TASK-002.json').write_text(
+            json.dumps({'number': 2, 'title': 'B', 'status': 'done'}),
+            encoding='utf-8',
+        )
+
+        lines = [
+            '[2026-05-08T14:00:01Z] [INFO] [abc] [OUTCOME] (plan-marshall:phase-5-execute) '
+            'Completed TASK-001: A (1 steps)',
+            '[2026-05-08T14:00:02Z] [INFO] [def] [OUTCOME] (plan-marshall:phase-5-execute) '
+            'Completed TASK-002: B (1 steps)',
+        ]
+        result = _analyze_logs.detect_outcome_for_diffed_tasks(lines, plan_dir)
+        assert result['tasks_with_diff_no_outcome'] == []
+
+    def test_detect_outcome_for_diffed_tasks_regression(self, tmp_path):
+        """Done task with no [OUTCOME] line — the lesson 2026-05-08-14-001 gap."""
+        plan_dir = tmp_path / 'plans' / 'gap'
+        (plan_dir / 'tasks').mkdir(parents=True)
+        (plan_dir / 'tasks' / 'TASK-001.json').write_text(
+            json.dumps({'number': 1, 'title': 'A', 'status': 'done'}),
+            encoding='utf-8',
+        )
+        (plan_dir / 'tasks' / 'TASK-002.json').write_text(
+            json.dumps({'number': 2, 'title': 'B', 'status': 'done'}),
+            encoding='utf-8',
+        )
+        # Task pending — never closed; should NOT be flagged as missing-outcome.
+        (plan_dir / 'tasks' / 'TASK-003.json').write_text(
+            json.dumps({'number': 3, 'title': 'C', 'status': 'pending'}),
+            encoding='utf-8',
+        )
+
+        lines = [
+            '[2026-05-08T14:00:01Z] [INFO] [abc] [OUTCOME] (plan-marshall:phase-5-execute) '
+            'Completed TASK-001: A (1 steps)',
+            # No [OUTCOME] for TASK-002 → flagged.
+        ]
+        result = _analyze_logs.detect_outcome_for_diffed_tasks(lines, plan_dir)
+        assert result['tasks_with_diff_no_outcome'] == ['TASK-002']
+
+    # ------------------------------------------------------------------
+    # read_dispatch_boundaries
+    # ------------------------------------------------------------------
+
+    def test_read_dispatch_boundaries_absent(self, tmp_path):
+        """Plans without the artifact return present=false (precondition guard)."""
+        plan_dir = tmp_path / 'plans' / 'no-boundary'
+        plan_dir.mkdir(parents=True)
+        result = _analyze_logs.read_dispatch_boundaries(plan_dir)
+        assert result == {'present': False, 'rows': [], 'unknown_count': 0}
+
+    def test_read_dispatch_boundaries_present(self, tmp_path):
+        """Artifact parses into one row per data line; unknown_count counts unknowns."""
+        plan_dir = tmp_path / 'plans' / 'with-boundary'
+        (plan_dir / 'work').mkdir(parents=True)
+        artifact = plan_dir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
+        artifact.write_text(
+            'plan_id: with-boundary\n'
+            'phase: 5-execute\n'
+            'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:\n'
+            '2026-05-08T14:00:00Z,voluntary_checkpoint,100,2,1000\n'
+            '2026-05-08T14:01:00Z,unknown,200,4,2000\n'
+            '2026-05-08T14:02:00Z,unknown,300,6,3000\n',
+            encoding='utf-8',
+        )
+        result = _analyze_logs.read_dispatch_boundaries(plan_dir)
+        assert result['present'] is True
+        assert len(result['rows']) == 3
+        assert result['rows'][0]['termination_cause'] == 'voluntary_checkpoint'
+        assert result['rows'][0]['total_tokens'] == 100
+        assert result['unknown_count'] == 2
+
+    # ------------------------------------------------------------------
+    # Integration: cmd_run end-to-end
+    # ------------------------------------------------------------------
+
+    def test_cmd_run_surfaces_phase5_logging_gaps(self, tmp_path, monkeypatch):
+        """End-to-end: cmd_run emits a phase5_logging_gaps block under the live
+        plan dir containing all four extractor outputs."""
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+
+        # Add a tasks/ dir + dispatch-boundary artifact so all four extractors
+        # have inputs to surface.
+        (plan_dir / 'tasks').mkdir(parents=True, exist_ok=True)
+        (plan_dir / 'tasks' / 'TASK-001.json').write_text(
+            json.dumps({'number': 1, 'title': 'A', 'status': 'done'}),
+            encoding='utf-8',
+        )
+        (plan_dir / 'work').mkdir(parents=True, exist_ok=True)
+        (plan_dir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon').write_text(
+            'plan_id: ' + plan_id + '\n'
+            'phase: 5-execute\n'
+            'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:\n'
+            '2026-05-08T14:00:00Z,unknown,100,2,1000\n',
+            encoding='utf-8',
+        )
+
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+
+        gaps = data['phase5_logging_gaps']
+        # All four extractor blocks present.
+        assert 'outcome_pairing' in gaps
+        assert 'dispatch_clustering' in gaps
+        assert 'outcome_for_diffed_tasks' in gaps
+        assert 'dispatch_boundaries' in gaps
+
+        # The dispatch-boundaries block reflects the artifact we wrote.
+        boundaries = gaps['dispatch_boundaries']
+        # TOON parser may keep nested dicts intact — accept either structured
+        # or stringified shape.
+        assert str(boundaries.get('present', boundaries)).lower().startswith('true')
