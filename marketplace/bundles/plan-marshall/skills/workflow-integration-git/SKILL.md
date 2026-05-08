@@ -336,7 +336,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workf
 **Output** (TOON):
 ```toon
 status: success
-worktrees_root: /repo/.claude/worktrees
+worktrees_root: /repo/.plan/local/worktrees
 count: 2
 worktrees[2]{plan_id,path,branch}:
   my-plan,/repo/.plan/local/worktrees/my-plan,feature/my-plan
