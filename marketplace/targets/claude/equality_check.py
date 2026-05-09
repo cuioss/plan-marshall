@@ -5,6 +5,17 @@ Regenerates ``plugin.json`` for each bundle in-memory via
 committed ``marketplace/bundles/{bundle}/.claude-plugin/plugin.json``.
 Powers both the standalone validation mode (``generate.py --target
 claude`` without ``--output``) and the CI/PR equality gate.
+
+Variant-aware drift detection: agents declaring the
+dynamic-level-executor extension point expand into multiple
+``plugin.json`` entries (canonical + per-emitted-level). The diff
+naturally surfaces drift when (a) the canonical's ``levels:`` whitelist
+changes without ``plugin.json`` regeneration, (b) the build-time
+``xxhigh`` guard suppresses a previously emitted variant, or (c) a new
+canonical adds the ``implements:`` declaration but the committed
+``plugin.json`` still lists only the no-suffix entry. The fix in every
+case is the documented one: regenerate via the Claude target and copy
+the updated ``plugin.json`` over the committed file.
 """
 
 from __future__ import annotations

@@ -38,12 +38,23 @@ Parse the JSON output to get:
 
 2. **Tool Coverage Analysis via Agents** (for items in `components_for_tool_analysis`):
 
-   Spawn `tool-coverage-agent` for each component. **Use parallel spawning** for efficiency:
+   Resolve the level for role `tool_coverage_analysis` ONCE before spawning:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+     models read --role tool_coverage_analysis
+   ```
+
+   Compute the target agent name:
+   - `level == "inherit"` or empty → `target = tool-coverage-agent`
+   - otherwise → `target = tool-coverage-agent-<level>`
+
+   Spawn `pm-plugin-development:{target}` for each component. **Use parallel spawning** for efficiency:
    ```
    # Spawn multiple agents in parallel (single message with multiple Task calls)
-   Task: tool-coverage-agent (file1)
-   Task: tool-coverage-agent (file2)
-   Task: tool-coverage-agent (file3)
+   Task: pm-plugin-development:{target} (file1)
+   Task: pm-plugin-development:{target} (file2)
+   Task: pm-plugin-development:{target} (file3)
    ...
    ```
 

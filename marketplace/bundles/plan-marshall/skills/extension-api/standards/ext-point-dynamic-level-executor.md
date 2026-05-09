@@ -1,0 +1,194 @@
+# Extension Point: Dynamic-Level Executor
+
+> **Type**: Agent Extension (declarative, build-time variant emission) | **Declaration**: `implements:` frontmatter on agent file | **Implementations**: 11 | **Status**: Active
+
+## Overview
+
+The `ext-point-dynamic-level-executor` extension point declares that a marketplace agent participates in role-based variant emission. It is the only extension point in the `ext-point-*` family whose consumer is an **agent file** (not a skill); the implementor is the agent's frontmatter, and the producer is the build target (`marketplace/targets/claude/`).
+
+When an agent declares this extension point, the build target emits one variant agent file per ordinal level (`low`, `medium`, `high`, `xhigh`, `xxhigh`) into `target/claude/{bundle}/agents/`, each variant pinned to a specific `(model, effort)` primitive. The canonical no-suffix file is also emitted (with `implements:` and `levels:` stripped) so the `inherit` resolution case dispatches the user-configured-or-default model. Dispatch sites resolve the role's level via `manage-config models read --role <name>` and call the matching variant by name (`{base}-{level}`) or the canonical (when level is `inherit`).
+
+The end-to-end trace:
+
+```
+.plan/marshal.json              models.roles.<role> = "high"
+        │
+        ▼
+manage-config models read       resolver returns "high"
+        │
+        ▼
+dispatch site                   target = {base}-high
+        │
+        ▼
+target/claude/{bundle}/agents/  build-emitted variant {base}-high.md
+                                (model: opus, effort: high)
+        │
+        ▼
+Claude Code runtime             subagent runs on Opus, effort=high
+```
+
+## Implementor Requirements
+
+### Frontmatter Declaration
+
+The canonical agent file (`marketplace/bundles/{bundle}/agents/{name}.md`) MUST declare:
+
+```yaml
+---
+name: {agent-name}
+description: ...
+implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor
+levels: [high, xxhigh]   # OPTIONAL — restricts emitted variants to a subset
+---
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `implements` | Yes | Fully-qualified ext-point reference: `plan-marshall:extension-api/standards/ext-point-dynamic-level-executor`. Single switch that turns variant emission on for this agent. |
+| `levels` | No | Whitelist of ordinal levels to emit. When omitted, the build target emits all five (`low`, `medium`, `high`, `xhigh`, `xxhigh`). When present, only listed levels are emitted. The canonical (`inherit`) is always emitted regardless of `levels`. |
+
+### Forbidden Fields
+
+The canonical agent file MUST NOT declare `model:` or `effort:` when `implements:` is present. These fields are set by the build target on the emitted variants — declaring them on the canonical creates silent shadowing and violates the single-source-of-truth invariant.
+
+The plugin-doctor `hardcoded-model-on-canonical` rule (see `pm-plugin-development:plugin-doctor/standards/doctor-marketplace.md`) enforces this at lint time:
+
+- Canonical with `model:` or `effort:` AND no `implements:` → error (use `implements:` to opt into the system, or remove the model pin).
+- Canonical with `implements:` AND `model:` or `effort:` → error (the build target sets these; do not author them).
+
+### Level → Primitive Binding
+
+The level → `(model, effort)` mapping is documented in [`plan-marshall:plan-marshall/standards/model-levels.md`](../../plan-marshall/standards/model-levels.md). Agent authors do NOT redeclare the binding — it is read once by the build target. See that document for the canonical table and the `xxhigh` Opus-4.7-only build-time guard.
+
+### Role Registry
+
+Agents declare the extension point structurally; **roles** map dispatch sites to canonical agents. The role registry lives in [`plan-marshall:plan-marshall/standards/model-roles.md`](../../plan-marshall/standards/model-roles.md). Adding a new role-eligible agent requires both:
+
+1. The `implements:` declaration on the agent file (this contract).
+2. A row in `model-roles.md` linking a role key to the agent file.
+
+## Variant Generation Contract
+
+### Input → Output Mapping
+
+Given a canonical agent at `marketplace/bundles/{bundle}/agents/{name}.md` with `implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor`, the build target emits:
+
+| Output File | Frontmatter Modification |
+|-------------|--------------------------|
+| `target/claude/{bundle}/agents/{name}.md` | Canonical: `implements:` and `levels:` **stripped**. All other fields preserved. Serves the `inherit` resolution. |
+| `target/claude/{bundle}/agents/{name}-low.md` | Variant: `name: {name}-low`, `model: haiku`, no `effort:` (haiku does not accept effort). `implements:`/`levels:` stripped. |
+| `target/claude/{bundle}/agents/{name}-medium.md` | Variant: `name: {name}-medium`, `model: sonnet`, `effort: medium`. |
+| `target/claude/{bundle}/agents/{name}-high.md` | Variant: `name: {name}-high`, `model: sonnet`, `effort: high`. |
+| `target/claude/{bundle}/agents/{name}-xhigh.md` | Variant: `name: {name}-xhigh`, `model: opus`, `effort: high`. |
+| `target/claude/{bundle}/agents/{name}-xxhigh.md` | Variant: `name: {name}-xxhigh`, `model: opus`, `effort: xhigh`. **Refused at build time** when canonical's resolved model alias does not accept `effort: xhigh` (Opus-4.7-only guard). |
+
+When the canonical declares `levels: [high, xxhigh]`, only `{name}.md`, `{name}-high.md`, and `{name}-xxhigh.md` are emitted.
+
+The exact level → primitive table is the single source of truth in `model-levels.md`; this contract pins the **shape** of variant emission, not the table values.
+
+### plugin.json Expansion
+
+When the build target generates per-bundle `plugin.json`, each role-eligible agent expands into N entries — one per emitted variant plus the canonical for `inherit`. Non-eligible agents emit a single entry as before. See `marketplace/targets/claude/plugin_json_gen.py` for the implementation.
+
+### Equality / Drift Detection
+
+`marketplace/targets/claude/equality_check.py` is variant-aware: for each canonical declaring this extension point, it asserts the emitted variant set matches the canonical's `levels:` whitelist (or the default level set when `levels:` is omitted). Variants outside the expected set are flagged as drift; missing variants are flagged as orphans. The existing structural drift logic continues to apply.
+
+## Validation Rules
+
+The build target enforces these rules at emission time:
+
+| Rule | Scope | Failure Mode |
+|------|-------|--------------|
+| `implements:` value is the canonical fully-qualified ext-point reference | Per-agent | Build error: unrecognized `implements:` target |
+| Canonical does not declare `model:` or `effort:` | Per-agent | Build error: forbidden field on canonical |
+| `levels:` (when present) contains only known ordinal level keys | Per-agent | Build error: unknown level |
+| `xxhigh` variant only emitted when the resolved canonical model accepts `effort: xhigh` | Per-variant | Variant skipped + build warning |
+| Variant `name:` matches `{canonical-name}-{level}` exactly | Per-variant | Build error: variant name mismatch |
+| Canonical no-suffix file always emitted (regardless of `levels:`) | Per-agent | Build error: canonical missing |
+
+The plugin-doctor `hardcoded-model-on-canonical` lint rule (deliverable 9) enforces the first two rules at edit time, before the build target runs.
+
+## Worked Example
+
+### Canonical agent (input)
+
+`marketplace/bundles/plan-marshall/agents/sonar-roundtrip-agent.md`:
+
+```yaml
+---
+name: sonar-roundtrip-agent
+description: SonarQube/SonarCloud round-trip — fetch, triage, fix or suppress issues
+implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor
+tools: [Read, Write, Edit, Bash, Grep, Glob, Task, Skill]
+---
+
+# Sonar Roundtrip Agent
+
+...agent body unchanged...
+```
+
+### Emitted files (output)
+
+The build target produces:
+
+```
+target/claude/plan-marshall/agents/
+├── sonar-roundtrip-agent.md          # canonical, implements/levels stripped
+├── sonar-roundtrip-agent-low.md      # model: haiku
+├── sonar-roundtrip-agent-medium.md   # model: sonnet, effort: medium
+├── sonar-roundtrip-agent-high.md     # model: sonnet, effort: high
+├── sonar-roundtrip-agent-xhigh.md    # model: opus, effort: high
+└── sonar-roundtrip-agent-xxhigh.md   # model: opus, effort: xhigh (Opus-4.7-only)
+```
+
+`target/claude/plan-marshall/.claude-plugin/plugin.json` registers six agent entries for this canonical (the canonical + five variants).
+
+### Dispatch site
+
+`marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md`:
+
+```bash
+# Resolve level for the sonar_roundtrip role
+level=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models read --role sonar_roundtrip --plan-id {plan_id})
+
+# Compute target agent name
+target=sonar-roundtrip-agent
+if [[ "$level" != "inherit" && -n "$level" ]]; then
+  target=sonar-roundtrip-agent-$level
+fi
+
+# Dispatch
+Task: plan-marshall:$target
+```
+
+When the user has set `models.roles.sonar_roundtrip = "high"` in `.plan/marshal.json`, the resolver returns `high` and the dispatch becomes `Task: plan-marshall:sonar-roundtrip-agent-high`. When unset, the resolver falls back to `models.default` then `inherit`, dispatching the canonical no-suffix file which inherits the parent session's model.
+
+## Cross-References
+
+| Document | Content |
+|----------|---------|
+| [`model-levels.md`](../../plan-marshall/standards/model-levels.md) | Level → `(model, effort)` primitive binding; alias rules; `xxhigh` guard rationale |
+| [`model-roles.md`](../../plan-marshall/standards/model-roles.md) | Role registry mapping role keys to canonical agents |
+| [`role-variants.md`](../../plan-marshall/standards/role-variants.md) | User-facing centralised doc for configuring `models.roles.<name>` |
+| `marketplace/targets/claude/emitter.py` | Variant emission implementation |
+| `marketplace/targets/claude/plugin_json_gen.py` | `plugin.json` expansion for role-eligible agents |
+| `marketplace/targets/claude/equality_check.py` | Variant-aware drift detection |
+| `pm-plugin-development:plugin-doctor/standards/doctor-marketplace.md` | `hardcoded-model-on-canonical` lint rule |
+
+## Current Implementations
+
+| Bundle | Agent | `levels:` whitelist |
+|--------|-------|---------------------|
+| plan-marshall | automated-review-agent | (default — all five) |
+| plan-marshall | create-pr-agent | (default — all five) |
+| plan-marshall | detect-change-type-agent | (default — all five) |
+| plan-marshall | lessons-capture-agent | (default — all five) |
+| plan-marshall | phase-agent | (default — all five) |
+| plan-marshall | q-gate-validation-agent | (default — all five) |
+| plan-marshall | research-best-practices-agent | (default — all five; recommended setting `high` or `xxhigh`) |
+| plan-marshall | sonar-roundtrip-agent | (default — all five) |
+| pm-plugin-development | ext-outline-component-agent | (default — all five) |
+| pm-plugin-development | ext-outline-inventory-agent | (default — all five) |
+| pm-plugin-development | tool-coverage-agent | (default — all five) |

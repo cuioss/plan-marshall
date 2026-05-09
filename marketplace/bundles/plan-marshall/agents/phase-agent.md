@@ -7,6 +7,7 @@ description: |
   - Input: skill=plan-marshall:phase-1-init, plan_id=my-plan
   - Output: Skill's own output (varies by phase)
 tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill
+implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor
 ---
 
 # Phase Agent

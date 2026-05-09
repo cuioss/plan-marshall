@@ -4,7 +4,9 @@ doctor-marketplace.py - Batch marketplace analysis and fixing.
 
 Provides automated batch operations across the entire marketplace:
 - scan: Discover all components (agents, commands, skills, scripts)
-- analyze: Batch analyze all components for issues
+- analyze: Batch analyze all components for issues (includes the
+  hardcoded-model-on-canonical rule introduced by the role-variants plan;
+  see plugin-doctor/standards/doctor-agents.md)
 - fix: Apply safe fixes automatically across marketplace
 - report: Generate comprehensive report for LLM review
 - quality-gate: Run pure-static-analysis rules as a build gate

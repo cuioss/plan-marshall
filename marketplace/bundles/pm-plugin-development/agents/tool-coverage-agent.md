@@ -5,6 +5,7 @@ description: |
   Input: file_path, declared_tools list, component_type.
   Output: JSON with declared_tools, used_tools, analysis (missing/unused/false_positives), confidence.
 tools: Read, Grep, Skill
+implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor
 ---
 
 # Tool Coverage Analysis Agent

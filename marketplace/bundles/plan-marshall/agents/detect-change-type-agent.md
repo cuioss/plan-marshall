@@ -7,6 +7,7 @@ description: |
   - Input: plan_id=my-plan
   - Output: TOON with status, change_type, confidence, reasoning
 tools: Bash, Skill
+implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor
 ---
 
 # Detect Change-Type Agent

@@ -738,8 +738,21 @@ If `status: not_found` or `value != lesson`, skip Step 13.5 — log nothing and 
 
 **Dispatch the validator agent** (lesson-derived plans only):
 
+(1) Resolve the level for role `q_gate_validation`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models read --role q_gate_validation
 ```
-Task: plan-marshall:q-gate-validation-agent
+
+(2) Compute the target agent name:
+- `level == "inherit"` or empty → `target = q-gate-validation-agent`
+- otherwise → `target = q-gate-validation-agent-<level>`
+
+(3) Dispatch the role-resolved variant:
+
+```
+Task: plan-marshall:{target}
   Input:
     plan_id: {plan_id}
     activation_context: 2-refine

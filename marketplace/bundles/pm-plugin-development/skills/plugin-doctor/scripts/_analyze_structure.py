@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
-"""Skill structure analysis subcommand."""
+"""Skill structure analysis subcommand.
+
+Also re-exports ``check_hardcoded_model_on_canonical`` from
+``_analyze_markdown`` for callers that key on the ``_analyze_structure``
+module path. The rule itself lives next to the other agent-frontmatter
+checks; this module retains a stable import surface for the
+``hardcoded-model-on-canonical`` rule introduced by the role-variants
+plan.
+"""
 
 import re
 from pathlib import Path
 
+from _analyze_markdown import (  # noqa: F401  # re-exported for stable import surface
+    DYNAMIC_LEVEL_EXECUTOR_REF,
+    check_hardcoded_model_on_canonical,
+)
 from _analyze_shared import check_yaml_validity, extract_frontmatter, remove_code_blocks
 
 # Noun suffixes reserved for spawnable marketplace agents. Skill directory names

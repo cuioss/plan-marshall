@@ -51,11 +51,24 @@ This applies equally to production code, test code, and documentation.
 
 **How to Research:**
 
-**Use research-best-practices-agent** (NOT web search tools directly):
+**Use research-best-practices-agent** (NOT web search tools directly).
+
+(1) Resolve the level for role `research`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models read --role research
+```
+
+(2) Compute the target:
+- `level == "inherit"` or empty → `target = research-best-practices-agent`
+- otherwise → `target = research-best-practices-agent-<level>`
+
+(3) Dispatch (recommended levels: `high` or `xxhigh` — research benefits from the most capable model):
 
 ```
 Task:
-  subagent_type: plan-marshall:research-best-practices-agent
+  subagent_type: plan-marshall:{target}
   description: Research {topic} best practices
   prompt: |
     Research current best practices for {specific topic}.

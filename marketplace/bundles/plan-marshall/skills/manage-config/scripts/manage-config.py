@@ -18,6 +18,7 @@ import argparse
 
 from _cmd_ext_defaults import cmd_ext_defaults
 from _cmd_init import cmd_init
+from _cmd_models import cmd_models
 from _cmd_skill_domains import (
     cmd_list_verify_steps,
     cmd_skill_domains,
@@ -240,6 +241,20 @@ def main() -> int:
     p_init = subparsers.add_parser('init', help='Initialize marshal.json', allow_abbrev=False)
     p_init.add_argument('--force', action='store_true', help='Overwrite existing')
 
+    # --- models ---
+    p_models = subparsers.add_parser(
+        'models',
+        help='Resolve per-role model levels (read-only resolver)',
+        allow_abbrev=False,
+    )
+    models_sub = p_models.add_subparsers(dest='verb', required=True, help='Operation')
+    models_read = models_sub.add_parser(
+        'read', help='Resolve the level keyword for a role', allow_abbrev=False
+    )
+    models_read.add_argument(
+        '--role', required=True, help='Role key (see model-roles.md registry)'
+    )
+
     # --- resolve-domain-skills ---
     p_rds = subparsers.add_parser(
         'resolve-domain-skills', help='Resolve skills for domain and profile', allow_abbrev=False
@@ -324,6 +339,11 @@ def main() -> int:
         result = cmd_ext_defaults(args)
     elif args.noun == 'init':
         result = cmd_init(args)
+    elif args.noun == 'models':
+        if not args.verb:
+            p_models.print_help()
+            return 2
+        result = cmd_models(args)
     elif args.noun == 'resolve-domain-skills':
         result = cmd_resolve_domain_skills(args)
     elif args.noun == 'resolve-workflow-skill-extension':

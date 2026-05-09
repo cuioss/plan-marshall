@@ -7,7 +7,7 @@ description: |
   - Input: topic="JUnit 5 parameterized tests"
   - Output: Structured research report with findings, confidence levels, and source references
 tools: WebSearch, WebFetch, Read, Skill
-model: opus  # Intentional: research tasks benefit from the most capable model for deep analysis, multi-source synthesis, and nuanced confidence assessment
+implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor
 color: blue
 ---
 

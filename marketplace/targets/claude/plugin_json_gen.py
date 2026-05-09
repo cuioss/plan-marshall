@@ -8,6 +8,12 @@ populated ``plugin.json`` document. Top-level fields (``name``,
 committed ``plugin.json``; only the ``agents``, ``commands``, and
 ``skills`` arrays come from the frontmatter scan.
 
+Agents declaring ``implements:
+plan-marshall:extension-api/standards/ext-point-dynamic-level-executor``
+expand into multiple entries in the ``agents`` array — one per emitted
+level plus the canonical no-suffix entry that serves the ``inherit``
+resolution case. Non-eligible agents emit a single entry as before.
+
 The output is deterministic — file paths within each component array are
 sorted alphabetically — so the equality check in
 ``equality_check.py`` produces stable diffs across runs.
@@ -17,6 +23,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+
+from marketplace.targets.claude.variant_emitter import (
+    LEVEL_TABLE,
+    is_role_eligible,
+    parse_frontmatter,
+    selected_levels,
+    supports_xhigh_effort,
+)
 
 # Top-level fields that are preserved verbatim from the committed plugin.json.
 PASSTHROUGH_FIELDS = (
@@ -38,10 +52,54 @@ def _read_committed(bundle_dir: Path) -> dict:
     return json.loads(plugin_json.read_text(encoding='utf-8'))
 
 
+_OPENCODE_MAPPING = Path(__file__).resolve().parent.parent / 'opencode' / 'mapping.json'
+
+
 def _list_md_files(directory: Path) -> list[str]:
     if not directory.exists():
         return []
     return sorted(p.name for p in directory.iterdir() if p.is_file() and p.suffix == '.md' and not p.name.startswith('.'))
+
+
+def _expanded_agent_entries(agents_dir: Path, mapping_path: Path = _OPENCODE_MAPPING) -> list[str]:
+    """Return the agents array for ``plugin.json`` with variant expansion.
+
+    For each agent file:
+    - If the file declares the dynamic-level-executor extension point,
+      emit one entry per selected level plus the canonical no-suffix
+      entry. The ``xxhigh`` entry is suppressed when the resolved alias
+      cannot accept ``effort: xhigh`` (mirrors the build-time skip in
+      ``variant_emitter``).
+    - Otherwise, emit a single entry for the agent's filename.
+
+    Entries are absolute-from-bundle paths (``./agents/{name}.md``) and
+    the returned list is sorted alphabetically for deterministic output.
+    """
+    if not agents_dir.exists():
+        return []
+    entries: list[str] = []
+    for path in sorted(agents_dir.iterdir()):
+        if not (path.is_file() and path.suffix == '.md' and not path.name.startswith('.')):
+            continue
+        text = path.read_text(encoding='utf-8')
+        frontmatter, _body = parse_frontmatter(text)
+        if not is_role_eligible(frontmatter):
+            entries.append(f'./agents/{path.name}')
+            continue
+        assert frontmatter is not None
+        base_name = frontmatter.name or path.stem
+        # Canonical (inherit) entry.
+        entries.append(f'./agents/{base_name}.md')
+        # Per-level variants (with xxhigh guard).
+        for level in selected_levels(frontmatter):
+            primitive = LEVEL_TABLE[level]
+            if primitive['effort'] == 'xhigh':
+                alias = primitive['model']
+                assert alias is not None
+                if not supports_xhigh_effort(alias, mapping_path):
+                    continue
+            entries.append(f'./agents/{base_name}-{level}.md')
+    return sorted(entries)
 
 
 def _list_skill_dirs(skills_dir: Path) -> list[str]:
@@ -64,7 +122,7 @@ def discover_components(bundle_dir: Path) -> dict[str, list[str]]:
     mapped to a sorted list of paths relative to the bundle root (matching
     the schema used by the existing committed ``plugin.json`` files).
     """
-    agents = [f'./agents/{name}' for name in _list_md_files(bundle_dir / 'agents')]
+    agents = _expanded_agent_entries(bundle_dir / 'agents')
     commands = [f'./commands/{name}' for name in _list_md_files(bundle_dir / 'commands')]
     skills = [f'./skills/{name}' for name in _list_skill_dirs(bundle_dir / 'skills')]
     return {

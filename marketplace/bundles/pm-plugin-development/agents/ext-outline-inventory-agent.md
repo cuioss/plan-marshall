@@ -5,6 +5,7 @@ description: |
   Input: plan_id, component_types, content_pattern, bundle_scope, include_tests, include_project_skills.
   Output: TOON summary with status, inventory_file path, scope, and counts per component type.
 tools: Read, Bash, Skill
+implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor
 ---
 
 # Ext-Outline Inventory Agent
