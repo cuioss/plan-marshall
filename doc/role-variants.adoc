@@ -1,0 +1,72 @@
+= Role Variants and Per-Role Models
+:toc:
+:toclevels: 3
+
+Overview and entry-point map for the per-role model variant-emission system. The canonical specifications live next to the code they govern; this document is a navigational summary that points there.
+
+Authors configure `models.roles.<name>` in `.plan/marshal.json`. The Claude target emits `{base}-{level}.md` agent variants for every canonical agent that opts in via `implements: ext-point-dynamic-level-executor`. Dispatch sites resolve the role's level via `manage-config models read --role <role>` and call the matching variant by name. End users get the right model per role at dispatch time without any user-side build step.
+
+== Where things live
+
+[cols="1,3,4", options="header"]
+|===
+| Layer | Document | Purpose
+
+| User
+| link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/role-variants.md[`plan-marshall/standards/role-variants.md`]
+| Stand-alone end-user / project-author guide. Configuration walkthrough, troubleshooting (invalid levels, pending roles, `CLAUDE_CODE_SUBAGENT_MODEL` env-var override, session-restart requirement). Read this first.
+
+| User (wizard)
+| link:../marketplace/bundles/plan-marshall/skills/marshall-steward/standards/models-menu.md[`marshall-steward/standards/models-menu.md`]
+| `/marshall-steward` → Models submenu UX contract: validation rules, persistence, restart-hint behavior.
+
+| Architecture (extension point)
+| link:../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-dynamic-level-executor.md[`extension-api/standards/ext-point-dynamic-level-executor.md`]
+| Contract every variant-eligible canonical agent must satisfy: required `implements:` value, optional `levels:` whitelist, forbidden `model:`/`effort:` on canonical, validation rules, worked example.
+
+| Architecture (level binding)
+| link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-levels.md[`plan-marshall/standards/model-levels.md`]
+| Single source of truth for the five ordinal levels (`low / medium / high / xhigh / xxhigh`) plus the `inherit` sentinel. Maps each to a `(model, effort)` pair. Aliases-not-IDs rule. `xxhigh` Opus-4.7-only build-time guard.
+
+| Architecture (role registry)
+| link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-roles.md[`plan-marshall/standards/model-roles.md`]
+| Role-key → canonical-agent table, with per-row effective-vs-pending status and the per-phase-roles-share-phase-agent pattern.
+
+| Build system
+| link:refactor/02-build-system/plan.md[`doc/refactor/02-build-system/plan.md`] § Variant Emission
+| Cluster-02 contributor view: variant-generation algorithm, `levels:` whitelist mechanics, `xxhigh` model-support guard, drift-check semantics, deploy-step + sync-skill integration.
+|===
+
+== How the pieces fit
+
+[source]
+----
+role-variants.md  (user)                          ── single config target
+        │
+        ├─ model-levels.md     (level → primitive)
+        ├─ model-roles.md      (role → canonical)
+        └─ marshall-steward/standards/models-menu.md   (wizard)
+
+ext-point-dynamic-level-executor.md  (contract)
+        │
+        ├─ model-levels.md
+        └─ role-variants.md    (user-facing target)
+
+doc/refactor/02-build-system/plan.md § Variant Emission   (build view)
+        │
+        ├─ ext-point-dynamic-level-executor.md
+        ├─ role-variants.md
+        ├─ model-levels.md
+        └─ model-roles.md
+----
+
+== Quick reference
+
+* **Configure a role** — set `plan.models.roles.<role>` in `.plan/marshal.json` to one of `low | medium | high | xhigh | xxhigh | inherit`. See `role-variants.md`.
+* **Resolve a role at dispatch** — `python3 .plan/execute-script.py plan-marshall:manage-config:manage-config models read --role <role>` returns `level: <value>`. See dispatch-site patches in `phase-3-outline`, `phase-4-plan`, `phase-6-finalize`, `plan-marshall/workflows/planning.md` and `recipe.md`.
+* **Make a new agent role-eligible** — add `implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor` to its frontmatter; remove any hardcoded `model:` / `effort:`. Plugin-doctor enforces both rules. See `ext-point-dynamic-level-executor.md`.
+* **Inspect emitted variants** — generate the Claude target output (`python3 marketplace/targets/generate.py --target claude --output target/claude`) and look under `target/claude/{bundle}/agents/{base}-{level}.md`. The canonical no-suffix file remains the `inherit` target.
+
+== Rationale for keeping the canonical specs in `marketplace/bundles/`
+
+Each standard is co-located with the skill or extension that owns it so it stays under the same review lifecycle as the code it governs. This `doc/` page is intentionally a thin summary — duplicating the substance here would create two places to update on every change and the `marketplace/bundles/` copy is the one that downstream consumers (plugin-doctor, the build target, dispatch sites) read.
