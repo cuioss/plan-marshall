@@ -376,6 +376,262 @@ def test_cli_strict_propagates_nonzero_exit_on_worktree_unresolved(
         )
 
 
+# =============================================================================
+# Inverse-direction invariant: orphan worktree dir + metadata says no worktree
+# =============================================================================
+#
+# Companion to the metadata→disk assertion above. The
+# ``_capture_worktree_orphan`` invariant fires when the canonical worktree
+# directory ``.plan/local/worktrees/{plan_id}`` exists on disk but
+# ``status.metadata`` reports ``use_worktree != true``. ``cmd_capture`` and
+# ``cmd_verify`` translate the resulting ``WorktreeMetadataDrift`` into a
+# structured ``error: worktree_metadata_drift`` payload. Under ``--strict``
+# the verify path turns this into a non-zero exit. Origin: lesson
+# ``2026-05-08-14-001`` writer-chain drift.
+# =============================================================================
+
+
+def _make_orphan_worktree(plan_id: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Helper: pin ``_repo_root`` to ``tmp_path`` and create the canonical
+    orphan worktree dir at ``.plan/local/worktrees/{plan_id}``.
+
+    Returns the orphan path so tests can assert it appears in the error
+    payload. The base_path module is monkeypatched so PlanContext usage
+    remains independent of the orphan-detection setup.
+    """
+    monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
+    orphan = tmp_path / '.plan' / 'local' / 'worktrees' / plan_id
+    orphan.mkdir(parents=True, exist_ok=True)
+    return orphan
+
+
+def test_orphan_no_dir_returns_none(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """No worktree directory + metadata.use_worktree=false → None (not applicable)."""
+    monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
+    result = inv._capture_worktree_orphan(
+        'orphan-no-dir',
+        {'use_worktree': False},
+        '5-execute',
+    )
+    assert result is None
+
+
+def test_orphan_metadata_true_returns_none(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Orphan dir present but metadata.use_worktree=true → None (other-direction case)."""
+    _make_orphan_worktree('orphan-md-true', monkeypatch, tmp_path)
+    # When metadata claims a worktree, the metadata→disk assertion in
+    # _resolve_worktree_assertion handles it; this invariant short-circuits.
+    result = inv._capture_worktree_orphan(
+        'orphan-md-true',
+        {'use_worktree': True, 'worktree_path': '/tmp/wt'},
+        '5-execute',
+    )
+    assert result is None
+
+
+def test_orphan_dir_metadata_false_raises(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Orphan dir + metadata.use_worktree=false → WorktreeMetadataDrift."""
+    orphan = _make_orphan_worktree('orphan-md-false', monkeypatch, tmp_path)
+    with pytest.raises(inv.WorktreeMetadataDrift) as excinfo:
+        inv._capture_worktree_orphan(
+            'orphan-md-false',
+            {'use_worktree': False},
+            '5-execute',
+        )
+    err = excinfo.value
+    assert err.plan_id == 'orphan-md-false'
+    assert err.worktree_dir == str(orphan)
+    assert err.use_worktree is False
+
+
+def test_orphan_dir_metadata_missing_raises(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Orphan dir + metadata missing use_worktree entirely → drift error.
+
+    Mirrors the writer-chain bug from lesson ``2026-05-08-14-001`` where
+    the ``manage_status create`` call clobbered the worktree trio,
+    leaving an orphan disk dir while metadata had no use_worktree field.
+    """
+    orphan = _make_orphan_worktree('orphan-md-absent', monkeypatch, tmp_path)
+    with pytest.raises(inv.WorktreeMetadataDrift) as excinfo:
+        inv._capture_worktree_orphan(
+            'orphan-md-absent',
+            {},  # no use_worktree key at all
+            '5-execute',
+        )
+    err = excinfo.value
+    assert err.plan_id == 'orphan-md-absent'
+    assert err.worktree_dir == str(orphan)
+    assert err.use_worktree is None
+
+
+def test_orphan_string_false_metadata_raises(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Orphan dir + metadata.use_worktree='false' (string) → drift (TOON tolerance)."""
+    _make_orphan_worktree('orphan-md-str-false', monkeypatch, tmp_path)
+    with pytest.raises(inv.WorktreeMetadataDrift):
+        inv._capture_worktree_orphan(
+            'orphan-md-str-false',
+            {'use_worktree': 'false'},
+            '5-execute',
+        )
+
+
+def test_orphan_string_true_metadata_returns_none(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Orphan dir + metadata.use_worktree='true' (string) → None (truthy short-circuit)."""
+    _make_orphan_worktree('orphan-md-str-true', monkeypatch, tmp_path)
+    result = inv._capture_worktree_orphan(
+        'orphan-md-str-true',
+        {'use_worktree': 'true', 'worktree_path': '/tmp/wt'},
+        '5-execute',
+    )
+    assert result is None
+
+
+def test_cmd_capture_surfaces_worktree_metadata_drift(
+    stubbed_invariants,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """``cmd_capture`` translates WorktreeMetadataDrift into structured TOON error.
+
+    Wires the real ``_capture_worktree_orphan`` into a narrowed INVARIANTS
+    list and pins the metadata loader so the orphan-on-disk +
+    metadata-says-false scenario fires through the full capture pipeline.
+    """
+    plan_id = 'cap-orphan-drift'
+    orphan = _make_orphan_worktree(plan_id, monkeypatch, tmp_path)
+
+    narrowed = [('worktree_orphan', inv._always, inv._capture_worktree_orphan)]
+    monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
+    monkeypatch.setattr(cmds, 'INVARIANTS', narrowed)
+    monkeypatch.setattr(cmds, '_load_status_metadata', lambda _pid: {'use_worktree': False})
+
+    with PlanContext(plan_id=plan_id):
+        result = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'worktree_metadata_drift'
+    assert result['plan_id'] == plan_id
+    assert result['phase'] == '5-execute'
+    assert result['worktree_dir'] == str(orphan)
+    assert result['use_worktree'] is False
+
+
+def test_cmd_verify_surfaces_worktree_metadata_drift(
+    stubbed_invariants,
+    monkeypatch: pytest.MonkeyPatch,
+    git_worktree: Path,
+    tmp_path: Path,
+) -> None:
+    """``cmd_verify`` surfaces orphan drift after a clean capture.
+
+    Captures with metadata.use_worktree=true pointing at a real git
+    worktree fixture so the metadata→disk assertion in
+    ``_resolve_worktree_assertion`` passes; then flips metadata to drop
+    ``use_worktree`` and creates the orphan dir, exercising verify's
+    WorktreeMetadataDrift branch (the inverse direction).
+    """
+    plan_id = 'ver-orphan-drift'
+
+    md_state: dict[str, object] = {
+        'use_worktree': True,
+        'worktree_path': str(git_worktree),
+    }
+    monkeypatch.setattr(cmds, '_load_status_metadata', lambda _pid: md_state)
+
+    # Use the stubbed_invariants registry for the initial capture so
+    # _capture_worktree_orphan does not fire on capture (metadata.use_worktree
+    # is True at that point).
+    with PlanContext(plan_id=plan_id):
+        cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+        assert cap['status'] == 'success', cap
+
+        # Now flip metadata to drop use_worktree, create the orphan dir
+        # under tmp_path (NOT git_worktree — orphan-detection compares
+        # against ``_repo_root()`` which we now monkeypatch to tmp_path),
+        # narrow INVARIANTS to just the orphan check, and verify.
+        md_state.clear()
+        md_state['use_worktree'] = False
+        orphan = _make_orphan_worktree(plan_id, monkeypatch, tmp_path)
+        narrowed = [('worktree_orphan', inv._always, inv._capture_worktree_orphan)]
+        monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
+        monkeypatch.setattr(cmds, 'INVARIANTS', narrowed)
+
+        result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'worktree_metadata_drift'
+    assert result['worktree_dir'] == str(orphan)
+    assert result['plan_id'] == plan_id
+
+
+# =============================================================================
+# CLI --strict flag: non-zero exit on worktree_metadata_drift
+# =============================================================================
+
+
+def test_cli_strict_propagates_nonzero_exit_on_worktree_metadata_drift(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``verify --strict`` exits non-zero on the inverse-direction drift error.
+
+    Mirrors the strict-flag test for ``worktree_unresolved``: drives
+    ``main()`` directly so the in-process monkeypatched metadata loader and
+    invariant registry actually apply, and asserts ``SystemExit.code != 0``.
+    """
+    plan_id = 'strict-orphan-drift'
+
+    # Capture with metadata.use_worktree=True so a row exists, then flip
+    # to false and create the orphan dir before calling verify.
+    md_state = {'use_worktree': True, 'worktree_path': str(tmp_path / 'placeholder')}
+    monkeypatch.setattr(cmds, '_load_status_metadata', lambda _pid: md_state)
+
+    with PlanContext(plan_id=plan_id):
+        _capture_row_for_strict_test(plan_id)
+
+        md_state.clear()
+        md_state['use_worktree'] = False
+        _make_orphan_worktree(plan_id, monkeypatch, tmp_path)
+        narrowed = [('worktree_orphan', inv._always, inv._capture_worktree_orphan)]
+        monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
+        monkeypatch.setattr(cmds, 'INVARIANTS', narrowed)
+
+        monkeypatch.setattr(
+            sys,
+            'argv',
+            [
+                'phase_handshake.py',
+                'verify',
+                '--plan-id',
+                plan_id,
+                '--phase',
+                '5-execute',
+                '--strict',
+            ],
+        )
+        main_fn = _load_phase_handshake_module()
+        with pytest.raises(SystemExit) as excinfo:
+            main_fn()
+        assert excinfo.value.code == 1, (
+            '--strict must exit non-zero on worktree_metadata_drift, '
+            f'got {excinfo.value.code}'
+        )
+
+
+# =============================================================================
+# Original strict-resolves test (unchanged behavior)
+# =============================================================================
+
+
 def test_cli_strict_exits_zero_when_worktree_resolves(
     stubbed_invariants, monkeypatch: pytest.MonkeyPatch, git_worktree: Path
 ) -> None:
@@ -420,4 +676,275 @@ def test_cli_strict_exits_zero_when_worktree_resolves(
             main_fn()
         assert excinfo.value.code == 0, (
             f'--strict on a resolved worktree must exit 0, got {excinfo.value.code}'
+        )
+
+
+# =============================================================================
+# Layer-D enforcement: main_dirty_files / main_checkout_dirtied_during_plan
+# =============================================================================
+#
+# Companion to ``_check_main_dirty_drift`` in ``_handshake_commands.py`` and
+# ``_capture_main_dirty_files`` / ``_main_dirty_drift_diff`` in
+# ``_invariants.py``. The check raises
+# ``MainCheckoutDirtiedDuringPlan`` and ``cmd_verify`` translates the
+# exception into the structured ``error: main_checkout_dirtied_during_plan``
+# payload. Origin: deliverable D2 of plan ``lesson-2026-05-08-08-001``.
+#
+# The five scenarios below exercise the contract end-to-end through
+# ``cmd_capture`` / ``cmd_verify``:
+#
+#   (a) clean baseline + clean live  → strict verify succeeds
+#   (b) baseline subset of live      → strict verify fails with payload
+#       listing the offending paths
+#   (c) ``use_worktree=false`` plan  → invariant gated off (no error)
+#   (d) ``.plan/`` paths in live set → filtered, NOT a drift signal
+#   (e) baseline-equal live set      → proper-superset rule yields no error
+# =============================================================================
+
+
+def _patch_main_dirty_files(
+    monkeypatch: pytest.MonkeyPatch, sequence: list[list[str] | None]
+):
+    """Replace ``inv._capture_main_dirty_files`` with a sequence-driven stub.
+
+    Each call returns the next entry from ``sequence`` (cycling on the last
+    entry once exhausted, so monotonically extra calls during the same test
+    keep returning the most recent value). Returns a small holder object
+    exposing ``calls`` so the test can assert how many captures fired.
+    """
+
+    class _Holder:
+        calls = 0
+
+        @staticmethod
+        def stub(_plan_id: str, _metadata: dict, _phase: str):
+            idx = min(_Holder.calls, len(sequence) - 1)
+            _Holder.calls += 1
+            return sequence[idx]
+
+    monkeypatch.setattr(inv, '_capture_main_dirty_files', _Holder.stub)
+    return _Holder
+
+
+def _layer_d_invariants() -> list:
+    """Narrowed INVARIANTS list containing only ``main_dirty_files``.
+
+    Capture/verify go through the registry; narrowing keeps the test
+    coupled to the layer-D contract instead of every other invariant.
+
+    The capture entry is a thin trampoline that defers to the
+    *current* ``inv._capture_main_dirty_files`` attribute at call time
+    so monkeypatches applied AFTER this list is constructed still take
+    effect (registry tuples cache the function reference at construction
+    time, but the trampoline re-resolves the attribute on every call).
+    """
+    def _trampoline(plan_id, metadata, phase):
+        return inv._capture_main_dirty_files(plan_id, metadata, phase)
+
+    return [('main_dirty_files', inv._always, _trampoline)]
+
+
+def test_layer_d_clean_baseline_and_live_succeeds(
+    monkeypatch: pytest.MonkeyPatch, git_worktree: Path
+) -> None:
+    """(a) Worktree-routed plan, no dirty paths at either capture → verify ok."""
+    plan_id = 'layer-d-clean'
+    md_state = {'use_worktree': True, 'worktree_path': str(git_worktree)}
+    monkeypatch.setattr(cmds, '_load_status_metadata', lambda _pid: md_state)
+    narrowed = _layer_d_invariants()
+    monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
+    monkeypatch.setattr(cmds, 'INVARIANTS', narrowed)
+    _patch_main_dirty_files(monkeypatch, [[], []])
+
+    with PlanContext(plan_id=plan_id):
+        cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+        assert cap['status'] == 'success', cap
+        result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
+
+    assert result['status'] == 'ok', f'clean baseline+live must verify ok, got {result}'
+
+
+def test_layer_d_proper_superset_drift_raises_with_payload(
+    monkeypatch: pytest.MonkeyPatch, git_worktree: Path
+) -> None:
+    """(b) Worktree plan, live set is a proper superset → structured error."""
+    plan_id = 'layer-d-drift'
+    md_state = {'use_worktree': True, 'worktree_path': str(git_worktree)}
+    monkeypatch.setattr(cmds, '_load_status_metadata', lambda _pid: md_state)
+    narrowed = _layer_d_invariants()
+    monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
+    monkeypatch.setattr(cmds, 'INVARIANTS', narrowed)
+
+    baseline = ['existing.txt']
+    live = ['existing.txt', 'leaked-readme.md', 'src/leaked.py']
+    _patch_main_dirty_files(monkeypatch, [baseline, live])
+
+    with PlanContext(plan_id=plan_id):
+        cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+        assert cap['status'] == 'success', cap
+        result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'main_checkout_dirtied_during_plan'
+    assert result['plan_id'] == plan_id
+    assert result['phase'] == '5-execute'
+    assert sorted(result['baseline']) == ['existing.txt']
+    assert sorted(result['observed']) == ['existing.txt', 'leaked-readme.md', 'src/leaked.py']
+    assert sorted(result['newly_dirty']) == ['leaked-readme.md', 'src/leaked.py'], (
+        'newly_dirty must list ONLY the paths that appeared between captures, '
+        f'got {result["newly_dirty"]}'
+    )
+
+
+def test_layer_d_main_checkout_plan_is_gated_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """(c) ``use_worktree=false`` plan dirties main freely → no drift error."""
+    plan_id = 'layer-d-main-checkout'
+    md_state = {'use_worktree': False}
+    monkeypatch.setattr(cmds, '_load_status_metadata', lambda _pid: md_state)
+    narrowed = _layer_d_invariants()
+    monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
+    monkeypatch.setattr(cmds, 'INVARIANTS', narrowed)
+
+    # Even with a wildly different baseline vs live set, the gate must
+    # short-circuit because the invariant only fires for worktree-routed plans.
+    _patch_main_dirty_files(
+        monkeypatch,
+        [['baseline.txt'], ['baseline.txt', 'new-leak-1.py', 'new-leak-2.py']],
+    )
+
+    with PlanContext(plan_id=plan_id):
+        cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+        assert cap['status'] == 'success', cap
+        result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
+
+    assert result['status'] == 'ok', (
+        'main-checkout plans must not trip the layer-D drift invariant '
+        f'(use_worktree=false gate); got {result}'
+    )
+
+
+def test_layer_d_dot_plan_paths_are_filtered_and_do_not_trip(
+    monkeypatch: pytest.MonkeyPatch, git_worktree: Path
+) -> None:
+    """(d) ``.plan/`` artifacts in main MUST be filtered before drift check.
+
+    Drives the real ``_capture_main_dirty_files`` (which calls
+    :func:`_filter_main_dirty_paths`) by stubbing ``git_dirty_files`` and
+    confirming the captured list is empty even though git reports
+    ``.plan/`` paths as dirty. Then verify must produce ``status: ok``
+    because the filter strips the would-be drift.
+    """
+    plan_id = 'layer-d-dot-plan-filter'
+    md_state = {'use_worktree': True, 'worktree_path': str(git_worktree)}
+    monkeypatch.setattr(cmds, '_load_status_metadata', lambda _pid: md_state)
+    narrowed = _layer_d_invariants()
+    monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
+    monkeypatch.setattr(cmds, 'INVARIANTS', narrowed)
+
+    # First capture: nothing dirty.
+    # Second capture: only ``.plan/`` paths dirty — must be filtered out.
+    sequence = [
+        [],
+        ['.plan/local/plans/foo/work.log', '.plan/temp/scratch.toon'],
+    ]
+    counter = [0]
+
+    def _git_dirty_files_stub(_cwd):
+        idx = min(counter[0], len(sequence) - 1)
+        counter[0] += 1
+        return sequence[idx]
+
+    monkeypatch.setattr(inv, 'git_dirty_files', _git_dirty_files_stub)
+
+    with PlanContext(plan_id=plan_id):
+        cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+        assert cap['status'] == 'success', cap
+        result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
+
+    assert result['status'] == 'ok', (
+        '``.plan/`` paths must be filtered before the drift check fires, '
+        f'got {result}'
+    )
+
+
+def test_layer_d_baseline_equal_live_yields_no_drift(
+    monkeypatch: pytest.MonkeyPatch, git_worktree: Path
+) -> None:
+    """(e) Pre-existing dirty file unchanged across boundaries → no drift.
+
+    Proper-superset rule: identical sets are not a strict superset, so the
+    invariant must NOT raise. This guards against the off-by-one error
+    where a non-strict-subset comparison would erroneously fire on stable
+    pre-existing dirt.
+    """
+    plan_id = 'layer-d-baseline-equal'
+    md_state = {'use_worktree': True, 'worktree_path': str(git_worktree)}
+    monkeypatch.setattr(cmds, '_load_status_metadata', lambda _pid: md_state)
+    narrowed = _layer_d_invariants()
+    monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
+    monkeypatch.setattr(cmds, 'INVARIANTS', narrowed)
+
+    # Same dirty file at both captures — baseline-equal.
+    baseline = ['preexisting-dirty.txt']
+    live = ['preexisting-dirty.txt']
+    _patch_main_dirty_files(monkeypatch, [baseline, live])
+
+    with PlanContext(plan_id=plan_id):
+        cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+        assert cap['status'] == 'success', cap
+        result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
+
+    assert result['status'] == 'ok', (
+        'baseline-equal main-dirty (identical sets across boundaries) '
+        f'must not trigger the proper-superset drift check; got {result}'
+    )
+
+
+def test_cli_strict_propagates_nonzero_exit_on_main_dirty_drift(
+    monkeypatch: pytest.MonkeyPatch, git_worktree: Path
+) -> None:
+    """``verify --strict`` exits non-zero on layer-D drift.
+
+    Mirrors the strict-flag tests for ``worktree_unresolved`` and
+    ``worktree_metadata_drift``: drives ``main()`` directly so the
+    in-process monkeypatched metadata loader and capture stub apply.
+    """
+    plan_id = 'strict-layer-d-drift'
+    md_state = {'use_worktree': True, 'worktree_path': str(git_worktree)}
+    monkeypatch.setattr(cmds, '_load_status_metadata', lambda _pid: md_state)
+    narrowed = _layer_d_invariants()
+    monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
+    monkeypatch.setattr(cmds, 'INVARIANTS', narrowed)
+
+    _patch_main_dirty_files(
+        monkeypatch,
+        [['existing.txt'], ['existing.txt', 'leaked.md']],
+    )
+
+    with PlanContext(plan_id=plan_id):
+        # Capture establishes the baseline row.
+        cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+        assert cap['status'] == 'success', cap
+
+        monkeypatch.setattr(
+            sys,
+            'argv',
+            [
+                'phase_handshake.py',
+                'verify',
+                '--plan-id',
+                plan_id,
+                '--phase',
+                '5-execute',
+                '--strict',
+            ],
+        )
+        main_fn = _load_phase_handshake_module()
+        with pytest.raises(SystemExit) as excinfo:
+            main_fn()
+        assert excinfo.value.code == 1, (
+            '--strict must exit non-zero on main_checkout_dirtied_during_plan, '
+            f'got {excinfo.value.code}'
         )
