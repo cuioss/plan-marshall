@@ -166,14 +166,16 @@ def _is_user_invocable(fm: dict[str, str]) -> bool:
     return raw in {'true', 'yes', '1'}
 
 
-def _resolve_template_model(value: str, mapping: dict[str, dict[str, str]]) -> str | None:
+def _resolve_template_model(value: str, mapping: dict) -> str | None:
     if not value:
         return None
     model_map = mapping.get('model_map', {})
-    mapped = model_map.get(value)
-    if mapped is None:
+    entry = model_map.get(value)
+    if entry is None:
         return value
-    return f'{OPENCODE_MODEL_PREFIX}{mapped}'
+    if not isinstance(entry, dict) or 'id' not in entry:
+        return value
+    return f'{OPENCODE_MODEL_PREFIX}{entry["id"]}'
 
 
 def _render_user_invocable_template(description: str, model: str | None, skill_id: str) -> str:

@@ -17,8 +17,17 @@
     "TaskList": "todoread"
   },
   "model_map": {
-    "opus": "claude-opus-4-7",
-    "sonnet": "claude-sonnet-4-6",
-    "haiku": "claude-haiku-4-5-20251001"
+    "opus": {
+      "id": "claude-opus-4-7",
+      "supports_effort": ["medium", "high", "xhigh"]
+    },
+    "sonnet": {
+      "id": "claude-sonnet-4-6",
+      "supports_effort": ["medium", "high"]
+    },
+    "haiku": {
+      "id": "claude-haiku-4-5-20251001",
+      "supports_effort": []
+    }
   }
 }

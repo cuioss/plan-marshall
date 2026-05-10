@@ -19,6 +19,8 @@ The registry below is the single source of truth for which roles exist and which
 | **effective** | Dispatch sites consume this role today. Setting `models.roles.<role>` has runtime effect. |
 | **pending** | Schema validates the role (it can be configured), but no dispatch site reads it yet. Configuration is preserved across saves but produces no runtime effect until wrapping work lands. |
 
+**Effective criterion** — a row is `effective` only when at least one dispatch site reads the role through `manage-config models read --role <role>`. Variant emission alone (the canonical agent declaring `implements: ext-point-dynamic-level-executor`) does not qualify; without a reader, the resolved level cannot influence runtime dispatch. When a future plan wires a new dispatch site for a `pending` row, flip the row to `effective` in the same change.
+
 The wizard (`marshall-steward` Models submenu) surfaces both effective and pending roles, flagging pending rows so users know configuration is preserved but not active.
 
 ## Registry
@@ -34,9 +36,9 @@ The wizard (`marshall-steward` Models submenu) surfaces both effective and pendi
 | `change_type_detection` | `detect-change-type-agent.md` | plan-marshall | effective | Dispatched by phase-3-outline change-type detection. |
 | `phase_init` | `phase-agent.md` | plan-marshall | effective | Phase-agent dispatched for phase-1-init by `plan-marshall/workflows/planning.md` and `recipe.md`. |
 | `phase_plan` | `phase-agent.md` | plan-marshall | effective | Phase-agent dispatched for phase-4-plan by `planning.md`. |
-| `component_analysis` | `ext-outline-component-agent.md` | pm-plugin-development | effective | Variant infrastructure in place; activation in real workflows is deferred (no current dispatch site, but schema is wired). |
-| `inventory_analysis` | `ext-outline-inventory-agent.md` | pm-plugin-development | effective | Same as `component_analysis`. |
 | `tool_coverage_analysis` | `tool-coverage-agent.md` | pm-plugin-development | effective | Dispatched by `plugin-doctor/standards/doctor-marketplace.md`. |
+| `component_analysis` | `ext-outline-component-agent.md` | pm-plugin-development | pending | No dispatch site reads this role today; schema validates. Variants are emitted by the build target so activation is a one-line dispatch-site change when a workflow starts using the agent. |
+| `inventory_analysis` | `ext-outline-inventory-agent.md` | pm-plugin-development | pending | No dispatch site reads this role today; schema validates. Same activation contract as `component_analysis`. |
 | `phase_refine` | `phase-agent.md` | plan-marshall | pending | Phase-2-refine phase-agent dispatch site does not yet read role. |
 | `phase_outline` | `phase-agent.md` | plan-marshall | pending | Phase-3-outline phase-agent dispatch site does not yet read role. |
 | `phase_execute` | `phase-agent.md` | plan-marshall | pending | Phase-5-execute phase-agent dispatch site does not yet read role. |

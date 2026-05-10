@@ -128,7 +128,7 @@ class TestModelAliasResolution:
     ):
         fm = {'description': 'agent', 'model': 'sonnet'}
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
-        sonnet_id = mapping['model_map']['sonnet']
+        sonnet_id = mapping['model_map']['sonnet']['id']
         assert f'model: {OPENCODE_MODEL_PREFIX}{sonnet_id}' in result
 
     def test_unknown_alias_passes_through(

@@ -1,9 +1,16 @@
 """Frontmatter transform engine for the OpenCode target.
 
-Reads ``mapping.json`` (tool_permissions, model_map) and
-``frontmatter-rules.json`` (required_fields, optional_fields) at runtime;
-parses Claude Code-style YAML frontmatter; rewrites it into OpenCode
-form (skill/agent/command).
+Reads ``mapping.json`` (``tool_permissions``, ``model_map``) and
+``frontmatter-rules.json`` (``required_fields``, ``optional_fields``) at
+runtime; parses Claude Code-style YAML frontmatter; rewrites it into
+OpenCode form (skill/agent/command).
+
+``mapping.json::model_map`` entries are objects of shape
+``{"id": "<unprefixed-model-id>", "supports_effort": ["medium", "high",
+...]}``. The OpenCode emitter consumes ``id`` and prepends
+``OPENCODE_MODEL_PREFIX``; the ``supports_effort`` array is consumed by
+the Claude target's ``variant_emitter.supports_xhigh_effort`` build-time
+guard.
 
 Validation contract:
   * If a frontmatter block is missing any field listed in
@@ -21,9 +28,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-# OpenCode provider prefix. ``mapping.json`` carries unprefixed model IDs;
-# the emitter prepends this so the configured ``opencode.json`` references
-# resolve through OpenCode's provider system.
+# OpenCode provider prefix. ``mapping.json`` model_map entries are
+# objects of shape ``{"id": "<unprefixed-model-id>", "supports_effort":
+# ["medium", "high", ...]}``. The emitter prepends this prefix to the
+# resolved ``id`` so the configured ``opencode.json`` references resolve
+# through OpenCode's provider system. The ``supports_effort`` array is
+# consumed by the Claude target's ``variant_emitter.supports_xhigh_effort``
+# guard — the OpenCode adapter itself only consumes ``id``.
 OPENCODE_MODEL_PREFIX = 'anthropic/'
 
 # Tools that fall back to a list-style permission entry rather than a
@@ -40,12 +51,14 @@ class UnmappedToolError(RuntimeError):
     """Raised when an agent's ``tools`` value references an unknown tool."""
 
 
-def load_mapping(config_dir: Path) -> dict[str, dict[str, str]]:
+def load_mapping(config_dir: Path) -> dict[str, dict]:
     """Load ``mapping.json`` from ``config_dir``.
 
     Returns a dict with two top-level keys: ``tool_permissions`` (Claude
     tool name → OpenCode permission) and ``model_map`` (Claude alias →
-    unprefixed OpenCode model id).
+    ``{"id": "<unprefixed-model-id>", "supports_effort": [...]}`` object).
+    The ``id`` is prefixed by the OpenCode emitter; the ``supports_effort``
+    array is consumed by the Claude target's xhigh capability guard.
     """
     mapping_path = config_dir / 'mapping.json'
     if not mapping_path.exists():
@@ -161,18 +174,23 @@ def _ensure_required(fm: dict[str, str], rules: dict[str, list[str]], source: st
         )
 
 
-def _resolve_model(value: str, model_map: dict[str, str]) -> str | None:
+def _resolve_model(value: str, model_map: dict[str, dict]) -> str | None:
     """Resolve a Claude model alias to an OpenCode-prefixed model id.
 
-    Unmapped values (e.g., already-qualified ``anthropic/...`` strings, or
-    a custom override) pass through unchanged.
+    ``model_map`` is the ``{alias: {id, supports_effort}}`` shape loaded
+    from ``mapping.json``. The function extracts the ``.id`` from the
+    matched entry and prefixes it with ``OPENCODE_MODEL_PREFIX``.
+    Unmapped values (e.g., already-qualified ``anthropic/...`` strings,
+    or a custom override) pass through unchanged.
     """
     if not value:
         return None
-    mapped = model_map.get(value)
-    if mapped is None:
+    entry = model_map.get(value)
+    if entry is None:
         return value
-    return f'{OPENCODE_MODEL_PREFIX}{mapped}'
+    if not isinstance(entry, dict) or 'id' not in entry:
+        return value
+    return f'{OPENCODE_MODEL_PREFIX}{entry["id"]}'
 
 
 def _split_tools(raw: str) -> list[str]:
@@ -209,7 +227,7 @@ def transform_skill_frontmatter(
 
 def transform_agent_frontmatter(
     fm: dict[str, str],
-    mapping: dict[str, dict[str, str]],
+    mapping: dict[str, dict],
     rules: dict[str, list[str]],
     *,
     source_label: str,
