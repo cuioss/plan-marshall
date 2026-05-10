@@ -469,13 +469,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --value {worktree_path}
 ```
 
-3. Persist `worktree_path` to `status.metadata` so downstream phases (notably phase-5-execute Step 3) can surface the active worktree path via `manage_status read`. This MUST happen in the same Step 6 transaction as the references write — the two sinks are the single source of truth and must agree:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
-  --set --plan-id {plan_id} \
-  --field worktree_path \
-  --value {worktree_path}
-```
+3. **Carry the worktree trio forward to Step 8**: do NOT call `manage_status metadata --set` here — `status.json` is not created until Step 8, and an early `metadata --set` call would either fail (no status.json yet) or be clobbered by Step 8's `manage_status create` call which writes a fresh `metadata` block. Instead, keep `{worktree_path}`, the literal feature branch name `feature/{plan_id}`, and the `use_worktree=true` flag in the orchestrator's local context and pass them as `--use-worktree --worktree-path --worktree-branch` flags into Step 8's `manage_status create` invocation. That single write seeds the worktree metadata atomically and is the only writer of `status.metadata` for use_worktree/worktree_path/worktree_branch in this phase. (Lesson `2026-05-08-14-001` documented the prior writer-chain drift this rule eliminates.)
 
 4. Log the decision:
 ```bash
@@ -558,7 +552,19 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 8: Create Status
 
-Create status.json with phases (6-phase model):
+Create status.json with phases (6-phase model). When Step 6 allocated an isolated worktree (the `branch_strategy == "feature" AND use_worktree == true` branch succeeded), pass the worktree trio as flags so the metadata is seeded atomically in this single create call — no follow-up `metadata --set` is needed and the writer-chain bug from lesson `2026-05-08-14-001` cannot recur:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status create \
+  --plan-id {plan_id} \
+  --title "{title_from_task_md}" \
+  --phases 1-init,2-refine,3-outline,4-plan,5-execute,6-finalize \
+  --use-worktree \
+  --worktree-path {worktree_path} \
+  --worktree-branch feature/{plan_id}
+```
+
+When Step 6 did NOT allocate a worktree (the `use_worktree == false` opt-out branch, or the `branch_strategy == "direct"` branch, or the worktree-creation fail-loud fallback ran), omit the three worktree flags so `manage_status create` writes the explicit `metadata.use_worktree=false` marker:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status create \
@@ -568,6 +574,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status create
 ```
 
 **Note**: Domain information is stored in `references.json` (as a `domains` list), not in `status.json`. All plans use the standard 6-phase model (verification is integrated into phase-5-execute).
+
+**Writer-chain contract**: `manage_status create` is the **only** writer of `metadata.use_worktree`, `metadata.worktree_path`, and `metadata.worktree_branch` in phase-1-init. Earlier drafts of this skill issued separate `manage_status metadata --set` calls in Step 6 before status.json existed, which silently failed and let `create`'s default `{'use_worktree': False}` else-branch overwrite the trio. The new contract is: Step 6 holds the worktree trio in orchestrator context, Step 8 passes it as create flags, and the inverse-direction `_worktree_orphan` invariant in `_invariants.py` (registered in `INVARIANTS`) catches any future drift between the on-disk worktree directory and the persisted metadata. See `workflow-integration-git/standards/worktree-handling.md` for the canonical worktree contract.
 
 ### Step 9: Store Domains in References
 

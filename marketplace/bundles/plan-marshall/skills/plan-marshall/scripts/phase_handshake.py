@@ -80,10 +80,21 @@ def main() -> int:
     if args.command == 'verify' and getattr(args, 'strict', False):
         if result.get('status') == 'drift':
             return 1
-        # worktree_unresolved is a phase-entry refusal — under --strict it
-        # MUST surface as a non-zero exit so calling tooling that swallows
-        # TOON output still sees the failure (mirrors the drift contract).
-        if result.get('error') == 'worktree_unresolved':
+        # worktree_unresolved (metadata→disk), worktree_metadata_drift
+        # (disk→metadata, the inverse direction) and
+        # main_checkout_dirtied_during_plan (layer-D filesystem leak into
+        # the main checkout during a worktree-routed plan) are all
+        # phase-boundary refusals. Under --strict they MUST surface as a
+        # non-zero exit so calling tooling that swallows TOON output still
+        # sees the failure (mirrors the drift contract). All three share
+        # the same severity: the operator must repair the disagreement (or
+        # revert the leaked main-checkout changes) before any phase advance
+        # is allowed.
+        if result.get('error') in (
+            'worktree_unresolved',
+            'worktree_metadata_drift',
+            'main_checkout_dirtied_during_plan',
+        ):
             return 1
     if result.get('status') == 'error':
         return 0

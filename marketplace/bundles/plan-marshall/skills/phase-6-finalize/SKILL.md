@@ -648,11 +648,13 @@ Emit a one-shot `✓ pm:done:{short_description}` OSC escape to the terminal so 
 
 **If `short_description` is `None` or empty**: skip this step (log at INFO and continue to return). A plan created before the `short_description` field existed, or one whose derivation produced an empty string, cannot produce a meaningful `pm:done:` label; in that case the title stays at whatever the last hook emitted (typically `◯ claude` via Stop).
 
-**If `short_description` is set**: invoke the terminal-title script from the plugin cache, passing the captured label. The script is user-invoked from hooks via absolute path — use the same absolute path that the Terminal Title Integration config resolved at `/marshall-steward` time, typically:
+**If `short_description` is set**: invoke the terminal-title script via the canonical executor notation, passing the captured label. The executor mapping resolves the deployed cache path at generation time, so future bundle-version bumps flow through automatically and the invocation matches every other phase-6 step:
 
 ```bash
-python3 ~/.claude/plugins/cache/plan-marshall/marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/set_terminal_title.py done --plan-label "{short_description}"
+python3 .plan/execute-script.py plan-marshall:plan-marshall:set_terminal_title done --plan-label "{short_description}"
 ```
+
+The user-side hook entries in `./.claude/settings.json` (written by `/marshall-steward`) are unaffected — they continue to invoke the script via absolute path because the host-platform hook runner does not load the marketplace executor; that absolute-path duplication is required by external constraint and `/marshall-steward` remains the single source of truth for it.
 
 **Advisory**: this step is best-effort. On any error (script missing, non-zero exit, `/dev/tty` unavailable), log a WARNING and continue. A missing terminal emission is cosmetic and MUST NOT block finalize from returning success — the plan has already archived, all state transitions are committed, and the user can still read the Step 4 output template in their scrollback:
 

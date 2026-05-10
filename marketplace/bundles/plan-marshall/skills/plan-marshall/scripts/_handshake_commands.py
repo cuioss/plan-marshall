@@ -1,4 +1,39 @@
-"""Command handlers for phase_handshake (capture, verify, list, clear)."""
+"""Command handlers for phase_handshake (capture, verify, list, clear).
+
+This module wires three worktree-related boundary checks on top of the
+generic invariant registry in :mod:`_invariants`:
+
+1. :func:`_resolve_worktree_assertion` — phase-entry assertion in the
+   ``metadata→disk`` direction. Refuses to enter a phase when
+   ``metadata.use_worktree==true`` but ``metadata.worktree_path`` is
+   missing or does not resolve to a real git worktree. Surfaces as
+   ``error: worktree_unresolved`` (under ``--strict`` exits non-zero).
+
+2. ``_capture_worktree_orphan`` (in :mod:`_invariants`, raises
+   :class:`_invariants.WorktreeMetadataDrift`) — capture-time check in
+   the **inverse** ``disk→metadata`` direction. Refuses to capture when
+   the on-disk worktree directory exists but metadata reports
+   ``use_worktree != true``. Surfaces as ``error: worktree_metadata_drift``.
+
+3. ``_capture_main_dirty_files`` (in :mod:`_invariants`) plus
+   :func:`_check_main_dirty_drift` (verify-time, in this module) — layer-D
+   enforcement that detects free-form filesystem leaks into the main
+   checkout during a worktree-routed plan. The capture records the
+   sorted, ``.plan/``-filtered dirty-path set; the verify check raises
+   :class:`_invariants.MainCheckoutDirtiedDuringPlan` when the live set
+   is a *proper superset* of the captured baseline AND ``use_worktree==true``.
+   Surfaces as ``error: main_checkout_dirtied_during_plan`` (under
+   ``--strict`` exits non-zero). The proper-superset rule means
+   pre-existing dirty paths (baseline-equal) do not trip the invariant —
+   only newly-dirty paths between boundaries count as a leak.
+
+All three checks share a common contract: under ``--strict`` they refuse
+to advance the boundary so prompt-discipline failures and writer-chain
+drift cannot run silently. See
+``workflow-integration-git/standards/worktree-handling.md`` for the
+operator-facing recovery loops and the worktree-routing contract this
+module enforces.
+"""
 
 from __future__ import annotations
 
@@ -17,7 +52,10 @@ from _handshake_store import (  # type: ignore[import-not-found]
 from _invariants import (  # type: ignore[import-not-found]
     INVARIANTS,
     BlockingFindingsPresent,
+    MainCheckoutDirtiedDuringPlan,
     PhaseStepsIncomplete,
+    WorktreeMetadataDrift,
+    _main_dirty_drift_diff,
     capture_all,
 )
 from file_ops import get_base_dir  # type: ignore[import-not-found]
@@ -46,7 +84,7 @@ def _is_truthy_metadata(value: Any) -> bool:
 
 
 def _resolve_worktree_assertion(metadata: dict[str, Any]) -> dict[str, Any] | None:
-    """Worktree-resolution phase-entry assertion.
+    """Worktree-resolution phase-entry assertion (metadata→disk direction).
 
     Asserts that when ``metadata.use_worktree`` is true, the
     ``metadata.worktree_path`` field is non-empty AND filesystem-resolvable
@@ -64,6 +102,15 @@ def _resolve_worktree_assertion(metadata: dict[str, Any]) -> dict[str, Any] | No
         - ``worktree_path`` exists but is not a git worktree
         - ``worktree_path`` exists, is a git worktree, but ``rev-parse
           --show-toplevel`` resolves to a different path (stale link)
+
+    The **inverse direction** (orphan worktree dir on disk while
+    metadata reports ``use_worktree != true``) is handled by the
+    ``_worktree_orphan`` invariant in ``_invariants.py``. That capture
+    raises :class:`_invariants.WorktreeMetadataDrift` which
+    ``cmd_capture`` and ``cmd_verify`` translate into a structured
+    ``error: worktree_metadata_drift`` payload. Both directions refuse
+    to advance under ``--strict`` so the writer-chain drift surfaced by
+    lesson ``2026-05-08-14-001`` cannot run silently.
 
     See ``workflow-integration-git/standards/worktree-handling.md`` for the
     canonical worktree contract this assertion enforces at every phase
@@ -187,6 +234,81 @@ def _load_status_metadata(plan_id: str) -> dict[str, Any]:
     return metadata if isinstance(metadata, dict) else {}
 
 
+def _coerce_path_list(raw: Any) -> list[str]:
+    """Coerce a captured-row ``main_dirty_files`` value into a list of paths.
+
+    The stored row may carry the field as:
+
+    - A Python list (the natural shape after :func:`toon_parser.parse_toon`
+      decodes a TOON list) — returned verbatim with each element stringified.
+    - The empty string ``''`` (the ``HANDSHAKE_FIELDS`` default when capture
+      returned ``None``) — returned as ``[]`` to mean "no baseline".
+    - A comma-separated string (legacy or hand-edited rows) — split and
+      stripped so callers don't need to guess at the storage format.
+
+    Returns ``[]`` for ``None`` / unrecognized shapes so the caller's
+    proper-superset check sees an empty baseline (every observed path
+    becomes "newly dirty"). That matches the conservative interpretation:
+    if we cannot prove the baseline, treat any current dirty path as
+    suspect rather than silently passing the boundary.
+    """
+    if raw is None or raw == '':
+        return []
+    if isinstance(raw, list):
+        return [str(item) for item in raw if str(item)]
+    if isinstance(raw, str):
+        return [item.strip() for item in raw.split(',') if item.strip()]
+    return []
+
+
+def _check_main_dirty_drift(
+    plan_id: str,
+    phase: str,
+    captured_row: dict[str, Any],
+    observed: dict[str, Any],
+    metadata: dict[str, Any],
+) -> None:
+    """Layer-D enforcement: raise on proper-superset main-checkout drift.
+
+    Gate: only fires when ``metadata.use_worktree`` is truthy. Plans that
+    run against the main checkout (``use_worktree==false`` or absent)
+    legitimately dirty main, so the invariant is not enforced there.
+
+    Compares ``captured_row['main_dirty_files']`` (the previous-boundary
+    baseline) against ``observed.get('main_dirty_files')`` (the live
+    capture) using set-difference proper-superset semantics. When the
+    observed set contains every baseline path AND at least one additional
+    path, raises :class:`_invariants.MainCheckoutDirtiedDuringPlan` with
+    the ``newly_dirty`` payload listing only the leaked paths so
+    ``cmd_verify`` can surface a structured TOON error and the operator
+    sees exactly what to revert.
+
+    Returns ``None`` (no drift) when:
+        - ``use_worktree`` is not truthy (gate)
+        - The observed set is a (non-strict) subset of the baseline
+        - The baseline and observed sets are identical
+
+    Note: the inverse direction (baseline contained paths the observed
+    set no longer has) is *not* a layer-D leak; a previously-dirty main
+    file that got cleaned between captures is benign. Only newly-dirty
+    paths count.
+    """
+    if not _is_truthy_metadata(metadata.get('use_worktree')):
+        return
+    baseline = _coerce_path_list(captured_row.get('main_dirty_files'))
+    live = _coerce_path_list(observed.get('main_dirty_files'))
+    newly_dirty = _main_dirty_drift_diff(baseline, live)
+    if not newly_dirty:
+        return
+    raise MainCheckoutDirtiedDuringPlan(
+        plan_id=plan_id,
+        phase=phase,
+        baseline=baseline,
+        observed=live,
+        newly_dirty=newly_dirty,
+    )
+
+
 def _row_for_capture(
     plan_id: str,
     phase: str,
@@ -249,6 +371,16 @@ def cmd_capture(args: Any) -> dict[str, Any]:
             'per_type': exc.per_type,
             'message': str(exc),
         }
+    except WorktreeMetadataDrift as exc:
+        return {
+            'status': 'error',
+            'error': 'worktree_metadata_drift',
+            'plan_id': plan_id,
+            'phase': phase,
+            'worktree_dir': exc.worktree_dir,
+            'use_worktree': exc.use_worktree,
+            'message': str(exc),
+        }
     row = _row_for_capture(
         plan_id,
         phase,
@@ -273,6 +405,15 @@ def cmd_capture(args: Any) -> dict[str, Any]:
 def _diffs(captured_row: dict[str, Any], observed: dict[str, Any]) -> list[dict[str, Any]]:
     diffs: list[dict[str, Any]] = []
     for name, _a, _c in INVARIANTS:
+        # ``main_dirty_files`` is owned by the dedicated layer-D drift
+        # check :func:`_check_main_dirty_drift` (proper-superset semantics).
+        # Skipping it here prevents the generic stringified-list comparison
+        # from emitting a low-signal "drift" diff alongside (or instead of)
+        # the structured ``main_checkout_dirtied_during_plan`` error. The
+        # accompanying scalar ``main_dirty`` column still participates in
+        # the generic comparison so operators retain the count signal.
+        if name == 'main_dirty_files':
+            continue
         cap_value = captured_row.get(name, '')
         if cap_value == '':
             # Not captured (invariant was not applicable or missing) — skip.
@@ -357,6 +498,41 @@ def cmd_verify(args: Any) -> dict[str, Any]:
             'drift_count': len(diffs),
             'diffs': diffs,
         }
+    except WorktreeMetadataDrift as exc:
+        # Inverse-direction worktree drift: an orphan worktree directory
+        # exists on disk while metadata claims no worktree is in use.
+        # Surfaced as a hard error (not drift) because there is nothing
+        # for the operator to compare against — the metadata is wrong.
+        return {
+            'status': 'error',
+            'error': 'worktree_metadata_drift',
+            'plan_id': plan_id,
+            'phase': phase,
+            'worktree_dir': exc.worktree_dir,
+            'use_worktree': exc.use_worktree,
+            'message': str(exc),
+        }
+
+    # Layer-D enforcement (filesystem-state-based): proper-superset drift
+    # of main_dirty_files between the captured baseline and the live set
+    # raises MainCheckoutDirtiedDuringPlan on worktree-routed plans. Run
+    # BEFORE the generic _diffs comparison so the structured error
+    # payload (with the newly_dirty path list) takes precedence over the
+    # plain "drift on main_dirty_files column" form _diffs would emit.
+    try:
+        _check_main_dirty_drift(plan_id, phase, captured_row, observed, metadata)
+    except MainCheckoutDirtiedDuringPlan as exc:
+        return {
+            'status': 'error',
+            'error': 'main_checkout_dirtied_during_plan',
+            'plan_id': plan_id,
+            'phase': phase,
+            'baseline': exc.baseline,
+            'observed': exc.observed,
+            'newly_dirty': exc.newly_dirty,
+            'message': str(exc),
+        }
+
     diffs = _diffs(captured_row, observed)
 
     if not diffs:

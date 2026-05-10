@@ -89,7 +89,88 @@ Every Edit/Write/Read tool call MUST resolve its target against `{worktree_path}
 - Bypasses worktree isolation, defeating the whole point of running in a worktree.
 - Lets tests silently load stale source via PYTHONPATH — the test runner sees the main checkout's PYTHONPATH entries and reports green while the worktree's edits go entirely unexercised.
 
-This invariant is enforced structurally by the `--plan-id` auto-routing on Bucket B scripts (build / CI / Sonar): when `--plan-id` is supplied, the script resolves the worktree path internally and binds every subprocess to it; the main checkout is not reachable from the script's process tree.
+This invariant is enforced at four layers:
+
+- **Layer A — Bucket A / `manage-*` scripts** resolve `.plan/` via `git rev-parse --git-common-dir` and stay cwd-agnostic. The shared metadata directory belongs to the main checkout regardless of which worktree the agent runs in, so layer A is path-stable by construction.
+- **Layer B — Bucket B `--plan-id` auto-routing** binds build / CI / Sonar wrappers to the worktree path internally; the main checkout is not reachable from those subprocess trees.
+- **Layer C — Raw tool flags** (`git -C`, `mvn -f`, `pytest --rootdir`, etc.) target the worktree explicitly when the agent invokes external CLIs directly. This is the call-site rule documented in `dev-general-practices/standards/tool-usage-patterns.md`.
+- **Layer D — Phase-handshake strict-verify drift detection** catches free-form filesystem leaks that escape layers A/B/C. See the next section.
+
+## Layer D: Phase-Handshake Drift Detection
+
+Layers A/B/C cover structured tooling (manage-* scripts, build wrappers, raw tool flags), but they cannot constrain free-form filesystem operations: `Edit` / `Write` / `Read` against an absolute path, `Bash` invocations that ignore `git -C`, external CLIs that accept no cwd flag, or scripts that `chdir` mid-execution. Layer D closes that gap **structurally** by detecting filesystem-state drift at every phase boundary instead of relying on prompt discipline.
+
+### Why Not a `PreToolUse` Hook
+
+An earlier proposal (lesson `2026-05-08-08-001`) suggested intercepting `Edit` / `Write` / `Read` via Claude Code's `PreToolUse` hook to reject any tool call whose path resolves outside `{worktree_path}`. That approach was **rejected during refine** for two reasons:
+
+1. **Host-platform-specific.** Hooks live in `.claude/settings.json` and only fire under the Claude Code CLI host. The same plan running under OpenCode (or any future adapter target) silently loses the enforcement — the hook config is not portable across hosts. This violates the bundle's multi-host design contract.
+2. **Brittle in practice.** Hook configurations require absolute-path matching, settings.json mutation by `marshall-steward` (with version drift between bundle releases), and case-by-case allow-list tuning for legitimate `.plan/` writes. Operators routinely disable misbehaving hooks, training muscle memory that masks legitimate violations later.
+
+The chosen approach is host-agnostic and lives on the same code surface as the existing handshake invariants: at every phase boundary, the handshake captures the main checkout's dirty-file set; on the next boundary's `verify --strict`, a proper-superset comparison detects new dirty paths and refuses to advance.
+
+### What Layer D Detects
+
+The **`main_dirty_files`** invariant captures the set of paths reported by `git status --porcelain` against the main checkout, filtered to exclude `.plan/` artifacts (which legitimately live in the main checkout). The set is persisted on every phase boundary inside `handshakes.toon`.
+
+The **`main_dirty_drift`** check (invoked at verify time, not via the registry) compares the live capture against the captured baseline using **proper-superset semantics**: drift fires when
+
+1. `metadata.use_worktree == true` (gate — main-checkout plans dirty freely without enforcement), AND
+2. The live dirty-file set is a *proper superset* of the captured baseline (contains every baseline path AND at least one new path).
+
+On detection, `phase_handshake verify --phase {N} --strict` exits non-zero with the structured payload:
+
+```
+status: error
+error: main_checkout_dirtied_during_plan
+plan_id: ...
+phase: ...
+baseline[]: [...]    # paths dirty at the previous boundary capture
+observed[]: [...]    # paths dirty at the current verify
+newly_dirty[]: [...] # the set difference — exactly the leaked paths
+```
+
+Because detection is **filesystem-state-based** at every phase boundary (not tool-call-based), layer D catches every leak channel uniformly:
+
+- `Bash`-driven writes (`echo > /path/in/main`, `cat ... > path`, `sed -i`, etc.).
+- External CLI writes (`prettier --write`, `gofmt -w`, IDE formatters, etc.).
+- `Edit` / `Write` / `Read` against absolute paths in the main checkout.
+- Subprocess invocations that `chdir` mid-execution.
+
+It catches leaks regardless of which tool produced them — the only question layer D asks is "did the main checkout's dirty set grow between boundaries?".
+
+### Granularity Trade-Off
+
+Layer D operates at **per-phase-boundary** granularity rather than per-tool-call. A leak introduced mid-phase is not detected until the next boundary capture, so the agent may complete additional work on top of the polluted main checkout before the verify fires. This is an explicit trade-off:
+
+- **Recovery is identical either way** — the operator must revert the leaked main-checkout changes (or move them into the worktree branch) before the boundary advances. Per-tool-call detection would surface the leak earlier but would not change the recovery steps.
+- **Filesystem-based detection works across hosts**, while a tool-call hook would not. Granularity is the cost; portability is the benefit.
+
+Plans that need finer-grained enforcement can run `phase_handshake capture` / `verify --strict` at intra-phase checkpoints (the `phase-6-finalize` orchestrator already does this for the `automated-review → branch-cleanup` and `sonar-roundtrip → next` boundaries), but the core contract remains per-phase.
+
+### Recovery Loop
+
+When `phase_handshake verify --phase {N} --strict` fails with `error: main_checkout_dirtied_during_plan`, the operator's recovery path is:
+
+1. **Inspect `newly_dirty[]`.** The payload lists the exact paths that leaked into the main checkout between captures.
+2. **Decide per-path: revert or relocate.**
+   - *Revert* — when the change was unintended (typical case): `git -C {main_checkout} checkout -- {path}` to drop the dirty state. The plan's worktree edits remain unaffected.
+   - *Relocate* — when the change is intentional but landed in the wrong tree: stage the file in the main checkout (`git -C {main_checkout} add {path}`), copy the staged blob into the worktree branch, and revert the main-checkout staging. The most reliable mechanical form is `git -C {main_checkout} stash push -- {path}` followed by `git -C {worktree_path} stash pop` from the corresponding stash entry.
+3. **Re-run the boundary verify.** Once `git status --porcelain` against the main checkout is back to (or below) the baseline, `phase_handshake verify --phase {N} --strict` returns `status: ok` and the boundary advances.
+
+The proper-superset rule means the operator does not need to *clean* pre-existing dirty paths — only the **newly-dirty** paths must be addressed before the boundary will advance. This keeps the recovery loop scoped to the actual leak rather than demanding a fully-clean main checkout that may carry unrelated dirty state from before the plan started.
+
+### Filter Rule: `.plan/` Paths Are Excluded
+
+The invariant filters paths beginning with `.plan/` out of both the capture and the comparison. The plan-marshall `.plan/` directory holds plan metadata, status files, lessons aggregate state, etc. — these legitimately live in the main checkout (the worktree shares the parent `.git` common-dir's `.plan/local/` writes via `manage-*` scripts that resolve via `git rev-parse --git-common-dir`), so dirtying `.plan/` is part of normal phase-boundary bookkeeping.
+
+A user-side hook (the original lesson's proposal) would need a complex allow-list of `.plan/`, `.plan/local/`, `.plan/temp/` etc. patterns to avoid false positives. The handshake-driven approach uses a single canonical filter applied identically at capture and verify time, eliminating the allow-list-drift class of bug entirely.
+
+### Baseline-Equal Paths Are Not Drift
+
+The proper-superset rule explicitly tolerates **baseline-equal main-dirty state**: a file that was dirty at boundary N and remains dirty (with the same path) at boundary N+1 is not a leak — it predates the current phase boundary and either pre-dated the plan or was previously surfaced by an earlier boundary. Only **newly-dirty** paths count.
+
+This matches the operator's mental model ("only flag what changed") and keeps the failure payload focused on the paths that actually need attention.
 
 ## Cleanup Ordering: Worktree First, Then Branch
 

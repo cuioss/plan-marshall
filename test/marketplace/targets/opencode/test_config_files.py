@@ -36,18 +36,27 @@ class TestMappingJsonSchema:
             assert isinstance(value, str), f'tool_permissions[{key!r}] must be str'
             assert value, 'tool_permissions values must be non-empty'
 
-    def test_model_map_string_to_string(self, opencode_config_dir: Path):
+    def test_model_map_object_shape(self, opencode_config_dir: Path):
+        """Each model_map entry is `{id: str, supports_effort: list[str]}`."""
         data = load_mapping(opencode_config_dir)
-        for key, value in data['model_map'].items():
+        allowed_efforts = {'medium', 'high', 'xhigh', 'max'}
+        for key, entry in data['model_map'].items():
             assert isinstance(key, str)
-            assert isinstance(value, str)
-            assert value, 'model_map values must be non-empty'
+            assert isinstance(entry, dict), f'model_map[{key!r}] must be a dict'
+            assert 'id' in entry, f'model_map[{key!r}] missing id'
+            assert isinstance(entry['id'], str) and entry['id']
+            assert 'supports_effort' in entry, f'model_map[{key!r}] missing supports_effort'
+            assert isinstance(entry['supports_effort'], list)
+            for effort in entry['supports_effort']:
+                assert isinstance(effort, str)
+                assert effort in allowed_efforts, f'unknown effort {effort!r} in {key}'
 
     def test_canonical_model_aliases_present(self, opencode_config_dir: Path):
         data = load_mapping(opencode_config_dir)
-        # The three Claude aliases must each resolve to a model id.
+        # The three Claude aliases must each resolve to a model entry with an id.
         for alias in ('opus', 'sonnet', 'haiku'):
             assert alias in data['model_map'], f'missing alias: {alias}'
+            assert data['model_map'][alias]['id'], f'{alias} entry missing id'
 
     def test_canonical_tools_mapped(self, opencode_config_dir: Path):
         data = load_mapping(opencode_config_dir)

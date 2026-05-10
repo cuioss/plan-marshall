@@ -194,3 +194,197 @@ def test_staleness_guard_can_be_skipped_for_recovery(tmp_path: Path):
     data = parse_toon(result.stdout)
     assert data['status'] == 'error'
     assert 'no matching bundles' in data['summary_message']
+
+
+# ---------------------------------------------------------------------------
+# (d) Transient-artifact / .gitignore filter scenarios (deliverable D4)
+# ---------------------------------------------------------------------------
+#
+# These four scenarios exercise the rewritten staleness walk that ignores
+# git-ignored files and applies the hard-coded transient-artifact denylist
+# (``__pycache__``, ``.pyc``, ``.pytest_cache``, ``.mypy_cache``,
+# ``.ruff_cache``, ``.coverage``). The guard MUST continue to flag legitimate
+# source-file changes — any tracked ``.py`` / ``.md`` / ``.json`` newer than
+# ``target/claude/`` still trips it.
+#
+# Each scenario builds a synthetic git repo with a ``.gitignore`` so the
+# git-based ignore probe (``git ls-files --others --ignored
+# --exclude-standard``) can run authentically.
+
+
+def _git_init(cwd: Path) -> None:
+    """Initialise a git repo at ``cwd`` with a default identity.
+
+    Tests run in a sandboxed ``tmp_path``; we never push or fetch from these
+    repos, but ``git ls-files`` still requires a valid work tree.
+    """
+    subprocess.run(['git', 'init', '-q'], cwd=cwd, check=True)
+    subprocess.run(['git', 'config', 'user.email', 'test@example.invalid'], cwd=cwd, check=True)
+    subprocess.run(['git', 'config', 'user.name', 'Test User'], cwd=cwd, check=True)
+    subprocess.run(['git', 'config', 'commit.gpgsign', 'false'], cwd=cwd, check=True)
+
+
+def _git_commit_all(cwd: Path, message: str) -> None:
+    subprocess.run(['git', 'add', '-A'], cwd=cwd, check=True)
+    subprocess.run(['git', 'commit', '-q', '-m', message], cwd=cwd, check=True)
+
+
+@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
+def test_staleness_guard_ignores_transient_pycache_artifact(tmp_path: Path):
+    """A ``__pycache__/x.pyc`` newer than target/claude/ MUST NOT trip the guard.
+
+    Reproduces the post-pytest scenario that drove the D4 rewrite: source
+    bundles are unchanged but pytest left ``.pyc`` files with fresh
+    mtimes; the guard previously refused even though no source drift
+    occurred.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    # .gitignore covers __pycache__ exactly the way the real repo does
+    _write(cwd / '.gitignore', '__pycache__/\n*.pyc\n')
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init(cwd)
+    _git_commit_all(cwd, 'initial')
+
+    # All tracked files: target newer than source (clean state)
+    old = time.time() - 86400
+    new = time.time()
+    for path in (cwd / 'marketplace').rglob('*'):
+        if path.is_file():
+            _set_mtime(path, old)
+    for path in (cwd / 'target').rglob('*'):
+        if path.is_file():
+            _set_mtime(path, new)
+
+    # Now drop a transient .pyc with a mtime newer than target/
+    pycache_dir = cwd / 'marketplace' / 'bundles' / 'demo' / '__pycache__'
+    pyc_file = pycache_dir / 'demo.cpython-311.pyc'
+    _write(pyc_file, 'fake bytecode')
+    _set_mtime(pyc_file, new + 60)  # 60s newer than the target
+
+    cache = tmp_path / 'cache'
+    result = _run('--cache-root', str(cache), cwd=cwd)
+    # Guard MUST NOT trip — the .pyc is filtered by git-ignored probe AND
+    # the transient denylist
+    assert result.returncode == 0, (
+        f'guard tripped on transient artifact (returncode {result.returncode}): {result.stdout}'
+    )
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
+
+
+@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
+def test_staleness_guard_trips_on_tracked_source_change(tmp_path: Path):
+    """A tracked source file (``README.md``) newer than target MUST trip the guard.
+
+    Belt-and-suspenders check: filtering must NOT mask legitimate source
+    drift. Edits to tracked ``.md`` / ``.py`` / ``.json`` files still need
+    to trigger a regenerate.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _write(cwd / '.gitignore', '__pycache__/\n*.pyc\n')
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init(cwd)
+    _git_commit_all(cwd, 'initial')
+
+    # Target older than source — guard should trip
+    old = time.time() - 86400
+    new = time.time()
+    for path in (cwd / 'target').rglob('*'):
+        if path.is_file():
+            _set_mtime(path, old)
+    # Touch only a tracked source file with a fresh mtime
+    tracked_readme = cwd / 'marketplace' / 'bundles' / 'demo' / 'README.md'
+    _set_mtime(tracked_readme, new)
+
+    result = _run(cwd=cwd)
+    assert result.returncode == 2, (
+        f'guard failed to trip on tracked source change (returncode {result.returncode}): {result.stdout}'
+    )
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert 'stale' in data['summary_message']
+
+
+@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
+def test_staleness_guard_ignores_pytest_cache_directory(tmp_path: Path):
+    """A ``.pytest_cache/`` directory under marketplace/ MUST NOT trip the guard.
+
+    Like ``__pycache__``, ``.pytest_cache`` is a runtime-only artifact
+    that should never count as source drift.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _write(cwd / '.gitignore', '.pytest_cache/\n__pycache__/\n*.pyc\n')
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init(cwd)
+    _git_commit_all(cwd, 'initial')
+
+    old = time.time() - 86400
+    new = time.time()
+    for path in (cwd / 'marketplace').rglob('*'):
+        if path.is_file():
+            _set_mtime(path, old)
+    for path in (cwd / 'target').rglob('*'):
+        if path.is_file():
+            _set_mtime(path, new)
+
+    # Drop a .pytest_cache file with a mtime newer than target
+    cache_marker = cwd / 'marketplace' / 'bundles' / 'demo' / '.pytest_cache' / 'CACHEDIR.TAG'
+    _write(cache_marker, 'Signature: 8a477f597d28d172789f06886806bc55')
+    _set_mtime(cache_marker, new + 120)
+
+    cache = tmp_path / 'cache'
+    result = _run('--cache-root', str(cache), cwd=cwd)
+    assert result.returncode == 0, (
+        f'guard tripped on .pytest_cache (returncode {result.returncode}): {result.stdout}'
+    )
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
+
+
+@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
+def test_staleness_guard_trips_on_untracked_source_style_file(tmp_path: Path):
+    """A brand-new untracked ``.py`` file (NOT ignored) MUST trip the guard.
+
+    The git probe uses ``git ls-files --others --ignored
+    --exclude-standard`` which yields *ignored* files only. An untracked
+    file that is NOT in ``.gitignore`` is "others, NOT ignored" and is
+    therefore left in the candidate set — its fresh mtime should still
+    cause the guard to refuse so the new source gets propagated.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _write(cwd / '.gitignore', '__pycache__/\n*.pyc\n')
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init(cwd)
+    _git_commit_all(cwd, 'initial')
+
+    old = time.time() - 86400
+    new = time.time()
+    for path in (cwd / 'marketplace').rglob('*'):
+        if path.is_file():
+            _set_mtime(path, old)
+    for path in (cwd / 'target').rglob('*'):
+        if path.is_file():
+            _set_mtime(path, new)
+
+    # Drop a new untracked .py file with a mtime newer than target.
+    # NOT in .gitignore, NOT yet `git add`-ed → "others, NOT ignored".
+    new_source = cwd / 'marketplace' / 'bundles' / 'demo' / 'new_module.py'
+    _write(new_source, '# new source file\n')
+    _set_mtime(new_source, new + 60)
+
+    result = _run(cwd=cwd)
+    assert result.returncode == 2, (
+        'guard failed to trip on untracked source file '
+        f'(returncode {result.returncode}): {result.stdout}'
+    )
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert 'stale' in data['summary_message']

@@ -18,7 +18,7 @@ import argparse
 
 from _cmd_ext_defaults import cmd_ext_defaults
 from _cmd_init import cmd_init
-from _cmd_models import cmd_models
+from _cmd_models import cmd_models, cmd_models_apply_preset
 from _cmd_skill_domains import (
     cmd_list_verify_steps,
     cmd_skill_domains,
@@ -43,6 +43,7 @@ from input_validation import (  # type: ignore[import-not-found]
     add_field_arg,
     parse_args_with_toon_errors,
 )
+from model_presets import ModelPresets  # type: ignore[import-not-found]
 
 
 def _add_phase_subparser(
@@ -244,7 +245,7 @@ def main() -> int:
     # --- models ---
     p_models = subparsers.add_parser(
         'models',
-        help='Resolve per-role model levels (read-only resolver)',
+        help='Manage per-role model levels (read resolver, preset writer)',
         allow_abbrev=False,
     )
     models_sub = p_models.add_subparsers(dest='verb', required=True, help='Operation')
@@ -253,6 +254,41 @@ def main() -> int:
     )
     models_read.add_argument(
         '--role', required=True, help='Role key (see model-roles.md registry)'
+    )
+    models_apply_preset = models_sub.add_parser(
+        'apply-preset',
+        help='Completely overwrite the models block with a named preset',
+        allow_abbrev=False,
+    )
+    # Validation uses ``type=`` rather than ``choices=`` so the documented
+    # case-insensitive / underscore-alias behaviour (``HIGH_END``,
+    # ``high_end``, ``Balanced``) works end-to-end through the CLI, not
+    # just for programmatic callers of :meth:`ModelPresets.get`. A plain
+    # ``choices=ModelPresets.all_names()`` would enforce exact,
+    # case-sensitive matching of the canonical names and reject the
+    # documented aliases before the handler runs. The ``type=`` callable
+    # normalises and validates in one step, and unknown names raise
+    # :class:`argparse.ArgumentTypeError` so argparse still emits a usage
+    # error with exit code 2 (preserving the existing CLI contract that
+    # bogus presets are rejected at the argparse layer).
+    def _preset_arg(value: str) -> str:
+        try:
+            ModelPresets.get(value)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(str(exc)) from exc
+        return value
+
+    canonical_names = ', '.join(ModelPresets.all_names())
+    models_apply_preset.add_argument(
+        '--preset',
+        required=True,
+        type=_preset_arg,
+        metavar='PRESET',
+        help=(
+            f'Preset name (canonical: {canonical_names}; '
+            'case-insensitive, underscore variants accepted; '
+            'see model_presets.py for per-preset values)'
+        ),
     )
 
     # --- resolve-domain-skills ---
@@ -343,7 +379,10 @@ def main() -> int:
         if not args.verb:
             p_models.print_help()
             return 2
-        result = cmd_models(args)
+        if args.verb == 'apply-preset':
+            result = cmd_models_apply_preset(args)
+        else:
+            result = cmd_models(args)
     elif args.noun == 'resolve-domain-skills':
         result = cmd_resolve_domain_skills(args)
     elif args.noun == 'resolve-workflow-skill-extension':

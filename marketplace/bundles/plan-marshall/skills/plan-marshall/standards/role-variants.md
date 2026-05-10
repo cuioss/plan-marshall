@@ -114,7 +114,7 @@ Variants are emitted at build time into `target/claude/{bundle}/agents/`, then s
 1. Did you restart Claude Code after editing? Agent files load at session start; mid-session edits don't apply until restart. (The wizard prints this hint after every Models save.)
 2. Is the role status `effective` in [`model-roles.md`](model-roles.md)? **pending** roles validate at save but produce no runtime effect.
 3. Is the level spelled correctly (`high`, not `High` or `hi`)?
-4. Is `target/claude/` regenerated? Run the `default:deploy-target` step (or `python3 marketplace/targets/generate.py --target claude --output target/claude`) to refresh emitted variants, then `/sync-plugin-cache` to push them into the plugin cache.
+4. Is `target/claude/` regenerated? Run the `project:finalize-step-deploy-target` step (or `python3 marketplace/targets/generate.py --target claude --output target/claude`) to refresh emitted variants, then `/sync-plugin-cache` to push them into the plugin cache.
 
 ### Symptom: A role configured as `xxhigh` is not running on Opus
 
