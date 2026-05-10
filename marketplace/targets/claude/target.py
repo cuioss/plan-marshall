@@ -7,12 +7,16 @@ provides ``--output``:
   ``marketplace/bundles/`` and copy its content byte-for-byte into
   ``{output}/{bundle}/`` *except* for ``.claude-plugin/plugin.json``,
   which is regenerated deterministically from the bundle's source
-  frontmatter. The regenerated file is also diffed against the committed
-  ``plugin.json`` so callers see drift as part of the same TOON return.
+  frontmatter. Immediately after emit, the regenerated content is
+  diffed against the just-written ``{output}/{bundle}/.claude-plugin/plugin.json``
+  so callers see drift as part of the same TOON return. Equality
+  failure raises ``RuntimeError`` so the CLI surfaces a non-zero exit.
 
 * **Validate mode (`--output` omitted)** — run the equality check only.
-  Regenerate ``plugin.json`` for every bundle in-memory and report any
-  drift versus the committed file. No bytes hit the filesystem.
+  The engine reads ``target/claude/{bundle}/.claude-plugin/plugin.json``
+  (relative to the project root) and diffs it against a fresh in-memory
+  regeneration. When ``target/claude/`` is absent, the result includes
+  a structured "run emit mode first" diagnostic.
 
 The TOON return contains ``status``, ``emitted_count``,
 ``plugin_json_diff_count``, and ``equality_check_result``.
@@ -24,8 +28,15 @@ from pathlib import Path
 
 from marketplace.targets.base import TargetBase
 from marketplace.targets.claude.emitter import emit_bundle_verbatim, iter_bundle_dirs
-from marketplace.targets.claude.equality_check import EqualityResult, run_equality_check
+from marketplace.targets.claude.equality_check import run_equality_check
 from marketplace.targets.claude.plugin_json_gen import generate_plugin_json
+
+# Default ``target/claude/`` location used by validate mode when no
+# ``--output`` is provided. Resolved against the project root at import
+# time so test runners using ``pytest`` from the repository root see the
+# same path.
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_VALIDATE_TARGET_DIR = _PROJECT_ROOT / 'target' / 'claude'
 
 
 class ClaudeTarget(TargetBase):
@@ -54,9 +65,10 @@ class ClaudeTarget(TargetBase):
         bundle_dirs = list(iter_bundle_dirs(marketplace_dir, bundles))
         emitted: list[Path] = []
 
-        # Validate mode: equality check only
+        # Validate mode: equality check only. Read from the canonical
+        # ``target/claude/`` location relative to the project root.
         if output_dir is None:
-            equality = run_equality_check(marketplace_dir, bundle_dirs)
+            equality = run_equality_check(DEFAULT_VALIDATE_TARGET_DIR, bundle_dirs)
             self._last_run = {
                 'status': 'success' if equality.passed else 'error',
                 'emitted_count': 0,
@@ -68,10 +80,9 @@ class ClaudeTarget(TargetBase):
                 raise RuntimeError(equality.summary)
             return emitted
 
-        # Emit mode: verbatim mirror + plugin.json regeneration
+        # Emit mode: verbatim mirror + plugin.json regeneration.
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        all_diffs: list[EqualityResult] = []
         for bundle_dir in bundle_dirs:
             mirrored = emit_bundle_verbatim(bundle_dir, output_dir)
             emitted.extend(mirrored)
@@ -82,9 +93,9 @@ class ClaudeTarget(TargetBase):
             target_plugin_json.write_text(generated, encoding='utf-8')
             emitted.append(target_plugin_json)
 
-        # Run equality check after emit so emit_count reflects bytes written.
-        equality = run_equality_check(marketplace_dir, bundle_dirs)
-        all_diffs.append(equality)
+        # Run equality check after emit so emit_count reflects bytes written
+        # AND so the equality engine has fresh artifacts to compare against.
+        equality = run_equality_check(output_dir, bundle_dirs)
 
         self._last_run = {
             'status': 'success' if equality.passed else 'error',
@@ -92,4 +103,10 @@ class ClaudeTarget(TargetBase):
             'plugin_json_diff_count': len(equality.diffs),
             'equality_check_result': equality,
         }
+
+        if not equality.passed:
+            # Mirror validate mode: equality failure must propagate so the
+            # CLI returns EXIT_ERROR rather than a silent emit-and-pass.
+            raise RuntimeError(equality.summary)
+
         return emitted
