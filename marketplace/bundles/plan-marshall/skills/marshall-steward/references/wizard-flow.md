@@ -197,7 +197,7 @@ The two `rebase_*` fields control the sync-with-main step at the start of phase-
 
 ## Step 7: Quality Pipeline Configuration (Optional)
 
-Ask the user to accept defaults (all generic verify steps + 6 finalize steps, default iterations) or configure individually. If configuring, discover available steps and apply:
+Ask the user to accept defaults (all generic verify steps + 7 finalize steps, default iterations) or configure individually. The 7 default finalize steps are `commit-push`, `create-pr`, `ci-wait`, `automated-review`, `sonar-roundtrip` (or `lessons-capture` substitute), `lessons-capture`, `branch-cleanup`, and `archive-plan` — `ci-wait` is ordered immediately before `automated-review` so the latter consumes the completed-CI signal rather than polling CI itself. If configuring, discover available steps and apply:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-verify-steps
@@ -228,7 +228,8 @@ Configure whether phase transitions pause for user review or auto-continue. Defa
 Ask user which transitions should auto-continue (multi-select):
 - "Plan without asking" → outline (phase 3) to planning (phase 4)
 - "Execute without asking" → planning (phase 4) to execution (phase 5)
-- "Finalize without asking" → execution (phase 5) to finalize (phase 6)
+- "Finalize without asking" → execution (phase 5) to finalize (phase 6) [forward direction]
+- "Loop-back without asking" → finalize (phase 6) loop_back outcome → execute (phase 5) inline [reverse direction; symmetric counterpart]
 
 Apply each selection via manage-config:
 ```bash
@@ -243,6 +244,12 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set --field finalize_without_asking --value {true|false}
 ```
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize set --field loop_back_without_asking --value {true|false}
+```
+
+The `loop_back_without_asking` knob is the structural counterpart to `finalize_without_asking`: forward gates the `5-execute → 6-finalize` transition, reverse gates the `6-finalize → 5-execute` inline re-dispatch when a phase-6 step records `outcome: loop_back` (FIX disposition, `pr-comment-overflow`, sonar-roundtrip FIX). Both default to `false` for the conservative interactive shape; opt into both for full unattended execution. Reverse loop-back is also bounded by `phase-6-finalize.max_iterations` (default 3) — the dispatcher halts and prompts the user when the cap is reached even with the flag set.
 
 ---
 

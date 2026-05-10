@@ -133,6 +133,23 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 | `rebase_on_execute_start` | bool | `true` | Whether phase-5-execute runs a sync step against `origin/{base_branch}` at phase start. Fast-path no-op when the branch already contains the remote tip. When `false`, phase-6-finalize's `pr update-branch` remains the only sync point. |
 | `rebase_strategy` | enum(`rebase`\|`merge`) | `merge` | How the sync step updates the branch. `rebase` rewrites history (requires force-push when a PR is open); `merge` does `git merge --no-edit origin/{base}` (no history rewrite, PR-safe). Invalid values are rejected by the config setter. |
 
+**Symmetric auto-continuation knobs:**
+
+| Field | Phase | Type | Default | Semantics |
+|-------|-------|------|---------|-----------|
+| `finalize_without_asking` | `phase-5-execute` | bool | `false` | Forward direction. When `true`, after the `5-execute → 6-finalize` transition the orchestrator dispatches `phase-6-finalize` inline rather than halting and prompting the user. |
+| `loop_back_without_asking` | `phase-6-finalize` | bool | `false` | Reverse direction. When `true`, a phase-6 step recording `outcome: loop_back` (FIX disposition on a `pr-comment` finding, `pr-comment-overflow` capture, or sonar-roundtrip FIX) re-dispatches the execute pipeline inline, transitions back to `6-finalize`, and re-enters the finalize loop — bounded by `phase-6-finalize.max_iterations` (default 3). When `false` (default), the dispatcher halts and returns control to the user. The two knobs are independent: full unattended execution requires both `true`. See `phase-6-finalize/SKILL.md` Step 3 § "Loop-back continuation hook" for the dispatch shape and the four-corner truth table. |
+
+Each is set with the standard phase-set verb:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set --field finalize_without_asking --value true
+
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize set --field loop_back_without_asking --value true
+```
+
 ### Manage Verification Steps
 
 `set-steps` and `add-step` resolve each step's `order` from its authoritative source (frontmatter on built-in standards docs, frontmatter on project-local `SKILL.md` for `project:` steps, return-dict `order` field for extension-contributed skills) and persist the steps list sorted ascending by that value. They return `error: missing_order` or `error: order_collision` when a step has no declared order or two steps share the same value — fix the offending step's authoritative source.
@@ -277,6 +294,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     "phase-6-finalize": {
       "max_iterations": 3,
       "review_bot_buffer_seconds": 180,
+      "loop_back_without_asking": false,
       "steps": [
         "commit_push", "create_pr", "automated_review",
         "sonar_roundtrip", "lessons_capture",

@@ -35,6 +35,7 @@ Plan-scoped findings are stored split per type rather than in a single combined 
 - `findings/lint-issue.jsonl`
 - `findings/sonar-issue.jsonl`
 - `findings/pr-comment.jsonl`
+- `findings/pr-comment-overflow.jsonl`
 
 Files are created lazily — a per-type file only exists once a finding of that type has been added.
 
@@ -69,7 +70,7 @@ Each line in a `findings/{type}.jsonl` file is a JSON object:
 |-------|------|-------------|
 | `hash_id` | string | 6-character hex hash (auto-generated, see Hash ID Generation) |
 | `timestamp` | string | ISO 8601 UTC (auto-generated on add) |
-| `type` | string | One of: `bug`, `improvement`, `anti-pattern`, `triage`, `tip`, `insight`, `best-practice`, `build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `pr-comment`. The first three (`bug`, `improvement`, `anti-pattern`) map to lesson categories — see `manage-lessons/standards/file-format.md` |
+| `type` | string | One of: `bug`, `improvement`, `anti-pattern`, `triage`, `tip`, `insight`, `best-practice`, `build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `pr-comment`, `pr-comment-overflow`. The first three (`bug`, `improvement`, `anti-pattern`) map to lesson categories — see `manage-lessons/standards/file-format.md` |
 | `title` | string | Short description of the finding |
 | `detail` | string | Full description with context |
 | `severity` | string | `error`, `warning`, or `info` (default: `warning`) |
@@ -110,6 +111,22 @@ Finding types promote to specific targets:
 | `lint-issue` | Not promotable | N/A |
 | `sonar-issue` | Not promotable | N/A |
 | `pr-comment` | Not promotable | N/A |
+| `pr-comment-overflow` | Not promotable | N/A |
+
+### `pr-comment-overflow`
+
+`pr-comment-overflow` is the bookkeeping type that carries unprocessed `pr-comment` IDs from a budget-exhausted `automated-review` iteration to the next one. It is filed by `automated-review` (see [`phase-6-finalize/standards/automated-review.md`](../../phase-6-finalize/standards/automated-review.md) § Overflow handling) when the per-iteration triage budget is nearly exhausted before all `pr-comment` findings have been processed.
+
+| Field | Expected shape |
+|-------|----------------|
+| `title` | `Triage budget exhausted: {N} pr-comment finding(s) deferred` |
+| `severity` | `warning` (overflow does not block the boundary; it defers work to the next iteration) |
+| `detail` | Comma-separated list of `pr-comment` `hash_id` values that were enqueued but not resolved this iteration. The list is machine-readable; the next iteration's overflow consumer parses it to know which comments to prioritise. |
+| `resolution` | `pending` until every comment named in `detail` has been individually resolved (FIX / SUPPRESS / ACCEPT) in a subsequent `automated-review` iteration; then `fixed`. |
+
+**Resolution semantics**: an overflow finding resolves once the next `automated-review` iteration has processed every comment listed in its `detail` (each individual comment goes through the standard FIX / SUPPRESS / ACCEPT path; the overflow finding itself is the umbrella). If a subsequent iteration cannot finish the deferred queue either, a fresh `pr-comment-overflow` finding is filed for the still-unprocessed remainder — the original overflow finding is `resolved` with `--resolution fixed` once its specific comments are processed; the new overflow is a separate record.
+
+The type is non-promotable: it is operational bookkeeping, not a long-lived knowledge artefact. The blocking partition (see [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) § Per-phase blocking partition) does NOT include `pr-comment-overflow` — the overflow finding deliberately does not block the `6-finalize` boundary because the deferred work is handled by the dispatcher's `loop_back` re-entry rather than by gating the phase boundary.
 
 ## Q-Gate Finding Record
 
