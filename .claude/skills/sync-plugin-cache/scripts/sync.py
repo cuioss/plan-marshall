@@ -56,6 +56,32 @@ DEFAULT_CACHE_ROOT = Path.home() / '.claude' / 'plugins' / 'cache' / 'plan-marsh
 TARGET_SUBDIR = Path('target') / 'claude'
 MARKETPLACE_SUBDIR = Path('marketplace') / 'bundles'
 
+# Hard-coded denylist applied when the git-based ignore probe is unavailable
+# (e.g., shallow checkouts, missing ``git`` binary, or sources sitting
+# outside any git repository). The patterns target transient runtime
+# artifacts that frequently appear in marketplace/ during pytest /
+# mypy / ruff runs and would otherwise trip the time-based staleness
+# check despite belonging to ``.gitignore``.
+#
+# Each entry is a path *segment* compared against ``Path.parts`` (so
+# ``__pycache__`` matches any directory named ``__pycache__`` anywhere in
+# the tree). Entries that include a ``.`` (suffix) are treated as
+# trailing-suffix matches against the filename.
+_TRANSIENT_DIR_NAMES: frozenset[str] = frozenset(
+    {
+        '__pycache__',
+        '.pytest_cache',
+        '.mypy_cache',
+        '.ruff_cache',
+    }
+)
+_TRANSIENT_FILE_NAMES: frozenset[str] = frozenset(
+    {
+        '.coverage',
+    }
+)
+_TRANSIENT_FILE_SUFFIXES: tuple[str, ...] = ('.pyc',)
+
 
 def _read_version(plugin_json: Path) -> str:
     try:
@@ -109,14 +135,125 @@ def _resolve_marketplace_root(args: argparse.Namespace) -> Path:
     return Path.cwd() / MARKETPLACE_SUBDIR
 
 
-def _newest_mtime(root: Path) -> float:
-    """Return the newest mtime under ``root`` (recursively), or 0 if empty/missing."""
-    newest = 0.0
+def _is_transient_artifact(rel_parts: tuple[str, ...]) -> bool:
+    """Return True when the path matches the hard-coded transient-artifact denylist.
+
+    Used as the fallback ignore filter when the git-based probe is unavailable.
+    Compares path segments against :data:`_TRANSIENT_DIR_NAMES`, the filename
+    against :data:`_TRANSIENT_FILE_NAMES`, and the filename suffix against
+    :data:`_TRANSIENT_FILE_SUFFIXES`. The match is conservative — only drops
+    paths that look like runtime artifacts of pytest / mypy / ruff /
+    coverage. Tracked source files (``.py``, ``.md``, ``.json``, ``.toon``,
+    etc.) always pass through.
+    """
+    if not rel_parts:
+        return False
+    for part in rel_parts:
+        if part in _TRANSIENT_DIR_NAMES:
+            return True
+    filename = rel_parts[-1]
+    if filename in _TRANSIENT_FILE_NAMES:
+        return True
+    return any(filename.endswith(suffix) for suffix in _TRANSIENT_FILE_SUFFIXES)
+
+
+def _git_ignored_files(root: Path) -> set[str] | None:
+    """Return the set of paths under ``root`` that git considers ignored.
+
+    Invokes ``git -C {root_parent} ls-files --others --ignored
+    --exclude-standard`` to enumerate ignored files (``--others`` includes
+    untracked, ``--ignored`` filters down to those matched by gitignore /
+    excludes / core.excludesfile). Returns paths as strings relative to
+    ``root_parent`` so callers can compare against ``Path.relative_to``
+    output without further translation.
+
+    Returns ``None`` when git is unavailable, the directory is not inside
+    a git work tree, or the invocation fails for any other reason — the
+    caller MUST fall back to the hard-coded denylist in that case so the
+    guard still trips on tracked source-file changes.
+    """
     if not root.is_dir():
-        return newest
+        return None
+    if not shutil.which('git'):
+        return None
+    try:
+        # Run git from the parent of marketplace/bundles so ignored paths
+        # are reported as ``marketplace/bundles/...``. This makes the
+        # downstream comparison straightforward.
+        repo_root = root.parent.parent if root.name == 'bundles' else root
+        result = subprocess.run(
+            [
+                'git',
+                '-C',
+                str(repo_root),
+                'ls-files',
+                '--others',
+                '--ignored',
+                '--exclude-standard',
+                '--',
+                str(root.relative_to(repo_root)),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return None
+    if result.returncode != 0:
+        # Outside a git repo / shallow checkout / other failure mode —
+        # fall back to the denylist.
+        return None
+    ignored: set[str] = set()
+    for line in result.stdout.splitlines():
+        path = line.strip()
+        if path:
+            # The git output is repo-relative; resolve to absolute so
+            # callers can compare against ``Path`` objects consistently.
+            ignored.add(str((repo_root / path).resolve()))
+    return ignored
+
+
+def _iter_filtered_files(root: Path, ignored: set[str] | None) -> list[Path]:
+    """Yield files under ``root`` excluding git-ignored / transient artifacts.
+
+    When ``ignored`` is non-None (git probe succeeded), drop any file
+    whose absolute path is in the set. Always also apply the
+    transient-artifact denylist as a belt-and-suspenders safeguard so
+    fresh untracked artifacts (not yet seen by git) and pyc files
+    matching the .gitignore pattern but not yet enumerated by ls-files
+    are still excluded.
+    """
+    files: list[Path] = []
+    if not root.is_dir():
+        return files
     for path in root.rglob('*'):
         if not path.is_file():
             continue
+        # Use parts relative to root for the denylist match so deeply
+        # nested transient dirs (e.g., bundle/.../scripts/__pycache__/x.pyc)
+        # are caught regardless of nesting depth.
+        try:
+            rel_parts = path.relative_to(root).parts
+        except ValueError:
+            rel_parts = path.parts
+        if _is_transient_artifact(rel_parts):
+            continue
+        if ignored is not None and str(path.resolve()) in ignored:
+            continue
+        files.append(path)
+    return files
+
+
+def _newest_mtime(root: Path, ignored: set[str] | None = None) -> float:
+    """Return the newest mtime under ``root`` (recursively), or 0 if empty/missing.
+
+    When ``ignored`` is non-None it is the set of git-ignored absolute
+    paths (from :func:`_git_ignored_files`); those files are skipped.
+    The transient-artifact denylist is always applied via
+    :func:`_iter_filtered_files`.
+    """
+    newest = 0.0
+    for path in _iter_filtered_files(root, ignored):
         try:
             mtime = path.stat().st_mtime
         except OSError:
@@ -126,14 +263,15 @@ def _newest_mtime(root: Path) -> float:
     return newest
 
 
-def _oldest_mtime(root: Path) -> float:
-    """Return the oldest mtime under ``root`` (recursively), or 0 if empty/missing."""
+def _oldest_mtime(root: Path, ignored: set[str] | None = None) -> float:
+    """Return the oldest mtime under ``root`` (recursively), or 0 if empty/missing.
+
+    Mirrors :func:`_newest_mtime`'s filtering: ignored / transient files
+    are skipped so the staleness comparison only considers tracked,
+    source-shaped files.
+    """
     oldest: float | None = None
-    if not root.is_dir():
-        return 0.0
-    for path in root.rglob('*'):
-        if not path.is_file():
-            continue
+    for path in _iter_filtered_files(root, ignored):
         try:
             mtime = path.stat().st_mtime
         except OSError:
@@ -170,8 +308,19 @@ def _staleness_guard(source_root: Path, marketplace_root: Path) -> str | None:
         # Time-based staleness: if the oldest file in target/claude/ is older
         # than the newest file in marketplace/bundles/, the mirror is stale.
         # Refuse so callers regenerate before sync.
-        oldest_target = _oldest_mtime(source_root)
-        newest_source = _newest_mtime(marketplace_root)
+        #
+        # Filter the marketplace walk via the git-ignored probe so transient
+        # artifacts (``__pycache__``, ``.pyc``, ``.pytest_cache``, ...) do
+        # NOT trip the guard after a pytest / mypy / ruff run. ``ignored``
+        # is None when the git probe is unavailable; the transient-artifact
+        # denylist applied inside :func:`_iter_filtered_files` still drops
+        # the common cases. The source root (``target/claude/``) is a
+        # generator output that does not contain transient artifacts, so
+        # filtering there is a no-op in practice but kept symmetrical.
+        ignored_source = _git_ignored_files(source_root)
+        ignored_marketplace = _git_ignored_files(marketplace_root)
+        oldest_target = _oldest_mtime(source_root, ignored_source)
+        newest_source = _newest_mtime(marketplace_root, ignored_marketplace)
         if oldest_target and newest_source and oldest_target < newest_source:
             return (
                 'target/claude/ is stale — oldest target file predates the newest source file. '

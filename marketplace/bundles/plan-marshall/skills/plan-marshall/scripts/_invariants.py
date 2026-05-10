@@ -22,7 +22,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from _git_helpers import git_dirty_count, git_head  # type: ignore[import-not-found]
+from _git_helpers import git_dirty_count, git_dirty_files, git_head  # type: ignore[import-not-found]
 from constants import QGATE_PHASES  # type: ignore[import-not-found]
 from file_ops import get_base_dir  # type: ignore[import-not-found]
 from marketplace_paths import find_marketplace_path  # type: ignore[import-not-found]
@@ -108,6 +108,110 @@ class BlockingFindingsPresent(Exception):
             f'pending_findings_blocking_count failed for phase {phase!r}: '
             f'blocking_count={blocking_count}, blocking_types={blocking_types}, '
             f'per_type={per_type}'
+        )
+
+
+class WorktreeMetadataDrift(Exception):
+    """Raised when an on-disk worktree directory exists at the canonical
+    location ``.plan/local/worktrees/{plan_id}`` but ``status.metadata``
+    reports ``use_worktree != true`` (or the field is missing entirely).
+
+    This is the inverse of the existing ``worktree_unresolved`` failure
+    in ``_handshake_commands._resolve_worktree_assertion`` — that one
+    fires when metadata claims a worktree exists but the disk path is
+    missing/invalid. ``WorktreeMetadataDrift`` fires in the opposite
+    direction: the disk path IS present but metadata denies it. Both
+    failure modes refuse to advance under ``--strict`` so the writer-
+    chain bug surfaced by lesson ``2026-05-08-14-001`` (where
+    ``phase-1-init`` returned ``use_worktree=true`` and the worktree dir
+    was created but the persisted metadata silently reverted to
+    ``use_worktree=false``) cannot run silently.
+
+    The constructor formats a descriptive message and keeps the
+    structured fields (``plan_id``, ``worktree_dir``, ``use_worktree``)
+    as attributes so callers (``cmd_capture`` / ``cmd_verify``) can
+    surface a TOON error payload and refuse to persist the row.
+    """
+
+    def __init__(
+        self,
+        plan_id: str,
+        worktree_dir: str,
+        use_worktree: Any,
+    ):
+        self.plan_id = plan_id
+        self.worktree_dir = worktree_dir
+        self.use_worktree = use_worktree
+        super().__init__(
+            f'worktree_metadata_drift for plan {plan_id!r}: orphan worktree directory '
+            f'at {worktree_dir!r} but metadata.use_worktree={use_worktree!r}'
+        )
+
+
+class MainCheckoutDirtiedDuringPlan(Exception):
+    """Raised when the main checkout's dirty-file set is a proper superset of
+    the previous-boundary baseline during a worktree-routed plan.
+
+    This is the layer-D enforcement gap surfaced by lesson
+    ``2026-05-08-08-001``: layers A/B/C of worktree routing are closed
+    (``manage-*`` cwd-agnostic, ``--plan-id`` auto-routing, raw tool flags
+    using the resolved path), but layer D (any tool that touches the
+    filesystem free-form — ``Edit`` / ``Write`` / ``Bash`` / external CLIs)
+    has no enforcement and relies on prompt discipline alone. The original
+    lesson proposed a ``PreToolUse`` hook; that approach was rejected during
+    refine for being host-platform-specific (Claude-Code-only — fails on
+    OpenCode and any future adapter target) and brittle (settings.json
+    mutation, absolute paths, version drift).
+
+    The chosen approach is filesystem-state-based at every phase boundary:
+    ``_capture_main_dirty_files`` records the (filtered) dirty-path set from
+    the main checkout on every capture, and ``_verify_main_dirty_drift``
+    (invoked from ``cmd_verify`` against the persisted baseline row) raises
+    this exception when:
+
+    1. ``metadata.use_worktree==true`` (gated — main-checkout plans dirty
+       freely without tripping the invariant), AND
+    2. The live dirty-file set is a *proper superset* of the captured
+       baseline (i.e., contains every baseline path AND at least one new
+       path the baseline did not have).
+
+    The proper-superset rule is deliberate: a pre-existing dirty file that
+    persists across boundaries (baseline-equal) is not a leak — it predates
+    the current plan. Only newly-dirty paths between captures count as
+    drift, so the operator sees only the paths that actually leaked into
+    main during this phase boundary.
+
+    The constructor formats a descriptive message and keeps the structured
+    fields (``plan_id``, ``phase``, ``baseline``, ``observed``,
+    ``newly_dirty``) as attributes so callers (``cmd_verify``) can surface
+    a TOON error payload (``error: main_checkout_dirtied_during_plan``)
+    listing the offending paths. Under ``--strict`` the verify path turns
+    this into a non-zero exit so the boundary refuses to advance until the
+    unauthorized changes are reverted (or moved into the worktree branch).
+
+    See ``workflow-integration-git/standards/worktree-handling.md`` § layer
+    D for the recovery loop ("boundary refuses → revert leaked
+    main-checkout changes (or git checkout main && git mv them into the
+    worktree branch) → retry boundary").
+    """
+
+    def __init__(
+        self,
+        plan_id: str,
+        phase: str,
+        baseline: list[str],
+        observed: list[str],
+        newly_dirty: list[str],
+    ):
+        self.plan_id = plan_id
+        self.phase = phase
+        self.baseline = baseline
+        self.observed = observed
+        self.newly_dirty = newly_dirty
+        super().__init__(
+            f'main_checkout_dirtied_during_plan for plan {plan_id!r} at phase {phase!r}: '
+            f'{len(newly_dirty)} newly-dirty path(s) leaked into main checkout '
+            f'beyond baseline — {newly_dirty}'
         )
 
 
@@ -261,6 +365,79 @@ def _capture_main_dirty(_plan_id: str, _metadata: dict[str, Any], _phase: str) -
     return git_dirty_count(_repo_root())
 
 
+def _filter_main_dirty_paths(paths: list[str]) -> list[str]:
+    """Filter ``paths`` to exclude entries that legitimately live in the main
+    checkout regardless of worktree state.
+
+    The single filter rule: drop every path that begins with ``.plan/``.
+    The plan-marshall ``.plan/`` directory holds plan metadata, status
+    files, lessons, lessons-aggregate working state, etc. — these legitimately
+    live in the main checkout (the worktree shares the parent ``.git``
+    common-dir's ``.plan/local/`` writes via ``manage-*`` scripts that resolve
+    via ``git rev-parse --git-common-dir``), so dirtying ``.plan/`` is part
+    of normal phase-boundary bookkeeping and MUST NOT trip the layer-D
+    drift invariant.
+
+    Operates on the porcelain-string set (sorted, deduplicated) returned by
+    :func:`_git_helpers.git_dirty_files`; preserves sort order so callers
+    can diff successive captures with set semantics.
+    """
+    return [p for p in paths if not p.startswith('.plan/')]
+
+
+def _capture_main_dirty_files(_plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
+    """Sorted list of main-checkout dirty paths, filtered to exclude ``.plan/``.
+
+    Layer-D enforcement capture (paired with :func:`_verify_main_dirty_drift`
+    which is invoked at verify time, not via the registry — drift detection
+    is comparison-based and needs the persisted baseline row, which the
+    capture-time signature does not expose).
+
+    Returns ``None`` when the dirty-file probe fails (not a git repository
+    or git invocation error) so the calling capture's "not applicable"
+    contract leaves the column empty in stored rows. Otherwise returns the
+    sorted, ``.plan/``-filtered list — callers persist the list verbatim
+    via the TOON list field on the handshake row.
+
+    The capture is keyed on ``main_dirty_files`` and complements the
+    existing scalar ``main_dirty`` column: ``main_dirty`` answers "how many
+    dirty paths?" (drives retrospective summaries), ``main_dirty_files``
+    answers "which paths?" (drives layer-D drift detection). Both are
+    captured every boundary to keep the columns aligned.
+
+    See :class:`MainCheckoutDirtiedDuringPlan` for the matching exception
+    raised by the verify-time drift check, and
+    ``workflow-integration-git/standards/worktree-handling.md`` § layer D
+    for the operator-facing recovery loop.
+    """
+    raw = git_dirty_files(_repo_root())
+    if raw is None:
+        return None
+    return _filter_main_dirty_paths(raw)
+
+
+def _main_dirty_drift_diff(baseline: list[str], observed: list[str]) -> list[str]:
+    """Return the proper-superset diff between ``baseline`` and ``observed``.
+
+    Result is the list of paths present in ``observed`` but absent from
+    ``baseline``, sorted. An empty result means the live set is a (non-strict)
+    subset of the baseline — no drift. A non-empty result means the live set
+    is a proper superset (strictly contains everything in baseline plus at
+    least one additional path), so layer-D drift fires.
+
+    The proper-superset rule deliberately ignores baseline-only paths (a
+    file that was dirty at capture and got cleaned by the next boundary
+    is not a leak) and identical-set captures (no movement). It only flags
+    *new* dirty paths added between boundaries — exactly the leak signal
+    the layer-D enforcement is meant to catch.
+
+    Set-difference semantics; callers pass the sorted list returned by
+    :func:`_capture_main_dirty_files` (or the persisted TOON list field).
+    """
+    baseline_set = set(baseline)
+    return sorted(p for p in observed if p not in baseline_set)
+
+
 def _capture_worktree_sha(_plan_id: str, metadata: dict[str, Any], _phase: str) -> Any:
     wt = metadata.get('worktree_path')
     if not wt:
@@ -273,6 +450,71 @@ def _capture_worktree_dirty(_plan_id: str, metadata: dict[str, Any], _phase: str
     if not wt:
         return None
     return git_dirty_count(wt)
+
+
+def _is_truthy_metadata(value: Any) -> bool:
+    """Decide whether a metadata field expressing a boolean is true.
+
+    Mirrors the helper of the same name in ``_handshake_commands.py`` so
+    invariant captures here stay self-contained (no cross-module import
+    cycle). TOON serialises booleans through ``parse_toon`` to Python
+    ``bool``; tolerates the string forms ``'true'``/``'True'``/``'1'``
+    for robustness against future TOON schema changes.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {'true', '1', 'yes'}
+    if isinstance(value, int):
+        return value != 0
+    return False
+
+
+def _worktree_orphan_dir(plan_id: str) -> Path | None:
+    """Return the canonical worktree directory if it exists on disk.
+
+    The convention (documented in ``phase-1-init/SKILL.md`` Step 6) is
+    ``<repo_root>/.plan/local/worktrees/{plan_id}``. Returns ``None``
+    when the directory is absent — callers interpret that as "no orphan
+    detection applicable".
+    """
+    candidate = _repo_root() / '.plan' / 'local' / 'worktrees' / plan_id
+    return candidate if candidate.is_dir() else None
+
+
+def _capture_worktree_orphan(plan_id: str, metadata: dict[str, Any], _phase: str) -> Any:
+    """Inverse-direction worktree invariant: orphan dir + metadata says no worktree.
+
+    Detects the failure mode where the on-disk worktree directory at
+    ``.plan/local/worktrees/{plan_id}`` exists, but ``status.metadata``
+    reports ``use_worktree != true`` (the field is false, missing, or
+    empty). This is the writer-chain drift scenario surfaced by lesson
+    ``2026-05-08-14-001``.
+
+    Returns ``None`` (capture not applicable) when the orphan directory
+    is absent OR when ``use_worktree`` is truthy (the existing
+    ``worktree_unresolved`` invariant covers the metadata-says-true /
+    disk-says-false case from the other direction).
+
+    On detection raises :class:`WorktreeMetadataDrift` so ``cmd_capture``
+    surfaces a structured TOON error payload (``error:
+    worktree_metadata_drift``) and refuses to persist the handshake row.
+    Under ``--strict`` the verify path turns this into a non-zero exit.
+    """
+    use_worktree = metadata.get('use_worktree')
+    if _is_truthy_metadata(use_worktree):
+        # Metadata claims a worktree is in use — the existing
+        # worktree_unresolved invariant in _handshake_commands handles
+        # this direction. Nothing to detect here.
+        return None
+    orphan = _worktree_orphan_dir(plan_id)
+    if orphan is None:
+        return None
+    raise WorktreeMetadataDrift(
+        plan_id=plan_id,
+        worktree_dir=str(orphan),
+        use_worktree=use_worktree,
+    )
 
 
 def _capture_task_state_hash(plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
@@ -941,8 +1183,10 @@ def _capture_phase_steps_complete(
 INVARIANTS: list[tuple[str, AppliesFn, CaptureFn]] = [
     ('main_sha', _always, _capture_main_sha),
     ('main_dirty', _always, _capture_main_dirty),
+    ('main_dirty_files', _always, _capture_main_dirty_files),
     ('worktree_sha', _worktree_applicable, _capture_worktree_sha),
     ('worktree_dirty', _worktree_applicable, _capture_worktree_dirty),
+    ('worktree_orphan', _always, _capture_worktree_orphan),
     ('task_state_hash', _always, _capture_task_state_hash),
     ('qgate_open_count', _always, _capture_qgate_open_count),
     ('config_hash', _always, _capture_config_hash),

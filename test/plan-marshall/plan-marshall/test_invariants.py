@@ -723,3 +723,371 @@ def test_capture_qgate_open_count_invokes_script_for_other_phases(
     assert '--phase' in calls[0]
     assert phase in calls[0]
     assert result == 0
+
+
+# =============================================================================
+# _capture_worktree_orphan: inverse-direction (disk→metadata) drift
+# =============================================================================
+#
+# The capture detects orphaned worktree directories on disk while metadata
+# claims no worktree is in use. Companion to ``_resolve_worktree_assertion``
+# in ``_handshake_commands.py`` which handles the metadata→disk direction.
+# Origin: lesson ``2026-05-08-14-001`` writer-chain drift.
+# =============================================================================
+
+
+def test_worktree_orphan_no_disk_dir_returns_none(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No worktree dir + metadata.use_worktree=false → None (not applicable)."""
+    monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
+    assert inv._capture_worktree_orphan('p', {'use_worktree': False}, '5-execute') is None
+
+
+def test_worktree_orphan_metadata_truthy_short_circuits(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Metadata truthy → short-circuits even when orphan dir exists.
+
+    The metadata→disk direction is owned by ``_resolve_worktree_assertion``;
+    this invariant only fires for the inverse case.
+    """
+    monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
+    orphan_dir = tmp_path / '.plan' / 'local' / 'worktrees' / 'p-truthy'
+    orphan_dir.mkdir(parents=True)
+    assert (
+        inv._capture_worktree_orphan(
+            'p-truthy',
+            {'use_worktree': True, 'worktree_path': str(orphan_dir)},
+            '5-execute',
+        )
+        is None
+    )
+
+
+def test_worktree_orphan_dir_metadata_false_raises(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Orphan dir + metadata.use_worktree=false → WorktreeMetadataDrift."""
+    monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
+    orphan = tmp_path / '.plan' / 'local' / 'worktrees' / 'p-false'
+    orphan.mkdir(parents=True)
+    with pytest.raises(inv.WorktreeMetadataDrift) as excinfo:
+        inv._capture_worktree_orphan('p-false', {'use_worktree': False}, '5-execute')
+    err = excinfo.value
+    assert err.plan_id == 'p-false'
+    assert err.worktree_dir == str(orphan)
+    assert err.use_worktree is False
+
+
+def test_worktree_orphan_dir_metadata_missing_raises(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Orphan dir + missing use_worktree key → WorktreeMetadataDrift.
+
+    Mirrors the writer-chain bug: ``manage_status create`` clobbered the
+    worktree trio leaving the disk dir orphaned and metadata silent.
+    """
+    monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
+    orphan = tmp_path / '.plan' / 'local' / 'worktrees' / 'p-missing'
+    orphan.mkdir(parents=True)
+    with pytest.raises(inv.WorktreeMetadataDrift) as excinfo:
+        inv._capture_worktree_orphan('p-missing', {}, '5-execute')
+    err = excinfo.value
+    assert err.plan_id == 'p-missing'
+    assert err.worktree_dir == str(orphan)
+    assert err.use_worktree is None
+
+
+@pytest.mark.parametrize('falsy_value', [False, 'false', 'False', 0, '', None])
+def test_worktree_orphan_falsy_metadata_variants_all_raise(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, falsy_value
+) -> None:
+    """All TOON-falsy variants of use_worktree trigger orphan drift."""
+    monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
+    orphan = tmp_path / '.plan' / 'local' / 'worktrees' / 'p-falsy'
+    orphan.mkdir(parents=True)
+    metadata = {'use_worktree': falsy_value} if falsy_value is not None else {}
+    with pytest.raises(inv.WorktreeMetadataDrift):
+        inv._capture_worktree_orphan('p-falsy', metadata, '5-execute')
+
+
+@pytest.mark.parametrize('truthy_value', [True, 'true', 'True', '1', 'yes', 1])
+def test_worktree_orphan_truthy_metadata_variants_all_short_circuit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, truthy_value
+) -> None:
+    """All TOON-truthy variants of use_worktree short-circuit (no raise)."""
+    monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
+    orphan = tmp_path / '.plan' / 'local' / 'worktrees' / 'p-truthy'
+    orphan.mkdir(parents=True)
+    result = inv._capture_worktree_orphan(
+        'p-truthy',
+        {'use_worktree': truthy_value, 'worktree_path': str(orphan)},
+        '5-execute',
+    )
+    assert result is None
+
+
+def test_worktree_orphan_registered_in_invariants() -> None:
+    """The registry must wire ``worktree_orphan`` to the capture function.
+
+    Guards against accidental removal of the tuple from ``INVARIANTS`` —
+    without this entry the inverse-direction drift contract is unenforced.
+    """
+    names = [name for name, _, _ in inv.INVARIANTS]
+    assert 'worktree_orphan' in names, f'worktree_orphan must be registered, got {names}'
+    entry = next(t for t in inv.INVARIANTS if t[0] == 'worktree_orphan')
+    name, applies_fn, capture_fn = entry
+    assert capture_fn is inv._capture_worktree_orphan
+    # Always-applicable: every phase boundary must check for orphan dirs.
+    assert applies_fn('any-plan', {}) is True
+
+
+def test_worktree_orphan_capture_all_propagates_drift(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``capture_all`` must propagate WorktreeMetadataDrift from the registry.
+
+    Narrows ``INVARIANTS`` to just the orphan entry so the other invariants
+    (which would shell out to git etc.) don't interfere with the assertion.
+    """
+    monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
+    orphan = tmp_path / '.plan' / 'local' / 'worktrees' / 'p-cap-all'
+    orphan.mkdir(parents=True)
+
+    narrowed = [('worktree_orphan', inv._always, inv._capture_worktree_orphan)]
+    monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
+
+    with pytest.raises(inv.WorktreeMetadataDrift):
+        inv.capture_all('p-cap-all', {'use_worktree': False}, '5-execute')
+
+
+# =============================================================================
+# Layer-D helpers: _filter_main_dirty_paths / _main_dirty_drift_diff /
+# _capture_main_dirty_files
+# =============================================================================
+#
+# Unit-level coverage for the layer-D primitives that drive the
+# ``main_checkout_dirtied_during_plan`` enforcement. Companion to the
+# integration-level scenarios in test_phase_handshake_worktree_assertion.py
+# which exercise the full cmd_capture / cmd_verify path.
+# Origin: deliverable D2 of plan ``lesson-2026-05-08-08-001``.
+# =============================================================================
+
+
+# --- _filter_main_dirty_paths ---------------------------------------------
+
+
+def test_filter_main_dirty_paths_drops_dot_plan_paths() -> None:
+    """``.plan/`` prefixes are stripped — they live legitimately in main."""
+    paths = [
+        '.plan/local/plans/foo/work.log',
+        '.plan/temp/scratch.toon',
+        'src/main.py',
+        'README.md',
+    ]
+    filtered = inv._filter_main_dirty_paths(paths)
+    assert filtered == ['src/main.py', 'README.md'], (
+        f'expected ``.plan/`` paths to be dropped, got {filtered}'
+    )
+
+
+def test_filter_main_dirty_paths_keeps_non_plan_paths() -> None:
+    """Non-``.plan/`` paths pass through unchanged in declaration order."""
+    paths = ['a.txt', 'src/b.py', 'docs/c.md']
+    assert inv._filter_main_dirty_paths(paths) == ['a.txt', 'src/b.py', 'docs/c.md']
+
+
+def test_filter_main_dirty_paths_handles_empty_list() -> None:
+    """Empty input → empty output (no error)."""
+    assert inv._filter_main_dirty_paths([]) == []
+
+
+def test_filter_main_dirty_paths_only_plan_paths_returns_empty() -> None:
+    """Input where every path is under ``.plan/`` → empty result."""
+    paths = ['.plan/foo', '.plan/bar', '.plan/baz/qux']
+    assert inv._filter_main_dirty_paths(paths) == []
+
+
+def test_filter_main_dirty_paths_does_not_match_plan_substring() -> None:
+    """Filter is prefix-based — ``my.plan/foo`` MUST NOT be dropped.
+
+    Guards against an over-eager substring match that would erroneously
+    strip paths that merely contain ``.plan/`` somewhere in their string
+    representation. Only paths starting with ``.plan/`` (the project's
+    plan-data directory) qualify for the filter.
+    """
+    paths = ['my.plan/foo.py', 'src/.plan/bar.py']
+    # The first path doesn't start with ``.plan/`` — only ``my.plan/`` —
+    # so it stays. The second starts with ``src/`` (also not ``.plan/``)
+    # so it likewise stays.
+    assert inv._filter_main_dirty_paths(paths) == ['my.plan/foo.py', 'src/.plan/bar.py']
+
+
+# --- _main_dirty_drift_diff -----------------------------------------------
+
+
+def test_main_dirty_drift_diff_returns_only_new_paths() -> None:
+    """Live set has paths not in baseline → those paths are returned, sorted."""
+    baseline = ['existing.txt']
+    observed = ['existing.txt', 'new-b.md', 'new-a.py']
+    # Result is sorted regardless of input order.
+    assert inv._main_dirty_drift_diff(baseline, observed) == ['new-a.py', 'new-b.md']
+
+
+def test_main_dirty_drift_diff_identical_sets_returns_empty() -> None:
+    """Baseline-equal observed set → empty diff (proper-superset rule)."""
+    baseline = ['a.txt', 'b.py']
+    observed = ['a.txt', 'b.py']
+    assert inv._main_dirty_drift_diff(baseline, observed) == []
+
+
+def test_main_dirty_drift_diff_observed_subset_of_baseline_returns_empty() -> None:
+    """Live set is a strict subset of baseline → empty diff (cleaned files OK).
+
+    A pre-existing dirty file that got cleaned by the next boundary is
+    benign. Only newly-dirty paths count as drift; baseline-only paths
+    do NOT contribute to the result.
+    """
+    baseline = ['a.txt', 'b.py', 'c.md']
+    observed = ['a.txt']  # b.py and c.md were cleaned
+    assert inv._main_dirty_drift_diff(baseline, observed) == []
+
+
+def test_main_dirty_drift_diff_empty_baseline_returns_all_observed_sorted() -> None:
+    """Empty baseline → every observed path is "newly dirty"."""
+    baseline: list[str] = []
+    observed = ['z.py', 'a.md', 'm.txt']
+    assert inv._main_dirty_drift_diff(baseline, observed) == ['a.md', 'm.txt', 'z.py']
+
+
+def test_main_dirty_drift_diff_empty_observed_returns_empty() -> None:
+    """Empty observed set → no newly-dirty paths regardless of baseline."""
+    baseline = ['a.txt', 'b.py']
+    observed: list[str] = []
+    assert inv._main_dirty_drift_diff(baseline, observed) == []
+
+
+def test_main_dirty_drift_diff_disjoint_sets_returns_full_observed_sorted() -> None:
+    """Disjoint baseline and observed → entire observed set is "newly dirty"."""
+    baseline = ['old1.txt', 'old2.py']
+    observed = ['new-z.md', 'new-a.py']
+    assert inv._main_dirty_drift_diff(baseline, observed) == ['new-a.py', 'new-z.md']
+
+
+def test_main_dirty_drift_diff_mixed_overlap_returns_only_new() -> None:
+    """Mixed overlap — baseline ∩ observed retained, only fresh paths reported."""
+    baseline = ['shared.txt', 'cleaned.py']
+    observed = ['shared.txt', 'leaked-1.md', 'leaked-2.py']
+    assert inv._main_dirty_drift_diff(baseline, observed) == ['leaked-1.md', 'leaked-2.py']
+
+
+def test_main_dirty_drift_diff_result_is_deterministic() -> None:
+    """Same inputs across two calls produce identical output (sorted)."""
+    baseline = ['a.txt']
+    observed = ['c.py', 'a.txt', 'b.md']
+    first = inv._main_dirty_drift_diff(baseline, observed)
+    second = inv._main_dirty_drift_diff(baseline, observed)
+    assert first == second
+    assert first == ['b.md', 'c.py']
+
+
+# --- _capture_main_dirty_files (integration with filter + git_dirty_files) -
+
+
+def test_capture_main_dirty_files_returns_filtered_sorted_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Capture wraps ``git_dirty_files`` with ``_filter_main_dirty_paths``.
+
+    Drives the function directly so the capture-time chain (git probe →
+    filter → return) is exercised end-to-end as a unit.
+    """
+    monkeypatch.setattr(
+        inv,
+        'git_dirty_files',
+        lambda _cwd: [
+            '.plan/local/plans/foo/work.log',  # filtered
+            'src/main.py',
+            'README.md',
+            '.plan/temp/scratch',  # filtered
+        ],
+    )
+    result = inv._capture_main_dirty_files('any-plan', {}, '5-execute')
+    # The filter preserves git-output order; sorting is the responsibility
+    # of git_dirty_files (which sorts its return). Here we assert the
+    # filter preserved order while dropping ``.plan/`` paths.
+    assert result == ['src/main.py', 'README.md']
+
+
+def test_capture_main_dirty_files_returns_none_when_git_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``git_dirty_files`` returning ``None`` propagates as ``None``.
+
+    Matches the documented "not applicable" contract from the capture's
+    docstring: stored row leaves the column empty when the probe fails.
+    """
+    monkeypatch.setattr(inv, 'git_dirty_files', lambda _cwd: None)
+    assert inv._capture_main_dirty_files('any-plan', {}, '5-execute') is None
+
+
+def test_capture_main_dirty_files_empty_input_returns_empty_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Clean main checkout (no dirty paths) → empty list (NOT None)."""
+    monkeypatch.setattr(inv, 'git_dirty_files', lambda _cwd: [])
+    assert inv._capture_main_dirty_files('any-plan', {}, '5-execute') == []
+
+
+def test_capture_main_dirty_files_only_dot_plan_paths_returns_empty_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only ``.plan/`` paths dirty → empty list after filter."""
+    monkeypatch.setattr(
+        inv,
+        'git_dirty_files',
+        lambda _cwd: ['.plan/local/foo', '.plan/temp/bar'],
+    )
+    assert inv._capture_main_dirty_files('any-plan', {}, '5-execute') == []
+
+
+def test_main_dirty_files_registered_in_invariants() -> None:
+    """The registry must wire ``main_dirty_files`` to the capture function.
+
+    Guards against accidental removal of the tuple from ``INVARIANTS`` —
+    without this entry the layer-D drift contract has no captured
+    baseline to compare against.
+    """
+    names = [name for name, _, _ in inv.INVARIANTS]
+    assert 'main_dirty_files' in names, f'main_dirty_files must be registered, got {names}'
+    entry = next(t for t in inv.INVARIANTS if t[0] == 'main_dirty_files')
+    name, applies_fn, capture_fn = entry
+    assert capture_fn is inv._capture_main_dirty_files
+    # Always-applicable: every phase boundary captures the baseline so the
+    # next verify has a known previous-state to compare against.
+    assert applies_fn('any-plan', {}) is True
+
+
+def test_main_checkout_dirtied_during_plan_exception_carries_payload() -> None:
+    """The exception class carries baseline / observed / newly_dirty as attrs.
+
+    cmd_verify reads these attributes verbatim into the structured TOON
+    error payload — this guards against accidental rename / deletion of
+    the public attribute surface.
+    """
+    err = inv.MainCheckoutDirtiedDuringPlan(
+        plan_id='p1',
+        phase='5-execute',
+        baseline=['old.txt'],
+        observed=['old.txt', 'new.md'],
+        newly_dirty=['new.md'],
+    )
+    assert err.plan_id == 'p1'
+    assert err.phase == '5-execute'
+    assert err.baseline == ['old.txt']
+    assert err.observed == ['old.txt', 'new.md']
+    assert err.newly_dirty == ['new.md']
+    # The formatted message must mention the leaked paths so unstructured
+    # log readers (raw stderr) can still see what leaked.
+    assert 'new.md' in str(err)
