@@ -100,7 +100,7 @@ missing flag, generator error, plugin.json drift, unmapped tool, etc.).
 ## Output directories
 
 `target/claude/` and `target/opencode/` are gitignored — they are build
-artifacts, not committed sources. The `default:deploy-target` finalize
+artifacts, not committed sources. The `project:finalize-step-deploy-target` finalize
 step emits `target/claude/` during the finalize phase; the
 `/sync-plugin-cache` skill consumes that directory when syncing the
 Claude plugin cache.
