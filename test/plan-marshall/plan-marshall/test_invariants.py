@@ -1091,3 +1091,122 @@ def test_main_checkout_dirtied_during_plan_exception_carries_payload() -> None:
     # The formatted message must mention the leaked paths so unstructured
     # log readers (raw stderr) can still see what leaked.
     assert 'new.md' in str(err)
+
+
+# =============================================================================
+# D4: Blocking-types dispatch via dict[str, Callable] mapping
+# =============================================================================
+
+
+def test_resolve_blocking_callable_registry_returns_dict_with_all_keys() -> None:
+    """The resolver returns a mapping covering every key from determine_mode.
+
+    Asserts the merge between ``_GLOBAL_BLOCKING_TYPES`` and
+    ``_FINALIZE_BLOCKING_TYPES`` produces a flat dispatch table the
+    consumer can index by finding-type string.
+    """
+    # Arrange + Act
+    registry = inv._resolve_blocking_callable_registry()
+
+    # Assert — every expected blocking type is present.
+    for finding_type in ('build-error', 'test-failure', 'lint-issue', 'sonar-issue', 'qgate', 'pr-comment'):
+        assert finding_type in registry, f'Missing blocking type {finding_type!r} in dispatch registry'
+
+
+def test_resolve_blocking_callable_registry_generic_types_route_to_generic_query() -> None:
+    """Storage-canonical types resolve to ``_query_pending_count_for_type``."""
+    # Arrange + Act
+    registry = inv._resolve_blocking_callable_registry()
+
+    # Assert — generic types route to the shared helper.
+    assert registry['build-error'] is inv._query_pending_count_for_type
+    assert registry['test-failure'] is inv._query_pending_count_for_type
+    assert registry['lint-issue'] is inv._query_pending_count_for_type
+    assert registry['sonar-issue'] is inv._query_pending_count_for_type
+    assert registry['pr-comment'] is inv._query_pending_count_for_type
+
+
+def test_resolve_blocking_callable_registry_qgate_routes_to_aggregator() -> None:
+    """Q-Gate type resolves to a wrapper around ``_query_pending_qgate_count_aggregated``.
+
+    The wrapper enforces the uniform ``(plan_id, finding_type)`` signature
+    even though the underlying aggregator only consumes ``plan_id``.
+    """
+    # Arrange + Act
+    registry = inv._resolve_blocking_callable_registry()
+    qgate_query = registry['qgate']
+
+    # Assert — distinct from the generic helper (different storage shape).
+    assert qgate_query is not inv._query_pending_count_for_type
+    # The qgate route is a lambda wrapping the aggregator — callable with the
+    # uniform two-arg signature.
+    assert callable(qgate_query)
+
+
+def test_blocking_dispatch_calls_each_callable_with_uniform_signature(monkeypatch) -> None:
+    """Every callable in the dispatch path is invoked as ``(plan_id, finding_type)``.
+
+    Stubs the underlying helpers to record their call arguments, then drives
+    ``_capture_pending_findings_blocking_count`` with a known blocking-types
+    list and asserts the recorded call shape.
+    """
+    # Arrange — stub the generic and qgate helpers.
+    generic_calls = []
+    qgate_calls = []
+
+    def fake_generic(plan_id, finding_type):
+        generic_calls.append((plan_id, finding_type))
+        return 0
+
+    def fake_qgate(plan_id):
+        qgate_calls.append(plan_id)
+        return 0
+
+    monkeypatch.setattr(inv, '_query_pending_count_for_type', fake_generic)
+    monkeypatch.setattr(inv, '_query_pending_qgate_count_aggregated', fake_qgate)
+    # Stub the marshal.json read to return a known blocking-types list.
+    monkeypatch.setattr(
+        inv,
+        '_read_blocking_finding_types',
+        lambda plan_id, phase: ['build-error', 'qgate', 'sonar-issue'],
+    )
+
+    # Act
+    result = inv._capture_pending_findings_blocking_count('plan-x', {}, '5-execute')
+
+    # Assert — every generic helper call has the uniform two-arg signature.
+    assert ('plan-x', 'build-error') in generic_calls
+    assert ('plan-x', 'sonar-issue') in generic_calls
+    # The aggregator is called once (qgate path).
+    assert qgate_calls == ['plan-x']
+    # Total is zero across all helpers — and the function returns 0.
+    assert result == 0
+
+
+def test_blocking_dispatch_unknown_type_falls_back_to_generic_query(monkeypatch) -> None:
+    """A blocking type not in the registry falls back to the generic helper.
+
+    Backward-compatibility guard: types added to ``marshal.json`` centrally
+    without a determine_mode.py update still surface in the count via the
+    generic per-type query path.
+    """
+    # Arrange — stub the generic helper.
+    calls = []
+
+    def fake_generic(plan_id, finding_type):
+        calls.append((plan_id, finding_type))
+        return 7  # arbitrary positive count
+
+    monkeypatch.setattr(inv, '_query_pending_count_for_type', fake_generic)
+    monkeypatch.setattr(
+        inv,
+        '_read_blocking_finding_types',
+        lambda plan_id, phase: ['novel-finding-type'],
+    )
+
+    # Act
+    result = inv._capture_pending_findings_blocking_count('plan-fallback', {}, '5-execute')
+
+    # Assert — the generic helper was invoked with the uniform signature.
+    assert calls == [('plan-fallback', 'novel-finding-type')]
+    assert result == 7

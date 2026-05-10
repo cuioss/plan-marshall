@@ -1412,3 +1412,110 @@ def test_intra_finalize_recapture_clears_after_resolution(
         assert second['invariants']['pending_findings_blocking_count'] in (0, '0')
         row = store.get_row('pf-intra-loop', '6-finalize')
         assert row is not None
+
+
+# =============================================================================
+# D4: Round-trip tests for every blocking type in the dict[str, Callable] mapping
+# =============================================================================
+#
+# For each type registered in ``_GLOBAL_BLOCKING_TYPES`` / ``_FINALIZE_BLOCKING_TYPES``:
+#   1. Stub the producer-side query to emit a non-zero pending count.
+#   2. Drive ``_capture_pending_findings_blocking_count`` directly.
+#   3. Assert the queried count == the produced count.
+#
+# The "silent zero" tripwire fires when any newly-mapped type returns a count of
+# zero for its first-traffic capture — that signals a missing dispatch entry in
+# the per-type registry.
+
+
+import determine_mode as _determine_mode_for_roundtrip  # type: ignore[import-not-found]  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    'finding_type',
+    sorted(_determine_mode_for_roundtrip._FINALIZE_BLOCKING_TYPES.keys()),
+)
+def test_blocking_type_roundtrip_queried_matches_produced(
+    finding_type: str,
+    only_pending_findings_invariants,
+    stub_metadata,
+    stub_query_counts,
+    stub_blocking_types,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Round-trip: producing N findings of this type → query reports exactly N.
+
+    Pins the dispatch contract for every type in the mapping. A regression
+    that adds a type without wiring its callable surfaces as the queried
+    count diverging from the produced count (typically zero — the "silent
+    zero" failure mode this test is designed to catch).
+    """
+    # Arrange — produce 3 findings of this type. The qgate path uses a
+    # different storage shape (aggregated across phases), so stub the
+    # aggregator separately to emit the same count.
+    produced_count = 3
+    if finding_type == 'qgate':
+        monkeypatch.setattr(
+            inv, '_query_pending_qgate_count_aggregated', lambda _plan_id: produced_count
+        )
+    else:
+        stub_query_counts[finding_type] = produced_count
+
+    # 6-finalize is the only guarded boundary; using 5-execute means the
+    # capture returns the count rather than raising BlockingFindingsPresent
+    # — that keeps every parametrised case symmetric regardless of type.
+    stub_blocking_types['5-execute'] = [finding_type]
+
+    # Act
+    queried_count = inv._capture_pending_findings_blocking_count(
+        'plan-roundtrip', {}, '5-execute'
+    )
+
+    # Assert — queried == produced.
+    assert queried_count == produced_count, (
+        f'Round-trip failed for blocking type {finding_type!r}: '
+        f'queried={queried_count}, produced={produced_count}. '
+        f'A queried count of 0 indicates a missing dispatch entry in the '
+        f'dict[str, Callable] mapping (silent-zero failure mode).'
+    )
+
+
+def test_blocking_type_silent_zero_tripwire_all_types_have_dispatch(
+    only_pending_findings_invariants,
+    stub_metadata,
+    stub_query_counts,
+    stub_blocking_types,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No type in the mapping silently returns zero when traffic exists.
+
+    Constructs a fixture where every registered blocking type has a pending
+    count of 1, configures all of them as blocking for ``5-execute``, and
+    asserts the capture's total matches the produced sum. A type whose
+    dispatch routes nowhere would contribute 0 and break the equality.
+    """
+    # Arrange
+    mapping_keys = sorted(_determine_mode_for_roundtrip._FINALIZE_BLOCKING_TYPES.keys())
+
+    monkeypatch.setattr(
+        inv, '_query_pending_qgate_count_aggregated', lambda _plan_id: 1
+    )
+    for finding_type in mapping_keys:
+        if finding_type == 'qgate':
+            continue  # handled by the aggregator stub above
+        stub_query_counts[finding_type] = 1
+
+    stub_blocking_types['5-execute'] = list(mapping_keys)
+
+    # Act
+    queried_total = inv._capture_pending_findings_blocking_count(
+        'plan-tripwire', {}, '5-execute'
+    )
+
+    # Assert — every type contributes exactly 1.
+    expected_total = len(mapping_keys)
+    assert queried_total == expected_total, (
+        f'Silent-zero tripwire fired: expected total {expected_total} '
+        f'(one per registered type), got {queried_total}. '
+        f'A type without a dispatch entry contributed 0 instead of 1.'
+    )

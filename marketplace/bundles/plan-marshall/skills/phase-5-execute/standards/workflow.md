@@ -165,6 +165,33 @@ When all tasks in phase complete:
 - Multiple valid approaches exist
 - User explicitly requested confirmation
 
+## Deterministic Exit Clause (Token-Budget Sentinel)
+
+The execute-loop's continue-vs-yield decision is governed by exactly one deterministic clause — no per-task heuristics, no intuition-based yield. The clause is:
+
+> **If `remaining_budget > N`: continue to the next task. Else: yield.**
+
+Where `N` is the per-task budget reserve read from `marshal.json`'s `plan.phase-5-execute.per_task_budget_reserve` slot via `manage-config plan phase-5-execute get --field per_task_budget_reserve --audit-plan-id {plan_id}`. The clause runs once after each task completes — between the closing `manage-tasks finalize-step` call (which fires the canonical `[OUTCOME]`) and the next `manage-tasks next` call. There is no intermediate decision point.
+
+**Budget items consumed per task** (the sentinel's accounting model):
+
+1. **`execute-task` agent dispatch** — the per-task subagent invocation. Largest cost per task; includes the agent's own context plus the standards it loads on entry.
+2. **Auto-injected `--project-dir` verify step** — `plan-marshall:execute-task:inject_project_dir` rewrites each `task.verification.commands[N]` to forward the worktree path when the plan resolves to a worktree. The rewritten command consumes additional executor + build-system context that the budget model MUST account for.
+
+**Fallback when the knob is absent**: `N = 50000` tokens. The fallback exists so plans that have not yet migrated to the manifest-driven model still observe a deterministic yield boundary rather than running until the host platform forces a `harness_cancellation`.
+
+### Terminal outcomes (cross-reference)
+
+The sentinel governs continue-vs-yield only; every exit from the loop is still one of the three terminal outcomes documented in `SKILL.md` § "Forbidden: agent-initiated checkpoints" and `phase-5-execute` § "Loop-to-completion contract":
+
+1. All pending tasks complete and the phase transitions to `6-finalize`.
+2. A fatal error captured via the **Error Handling** section (including the pending-task drift error).
+3. A triage-driven `blocked` outcome that the skill itself acknowledges via `manage-tasks` status updates.
+
+When the sentinel says "yield", the agent still MUST exit via one of the three terminal paths above — yielding does NOT mean "return a partial-completion checkpoint". That path is explicitly forbidden. The orchestrator re-dispatches the phase-agent on the next round; the in-flight task's state is already persisted by `manage-tasks finalize-step` so resumption is lossless.
+
+**Audit diagnostic ledger**: when investigating throughput regressions (e.g., "why did this run process 1 task at ~119k tokens while a prior run processed 4 at ~210k?"), compare the work-log entries between `phase-agent`-mediated dispatches and direct `phase-5-execute` dispatches — the phase-agent layer adds a small fixed cost per dispatch (skill-load + Worktree Header echo); the trace-shape difference is the first thing to inspect when budget accounting drifts.
+
 ## Pre-Implemented Work
 
 Before executing, check if deliverables already exist:

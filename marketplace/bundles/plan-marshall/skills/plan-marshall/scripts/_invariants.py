@@ -1037,6 +1037,52 @@ def _capture_pending_findings_by_type(
     return ','.join(parts)
 
 
+def _resolve_blocking_callable_registry() -> dict[str, Callable[[str, str], int | None]]:
+    """Return the per-type query callable mapping merged from determine_mode.
+
+    Reads ``_GLOBAL_BLOCKING_TYPES`` and ``_FINALIZE_BLOCKING_TYPES`` from
+    ``marshall-steward:scripts/determine_mode.py`` and resolves each entry's
+    callable thunk to the corresponding concrete query helper defined in
+    this module. The two registered thunks (``_generic_query_thunk`` and
+    ``_qgate_aggregated_query_thunk``) short-circuit to
+    :func:`_query_pending_count_for_type` and
+    :func:`_query_pending_qgate_count_aggregated` respectively, avoiding a
+    second executor hop through the thunk's lazy import path.
+
+    Returns an empty dict on import failure so the caller falls back to the
+    generic per-type query (matches the prior single-helper behaviour for
+    storage-canonical types).
+    """
+    try:
+        from determine_mode import (  # type: ignore[import-not-found]
+            _FINALIZE_BLOCKING_TYPES,
+            _GLOBAL_BLOCKING_TYPES,
+            BLOCKING_TYPE_CALLABLE_NAMES,
+            GENERIC_PENDING_QUERY,
+            QGATE_AGGREGATED_QUERY,
+        )
+    except ImportError:
+        return {}
+
+    # Resolve each thunk to its concrete helper so the dispatcher avoids the
+    # thunk's lazy-import bounce on every call.
+    concrete: dict[str, Callable[[str, str], int | None]] = {}
+
+    def _resolve(thunk: Callable[[str, str], int | None]) -> Callable[[str, str], int | None]:
+        name = BLOCKING_TYPE_CALLABLE_NAMES.get(thunk)
+        if name == GENERIC_PENDING_QUERY:
+            return _query_pending_count_for_type
+        if name == QGATE_AGGREGATED_QUERY:
+            return lambda plan_id, _ft: _query_pending_qgate_count_aggregated(plan_id)
+        return thunk  # Fallback — preserves caller signature.
+
+    merged: dict[str, Callable[[str, str], int | None]] = dict(_GLOBAL_BLOCKING_TYPES)
+    merged.update(_FINALIZE_BLOCKING_TYPES)
+    for finding_type, thunk in merged.items():
+        concrete[finding_type] = _resolve(thunk)
+    return concrete
+
+
 def _capture_pending_findings_blocking_count(
     plan_id: str,
     _metadata: dict[str, Any],
@@ -1067,16 +1113,18 @@ def _capture_pending_findings_blocking_count(
     if not blocking_types:
         return 0
 
+    callable_registry = _resolve_blocking_callable_registry()
     per_type: dict[str, int] = {}
     total = 0
     for finding_type in blocking_types:
-        if finding_type == 'qgate':
-            # Q-Gate findings live in qgate-{phase}.jsonl, not the canonical
-            # per-type findings/{type}.jsonl. Route through the aggregated
-            # helper that loops every phase via the qgate query subcommand.
-            count = _query_pending_qgate_count_aggregated(plan_id)
-        else:
-            count = _query_pending_count_for_type(plan_id, finding_type)
+        query_fn = callable_registry.get(finding_type)
+        if query_fn is None:
+            # Type is configured to block but no callable is registered for
+            # its storage shape. Fall back to the generic per-type query —
+            # this preserves backward-compatibility for storage-canonical
+            # types added centrally without a determine_mode.py update.
+            query_fn = _query_pending_count_for_type
+        count = query_fn(plan_id, finding_type)
         if count is None:
             # Partial query failure — fall back to "not applicable" rather
             # than under-counting and silently letting a transition

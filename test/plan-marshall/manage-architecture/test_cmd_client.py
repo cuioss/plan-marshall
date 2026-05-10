@@ -43,9 +43,17 @@ cmd_resolve = _cmd_client.cmd_resolve
 cmd_files = _cmd_client.cmd_files
 cmd_which_module = _cmd_client.cmd_which_module
 cmd_find = _cmd_client.cmd_find
+cmd_path = _cmd_client.cmd_path
+cmd_neighbors = _cmd_client.cmd_neighbors
+cmd_impact = _cmd_client.cmd_impact
 get_module_graph = _cmd_client.get_module_graph
 get_modules_list = _cmd_client.get_modules_list
 get_modules_with_command = _cmd_client.get_modules_with_command
+_build_internal_deps_map = _cmd_client._build_internal_deps_map
+_count_profile_skills = _cmd_client._count_profile_skills
+_modules_from_exception_or_fallback = _cmd_client._modules_from_exception_or_fallback
+render_module_markdown = _cmd_client.render_module_markdown
+ModuleNotFoundInProjectError = _architecture_core.ModuleNotFoundInProjectError
 
 
 # =============================================================================
@@ -875,3 +883,343 @@ def test_architecture_argparse_find_subcommand_accepts_pattern_and_category():
     assert proc.returncode == 0
     assert '--pattern' in proc.stdout
     assert '--category' in proc.stdout
+
+
+# =============================================================================
+# D1 tests: pre-loaded kwarg threading in render helpers
+# =============================================================================
+
+
+def test_build_internal_deps_map_honours_preloaded_kwargs(monkeypatch):
+    """When ``derived_by_name`` / ``enriched_by_name`` are supplied, the helper
+    skips its per-module ``load_module_derived`` / ``load_module_enriched_or_empty``
+    calls entirely — no extra I/O against disk.
+    """
+    # Arrange
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_test_project_with_deps(tmpdir)
+
+        preloaded_derived = {
+            'api': {'metadata': {'group_id': 'g', 'artifact_id': 'api'}, 'dependencies': []},
+            'core': {
+                'metadata': {'group_id': 'g', 'artifact_id': 'core'},
+                'dependencies': [],
+                'internal_dependencies': ['api'],
+            },
+        }
+        preloaded_enriched = {'api': {}, 'core': {}}
+
+        load_derived_calls = []
+        load_enriched_calls = []
+
+        original_load_derived = _cmd_client.load_module_derived
+        original_load_enriched = _cmd_client.load_module_enriched_or_empty
+
+        def tracking_load_derived(name, pdir):
+            load_derived_calls.append(name)
+            return original_load_derived(name, pdir)
+
+        def tracking_load_enriched(name, pdir):
+            load_enriched_calls.append(name)
+            return original_load_enriched(name, pdir)
+
+        monkeypatch.setattr(_cmd_client, 'load_module_derived', tracking_load_derived)
+        monkeypatch.setattr(_cmd_client, 'load_module_enriched_or_empty', tracking_load_enriched)
+
+        # Act
+        deps_map, module_names = _build_internal_deps_map(
+            tmpdir,
+            derived_by_name=preloaded_derived,
+            enriched_by_name=preloaded_enriched,
+        )
+
+        # Assert
+        assert load_derived_calls == [], 'load_module_derived must not be called when derived_by_name is supplied'
+        assert load_enriched_calls == [], 'load_module_enriched_or_empty must not be called when enriched_by_name is supplied'
+        assert set(module_names) == {'api', 'core'}
+        assert deps_map['core'] == ['api']
+
+
+def test_get_module_graph_honours_preloaded_kwargs(monkeypatch):
+    """``get_module_graph`` consumes pre-loaded maps without re-reading disk."""
+    # Arrange
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_test_project_with_deps(tmpdir)
+
+        preloaded_derived = {
+            'api': {
+                'metadata': {'group_id': 'g', 'artifact_id': 'api', 'packaging': 'jar'},
+                'dependencies': [],
+                'internal_dependencies': [],
+            },
+            'core': {
+                'metadata': {'group_id': 'g', 'artifact_id': 'core', 'packaging': 'jar'},
+                'dependencies': [],
+                'internal_dependencies': ['api'],
+            },
+        }
+        preloaded_enriched = {'api': {}, 'core': {}}
+
+        load_derived_calls = []
+        load_enriched_calls = []
+        original_load_derived = _cmd_client.load_module_derived
+        original_load_enriched = _cmd_client.load_module_enriched_or_empty
+
+        def tracking_load_derived(name, pdir):
+            load_derived_calls.append(name)
+            return original_load_derived(name, pdir)
+
+        def tracking_load_enriched(name, pdir):
+            load_enriched_calls.append(name)
+            return original_load_enriched(name, pdir)
+
+        monkeypatch.setattr(_cmd_client, 'load_module_derived', tracking_load_derived)
+        monkeypatch.setattr(_cmd_client, 'load_module_enriched_or_empty', tracking_load_enriched)
+
+        # Act
+        result = get_module_graph(
+            tmpdir,
+            derived_by_name=preloaded_derived,
+            enriched_by_name=preloaded_enriched,
+        )
+
+        # Assert
+        assert load_derived_calls == [], 'load_module_derived must not be called when derived_by_name is supplied'
+        assert load_enriched_calls == [], 'load_module_enriched_or_empty must not be called when enriched_by_name is supplied'
+        assert result['graph']['node_count'] == 2
+        node_names = {n['name'] for n in result['nodes']}
+        assert node_names == {'api', 'core'}
+
+
+def test_render_module_markdown_honours_preloaded_merged(monkeypatch):
+    """``render_module_markdown`` skips the module-validate + merge round-trip
+    when the caller supplies a pre-merged dict via ``merged=``.
+    """
+    # Arrange
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_test_project_with_deps(tmpdir)
+        preloaded_merged = {
+            'name': 'api',
+            'purpose': 'pre-loaded',
+            'responsibility': 'pre-loaded',
+            'internal_dependencies': [],
+            'packages': [],
+            'skills_by_profile': {},
+        }
+
+        merge_calls = []
+        load_or_raise_calls = []
+        original_merge = _cmd_client.merge_module_data
+        original_load_or_raise = _cmd_client._load_module_or_raise
+
+        def tracking_merge(name, pdir):
+            merge_calls.append(name)
+            return original_merge(name, pdir)
+
+        def tracking_load_or_raise(name, pdir):
+            load_or_raise_calls.append(name)
+            return original_load_or_raise(name, pdir)
+
+        monkeypatch.setattr(_cmd_client, 'merge_module_data', tracking_merge)
+        monkeypatch.setattr(_cmd_client, '_load_module_or_raise', tracking_load_or_raise)
+
+        # Act
+        markdown = render_module_markdown('api', tmpdir, merged=preloaded_merged)
+
+        # Assert
+        assert merge_calls == [], 'merge_module_data must not be called when merged is supplied'
+        assert load_or_raise_calls == [], '_load_module_or_raise must not be called when merged is supplied'
+        assert '# api' in markdown
+        assert 'pre-loaded' in markdown
+
+
+# =============================================================================
+# D1 tests: ModuleNotFoundInProjectError.args[1] consumption
+# =============================================================================
+
+
+def test_modules_from_exception_or_fallback_prefers_args1():
+    """``_modules_from_exception_or_fallback`` returns ``exc.args[1]`` verbatim
+    when present and skips the ``get_modules_list`` re-read.
+    """
+    # Arrange
+    embedded = ['mod-x', 'mod-y']
+    exc = ModuleNotFoundInProjectError('Module not found: nope', embedded)
+
+    # Act
+    result = _modules_from_exception_or_fallback(exc, '/nonexistent-path')
+
+    # Assert
+    assert result == embedded
+    # Defensive: result is a fresh list so callers may mutate without leaking back.
+    result.append('mod-z')
+    assert exc.args[1] == ['mod-x', 'mod-y']
+
+
+def test_modules_from_exception_or_fallback_falls_back_to_get_modules_list():
+    """When ``exc.args`` lacks the module list, the helper re-reads via
+    ``get_modules_list`` (defensive fallback for one-arg constructions).
+    """
+    # Arrange
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_test_project(tmpdir)
+        # One-arg construction — no embedded list.
+        exc = ModuleNotFoundInProjectError('Module not found: nope')
+
+        # Act
+        result = _modules_from_exception_or_fallback(exc, tmpdir)
+
+        # Assert
+        assert set(result) == {'module-a', 'module-b', 'module-c'}
+
+
+def test_cmd_path_consumes_args1_from_exception():
+    """``cmd_path`` uses ``exc.args[1]`` (no extra ``get_modules_list`` re-read)."""
+    # Arrange
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_test_project_with_deps(tmpdir)
+        args = Namespace(project_dir=tmpdir, source='api', target='nope-target')
+
+        get_modules_list_calls = []
+        original_get_modules_list = _cmd_client.get_modules_list
+
+        def tracking_get_modules_list(pdir):
+            get_modules_list_calls.append(pdir)
+            return original_get_modules_list(pdir)
+
+        _cmd_client.get_modules_list = tracking_get_modules_list
+        try:
+            # Act
+            result = cmd_path(args)
+        finally:
+            _cmd_client.get_modules_list = original_get_modules_list
+
+        # Assert
+        assert result['status'] == 'error'
+        # ``get_module_path`` raises ``ModuleNotFoundInProjectError`` with the
+        # module list embedded in args[1]; cmd_path must reuse that list rather
+        # than triggering its own ``get_modules_list`` re-read.
+        assert get_modules_list_calls == [], (
+            'cmd_path re-read the modules list — should consume args[1] from the exception'
+        )
+
+
+def test_cmd_neighbors_consumes_args1_from_exception():
+    """``cmd_neighbors`` uses ``exc.args[1]`` (no extra ``get_modules_list`` re-read)."""
+    # Arrange
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_test_project_with_deps(tmpdir)
+        args = Namespace(project_dir=tmpdir, module='nope-mod', depth=1)
+
+        get_modules_list_calls = []
+        original_get_modules_list = _cmd_client.get_modules_list
+
+        def tracking_get_modules_list(pdir):
+            get_modules_list_calls.append(pdir)
+            return original_get_modules_list(pdir)
+
+        _cmd_client.get_modules_list = tracking_get_modules_list
+        try:
+            # Act
+            result = cmd_neighbors(args)
+        finally:
+            _cmd_client.get_modules_list = original_get_modules_list
+
+        # Assert
+        assert result['status'] == 'error'
+        assert get_modules_list_calls == [], (
+            'cmd_neighbors re-read the modules list — should consume args[1] from the exception'
+        )
+
+
+def test_cmd_impact_consumes_args1_from_exception():
+    """``cmd_impact`` uses ``exc.args[1]`` (no extra ``get_modules_list`` re-read)."""
+    # Arrange
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_test_project_with_deps(tmpdir)
+        args = Namespace(project_dir=tmpdir, module='nope-mod')
+
+        get_modules_list_calls = []
+        original_get_modules_list = _cmd_client.get_modules_list
+
+        def tracking_get_modules_list(pdir):
+            get_modules_list_calls.append(pdir)
+            return original_get_modules_list(pdir)
+
+        _cmd_client.get_modules_list = tracking_get_modules_list
+        try:
+            # Act
+            result = cmd_impact(args)
+        finally:
+            _cmd_client.get_modules_list = original_get_modules_list
+
+        # Assert
+        assert result['status'] == 'error'
+        assert get_modules_list_calls == [], (
+            'cmd_impact re-read the modules list — should consume args[1] from the exception'
+        )
+
+
+# =============================================================================
+# D1 tests: _count_profile_skills dict-vs-list parity
+# =============================================================================
+
+
+def test_count_profile_skills_dict_shape():
+    """Dict shape with ``defaults`` + ``optionals`` returns combined length."""
+    # Arrange
+    profile = {'defaults': ['skill-a', 'skill-b'], 'optionals': ['skill-c']}
+
+    # Act
+    count = _count_profile_skills(profile)
+
+    # Assert
+    assert count == 3
+
+
+def test_count_profile_skills_list_shape():
+    """Flat-list shape returns the list length directly."""
+    # Arrange
+    profile = ['skill-a', 'skill-b', 'skill-c']
+
+    # Act
+    count = _count_profile_skills(profile)
+
+    # Assert
+    assert count == 3
+
+
+def test_count_profile_skills_dict_and_list_parity():
+    """Equivalent dict and list shapes produce the same count."""
+    # Arrange
+    dict_form = {'defaults': ['skill-a', 'skill-b'], 'optionals': ['skill-c']}
+    list_form = ['skill-a', 'skill-b', 'skill-c']
+
+    # Act
+    dict_count = _count_profile_skills(dict_form)
+    list_count = _count_profile_skills(list_form)
+
+    # Assert
+    assert dict_count == list_count == 3
+
+
+def test_count_profile_skills_dict_partial_keys():
+    """Dict shape with only ``defaults`` (no ``optionals``) returns ``defaults`` length."""
+    # Arrange
+    profile = {'defaults': ['skill-a', 'skill-b']}
+
+    # Act
+    count = _count_profile_skills(profile)
+
+    # Assert
+    assert count == 2
+
+
+def test_count_profile_skills_unknown_shape_returns_zero():
+    """Unsupported shapes (None, str, int) contribute zero."""
+    # Arrange + Act + Assert
+    assert _count_profile_skills(None) == 0
+    assert _count_profile_skills('not-a-collection') == 0
+    assert _count_profile_skills(42) == 0
+    assert _count_profile_skills({}) == 0
+    assert _count_profile_skills([]) == 0

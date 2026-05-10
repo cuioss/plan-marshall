@@ -324,8 +324,34 @@ def calculate_progress(task: dict) -> tuple[int, int]:
 # =============================================================================
 
 
+_STEPS_BARE_BLOCK_PREFIX = 'steps:'
+_STEPS_BRACKETED_RE = re.compile(r'^steps\[(\d+)\]:\s*$')
+_SKILLS_BRACKETED_RE = re.compile(r'^skills\[(\d+)\]:\s*$')
+_COMMANDS_BRACKETED_RE = re.compile(r'^commands\[(\d+)\]:\s*$')
+
+
+def _matches_steps_header(line: str) -> bool:
+    """True when ``line`` opens a steps list — bare or bracketed form."""
+    if line == _STEPS_BARE_BLOCK_PREFIX or line.startswith(_STEPS_BARE_BLOCK_PREFIX + ' '):
+        return True
+    return bool(_STEPS_BRACKETED_RE.match(line))
+
+
 def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
-    """Parse task definition from stdin TOON format."""
+    """Parse task definition from stdin TOON format.
+
+    Accepts both the bare-block form (``steps:`` followed by indented ``- ``
+    items) and the bracketed form (``steps[N]:`` followed by the same indented
+    ``- `` items). Both shapes normalise to the same internal step list. The
+    same dual-form acceptance applies to ``skills`` and ``verification.commands``
+    so callers that emit the canonical TOON length-declared list shape
+    (``skills[2]:``, ``commands[1]:``) round-trip cleanly.
+
+    When neither shape parses for a given list field, raises a schema-level
+    error that names both expected forms explicitly (see ``ValueError`` paths
+    below) so fixture authors get a clear "wrong serialisation form" message
+    instead of a generic structural error.
+    """
     # Create typed local variables for mutable fields
     skills: list[str] = []
     steps: list[str] = []
@@ -378,7 +404,9 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
             result['origin'] = line[7:].strip()
             i += 1
 
-        elif line.startswith('skills:'):
+        elif line.startswith('skills:') or _SKILLS_BRACKETED_RE.match(line):
+            # Both bare-block (`skills:`) and bracketed (`skills[N]:`) headers
+            # open the same indented list body.
             i += 1
             while i < len(lines) and lines[i].startswith('  - '):
                 skill = lines[i][4:].strip()
@@ -404,9 +432,16 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
                 result['description'] = rest
                 i += 1
 
-        elif line.startswith('steps:'):
+        elif _matches_steps_header(line):
+            # Both bare-block (`steps:`) and bracketed (`steps[N]:`) headers
+            # open the same indented list body. The bracketed length declaration
+            # is intentionally not validated against the actual row count —
+            # the parser normalises by walking the body, matching TOON's
+            # documented "[N] is advisory" semantics.
             i += 1
+            had_body_item = False
             while i < len(lines) and lines[i].startswith('  - '):
+                had_body_item = True
                 raw_step = lines[i][4:].strip()
                 if len(raw_step) >= 2 and raw_step.startswith('"') and raw_step.endswith('"'):
                     raise ValueError(
@@ -418,6 +453,9 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
                 if step_target:
                     steps.append(step_target)
                 i += 1
+            # Empty steps body is allowed at parse time — the required-fields
+            # check below catches it with a more specific error message.
+            del had_body_item
 
         elif line.startswith('depends_on:'):
             value = line[11:].strip()
@@ -428,7 +466,9 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
             i += 1
             while i < len(lines) and lines[i].startswith('  '):
                 stripped = lines[i].strip()
-                if stripped.startswith('commands:'):
+                if stripped.startswith('commands:') or _COMMANDS_BRACKETED_RE.match(stripped):
+                    # Both bare-block (`commands:`) and bracketed (`commands[N]:`)
+                    # forms open the same deeper-indented list body.
                     i += 1
                     while i < len(lines) and lines[i].startswith('    - '):
                         cmd = lines[i][6:].strip()

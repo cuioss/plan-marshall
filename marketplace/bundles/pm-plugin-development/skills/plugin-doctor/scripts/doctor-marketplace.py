@@ -58,6 +58,54 @@ SCRIPT_DIR = Path(__file__).parent
 
 
 # =============================================================================
+# Opt-in rule registry (--rules flag for analyze)
+# =============================================================================
+#
+# Named rules in this registry are gated OFF by default and only run when the
+# caller explicitly opts in via ``--rules <name>[,<name>...]`` on the
+# ``analyze`` subcommand. The two boolean aliases ``--enable-argument-naming``
+# and ``--enable-verb-chain`` desugar into the corresponding ``--rules`` token.
+# Absence of any opt-in keeps the rule silent (no findings, no warnings) —
+# matching the prior env-var-off default and avoiding noise on every run.
+#
+# This replaces the prior env-var gate (removed per lesson
+# ``2026-05-08-19-003``) which violated the ``dev-general-practices`` hard
+# rule against ``VAR=val cmd`` invocations.
+
+_OPTIN_RULE_NAMES = frozenset({'argument_naming', 'verb_chain'})
+
+
+def _parse_rules_flag(rules_value: str | None) -> frozenset[str]:
+    """Parse a ``--rules`` argument into a normalised set of rule names.
+
+    Accepts ``None`` or empty string (returns empty set), a single name, or
+    comma-separated names. Unknown names are silently ignored — the caller's
+    intent ("enable these rules") is honoured even when one of the names is
+    mistyped, but no rule activates without a known token.
+    """
+    if not rules_value:
+        return frozenset()
+    tokens = {tok.strip() for tok in rules_value.split(',') if tok.strip()}
+    return frozenset(tokens & _OPTIN_RULE_NAMES)
+
+
+def _resolve_active_rules(args) -> frozenset[str]:
+    """Resolve the active opt-in rule set from ``--rules`` + alias flags.
+
+    The two aliases ``--enable-argument-naming`` and ``--enable-verb-chain``
+    desugar into ``argument_naming`` / ``verb_chain`` tokens that union with
+    whatever ``--rules`` already names. Order does not matter — the result
+    is a set.
+    """
+    active = set(_parse_rules_flag(getattr(args, 'rules', None)))
+    if getattr(args, 'enable_argument_naming', False):
+        active.add('argument_naming')
+    if getattr(args, 'enable_verb_chain', False):
+        active.add('verb_chain')
+    return frozenset(active)
+
+
+# =============================================================================
 # Fix application (inlined from _doctor_fixes.py)
 # =============================================================================
 
@@ -272,12 +320,14 @@ def cmd_analyze(args) -> dict:
     total_issues += len(argparse_issues)
 
     # Marketplace-wide argument-naming rule cluster (notation/subcommand/
-    # flag/Canonical-Forms cross-check). GATED OFF by default — only runs
-    # when PM_ARGUMENT_NAMING_ENABLED is set to a truthy value. See
-    # _analyze_argument_naming.py for the full gating contract.
-    argument_naming_issues = analyze_argument_naming(marketplace_root)
-    all_issues.extend(argument_naming_issues)
-    total_issues += len(argument_naming_issues)
+    # flag/Canonical-Forms cross-check). Gated OFF by default; opt in via
+    # ``--rules argument_naming`` or the ``--enable-argument-naming`` alias.
+    # Absence of the flag keeps the cluster silent (no findings, no warnings).
+    active_rules = _resolve_active_rules(args)
+    if 'argument_naming' in active_rules:
+        argument_naming_issues = analyze_argument_naming(marketplace_root)
+        all_issues.extend(argument_naming_issues)
+        total_issues += len(argument_naming_issues)
 
     categorized = categorize_all_issues(all_issues)
 
@@ -364,9 +414,11 @@ def cmd_quality_gate(args) -> dict:
                                       enforced by test_plugin_doctor_extension.py
                                       test_contract_validation_real_marketplace)
       - analyze_argument_naming    (notation/subcommand/flag/canonical-forms
-                                    cluster — gated by
-                                    PM_ARGUMENT_NAMING_ENABLED env var; emits
-                                    nothing when gated off)
+                                    cluster — unconditionally active in
+                                    quality-gate per lesson
+                                    ``2026-04-29-23-002``; ``--rules``
+                                    opt-in only applies to the ``analyze``
+                                    subcommand)
     """
     marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
     if not marketplace_root:
@@ -639,6 +691,25 @@ Examples:
     p_analyze.add_argument('--type', help='Component types to analyze (agents,commands,skills)')
     p_analyze.add_argument('--name', help='Comma-separated component names to filter (e.g., phase-4-plan)')
     p_analyze.add_argument('--marketplace-root', dest='marketplace_root', help=marketplace_root_help)
+    p_analyze.add_argument(
+        '--rules',
+        help=(
+            'Comma-separated list of opt-in rule names to activate. Known names: '
+            'argument_naming, verb_chain. Absence keeps these rule clusters off.'
+        ),
+    )
+    p_analyze.add_argument(
+        '--enable-argument-naming',
+        dest='enable_argument_naming',
+        action='store_true',
+        help='Alias for `--rules argument_naming` (activates the argument-naming rule cluster).',
+    )
+    p_analyze.add_argument(
+        '--enable-verb-chain',
+        dest='enable_verb_chain',
+        action='store_true',
+        help='Alias for `--rules verb_chain` (activates the verb-chain rule cluster).',
+    )
     p_analyze.set_defaults(func=cmd_analyze)
 
     # fix subcommand
