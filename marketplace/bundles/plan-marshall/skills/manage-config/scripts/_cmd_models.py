@@ -218,16 +218,29 @@ def cmd_models_apply_preset(args) -> dict:
         if not ok:
             return error_exit(err or 'invalid level')
 
+    # Expand the preset to a fully-qualified roles map: every entry in
+    # KNOWN_ROLES (effective + pending) is written explicitly, with the
+    # preset's per-role override taking precedence over `default`. Writing
+    # the full set makes ``marshal.json`` self-documenting — users editing
+    # the file by hand can see every dispatch site and adjust without
+    # having to consult the role registry.
+    expanded_roles: dict = {role: default_level for role in KNOWN_ROLES}
+    expanded_roles.update(roles)
+
     config = load_config()
     # User-mandated "completely overwritten" semantic: drop any existing
-    # models block entirely and replace with the preset payload.
-    config['models'] = preset
+    # models block entirely and replace with the expanded preset payload.
+    config['models'] = {
+        'default': default_level,
+        'roles': expanded_roles,
+    }
     save_config(config)
 
     return success_exit(
         {
             'preset': args.preset,
             'default': default_level,
-            'roles_count': len(roles),
+            'roles_count': len(expanded_roles),
+            'overrides_count': len(roles),
         }
     )
