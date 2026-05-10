@@ -75,7 +75,14 @@ def _expanded_preset(preset: dict) -> dict:
     default_level = preset['default']
     overrides = preset.get('roles', {})
     expanded_roles = dict.fromkeys(KNOWN_ROLES, default_level)
-    expanded_roles.update(overrides)
+    # Mirror the implementation: only overrides for roles in KNOWN_ROLES
+    # survive the expansion. The implementation filters to enforce the
+    # documented "only known roles survive" contract, so the test helper
+    # must filter identically or the equality assertions would falsely
+    # fail when a preset references a role outside the registry.
+    expanded_roles.update(
+        {k: v for k, v in overrides.items() if k in KNOWN_ROLES}
+    )
     return {'default': default_level, 'roles': expanded_roles}
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)

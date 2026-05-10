@@ -290,14 +290,16 @@ Success payload:
 status: success
 preset: balanced
 default: medium
-roles_count: 19
+roles_count: 20
 overrides_count: 4
 ```
 
 `roles_count` is the number of entries written under `models.roles` — equal
 to `len(KNOWN_ROLES)` once expansion has run. `overrides_count` is the
-number of explicit per-role overrides the preset payload carried in (i.e.
-the count of entries whose level differs from `models.default`).
+number of role entries whose written level differs from `models.default`
+after expansion (i.e. the user-visible definition of "override" — a role
+explicitly listed at the same level as `default` is functionally an
+inherit and is not counted).
 
 Common errors:
 
