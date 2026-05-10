@@ -87,6 +87,14 @@ Challenge whether a proposed fix actually solves the documented symptom before c
 
 For the complete procedure (extraction, probe construction, result handling, worked example), see [proposed-fix-verification.md](standards/proposed-fix-verification.md).
 
+### Step 3d: Baseline Reconciliation
+
+Sync the target branch and surface overlapping diffs as Q-Gate findings before quality analysis runs against an outdated `main`. Activates whenever the plan has a configured base branch (the default flow). When upstream changes have landed on the same surface as the request narrative since `phase-1-init`, those changes feed back into Steps 8-12 — the existing iterate-to-confidence loop is the right place to absorb baseline shifts, because re-authoring at refine-time is cheap relative to re-authoring after outline + plan + tasks have been written.
+
+Skipped silently for main-checkout flow (`metadata.use_worktree=false`) and when no base branch is configured.
+
+For the complete procedure (sync invocation, diff surfacing, finding-emission contract, fast-path semantics, conflict handling), see [refine-workflow-detail.md § Step 3d](standards/refine-workflow-detail.md#step-3d-baseline-reconciliation).
+
 ### Step 4: Load Confidence Threshold
 
 Read `confidence_threshold` from project config (`manage-config plan phase-2-refine get --field confidence_threshold`). Default: `95`.

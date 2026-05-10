@@ -607,7 +607,7 @@ Verify that every deliverable in `solution_outline.md` whose `Affected files` li
 
 **Detection logic**: For each deliverable in `solution_outline.md`:
 
-1. Extract the `**Affected files:**` block. Match each entry against the path heuristic from [`self-modifying-classification.md` § Path Heuristic](../skills/ref-workflow-architecture/standards/self-modifying-classification.md#path-heuristic). The deliverable is **path-matched** when at least one affected file matches.
+1. Extract the `**Affected files:**` block. Match each entry against the path heuristic from [`self-modifying-classification.md` § Path Heuristic](../skills/ref-workflow-architecture/standards/self-modifying-classification.md#path-heuristic) — the centralized standard is the single source of truth for the pattern set; the validator's path-detection regex/glob MUST stay in lockstep with that table. The current heuristic covers the phase skills (`phase-[1-6]-*/`), per-task executor (`execute-task/`), plan/phase state (`manage-status/`), build wrappers (`script-shared/.../_build_cli.py`), notation resolver (`tools-script-executor/`), CI abstraction (`tools-integration-ci/scripts/ci.py`, `ci_base.py`), the multi-target generator (`marketplace/targets/**`), and the plugin-cache sync engine (`marketplace/bundles/plan-marshall/skills/sync-plugin-cache/**`). When `self-modifying-classification.md` adds new pattern entries, the validator picks them up by xref — no regex maintenance is required here. The deliverable is **path-matched** when at least one affected file matches any pattern in the table.
 2. Extract the deliverable's narrative (`**Change per file:**`, `**Success Criteria:**`, surrounding prose). The deliverable is **hard-cutover** when the narrative contains any of: "remove ... entirely", "delete the ...", "drop the ...", "retire the ...", "no escape hatch", "no transition window", "zero-hit grep", "zero hits", "returns zero", or equivalent phrasing applied to a public surface (CLI flag, public API, exported symbol, manage-* subcommand, etc.).
 3. The deliverable triggers the validator when **path-matched AND hard-cutover** both hold (the plan-level `compatibility: breaking` is the activation guard, so it is already true at this point).
 4. For each triggered deliverable, search its narrative for a `**Phasing Rationale:**` block. The block satisfies the contract when it explicitly addresses all three points from [`self-modifying-classification.md` § Phasing-Rationale Contract](../skills/ref-workflow-architecture/standards/self-modifying-classification.md#phasing-rationale-contract): cache-sync ordering, verification-gate target, narrative consistency. Missing block OR a block that omits any of the three points is a violation.
@@ -647,6 +647,59 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 - Companion validator: § 2.15 Worktree-Linter Validator (covers stale worktree-handling patterns; this validator covers the orthogonal phasing concern)
 - Companion procedure: phase-3-outline Step 10b (Self-Modifying Classification) — outline-time author prompt that this validator backstops at q-gate time
 - Driving lesson: `2026-05-08-09-004` (PR #346 silently descoped a "no transition window" requirement because no q-gate validator caught the missing phasing rationale)
+
+#### 2.17 Architecture-Mismatch Validator
+
+Verify that every deliverable in `solution_outline.md` that adds capability to an existing skill carries a `**Design notes:**` block whose declared design model matches the target skill's documented design intent. Without this validator, plans regularly propose script-side check evaluators for LLM-driven aspects (or vice versa), and the mismatch surfaces only at phase-5-execute when the implementation task agent finds itself extending the wrong surface. This validator catches the mismatch at outline time, where the cheap fix is a re-outline pass.
+
+**Activation condition**: Runs in the `3-outline` phase context. Activates for every deliverable whose `**Affected files:**` list contains at least one path under `marketplace/bundles/{bundle}/skills/{skill}/**` for an EXISTING skill (path resolves to a real directory at validation time). Brand-new skill creations (where the target skill directory does not yet exist) skip the check — there is no documented design model to compare against. Deliverables that do not touch existing skills skip the check.
+
+**Detection logic**: For each activated deliverable:
+
+1. Resolve the target skill from the deliverable's affected files. When multiple skills are touched, the deliverable triggers the check separately for each touched skill; a single deliverable may emit multiple findings.
+2. Read the target skill's design model from its SKILL.md / `standards/design-intent.md` / `standards/architecture.md` per the heuristic documented in [`phase-3-outline/standards/outline-workflow-detail.md` § Step 9c](../skills/phase-3-outline/standards/outline-workflow-detail.md#step-9c-read-target-skill-design-intent). Classify as `script-deterministic`, `LLM-driven`, or `hybrid`.
+3. Extract the deliverable's `**Design notes:**` block. The block satisfies the contract when ALL of the following hold:
+   - The block exists.
+   - The block names a specific design model (`script-deterministic`, `LLM-driven`, or `hybrid`).
+   - The named model **matches** the target skill's classification from step 2 (allowing the `Diverges from` form documented in Step 9c when the deliverable explicitly declares a divergence and includes the "documented going forward" half).
+   - The block carries a one-sentence rationale that names a specific element of the design model (generic phrases like "matches the existing model" or "fits the architecture" fail this check — the rationale has to identify the specific extension point).
+4. Missing block, mismatched model, generic rationale, OR a `Diverges from` form without the "documented going forward" half is a violation.
+
+**Recurrence signal**: the most common shape of this failure — and the one that motivated this validator — is a deliverable that proposes script-side check evaluators for an LLM-driven aspect, OR proposes LLM-driven narrative steps that re-do work the target script already does. Both shapes contradict the target skill's design model and would be caught by Step 9c if the outline followed the procedure, but historically they survive into phase-5-execute because Step 9c was not previously enforced.
+
+**Finding emission template**:
+
+For each triggered deliverable that fails the contract:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate add --plan-id {plan_id} --phase 3-outline \
+  --source qgate-architecture-mismatch --type triage \
+  --severity blocking \
+  --title "Q-Gate: architecture-mismatch — deliverable {N} ({title}) {missing|mismatched|generic} Design notes" \
+  --detail "Deliverable {N} touches existing skill `{bundle}:{skill}` whose documented design model is {target_model}. {Specific defect — one of: 'Design notes block is absent', 'Design notes declares {declared_model} but target is {target_model}', 'Design notes rationale is generic — no specific extension point named', 'Design notes declares Diverges from but omits the documented-going-forward half'.} Follow the procedure in phase-3-outline/standards/outline-workflow-detail.md § Step 9c — read the target skill's SKILL.md / standards/design-intent.md, classify the design model, and record a Design notes block that either extends the existing model with a specific rationale OR documents the divergence with the matching skill-design-intent update task." \
+  --audit-plan-id {plan_id}
+```
+
+`{target_model}` is the classification computed in step 2. `{declared_model}` is the value parsed from the deliverable's `**Design notes:**` block (empty when the block is missing). `severity: blocking` so phase-3-outline auto-loops to address the finding before phase transition.
+
+**Pass criteria** (silent — no finding emitted):
+- The deliverable does not touch an existing skill (no path under `marketplace/bundles/{bundle}/skills/{skill}/**` with a real directory at validation time), OR
+- The deliverable's `**Design notes:**` block satisfies all four contract points above.
+
+**Fail criteria**: At least one triggered deliverable has a missing, mismatched, or generic `**Design notes:**` block — emit one finding per (deliverable, target-skill) pair.
+
+**Positive example (LLM-driven mismatch)**: A plan touches `marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md` (LLM-driven) and proposes a new Python script under `scripts/check_outline.py` that walks SKILL.md for a regex match. The deliverable's `**Design notes:**` block reads "Extends the existing script-deterministic design model of plan-marshall:phase-3-outline". Validator emits a finding: declared model `script-deterministic` does not match target model `LLM-driven`; the proposed check belongs in `q-gate-validation-agent.md` (LLM-driven) as a new validator subsection.
+
+**Positive example (generic rationale)**: A plan touches `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py` (script-deterministic) and adds a new subcommand. The `**Design notes:**` block reads "Extends the existing script-deterministic design model of plan-marshall:manage-execution-manifest — matches the existing model". Validator emits a finding: rationale is generic; the block has to name a specific extension point (e.g., "adds a new `validate-loadable` CLI subcommand alongside the existing `compose` / `read` / `validate` subcommands").
+
+**Negative example (clean extension)**: A plan adds a new validator subsection to `q-gate-validation-agent.md` (LLM-driven). The `**Design notes:**` block reads "Extends the existing LLM-driven design model of plan-marshall:q-gate-validation-agent — adds a new validator subsection §N.NN with detection logic, finding emission template, and pass/fail criteria following the existing §2.x pattern". Validator passes silently.
+
+**Cross-references**:
+- Authoritative source: [`phase-3-outline/standards/outline-workflow-detail.md` § Step 9c](../skills/phase-3-outline/standards/outline-workflow-detail.md#step-9c-read-target-skill-design-intent) (the procedure this validator enforces)
+- Companion validator: § 2.10 Argparse Validator (script-shape compliance) and § 2.16 Self-Modifying Phased-Rollout Validator (orthogonal — phasing rationale for breaking plans)
+- Companion rule: phase-4-plan SKILL.md § "Integration Deliverable Narrative Constraint" (xref-vs-inline) — operates on a different axis but compose with this validator when a single deliverable both integrates a central standard AND adds capability to an existing skill
+- Driving lessons: outline-discipline aggregate `2026-05-04-20-002` (recurring mismatch between proposed implementation strategy and target skill's documented design model)
 
 ---
 

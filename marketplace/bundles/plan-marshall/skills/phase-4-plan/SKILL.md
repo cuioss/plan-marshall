@@ -69,6 +69,51 @@ When a task step target lives under a skill test directory (any path matching `t
 
 If a deliverable's `Affected files` list names a disallowed `conftest.py`, phase-4-plan MUST rewrite the target to `_fixtures.py` (preserving the parent directory) before persisting the step. Cross-reference: phase-3-outline owns the outline-time rule and rationale in [outline-workflow-detail.md §10d "Test Helper File Naming"](../phase-3-outline/standards/outline-workflow-detail.md#10d-test-helper-file-naming); this subsection enforces the same constraint at task-creation time so that any late-surviving `conftest.py` target is corrected before tasks reach phase-5-execute.
 
+### Basename Collision Pre-check
+
+When a planned task creates a NEW `test_*.py` file (an affected file with a `test_` basename prefix and a `.py` extension that does not yet exist on disk), the planning agent MUST verify that the chosen basename does not collide with any other `test_*.py` already in the repository — regardless of which directory the new file lives in. This rule applies most aggressively to **shared collection roots** (any `test/` subtree without `__init__.py` package markers); the canonical example is `test/plan-marshall/`, where every subdirectory contributes to the same pytest collection namespace.
+
+**Pre-check command** (run BEFORE persisting the task step that creates the new file):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  find --pattern "test_{candidate_basename}.py"
+```
+
+Substitute `{candidate_basename}` with the basename minus the `test_` prefix and `.py` suffix (e.g., for `test_findings_store.py`, `{candidate_basename}` is `findings_store`).
+
+**Glob fallback** — when the architecture verb returns elision (`status: elided`) or no result, fall back to the structured-Glob query:
+
+```
+Glob: test/**/test_{candidate_basename}.py
+```
+
+The Glob fallback covers the case where the new test file lives in a recipe / extension directory that the architecture inventory has not yet enriched. Both forms enumerate the existing collisions; an empty result means the basename is free.
+
+**Collision response** — when at least one collision is detected, the planning agent MUST disambiguate by prefixing the basename with a **module-disambiguating prefix** derived from the module under test, NOT by appending a numeric suffix:
+
+| Module under test | Existing collision | Disambiguated basename |
+|-------------------|--------------------|------------------------|
+| `manage-findings` | `test/.../test_findings_store.py` | `test_findings_findings_store.py` (or `test_findings_store_manage.py` — match the existing naming style of the target directory) |
+| `build-python` (findings module) | `test/.../test_findings_store.py` | `test_build_findings_store.py` |
+| `recipe-lesson-cleanup` (parser) | `test/.../test_parser.py` | `test_lesson_cleanup_parser.py` |
+
+The disambiguation prefix MUST be a substring of the module path (kebab-case stem, joined by `_`) so the basename remains greppable from the module name. Numeric suffixes (`test_findings_store_2.py`) and copy-cat ordinals are forbidden — they preserve the collision risk for the next addition and lose the module-under-test signal entirely.
+
+**Decision logging** — every disambiguation MUST be recorded in `decision.log` with the chosen basename, the colliding pre-existing test file, and the rationale:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-4-plan) Basename-collision pre-check: requested test_{candidate_basename}.py collides with {existing_path} — disambiguated to test_{disambiguated_basename}.py (module-disambiguating prefix derived from {module_under_test})"
+```
+
+**Failure mode rationale** — pytest's default `--import-mode=prepend` collection mode adds each test file's parent directory to `sys.path` and then imports the module by its **basename** (the `test_` prefix plus the stem). Two `test_X.py` files in different subdirectories of a shared collection root (no `__init__.py` package markers between them) resolve to the same module name `test_X`. pytest imports the first match, silently discards the second, and emits no warning. The regression is that the second file's test cases never execute — `pytest -v` lists only the first file's tests, the CI tab shows green, and the missing coverage is invisible until a human notices the test count is wrong. The pre-check converts this silent failure into a planning-time decision the agent has to make explicitly.
+
+**Counter-indication (when no pre-check is needed)** — the new `test_*.py` lives under a directory that contains an `__init__.py` (or has one in every ancestor up to the pytest rootdir), which makes the file a proper package module rather than a basename-keyed top-level module. In that case the basename collision is harmless because the import path includes the package prefix. The pre-check verb returns the collision, the planner records it in `decision.log` with the `__init__.py` evidence, and the original basename is kept.
+
+**Cross-reference**: [outline-workflow-detail.md §10d](../phase-3-outline/standards/outline-workflow-detail.md#10d-test-helper-file-naming) — the outline-phase counterpart owns the rule rationale; this subsection enforces the basename check at task-creation time.
+
 ## Input
 
 | Parameter | Type | Required | Description |
@@ -719,6 +764,68 @@ execution_order:
 lessons_recorded: {count}
 qgate_pending_count: {0 if no findings}
 ```
+
+## Integration Deliverable Narrative Constraint
+
+**Applies when**: the plan has a **"central + integrations"** shape — one deliverable creates a central standard, regex, decision table, keyword list, or path heuristic (the *central* deliverable), and one or more downstream deliverables integrate / consume that central artifact (the *integration* deliverables).
+
+**Rule**: each integration deliverable's task description and `success_criteria` MUST require **xref** to the central standard for any **enforcement-critical** content. The xref form is `see {central-standard-path} §{section}` (or `see {central-standard-path}#{anchor}` when the source supports markdown anchors). The list of enforcement-critical content categories is fixed:
+
+- Path heuristics
+- Keyword lists
+- Decision tables
+- Regex / glob patterns
+- Threshold values that gate behavior
+
+A 1-2-sentence inline summary is permitted for skim-readability — but the **normative rule body** (the text the q-gate validator, plugin-doctor, or runtime dispatcher actually consumes) MUST live in the central standard only. Integration deliverables that copy-paste the rule body have *every* drift surface that the central standard had, multiplied by the number of integrations: every subsequent edit to the rule has to find and update every copy, and the first missed copy silently regresses one of the integration points.
+
+**Injection point**: when `phase-4-plan` materialises the per-task description for an integration deliverable, prepend the constraint to the task narrative so the task agent receives it in-context. Detection heuristic for "this is an integration deliverable":
+
+1. The deliverable's `depends_on` list names at least one prior deliverable AND
+2. The prior deliverable's affected_files include a `**.md` standards file (typically under `standards/`) AND
+3. The current deliverable's affected_files reference the *same skill* but a *different* file (typically `SKILL.md` or a validator agent's prompt).
+
+When all three conditions hold, the task narrative MUST carry a sentence of the form: *"Reference the central standard via `see {central-standard-path} §{section}` — do not inline-copy the path heuristic / keyword list / decision table / regex; enforcement-critical content lives in the central standard only."*
+
+**Failure-mode rationale**: this constraint was hardened in response to two recurring drift patterns:
+
+1. **PR #348 path-heuristic copy-paste** — `phase-3-outline/standards/outline-workflow-detail.md` Step 10b inlined the self-modifying-plan path list instead of xref-ing `ref-workflow-architecture/standards/self-modifying-classification.md` § Path Heuristic. A subsequent extension of the path heuristic landed only in the central standard; the integration site silently kept the old list and missed two new path classes (`marketplace/targets/**`, `.../skills/sync-plugin-cache/**`).
+2. **q-gate-validator §2.16 keyword-list drift** — the validator's hard-cutover keyword list was duplicated in `q-gate-validation-agent.md` §2.16. An extension of the keyword list landed only in the central standard; the validator agent continued matching the stale list until a manual audit caught the divergence.
+
+Both failures share the same shape: a copy-pasted *enforcement-critical* rule body that drifted because the integration site was not declared as a downstream consumer of the central standard. The constraint converts that latent contract ("everyone keep your copy in sync") into an explicit one ("xref the central standard; never inline-copy"). The q-gate validator §2.16 architecture-mismatch finding (added in deliverable 9 of this plan) reinforces the same boundary at the outline phase, so the constraint is enforced at both planning time and validation time.
+
+**Counter-indication (when inline copy is allowed)**: the integration deliverable extends a *closed-form, version-pinned reference value* that the central standard explicitly designates as a stable embedding target (e.g., a SemVer constant, a fixed enum). Inline embedding of such values is acceptable because they are not enforcement-critical rule bodies — drift is detected by the central standard's release/version contract, not by xref reachability.
+
+## Path / Constant Migration Sub-pattern
+
+**Applies when**: the planner detects a **cross-cutting rename** — a path constant, string literal, command name, log-level token, JSON key, or skill cross-reference appears > N times across the marketplace AND the deliverable list contains at least one `*.py` task targeting the rename AND **zero** `*.md` tasks for the same constant. The `*.py`-only signal is the activation key: a planner that would otherwise schedule only code-sweep tasks for a wide-scoped rename is the failure mode this sub-pattern fires against.
+
+**Activation heuristic** (all four conditions MUST hold):
+
+1. **Occurrence count** — the constant appears in > 10 locations across the marketplace (measure via `architecture find --pattern {constant}` or `Grep` fallback). The threshold is conservative; lower counts collapse into a single sweep task safely.
+2. **Code presence** — at least one `*.py` file is affected.
+3. **Test presence** — at least one `test_*.py` file references the constant (separate from the code under test).
+4. **Prose absence** — zero `*.md` files appear in the deliverable's `Affected files`, AND `architecture find --pattern {constant}` reports at least one `*.md` hit (i.e., prose copies exist but the planner missed them).
+
+When all four conditions hold, **auto-decompose** the deliverable into the canonical five-task sequence below. The sub-pattern is generic: it applies equally to log-level vocabulary changes, command-name renames, SKILL.md cross-references after a skill split, JSON-key renames in example payloads, and standards file relocations.
+
+**Canonical five-task sequence**:
+
+| Order | Task | Profile | Affected files | Responsibility |
+|-------|------|---------|----------------|----------------|
+| TASK-N | **Code sweep** | `implementation` | `*.py` (production source) | Update every code reference to the new constant; preserve the old constant only behind compatibility shims if the change is non-breaking. |
+| TASK-N+1 | **Test sweep** | `module_testing` | `test/**/test_*.py` (test source) | Update every test reference. Test changes follow code changes so the production sweep is testable independently. |
+| TASK-N+2 | **Prose sweep** | `implementation` | `SKILL.md`, `standards/**/*.md`, `README.md`, any `agents/*.md` referencing the constant | Update every documentation reference. MUST be its own task — appending prose updates to the code sweep dilutes the diff and hides the prose surface from the planner's task accounting. |
+| TASK-N+3 | **Example sweep** | `implementation` | Fenced code blocks in `*.md` files, JSON / TOON fixtures, golden-output files | Distinguish *synthetic-but-old-path-format* examples (the rename applies; update verbatim) from *synthetic-and-format-neutral* examples (the rename does NOT apply; leave untouched and add a note explaining why). The distinction is load-bearing because format-neutral examples often look like targets and would be incorrectly rewritten by a naive grep-replace. |
+| TASK-N+4 | **Holistic verification** | `verification` | `build_verify`, `module-tests`, plus a **final grep gate** | After every prior task has executed, run a final `Grep` (or `architecture find`) for the old constant across the marketplace; the expected count is zero (modulo the synthetic-and-format-neutral exemptions captured in TASK-N+3). Non-zero counts fail the verification task and trigger the Step 11 triage loop. |
+
+**Why prose-sweep is its own task** — the most common failure mode for cross-cutting renames is silently leaving prose behind: SKILL.md narrative paragraphs, standards/*.md decision tables, and README cross-references continue to reference the old constant after the code and tests are clean. Plugin-doctor and the test suite do not catch prose-level drift; the next reader (human or LLM) silently absorbs the stale documentation as if it were current. Making prose-sweep a separate task forces the planner to **enumerate** the prose surface (via `Grep --files-with-matches` over `*.md`) before the work begins, and the task agent has explicit affected files to sweep through, not a vague "and also update the docs" footer on the verify task.
+
+**Why example-sweep precedes verification** — the same logic applies to example outputs: stale fenced TOON / JSON examples in `SKILL.md` and standards documents survive code+test+prose sweeps because they look like data, not code. The distinction between *synthetic-but-old-path-format* (update) and *synthetic-and-format-neutral* (leave) cannot be made by a generic grep-replace; it requires the task agent to read each fenced block and decide. Scheduling example-sweep before the final grep gate gives the agent a chance to surface and resolve every ambiguous case before the gate fires.
+
+**Counter-indication (no split)**: the rename is **module-local** — all `<= 3` affected files live under a single skill directory AND no prose or example references exist outside that skill. In that case the deliverable collapses to a single `implementation` task that touches code + test + prose + examples in one diff, and the holistic verification rides on the standard Phase 5 verification steps. The split exists for cross-cutting work; over-applying it to surgical renames inflates the task count without improving correctness.
+
+**Cross-reference**: this sub-pattern complements the **Integration Deliverable Narrative Constraint** above. The integration constraint prevents *new* enforcement-critical content from being inlined; the migration sub-pattern catches *existing* inlined content during renames so the drift surface is collapsed back to the central source.
 
 ## Skill Resolution Guidelines
 
