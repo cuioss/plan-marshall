@@ -1006,8 +1006,11 @@ _PHASE_6_STANDARDS_DIR = (
 )
 
 # Repository-root anchor used to render the standards path as a project-relative
-# string in the script output. Resolves to the marketplace repo root.
-_REPO_ROOT = Path(__file__).resolve().parents[5]
+# string in the script output. The script lives at
+# marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/
+# manage-execution-manifest.py — parents[6] resolves to the repo root so rendered
+# paths start with `marketplace/bundles/…` and match the documented contract.
+_REPO_ROOT = Path(__file__).resolve().parents[6]
 
 
 def _is_external_step(step_id: str) -> bool:
@@ -1038,7 +1041,7 @@ def _render_standards_rel_path(absolute: Path) -> str:
     Falls back to the absolute string when ``absolute`` is outside the repo.
     """
     try:
-        return absolute.resolve().relative_to(_REPO_ROOT).as_posix()
+        return absolute.relative_to(_REPO_ROOT).as_posix()
     except ValueError:
         return str(absolute)
 
@@ -1141,7 +1144,25 @@ def cmd_validate_loadable(args: argparse.Namespace) -> dict[str, Any] | None:
             'message': 'phase_6.steps must be a list',
         }
 
-    results = [_check_step_loadable(s) for s in steps if isinstance(s, str)]
+    results: list[dict[str, Any]] = []
+    for entry in steps:
+        if isinstance(entry, str):
+            results.append(_check_step_loadable(entry))
+            continue
+        # Non-string manifest entries are corruption — surface them as
+        # unloadable so the caller sees them in `results[]` and the
+        # `unloadable_count` totals the defect, instead of silently
+        # dropping the entry from validation.
+        offending_type = type(entry).__name__
+        results.append({
+            'step_id': str(entry),
+            'standards_path': '',
+            'loadable': False,
+            'message': (
+                f'manifest step entry has non-string type `{offending_type}` '
+                f'(value: {entry!r}) — manifest is corrupt; only str step IDs are valid'
+            ),
+        })
     unloadable_count = sum(1 for r in results if not r['loadable'])
     return {
         'status': 'success',

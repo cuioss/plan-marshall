@@ -783,7 +783,7 @@ A 1-2-sentence inline summary is permitted for skim-readability — but the **no
 
 1. The deliverable's `depends_on` list names at least one prior deliverable AND
 2. The prior deliverable's affected_files include a `**.md` standards file (typically under `standards/`) AND
-3. The current deliverable's affected_files reference the *same skill* but a *different* file (typically `SKILL.md` or a validator agent's prompt).
+3. The current deliverable's affected_files include at least one file (typically `SKILL.md`, a validator agent's prompt, or any prose body) that integrates the central standard — the file MAY live in the same skill, a different skill, or a different bundle. The integration point is a consumer of the central standard's rule body, regardless of co-location with the standard.
 
 When all three conditions hold, the task narrative MUST carry a sentence of the form: *"Reference the central standard via `see {central-standard-path} §{section}` — do not inline-copy the path heuristic / keyword list / decision table / regex; enforcement-critical content lives in the central standard only."*
 
