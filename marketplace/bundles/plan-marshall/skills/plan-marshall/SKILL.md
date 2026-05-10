@@ -43,7 +43,7 @@ This skill implements its **OWN** plan system. You must:
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `action` | optional | Explicit action: `list`, `init`, `outline`, `execute`, `finalize`, `cleanup`, `lessons`, `recipe` (default: list) |
+| `action` | optional | Explicit action: `list`, `init`, `outline`, `execute`, `finalize`, `cleanup`, `lessons`, `lessons-aggregate`, `recipe` (default: list) |
 | `task` | optional | Task description for creating new plan |
 | `issue` | optional | GitHub issue URL for creating new plan |
 | `lesson` | optional | Lesson ID to convert to plan |
@@ -74,6 +74,7 @@ Route based on action parameter. Load the appropriate workflow document and foll
 | `outline` | `Read workflows/planning.md` | Run outline and plan phases |
 | `cleanup` | `Read workflows/planning.md` | Remove completed plans |
 | `lessons` | `Read workflows/planning.md` | List and convert lessons |
+| `lessons-aggregate` | `Read workflows/planning.md` | Aggressive cross-lesson aggregation + superseded-stub prune in a single command |
 | `execute` | `Read workflows/execution.md` | Execute implementation tasks + verification |
 | `finalize` | `Read workflows/execution.md` | Commit, push, PR |
 | `recipe` | `Read workflows/recipe.md` | Create plan from predefined recipe |
@@ -136,6 +137,9 @@ After determining the action and workflow document:
 
 # List lessons and convert to plan
 /plan-marshall action=lessons
+
+# Aggressive cross-lesson aggregation + superseded-stub prune in one batch
+/plan-marshall action=lessons-aggregate
 
 # Create plan from predefined recipe (lists available recipes for selection)
 /plan-marshall action=recipe
