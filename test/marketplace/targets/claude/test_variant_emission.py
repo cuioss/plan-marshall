@@ -50,16 +50,25 @@ def _write(path: Path, content: str) -> Path:
 
 @pytest.fixture()
 def mapping_path(tmp_path: Path) -> Path:
-    """Fixture mapping.json with opus → claude-opus-4-7 (xhigh-capable)."""
+    """Fixture mapping.json with opus xhigh-capable; sonnet/haiku not."""
     path = tmp_path / 'mapping.json'
     path.write_text(
         json.dumps(
             {
                 'tool_permissions': {},
                 'model_map': {
-                    'opus': 'claude-opus-4-7',
-                    'sonnet': 'claude-sonnet-4-6',
-                    'haiku': 'claude-haiku-4-5',
+                    'opus': {
+                        'id': 'claude-opus-4-7',
+                        'supports_effort': ['medium', 'high', 'xhigh'],
+                    },
+                    'sonnet': {
+                        'id': 'claude-sonnet-4-6',
+                        'supports_effort': ['medium', 'high'],
+                    },
+                    'haiku': {
+                        'id': 'claude-haiku-4-5',
+                        'supports_effort': [],
+                    },
                 },
             }
         ),
@@ -216,11 +225,20 @@ def test_emit_variants_canonical_strips_role_fields(tmp_path: Path, mapping_path
     assert 'tools: Read' in canonical_text  # other fields preserved
 
 
-def test_emit_variants_skips_xxhigh_when_alias_unsupported(tmp_path: Path):
-    """When mapping.json doesn't whitelist opus, xxhigh is suppressed."""
-    mapping = tmp_path / 'mapping_no_opus.json'
+def test_emit_variants_skips_xxhigh_when_opus_lacks_xhigh(tmp_path: Path):
+    """Opus alias with supports_effort missing `xhigh`: xxhigh is suppressed."""
+    mapping = tmp_path / 'mapping_opus_no_xhigh.json'
     mapping.write_text(
-        json.dumps({'tool_permissions': {}, 'model_map': {'sonnet': 'x', 'haiku': 'y'}}),
+        json.dumps(
+            {
+                'tool_permissions': {},
+                'model_map': {
+                    'opus': {'id': 'claude-opus-old', 'supports_effort': ['medium', 'high']},
+                    'sonnet': {'id': 'sonnet-x', 'supports_effort': ['medium', 'high']},
+                    'haiku': {'id': 'haiku-y', 'supports_effort': []},
+                },
+            }
+        ),
         encoding='utf-8',
     )
     src = _write(
@@ -232,7 +250,23 @@ def test_emit_variants_skips_xxhigh_when_alias_unsupported(tmp_path: Path):
     assert result is not None
     assert (dest.parent / 'poc-high.md').exists()
     assert not (dest.parent / 'poc-xxhigh.md').exists()
-    assert any(level == 'xxhigh' for level, _reason in result.variants_skipped)
+    skipped_xxhigh = [(lvl, reason) for lvl, reason in result.variants_skipped if lvl == 'xxhigh']
+    assert skipped_xxhigh, 'xxhigh should be in variants_skipped'
+    assert 'xhigh' in skipped_xxhigh[0][1].lower()
+
+
+def test_emit_variants_emits_xxhigh_when_opus_supports_xhigh(tmp_path: Path, mapping_path: Path):
+    """Default fixture: opus supports xhigh, xxhigh variant is emitted."""
+    src = _write(
+        tmp_path / 'src' / 'poc.md',
+        f'---\nname: poc\nimplements: {EXTENSION_POINT}\nlevels: [xxhigh]\n---\nbody\n',
+    )
+    dest = tmp_path / 'out' / 'poc.md'
+    result = emit_variants_for_agent(src, dest, mapping_path)
+    assert result is not None
+    assert (dest.parent / 'poc-xxhigh.md').exists()
+    assert 'xxhigh' in result.variants_emitted
+    assert all(lvl != 'xxhigh' for lvl, _reason in result.variants_skipped)
 
 
 def test_emit_variants_canonical_with_model_raises(tmp_path: Path, mapping_path: Path):

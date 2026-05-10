@@ -32,14 +32,6 @@ LEVEL_TABLE: dict[str, dict[str, str | None]] = {
     'xxhigh': {'model': 'opus', 'effort': 'xhigh'},
 }
 
-# Aliases whose resolved IDs accept the ``xhigh`` effort field.
-# Pinned IDs live in opencode/mapping.json::model_map; the build-time
-# guard whitelists the alias names that resolve to xhigh-capable IDs.
-# Updating the mapping.json model targets is the single edit needed
-# when a new model release changes capability.
-XHIGH_CAPABLE_ALIASES: set[str] = {'opus'}
-
-
 @dataclass(frozen=True)
 class Frontmatter:
     """Parsed YAML frontmatter for an agent file.
@@ -274,24 +266,26 @@ def _assemble(frontmatter_lines: list[str], body: str) -> str:
 def supports_xhigh_effort(model_alias: str, mapping_path: Path) -> bool:
     """Read ``mapping.json::model_map`` and decide whether the alias accepts ``xhigh``.
 
-    The current rule: only the ``opus`` alias resolves to an ID that
-    accepts ``effort: xhigh``. If the mapping file is missing or
-    malformed, fall back to the conservative whitelist
-    (``XHIGH_CAPABLE_ALIASES``).
+    Inspects ``mapping.json::model_map[model_alias].supports_effort`` and
+    returns ``True`` iff the array contains ``'xhigh'``. When the mapping
+    file is missing, malformed, or the alias is absent / lacks the
+    ``supports_effort`` shape, returns ``False`` — the conservative
+    refuse-emit so we never silently emit unsupported variants.
     """
-    if model_alias not in XHIGH_CAPABLE_ALIASES:
-        return False
     if not mapping_path.exists():
-        return True
+        return False
     try:
         mapping = json.loads(mapping_path.read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError):
-        return True
+        return False
     model_map = mapping.get('model_map', {})
-    # Confirm the alias resolves to an ID in the mapping; future model
-    # rotation may flip the support flag, in which case this guard
-    # ensures we still emit only when the alias is mapped at all.
-    return model_alias in model_map
+    entry = model_map.get(model_alias)
+    if not isinstance(entry, dict):
+        return False
+    supports_effort = entry.get('supports_effort', [])
+    if not isinstance(supports_effort, list):
+        return False
+    return 'xhigh' in supports_effort
 
 
 @dataclass

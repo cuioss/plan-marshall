@@ -461,11 +461,11 @@ The fix in every case is the documented one: regenerate via the Claude target an
 
 ### Deploy-Step Integration
 
-The `default:deploy-target` finalize step (cluster-02 step body in `.claude/skills/finalize-step-deploy-target/`) invokes the Claude target via `python3 marketplace/targets/generate.py --target claude --output target/claude`. Variant emission is a transparent extension of the verbatim mirror: contributors who add `implements:` to a canonical or change a `levels:` whitelist see the new variant files in `target/claude/{bundle}/agents/` after the next deploy-step run, with no additional configuration required.
+The `project:finalize-step-deploy-target` finalize step (cluster-02 step body in `.claude/skills/finalize-step-deploy-target/`) invokes the Claude target via `python3 marketplace/targets/generate.py --target claude --output target/claude`. Variant emission is a transparent extension of the verbatim mirror: contributors who add `implements:` to a canonical or change a `levels:` whitelist see the new variant files in `target/claude/{bundle}/agents/` after the next deploy-step run, with no additional configuration required.
 
 ### Sync-Skill Integration
 
-The `default:sync-plugin-cache` finalize step (cluster-02 step body in `.claude/skills/finalize-step-sync-plugin-cache/`) syncs `target/claude/` into `~/.claude/plugins/cache/plan-marshall/` via rsync with `--delete`. The deploy step runs unconditionally before sync — `target/claude/` is regenerated with the new variants and the canonical no-suffix file BEFORE sync rebuilds the plugin cache. Live Claude Code sessions need a restart to pick up the new agent files (per code.claude.com — agents loaded at session start); the wizard prints this hint after every Models-block save and `role-variants.md` documents it.
+The `project:finalize-step-sync-plugin-cache` finalize step (cluster-02 step body in `.claude/skills/finalize-step-sync-plugin-cache/`) syncs `target/claude/` into `~/.claude/plugins/cache/plan-marshall/` via rsync with `--delete`. The deploy step runs unconditionally before sync — `target/claude/` is regenerated with the new variants and the canonical no-suffix file BEFORE sync rebuilds the plugin cache. Live Claude Code sessions need a restart to pick up the new agent files (per code.claude.com — agents loaded at session start); the wizard prints this hint after every Models-block save and `role-variants.md` documents it.
 
 ### Authoring a New Role-Eligible Agent
 
