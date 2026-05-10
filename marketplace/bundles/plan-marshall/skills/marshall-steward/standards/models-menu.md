@@ -4,7 +4,9 @@
 
 ## Overview
 
-The Models submenu lets users configure per-role model variant routing without hand-editing JSON. It walks the role registry from [`plan-marshall:plan-marshall/standards/model-roles.md`](../../plan-marshall/standards/model-roles.md), validates every level value against the enum from [`plan-marshall:plan-marshall/standards/model-levels.md`](../../plan-marshall/standards/model-levels.md), and prints the **restart hint** after any successful save (Claude Code loads agent files at session start, so new variant routing applies only after restart).
+The Models submenu is a single preset-picker. The user chooses one of three named presets — `economic`, `balanced`, `high-end` — and the wizard delegates to `manage-config models apply-preset`, which **completely overwrites** the `models` block with the preset payload. Per-role values come from the `ModelPresets` constant-class in [`plan-marshall/scripts/model_presets.py`](../../plan-marshall/scripts/model_presets.py); validation against the level enum from [`plan-marshall:plan-marshall/standards/model-levels.md`](../../plan-marshall/standards/model-levels.md) is enforced at constant-class construction (an import-time `_validate_preset` self-check) and re-validated defense-in-depth at write time inside `manage-config`. The wizard prints the **restart hint** after any successful save (Claude Code loads agent files at session start, so new variant routing applies only after restart).
+
+> For per-role fine-tuning beyond the three presets, edit `.plan/marshal.json` directly. The wizard intentionally does not expose per-role editing — the preset-then-manual-edit split keeps the wizard small and the tweak point obvious.
 
 This document is the contract. The wizard implementation in `SKILL.md` (Main Menu Option 4) loads this file when the user picks "Models".
 
@@ -22,123 +24,66 @@ Then execute the workflow described below.
 
 ### Step 1: Show Current State
 
-Read the current `models` block via `manage-config`:
+Read the current `models` block from `.plan/marshal.json` and identify which preset (if any) it matches by deep-equality against `ModelPresets.ECONOMIC`, `ModelPresets.BALANCED`, and `ModelPresets.HIGH_END`. Display one of:
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models read --role <any_role_used_for_status>
-```
+- `Current: economic preset` — when the on-disk block is exactly equal to `ModelPresets.ECONOMIC`.
+- `Current: balanced preset` — when the on-disk block is exactly equal to `ModelPresets.BALANCED`.
+- `Current: high-end preset` — when the on-disk block is exactly equal to `ModelPresets.HIGH_END`.
+- `Current: custom (manually edited)` — when a `models` block exists but does not match any preset.
+- `Current: not configured — defaults apply` — when the `models` block is absent or empty.
 
-Display one of:
+The display walks `ModelPresets.all_names()` to produce the deep-equality comparison set, so any future preset added to `model_presets.py` is automatically picked up here without further wizard changes.
 
-- `(not configured — defaults apply)` — when `models` block is absent or empty.
-- The current `default` (or `(unset)`) plus a table of `roles.<role> = <level>` entries grouped by **effective** vs **pending** status.
+### Step 2: Preset Selection
 
-The display walks the registry from `model-roles.md` so pending and unset roles are surfaced (not hidden) — users see what could be configured, not just what is.
-
-### Step 2: Sub-menu Choice
+Single `AskUserQuestion` with four options. Each preset's description is sourced verbatim from `ModelPresets.describe(name)` so the wizard never duplicates the preset's per-role rationale.
 
 ```
 AskUserQuestion:
-  question: "Models submenu — what would you like to do?"
+  question: "Models submenu — pick a preset"
   header: "Models"
   options:
-    - label: "1. Edit default level"
-      description: "Set the plan-wide default level (used when a role is unset)"
-    - label: "2. Edit per-role levels"
-      description: "Walk the role registry and set per-role overrides"
-    - label: "3. Clear all"
-      description: "Remove the models block entirely (revert to inherit-everywhere)"
-    - label: "4. Back to Main Menu"
+    - label: "Apply economic preset"
+      description: <ModelPresets.describe("economic")>
+    - label: "Apply balanced preset"
+      description: <ModelPresets.describe("balanced")>
+    - label: "Apply high-end preset"
+      description: <ModelPresets.describe("high-end")>
+    - label: "Back to Main Menu"
       description: "Return without changes"
   multiSelect: false
 ```
 
-### Step 3a: Edit Default Level
+### Step 3: Persist
 
-When user picks "1. Edit default level":
+When the user picks any of the three preset options, call:
 
-```
-AskUserQuestion:
-  question: "Pick a default level (applies to every role unless overridden)"
-  header: "models.default"
-  options:
-    - label: "low"
-      description: "Haiku — mechanical tasks, log scrubbing"
-    - label: "medium"
-      description: "Sonnet medium — routine code edits, doc updates"
-    - label: "high"
-      description: "Sonnet high — analytical work, multi-file reasoning"
-    - label: "xhigh"
-      description: "Opus high — heavy reasoning, complex refactors"
-    - label: "xxhigh"
-      description: "Opus xhigh — top tier (Opus-4.7-only)"
-    - label: "inherit"
-      description: "Sentinel — dispatch canonical, runtime inherits parent model"
-    - label: "(unset)"
-      description: "Remove models.default entirely"
-  multiSelect: false
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models apply-preset --preset <name>
 ```
 
-Persist the choice via `manage-config` (the wizard manipulates `marshal.json` through the script, never directly).
+with `<name>` set to the canonical preset name (`economic`, `balanced`, or `high-end`). The script completely overwrites the `models` block — any keys present in the previous block but absent from the preset are gone after the write.
 
-### Step 3b: Edit Per-Role Levels
+After a successful save:
 
-When user picks "2. Edit per-role levels":
-
-Walk the **effective** rows from `model-roles.md` first, then the **pending** rows. For each role, present the same level palette as Step 3a plus an `(unset — fall back to default)` option.
-
-For **pending** roles, prefix the question with:
-
-> "(pending — set, but not effective until wrapping work lands)"
-
-so the user understands the configuration is preserved but produces no runtime effect today.
-
-### Step 3c: Clear All
-
-When user picks "3. Clear all":
-
-Confirm via `AskUserQuestion`, then remove the `models` block from `marshal.json`. This reverts every dispatch site to `inherit` (canonical no-suffix variant, runtime inherits parent model).
-
-## Validation
-
-Validation rules are identical to the resolver in `manage-config models read --role`:
-
-| Rule | Failure Mode |
-|------|--------------|
-| Level value is one of `low`, `medium`, `high`, `xhigh`, `xxhigh`, `inherit` | Refuse save; show error inline; re-prompt. |
-| `max` is reserved (future-additive) | Refuse save with explicit "use `xxhigh` for the current top tier" message. |
-| Role key is in the registry | Warn (not refuse) for unknown roles — the registry can rename without breaking saved configs. |
-
-The wizard MUST NOT permit saving an invalid value at any step. The user sees the rejection and is re-prompted from the same question.
-
-## Persistence
-
-After every successful save (Steps 3a, 3b, 3c):
-
-1. The wizard writes through `manage-config` (which round-trips JSON cleanly — no formatting drift).
-2. Print confirmation: `"Saved: models.<key> = <value>"`.
-3. **Print the restart hint verbatim**:
+1. Print the confirmation: `Saved: applied preset '<name>'`.
+2. **Print the restart hint verbatim**:
 
    > **Restart Claude Code to pick up new variant routing.** Agent files load at session start; mid-session edits don't apply until you exit and re-enter.
 
-   The hint fires unconditionally after any Models save — even when the only change was setting a pending role (the user might restart anyway, and clarity beats cleverness).
+   The hint fires unconditionally after any successful preset application — even when the on-disk block already matched the chosen preset (the user might restart anyway, and clarity beats cleverness).
 
-4. Return to the Models submenu (Step 2) so the user can make further edits or back out.
+3. Return to the **Main Menu** (not back into the Models submenu — the user is now done).
 
-## Pending-Role Hint
-
-When the user sets a value on a **pending** role, append this hint to the save confirmation:
-
-> Note: `<role>` is currently pending — the value is saved but produces no runtime effect until the wrapping work lands. See `model-roles.md` for status.
-
-This makes the schema-validates-but-no-effect distinction explicit at save time, not just in the read display.
+When the user picks "Back to Main Menu" in Step 2, return to the Main Menu without making any changes.
 
 ## Cross-References
 
 | Document | Content |
 |----------|---------|
 | [`model-levels.md`](../../plan-marshall/standards/model-levels.md) | Level enum and primitive binding. |
-| [`model-roles.md`](../../plan-marshall/standards/model-roles.md) | Role registry walked by Step 3b. |
+| [`model-roles.md`](../../plan-marshall/standards/model-roles.md) | Role registry that the presets cover. |
 | [`role-variants.md`](../../plan-marshall/standards/role-variants.md) | User-facing centralised guide cross-linked from save confirmations. |
-| `manage-config:_cmd_models.py` | Resolver that reads the same `models` block written by this wizard. |
+| [`model_presets.py`](../../plan-marshall/scripts/model_presets.py) | `ModelPresets` constant-class — per-preset payloads, `get`, `all_names`, `describe`. |
+| `manage-config:_cmd_models.py` | Resolver that reads the same `models` block written by this wizard, plus `apply-preset` writer. |

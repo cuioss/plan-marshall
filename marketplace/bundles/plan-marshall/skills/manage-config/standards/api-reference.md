@@ -221,6 +221,82 @@ manage-config ext-defaults set-default --key my_setting --value fallback
 
 ---
 
+## Noun: models
+
+Manage per-role model levels stored in the `models` block of `.plan/marshal.json`.
+The read verb is a pure resolver; the write verb completely overwrites the block
+from a named preset.
+
+| Verb | Parameters | Description |
+|------|-----------|-------------|
+| `read` | `--role` | Resolve the level keyword for a role (walks `models.roles.<role>` -> `models.default` -> `inherit`) |
+| `apply-preset` | `--preset` | **Completely overwrite** the `models` block with a named preset (see `model_presets.py` for per-preset values) |
+
+### Verb: read
+
+```bash
+manage-config models read --role research
+```
+
+Walks the documented resolution order and validates the resolved value against
+`ALLOWED_LEVELS` (`low|medium|high|xhigh|xxhigh|inherit`). Unknown role names
+produce a warning (not an error) so registry renames do not break saved configs.
+
+### Verb: apply-preset
+
+```bash
+manage-config models apply-preset --preset balanced
+```
+
+Arguments:
+
+- `--preset` (required) — Preset name. Canonical names are
+  `economic`, `balanced`, `high-end` (returned by `ModelPresets.all_names()`).
+  The lookup is case-insensitive and also accepts the underscore variant
+  (`HIGH_END`, `high_end`, `Balanced`, ...). The argparse layer pre-validates
+  `--preset` through a `type=` callable that delegates to
+  `ModelPresets.get()`, so unknown names are rejected with a usage error
+  (exit code 2) before the handler runs. `argparse choices=` is intentionally
+  *not* used because it enforces exact case-sensitive matching of the
+  canonical names and would reject the documented aliases.
+
+Semantic — **completely overwrites**: the existing `models` block is discarded
+entirely and replaced by the preset payload. Any keys present in the previous
+block but absent from the preset are gone after the write. Merging is
+deliberately not supported — the point of preset selection is to swap the
+entire policy in one operation. For per-role fine-tuning beyond the three
+presets, edit `.plan/marshal.json` directly.
+
+Per-preset values are defined in
+`marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/model_presets.py`
+(see the `ModelPresets` constant-class). The module documents each preset's
+rationale and runs an import-time self-check to guarantee every level value is
+in `ALLOWED_LEVELS`.
+
+Success payload:
+
+```toon
+status: success
+preset: balanced
+default: medium
+roles_count: 4
+```
+
+Common errors:
+
+- `argument --preset: unknown preset '<name>'; valid names: ['economic', 'balanced', 'high-end']` —
+  argparse usage error (exit code 2). The supplied `--preset` value did not
+  normalise (lowercase + `_`→`-`) to any canonical name. Raised by the
+  argparse `type=` callable that delegates to `ModelPresets.get()`.
+- `marshal.json not initialized; run /marshall-steward first` — the project
+  has not yet run `manage-config init`.
+- `level '...' at preset.default ...` / `level '...' at preset.roles.<role> ...` —
+  defense-in-depth: a preset value drifted out of `ALLOWED_LEVELS`. Should
+  not occur in normal operation; indicates a desync between
+  `_cmd_models.ALLOWED_LEVELS` and the validation in `model_presets.py`.
+
+---
+
 ## Noun: ci
 
 ### persist
