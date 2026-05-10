@@ -130,6 +130,33 @@ path: /abs/path/to/.plan/local/lessons-learned/2025-12-02-001.md
 body_bytes_written: 1234
 ```
 
+### set-title
+
+Rewrite the H1 title of an existing lesson file in place. The metadata header (`key=value` frontmatter), blank lines, and lesson body are preserved on disk — only the first `# ` line is replaced. Both `active` and `superseded` lifecycle states are rewriteable; only a missing file or a malformed lesson (no H1 line) fail.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons set-title \
+  --lesson-id 2025-12-02-001 \
+  --title "Build fails with missing dependency (canonical)"
+```
+
+**Parameters**:
+- `--lesson-id` (required): Lesson ID whose title to rewrite
+- `--title` (required): New title; replaces the H1 line verbatim
+
+**Idempotent**: rewriting with the existing title produces no on-disk change but still returns `status: success` with `old_title == new_title` so callers can re-run safely.
+
+**Fenced-code-block safety**: the rewriter walks the markdown line-by-line tracking ` ``` ` fence state, so a literal `# heading` line inside a code example is not mistaken for the lesson H1.
+
+**Output** (TOON):
+```toon
+status: success
+lesson_id: 2025-12-02-001
+old_title: "Build fails with missing dependency"
+new_title: "Build fails with missing dependency (canonical)"
+file: /abs/path/to/.plan/local/lessons-learned/2025-12-02-001.md
+```
+
 **Path-allocate flow (canonical)**:
 
 The standard sequence for creating a lesson with a non-trivial body is:
@@ -343,6 +370,44 @@ id: 2025-12-02-003
 created_from: error_context
 ```
 
+### aggregate
+
+Read-only classifier that groups the active lessons corpus into multi-lesson groups whose work would land in a single plan. Never mutates lesson files — `set-body`, `set-title`, `supersede`, and `cleanup-superseded` are NOT invoked. Use the orchestrator action (`/plan-marshall:plan-marshall` Action: lessons-aggregate) when you want the merge actually applied; use this verb when you want to inspect the classification first.
+
+The classifier rules, signal-priority order, primary-pick tie-breakers, and merged-body-preview template are specified in [`references/aggregate-analysis.md`](references/aggregate-analysis.md).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons aggregate \
+  [--top-n 5]
+```
+
+**Parameters**:
+- `--top-n` (optional, default `5`): Number of headline `/plan-marshall:plan-marshall lesson={primary_id}` commands to surface in `top_n_commands`. The full `groups[]` list is always returned regardless of this flag.
+
+**Output** (TOON):
+```toon
+status: success
+top_n: 5
+groups[N]{primary_id,primary_title,absorb_count,absorbed,merged_body_preview}:
+  ...
+top_n_commands[N]:
+  - "/plan-marshall:plan-marshall lesson=2025-12-02-001"
+  - "/plan-marshall:plan-marshall lesson=2025-12-04-002"
+```
+
+Each `absorbed[]` row carries `{lesson_id, title, reason}` where `reason` names the strongest signal that placed the lesson in the group (e.g., `cross-ref to 2025-12-02-001`, `shared component plan-marshall:phase-5-execute`, `shared standards-dir marketplace/bundles/.../standards/`, `shared workflow-boundary plan-marshall:phase-5-execute`). `merged_body_preview` is the first ~400 characters of the would-be merged body so callers can sanity-check the grouping before invoking the orchestrator action.
+
+Singletons (lessons that match no other lesson at any signal tier) are dropped — only multi-member groups are emitted.
+
+---
+
+## References
+
+The classification logic for the read-side corpus operations lives under `references/`:
+
+- [`references/dedup-analysis.md`](references/dedup-analysis.md) — single-candidate classifier (new / merge_into / already_closed). Used by the dedup gate before any new lesson is recorded.
+- [`references/aggregate-analysis.md`](references/aggregate-analysis.md) — full-corpus classifier. Specifies the signal-priority order (cross-ref > shared-component > shared-standards-dir > shared-workflow-boundary), primary-pick tie-breakers (cross-ref-fan-in → recurrence-count → lesson-id), and the merged-body-preview template consumed by the `aggregate` verb and the `lessons-aggregate` orchestrator action.
+
 ---
 
 ## Scripts
@@ -353,9 +418,11 @@ created_from: error_context
 |---------|------------|-------------|
 | `add` | `--component --category --title [--bundle]` | Allocate a new lesson file and return its absolute `path`. Caller populates body via `set-body`. |
 | `set-body` | `--lesson-id (--file PATH \| --content STRING)` | Populate or replace lesson body. `--file` is the canonical form (shell-safe for arbitrary markdown); `--content` is the secondary form for tiny single-line payloads only. |
+| `set-title` | `--lesson-id --title` | Rewrite the H1 title in place. Preserves frontmatter and body; idempotent; works on `active` and `superseded` lessons. Fenced-code-block aware. |
 | `update` | `--lesson-id [--component] [--category]` | Update lesson metadata |
 | `get` | `--lesson-id` | Get single lesson |
 | `list` | `[--component] [--category] [--full]` | List with filtering. `--full` includes lesson body content. |
+| `aggregate` | `[--top-n N]` | Read-only classifier: group active lessons that would land in one plan. Returns groups + headline commands. See [`references/aggregate-analysis.md`](references/aggregate-analysis.md). |
 | `from-error` | `--context` | Create from JSON error context (programmatic; body synthesized from context) |
 | `convert-to-plan` | `--lesson-id --plan-id` | Move lesson into a plan directory as `lesson-{id}.md`. This is the move-semantics replacement for marking a lesson "applied". |
 | `cleanup-superseded` | `[--lesson-id ID ...] \| [--retention-days N] [--dry-run]` | Prune superseded `.md` stubs while preserving tombstones. Age-filtered when `--retention-days` (falls back to `system.retention.lessons_superseded_days`, hard fallback 7); explicit when `--lesson-id` is repeated. |
