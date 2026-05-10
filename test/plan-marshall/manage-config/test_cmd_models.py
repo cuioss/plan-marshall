@@ -74,7 +74,7 @@ def _expanded_preset(preset: dict) -> dict:
     """
     default_level = preset['default']
     overrides = preset.get('roles', {})
-    expanded_roles = {role: default_level for role in KNOWN_ROLES}
+    expanded_roles = dict.fromkeys(KNOWN_ROLES, default_level)
     expanded_roles.update(overrides)
     return {'default': default_level, 'roles': expanded_roles}
 

@@ -224,7 +224,7 @@ def cmd_models_apply_preset(args) -> dict:
     # the full set makes ``marshal.json`` self-documenting — users editing
     # the file by hand can see every dispatch site and adjust without
     # having to consult the role registry.
-    expanded_roles: dict = {role: default_level for role in KNOWN_ROLES}
+    expanded_roles: dict = dict.fromkeys(KNOWN_ROLES, default_level)
     expanded_roles.update(roles)
 
     config = load_config()
