@@ -260,12 +260,23 @@ Arguments:
   *not* used because it enforces exact case-sensitive matching of the
   canonical names and would reject the documented aliases.
 
-Semantic — **completely overwrites**: the existing `models` block is discarded
-entirely and replaced by the preset payload. Any keys present in the previous
-block but absent from the preset are gone after the write. Merging is
-deliberately not supported — the point of preset selection is to swap the
-entire policy in one operation. For per-role fine-tuning beyond the three
-presets, edit `.plan/marshal.json` directly.
+Semantic — **completely overwrites, fully expanded**: the existing `models`
+block is discarded entirely and replaced by the preset payload, and every
+entry in the role registry (`KNOWN_ROLES` in `_cmd_models.py`) is written
+explicitly under `models.roles` so users editing `marshal.json` by hand can
+see and tune every dispatch site without consulting the registry.
+
+The expansion rule: each `KNOWN_ROLES` entry is written at `models.default`
+unless the preset payload defines a per-role override, in which case the
+override level is preserved. The `default` value itself is kept on the
+top-level `models.default` key so the resolver's documented walk
+(`models.roles.<role>` -> `models.default` -> `inherit`) keeps working
+unchanged.
+
+Any keys present in the previous block but absent from the role registry
+are gone after the write — only known roles survive. Merging across runs
+is deliberately not supported. For per-role fine-tuning beyond the three
+presets, edit the expanded `.plan/marshal.json` directly.
 
 Per-preset values are defined in
 `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/model_presets.py`
@@ -279,8 +290,16 @@ Success payload:
 status: success
 preset: balanced
 default: medium
-roles_count: 4
+roles_count: 20
+overrides_count: 4
 ```
+
+`roles_count` is the number of entries written under `models.roles` — equal
+to `len(KNOWN_ROLES)` once expansion has run. `overrides_count` is the
+number of role entries whose written level differs from `models.default`
+after expansion (i.e. the user-visible definition of "override" — a role
+explicitly listed at the same level as `default` is functionally an
+inherit and is not counted).
 
 Common errors:
 
