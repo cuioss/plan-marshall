@@ -60,6 +60,30 @@ _cmd_models_mod = _load_module(
 )
 cmd_models = _cmd_models_mod.cmd_models
 cmd_models_apply_preset = _cmd_models_mod.cmd_models_apply_preset
+KNOWN_ROLES = _cmd_models_mod.KNOWN_ROLES
+
+
+def _expanded_preset(preset: dict) -> dict:
+    """Return the fully-qualified roles map that apply-preset writes to disk.
+
+    `apply-preset` expands the preset payload so every entry in
+    ``KNOWN_ROLES`` is explicit on disk, with the preset's per-role
+    overrides taking precedence over ``default``. Tests use this helper
+    to assert the on-disk shape without reproducing the expansion logic
+    inline.
+    """
+    default_level = preset['default']
+    overrides = preset.get('roles', {})
+    expanded_roles = dict.fromkeys(KNOWN_ROLES, default_level)
+    # Mirror the implementation: only overrides for roles in KNOWN_ROLES
+    # survive the expansion. The implementation filters to enforce the
+    # documented "only known roles survive" contract, so the test helper
+    # must filter identically or the equality assertions would falsely
+    # fail when a preset references a role outside the registry.
+    expanded_roles.update(
+        {k: v for k, v in overrides.items() if k in KNOWN_ROLES}
+    )
+    return {'default': default_level, 'roles': expanded_roles}
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import PlanContext, run_script  # noqa: E402
@@ -86,7 +110,7 @@ def _read_marshal_models(fixture_dir: Path) -> dict:
 # =============================================================================
 
 
-def test_apply_preset_economic_writes_economic_payload():
+def test_apply_preset_economic_writes_expanded_payload():
     with PlanContext() as ctx:
         # Initialise marshal.json with no models block.
         _write_marshal_with_models(ctx.fixture_dir, None)
@@ -96,21 +120,35 @@ def test_apply_preset_economic_writes_economic_payload():
         assert result['status'] == 'success'
         assert result['preset'] == 'economic'
         assert result['default'] == 'low'
-        assert result['roles_count'] == len(ModelPresets.ECONOMIC['roles'])
+        # roles_count reflects the EXPANDED set (every KNOWN_ROLES entry
+        # is explicit on disk); overrides_count reflects only the
+        # explicit per-role overrides from the preset payload.
+        assert result['roles_count'] == len(KNOWN_ROLES)
+        assert result['overrides_count'] == len(ModelPresets.ECONOMIC['roles'])
 
-        # Disk state matches ECONOMIC exactly.
+        # Disk state matches the EXPANDED ECONOMIC payload — every
+        # KNOWN_ROLES entry is present, with preset overrides preserved.
         on_disk = _read_marshal_models(ctx.fixture_dir)
-        assert on_disk == ModelPresets.ECONOMIC
+        assert on_disk == _expanded_preset(ModelPresets.ECONOMIC)
 
-        # Read resolves to the documented default level for an unconfigured
-        # role (falls through to models.default).
-        # Use a known role from KNOWN_ROLES that is NOT explicitly set in
-        # ECONOMIC (e.g. 'pr_creation' is in KNOWN_ROLES but absent from the
-        # ECONOMIC roles dict, so it must resolve to default 'low').
+        # Self-documenting on-disk shape: every KNOWN_ROLES entry is a
+        # key under models.roles so the user can edit them by hand.
+        for role in KNOWN_ROLES:
+            assert role in on_disk['roles'], (
+                f"role '{role}' missing from expanded on-disk roles map"
+            )
+
+        # `pr_creation` is now an explicit entry (with the default-level
+        # value), so the resolver attributes it to the role row rather
+        # than the default fallback.
         read_result = cmd_models(Namespace(role='pr_creation'))
         assert read_result['status'] == 'success'
         assert read_result['level'] == 'low'
-        assert read_result['source'] == 'models.default'
+        assert read_result['source'] == 'models.roles.pr_creation'
+
+        # Roles explicitly bumped by the preset keep their override level.
+        for role, expected in ModelPresets.ECONOMIC['roles'].items():
+            assert on_disk['roles'][role] == expected
 
 
 # =============================================================================
@@ -152,14 +190,23 @@ def test_apply_preset_high_end_overwrites_pre_seeded_block():
 
         on_disk = _read_marshal_models(ctx.fixture_dir)
 
-        # Disk state is exactly HIGH_END — none of the seeded values survive.
-        assert on_disk == ModelPresets.HIGH_END
+        # Disk state is the EXPANDED HIGH_END payload — every KNOWN_ROLES
+        # entry is explicit, none of the seeded values survive.
+        assert on_disk == _expanded_preset(ModelPresets.HIGH_END)
 
         # Specifically: the seeded q_gate_validation: low is replaced by xhigh.
         assert on_disk['roles']['q_gate_validation'] == 'xhigh'
 
-        # And the seeded phantom_role is gone entirely (overwrite, not merge).
+        # And the seeded phantom_role is gone entirely (overwrite, not merge —
+        # only KNOWN_ROLES survive).
         assert 'phantom_role_not_in_high_end' not in on_disk['roles']
+
+        # Roles not explicitly bumped by HIGH_END are written at the default
+        # level ('high') rather than dropped.
+        non_override_role = next(
+            r for r in KNOWN_ROLES if r not in ModelPresets.HIGH_END['roles']
+        )
+        assert on_disk['roles'][non_override_role] == 'high'
 
 
 # =============================================================================
@@ -203,7 +250,7 @@ def test_apply_preset_uppercase_underscore_alias_succeeds():
         assert result['default'] == 'high'
 
         on_disk = _read_marshal_models(ctx.fixture_dir)
-        assert on_disk == ModelPresets.HIGH_END
+        assert on_disk == _expanded_preset(ModelPresets.HIGH_END)
 
 
 def test_apply_preset_lowercase_underscore_alias_succeeds():
@@ -216,7 +263,7 @@ def test_apply_preset_lowercase_underscore_alias_succeeds():
         assert result['default'] == 'high'
 
         on_disk = _read_marshal_models(ctx.fixture_dir)
-        assert on_disk == ModelPresets.HIGH_END
+        assert on_disk == _expanded_preset(ModelPresets.HIGH_END)
 
 
 # =============================================================================
@@ -237,7 +284,7 @@ def test_apply_preset_creates_models_block_when_absent():
 
         assert result['status'] == 'success'
         on_disk = _read_marshal_models(ctx.fixture_dir)
-        assert on_disk == ModelPresets.BALANCED
+        assert on_disk == _expanded_preset(ModelPresets.BALANCED)
 
 
 # =============================================================================
@@ -252,13 +299,16 @@ def test_apply_preset_round_trip_no_residue():
 
         cmd_models_apply_preset(Namespace(preset='balanced'))
         balanced_on_disk = _read_marshal_models(ctx.fixture_dir)
-        assert balanced_on_disk == ModelPresets.BALANCED
+        assert balanced_on_disk == _expanded_preset(ModelPresets.BALANCED)
 
         cmd_models_apply_preset(Namespace(preset='economic'))
         on_disk = _read_marshal_models(ctx.fixture_dir)
-        assert on_disk == ModelPresets.ECONOMIC
+        assert on_disk == _expanded_preset(ModelPresets.ECONOMIC)
 
-        # Specifically: any BALANCED-only roles (e.g., automated_review at
-        # 'high') must not survive the swap — ECONOMIC does not list
-        # automated_review at all.
-        assert 'automated_review' not in on_disk['roles']
+        # Specifically: any BALANCED-only role overrides (e.g.,
+        # automated_review at 'high') must not survive the swap. Since
+        # the expansion writes every KNOWN_ROLES entry explicitly,
+        # automated_review is now present at the ECONOMIC default
+        # ('low') rather than absent — the residue check is on the LEVEL,
+        # not the key's presence.
+        assert on_disk['roles']['automated_review'] == 'low'
