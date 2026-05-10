@@ -124,6 +124,7 @@ Each step declares an `order: <int>` value in its authoritative source — front
 | `default:commit-push` | `standards/commit-push.md` | Commit and push changes |
 | `default:create-pr` | `standards/create-pr.md` | Create pull request |
 | `default:architecture-refresh` | `standards/architecture-refresh.md` | Refresh architecture descriptors (tier-0 deterministic discover + diff, tier-1 LLM re-enrichment) |
+| `default:ci-wait` | `standards/ci-wait.md` | Poll CI to completion and write the completed-CI signal `automated-review` consumes |
 | `default:automated-review` | `standards/automated-review.md` | CI automated review (see standards doc for the consumer step list; [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) for the architectural flow) |
 | `default:sonar-roundtrip` | `standards/sonar-roundtrip.md` | Sonar analysis roundtrip (see standards doc for the consumer step list; [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) for the architectural flow) |
 | `default:lessons-capture` | `standards/lessons-capture.md` | Record lessons learned |
@@ -333,7 +334,7 @@ cache holds, which is exactly the published bundle definitions.
 
 **Resumable re-entry semantics**: Before dispatching each step, read the current step record from `status.metadata.phase_steps["6-finalize"]`. If the step is already marked `done`, skip dispatch entirely (no re-run, no log noise — the previous run completed it). If the step is marked `failed`, retry it from scratch. If the step has no record (or any other outcome), dispatch it as a fresh run. This makes finalize safe to re-enter after a partial run, a crash, or an explicit retry — completed steps stay completed, failed steps get exactly one retry per invocation.
 
-**Special case — `pre-push-quality-gate`**: this step is HEAD-dependent. The general rule above is augmented for `step_id == "pre-push-quality-gate"` with a worktree-HEAD comparison so a loop-back commit (typically produced by `automated-review` or `sonar-roundtrip`) re-fires the gate against the newer code instead of skipping it on a stale `done` record:
+**Special case — HEAD-dependent steps**: four steps (`pre-push-quality-gate`, `ci-wait`, `automated-review`, `sonar-roundtrip`) are HEAD-dependent. Each validates the live worktree tree via local quality-gate, CI, PR-comment, and Sonar infrastructure respectively. The general rule above is augmented for `step_id IN HEAD_DEPENDENT_STEPS` (defined below) with a worktree-HEAD comparison so a loop-back commit (typically produced by `automated-review` or `sonar-roundtrip` opening a fix task that produces a new commit) re-fires each gate against the newer code instead of skipping it on a stale `done` record:
 
 | Persisted state | Live worktree HEAD | Action |
 |-----------------|--------------------|--------|
@@ -341,7 +342,10 @@ cache holds, which is exactly the published bundle definitions.
 | `outcome == done` AND `head_at_completion != HEAD` | differs | RE-FIRE (treat as no record — HEAD has advanced past the validated SHA) |
 | `outcome == done` AND `head_at_completion` absent | n/a | RE-FIRE (legacy record from before SHA tracking; safe default is to re-run) |
 | `outcome == failed` | n/a | RETRY (unchanged — same as the general rule) |
+| `outcome == loop_back` | n/a | RE-FIRE (treat as no record — same as the general rule for loop_back) |
 | no record OR any other value | n/a | DISPATCH (unchanged — same as the general rule) |
+
+`HEAD_DEPENDENT_STEPS = {"pre-push-quality-gate", "ci-wait", "automated-review", "sonar-roundtrip"}`. All four steps MUST persist `head_at_completion` on their terminal `--outcome done` `mark-step-done` call so the comparison above is meaningful. The standards docs for each step (`pre-push-quality-gate.md`, `ci-wait.md`, `automated-review.md`, `sonar-roundtrip.md`) carry the per-step instructions for capturing `git rev-parse HEAD` immediately before the `mark-step-done` invocation and forwarding it via `--head-at-completion {sha}`. Branches that mark `loop_back` or `failed` do not need to persist the SHA — the dispatcher's general resumability handling for those outcomes does not consult it.
 
 Resolve the comparison HEAD inside the dispatcher block at the moment of the per-step check:
 
@@ -349,7 +353,7 @@ Resolve the comparison HEAD inside the dispatcher block at the moment of the per
 git -C {worktree_path} rev-parse HEAD
 ```
 
-Do NOT cache the live HEAD across loop iterations — read it fresh per step so a step that advances HEAD mid-loop (e.g., a hypothetical inline commit) is observed correctly by every later step's check. All other finalize steps keep the general rule above verbatim; this special case applies only to `pre-push-quality-gate`.
+Do NOT cache the live HEAD across loop iterations — read it fresh per step so a step that advances HEAD mid-loop (e.g., an inline commit produced by an earlier loop-back fix task) is observed correctly by every later step's check. All other finalize steps keep the general rule above verbatim; this special case applies only to the four steps named in `HEAD_DEPENDENT_STEPS`.
 
 **Per-agent timeout wrapper**: Every Task agent dispatch in this loop runs under a per-agent timeout budget. If the dispatch does not return inside the budget, the wrapper logs an ERROR, marks the step `failed` via `manage-status mark-step-done`, and continues with the next step in the list (no abort, no re-throw). Inline-only steps are not timeout-wrapped because they execute in the main context where the host platform already manages call timeouts. Budgets:
 
@@ -384,24 +388,29 @@ Read the `level` field from the TOON output. Compute the target agent:
 
 Dispatch via `Task: plan-marshall:<target>` with the existing prompt and timeout unchanged. See [`plan-marshall:plan-marshall/standards/role-variants.md`](../plan-marshall/standards/role-variants.md) for the full variant-routing contract.
 
-**Inline-only built-in steps** (require user interaction or sequential dependency):
-- `commit-push` (git working directory state), `architecture-refresh` (AskUserQuestion for Tier-1 prompt mode; consumes `architecture-pre/` snapshot from phase-1-init Step 5d), `branch-cleanup` (AskUserQuestion), `record-metrics` (must run immediately before `archive-plan` on the still-live plan directory), `archive-plan` (must be last, moves plan files)
+**Inline-only built-in steps** (require user interaction, sequential dependency, or are bounded polling primitives that fit comfortably under the host platform's per-call Bash ceiling):
+- `commit-push` (git working directory state), `architecture-refresh` (AskUserQuestion for Tier-1 prompt mode; consumes `architecture-pre/` snapshot from phase-1-init Step 5d), `ci-wait` (bounded `ci wait` polling primitive — the `ci wait` script enforces its own `--timeout` ceiling; the dispatcher invokes it inline with a Bash timeout matching that ceiling), `branch-cleanup` (AskUserQuestion), `record-metrics` (must run immediately before `archive-plan` on the still-live plan directory), `archive-plan` (must be last, moves plan files)
 
 Per-step agent `<usage>` totals are persisted on disk by `manage-metrics accumulate-agent-usage` (called from step 5b below). The on-disk file `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` survives context compaction and is read by `default:record-metrics` at `end-phase` time. Do NOT maintain a parallel tally in model context — the on-disk file is authoritative.
 
+**Initialise the `loop_back_iteration` counter to 0 BEFORE entering the FOR loop** (i.e., here, at the start of Step 3 — outside the loop body). The counter persists across FOR-loop re-entries triggered by the loop-back continuation hook (step 7b below), so that the `max_iterations` ceiling is enforced across the entire dispatch. Initialising the counter inside the FOR loop body (e.g., on each entry into the loop) would reset it on every loop-back BREAK + RE-ENTER, defeating the ceiling. The counter is held in model context for the duration of the dispatch — it is NOT persisted to status.json; a fresh phase-6 entry (e.g., after a session restart) starts the counter back at 0.
+
 ```
+loop_back_iteration = 0   # initialised once, before the FOR loop; persists across FOR-loop re-entries from the loop-back hook (step 7b)
+
 FOR each step_id in manifest.phase_6.steps:
   step_ref = "default:" + step_id   # manifest holds bare names; dispatcher prepends prefix
 
   1. Resumable re-entry check:
      Read status.metadata.phase_steps["6-finalize"][step_id]:
-       - IF step_id == "pre-push-quality-gate" (special-cased HEAD-dependent rule):
+       - IF step_id IN HEAD_DEPENDENT_STEPS (the HEAD-dependent special-case set; see "HEAD-dependent step set" note below):
            Resolve the live worktree HEAD via `git -C {worktree_path} rev-parse HEAD`.
            Read this fresh per iteration; do NOT cache across the loop.
              - IF outcome == "done" AND head_at_completion == live HEAD: SKIP this step
              - IF outcome == "done" AND head_at_completion != live HEAD: RE-FIRE (treat as no record — dispatch as fresh run)
              - IF outcome == "done" AND head_at_completion is absent: RE-FIRE (legacy record from before SHA tracking; dispatch as fresh run)
              - IF outcome == "failed": RETRY (proceed to dispatch as fresh run)
+             - IF outcome == "loop_back": RE-FIRE (treat as no record — dispatch as fresh run)
              - IF no record OR any other value: dispatch normally
        - ELSE (every other step keeps the general rule):
            - IF outcome == "done": SKIP this step (continue to next iteration)
@@ -409,6 +418,8 @@ FOR each step_id in manifest.phase_6.steps:
            - IF outcome == "loop_back": RE-FIRE (treat as no record — dispatch as fresh run)
            - IF no record OR any other value: dispatch normally
      Log skip/retry/re-fire decisions at INFO level so the work.log reflects the re-entry path.
+
+     **HEAD-dependent step set**: `HEAD_DEPENDENT_STEPS = {"pre-push-quality-gate", "ci-wait", "automated-review", "sonar-roundtrip"}`. These four steps validate the live worktree tree via local quality-gate, CI, PR-comment, and Sonar infrastructure respectively. A loop-back commit (typically produced by `automated-review` or `sonar-roundtrip` opening a fix task that produces a new commit) advances HEAD past the previously-validated SHA, and a stale `done` record on any of these four steps would produce a false-clean result on re-entry. The same `head_at_completion` comparison applies to all four. Inline-only steps (`commit-push`, `architecture-refresh`, `branch-cleanup`, `record-metrics`, `archive-plan`) and pure-administrative agent steps (`create-pr`, `lessons-capture`) are NOT HEAD-dependent — their effect is captured by side-effect (a pushed commit, a created PR, recorded lessons) and is idempotent against HEAD advances; the general rule above applies to them.
 
   2. Log step start:
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -457,8 +468,8 @@ FOR each step_id in manifest.phase_6.steps:
               --display-detail "timed out after {budget}s"
          c. Continue to the next step in the loop — DO NOT abort the pipeline.
 
-     - BUILT-IN (inline-only: commit-push, branch-cleanup, record-metrics, archive-plan):
-       Read the standards document from dispatch table and follow all steps in main context. Inline steps are not timeout-wrapped — they execute under the host platform's standard per-call ceiling.
+     - BUILT-IN (inline-only: commit-push, architecture-refresh, ci-wait, branch-cleanup, record-metrics, archive-plan):
+       Read the standards document from dispatch table and follow all steps in main context. Inline steps are not wrapped by the per-agent timeout block above — they execute under the host platform's standard per-call ceiling (or, for `ci-wait`, under the Bash timeout matching the `ci wait --timeout` ceiling the script enforces internally).
 
      - PROJECT/SKILL: Load the skill with interface contract:
        Skill: {step_ref}
@@ -503,7 +514,7 @@ FOR each step_id in manifest.phase_6.steps:
         Display: "Loop-back signalled. Run '/plan-marshall action=execute plan={plan_id}' when ready to dispatch the fix tasks."
         STOP.
 
-      - IF `value == true`: increment the in-memory `loop_back_iteration` counter (initialised to 0 at FOR-loop entry) and consult the ceiling:
+      - IF `value == true`: increment the in-memory `loop_back_iteration` counter (initialised to 0 at the start of Step 3, BEFORE the FOR loop — see the `loop_back_iteration = 0` line above the `FOR each step_id` header. The counter persists across FOR-loop re-entries triggered by step 7b, so the `max_iterations` ceiling is enforced across the entire dispatch rather than reset per re-entry) and consult the ceiling:
 
          (a) Compare against `phase-6-finalize.max_iterations` (default 3, read in Step 2). When `loop_back_iteration > max_iterations`, halt with a user-facing prompt — even with the flag set, the ceiling is the structural safety valve:
              python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -779,7 +790,7 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `standards/commit-push.md` | `default:commit-push` | Commit strategy, git status, workflow-integration-git delegation |
 | `standards/create-pr.md` | `default:create-pr` | PR existence check, body generation, CI pr create |
 | `standards/architecture-refresh.md` | `default:architecture-refresh` | Tier-0 deterministic `architecture discover --force` + `diff-modules --pre` driven `chore(architecture)` commit; Tier-1 LLM re-enrichment with `prompt`/`auto`/`disabled` modes; respects `architecture_refresh.tier_0` / `tier_1` run-config knobs and `change_type ∈ {bug_fix, verification}` shortcut |
-| `standards/ci-wait.md` | `default:ci-wait` | Poll CI to completion (1800 s budget), write the completed-CI signal `automated-review` consumes; never loops_back |
+| `standards/ci-wait.md` | `default:ci-wait` | Poll CI to completion via inline `ci wait`, write the completed-CI signal `automated-review` consumes; never loops_back |
 | `standards/automated-review.md` | `default:automated-review` | Consume completed-CI signal, then consumer dispatch (FIX / SUPPRESS / ACCEPT / AskUserQuestion); loop-back on FIX or pr-comment-overflow. Architectural flow: [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) |
 | `standards/sonar-roundtrip.md` | `default:sonar-roundtrip` | Sonar consumer dispatch (FIX / SUPPRESS / ACCEPT / AskUserQuestion); loop-back on FIX. Architectural flow: [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) |
 | `standards/lessons-capture.md` | `default:lessons-capture` | manage-lesson add command |

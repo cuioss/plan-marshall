@@ -255,7 +255,7 @@ The 75 % threshold is intentionally conservative — it leaves enough budget for
 
    Substitute `{N}` with the count of unprocessed findings and the `--detail` body with the list of IDs (machine-readable; the next iteration's overflow consumer parses this list to know exactly which comments are outstanding). See [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) for the type's full contract — purpose, expected `detail` shape, and resolution semantics.
 
-3. **Mark the step `loop_back`** with a display detail naming the deferred count, then return — do NOT proceed to "Phase Boundary Re-Capture" or "Mark Step Complete" Branch A on this iteration. The dispatcher's `loop_back` semantics will re-fire `automated-review` on next phase-6 entry; the next iteration MUST consult the `pr-comment-overflow` finding (via `manage-findings query --type pr-comment-overflow --resolution pending`) to know which comments to prioritise. Once every comment named by the overflow finding is processed, mark the overflow finding `--resolution fixed` (or whichever per-comment disposition applies in aggregate — typically `fixed` once each comment has been individually resolved):
+3. **Mark the step `loop_back`** with a display detail naming the deferred count, then return — do NOT proceed to "Phase Boundary Re-Capture" or "Mark Step Complete" Branch A on this iteration. The dispatcher's `loop_back` semantics will re-fire `automated-review` on next phase-6 entry; the next iteration MUST consult the `pr-comment-overflow` finding (via `manage-findings query --type pr-comment-overflow --resolution pending`) to know which comments to prioritise.
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
@@ -264,6 +264,16 @@ The 75 % threshold is intentionally conservative — it leaves enough budget for
    ```
 
    The overflow path counts as a loop-back iteration against the 3-iteration cap (same ceiling as the FIX-driven loop-back). When the cap is reached and unprocessed comments still remain, the dispatcher falls through to the standard `failed` path and the user is prompted on next phase-6 entry.
+
+4. **Resolve the overflow finding when the deferred queue is drained** (subsequent iterations only — NOT on the iteration that captured the overflow). Once every `pr-comment` `hash_id` named in the overflow finding's `--detail` body has been individually resolved (FIX / SUPPRESS / ACCEPT / `taken_into_account`) via the per-finding loop above, close out the overflow finding itself as a bookkeeping resolution:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
+     --plan-id {plan_id} --hash-id {overflow_hash_id} --resolution fixed \
+     --detail "All deferred pr-comment findings resolved across iterations {start}..{end}"
+   ```
+
+   Substitute `{overflow_hash_id}` with the `hash_id` returned by the `manage-findings add --type pr-comment-overflow` call in step 2 (read it back via `manage-findings query --type pr-comment-overflow --resolution pending` at the start of the draining iteration), and `{start}..{end}` with the loop-back iteration numbers that span the drain. Typical resolution is `fixed` once each named comment has been individually closed; if every named comment was in fact accepted or suppressed in aggregate, the matching aggregate `--resolution` (`accepted` / `suppressed`) is also valid. The resolution applies to the overflow envelope only — the per-comment findings are resolved through their own per-finding dispatch calls earlier in the loop and MUST be closed before this bookkeeping call fires.
 
 ### Handle findings (loop-back)
 
@@ -332,28 +342,57 @@ The capture is the structural enforcer of "no unresolved pr-comment findings at 
 
 Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. Mark done only on the terminal pass that returns clean (or on a skip); loop-back iterations do not terminate the step.
 
+`automated-review` is one of the four HEAD-dependent steps (alongside `pre-push-quality-gate`, `ci-wait`, `sonar-roundtrip`) — see [`phase-6-finalize/SKILL.md`](../SKILL.md) Step 3 "Special case — HEAD-dependent steps". Every `--outcome done` branch below MUST capture the worktree HEAD SHA immediately before the `mark-step-done` call and forward it via `--head-at-completion {sha}`, so the dispatcher's HEAD-dependent resumability check can detect a stale `done` record after a future loop-back commit advances HEAD. The `loop_back` branch does NOT need to persist the SHA — the dispatcher's general resumability handling for `loop_back` treats it as no-record on re-entry regardless of HEAD.
+
 Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the review outcome. The payload differs by branch:
 
-**Branch A — terminal clean pass** (no loop-back needed): `{N}` is the total count of `pr-comment` findings resolved in the final pass (sum of fixed + suppressed + accepted + taken_into_account from this iteration's `manage-findings resolve` calls).
+**Branch A — terminal clean pass** (no loop-back needed): `{N}` is the total count of `pr-comment` findings resolved in the final pass (sum of fixed + suppressed + accepted + taken_into_account from this iteration's `manage-findings resolve` calls). Resolve the HEAD SHA before marking done:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Capture stdout as `{sha}` and forward via `--head-at-completion`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step automated-review --outcome done \
-  --display-detail "{N} comment(s) resolved (no loop-back)"
+  --display-detail "{N} comment(s) resolved (no loop-back)" \
+  --head-at-completion {sha}
 ```
 
-**Branch B — no PR available** (the dispatcher ran this step but no PR exists for the branch — the underlying workflow returned immediately with no comments to process):
+**Branch B — no PR available** (the dispatcher ran this step but no PR exists for the branch — the underlying workflow returned immediately with no comments to process). Resolve the worktree HEAD before marking done:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Capture stdout as `{sha}` and forward via `--head-at-completion`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step automated-review --outcome done \
-  --display-detail "no PR available"
+  --display-detail "no PR available" \
+  --head-at-completion {sha}
 ```
 
-**Branch C — loop-back recorded** (intermediate pass; used when a non-terminal iteration must be surfaced and the dispatcher must re-fire this step on the next phase-6 entry): `{iteration}` is the current loop-back iteration number (1..3). This branch records `--outcome loop_back` so the Step 3 dispatcher table (and the Resumability table in `phase-6-finalize/SKILL.md`) re-fires the step as a fresh dispatch on next entry. The terminal pass still uses Branch A when review eventually goes clean. Never record `--outcome done` for an intermediate iteration — `done` is terminal and will cause the dispatcher to skip the step on re-entry.
+**Branch C — loop-back recorded** (intermediate pass; used when a non-terminal iteration must be surfaced and the dispatcher must re-fire this step on the next phase-6 entry): `{iteration}` is the current loop-back iteration number (1..3). This branch records `--outcome loop_back` so the Step 3 dispatcher table (and the Resumability table below) re-fires the step as a fresh dispatch on next entry. The terminal pass still uses Branch A when review eventually goes clean. Never record `--outcome done` for an intermediate iteration — `done` is terminal and will cause the dispatcher to skip the step on re-entry. The `loop_back` branch does NOT need `--head-at-completion`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step automated-review --outcome loop_back \
   --display-detail "loop-back iteration {iteration}"
 ```
+
+## Resumability
+
+`automated-review` is one of the four HEAD-dependent steps in `HEAD_DEPENDENT_STEPS` (`pre-push-quality-gate`, `ci-wait`, `automated-review`, `sonar-roundtrip`) — see [`phase-6-finalize/SKILL.md`](../SKILL.md) Step 3 "Special case — HEAD-dependent steps". The HEAD comparison guards against false-clean re-entry after a downstream loop-back commit (typically produced by `sonar-roundtrip` opening a fix task that produces a new commit, or by an earlier `automated-review` iteration's own FIX dispositions) advances HEAD past the validated tree:
+
+| Persisted state | Live worktree HEAD | Action |
+|-----------------|--------------------|--------|
+| `outcome == done` AND `head_at_completion == HEAD` | matches | SKIP (steady-state — review already cleared this exact tree) |
+| `outcome == done` AND `head_at_completion != HEAD` | differs | RE-FIRE (treat as no record — HEAD has advanced past the validated SHA; re-fetch comments and re-triage against the new tree) |
+| `outcome == done` AND `head_at_completion` absent | n/a | RE-FIRE (legacy record from before SHA tracking; safe default is to re-run) |
+| `outcome == failed` | n/a | RETRY (unchanged — same as the general rule) |
+| `outcome == loop_back` | n/a | RE-FIRE (treat as no record — same as the general rule for loop_back) |
+| no record | n/a | DISPATCH (unchanged — same as the general rule) |
