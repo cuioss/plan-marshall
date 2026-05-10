@@ -17,9 +17,11 @@ changes without ``plugin.json`` regeneration, (b) the build-time
 ``xxhigh`` guard suppresses a previously emitted variant, or (c) a new
 canonical adds the ``implements:`` declaration but the emitted
 ``plugin.json`` still lists only the no-suffix entry. The fix in every
-case is the documented one: regenerate via the Claude target into
-``target/claude/`` and copy the regenerated ``plugin.json`` over the
-committed file.
+case is the documented one: re-run the Claude target's emit mode so
+``target/claude/`` is regenerated from the current sources. Source
+``plugin.json`` files under ``marketplace/bundles/{bundle}/.claude-plugin/``
+are canonical-only and MUST NOT be edited to satisfy the gate — only the
+build artifact under ``target/claude/`` is consulted.
 """
 
 from __future__ import annotations
@@ -58,12 +60,13 @@ def _emitted_plugin_json_path(target_dir: Path, bundle_name: str) -> Path:
     return target_dir / bundle_name / '.claude-plugin' / 'plugin.json'
 
 
-def _committed_plugin_json(bundle_dir: Path, target_dir: Path) -> dict:
+def _read_emitted_plugin_json(bundle_dir: Path, target_dir: Path) -> dict:
     """Read the emitted ``plugin.json`` for ``bundle_dir`` from ``target_dir``.
 
-    The function name is preserved for symmetry with the API consumed by
-    ``check_bundle``; the source of truth changed (it now reads the
-    artifact emitted into ``target/claude/{bundle}/.claude-plugin/``).
+    The build artifact under ``target/claude/{bundle}/.claude-plugin/`` is
+    the equality-gate source of truth; the bundle's committed
+    ``.claude-plugin/plugin.json`` is canonical-only and not consulted
+    here.
     """
     plugin_json = _emitted_plugin_json_path(target_dir, bundle_dir.name)
     return json.loads(plugin_json.read_text(encoding='utf-8'))
@@ -93,7 +96,7 @@ def check_bundle(bundle_dir: Path, target_dir: Path) -> list[BundleDiff]:
     are surfaced by ``run_equality_check`` as a structured diagnostic
     rather than being raised here.
     """
-    committed = _committed_plugin_json(bundle_dir, target_dir)
+    committed = _read_emitted_plugin_json(bundle_dir, target_dir)
     generated = build_plugin_json(bundle_dir)
     diffs: list[BundleDiff] = []
     for field_name in ('agents', 'commands', 'skills'):
@@ -163,6 +166,7 @@ def run_equality_check(target_dir: Path, bundle_dirs: Iterable[Path]) -> Equalit
             f'across {len(bundles_with_drift)}/{bundle_count} bundles '
             f'({", ".join(bundles_with_drift)}). '
             "Re-run 'python3 marketplace/targets/generate.py --target claude --output target/claude' "
-            "and copy each generated plugin.json over the committed one."
+            "to regenerate target/claude/ from current sources. "
+            "Do NOT edit the source plugin.json files — they are canonical-only."
         )
     return EqualityResult(passed=passed, diffs=all_diffs, summary=summary)

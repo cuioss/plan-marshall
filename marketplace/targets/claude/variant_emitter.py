@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 EXTENSION_POINT = 'plan-marshall:extension-api/standards/ext-point-dynamic-level-executor'
@@ -263,6 +264,25 @@ def _assemble(frontmatter_lines: list[str], body: str) -> str:
     return f'---\n{block}\n---\n{body}'
 
 
+@lru_cache(maxsize=8)
+def _load_mapping(mapping_path: Path) -> dict:
+    """Cache parsed ``mapping.json`` content keyed by absolute path.
+
+    Variant emission iterates per-agent and per-level; without caching, this
+    file is re-read and re-parsed for every level of every role-eligible
+    agent. The cache is keyed by ``Path`` (which is hashable). Use
+    ``_load_mapping.cache_clear()`` between distinct mapping files in tests.
+    Returns ``{}`` when the file is missing or malformed so the caller's
+    conservative refuse-emit path is preserved.
+    """
+    if not mapping_path.exists():
+        return {}
+    try:
+        return json.loads(mapping_path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
 def supports_xhigh_effort(model_alias: str, mapping_path: Path) -> bool:
     """Read ``mapping.json::model_map`` and decide whether the alias accepts ``xhigh``.
 
@@ -272,12 +292,7 @@ def supports_xhigh_effort(model_alias: str, mapping_path: Path) -> bool:
     ``supports_effort`` shape, returns ``False`` — the conservative
     refuse-emit so we never silently emit unsupported variants.
     """
-    if not mapping_path.exists():
-        return False
-    try:
-        mapping = json.loads(mapping_path.read_text(encoding='utf-8'))
-    except (OSError, json.JSONDecodeError):
-        return False
+    mapping = _load_mapping(mapping_path)
     model_map = mapping.get('model_map', {})
     entry = model_map.get(model_alias)
     if not isinstance(entry, dict):
