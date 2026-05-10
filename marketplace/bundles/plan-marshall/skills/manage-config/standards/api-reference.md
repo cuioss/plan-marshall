@@ -250,11 +250,15 @@ manage-config models apply-preset --preset balanced
 
 Arguments:
 
-- `--preset` (required) — Preset name. Valid choices come from
-  `ModelPresets.all_names()` and are restricted by argparse `choices=` so
-  unknown names are rejected before the handler runs. Currently:
-  `economic`, `balanced`, `high-end`. The lookup is case-insensitive and
-  also accepts the underscore variant (`HIGH_END`, `high_end`).
+- `--preset` (required) — Preset name. Canonical names are
+  `economic`, `balanced`, `high-end` (returned by `ModelPresets.all_names()`).
+  The lookup is case-insensitive and also accepts the underscore variant
+  (`HIGH_END`, `high_end`, `Balanced`, ...). The argparse layer pre-validates
+  `--preset` through a `type=` callable that delegates to
+  `ModelPresets.get()`, so unknown names are rejected with a usage error
+  (exit code 2) before the handler runs. `argparse choices=` is intentionally
+  *not* used because it enforces exact case-sensitive matching of the
+  canonical names and would reject the documented aliases.
 
 Semantic — **completely overwrites**: the existing `models` block is discarded
 entirely and replaced by the preset payload. Any keys present in the previous
@@ -278,8 +282,12 @@ default: medium
 roles_count: 4
 ```
 
-Common errors (besides argparse rejecting an unknown `--preset` value):
+Common errors:
 
+- `argument --preset: unknown preset '<name>'; valid names: ['economic', 'balanced', 'high-end']` —
+  argparse usage error (exit code 2). The supplied `--preset` value did not
+  normalise (lowercase + `_`→`-`) to any canonical name. Raised by the
+  argparse `type=` callable that delegates to `ModelPresets.get()`.
 - `marshal.json not initialized; run /marshall-steward first` — the project
   has not yet run `manage-config init`.
 - `level '...' at preset.default ...` / `level '...' at preset.roles.<role> ...` —

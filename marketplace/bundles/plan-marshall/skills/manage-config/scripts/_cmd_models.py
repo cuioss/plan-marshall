@@ -160,12 +160,15 @@ def cmd_models_apply_preset(args) -> dict:
     Resolution flow:
 
     1. ``ModelPresets.get(args.preset)`` returns a deep copy of the
-       preset payload (the canonical-name lookup is case-insensitive
-       and accepts the underscore variant ``HIGH_END`` / ``high_end``).
-       argparse already restricted ``--preset`` to
-       ``ModelPresets.all_names()``, so unknown names are rejected at
-       parse time; ``ValueError`` from :meth:`ModelPresets.get` is
-       therefore a defense-in-depth path that should not normally fire.
+       preset payload. The lookup is case-insensitive and accepts the
+       underscore variant (``HIGH_END`` / ``high_end``). The argparse
+       layer pre-validates ``--preset`` through a ``type=`` callable
+       that delegates to :meth:`ModelPresets.get`, so unknown names are
+       rejected at parse time with an ``ArgumentTypeError`` (exit code
+       2) before the handler runs. The ``ValueError`` branch below is
+       therefore a defense-in-depth path for programmatic callers (e.g.
+       direct ``cmd_models_apply_preset(Namespace(...))`` invocations
+       from tests).
     2. Defense-in-depth: re-validate every level value through
        :func:`_validate_level`. Preset values were validated at
        constant-class construction (``_validate_preset`` in
