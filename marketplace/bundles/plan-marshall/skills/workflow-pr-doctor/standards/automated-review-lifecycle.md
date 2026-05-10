@@ -2,7 +2,7 @@
 
 Detailed reference for the Automated Review Lifecycle mode used by phase-6-finalize when `decisions.automated_review: true`.
 
-> **Architectural context**: This document owns the lifecycle step list (CI wait, review-bot buffer, producer call, consumer dispatch, thread replies). For the architecture-level synthesis (producer→store→consumer→gate), see [`ref-workflow-architecture/standards/findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md). The pipeline narrative is not restated here.
+> **Architectural context**: This document owns the lifecycle step list (consume completed-CI signal, review-bot buffer, producer call, consumer dispatch, thread replies, overflow handling). CI completion is owned by the preceding `ci-wait` step (see [`phase-6-finalize/standards/ci-wait.md`](../../phase-6-finalize/standards/ci-wait.md)) — `automated-review` reads its terminal record via `manage-status` and proceeds only when CI is green. For the architecture-level synthesis (producer→store→consumer→gate), see [`ref-workflow-architecture/standards/findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md). The pipeline narrative is not restated here.
 
 ## Input Parameters
 
@@ -12,20 +12,23 @@ Detailed reference for the Automated Review Lifecycle mode used by phase-6-final
 
 ## Step-by-Step Reference
 
-### Step 1: Wait for CI
+### Step 1: Read completed-CI signal
+
+CI completion was already verified by the preceding `ci-wait` step. Read its terminal record from `manage-status`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
-  --pr-number {pr_number}
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+  --plan-id {plan_id}
 ```
 
-**Bash tool timeout**: 1800000ms (30-minute safety net). Internal timeout managed by script.
+Locate the `phase_steps["6-finalize"]["ci-wait"]` record and read its `outcome` and `display_detail`.
 
-| Script Output | Action |
+| Signal State | Action |
 |--------------|--------|
-| `final_status: success` | Proceed to step 2 |
-| `final_status: failure` | Return `{status: ci_failure, details: ...}` for loop-back |
-| `status: timeout` | Ask user (continue/skip/abort) |
+| `outcome: done` with display detail starting `CI success` | CI is green — proceed to step 2 |
+| `outcome: done` with display detail `no PR available` | No PR exists — return success with `comments_total: 0` and `loop_back_needed: false` |
+| `outcome: failed` (CI failure or `ci-wait` wrapper timeout) | Return `{status: ci_failure, details: ...}` for loop-back |
+| record absent (no `ci-wait` step in manifest, or earlier dispatcher skip) | Return `{status: ci_failure, details: "no ci-wait record"}` for loop-back |
 
 ### Step 2: Wait for Review Bot Comments
 
@@ -99,7 +102,12 @@ threads_resolved: {N}
 loop_back_needed: {true|false}
 ```
 
-`loop_back_needed` is `true` when at least one finding resolved to `fixed` (and therefore produced a fix task). When it is `true`, phase-6-finalize creates the fix tasks and loops back to phase-5-execute.
+`loop_back_needed` is `true` under either of two conditions:
+
+1. **FIX disposition fired** — at least one `pr-comment` finding resolved to `fixed` during this iteration's per-finding loop, allocating a fix task. When this is the trigger, phase-6-finalize creates the fix tasks and loops back to phase-5-execute.
+2. **Overflow capture fired** — the per-iteration triage budget (900 s) was nearly exhausted before all `pr-comment` findings could be processed. The Step 5 loop captures the unprocessed comment IDs as a single `pr-comment-overflow` finding (see [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) § `pr-comment-overflow`) and breaks early. The next phase-6 entry's `automated-review` invocation reads the pending `pr-comment-overflow` finding to know which comments are outstanding.
+
+The two paths are not mutually exclusive — a single iteration can both allocate fix tasks for some comments AND defer others to overflow. In that case, `loop_back_needed: true` covers both, and the overflow finding is filed alongside the fix-task allocations. The 3-iteration loop-back ceiling applies uniformly regardless of which trigger fired.
 
 ## Error Handling
 

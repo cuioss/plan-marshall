@@ -142,9 +142,9 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 **Outcome**:
 - `phase_5.early_terminate = false`
 - `phase_5.verification_steps = phase_5_candidates ∩ {quality-gate, module-tests}`
-- `phase_6.steps = phase_6_candidates − {automated-review, sonar-roundtrip}`
+- `phase_6.steps = phase_6_candidates − {ci-wait, automated-review, sonar-roundtrip}`
 
-**Why**: Recipe-driven plans (currently `recipe-refactor-to-profile-standards` and the upcoming `recipe-lesson-cleanup` from deliverable 7) follow deterministic, surgical-style patterns. Drop the heavy review steps that target broad code changes; keep the build/test gate and the bookkeeping/PR steps.
+**Why**: Recipe-driven plans (currently `recipe-refactor-to-profile-standards` and the upcoming `recipe-lesson-cleanup` from deliverable 7) follow deterministic, surgical-style patterns. Drop the heavy review steps that target broad code changes; `ci-wait` follows them out of the manifest because its only consumer is `automated-review`. Keep the build/test gate and the bookkeeping/PR steps.
 
 ### Row 3 — `docs_only`
 
@@ -153,9 +153,9 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 **Outcome**:
 - `phase_5.early_terminate = false`
 - `phase_5.verification_steps = []`
-- `phase_6.steps = phase_6_candidates − {automated-review, sonar-roundtrip}`
+- `phase_6.steps = phase_6_candidates − {ci-wait, automated-review, sonar-roundtrip}`
 
-**Why**: A docs-shaped plan never needs to run tests or coverage. The candidate set already reflects this (no `module-tests`/`coverage`), so the manifest empties Phase 5's verification list and skips the heavy review steps. We keep `commit-push`, `create-pr`, `lessons-capture`, `branch-cleanup`, and `archive-plan` so the doc change is committed, surfaced, and recorded.
+**Why**: A docs-shaped plan never needs to run tests or coverage. The candidate set already reflects this (no `module-tests`/`coverage`), so the manifest empties Phase 5's verification list and skips the heavy review steps. `ci-wait` is also dropped because its only consumer is `automated-review`. We keep `commit-push`, `create-pr`, `lessons-capture`, `branch-cleanup`, and `archive-plan` so the doc change is committed, surfaced, and recorded.
 
 ### Row 4 — `tests_only`
 
@@ -175,9 +175,9 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 **Outcome**:
 - `phase_5.early_terminate = false`
 - `phase_5.verification_steps = phase_5_candidates ∩ {quality-gate, module-tests}`
-- `phase_6.steps = phase_6_candidates − {automated-review, sonar-roundtrip}`
+- `phase_6.steps = phase_6_candidates − {ci-wait, automated-review, sonar-roundtrip}`
 
-**Why**: Surgical bug fixes and tech-debt nudges have already passed the Q-Gate bypass at outline time (deliverable 4). The full review army (`automated-review` + `sonar-roundtrip`) adds latency without commensurate signal on a one-line fix. We keep `lessons-capture` so any lesson observed during execution is still captured.
+**Why**: Surgical bug fixes and tech-debt nudges have already passed the Q-Gate bypass at outline time (deliverable 4). The full review army (`automated-review` + `sonar-roundtrip`) adds latency without commensurate signal on a one-line fix; `ci-wait` follows them out of the manifest because its only consumer is `automated-review`. We keep `lessons-capture` so any lesson observed during execution is still captured.
 
 ### Row 6 — `verification_no_files`
 

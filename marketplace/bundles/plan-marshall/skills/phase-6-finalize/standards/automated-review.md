@@ -6,13 +6,15 @@ order: 30
 
 # Automated Review
 
-Pure executor for the `automated-review` finalize step. Drives the consumer-side dispatch for `pr-comment` findings as defined in [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) — this document owns the step list (CI wait, producer call, per-finding decision loop, intra-finalize re-capture, mark-step-done). Refer to [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) for the architecture-level synthesis (producers, store schema, invariant gate, extension contract).
+Pure executor for the `automated-review` finalize step. Drives the consumer-side dispatch for `pr-comment` findings as defined in [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) — this document owns the step list (consume completed-CI signal, review-bot buffer, producer call, per-finding decision loop, overflow handling, intra-finalize re-capture, mark-step-done). Refer to [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) for the architecture-level synthesis (producers, store schema, invariant gate, extension contract).
+
+This step does NOT poll CI itself — CI completion is the responsibility of the preceding `ci-wait` step (see [`ci-wait.md`](ci-wait.md)). `automated-review` reads the completed-CI signal from `manage-status` (the `phase_steps["6-finalize"]["ci-wait"].outcome=done` record with a `final_status: success` display detail) and proceeds to comment triage when the signal is present. When the signal is absent (no `ci-wait` record) or `outcome=failed` (CI failure), `automated-review` surfaces `ci_failure` for loop-back without attempting to fetch comments.
 
 This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `automated-review` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
 
 ## Timeout Contract
 
-This step runs as a Task agent (`plan-marshall:automated-review-agent`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget covers the full sequence: CI wait, review-bot buffer, producer-side comments-stage, per-finding triage dispatch, thread replies, and thread resolution.
+This step runs as a Task agent (`plan-marshall:automated-review-agent`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget is **triage-only**: it covers the review-bot buffer, producer-side comments-stage, per-finding triage dispatch, thread replies, and thread resolution. CI wait time is bounded separately by the preceding `ci-wait` step's 1800 s budget — splitting CI-wait out keeps this triage budget bounded by comment volume rather than CI queue depth.
 
 **Graceful degradation**: When the wrapper expires:
 
@@ -21,7 +23,7 @@ This step runs as a Task agent (`plan-marshall:automated-review-agent`) under a 
 3. The dispatcher continues with the next manifest step. The pipeline does NOT abort; later steps still run.
 4. On the next Phase 6 entry, the resumable re-entry check sees `outcome=failed` and retries this step from scratch (one fresh attempt per invocation).
 
-There is no internal soft-timeout, polling cap, or partial-progress checkpoint inside this document — the wrapper is the only timeout authority. Standards-internal commands (CI wait, `pr wait-for-comments`) carry their own short polling intervals but never their own outer ceiling.
+There is no internal soft-timeout, polling cap, or partial-progress checkpoint inside this document — the wrapper is the only timeout authority. Standards-internal commands (`pr wait-for-comments`) carry their own short polling intervals but never their own outer ceiling. **Pre-emptive overflow handling** (see "Overflow handling" below) ensures that high comment volume produces a follow-up `pr-comment-overflow` finding and a `loop_back` outcome rather than a wrapper timeout.
 
 ## Inputs
 
@@ -40,18 +42,23 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 
 Read `pr_number` from the TOON output. If `ci pr view` returns `status: error` (no PR exists for the branch), this step has nothing to process — record `done` with a `display_detail` of `no PR available` (Branch B in "Mark Step Complete" below) and return.
 
-### Wait for CI
+### Read completed-CI signal
+
+CI completion was already verified by the preceding `ci-wait` step. Read its terminal record from `manage-status` to confirm CI is green before proceeding to comment triage:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} ci wait \
-  --pr-number {pr_number}
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+  --plan-id {plan_id}
 ```
 
-| Script Output | Action |
+Locate the `phase_steps["6-finalize"]["ci-wait"]` record in the returned TOON and read its `outcome` and `display_detail` fields.
+
+| Signal State | Action |
 |--------------|--------|
-| `final_status: success` | Proceed to "Wait for review-bot comments" |
-| `final_status: failure` | Treat as a CI failure — surface `ci_failure` to the caller for loop-back; this step does NOT proceed to comment processing |
-| `status: timeout` | Ask user (continue / skip / abort) via `AskUserQuestion` |
+| `outcome: done` with display detail starting `CI success` | CI is green — proceed to "Wait for review-bot comments" |
+| `outcome: done` with display detail `no PR available` | No PR exists — record `done` with display detail `no PR available` (Branch B in "Mark Step Complete" below) and return |
+| `outcome: failed` (CI failure or `ci-wait` wrapper timeout) | Treat as a CI failure — surface `ci_failure` to the caller for loop-back; this step does NOT proceed to comment processing |
+| record absent (no `ci-wait` step in manifest, or earlier dispatcher skip) | Treat as a CI-not-ready condition — surface `ci_failure` to the caller for loop-back |
 
 ### Wait for review-bot comments
 
@@ -92,7 +99,7 @@ If the result's `findings` list is empty, there is nothing to process — procee
 
 ### Per-finding dispatch loop (consumer-side triage)
 
-For each finding in the query result, perform the following sequence. Process findings sequentially — never batch the per-finding decision through a single LLM call.
+For each finding in the query result, perform the following sequence. Process findings sequentially — never batch the per-finding decision through a single LLM call. Before the next finding is dispatched, check the **Overflow handling** rule below — if the budget is nearly exhausted, capture the unprocessed findings as a single `pr-comment-overflow` finding and break out of the loop with a `loop_back` outcome rather than risking a wrapper timeout mid-finding.
 
 **1. Detect domain** from the finding's `file_path`:
 
@@ -220,6 +227,43 @@ The `AskUserQuestion` outcome is reserved for the cases where domain-skill rules
     --plan-id {plan_id} --hash-id {finding.hash_id} --resolution {fixed|suppressed|accepted|taken_into_account} \
     --detail "{user's stated rationale}"
   ```
+
+### Overflow handling
+
+The triage budget covers only the per-iteration triage work — it does not scale with comment volume. When a single finalize iteration faces more `pr-comment` findings than the 900 s budget can handle, the loop above MUST break early with a `loop_back` outcome rather than allow the wrapper to time out mid-finding (which would lose the per-finding progress made so far).
+
+**When to overflow**: Before dispatching the next finding in the per-finding loop, evaluate the elapsed-budget heuristic — if either condition holds, treat the remaining queue as overflow:
+
+- The 900 s wrapper budget is **75% consumed** (i.e., ≥ 675 s of wall-clock time has elapsed since this dispatch started) AND at least one pending finding remains.
+- The number of findings still pending in the loop is large enough that completing them at the observed per-finding pace would push past the 900 s ceiling. Use the per-finding wall-clock time of the most recently completed finding as the pace estimate.
+
+The 75 % threshold is intentionally conservative — it leaves enough budget for the overflow capture itself (one `manage-findings add` plus one `mark-step-done` call) plus a small safety margin against per-call latency variance.
+
+**How to overflow**: When the heuristic fires, do NOT dispatch any further per-finding triage. Instead:
+
+1. **Collect unprocessed comment IDs** — gather the `hash_id` (and the source comment ID, when present in the finding's `detail`) for every `pr-comment` finding in the original query result that has NOT yet been resolved this iteration. The IDs MUST be stable across iterations so the next pass can correlate them against fresh `comments-stage` output.
+
+2. **Capture the overflow finding** via `manage-findings add` — exactly one `pr-comment-overflow` finding per overflow event, regardless of how many comments overflowed:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings add \
+     --plan-id {plan_id} --type pr-comment-overflow \
+     --title "Triage budget exhausted: {N} pr-comment finding(s) deferred" \
+     --severity warning \
+     --detail "{comma-separated list of unprocessed pr-comment hash_ids}"
+   ```
+
+   Substitute `{N}` with the count of unprocessed findings and the `--detail` body with the list of IDs (machine-readable; the next iteration's overflow consumer parses this list to know exactly which comments are outstanding). See [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) for the type's full contract — purpose, expected `detail` shape, and resolution semantics.
+
+3. **Mark the step `loop_back`** with a display detail naming the deferred count, then return — do NOT proceed to "Phase Boundary Re-Capture" or "Mark Step Complete" Branch A on this iteration. The dispatcher's `loop_back` semantics will re-fire `automated-review` on next phase-6 entry; the next iteration MUST consult the `pr-comment-overflow` finding (via `manage-findings query --type pr-comment-overflow --resolution pending`) to know which comments to prioritise. Once every comment named by the overflow finding is processed, mark the overflow finding `--resolution fixed` (or whichever per-comment disposition applies in aggregate — typically `fixed` once each comment has been individually resolved):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+     --plan-id {plan_id} --phase 6-finalize --step automated-review --outcome loop_back \
+     --display-detail "overflow: {N} comment(s) deferred to next iteration"
+   ```
+
+   The overflow path counts as a loop-back iteration against the 3-iteration cap (same ceiling as the FIX-driven loop-back). When the cap is reached and unprocessed comments still remain, the dispatcher falls through to the standard `failed` path and the user is prompted on next phase-6 entry.
 
 ### Handle findings (loop-back)
 

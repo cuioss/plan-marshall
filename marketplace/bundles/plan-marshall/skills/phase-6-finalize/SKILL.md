@@ -90,7 +90,9 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 |-------|------|-------------|
 | `phase-6-finalize.review_bot_buffer_seconds` | integer | Max seconds to wait after CI for new review-bot comments (used as `--timeout` for `pr wait-for-comments`; ceiling, not fixed delay; default: 180) |
 | `phase-6-finalize.max_iterations` | integer | Maximum finalize-verify loops (default: 3) |
+| `phase-6-finalize.loop_back_without_asking` | bool | Symmetric counterpart to `phase-5-execute.finalize_without_asking`. When `true`, a `loop_back` outcome from any phase-6 step (FIX disposition, `pr-comment-overflow`, sonar-roundtrip FIX) auto-dispatches the execute pipeline inline and re-enters the finalize loop, capped by `max_iterations`. When `false` (default), the dispatcher halts and returns control to the user. See Step 3 § "Loop-back continuation" for the dispatch shape. |
 | `phase-5-execute.commit_strategy` | string | per_deliverable / per_plan / none |
+| `phase-5-execute.finalize_without_asking` | bool | Forward-direction auto-continuation: when `true`, after `5-execute → 6-finalize` transition the orchestrator dispatches `phase-6-finalize` inline rather than halting and prompting the user. The reverse-direction symmetric counterpart is `phase-6-finalize.loop_back_without_asking`. |
 | `phase-1-init.branch_strategy` | string | feature / direct |
 
 A step is active if and only if it appears in `manifest.phase_6.steps`. Absent steps are NEVER executed. The order of steps in the manifest list is the execution order. The `plan.phase-6-finalize.steps` field in `marshal.json` is the *candidate set* — the input list `phase-4-plan` Step 8b passes to `manage-execution-manifest compose --phase-6-steps`. The manifest's `phase_6.steps` is the *resolved per-plan instance* of that candidate set and is the only authority this skill consults at dispatch time. The candidate set drives dispatch transitively; this skill itself never reads `marshal.json` for step selection.
@@ -485,12 +487,70 @@ FOR each step_id in manifest.phase_6.steps:
   7. Log step completion:
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
        work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}"
+
+  7b. Loop-back continuation hook (consult the just-recorded outcome):
+      Read the step's recorded outcome from `status.metadata.phase_steps["6-finalize"][step_id]` (the dispatched agent's `mark-step-done` call wrote it). When `outcome == "loop_back"`, consult the symmetric auto-continuation knob to decide whether to halt or re-enter inline:
+
+         python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+           plan phase-6-finalize get --field loop_back_without_asking --audit-plan-id {plan_id}
+
+      Read the returned `value`:
+
+      - IF `value == false` (default): halt the FOR loop, mark the finalize phase as needing a re-entry, and emit the user-facing prompt:
+          python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+            work --plan-id {plan_id} --level INFO \
+            --message "[STATUS] (plan-marshall:phase-6-finalize) Loop-back signalled by {step_ref}: returning control to user (loop_back_without_asking=false)"
+        Display: "Loop-back signalled. Run '/plan-marshall action=execute plan={plan_id}' when ready to dispatch the fix tasks."
+        STOP.
+
+      - IF `value == true`: increment the in-memory `loop_back_iteration` counter (initialised to 0 at FOR-loop entry) and consult the ceiling:
+
+         (a) Compare against `phase-6-finalize.max_iterations` (default 3, read in Step 2). When `loop_back_iteration > max_iterations`, halt with a user-facing prompt — even with the flag set, the ceiling is the structural safety valve:
+             python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+               work --plan-id {plan_id} --level WARNING \
+               --message "[STATUS] (plan-marshall:phase-6-finalize) Loop-back ceiling reached ({loop_back_iteration}/{max_iterations}) — halting and returning control to user"
+             Display: "Loop-back iteration ceiling reached. Inspect pending fix tasks via 'manage-tasks list --status pending --plan-id {plan_id}' and re-run when ready."
+             STOP.
+
+         (b) Otherwise, emit the canonical iteration log line:
+             python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+               work --plan-id {plan_id} --level INFO \
+               --message "[STATUS] (plan-marshall:phase-6-finalize) Loop-back iteration {loop_back_iteration}/{max_iterations}"
+
+         (c) Dispatch the inline execute pipeline. The inline re-entry mirrors the forward `phase-5-execute.finalize_without_asking` path (`workflows/execution.md` § Execute Phase Completion) — it runs the execute pipeline against the freshly-allocated fix tasks, transitions back to `6-finalize`, and re-enters this FOR loop:
+
+             1. Set the plan back to phase-5-execute (the loop-back-emitting step typically did this already via `manage-status set-phase`; idempotent re-issue is safe):
+                python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-phase \
+                  --plan-id {plan_id} --phase 5-execute
+
+             2. Dispatch the execute pipeline inline by re-loading `phase-5-execute`:
+                Skill: plan-marshall:phase-5-execute
+                  Arguments: --plan-id {plan_id}
+
+                The execute pipeline picks up the freshly-allocated fix tasks (created by the FIX disposition or by the overflow-handling path) via the standard `manage-tasks next` loop, drives them to done, then transitions `5-execute → 6-finalize` via the existing `phase-5-execute.finalize_without_asking` gate. When `finalize_without_asking == false`, the inline re-entry halts at the standard prompt — symmetric loop-back is gated by both knobs in series, so a project can opt into automated forward continuation without also opting into automated loop-back continuation.
+
+             3. After phase-5-execute returns, BREAK out of the current FOR loop iteration position and RE-ENTER the FOR loop from the start of `manifest.phase_6.steps`. The resumable re-entry check (item 1 above) skips already-`done` steps, retries `failed` steps, and re-fires the `loop_back`-marked step now that its preconditions have been addressed.
+
+             Note: the BREAK + RE-ENTER above is a control-flow construct, not a per-step skip. The FOR loop re-iteration uses the same manifest list and the same per-step resumable check; the only state that changes is the `phase_steps["6-finalize"][step_id]` records (the dispatched agent will record a fresh outcome on its next run).
+
+      The `loop_back_iteration` counter is held in model context for the duration of the dispatch — it is NOT persisted to status.json. A fresh phase-6 entry (e.g., after a session restart) starts the counter back at 0; the manifest's resumable re-entry check still skips already-`done` steps, so re-entering after a restart re-runs only the steps that recorded `loop_back` or `failed` on the previous invocation.
 END FOR
 ```
 
 **Critical invariant**: This loop iterates **only** the manifest list. A step that is NOT in `manifest.phase_6.steps` MUST NOT fire under any circumstance — there is no fallback to a "default" step set, no inference from config booleans, no per-step skip logic. The manifest is the contract. If a deployment requires a different step set, recompose the manifest at outline time.
 
 **Lessons-capture unconditionality**: When `lessons-capture` IS in `manifest.phase_6.steps` (the composer includes it for every non-trivial change-type), this loop dispatches it on every Phase 6 entry. It is not gated on PR state, CI state, or earlier step outcomes — reaching Phase 6 is itself the trigger.
+
+**Symmetric auto-continuation invariant**: The `loop_back_without_asking` flag is the structural counterpart to `phase-5-execute.finalize_without_asking`. The two knobs together define the four corners of the unattended-vs-interactive matrix:
+
+| `finalize_without_asking` | `loop_back_without_asking` | Behaviour |
+|---------------------------|----------------------------|-----------|
+| `false` (default) | any | The forward `5-execute → 6-finalize` transition halts and prompts the user. Loop-back never fires inline because finalize is not entered in the same orchestration cycle. |
+| `true` | `false` (default) | Forward auto-continuation; loop-back halts at the inline execute re-entry point and prompts the user. (This is the conservative shape: forward is automated, reverse is interactive.) |
+| `true` | `true` | Full unattended cycle. A loop_back outcome re-dispatches execute inline up to `max_iterations` times, then halts even with the flag set. |
+| `false` | `true` | Effectively `false`/`false` from the user's perspective: forward halts and prompts before phase-6 ever runs, so the loop-back hook is unreachable in the same orchestration cycle. |
+
+The conservative default (`loop_back_without_asking=false`) ships an interactive shape so existing plans behave the same as before this knob was added. Projects that want full unattended execution must opt into both knobs.
 
 #### Pre-Archive Snapshot Hook
 
@@ -719,7 +779,8 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `standards/commit-push.md` | `default:commit-push` | Commit strategy, git status, workflow-integration-git delegation |
 | `standards/create-pr.md` | `default:create-pr` | PR existence check, body generation, CI pr create |
 | `standards/architecture-refresh.md` | `default:architecture-refresh` | Tier-0 deterministic `architecture discover --force` + `diff-modules --pre` driven `chore(architecture)` commit; Tier-1 LLM re-enrichment with `prompt`/`auto`/`disabled` modes; respects `architecture_refresh.tier_0` / `tier_1` run-config knobs and `change_type ∈ {bug_fix, verification}` shortcut |
-| `standards/automated-review.md` | `default:automated-review` | CI wait, then consumer dispatch (FIX / SUPPRESS / ACCEPT / AskUserQuestion); loop-back on FIX. Architectural flow: [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) |
+| `standards/ci-wait.md` | `default:ci-wait` | Poll CI to completion (1800 s budget), write the completed-CI signal `automated-review` consumes; never loops_back |
+| `standards/automated-review.md` | `default:automated-review` | Consume completed-CI signal, then consumer dispatch (FIX / SUPPRESS / ACCEPT / AskUserQuestion); loop-back on FIX or pr-comment-overflow. Architectural flow: [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) |
 | `standards/sonar-roundtrip.md` | `default:sonar-roundtrip` | Sonar consumer dispatch (FIX / SUPPRESS / ACCEPT / AskUserQuestion); loop-back on FIX. Architectural flow: [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) |
 | `standards/lessons-capture.md` | `default:lessons-capture` | manage-lesson add command |
 | `standards/branch-cleanup.md` | `default:branch-cleanup` | Branch cleanup with user confirmation — PR mode (merge + CI) or local-only (switch + pull) |
