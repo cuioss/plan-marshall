@@ -27,12 +27,24 @@ from _analyze_shared import (
     extract_frontmatter,
 )
 from _analyze_structure import analyze_skill_structure, cmd_structure
+from _analyze_cmd_root_anchoring import analyze_cmd_root_anchoring
+from _analyze_executor_path_in_production import analyze_executor_path_in_production
+from _analyze_metadata_field_validity import analyze_metadata_field_validity
+from _analyze_orphan_argparse_flags import analyze_orphan_argparse_flags
+from _analyze_resolution_branch_markers import analyze_resolution_branch_markers
+from _analyze_shell_active_tokens import analyze_shell_active_tokens
 from _analyze_verb_chains import analyze_verb_chains
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 # Public API surface — used by _doctor_analysis.py and other scripts
 __all__ = [
+    'analyze_cmd_root_anchoring',
+    'analyze_executor_path_in_production',
     'analyze_markdown_file',
+    'analyze_metadata_field_validity',
+    'analyze_orphan_argparse_flags',
+    'analyze_resolution_branch_markers',
+    'analyze_shell_active_tokens',
     'analyze_skill_structure',
     'analyze_tool_coverage',
     'analyze_verb_chains',
