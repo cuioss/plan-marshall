@@ -1341,5 +1341,386 @@ def test_quality_gate_real_marketplace_passes():
 
 
 # =============================================================================
+# --rules opt-in flag tests (replaces PM_ARGUMENT_NAMING_ENABLED env-var gate)
+# =============================================================================
+#
+# Pins the breaking-refactor contract from deliverable D3: the argument-naming
+# rule cluster (and the verb-chain cluster) under ``plugin-doctor analyze`` is
+# gated OFF by default. Activation is via ``--rules <name>[,<name>...]`` or the
+# two boolean aliases ``--enable-argument-naming`` / ``--enable-verb-chain``.
+# The legacy ``PM_ARGUMENT_NAMING_ENABLED`` env-var must NOT trigger any rule
+# activation — zero references remain in source per the deliverable's zero-hit
+# grep gate.
+
+
+# Load the analyze rules helpers directly so the small-pure-function tests do
+# not need a subprocess round-trip per case.
+_DOCTOR_MARKETPLACE_PATH = (
+    PROJECT_ROOT
+    / 'marketplace'
+    / 'bundles'
+    / 'pm-plugin-development'
+    / 'skills'
+    / 'plugin-doctor'
+    / 'scripts'
+    / 'doctor-marketplace.py'
+)
+
+
+def _load_doctor_marketplace():
+    """Import ``doctor-marketplace.py`` as a module for direct-call tests.
+
+    The script is invocation-side; importing it gives access to the pure-
+    function helpers (``_parse_rules_flag``, ``_resolve_active_rules``) without
+    paying subprocess overhead per case.
+    """
+    # Add the script directory to sys.path so internal ``from _x import ...``
+    # statements resolve.
+    script_dir = _DOCTOR_MARKETPLACE_PATH.parent
+    if str(script_dir) not in sys.path:
+        sys.path.insert(0, str(script_dir))
+    spec = importlib.util.spec_from_file_location('_doctor_marketplace_under_test', _DOCTOR_MARKETPLACE_PATH)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules['_doctor_marketplace_under_test'] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_doctor_marketplace = _load_doctor_marketplace()
+
+
+class _FakeArgs:
+    """Minimal Namespace stand-in for ``_resolve_active_rules`` tests."""
+
+    def __init__(self, rules=None, enable_argument_naming=False, enable_verb_chain=False):
+        self.rules = rules
+        self.enable_argument_naming = enable_argument_naming
+        self.enable_verb_chain = enable_verb_chain
+
+
+def test_parse_rules_flag_none_returns_empty_set():
+    """``_parse_rules_flag(None)`` returns an empty frozenset (no opt-in)."""
+    # Arrange + Act
+    result = _doctor_marketplace._parse_rules_flag(None)
+
+    # Assert
+    assert result == frozenset()
+
+
+def test_parse_rules_flag_empty_string_returns_empty_set():
+    """An empty ``--rules`` value is treated the same as absence."""
+    # Arrange + Act
+    result = _doctor_marketplace._parse_rules_flag('')
+
+    # Assert
+    assert result == frozenset()
+
+
+def test_parse_rules_flag_single_name_activates_that_rule():
+    """``--rules argument_naming`` activates the argument-naming cluster."""
+    # Arrange + Act
+    result = _doctor_marketplace._parse_rules_flag('argument_naming')
+
+    # Assert
+    assert result == frozenset({'argument_naming'})
+
+
+def test_parse_rules_flag_comma_separated_activates_multiple():
+    """``--rules argument_naming,verb_chain`` activates both clusters."""
+    # Arrange + Act
+    result = _doctor_marketplace._parse_rules_flag('argument_naming,verb_chain')
+
+    # Assert
+    assert result == frozenset({'argument_naming', 'verb_chain'})
+
+
+def test_parse_rules_flag_drops_unknown_names_but_keeps_valid(capsys):
+    """Unknown rule names are dropped but valid tokens still activate.
+
+    Valid tokens in the same invocation continue to enable their cluster —
+    only the unknown tokens are rejected. See ``test_parse_rules_flag_warns_on_unknown_tokens``
+    for the warning contract.
+    """
+    # Arrange + Act
+    result = _doctor_marketplace._parse_rules_flag('argument_naming,nonsense,verb_chain')
+
+    # Assert
+    assert result == frozenset({'argument_naming', 'verb_chain'})
+
+
+def test_parse_rules_flag_warns_on_unknown_tokens(capsys):
+    """Unknown ``--rules`` tokens trigger a stderr warning naming the rejected
+    token alongside the accepted registry — silent drops mask user typos in a
+    diagnostic tool. See lesson 2026-05-08-19-003 (PR #362 review).
+    """
+    # Arrange + Act
+    _doctor_marketplace._parse_rules_flag('argument_naming,nonsense,verb_chain')
+
+    # Assert — warning emitted on stderr, naming both the rejected token and
+    # the accepted registry so users can correct the typo.
+    captured = capsys.readouterr()
+    assert 'WARNING' in captured.err, f'Expected warning on stderr, got: {captured.err!r}'
+    assert 'nonsense' in captured.err, f'Warning should name the rejected token: {captured.err!r}'
+    assert 'argument_naming' in captured.err, f'Warning should list accepted registry: {captured.err!r}'
+    assert 'verb_chain' in captured.err, f'Warning should list accepted registry: {captured.err!r}'
+
+
+def test_parse_rules_flag_no_warning_on_valid_tokens(capsys):
+    """No warning is emitted when every ``--rules`` token is in the registry."""
+    # Arrange + Act
+    _doctor_marketplace._parse_rules_flag('argument_naming,verb_chain')
+
+    # Assert — no warning on stderr when all tokens are accepted.
+    captured = capsys.readouterr()
+    assert 'WARNING' not in captured.err, f'Should NOT warn on valid tokens, got: {captured.err!r}'
+
+
+def test_parse_rules_flag_trims_whitespace_around_names():
+    """Names are stripped of surrounding whitespace before lookup."""
+    # Arrange + Act
+    result = _doctor_marketplace._parse_rules_flag(' argument_naming ,  verb_chain ')
+
+    # Assert
+    assert result == frozenset({'argument_naming', 'verb_chain'})
+
+
+def test_resolve_active_rules_no_flags_returns_empty():
+    """No ``--rules``, no aliases → no rules active (default-off contract)."""
+    # Arrange
+    args = _FakeArgs()
+
+    # Act
+    result = _doctor_marketplace._resolve_active_rules(args)
+
+    # Assert
+    assert result == frozenset()
+
+
+def test_resolve_active_rules_enable_argument_naming_alias_activates_rule():
+    """``--enable-argument-naming`` desugars into ``argument_naming``."""
+    # Arrange
+    args = _FakeArgs(enable_argument_naming=True)
+
+    # Act
+    result = _doctor_marketplace._resolve_active_rules(args)
+
+    # Assert
+    assert result == frozenset({'argument_naming'})
+
+
+def test_resolve_active_rules_enable_verb_chain_alias_activates_rule():
+    """``--enable-verb-chain`` desugars into ``verb_chain``."""
+    # Arrange
+    args = _FakeArgs(enable_verb_chain=True)
+
+    # Act
+    result = _doctor_marketplace._resolve_active_rules(args)
+
+    # Assert
+    assert result == frozenset({'verb_chain'})
+
+
+def test_resolve_active_rules_rules_and_alias_union():
+    """``--rules`` and aliases combine — the active set is their union."""
+    # Arrange
+    args = _FakeArgs(rules='argument_naming', enable_verb_chain=True)
+
+    # Act
+    result = _doctor_marketplace._resolve_active_rules(args)
+
+    # Assert
+    assert result == frozenset({'argument_naming', 'verb_chain'})
+
+
+# =============================================================================
+# verb_chain gating — TASK-13 (PR #362 review)
+# =============================================================================
+#
+# The verb_chain rule cluster is registered in ``_OPTIN_RULE_NAMES`` and
+# surfaced via ``--rules verb_chain`` / ``--enable-verb-chain``, so it must
+# only dispatch when the caller opts in. Previously the rule ran
+# unconditionally inside ``analyze_component``, creating a data-contract
+# drift between registry and dispatch. These tests pin the gated dispatch
+# at the unit-test level via a patched ``analyze_verb_chains`` spy.
+
+
+def _load_doctor_analysis():
+    """Import ``_doctor_analysis.py`` for direct-call tests."""
+    script_dir = _DOCTOR_MARKETPLACE_PATH.parent
+    if str(script_dir) not in sys.path:
+        sys.path.insert(0, str(script_dir))
+    path = script_dir / '_doctor_analysis.py'
+    spec = importlib.util.spec_from_file_location('_doctor_analysis_under_test', path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules['_doctor_analysis_under_test'] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_analyze_component_skips_verb_chain_when_inactive(tmp_path, monkeypatch):
+    """``analyze_component`` does NOT call ``analyze_verb_chains`` without opt-in.
+
+    Pins the dispatch-gating contract introduced for TASK-13: verb_chain is
+    opt-in via ``--rules verb_chain`` / ``--enable-verb-chain``; absence
+    must keep the analyzer silent (no calls, no findings).
+    """
+    # Arrange — fixture skill directory and spy.
+    skill_dir = tmp_path / 'gated-skill'
+    skill_dir.mkdir()
+    (skill_dir / 'SKILL.md').write_text('---\nname: gated-skill\ndescription: x\n---\n# Gated Skill\n')
+    component = {'type': 'skill', 'path': str(skill_dir), 'skill_md_path': str(skill_dir / 'SKILL.md')}
+
+    doctor_analysis = _load_doctor_analysis()
+    calls = []
+
+    def _spy(skill_dir_arg):
+        calls.append(skill_dir_arg)
+        return []
+
+    monkeypatch.setattr(doctor_analysis, 'analyze_verb_chains', _spy)
+
+    # Act — no active rules.
+    doctor_analysis.analyze_component(component)
+
+    # Assert — spy never called.
+    assert calls == [], f'verb_chain should not run without opt-in, but spy was called: {calls!r}'
+
+
+def test_analyze_component_runs_verb_chain_when_active(tmp_path, monkeypatch):
+    """``analyze_component`` dispatches verb_chain when ``active_rules`` opts in.
+
+    Pins the active-path of the TASK-13 contract: with ``verb_chain`` in the
+    active rule set, the analyzer is invoked exactly once per skill.
+    """
+    # Arrange
+    skill_dir = tmp_path / 'opted-in-skill'
+    skill_dir.mkdir()
+    (skill_dir / 'SKILL.md').write_text('---\nname: opted-in-skill\ndescription: x\n---\n# Opted In Skill\n')
+    component = {'type': 'skill', 'path': str(skill_dir), 'skill_md_path': str(skill_dir / 'SKILL.md')}
+
+    doctor_analysis = _load_doctor_analysis()
+    calls = []
+
+    def _spy(skill_dir_arg):
+        calls.append(skill_dir_arg)
+        return []
+
+    monkeypatch.setattr(doctor_analysis, 'analyze_verb_chains', _spy)
+
+    # Act
+    doctor_analysis.analyze_component(component, active_rules=frozenset({'verb_chain'}))
+
+    # Assert — spy called exactly once with the skill dir.
+    assert len(calls) == 1, f'verb_chain should run exactly once when opted in, calls={calls!r}'
+
+
+# =============================================================================
+# Subprocess-level tests: argparse surface and PM_ARGUMENT_NAMING_ENABLED inertness
+# =============================================================================
+
+
+def test_analyze_help_documents_rules_flag():
+    """``analyze --help`` mentions the ``--rules`` flag and its aliases.
+
+    Pins the user-facing CLI surface — if the flag is renamed/removed, this
+    test catches it before the change reaches users.
+    """
+    # Arrange + Act
+    result = run_script(SCRIPT_PATH, 'analyze', '--help')
+
+    # Assert
+    assert result.returncode == 0, f'analyze --help failed: {result.stderr}'
+    help_text = result.stdout
+    assert '--rules' in help_text, f'--rules not documented in analyze --help: {help_text!r}'
+    assert '--enable-argument-naming' in help_text, '--enable-argument-naming alias not documented'
+    assert '--enable-verb-chain' in help_text, '--enable-verb-chain alias not documented'
+
+
+def test_pm_argument_naming_enabled_env_var_no_longer_recognised():
+    """Setting the legacy env var does NOT activate the argument-naming cluster.
+
+    The breaking-refactor contract per lesson 2026-05-08-19-003: zero source
+    references to ``PM_ARGUMENT_NAMING_ENABLED``. This test asserts inertness
+    by setting the env var and confirming the script does not warn or change
+    behaviour.
+    """
+    if not marketplace_available():
+        pytest.skip('Real marketplace not available')
+
+    # Arrange + Act — run analyze with the legacy env var set; the script must
+    # not warn, not error, and not activate the rule cluster (i.e., behaviour
+    # must be identical to a run without the env var).
+    result_with_env = run_script(
+        SCRIPT_PATH,
+        'analyze',
+        '--type',
+        'skills',
+        '--bundles',
+        'plan-marshall',
+        env_overrides={'PM_ARGUMENT_NAMING_ENABLED': '1'},
+    )
+    result_without_env = run_script(
+        SCRIPT_PATH,
+        'analyze',
+        '--type',
+        'skills',
+        '--bundles',
+        'plan-marshall',
+    )
+
+    # Assert — same return code (env var must not introduce a new exit path).
+    assert result_with_env.returncode == result_without_env.returncode, (
+        f'Env-var run diverged from no-env run: '
+        f'with={result_with_env.returncode}, without={result_without_env.returncode}'
+    )
+    # No warning emitted about the env var (would indicate residual recognition).
+    combined_stderr = (result_with_env.stderr or '') + (result_with_env.stdout or '')
+    assert 'PM_ARGUMENT_NAMING_ENABLED' not in combined_stderr, (
+        'Script must not reference PM_ARGUMENT_NAMING_ENABLED at runtime — '
+        'env-var gate was removed per the breaking refactor'
+    )
+
+
+def test_zero_hit_grep_pm_argument_naming_enabled_in_source():
+    """Zero source-tree references to ``PM_ARGUMENT_NAMING_ENABLED`` remain.
+
+    The deliverable's success criterion: ``PM_ARGUMENT_NAMING_ENABLED does not
+    appear in the post-change source tree (zero-hit grep).`` This test scans
+    the marketplace bundles for any string match and fails when one is found.
+    The test directory is intentionally excluded — this very file mentions the
+    legacy name in its assertion strings.
+    """
+    if not marketplace_available():
+        pytest.skip('Real marketplace not available')
+
+    # Arrange
+    marketplace_root = MARKETPLACE_ROOT
+    legacy_token = 'PM_ARGUMENT' + '_NAMING_ENABLED'  # split to avoid self-hit
+
+    # Act
+    hits = []
+    for path in marketplace_root.rglob('*'):
+        if not path.is_file():
+            continue
+        # Skip binary-ish suffixes that we never expect to source-match.
+        if path.suffix in {'.pyc', '.png', '.jpg', '.so', '.zip'}:
+            continue
+        try:
+            content = path.read_text(encoding='utf-8')
+        except (UnicodeDecodeError, OSError):
+            continue
+        if legacy_token in content:
+            hits.append(str(path.relative_to(marketplace_root)))
+
+    # Assert
+    assert hits == [], (
+        f'Found {len(hits)} residual reference(s) to {legacy_token} in marketplace tree: {hits}. '
+        f'The breaking-refactor contract per lesson 2026-05-08-19-003 requires zero hits.'
+    )
+
+
+# =============================================================================
 # Main
 # =============================================================================

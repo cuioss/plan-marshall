@@ -668,6 +668,32 @@ Phase-5-execute MUST drive the task loop to one of three terminal outcomes insid
 
 The motivating gap: lesson `2026-05-08-14-001` documents that agent-initiated re-dispatch was the trigger for losing `[OUTCOME]` log coverage. The script-level `[OUTCOME]` guard in `manage-tasks finalize-step` (D1) closes the audit-trail gap, but the underlying control-flow drift — agents deciding on their own to hand control back — also needs to be ruled out at the skill level. The orchestrator (`plan-marshall` workflows) is the single component allowed to start, re-dispatch, or terminate phase-5-execute; the dispatched agent does not get to vote.
 
+### Deterministic exit clause (token-budget sentinel)
+
+The loop's continue-vs-yield decision is governed by exactly one deterministic clause — no per-task heuristics, no "this task feels expensive" intuition, no "context is filling up" sense-checks. The clause is:
+
+> **If `remaining_budget > N`: continue to the next task. Else: yield.**
+
+Where `N` is the per-task budget reserve (the minimum context window that must be available before the loop is allowed to start another task). The clause runs once after each task completes — between `manage-tasks finalize-step` of the closing step (which fires the canonical `[OUTCOME]`) and the next `manage-tasks next` call. There is no intermediate decision point.
+
+**Budget items consumed per task** (the sentinel's accounting model — these are the costs `N` must reserve for):
+
+1. **`execute-task` agent dispatch** — the per-task subagent invocation that runs the actual implementation/test/verification work. This is the largest cost per task and includes the agent's own context plus the standards it loads on entry.
+2. **Auto-injected `--project-dir` verify step** — when the plan resolves to a worktree, `plan-marshall:execute-task:inject_project_dir` rewrites each `task.verification.commands[N]` to forward the worktree path. The rewritten command consumes additional executor + build-system context that the budget model must NOT under-account; it is part of every implementation / module_testing task and a primary driver of per-task cost variance.
+
+**Resolving `N`** — the threshold MUST come from a manifest-resolvable knob, not a literal:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute get --field per_task_budget_reserve --audit-plan-id {plan_id}
+```
+
+When `per_task_budget_reserve` is set, use its value as `N`. **Fallback when the knob is absent**: use the conservative default `N = 50000` tokens. The fallback exists so plans that have not yet migrated to the manifest-driven model still observe a deterministic yield boundary rather than running until the host platform forces a `harness_cancellation`. Plans that need a different reserve raise the value in `marshal.json`'s `plan.phase-5-execute.per_task_budget_reserve` slot.
+
+**Cross-reference to the three terminal outcomes** — the sentinel is the **continue-vs-yield** decision, not a fourth terminal outcome. When the sentinel says "yield", the agent still MUST exit via one of the three documented terminal paths above (queue empty → transition; fatal error → structured error TOON; triage `blocked` → manage-tasks status update). Yielding does NOT mean "return a partial-completion checkpoint" — that path is explicitly forbidden by the section above. The orchestrator re-dispatches the phase-agent on the next round; the in-flight task's state is already persisted by `manage-tasks finalize-step` so resumption is lossless.
+
+**Audit diagnostic ledger** — when investigating throughput regressions (e.g., "why did this run process 1 task at ~119k tokens while a prior run processed 4 at ~210k?"), compare the work-log entries between `phase-agent`-mediated dispatches and direct `phase-5-execute` dispatches. The phase-agent layer adds a small fixed cost per dispatch (skill-load + Worktree Header echo); the difference between the two trace shapes is the per-dispatch overhead and is the first thing to inspect when budget accounting drifts.
+
 ---
 
 ## Phase Transition

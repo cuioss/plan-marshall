@@ -145,23 +145,41 @@ def get_sibling_modules(module_name: str, project_dir: str = '.') -> list[str]:
     return siblings
 
 
-def get_module_graph(project_dir: str = '.', full: bool = False) -> dict[str, Any]:
+def get_module_graph(
+    project_dir: str = '.',
+    full: bool = False,
+    *,
+    derived_by_name: dict[str, dict[str, Any]] | None = None,
+    enriched_by_name: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Get complete internal module dependency graph with topological layers.
 
     Uses Kahn's algorithm to compute execution layers where layer 0 contains
     modules with no dependencies, and higher layers depend only on lower layers.
-    """
-    module_names_all = iter_modules(project_dir)
 
-    # Lazily load each module's derived/enriched data once.
-    derived_by_name: dict[str, dict[str, Any]] = {}
-    enriched_by_name: dict[str, dict[str, Any]] = {}
-    for name in module_names_all:
-        try:
-            derived_by_name[name] = load_module_derived(name, project_dir)
-        except DataNotFoundError:
-            derived_by_name[name] = {}
-        enriched_by_name[name] = load_module_enriched_or_empty(name, project_dir)
+    Args:
+        project_dir: Project directory path
+        full: When False, aggregator (pom-packaging) modules are filtered out.
+        derived_by_name: Optional pre-loaded ``module_name → derived.json`` map
+            shared with other helpers in the same caller; avoids redundant I/O.
+        enriched_by_name: Optional pre-loaded ``module_name → enriched.json`` map.
+    """
+    if derived_by_name is None:
+        module_names_all = iter_modules(project_dir)
+        # Lazily load each module's derived/enriched data once.
+        derived_by_name = {}
+        for name in module_names_all:
+            try:
+                derived_by_name[name] = load_module_derived(name, project_dir)
+            except DataNotFoundError:
+                derived_by_name[name] = {}
+    else:
+        module_names_all = list(derived_by_name.keys())
+
+    if enriched_by_name is None:
+        enriched_by_name = {
+            name: load_module_enriched_or_empty(name, project_dir) for name in module_names_all
+        }
 
     # Build mapping of groupId:artifactId -> module_name for internal dep
     # detection. Lets us identify which dependencies are internal to the project.
@@ -382,7 +400,12 @@ def resolve_command(command_name: str, module_name: str | None = None, project_d
 # =============================================================================
 
 
-def _build_internal_deps_map(project_dir: str = '.') -> tuple[dict[str, list[str]], list[str]]:
+def _build_internal_deps_map(
+    project_dir: str = '.',
+    *,
+    derived_by_name: dict[str, dict[str, Any]] | None = None,
+    enriched_by_name: dict[str, dict[str, Any]] | None = None,
+) -> tuple[dict[str, list[str]], list[str]]:
     """Build internal_dependencies mapping for all modules.
 
     Resolution order per module mirrors get_module_graph:
@@ -392,21 +415,34 @@ def _build_internal_deps_map(project_dir: str = '.') -> tuple[dict[str, list[str
 
     Args:
         project_dir: Project directory path
+        derived_by_name: Optional pre-loaded ``module_name → derived.json`` map.
+            When supplied, the helper skips its per-module ``load_module_derived``
+            calls and reuses the caller's already-loaded data. Module-name set
+            is taken from this dict's keys (preserves caller's ordering).
+        enriched_by_name: Optional pre-loaded ``module_name → enriched.json``
+            map. When supplied, the helper skips its per-module
+            ``load_module_enriched_or_empty`` calls.
 
     Returns:
         Tuple of (deps_map, module_names) where deps_map maps each module name
         to its list of internal dependency module names. Lists are sorted to
         guarantee deterministic traversal order.
     """
-    module_names = iter_modules(project_dir)
-    derived_by_name: dict[str, dict[str, Any]] = {}
-    enriched_by_name: dict[str, dict[str, Any]] = {}
-    for name in module_names:
-        try:
-            derived_by_name[name] = load_module_derived(name, project_dir)
-        except DataNotFoundError:
-            derived_by_name[name] = {}
-        enriched_by_name[name] = load_module_enriched_or_empty(name, project_dir)
+    if derived_by_name is None:
+        module_names = iter_modules(project_dir)
+        derived_by_name = {}
+        for name in module_names:
+            try:
+                derived_by_name[name] = load_module_derived(name, project_dir)
+            except DataNotFoundError:
+                derived_by_name[name] = {}
+    else:
+        module_names = list(derived_by_name.keys())
+
+    if enriched_by_name is None:
+        enriched_by_name = {
+            name: load_module_enriched_or_empty(name, project_dir) for name in module_names
+        }
 
     artifact_to_module: dict[str, str] = {}
     for mod_name, mod_data in derived_by_name.items():
@@ -611,6 +647,22 @@ def _render_adjacency_section(deps_map: dict[str, list[str]]) -> list[str]:
     return lines
 
 
+def _count_profile_skills(profile_data: Any) -> int:
+    """Count skill entries in a single profile's value.
+
+    The value may be either a dict (with ``defaults``/``optionals`` lists) or
+    a flat list. Any other shape contributes zero. Centralised so render
+    helpers and module deep-dives stay in lock-step on the count semantics.
+    """
+    if isinstance(profile_data, dict):
+        defaults = profile_data.get('defaults', [])
+        optionals = profile_data.get('optionals', [])
+        return len(defaults) + len(optionals)
+    if isinstance(profile_data, list):
+        return len(profile_data)
+    return 0
+
+
 def _render_skills_by_profile_section(enriched_by_name: dict[str, dict]) -> list[str]:
     rows: list[tuple[str, dict]] = []
     for name in sorted(enriched_by_name.keys()):
@@ -625,15 +677,7 @@ def _render_skills_by_profile_section(enriched_by_name: dict[str, dict]) -> list
         lines.append(f'### {name}')
         lines.append('')
         for profile in sorted(skills_by_profile.keys()):
-            data = skills_by_profile[profile]
-            if isinstance(data, dict):
-                defaults = data.get('defaults', [])
-                optionals = data.get('optionals', [])
-                count = len(defaults) + len(optionals)
-            elif isinstance(data, list):
-                count = len(data)
-            else:
-                count = 0
+            count = _count_profile_skills(skills_by_profile[profile])
             lines.append(f'- {profile}: {count} skill{"s" if count != 1 else ""}')
         lines.append('')
     return lines
@@ -683,10 +727,20 @@ def render_overview(project_dir: str = '.', budget: int = DEFAULT_OVERVIEW_BUDGE
     """
     meta = load_project_meta(project_dir)
     module_names = iter_modules(project_dir)
+    derived_by_name: dict[str, dict[str, Any]] = {}
+    for name in module_names:
+        try:
+            derived_by_name[name] = load_module_derived(name, project_dir)
+        except DataNotFoundError:
+            derived_by_name[name] = {}
     enriched_by_name: dict[str, dict] = {
         name: load_module_enriched_or_empty(name, project_dir) for name in module_names
     }
-    deps_map, _ = _build_internal_deps_map(project_dir)
+    deps_map, _ = _build_internal_deps_map(
+        project_dir,
+        derived_by_name=derived_by_name,
+        enriched_by_name=enriched_by_name,
+    )
 
     sections = [
         _render_project_section(meta),
@@ -704,6 +758,8 @@ def render_module_markdown(
     module_name: str | None = None,
     project_dir: str = '.',
     budget: int = DEFAULT_OVERVIEW_BUDGET,
+    *,
+    merged: dict | None = None,
 ) -> str:
     """Render budgeted markdown deep-dive for a single module.
 
@@ -714,6 +770,11 @@ def render_module_markdown(
         module_name: Module name (None resolves to root module)
         project_dir: Project directory path
         budget: Maximum line count for the rendered markdown
+        merged: Optional pre-loaded merged module data (derived + enriched).
+            When supplied, the helper skips ``_load_module_or_raise`` /
+            ``merge_module_data`` calls and trusts the caller's already-loaded
+            dict. The caller is responsible for having validated the module
+            name when the kwarg is non-None.
 
     Returns:
         Markdown string ending with a trailing newline.
@@ -723,9 +784,10 @@ def render_module_markdown(
         if not module_name:
             raise ModuleNotFoundInProjectError('No modules found', [])
 
-    # Validate the module exists; raises ModuleNotFoundInProjectError otherwise
-    _load_module_or_raise(module_name, project_dir)
-    merged = merge_module_data(module_name, project_dir)
+    if merged is None:
+        # Validate the module exists; raises ModuleNotFoundInProjectError otherwise
+        _load_module_or_raise(module_name, project_dir)
+        merged = merge_module_data(module_name, project_dir)
 
     purpose = merged.get('purpose', '').strip() or '—'
     responsibility = merged.get('responsibility', '').strip() or '—'
@@ -765,15 +827,7 @@ def render_module_markdown(
     if skills_by_profile:
         skills_section = ['## Skills by Profile', '']
         for profile in sorted(skills_by_profile.keys()):
-            data = skills_by_profile[profile]
-            if isinstance(data, dict):
-                defaults = data.get('defaults', [])
-                optionals = data.get('optionals', [])
-                count = len(defaults) + len(optionals)
-            elif isinstance(data, list):
-                count = len(data)
-            else:
-                count = 0
+            count = _count_profile_skills(skills_by_profile[profile])
             skills_section.append(f'- {profile}: {count} skill{"s" if count != 1 else ""}')
         skills_section.append('')
 
@@ -1014,6 +1068,23 @@ def cmd_siblings(args) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
+def _modules_from_exception_or_fallback(exc: ModuleNotFoundInProjectError, project_dir: str) -> list[str]:
+    """Prefer the module list embedded in the exception; fall back to a re-read.
+
+    ``ModuleNotFoundInProjectError`` carries the available module names in
+    ``args[1]`` when raised from the architecture core helpers. CLI handlers
+    that already provoked the exception can reuse that list rather than
+    re-loading ``_project.json``. Defensive fallback to ``get_modules_list``
+    handles one-arg constructions and unforeseen call sites.
+    """
+    if len(exc.args) >= 2 and isinstance(exc.args[1], list):
+        return list(exc.args[1])
+    try:
+        return get_modules_list(project_dir)
+    except Exception:
+        return []
+
+
 def cmd_path(args) -> dict:
     """CLI handler for path command."""
     try:
@@ -1027,10 +1098,7 @@ def cmd_path(args) -> dict:
     except DataNotFoundError:
         return require_project_meta_result(args.project_dir)
     except ModuleNotFoundInProjectError as e:
-        try:
-            modules = get_modules_list(args.project_dir)
-        except Exception:
-            modules = []
+        modules = _modules_from_exception_or_fallback(e, args.project_dir)
         missing = e.args[0].split(': ', 1)[-1] if e.args else args.source
         return error_result_module_not_found(missing, modules)
     except Exception as e:
@@ -1049,11 +1117,8 @@ def cmd_neighbors(args) -> dict:
         }
     except DataNotFoundError:
         return require_project_meta_result(args.project_dir)
-    except ModuleNotFoundInProjectError:
-        try:
-            modules = get_modules_list(args.project_dir)
-        except Exception:
-            modules = []
+    except ModuleNotFoundInProjectError as e:
+        modules = _modules_from_exception_or_fallback(e, args.project_dir)
         return error_result_module_not_found(args.module, modules)
     except ValueError as e:
         return {'status': 'error', 'error': str(e)}
@@ -1072,11 +1137,8 @@ def cmd_impact(args) -> dict:
         }
     except DataNotFoundError:
         return require_project_meta_result(args.project_dir)
-    except ModuleNotFoundInProjectError:
-        try:
-            modules = get_modules_list(args.project_dir)
-        except Exception:
-            modules = []
+    except ModuleNotFoundInProjectError as e:
+        modules = _modules_from_exception_or_fallback(e, args.project_dir)
         return error_result_module_not_found(args.module, modules)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}

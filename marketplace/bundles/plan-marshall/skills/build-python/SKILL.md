@@ -64,7 +64,7 @@ The plugin-doctor `quality-gate` subcommand runs only the rules whose violations
 
 - `scan_argparse_safety` — every `argparse.ArgumentParser(...)` and `subparsers.add_parser(...)` call must specify `allow_abbrev=False`. Prevents prefix-abbreviation matching from silently accepting truncated flags.
 - `validate_extension_contracts` — extension-point implementations must declare the required contract sections (severity guidelines, acceptable-to-accept lists, etc.) per `plan-marshall:extension-api`.
-- `analyze_argument_naming` — notation/subcommand/flag/canonical-forms cluster. Gated by `PM_ARGUMENT_NAMING_ENABLED`; emits nothing when gated off.
+- `analyze_argument_naming` — notation/subcommand/flag/canonical-forms cluster. Unconditionally active under `quality-gate` (build-failing invariant per lesson `2026-04-29-23-002`). The same cluster is **gated off by default** under the `analyze` subcommand and opt-in only via `--rules argument_naming` (or the `--enable-argument-naming` alias) on `plugin-doctor analyze`. The companion `verb_chain` cluster follows the same shape: opt in with `--rules verb_chain` or `--enable-verb-chain`.
 
 Module-scoped quality-gate runs (`./pw quality-gate <module>`) skip the marketplace-wide plugin-doctor sweep because they target a single bundle.
 

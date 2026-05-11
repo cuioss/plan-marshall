@@ -31,8 +31,22 @@ SUBDOC_DIRS = ['references', 'standards', 'workflows', 'templates']
 _ARGPARSE_SAFETY_CONSTRUCTORS = ('ArgumentParser', 'add_parser')
 
 
-def analyze_component(component: dict) -> dict:
-    """Analyze a single component and return issues."""
+def analyze_component(component: dict, active_rules: frozenset[str] | None = None) -> dict:
+    """Analyze a single component and return issues.
+
+    Per-component invariants (markdown, coverage, structure, subdoc, etc.) run
+    unconditionally. Opt-in rule clusters surfaced via ``--rules`` on
+    ``cmd_analyze`` are gated on ``active_rules``:
+
+    - ``verb_chain``: skip ``analyze_verb_chains`` unless the caller opts in.
+
+    The default ``active_rules=None`` is treated as the empty set, keeping
+    behaviour for callers that have not yet propagated the opt-in flag
+    (``cmd_fix`` and ``cmd_report``) consistent with ``cmd_analyze`` running
+    without ``--rules``.
+    """
+    if active_rules is None:
+        active_rules = frozenset()
     component_type = component.get('type')
     path = component.get('path')
 
@@ -135,7 +149,15 @@ def analyze_component(component: dict) -> dict:
         # Mirrors the argparse_safety integration pattern: lightweight static
         # analyzer whose findings merge into the main issue stream as
         # unfixable error-severity entries.
-        issues.extend(extract_issues_from_verb_chain_analysis(analyze_verb_chains(skill_dir)))
+        #
+        # Gated by ``active_rules`` to keep the registry/dispatch contract
+        # consistent: ``verb_chain`` is registered in
+        # ``_OPTIN_RULE_NAMES`` with a ``--enable-verb-chain`` alias and
+        # ``--rules verb_chain`` token, so the scan only runs when the caller
+        # opts in via either path. Absence keeps the cluster silent (no
+        # findings) — matching the documented opt-in semantics.
+        if 'verb_chain' in active_rules:
+            issues.extend(extract_issues_from_verb_chain_analysis(analyze_verb_chains(skill_dir)))
 
     return {'component': component, 'analysis': analysis, 'issues': issues, 'issue_count': len(issues)}
 
