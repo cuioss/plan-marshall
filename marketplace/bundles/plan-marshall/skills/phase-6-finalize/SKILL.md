@@ -125,8 +125,8 @@ Each step declares an `order: <int>` value in its authoritative source — front
 | `default:create-pr` | `standards/create-pr.md` | Create pull request |
 | `default:architecture-refresh` | `standards/architecture-refresh.md` | Refresh architecture descriptors (tier-0 deterministic discover + diff, tier-1 LLM re-enrichment) |
 | `default:ci-wait` | `standards/ci-wait.md` | Poll CI to completion and write the completed-CI signal `automated-review` consumes |
-| `default:automated-review` | `standards/automated-review.md` | CI automated review (see standards doc for the consumer step list; [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) for the architectural flow) |
-| `default:sonar-roundtrip` | `standards/sonar-roundtrip.md` | Sonar analysis roundtrip (see standards doc for the consumer step list; [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) for the architectural flow) |
+| `default:automated-review` | `standards/automated-review.md` | CI automated review — orchestration prose; the per-finding LLM core dispatches [`standards/triage.md`](standards/triage.md) with `finding_type=pr-comment` (see [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) for the architectural flow) |
+| `default:sonar-roundtrip` | `standards/sonar-roundtrip.md` | Sonar analysis roundtrip — orchestration prose; the per-finding LLM core dispatches [`standards/triage.md`](standards/triage.md) with `finding_type=sonar-issue` |
 | `default:lessons-capture` | `standards/lessons-capture.md` | Record lessons learned |
 | `default:branch-cleanup` | `standards/branch-cleanup.md` | Branch cleanup — adapts to PR mode or local-only based on create-pr step presence |
 | `default:record-metrics` | `standards/record-metrics.md` | Record final plan metrics before archive |

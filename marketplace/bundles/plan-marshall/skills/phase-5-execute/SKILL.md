@@ -467,6 +467,8 @@ If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
 - A `profile=verification` task completes with `verification.passed: false` / `next_action: requires_triage`, OR
 - Step 9 marked a task `blocked` with reason `no_changes_detected` or `verification_mismatch`
 
+The per-finding LLM core (FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over the failing findings) is owned by [`../phase-6-finalize/standards/triage.md`](../phase-6-finalize/standards/triage.md) and dispatched as `cross.triage` with `finding_type=verification-failure`. The inline triage branches in this step's later sub-sections will be rewired to that dispatch in Task 4 of the agents-to-execution-context refactor.
+
 #### Planned-failure exception (breaking-refactor task split)
 
 **Applies before** the standard triage branches below. When a task with `profile: implementation` produces a verification failure and a downstream task with `profile: module_testing` and explicit `depends_on: [TASK-{current_task_number}]` exists, the dispatcher MAY proceed to the dependent task without flagging the failure as an error — this is the only case where "tests fail" is the planned outcome of the implementation step.

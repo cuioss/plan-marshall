@@ -168,6 +168,18 @@ The orchestration is identical across consumers (PR review GitHub, PR review Git
 - [`phase-6-finalize/standards/sonar-roundtrip.md`](../../phase-6-finalize/standards/sonar-roundtrip.md) — Sonar consumer dispatch.
 - [`workflow-pr-doctor/standards/automated-review-lifecycle.md`](../../workflow-pr-doctor/standards/automated-review-lifecycle.md) — pr-doctor's automated-review lifecycle pointer.
 
+### By-reference triage dispatch
+
+The per-finding LLM core (steps 4–5 above — load `ext-triage-{domain}`, decide FIX/SUPPRESS/ACCEPT/AskUserQuestion, act on the decision) factors out into one shared workflow doc, [`phase-6-finalize/standards/triage.md`](../../phase-6-finalize/standards/triage.md), dispatched as `cross.triage` from every consumer (`phase-6` `automated-review` + `sonar-roundtrip` manifest steps, `phase-5` Steps 11/11b verification-failure / quality-gate-failure triage, `workflow-pr-doctor` per-finding loop).
+
+**The dispatch passes `finding_type` only — never the findings content.** The triage subagent's first workflow step is its own `manage-findings query --plan-id {plan_id} --type {finding_type} --resolution pending` call against the same store, which means:
+
+- the store stays the single source of truth (no double-serialization of multi-kilobyte findings into the prompt body),
+- loop-back re-entry sees only currently-pending findings (the orchestrator's earlier query result freezes in time; the subagent's own query is fresh), and
+- the orchestrator's role at the consumer's "should I dispatch?" decision shrinks to a gate-keeping count.
+
+The smart-grouping algorithm the triage workflow uses (pre-group by `(domain, rule_id)` → one batched LLM decision per group → sequential actions between groups for cross-group feedback) is documented inside `triage.md` itself.
+
 ## Invariant Gate
 
 The `pending_findings_blocking_count` invariant in [`plan-marshall/scripts/_invariants.py`](../../plan-marshall/scripts/_invariants.py) raises `BlockingFindingsPresent` at guarded boundaries when any blocking-type finding is in `pending` resolution.
