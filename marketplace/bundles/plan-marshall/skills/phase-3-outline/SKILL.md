@@ -174,7 +174,7 @@ For detailed procedures (metadata reads, recipe resolution, skill loading), see 
 
 **Purpose**: Determine the change type for agent routing.
 
-Spawn `plan-marshall:detect-change-type-agent` which persists `change_type` to status.json metadata. After detection, apply post-check: if agent returned `analysis` but request contains action words (`fix`, `implement`, `improve`, `update`, `create`, `refactor`, `migrate`, `remove`, `restructure`), override to `enhancement` or `tech_debt` as appropriate.
+Dispatch the `detect-change-type` workflow (`plan-marshall:phase-3-outline/workflow/detect-change-type.md` via `execution-context-{level}` resolved from `models.default`) which persists `change_type` to status.json metadata. After detection, apply post-check: if the workflow returned `analysis` but request contains action words (`fix`, `implement`, `improve`, `update`, `create`, `refactor`, `migrate`, `remove`, `restructure`), override to `enhancement` or `tech_debt` as appropriate.
 
 For detailed procedures (agent spawning, metadata read, post-check override logic), see [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md#step-4-detect-change-type-detail).
 
@@ -409,7 +409,7 @@ All other fields (`plan_id`, `track`, `deliverable_count`, `qgate_passed`, `qgat
 |----------|--------|
 | Track not set | Return `{status: error, message: "phase-2-refine incomplete - track not set"}` |
 | Target not found (Simple) | Return error with invalid target |
-| Change type not detected | Return `{status: error, message: "detect-change-type-agent failed to determine change type"}` |
+| Change type not detected | Return `{status: error, message: "detect-change-type workflow failed to determine change type"}` |
 | Skill workflow fails (Complex) | Return error, do not fall back |
 | Q-Gate fails | Return with `qgate_passed: false` and findings |
 | Request not found | Return `{status: error, message: "Request not found"}` |
@@ -435,8 +435,8 @@ All other fields (`plan_id`, `track`, `deliverable_count`, `qgate_passed`, `qgat
 - `plan-marshall:manage-findings:manage-findings assessment` - Log assessments (domain skills)
 
 **Spawns** (Complex Track):
-- `plan-marshall:detect-change-type-agent` (Step 4 - change type detection)
-- `plan-marshall:q-gate-validation-agent` (Step 11 - Q-Gate verification)
+- `plan-marshall:phase-3-outline/workflow/detect-change-type.md` workflow (Step 4 — change type detection)
+- `plan-marshall:plan-marshall/workflow/q-gate-validation.md` workflow under role `cross.q-gate-validation` (Step 11 — Q-Gate verification)
 
 **Loads Skills** (Recipe path):
 - `{recipe_skill}` (Step 3 - recipe skill with input parameters, built-in or custom)

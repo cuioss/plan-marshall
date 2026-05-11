@@ -564,7 +564,7 @@ When calling `manage-tasks add`, use YAML list format:
 
 ```yaml
 steps:
-  - marketplace/bundles/plan-marshall/agents/phase-agent.md
+  - marketplace/bundles/plan-marshall/agents/execution-context.md
   - marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md
   - marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md
 ```
@@ -576,7 +576,7 @@ The script converts input to JSON array format in task files:
 ```json
 {
   "steps": [
-    {"number": 1, "target": "marketplace/bundles/plan-marshall/agents/phase-agent.md", "status": "pending"},
+    {"number": 1, "target": "marketplace/bundles/plan-marshall/agents/execution-context.md", "status": "pending"},
     {"number": 2, "target": "marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md", "status": "pending"},
     {"number": 3, "target": "marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md", "status": "pending"}
   ]
@@ -594,7 +594,7 @@ The script converts input to JSON array format in task files:
 
 ```yaml
 steps:
-  - Update phase-agent to use TOON output
+  - Update execution-context to use TOON output
   - Migrate phase-3-outline skill output format
   - Convert all remaining components
 ```

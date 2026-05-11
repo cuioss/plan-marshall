@@ -471,7 +471,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 9c: Read Target Skill Design Intent
 
-**Purpose**: Before authoring any deliverable that adds capability to an existing skill, classify the target skill's design model so the proposed implementation extends (rather than contradicts) the existing model. The classification is recorded on the deliverable in a `**Design notes:**` block and is the input the q-gate validation agent's `architecture-mismatch-validator` (§2.17, see `q-gate-validation-agent.md`) consumes to surface design-model violations as blocking findings.
+**Purpose**: Before authoring any deliverable that adds capability to an existing skill, classify the target skill's design model so the proposed implementation extends (rather than contradicts) the existing model. The classification is recorded on the deliverable in a `**Design notes:**` block and is the input the q-gate validation agent's `architecture-mismatch-validator` (§2.17, see `plan-marshall/workflow/q-gate-validation.md`) consumes to surface design-model violations as blocking findings.
 
 **When to apply**: this step fires for every deliverable that lists at least one `marketplace/bundles/{bundle}/skills/{skill}/**` path under `**Affected files:**`. Deliverables that touch only standards documentation in an existing skill (`standards/**/*.md`) ALSO count — design-intent classification applies to the standards body, not just executable code. Deliverables that do not touch existing skills (brand-new skill creation, docs-only outside a skill, non-marketplace changes) skip this step.
 
@@ -527,9 +527,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 5. **Detect divergence and reroute**. If the proposed implementation strategy contradicts the target skill's design model, the outline MUST either reroute the implementation to fit the model OR justify the divergence in the `**Design notes:**` block (in which case the q-gate validator will surface the divergence for explicit human approval).
 
-   **Canonical mismatch shapes** (the validator's recurrence signals — see q-gate-validation-agent.md §2.17):
+   **Canonical mismatch shapes** (the validator's recurrence signals — see plan-marshall/workflow/q-gate-validation.md §2.17):
 
-   - **Script-side check evaluators proposed for an LLM-driven skill aspect** — e.g., a deliverable adds a Python script that walks SKILL.md prose for a regex match. The aspect is LLM-driven (the SKILL.md narrative is read in-context by the agent); a script-side regex evaluator is the wrong model. **Reroute**: the check belongs in `q-gate-validation-agent.md` as a new validator subsection (LLM-driven) OR in `plugin-doctor` if it is a structural-compliance check (also LLM-driven by §-based dispatch).
+   - **Script-side check evaluators proposed for an LLM-driven skill aspect** — e.g., a deliverable adds a Python script that walks SKILL.md prose for a regex match. The aspect is LLM-driven (the SKILL.md narrative is read in-context by the agent); a script-side regex evaluator is the wrong model. **Reroute**: the check belongs in `plan-marshall/workflow/q-gate-validation.md` as a new validator subsection (LLM-driven) OR in `plugin-doctor` if it is a structural-compliance check (also LLM-driven by §-based dispatch).
    - **LLM-driven workflow proposed for a script-deterministic skill aspect** — e.g., a deliverable adds an SKILL.md narrative step that performs file I/O the script already handles. The aspect is script-deterministic; LLM-driven narrative steps that re-do script work are duplication. **Reroute**: extend the script's CLI surface (new subcommand or flag) and replace the proposed narrative step with a single invocation of the new CLI shape.
    - **Hybrid skill change that breaks the script/LLM boundary** — e.g., a deliverable moves deterministic dispatch logic from the script into LLM prose, or moves LLM cognitive work into the script. The skill's hybrid design model has a documented script/LLM boundary; changes that cross the boundary contradict the model. **Reroute**: respect the existing boundary, OR document the boundary shift explicitly in the `**Design notes:**` block as a deliberate refactor (the validator will surface it for review).
 
@@ -541,7 +541,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
    The "documented going forward" half is required: a divergence that does not update the skill's own design-intent declaration silently creates two design models in the same skill, which is worse than the original gap. The deliverable's task list MUST include an edit to the skill's design-intent doc (or to SKILL.md's `Role` paragraph) that records the new model.
 
-**Validator linkage**: the `architecture-mismatch-validator` in `q-gate-validation-agent.md` (§2.17 — added by deliverable 9 of this plan) parses the `**Design notes:**` block on every deliverable that touches an existing skill and emits an `architecture-mismatch` finding with `severity: blocking` when the block is absent, generic, or contradicts the skill's documented design model. Phase-3-outline's Step 11 auto-loops on blocking findings (see "Step 11: Q-Gate Verification" below), so a missing or contradictory `**Design notes:**` block forces a re-outline pass before phase transition.
+**Validator linkage**: the `architecture-mismatch-validator` in `plan-marshall/workflow/q-gate-validation.md` (§2.17 — added by deliverable 9 of this plan) parses the `**Design notes:**` block on every deliverable that touches an existing skill and emits an `architecture-mismatch` finding with `severity: blocking` when the block is absent, generic, or contradicts the skill's documented design model. Phase-3-outline's Step 11 auto-loops on blocking findings (see "Step 11: Q-Gate Verification" below), so a missing or contradictory `**Design notes:**` block forces a re-outline pass before phase transition.
 
 ### Step 10: Execute Change-Type Workflow and Write Solution
 
@@ -658,7 +658,7 @@ A deliverable is **self-modifying + breaking** when ALL three predicates hold:
 
 1. At least one affected path matches the heuristic from the standard, AND
 2. The plan declares `compatibility: breaking` (read once for the whole plan from the solution outline header), AND
-3. The deliverable's `Change per file:` or surrounding narrative contains hard-cutover language. The full keyword list is owned by the q-gate validator — see [q-gate-validation-agent.md § 2.16 Self-Modifying Phased-Rollout Validator](../../../agents/q-gate-validation-agent.md) Detection Logic step 2 for the canonical phrasing list (`remove ... entirely`, `delete the ...`, `drop the ...`, `retire the ...`, `no escape hatch`, `no transition window`, `zero-hit grep`, `zero hits`, `returns zero`, or equivalent applied to a public surface). Both the validator and this step consume the same list to keep outline-time and q-gate-time detection in lockstep.
+3. The deliverable's `Change per file:` or surrounding narrative contains hard-cutover language. The full keyword list is owned by the q-gate validator — see [plan-marshall/workflow/q-gate-validation.md § 2.16 Self-Modifying Phased-Rollout Validator](../../../agents/plan-marshall/workflow/q-gate-validation.md) Detection Logic step 2 for the canonical phrasing list (`remove ... entirely`, `delete the ...`, `drop the ...`, `retire the ...`, `no escape hatch`, `no transition window`, `zero-hit grep`, `zero hits`, `returns zero`, or equivalent applied to a public surface). Both the validator and this step consume the same list to keep outline-time and q-gate-time detection in lockstep.
 
 #### Author Prompt (when all three hold)
 
@@ -770,7 +770,7 @@ Task: plan-marshall:{target}
 
 ##### Validator activation reference (phase-3-outline)
 
-The agent applies the following mechanical validators automatically when invoked from this phase. Each validator is documented in `q-gate-validation-agent.md` with its activation condition, detection logic, finding emission template, and positive/negative examples. The activation is dispatched by the agent based on phase context — phase-3-outline does not pass validator names; the agent reads `phase: 3-outline` from the audit and runs the applicable subset.
+The agent applies the following mechanical validators automatically when invoked from this phase. Each validator is documented in `plan-marshall/workflow/q-gate-validation.md` with its activation condition, detection logic, finding emission template, and positive/negative examples. The activation is dispatched by the agent based on phase context — phase-3-outline does not pass validator names; the agent reads `phase: 3-outline` from the audit and runs the applicable subset.
 
 | Validator (q-gate-validation-agent §) | Artifact consumed | Finding `--source` |
 |---------------------------------------|-------------------|--------------------|
@@ -779,7 +779,7 @@ The agent applies the following mechanical validators automatically when invoked
 | Tier-Delta Validator (§ 2.13) | `solution_outline.md` (tiered/variant section pairs and their delta tables) | `qgate-tier-delta` |
 | Self-Modifying Phased-Rollout Validator (§ 2.16) | `solution_outline.md` (each deliverable's Affected files + compatibility header + narrative), `self-modifying-classification.md` heuristic | `qgate-self-modifying-rollout` |
 
-The remaining validators (`module-mapping`, `scope-criterion`, `narrative-vs-code`) are scoped to other phases (4-plan or 2-refine) and do NOT activate when the agent is invoked from phase-3-outline. See `q-gate-validation-agent.md` for their canonical activation conditions.
+The remaining validators (`module-mapping`, `scope-criterion`, `narrative-vs-code`) are scoped to other phases (4-plan or 2-refine) and do NOT activate when the agent is invoked from phase-3-outline. See `plan-marshall/workflow/q-gate-validation.md` for their canonical activation conditions.
 
 Findings emitted by these validators flow into the same `qgate_pending_count` aggregate as the existing checks (Sections 2.1–2.7 and the missing-coverage sweep), so the orchestrator's existing 3-iteration auto-loop handles re-entry uniformly regardless of which validator emitted the finding.
 

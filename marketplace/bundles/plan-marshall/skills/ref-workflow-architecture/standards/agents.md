@@ -113,45 +113,40 @@ Understanding when to use `Skill:` vs `Task:` is critical for proper context man
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│                      4 AGENTS (plan-marshall bundle)                        │
+│                      1 AGENT (plan-marshall bundle)                         │
 │                                                                             │
 │  ┌──────────────────────┬────────────────────────────────────────────────┐ │
 │  │ AGENT                │ PURPOSE                                        │ │
 │  ├──────────────────────┼────────────────────────────────────────────────┤ │
 │  │                      │                                                │ │
-│  │ phase-agent          │ Generic thin wrapper                           │ │
-│  │                      │ • Loads caller-specified skill via Skill tool  │ │
-│  │                      │ • Delegates all work to the loaded skill       │ │
-│  │                      │ • Used for phase-1-init and phase-4-plan       │ │
+│  │ execution-context    │ Generic dispatcher                             │ │
+│  │                      │ • Loads dev-general-practices implicitly       │ │
+│  │                      │ • Loads caller-specified skills[] in order     │ │
+│  │                      │ • Reads + executes the prompt-body `workflow`  │ │
+│  │                      │   doc (or `instructions`) to completion        │ │
+│  │                      │ • Returns the workflow's declared TOON         │ │
 │  │                      │                                                │ │
-│  ├──────────────────────┼────────────────────────────────────────────────┤ │
-│  │                      │                                                │ │
-│  │ detect-change-type-  │ Analyze request to detect change type          │ │
-│  │ agent                │ • Returns change_type + confidence             │ │
-│  │                      │ • Used during phase-3-outline                  │ │
-│  │                      │                                                │ │
-│  ├──────────────────────┼────────────────────────────────────────────────┤ │
-│  │                      │                                                │ │
-│  │ q-gate-validation-   │ Validate assessments against request intent    │ │
-│  │ agent                │ • Catches false positives, missing coverage    │ │
-│  │                      │ • Used during phase-3-outline                  │ │
-│  │                      │                                                │ │
-│  ├──────────────────────┼────────────────────────────────────────────────┤ │
-│  │                      │                                                │ │
-│  │ research-best-       │ Web research for best practices                │ │
-│  │ practices-agent      │ • Searches multiple sources, synthesizes       │ │
-│  │                      │ • General-purpose research tool                │ │
+│  │                      │ Six emitted variants per ordinal level         │ │
+│  │                      │ (low/medium/high/xhigh/xxhigh + canonical      │ │
+│  │                      │ inherit) drive every plan-marshall Task:       │ │
+│  │                      │ invocation. Dispatch site resolves the         │ │
+│  │                      │ target via `manage-config models               │ │
+│  │                      │ resolve-target --role <key>`.                  │ │
 │  │                      │                                                │ │
 │  └──────────────────────┴────────────────────────────────────────────────┘ │
 │                                                                             │
-│  NOTE: Phases 2-refine, 3-outline, and 5-execute load skills directly     │
-│  in main context (no agent). This allows user interaction and sub-agent   │
-│  spawning.                                                                 │
+│  Workflow docs are addressed via `{bundle}:{skill}/workflow/{file}.md` or  │
+│  `{bundle}:{skill}/SKILL.md` notation; the dispatcher Read()s the resolved │
+│  path and follows it as the workflow body.                                 │
+│                                                                             │
+│  NOTE: Phases 2-refine, 3-outline, and 5-execute may also load skills     │
+│  directly in main context (no Task: dispatch) when the workflow needs    │
+│  AskUserQuestion or extensive sub-dispatch.                                │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Other bundles (e.g., `pm-plugin-development`) define their own analysis agents that are spawned by domain extensions during the outline phase. See the respective bundle documentation.
+The pm-plugin-development bundle defines zero agents — its workflows are dispatched through `plan-marshall:execution-context` like every other workflow in the marketplace, with the workflow body loaded from `pm-plugin-development:{skill}/workflow/{file}.md`.
 
 ---
 

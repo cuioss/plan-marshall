@@ -22,15 +22,7 @@
     "orchestration"
   ],
   "agents": [
-    "./agents/automated-review-agent.md",
-    "./agents/create-pr-agent.md",
-    "./agents/detect-change-type-agent.md",
-    "./agents/execution-context.md",
-    "./agents/lessons-capture-agent.md",
-    "./agents/phase-agent.md",
-    "./agents/q-gate-validation-agent.md",
-    "./agents/research-best-practices-agent.md",
-    "./agents/sonar-roundtrip-agent.md"
+    "./agents/execution-context.md"
   ],
   "commands": [
     "./commands/tools-fix-intellij-diagnostics.md",

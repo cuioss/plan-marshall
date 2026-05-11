@@ -842,7 +842,7 @@ If `qgate_pending_count > 0`, the orchestrator (planning.md) decides whether to 
 
 ### Step 13.5: Spawn q-gate-validation-agent — lesson-derived plans only
 
-**Purpose**: Run the `narrative-vs-code-validator` (q-gate-validation-agent.md § 2.14) over the source lesson narrative so concrete code claims (file paths, profile→target mappings, function names, argument shapes, behavioral assertions) are reconciled against current code state at refine time. Catches silent baseline drift between lesson capture and plan execution before the outline locks intent.
+**Purpose**: Run the `narrative-vs-code-validator` (plan-marshall/workflow/q-gate-validation.md § 2.14) over the source lesson narrative so concrete code claims (file paths, profile→target mappings, function names, argument shapes, behavioral assertions) are reconciled against current code state at refine time. Catches silent baseline drift between lesson capture and plan execution before the outline locks intent.
 
 **Activation guard**: Runs only when `status.json` reports `plan_source: lesson`. For free-form, issue-derived, or recipe-derived plans, skip this step entirely.
 

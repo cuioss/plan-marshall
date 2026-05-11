@@ -495,7 +495,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Positive example**: Lesson `2026-05-03-21-003` claims "implementation profile runs `module-tests`". Validator queries `manage-config plan phase-2-refine get --field profile_command_map`, finds `implementation` profile maps to `compile`, not `module-tests`. Validator emits `invalid` finding — the narrative was wrong about the baseline.
 
-**Negative example**: Lesson cites `marketplace/bundles/plan-marshall/agents/q-gate-validation-agent.md` and the file exists with the cited Section 2.9 still present. Silent pass — narrative matches code.
+**Negative example**: Lesson cites `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/q-gate-validation.md` and the file exists with the cited Section 2.9 still present. Silent pass — narrative matches code.
 
 **Driving lesson**: `2026-05-04-08-001` (validate lesson narrative against current code during refine).
 
@@ -675,11 +675,11 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Fail criteria**: At least one triggered deliverable has a missing, mismatched, or generic `**Design notes:**` block — emit one finding per (deliverable, target-skill) pair.
 
-**Positive example (LLM-driven mismatch)**: A plan touches `marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md` (LLM-driven) and proposes a new Python script under `scripts/check_outline.py` that walks SKILL.md for a regex match. The deliverable's `**Design notes:**` block reads "Extends the existing script-deterministic design model of plan-marshall:phase-3-outline". Validator emits a finding: declared model `script-deterministic` does not match target model `LLM-driven`; the proposed check belongs in `q-gate-validation-agent.md` (LLM-driven) as a new validator subsection.
+**Positive example (LLM-driven mismatch)**: A plan touches `marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md` (LLM-driven) and proposes a new Python script under `scripts/check_outline.py` that walks SKILL.md for a regex match. The deliverable's `**Design notes:**` block reads "Extends the existing script-deterministic design model of plan-marshall:phase-3-outline". Validator emits a finding: declared model `script-deterministic` does not match target model `LLM-driven`; the proposed check belongs in `plan-marshall/workflow/q-gate-validation.md` (LLM-driven) as a new validator subsection.
 
 **Positive example (generic rationale)**: A plan touches `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py` (script-deterministic) and adds a new subcommand. The `**Design notes:**` block reads "Extends the existing script-deterministic design model of plan-marshall:manage-execution-manifest — matches the existing model". Validator emits a finding: rationale is generic; the block has to name a specific extension point (e.g., "adds a new `validate-loadable` CLI subcommand alongside the existing `compose` / `read` / `validate` subcommands").
 
-**Negative example (clean extension)**: A plan adds a new validator subsection to `q-gate-validation-agent.md` (LLM-driven). The `**Design notes:**` block reads "Extends the existing LLM-driven design model of execution-context.q-gate-validation — adds a new validator subsection §N.NN with detection logic, finding emission template, and pass/fail criteria following the existing §2.x pattern". Validator passes silently.
+**Negative example (clean extension)**: A plan adds a new validator subsection to `plan-marshall/workflow/q-gate-validation.md` (LLM-driven). The `**Design notes:**` block reads "Extends the existing LLM-driven design model of cross.q-gate-validation — adds a new validator subsection §N.NN with detection logic, finding emission template, and pass/fail criteria following the existing §2.x pattern". Validator passes silently.
 
 **Cross-references**:
 - Authoritative source: [`phase-3-outline/standards/outline-workflow-detail.md` § Step 9c](../../phase-3-outline/standards/outline-workflow-detail.md#step-9c-read-target-skill-design-intent) (the procedure this validator enforces)
