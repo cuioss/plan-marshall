@@ -72,6 +72,7 @@
     "./skills/plan-marshall",
     "./skills/plan-marshall-plugin",
     "./skills/plan-retrospective",
+    "./skills/q-gate-validation",
     "./skills/recipe-lesson-cleanup",
     "./skills/recipe-refactor-to-profile-standards",
     "./skills/ref-toon-format",
