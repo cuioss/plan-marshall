@@ -75,6 +75,7 @@ DEFAULT_PHASE_5_STEPS = ('quality-gate', 'module-tests')
 DEFAULT_PHASE_6_STEPS = (
     'commit-push',
     'create-pr',
+    'ci-wait',
     'automated-review',
     'sonar-roundtrip',
     'lessons-capture',
@@ -159,7 +160,7 @@ def _decide(
     # so the surgical-style cascades still apply downstream; here we only need
     # to drop heavy steps.
     if recipe_key:
-        phase_6_steps = [s for s in phase_6_candidates if s not in {'automated-review', 'sonar-roundtrip'}]
+        phase_6_steps = [s for s in phase_6_candidates if s not in {'ci-wait', 'automated-review', 'sonar-roundtrip'}]
         body = {
             'phase_5': {
                 'early_terminate': False,
@@ -183,7 +184,7 @@ def _decide(
                 'verification_steps': [],
             },
             'phase_6': {
-                'steps': [s for s in phase_6_candidates if s not in {'sonar-roundtrip', 'automated-review'}],
+                'steps': [s for s in phase_6_candidates if s not in {'ci-wait', 'sonar-roundtrip', 'automated-review'}],
             },
         }
         return body, 'docs_only'
@@ -205,7 +206,7 @@ def _decide(
     # automated-review, no sonar-roundtrip (small, focused changes). Keep
     # lessons-capture + commit/PR/cleanup.
     if scope_estimate == 'surgical' and change_type in ('bug_fix', 'tech_debt'):
-        phase_6_steps = [s for s in phase_6_candidates if s not in {'automated-review', 'sonar-roundtrip'}]
+        phase_6_steps = [s for s in phase_6_candidates if s not in {'ci-wait', 'automated-review', 'sonar-roundtrip'}]
         body = {
             'phase_5': {
                 'early_terminate': False,

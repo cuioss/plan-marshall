@@ -127,6 +127,7 @@ BUILT_IN_FINALIZE_STEPS = [
     'default:pre-push-quality-gate',
     'default:commit-push',
     'default:create-pr',
+    'default:ci-wait',
     'default:automated-review',
     'default:sonar-roundtrip',
     'default:lessons-capture',
@@ -148,7 +149,8 @@ BUILT_IN_FINALIZE_STEP_DESCRIPTIONS = {
     'default:pre-push-quality-gate': 'Run quality-gate per affected bundle as the last gate before push',
     'default:commit-push': 'Commit and push changes',
     'default:create-pr': 'Create pull request',
-    'default:automated-review': 'CI automated review',
+    'default:ci-wait': 'Poll CI to completion (1800 s budget) and write the completed-CI signal automated-review consumes',
+    'default:automated-review': 'CI automated review (consumes ci-wait signal; triage-only 900 s budget)',
     'default:sonar-roundtrip': 'Sonar analysis roundtrip',
     'default:lessons-capture': 'Record lessons learned',
     'default:branch-cleanup': 'Merge PR (with --delete-branch) and pull latest',
@@ -167,6 +169,14 @@ DEFAULT_PLAN_FINALIZE = {
     'max_iterations': 3,
     'review_bot_buffer_seconds': 180,
     'pr_merge_strategy': 'squash',
+    # When True, a loop_back outcome from any phase-6 step (FIX disposition,
+    # pr-comment-overflow, or sonar-roundtrip FIX) re-dispatches the execute
+    # pipeline inline (execute-task → mark done → transition 5-execute →
+    # 6-finalize via finalize_without_asking) and re-enters the finalize loop,
+    # capped by max_iterations. When False (default), the dispatcher halts and
+    # returns control to the user — symmetric counterpart to phase-5-execute's
+    # finalize_without_asking knob.
+    'loop_back_without_asking': False,
     'steps': list(BUILT_IN_FINALIZE_STEPS),
 }
 

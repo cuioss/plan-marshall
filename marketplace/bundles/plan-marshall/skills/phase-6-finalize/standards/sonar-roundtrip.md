@@ -182,30 +182,66 @@ The capture is the structural enforcer of "no unresolved sonar-issue findings at
 
 Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. Mark done only on the terminal pass that returns clean (or on a skip); loop-back iterations do not terminate the step.
 
+`sonar-roundtrip` is one of the four HEAD-dependent steps (alongside `pre-push-quality-gate`, `ci-wait`, `automated-review`) — see [`phase-6-finalize/SKILL.md`](../SKILL.md) Step 3 "Special case — HEAD-dependent steps". Every `--outcome done` branch below MUST capture the worktree HEAD SHA immediately before the `mark-step-done` call and forward it via `--head-at-completion {sha}`, so the dispatcher's HEAD-dependent resumability check can detect a stale `done` record after a future loop-back commit advances HEAD. Loop-back iterations (recorded via `--outcome loop_back` from the "Handle findings (loop-back)" block above) do NOT need to persist the SHA — the dispatcher's general resumability handling for `loop_back` treats it as no-record on re-entry regardless of HEAD.
+
 Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the Sonar quality gate result. The payload differs by branch:
 
-**Branch A — quality gate passed** (terminal Sonar pass returns clean — every finding closed as SUPPRESS / ACCEPT, or the query was empty from the start):
+**Branch A — quality gate passed** (terminal Sonar pass returns clean — every finding closed as SUPPRESS / ACCEPT, or the query was empty from the start). Resolve the worktree HEAD before marking done:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step sonar-roundtrip --outcome done \
-  --display-detail "quality gate passed"
+git -C {worktree_path} rev-parse HEAD
 ```
 
-**Branch B — quality gate failed** (gate stayed red after max loop-back iterations; the step still marks `done` because the handshake records that the workflow executed — remediation is deferred to human follow-up):
+Capture stdout as `{sha}` and forward via `--head-at-completion`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step sonar-roundtrip --outcome done \
-  --display-detail "quality gate failed"
+  --display-detail "quality gate passed" \
+  --head-at-completion {sha}
 ```
 
-**Branch C — Sonar not configured for project** (the dispatcher ran this step but the producer determined Sonar is not configured — e.g., no SonarQube/SonarCloud credentials, no project key):
+**Branch B — quality gate failed** (gate stayed red after max loop-back iterations; the step still marks `done` because the handshake records that the workflow executed — remediation is deferred to human follow-up). Resolve the worktree HEAD before marking done:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Capture stdout as `{sha}` and forward via `--head-at-completion`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step sonar-roundtrip --outcome done \
-  --display-detail "Sonar not configured"
+  --display-detail "quality gate failed" \
+  --head-at-completion {sha}
+```
+
+**Branch C — Sonar not configured for project** (the dispatcher ran this step but the producer determined Sonar is not configured — e.g., no SonarQube/SonarCloud credentials, no project key). Resolve the worktree HEAD before marking done:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Capture stdout as `{sha}` and forward via `--head-at-completion`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step sonar-roundtrip --outcome done \
+  --display-detail "Sonar not configured" \
+  --head-at-completion {sha}
 ```
 
 Note: there is no "config disabled" branch — when the manifest excludes `sonar-roundtrip`, the dispatcher does not run this document at all, so no step record is written.
+
+## Resumability
+
+`sonar-roundtrip` is one of the four HEAD-dependent steps in `HEAD_DEPENDENT_STEPS` (`pre-push-quality-gate`, `ci-wait`, `automated-review`, `sonar-roundtrip`) — see [`phase-6-finalize/SKILL.md`](../SKILL.md) Step 3 "Special case — HEAD-dependent steps". The HEAD comparison guards against false-clean re-entry after a downstream loop-back commit (typically produced by `automated-review` opening a fix task that produces a new commit, or by an earlier `sonar-roundtrip` iteration's own FIX dispositions) advances HEAD past the validated tree:
+
+| Persisted state | Live worktree HEAD | Action |
+|-----------------|--------------------|--------|
+| `outcome == done` AND `head_at_completion == HEAD` | matches | SKIP (steady-state — Sonar already cleared this exact tree) |
+| `outcome == done` AND `head_at_completion != HEAD` | differs | RE-FIRE (treat as no record — HEAD has advanced past the validated SHA; re-fetch Sonar issues and re-triage against the new tree) |
+| `outcome == done` AND `head_at_completion` absent | n/a | RE-FIRE (legacy record from before SHA tracking; safe default is to re-run) |
+| `outcome == failed` | n/a | RETRY (unchanged — same as the general rule) |
+| `outcome == loop_back` | n/a | RE-FIRE (treat as no record — same as the general rule for loop_back) |
+| no record | n/a | DISPATCH (unchanged — same as the general rule) |
