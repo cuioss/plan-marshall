@@ -150,6 +150,59 @@ phase_6_unknown_steps_count: 0
 
 On failure: `status: error`, `error: invalid_manifest`, plus a `message` and per-section unknown-step list.
 
+### validate-loadable
+
+Verify that the standards file backing each `phase_6.steps` entry is present and readable. This is the loadability fail-fast guard consumed by `phase-6-finalize` Step 1.5 to catch self-modifying plans that delete a built-in step's standards file without sweeping `marshal.json`.
+
+```bash
+# Single-step form
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  validate-loadable --plan-id {plan_id} --step-id {step_id}
+
+# Bulk form — validate every step in manifest.phase_6.steps
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  validate-loadable --plan-id {plan_id} --all
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+- `--step-id` (mutually exclusive with `--all`): A single step id to check (bare name `commit-push` or prefixed `default:commit-push`; both forms accepted)
+- `--all` (mutually exclusive with `--step-id`): Walk every entry in `manifest.phase_6.steps` and report per-step results
+
+**Scope**: built-in steps only (bare names that resolve to `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/{name}.md`). External steps (`project:` / `bundle:skill`) are out of scope — `validate-loadable` returns `loadable: true` for them with no further check, on the rationale that their loadability is the host plugin cache's responsibility and a missing skill surfaces at `Skill: {ref}` dispatch time as a different failure mode.
+
+**Output (single-step form)**:
+```toon
+status: success
+plan_id: my-plan
+step_id: commit-push
+standards_path: marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/commit-push.md
+loadable: true
+```
+
+When the standards file is missing or unreadable, `loadable: false` and a `message` field carries the canonical actionable phrasing:
+```toon
+status: success
+plan_id: my-plan
+step_id: missing-step
+standards_path: marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/missing-step.md
+loadable: false
+message: "step `missing-step` referenced by `marshal.json` is missing standards file `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/missing-step.md` — the plan likely deleted the file without sweeping `marshal.json`"
+```
+
+**Output (bulk form)**: a `results[N]` table with one row per manifest step plus an `unloadable_count` summary, e.g.:
+```toon
+status: success
+plan_id: my-plan
+unloadable_count: 1
+results[3]{step_id,standards_path,loadable,message}:
+  commit-push,marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/commit-push.md,true,
+  create-pr,marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/create-pr.md,true,
+  ghost-step,marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/ghost-step.md,false,"step `ghost-step` referenced by `marshal.json` is missing standards file `…ghost-step.md` — the plan likely deleted the file without sweeping `marshal.json`"
+```
+
+The bulk form requires the manifest to exist on disk; if it does not, the script returns the standard `file_not_found` error.
+
 ---
 
 ## Scripts
@@ -161,6 +214,7 @@ On failure: `status: error`, `error: invalid_manifest`, plus a `message` and per
 | `compose` | `--plan-id --change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps]` | Compose and write execution.toon |
 | `read` | `--plan-id` | Read manifest as TOON |
 | `validate` | `--plan-id [--phase-5-steps] [--phase-6-steps]` | Validate manifest schema + step IDs |
+| `validate-loadable` | `--plan-id (--step-id ID \| --all)` | Verify standards file presence for built-in `phase_6.steps` entries |
 
 ---
 
@@ -176,6 +230,7 @@ On failure: `status: error`, `error: invalid_manifest`, plus a `message` and per
 | `invalid_scope_estimate` | --scope-estimate not in the valid enum |
 | `invalid_track` | --track not `simple` or `complex` |
 | `invalid_manifest` | Manifest schema invalid or step IDs unknown |
+| `invalid_arguments` | `validate-loadable` invoked without exactly one of `--step-id` / `--all` |
 
 ---
 

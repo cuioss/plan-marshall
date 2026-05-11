@@ -990,6 +990,189 @@ def cmd_read(args: argparse.Namespace) -> dict[str, Any] | None:
     }
 
 
+# =============================================================================
+# Loadability Check (validate-loadable)
+# =============================================================================
+
+# Path to the phase-6-finalize standards directory, resolved relative to this
+# script's location in the marketplace source tree. The directory layout is
+# fixed: ``…/skills/manage-execution-manifest/scripts/manage-execution-manifest.py``
+# is two parents up from ``…/skills/`` and the sibling skill is at
+# ``…/skills/phase-6-finalize/standards/``. The relative resolution avoids
+# coupling to the deployed plugin-cache layout (which carries a version segment
+# under ``~/.claude/plugins/cache/plan-marshall/plan-marshall/{version}/``).
+# Tests therefore exercise the same code path the production executor uses.
+_PHASE_6_STANDARDS_DIR = (
+    Path(__file__).resolve().parent.parent.parent / 'phase-6-finalize' / 'standards'
+)
+
+# Repository-root anchor used to render the standards path as a project-relative
+# string in the script output. The script lives at
+# marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/
+# manage-execution-manifest.py — parents[6] resolves to the repo root so rendered
+# paths start with `marketplace/bundles/…` and match the documented contract.
+_REPO_ROOT = Path(__file__).resolve().parents[6]
+
+
+def _is_external_step(step_id: str) -> bool:
+    """Return True when ``step_id`` is a project/skill (external) step.
+
+    External steps carry a colon (``project:foo`` or ``bundle:skill``).
+    Bare names and ``default:``-prefixed names are built-in.
+    """
+    if step_id.startswith('default:'):
+        return False
+    return ':' in step_id
+
+
+def _resolve_standards_path(step_id: str) -> Path:
+    """Resolve the standards file path for a built-in ``step_id``.
+
+    Strips the optional ``default:`` prefix and joins with
+    ``_PHASE_6_STANDARDS_DIR``. Caller is responsible for verifying the step is
+    built-in (see ``_is_external_step``) before calling.
+    """
+    bare = _strip_default_prefix(step_id)
+    return _PHASE_6_STANDARDS_DIR / f'{bare}.md'
+
+
+def _render_standards_rel_path(absolute: Path) -> str:
+    """Render ``absolute`` as a repo-root-relative POSIX string.
+
+    Falls back to the absolute string when ``absolute`` is outside the repo.
+    """
+    try:
+        return absolute.relative_to(_REPO_ROOT).as_posix()
+    except ValueError:
+        return str(absolute)
+
+
+def _check_step_loadable(step_id: str) -> dict[str, Any]:
+    """Single-step loadability check.
+
+    Returns a dict with ``step_id``, ``standards_path``, ``loadable`` and an
+    optional ``message`` (canonical actionable phrasing on failure).
+    External steps are short-circuited to ``loadable: true`` with an empty
+    standards_path because their loadability is owned by the host plugin
+    cache, not the marketplace standards tree.
+    """
+    if _is_external_step(step_id):
+        return {
+            'step_id': step_id,
+            'standards_path': '',
+            'loadable': True,
+        }
+    bare = _strip_default_prefix(step_id)
+    absolute_path = _resolve_standards_path(step_id)
+    rel_path = _render_standards_rel_path(absolute_path)
+    if absolute_path.is_file():
+        return {
+            'step_id': bare,
+            'standards_path': rel_path,
+            'loadable': True,
+        }
+    message = (
+        f'step `{bare}` referenced by `marshal.json` is missing standards file '
+        f'`{rel_path}` — the plan likely deleted the file without sweeping `marshal.json`'
+    )
+    return {
+        'step_id': bare,
+        'standards_path': rel_path,
+        'loadable': False,
+        'message': message,
+    }
+
+
+def cmd_validate_loadable(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Verify standards-file loadability for `phase_6.steps` entries.
+
+    Two modes (mutually exclusive):
+
+    - ``--step-id ID``: validate one step. Returns the per-step dict directly.
+    - ``--all``: walk every entry in ``manifest.phase_6.steps`` and return a
+      ``results[]`` table plus ``unloadable_count``.
+
+    Built-in steps resolve to ``phase-6-finalize/standards/{name}.md`` in the
+    marketplace source tree (the cache layout is a deployment concern;
+    resolving against the source tree keeps tests and production on the same
+    code path). External steps short-circuit to ``loadable: true``.
+    """
+    plan_id = require_valid_plan_id(args)
+
+    step_id = getattr(args, 'step_id', None)
+    use_all = bool(getattr(args, 'all', False))
+
+    if (step_id is None and not use_all) or (step_id is not None and use_all):
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'invalid_arguments',
+            'message': 'validate-loadable requires exactly one of --step-id or --all',
+        }
+
+    if step_id is not None:
+        result = _check_step_loadable(step_id)
+        return {
+            'status': 'success',
+            'plan_id': plan_id,
+            **result,
+        }
+
+    # --all path: read manifest, walk phase_6.steps.
+    manifest = read_manifest(plan_id)
+    if manifest is None:
+        output_toon_error(
+            'file_not_found',
+            f'execution.toon not found for plan {plan_id}',
+            plan_id=plan_id,
+        )
+        return None
+
+    phase_6 = manifest.get('phase_6')
+    if not isinstance(phase_6, dict):
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'invalid_manifest',
+            'message': 'phase_6 section missing or not a mapping',
+        }
+    steps = phase_6.get('steps', [])
+    if not isinstance(steps, list):
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'invalid_manifest',
+            'message': 'phase_6.steps must be a list',
+        }
+
+    results: list[dict[str, Any]] = []
+    for entry in steps:
+        if isinstance(entry, str):
+            results.append(_check_step_loadable(entry))
+            continue
+        # Non-string manifest entries are corruption — surface them as
+        # unloadable so the caller sees them in `results[]` and the
+        # `unloadable_count` totals the defect, instead of silently
+        # dropping the entry from validation.
+        offending_type = type(entry).__name__
+        results.append({
+            'step_id': str(entry),
+            'standards_path': '',
+            'loadable': False,
+            'message': (
+                f'manifest step entry has non-string type `{offending_type}` '
+                f'(value: {entry!r}) — manifest is corrupt; only str step IDs are valid'
+            ),
+        })
+    unloadable_count = sum(1 for r in results if not r['loadable'])
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'unloadable_count': unloadable_count,
+        'results': results,
+    }
+
+
 def cmd_validate(args: argparse.Namespace) -> dict[str, Any] | None:
     """Validate manifest schema and (optionally) step IDs against candidate sets."""
     plan_id = require_valid_plan_id(args)
@@ -1105,6 +1288,24 @@ def _build_parser() -> argparse.ArgumentParser:
     validate_parser.add_argument('--phase-5-steps', default=None, help='Comma-separated allowed Phase 5 step IDs')
     validate_parser.add_argument('--phase-6-steps', default=None, help='Comma-separated allowed Phase 6 step IDs')
 
+    validate_loadable_parser = subparsers.add_parser(
+        'validate-loadable',
+        help='Verify standards-file presence for phase_6.steps entries',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(validate_loadable_parser)
+    validate_loadable_group = validate_loadable_parser.add_mutually_exclusive_group(required=True)
+    validate_loadable_group.add_argument(
+        '--step-id',
+        default=None,
+        help='Validate a single step (bare name or default:-prefixed)',
+    )
+    validate_loadable_group.add_argument(
+        '--all',
+        action='store_true',
+        help='Validate every entry in manifest.phase_6.steps',
+    )
+
     return parser
 
 
@@ -1117,6 +1318,7 @@ def main() -> int:
         'compose': cmd_compose,
         'read': cmd_read,
         'validate': cmd_validate,
+        'validate-loadable': cmd_validate_loadable,
     }
     handler = handlers[args.command]
     result = handler(args)
