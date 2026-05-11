@@ -1435,13 +1435,45 @@ def test_parse_rules_flag_comma_separated_activates_multiple():
     assert result == frozenset({'argument_naming', 'verb_chain'})
 
 
-def test_parse_rules_flag_ignores_unknown_names():
-    """Unknown rule names are silently dropped — only known tokens activate."""
+def test_parse_rules_flag_drops_unknown_names_but_keeps_valid(capsys):
+    """Unknown rule names are dropped but valid tokens still activate.
+
+    Valid tokens in the same invocation continue to enable their cluster —
+    only the unknown tokens are rejected. See ``test_parse_rules_flag_warns_on_unknown_tokens``
+    for the warning contract.
+    """
     # Arrange + Act
     result = _doctor_marketplace._parse_rules_flag('argument_naming,nonsense,verb_chain')
 
     # Assert
     assert result == frozenset({'argument_naming', 'verb_chain'})
+
+
+def test_parse_rules_flag_warns_on_unknown_tokens(capsys):
+    """Unknown ``--rules`` tokens trigger a stderr warning naming the rejected
+    token alongside the accepted registry — silent drops mask user typos in a
+    diagnostic tool. See lesson 2026-05-08-19-003 (PR #362 review).
+    """
+    # Arrange + Act
+    _doctor_marketplace._parse_rules_flag('argument_naming,nonsense,verb_chain')
+
+    # Assert — warning emitted on stderr, naming both the rejected token and
+    # the accepted registry so users can correct the typo.
+    captured = capsys.readouterr()
+    assert 'WARNING' in captured.err, f'Expected warning on stderr, got: {captured.err!r}'
+    assert 'nonsense' in captured.err, f'Warning should name the rejected token: {captured.err!r}'
+    assert 'argument_naming' in captured.err, f'Warning should list accepted registry: {captured.err!r}'
+    assert 'verb_chain' in captured.err, f'Warning should list accepted registry: {captured.err!r}'
+
+
+def test_parse_rules_flag_no_warning_on_valid_tokens(capsys):
+    """No warning is emitted when every ``--rules`` token is in the registry."""
+    # Arrange + Act
+    _doctor_marketplace._parse_rules_flag('argument_naming,verb_chain')
+
+    # Assert — no warning on stderr when all tokens are accepted.
+    captured = capsys.readouterr()
+    assert 'WARNING' not in captured.err, f'Should NOT warn on valid tokens, got: {captured.err!r}'
 
 
 def test_parse_rules_flag_trims_whitespace_around_names():
@@ -1499,6 +1531,89 @@ def test_resolve_active_rules_rules_and_alias_union():
 
     # Assert
     assert result == frozenset({'argument_naming', 'verb_chain'})
+
+
+# =============================================================================
+# verb_chain gating — TASK-13 (PR #362 review)
+# =============================================================================
+#
+# The verb_chain rule cluster is registered in ``_OPTIN_RULE_NAMES`` and
+# surfaced via ``--rules verb_chain`` / ``--enable-verb-chain``, so it must
+# only dispatch when the caller opts in. Previously the rule ran
+# unconditionally inside ``analyze_component``, creating a data-contract
+# drift between registry and dispatch. These tests pin the gated dispatch
+# at the unit-test level via a patched ``analyze_verb_chains`` spy.
+
+
+def _load_doctor_analysis():
+    """Import ``_doctor_analysis.py`` for direct-call tests."""
+    script_dir = _DOCTOR_MARKETPLACE_PATH.parent
+    if str(script_dir) not in sys.path:
+        sys.path.insert(0, str(script_dir))
+    path = script_dir / '_doctor_analysis.py'
+    spec = importlib.util.spec_from_file_location('_doctor_analysis_under_test', path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules['_doctor_analysis_under_test'] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_analyze_component_skips_verb_chain_when_inactive(tmp_path, monkeypatch):
+    """``analyze_component`` does NOT call ``analyze_verb_chains`` without opt-in.
+
+    Pins the dispatch-gating contract introduced for TASK-13: verb_chain is
+    opt-in via ``--rules verb_chain`` / ``--enable-verb-chain``; absence
+    must keep the analyzer silent (no calls, no findings).
+    """
+    # Arrange — fixture skill directory and spy.
+    skill_dir = tmp_path / 'gated-skill'
+    skill_dir.mkdir()
+    (skill_dir / 'SKILL.md').write_text('---\nname: gated-skill\ndescription: x\n---\n# Gated Skill\n')
+    component = {'type': 'skill', 'path': str(skill_dir), 'skill_md_path': str(skill_dir / 'SKILL.md')}
+
+    doctor_analysis = _load_doctor_analysis()
+    calls = []
+
+    def _spy(skill_dir_arg):
+        calls.append(skill_dir_arg)
+        return []
+
+    monkeypatch.setattr(doctor_analysis, 'analyze_verb_chains', _spy)
+
+    # Act — no active rules.
+    doctor_analysis.analyze_component(component)
+
+    # Assert — spy never called.
+    assert calls == [], f'verb_chain should not run without opt-in, but spy was called: {calls!r}'
+
+
+def test_analyze_component_runs_verb_chain_when_active(tmp_path, monkeypatch):
+    """``analyze_component`` dispatches verb_chain when ``active_rules`` opts in.
+
+    Pins the active-path of the TASK-13 contract: with ``verb_chain`` in the
+    active rule set, the analyzer is invoked exactly once per skill.
+    """
+    # Arrange
+    skill_dir = tmp_path / 'opted-in-skill'
+    skill_dir.mkdir()
+    (skill_dir / 'SKILL.md').write_text('---\nname: opted-in-skill\ndescription: x\n---\n# Opted In Skill\n')
+    component = {'type': 'skill', 'path': str(skill_dir), 'skill_md_path': str(skill_dir / 'SKILL.md')}
+
+    doctor_analysis = _load_doctor_analysis()
+    calls = []
+
+    def _spy(skill_dir_arg):
+        calls.append(skill_dir_arg)
+        return []
+
+    monkeypatch.setattr(doctor_analysis, 'analyze_verb_chains', _spy)
+
+    # Act
+    doctor_analysis.analyze_component(component, active_rules=frozenset({'verb_chain'}))
+
+    # Assert — spy called exactly once with the skill dir.
+    assert len(calls) == 1, f'verb_chain should run exactly once when opted in, calls={calls!r}'
 
 
 # =============================================================================

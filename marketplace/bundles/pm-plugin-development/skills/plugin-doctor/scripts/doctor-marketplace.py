@@ -79,13 +79,24 @@ def _parse_rules_flag(rules_value: str | None) -> frozenset[str]:
     """Parse a ``--rules`` argument into a normalised set of rule names.
 
     Accepts ``None`` or empty string (returns empty set), a single name, or
-    comma-separated names. Unknown names are silently ignored — the caller's
-    intent ("enable these rules") is honoured even when one of the names is
-    mistyped, but no rule activates without a known token.
+    comma-separated names. Unknown names are dropped from the active set but
+    a warning is emitted to stderr naming each rejected token alongside the
+    accepted registry — silent drops mask user typos in a diagnostic tool
+    where the caller may believe a rule is active when it has been silently
+    dropped. Valid tokens in the same invocation continue to activate.
     """
     if not rules_value:
         return frozenset()
     tokens = {tok.strip() for tok in rules_value.split(',') if tok.strip()}
+    unknown = sorted(tokens - _OPTIN_RULE_NAMES)
+    if unknown:
+        accepted = ', '.join(sorted(_OPTIN_RULE_NAMES))
+        rejected = ', '.join(unknown)
+        print(
+            f'WARNING: unknown --rules token(s) ignored: {rejected}. '
+            f'Accepted opt-in rules: {accepted}.',
+            file=sys.stderr,
+        )
     return frozenset(tokens & _OPTIN_RULE_NAMES)
 
 
@@ -297,11 +308,17 @@ def cmd_analyze(args) -> dict:
     bundles = find_bundles(marketplace_root, parse_csv_filter(args.bundles))
     component_list = collect_filtered_components(bundles, parse_csv_filter(args.type), parse_csv_filter(args.name))
 
+    # Resolve opt-in rules from ``--rules`` and alias flags. The set is the
+    # single source of truth for which rule clusters dispatch — propagated
+    # down into ``analyze_component`` for per-component clusters (verb_chain)
+    # and used directly for marketplace-wide clusters (argument_naming).
+    active_rules = _resolve_active_rules(args)
+
     all_analysis = []
     total_issues = 0
 
     for component in component_list:
-        result = analyze_component(component)
+        result = analyze_component(component, active_rules=active_rules)
         result['bundle'] = component['_bundle_name']
         all_analysis.append(result)
         total_issues += result.get('issue_count', 0)
@@ -323,7 +340,6 @@ def cmd_analyze(args) -> dict:
     # flag/Canonical-Forms cross-check). Gated OFF by default; opt in via
     # ``--rules argument_naming`` or the ``--enable-argument-naming`` alias.
     # Absence of the flag keeps the cluster silent (no findings, no warnings).
-    active_rules = _resolve_active_rules(args)
     if 'argument_naming' in active_rules:
         argument_naming_issues = analyze_argument_naming(marketplace_root)
         all_issues.extend(argument_naming_issues)

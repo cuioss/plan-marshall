@@ -439,9 +439,7 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
             # the parser normalises by walking the body, matching TOON's
             # documented "[N] is advisory" semantics.
             i += 1
-            had_body_item = False
             while i < len(lines) and lines[i].startswith('  - '):
-                had_body_item = True
                 raw_step = lines[i][4:].strip()
                 if len(raw_step) >= 2 and raw_step.startswith('"') and raw_step.endswith('"'):
                     raise ValueError(
@@ -455,7 +453,6 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
                 i += 1
             # Empty steps body is allowed at parse time — the required-fields
             # check below catches it with a more specific error message.
-            del had_body_item
 
         elif line.startswith('depends_on:'):
             value = line[11:].strip()
