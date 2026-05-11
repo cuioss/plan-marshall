@@ -140,7 +140,10 @@ def _split_role(args) -> tuple[str | None, str | None, str | None]:
             )
         return phase, role, None
 
-    # Single-flag form. Detect dotted vs bare.
+    # Single-flag form. Detect dotted vs bare. (Reaching here implies
+    # `phase is None` AND `role is not None` per the early-return guards
+    # above; the assertion narrows the type for mypy.)
+    assert role is not None
     if '.' in role:
         parts = role.split('.', 1)
         return parts[0], parts[1], None
@@ -255,6 +258,8 @@ def cmd_models(args) -> dict:
     group, subkey, err = _split_role(args)
     if err is not None:
         return error_exit(err)
+    # When err is None, _split_role guarantees group is non-None.
+    assert group is not None
 
     # Validate the default value (if present) once so callers see invalid
     # defaults via a clear message even when the role itself has a value.
