@@ -1,11 +1,11 @@
 ---
 name: execution-context
 description: |
-  Generic execution-context dispatcher. The single agent that every `Task:` dispatch in the plan-marshall workflow targets — a thin envelope that loads `plan-marshall:dev-general-practices`, loads the caller-specified `skills[]` in order, then reads and executes the caller-specified `workflow` doc (or inline `instructions`) under the prompt-body's `WORKTREE` and `plan_id`. Replaces the eleven legacy named agents (phase-agent, create-pr-agent, automated-review-agent, sonar-roundtrip-agent, lessons-capture-agent, q-gate-validation-agent, research-best-practices-agent, detect-change-type-agent, ext-outline-component-agent, ext-outline-inventory-agent, tool-coverage-agent); their workflow content moved into `standards/*.md` docs that this dispatcher reads at runtime.
+  Generic dispatcher for every plan-marshall Task: invocation. Loads plan-marshall:dev-general-practices and any caller-specified skills, then reads and executes the workflow doc (or inline instructions) named in the prompt body. Required prompt-body fields: name, plan_id, skills[], exactly one of workflow/instructions, WORKTREE. Model and effort pinned by which execution-context-{level} variant is dispatched.
 
   Examples:
   - Input: name=commit-push, plan_id=my-plan, skills=[workflow-integration-git], workflow=plan-marshall:phase-6-finalize/standards/commit-push.md, WORKTREE=.plan/local/worktrees/my-plan
-  - Output: TOON with status, display_detail (≤80 char, ASCII), plus workflow-specific return fields
+  - Output: TOON with status, display_detail, plus workflow-specific return fields
 tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill
 implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor
 ---
