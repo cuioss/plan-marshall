@@ -32,25 +32,12 @@ Model and effort are NOT prompt-body fields. They are pinned by the variant file
 
 ## Enforcement
 
-Mirrors the Workflow Discipline hard rules from `plan-marshall:dev-general-practices` and the repository-level CLAUDE.md. These constraints apply to every action this agent takes; violating them breaks plan-marshall phase invariants and is never acceptable even under time pressure.
+The hard rules from `plan-marshall:dev-general-practices` (Workflow Discipline: one Bash command per call, no shell constructs, `.plan/` access only through manage-* scripts, no direct `gh`/`glab`, no hard-coded build commands, no multi-line content through the shell, etc.) apply unconditionally to every action this agent takes. They are loaded by Step 2 below and are NOT re-stated here — see that skill for the canonical list. Two dispatcher-specific constraints layered on top:
 
-**Prohibited actions:**
-- Never dispatch further work via an unconstrained generic subagent or any host-platform catch-all (`Task: general-purpose`, raw `Task: <any-other-agent>`, host built-in plan-mode tools). Every nested `Task:` dispatch MUST target `plan-marshall:execution-context` (canonical inherit) or `plan-marshall:execution-context-{level}` (variant) and carry the same five-field prompt body (`name`, `plan_id`, `skills[]`, `workflow`/`instructions`, `WORKTREE`).
-- Never access `.plan/` files with Read/Write/Edit. All `.plan/` operations MUST go through `python3 .plan/execute-script.py` manage-* scripts.
-- Never use `gh` or `glab` directly. All CI/Git-provider operations MUST go through `plan-marshall:tools-integration-ci` or the provider-specific review skills (`plan-marshall:workflow-integration-github` / `plan-marshall:workflow-integration-gitlab`).
-- Never hard-code build commands (`./pw`, `mvn`, `npm`, `gradle`). Resolve via `plan-marshall:manage-architecture:architecture resolve` first.
-- Never edit the main checkout when `WORKTREE` is a non-`.` path. The `WORKTREE` field is authoritative — bind every Edit/Write/Read tool call against that path; use `git -C {WORKTREE} <subcommand>` for every git call. Do NOT re-resolve via `manage-status get-worktree-path`; the orchestrator already did that.
-- Never marshal multi-line content (PR body, lesson body, memory entry, task YAML, request narrative) through the shell. Multi-line content MUST be written via the Write tool against the absolute path returned by the relevant `manage-*` script's path-allocate subcommand. Banned constructs: shell heredocs (`cat > file <<EOF`), `python3 -c "..."`, `python -c "..."`, `printf > file`, `$(cat …)` and equivalent shell command-substitution patterns.
-- Never resolve skills by filesystem search. If you find yourself reaching for `find`, `Glob`, `ls`, or any other discovery tool to locate a skill directory by name, STOP. Invoke `Skill: <name>` directly and let it fail loudly if the skill does not exist.
+- **No raw `Task:` spawn.** Every nested `Task:` dispatch MUST target `plan-marshall:execution-context` (canonical inherit) or `plan-marshall:execution-context-{level}` (variant) and carry the same five-field prompt body (`name`, `plan_id`, `skills[]`, `workflow`/`instructions`, `WORKTREE`). Banned: `Task: general-purpose`, raw `Task: <any-other-agent>`, host built-in plan-mode tools.
+- **`WORKTREE` is authoritative.** Bind every Edit/Write/Read tool call against the `WORKTREE` value verbatim; use `git -C {WORKTREE} <subcommand>` for every git call. Do NOT re-resolve via `manage-status get-worktree-path` — the orchestrator did that once before dispatch.
 
-**Bash constraints:**
-- One command per Bash call. No `&&`, `;`, `&`, or newline chaining.
-- No shell constructs: no `for`/`while` loops, no `$()` command substitution, no subshells, no heredocs, no piped chains.
-- Git commands MUST use `git -C {WORKTREE} …` — never `cd {WORKTREE} && git …`.
-
-**Workflow constraints:**
-- Execute ONLY the steps documented in the loaded `workflow` doc (or in the inline `instructions`). Do not add discovery steps, invent arguments, or skip documented steps.
-- Return the workflow's declared TOON contract verbatim. Do not summarise, filter, or wrap the workflow's terminal payload.
+Execute ONLY the steps documented in the loaded `workflow` doc (or in the inline `instructions`). Return the workflow's declared TOON contract verbatim — do not summarise, filter, or wrap.
 
 ## Step 1: Validate Prompt-Body Contract (MANDATORY)
 
