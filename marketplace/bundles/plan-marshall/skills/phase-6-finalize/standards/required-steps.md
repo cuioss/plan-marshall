@@ -40,3 +40,50 @@ otherwise a manifest pruning would deadlock the phase transition.
 - branch-cleanup
 - validation
 - lessons-capture
+
+## Loadability Contract
+
+Before any step in `manifest.phase_6.steps` is dispatched, `phase-6-finalize`
+SKILL.md Step 1.5 ("Manifest Loadability Check") MUST verify that every
+built-in step's standards file is present and readable. The check is
+implemented by `manage-execution-manifest validate-loadable` and runs
+exactly once per phase entry, immediately after the manifest is read in
+Step 2 and before the dispatch loop in Step 3.
+
+**Scope**: the contract covers **built-in** steps only — bare names that
+resolve to `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/{name}.md`
+in the deployed plugin cache. External steps (`project:` / `bundle:skill`)
+are NOT covered: their loadability is the responsibility of the host
+plugin cache, and a missing `Skill:` reference surfaces at dispatch time
+as a skill-resolution error (a different failure mode than a missing
+standards file).
+
+**Subcommand**: `manage-execution-manifest validate-loadable` accepts
+either `--step-id {id}` (single-step form) or `--all` (bulk form for the
+entire `manifest.phase_6.steps` list). The single-step return shape is
+`{status, step_id, standards_path, loadable: bool, message?}`; the bulk
+return shape is `{status, results[N]{step_id, standards_path, loadable,
+message?}, unloadable_count}`. See
+[`../../manage-execution-manifest/SKILL.md`](../../manage-execution-manifest/SKILL.md)
+§ `validate-loadable` for the authoritative API.
+
+**Failure shape**: on any unloadable built-in step, Step 1.5 aborts
+finalize with the canonical actionable message:
+
+> step `{step_id}` referenced by `marshal.json` is missing standards file
+> `{standards_path}` — the plan likely deleted the file without sweeping
+> `marshal.json`
+
+Self-modifying plans that delete a `phase-6-finalize/standards/{name}.md`
+without also pruning `marshal.json::plan.phase-6-finalize.steps` are the
+motivating failure mode. The fail-fast guard converts a confusing
+mid-dispatch failure (the dispatcher tries to load the deleted standards
+file when its turn comes) into an immediate, actionable error at phase
+entry.
+
+**Activation**: presence of every built-in step in this file plus
+`manifest.phase_6.steps` is the trigger. A step listed here but absent
+from the manifest is NOT enforced (matching the "Activation note" rule
+above). The handshake parser MUST refuse to enforce a step that is not
+in the manifest; otherwise a manifest pruning would deadlock the phase
+transition.

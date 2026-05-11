@@ -19,6 +19,8 @@ A deliverable is **self-modifying** when its `Affected files` list contains any 
 | `marketplace/bundles/plan-marshall/skills/tools-script-executor/` | Notation-to-path resolver and executor entry point |
 | `marketplace/bundles/plan-marshall/skills/tools-integration-ci/scripts/ci.py` | CI/Git provider abstraction |
 | `marketplace/bundles/plan-marshall/skills/tools-integration-ci/scripts/ci_base.py` | Shared CI/Git base used by every PR/finalize action |
+| `marketplace/targets/**` | Multi-target generator and adapter framework. The phase-6-finalize `deploy-target` step invokes the generator at run time; mid-flight edits change deployment behavior for the running plan and any downstream plans that share the cache. |
+| `marketplace/bundles/plan-marshall/skills/sync-plugin-cache/**` | Plugin cache sync engine. The phase-6-finalize `sync-plugin-cache` step invokes this skill at run time; mid-flight edits change cache layout and consumption ordering for the running plan and every subsequent plan that loads from the cache. |
 
 The list is intentionally narrow: only files that the running plan actually invokes during its own execution count. Edits to documentation, non-runtime skills, or test scaffolding under these directories do not by themselves trigger the classification — but if a deliverable mixes runtime and non-runtime files under one of the patterns above, the deliverable is self-modifying as a whole.
 

@@ -208,6 +208,125 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ---
 
+## Step 3d: Baseline Reconciliation
+
+**Purpose**: Pull/sync the target branch and surface overlapping diffs as Q-Gate findings BEFORE quality analysis runs (Step 8). Catches the recurring failure mode where request → outline → tasks were authored against an older snapshot of `main`, then upstream merges land between refine and execute on the same surface, forcing the plan to be re-authored mid-flight. Re-authoring at refine-time (Steps 8-12 loop iteration) is cheap; re-authoring at execute-time is not.
+
+### Activation Guard
+
+Skip Step 3d entirely when ANY of the following hold:
+
+- `metadata.use_worktree == false` (main-checkout flow — git pull is invasive on the user's working directory; skip and let the user reconcile manually).
+- No base branch is configured for the plan.
+- The repo has no remote (e.g., a brand-new clone for fixtures).
+
+When the guard does not skip, proceed to the sync sub-steps below.
+
+### Sub-step 3d.1 — Resolve the base branch
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-2-refine get --field base_branch --audit-plan-id {plan_id}
+```
+
+Fall back to the repo default (`main` for plan-marshall, project-configured otherwise) when `base_branch` is not set.
+
+### Sub-step 3d.2 — Resolve the worktree path
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-worktree-path \
+  --plan-id {plan_id}
+```
+
+Use the returned absolute path as `{worktree_path}` for the git invocations below. Do NOT pin cwd via `env -C` for the manage-* scripts; `git` invocations DO need the worktree path because `git` is a Bucket B tool by convention.
+
+### Sub-step 3d.3 — Fetch the upstream tip
+
+```bash
+git -C {worktree_path} fetch origin {base_branch}
+```
+
+This is the only network round-trip. Subsequent diff/log queries are local.
+
+### Sub-step 3d.4 — Compute overlap with the request narrative
+
+Surface diff against the captured baseline:
+
+```bash
+git -C {worktree_path} log --oneline {worktree_sha}..origin/{base_branch}
+```
+
+Where `{worktree_sha}` is the captured worktree SHA from the phase-1-init handshake (read via `manage-status read --plan-id {plan_id}` and consume `metadata.worktree_sha` if present, otherwise use the worktree's current `HEAD`).
+
+If the log returns zero commits → fast-path: log the clean state and return without emitting findings:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine:baseline) Fast-path — origin/{base_branch} unchanged since phase-1-init; no reconciliation needed"
+```
+
+If the log returns commits, continue to Sub-step 3d.5.
+
+### Sub-step 3d.5 — Surface overlap as Q-Gate findings
+
+For each upstream commit, list the files it touched:
+
+```bash
+git -C {worktree_path} show --stat --format= {commit_sha}
+```
+
+Compare each touched file against the request narrative's affected-files candidate set (loaded from `request.md` and any `module_mapping.toon` produced by phase-1-init):
+
+- **No overlap** — log the commit and continue:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine:baseline) Upstream commit {sha} ({subject}) — no overlap with request"
+  ```
+
+- **Overlap detected** — emit a Q-Gate finding with `severity: blocking` so the iterate-to-confidence loop addresses the drift:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+    qgate add --plan-id {plan_id} --phase 2-refine \
+    --source qgate-baseline-reconciliation --type triage \
+    --severity blocking \
+    --title "Q-Gate: upstream commit {sha} overlaps request surface" \
+    --detail "Commit {sha} ({subject}) landed on origin/{base_branch} since phase-1-init and touches files in the request's affected-files candidate set: {overlap_paths}. Re-author the request narrative against the new baseline (Steps 8-12 will iterate to confidence again) OR justify in clarifications why the upstream change is irrelevant to the request scope." \
+    --audit-plan-id {plan_id}
+  ```
+
+### Sub-step 3d.6 — Feedback Loop
+
+Findings emitted in Sub-step 3d.5 flow into the Step 8-12 iterate-to-confidence loop via the standard Q-Gate finding-resolution path. The loop reads pending findings at Step 1 (next iteration), surfaces them as clarifications in Step 11, and the user-supplied resolution feeds the request update in Step 12. The loop terminates when confidence reaches threshold AND no pending baseline findings remain.
+
+### Conflict Handling
+
+The fetch/compare path above is read-only — it never touches the worktree's working tree. When the loop iteration concludes that the request must be re-authored against the new baseline, the user (or the orchestrator under `plan_without_asking == true`) explicitly drives the rebase/merge in `phase-5-execute` Step 3 (now downgraded to a fast-path; see [phase-5-execute/standards/sync-with-main.md](../../phase-5-execute/standards/sync-with-main.md)). Phase-2-refine does NOT modify the worktree's working tree.
+
+### Skip Conditions Summary
+
+| Condition | Behavior |
+|-----------|----------|
+| `metadata.use_worktree == false` | Skip entirely |
+| No base branch configured | Skip entirely |
+| Repo has no remote | Skip entirely |
+| `git fetch` fails (network, auth) | Log warning, skip — do not block refine on transient infrastructure issues |
+| Zero upstream commits since phase-1-init | Fast-path log, no findings |
+| Upstream commits exist but none overlap request files | Log each commit, no findings |
+| Upstream commits overlap request files | Emit one blocking Q-Gate finding per overlapping commit |
+
+### Logging
+
+Log the step start and outcome:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-2-refine:baseline) Baseline reconciliation complete — {N} upstream commits, {M} overlapping, {K} findings emitted"
+```
+
+---
+
 ## Step 4: Load Confidence Threshold
 
 Read the confidence threshold from project configuration.
