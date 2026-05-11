@@ -654,6 +654,21 @@ warnings[N]:
 
 ---
 
+## Output
+
+Step 12 (above) is the single source of truth for the return TOON. The summary of the contract — the two fields every workflow doc that implements `ext-point-execution-context-workflow` MUST return — is:
+
+```toon
+status: success | error
+display_detail: "<plan {plan_id} created, domain {domain}>"
+```
+
+`display_detail` shape on success: `"plan {plan_id} created, domain {domain}"` (e.g. `"plan 2026-05-11-15-007 created, domain plan-marshall"`); ≤80 chars, ASCII, no trailing period. On error, `display_detail` carries the short error label (see § Error Handling for the structured envelope).
+
+All other fields (`plan_id`, `domain`, `next_phase`, `worktree_path`, `source`, `artifacts`, `warnings[]`) are documented in Step 12 above and form the rest of the return payload.
+
+---
+
 ## Error Handling
 
 On any error, **first log the error** to work-log (if plan directory exists):

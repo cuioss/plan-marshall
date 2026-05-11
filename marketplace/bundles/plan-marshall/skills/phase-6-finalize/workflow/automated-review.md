@@ -2,6 +2,7 @@
 name: default:automated-review
 description: CI automated review
 order: 30
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
 # Automated Review
@@ -121,7 +122,7 @@ Task: plan-marshall:{target}
     - plan-marshall:manage-architecture
     - plan-marshall:manage-config
     - plan-marshall:tools-integration-ci
-    workflow: plan-marshall:phase-6-finalize/workflow/triage.md
+    workflow: plan-marshall:plan-marshall/workflow/triage.md
 
     finding_type: pr-comment
     pr_number: {pr_number}
@@ -254,3 +255,15 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 | `outcome == failed` | n/a | RETRY (unchanged — same as the general rule) |
 | `outcome == loop_back` | n/a | RE-FIRE (treat as no record — same as the general rule for loop_back) |
 | no record | n/a | DISPATCH (unchanged — same as the general rule) |
+
+## Output
+
+```toon
+status: success | error | loop_back
+display_detail: "<{N} comments resolved, {fix_tasks} fix tasks, {accepted} accepted>"
+comments_processed: {N}
+comments_resolved: {N}
+fix_tasks_created: {N}
+```
+
+Orchestrator workflow — the LLM core is delegated to `cross.triage` via the internal sub-dispatch. The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded via `mark-step-done --display-detail`. On `loop_back`, the calling step re-fires on the next phase entry per the HEAD-dependent resumability rules above.

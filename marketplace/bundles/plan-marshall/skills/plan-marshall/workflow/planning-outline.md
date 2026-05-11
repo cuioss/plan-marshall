@@ -1,3 +1,7 @@
+---
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+---
+
 # Planning Workflow — Action: outline
 
 Workflow for the `outline` action (3-Outline + 4-Plan phases). Extracted from `workflow/planning.md` to keep that file under the bloat threshold.
@@ -225,13 +229,27 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake veri
   --plan-id {plan_id} --phase 3-outline --strict
 ```
 
-Resolve the level for role `phase_plan` (`manage-config models read --role phase_plan`); compute `target = phase-agent` when level is `inherit`/empty, else `target = phase-agent-{level}`. Dispatch:
+Compute the dispatch target via the role resolver:
+
+```bash
+target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models resolve-target --role phase-4)
+```
+
+Dispatch:
 
 ```
 Task: plan-marshall:{target}
-  Input: skill=plan-marshall:phase-4-plan, plan_id={plan_id}
-  Output: tasks created with domain, profile, skills
+  prompt: |
+    name: phase-4-plan
+    plan_id: {plan_id}
+    skills[1]:
+    - plan-marshall:phase-4-plan
+    workflow: plan-marshall:phase-4-plan/SKILL.md
+    WORKTREE: {worktree_path}
 ```
+
+The agent returns the task creation summary (`tasks` array with `domain`, `profile`, `skills`) in its TOON.
 
 **Metrics**: After the plan agent completes, record the `4-plan → 5-execute`
 boundary in a single fused call (forwarding the agent's `<usage>` data to
@@ -254,7 +272,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capt
 Log task plan agent invocation:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:plan-marshall) Invoked phase-agent for phase-4-plan"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:plan-marshall) Invoked execution-context for phase-4-plan"
 ```
 
 **Step 4b**: Transition phase after tasks created:
@@ -277,3 +295,14 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 - Display: `"Tasks created. Ready to execute."`
 - Display: `"Run '/plan-marshall action=execute plan={plan_id}' when ready."`
 - **STOP** (current behavior)
+
+## Output
+
+Top-level orchestrator workflow. Conformance to the ext-point output contract:
+
+```toon
+status: success | error
+display_detail: "<plan {plan_id} reached {terminal_phase}>"
+```
+
+The orchestrator emits this shape when wrapped in a `Task: execution-context-{level}` dispatch.

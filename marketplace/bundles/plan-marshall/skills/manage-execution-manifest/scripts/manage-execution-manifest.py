@@ -994,17 +994,16 @@ def cmd_read(args: argparse.Namespace) -> dict[str, Any] | None:
 # Loadability Check (validate-loadable)
 # =============================================================================
 
-# Path to the phase-6-finalize standards directory, resolved relative to this
-# script's location in the marketplace source tree. The directory layout is
-# fixed: ``…/skills/manage-execution-manifest/scripts/manage-execution-manifest.py``
-# is two parents up from ``…/skills/`` and the sibling skill is at
-# ``…/skills/phase-6-finalize/standards/``. The relative resolution avoids
-# coupling to the deployed plugin-cache layout (which carries a version segment
-# under ``~/.claude/plugins/cache/plan-marshall/plan-marshall/{version}/``).
-# Tests therefore exercise the same code path the production executor uses.
-_PHASE_6_STANDARDS_DIR = (
-    Path(__file__).resolve().parent.parent.parent / 'phase-6-finalize' / 'standards'
-)
+# Paths to the phase-6-finalize standards + workflow directories, resolved
+# relative to this script's location in the marketplace source tree. Built-in
+# step docs may live under either directory: orchestrator-style steps that the
+# dispatcher reads inline live under ``standards/``; ext-point implementor
+# workflows (LLM-judgement workflows dispatched as a unit via
+# ``execution-context``) live under ``workflow/``. The loadability check
+# searches both, ``workflow/`` first.
+_PHASE_6_SKILL_DIR = Path(__file__).resolve().parent.parent.parent / 'phase-6-finalize'
+_PHASE_6_WORKFLOW_DIR = _PHASE_6_SKILL_DIR / 'workflow'
+_PHASE_6_STANDARDS_DIR = _PHASE_6_SKILL_DIR / 'standards'
 
 # Repository-root anchor used to render the standards path as a project-relative
 # string in the script output. The script lives at
@@ -1026,14 +1025,21 @@ def _is_external_step(step_id: str) -> bool:
 
 
 def _resolve_standards_path(step_id: str) -> Path:
-    """Resolve the standards file path for a built-in ``step_id``.
+    """Resolve the doc file path for a built-in ``step_id``.
 
-    Strips the optional ``default:`` prefix and joins with
-    ``_PHASE_6_STANDARDS_DIR``. Caller is responsible for verifying the step is
-    built-in (see ``_is_external_step``) before calling.
+    Strips the optional ``default:`` prefix. Searches ``workflow/`` first,
+    then falls back to ``standards/``. Returns the first matching path; if
+    neither exists, returns the ``workflow/`` path (so the caller's missing-
+    file error message reports the preferred location).
     """
     bare = _strip_default_prefix(step_id)
-    return _PHASE_6_STANDARDS_DIR / f'{bare}.md'
+    workflow_path = _PHASE_6_WORKFLOW_DIR / f'{bare}.md'
+    if workflow_path.is_file():
+        return workflow_path
+    standards_path = _PHASE_6_STANDARDS_DIR / f'{bare}.md'
+    if standards_path.is_file():
+        return standards_path
+    return workflow_path
 
 
 def _render_standards_rel_path(absolute: Path) -> str:

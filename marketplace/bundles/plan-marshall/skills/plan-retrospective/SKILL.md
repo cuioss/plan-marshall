@@ -222,6 +222,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 
 ```toon
 status: success
+display_detail: "<{aspects} aspects, {lessons_recorded} lessons recorded>"
 plan_id: {plan_id or basename of archived_plan_path}
 mode: {finalize-step|user-invocable|archived}
 report_path: {absolute path to report}
@@ -234,11 +235,23 @@ On error:
 
 ```toon
 status: error
+display_detail: "<retrospective error: {code}>"
 plan_id: {id}
 mode: {mode}
 error: {code}
 message: {human-readable}
 ```
+
+## Output
+
+Step 7 (above) is the single source of truth for the return TOON. The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
+
+```toon
+status: success | error
+display_detail: "<{aspects_dispatched} aspects, {lessons_recorded} lessons recorded>"
+```
+
+`display_detail` shape on success: `"{aspects_dispatched} aspects, {lessons_recorded} lessons recorded"` (e.g. `"8 aspects, 3 lessons recorded"`); ≤80 chars, ASCII, no trailing period.
 
 ## Related
 

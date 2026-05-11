@@ -129,6 +129,7 @@ The Phase Entry Protocol's `phase_handshake verify --phase 3-outline --strict` c
 
 ```toon
 status: success | error
+display_detail: "<{M} tasks across {N} groups>"
 plan_id: {echo}
 summary:
   deliverables_processed: N
@@ -138,6 +139,8 @@ tasks_created[M]: {number, title, deliverable, depends_on}
 execution_order: {parallel groups}
 message: {error message if status=error}
 ```
+
+`display_detail` shape: `"{tasks_created} tasks across {parallelizable_groups} groups"` on success; ≤80 chars, ASCII, no trailing period.
 
 ## Related
 
@@ -657,28 +660,35 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Dispatch the validator agent**.
 
-(1) Resolve the level for role `q_gate_validation`:
+Compute the dispatch target via the role resolver:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models read --role q_gate_validation
+target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models resolve-target --role cross.q-gate-validation)
 ```
 
-(2) Compute the target:
-- `level == "inherit"` or empty → `target = q-gate-validation-agent`
-- otherwise → `target = q-gate-validation-agent-<level>`
-
-(3) Dispatch:
+Dispatch:
 
 ```
 Task: plan-marshall:{target}
-  Input:
+  prompt: |
+    name: cross.q-gate-validation
     plan_id: {plan_id}
+    skills[6]:
+    - plan-marshall:manage-solution-outline
+    - plan-marshall:manage-findings
+    - plan-marshall:manage-plan-documents
+    - plan-marshall:manage-status
+    - plan-marshall:manage-architecture
+    - plan-marshall:manage-logging
+    workflow: plan-marshall:plan-marshall/workflow/q-gate-validation.md
+    WORKTREE: {worktree_path}
+
     activation_context: 4-plan
     validators: [module-mapping-validator, scope-criterion-validator]
 ```
 
-The agent reads `solution_outline.md` (for the deliverables and their `success_criterion`/`affected_files` blocks) and the just-written `TASK-*.json` files (for `module_testing` task targets), runs the validator detection logic documented in q-gate-validation-agent.md §§ 2.11–2.12, and emits findings using `--source qgate-module-mapping` / `--source qgate-scope-criterion`. See those sections for the canonical detection logic and finding emission templates.
+The agent reads `solution_outline.md` (for the deliverables and their `success_criterion`/`affected_files` blocks) and the just-written `TASK-*.json` files (for `module_testing` task targets), runs the module-mapping and scope-criterion validator detection logic, and emits findings using `--source qgate-module-mapping` / `--source qgate-scope-criterion`. See the q-gate validation workflow for the canonical detection logic and finding emission templates.
 
 **Aggregate the findings** — read pending findings to update the running count returned in Step 11:
 

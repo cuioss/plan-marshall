@@ -197,7 +197,7 @@ plan_id: my-plan
 unloadable_count: 1
 results[3]{step_id,standards_path,loadable,message}:
   commit-push,marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/commit-push.md,true,
-  create-pr,marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/create-pr.md,true,
+  create-pr,marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/create-pr.md,true,
   ghost-step,marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/ghost-step.md,false,"step `ghost-step` referenced by `marshal.json` is missing standards file `…ghost-step.md` — the plan likely deleted the file without sweeping `marshal.json`"
 ```
 

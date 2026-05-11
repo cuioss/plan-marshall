@@ -115,7 +115,7 @@ Finding types promote to specific targets:
 
 ### `pr-comment-overflow`
 
-`pr-comment-overflow` is the bookkeeping type that carries unprocessed `pr-comment` IDs from a budget-exhausted `automated-review` iteration to the next one. It is filed by `automated-review` (see [`phase-6-finalize/standards/automated-review.md`](../../phase-6-finalize/standards/automated-review.md) § Overflow handling) when the per-iteration triage budget is nearly exhausted before all `pr-comment` findings have been processed.
+`pr-comment-overflow` is the bookkeeping type that carries unprocessed `pr-comment` IDs from a budget-exhausted `automated-review` iteration to the next one. It is filed by `automated-review` (see [`phase-6-finalize/workflow/automated-review.md`](../../phase-6-finalize/workflow/automated-review.md) § Overflow handling) when the per-iteration triage budget is nearly exhausted before all `pr-comment` findings have been processed.
 
 | Field | Expected shape |
 |-------|----------------|

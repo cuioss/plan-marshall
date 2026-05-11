@@ -27,11 +27,17 @@ The implementor MUST live at one of these paths:
 | `{bundle}:{skill}/SKILL.md` | `marketplace/bundles/{bundle}/skills/{skill}/SKILL.md` |
 | `{bundle}:{skill}/workflow/{file}.md` | `marketplace/bundles/{bundle}/skills/{skill}/workflow/{file}.md` |
 
-The `workflow/` directory (singular) is the marketplace convention for workflow docs in general — both ext-point implementors and top-level orchestrator / reference workflows that the LLM follows directly. Reference / contract / configuration docs live under `standards/`; tool-loaded reference material lives under `references/`.
+The `workflow/` directory (singular) is the marketplace convention for workflow docs. Reference / contract / configuration docs live under `standards/`; tool-loaded reference material lives under `references/`.
 
-Not every `workflow/*.md` declares this ext-point — orchestrator docs that drive multi-phase work and do not return a structured TOON payload (e.g., the top-level planning / recipe / execution workflows) live under `workflow/` for naming consistency but do NOT carry the `implements:` line. Conversely, every file that DOES carry the `implements:` declaration MUST conform to the input/output contract below.
+**Every** file under `workflow/` (markdown or AsciiDoc) MUST declare `implements:` and conform to the input/output contract below. There is no orchestrator-exception: even top-level workflows the LLM follows directly in the main context (e.g., `plan-marshall/workflow/planning.md`, `recipe.md`, `execution.md`) declare the ext-point — their Output section is degenerate (a `status` + `display_detail` shape emitted when the workflow is wrapped in a `Task: execution-context-{level}` dispatch; interactive entry surfaces the same conceptual state via `manage-logging` records and the terminal user message).
+
+Two doc-format conventions:
+- **Markdown workflows** declare `implements:` in YAML frontmatter (`---` block) and document the Output section as `## Output`.
+- **AsciiDoc workflows** (`.md` extension, AsciiDoc body) declare `:implements:` as an AsciiDoc attribute at the top of the file and document the Output section as `== Output`.
 
 A skill MAY hold zero, one, or many `workflow/*.md` files. A SKILL.md MAY itself implement the ext-point when the skill's primary deliverable is one workflow (e.g., the six phase-N skills). When both apply, SKILL.md typically describes the skill and points at one or more `workflow/*.md` implementors that carry the actual dispatch bodies.
+
+**Cross-phase / multi-consumer placement rule**: when a workflow is consumed from multiple phases or from outside any phase (e.g., `triage`, `q-gate-validation`, `research-best-practices`, `enrich-module`), place it under `plan-marshall/skills/plan-marshall/workflow/` rather than under any single consumer phase. Single-phase workflows live under the consumer phase's `skill/workflow/`.
 
 ### Input Contract — what the implementor can rely on
 

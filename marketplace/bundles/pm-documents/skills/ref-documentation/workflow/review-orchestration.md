@@ -2,6 +2,7 @@
 :toc: left
 :toclevels: 3
 :sectnums:
+:implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 
 == Overview
 
@@ -491,3 +492,15 @@ The comprehensive-review workflow can be invoked from any skill or agent that lo
 * xref:link-verification.md[Link Verification Protocol]
 * xref:content-review.md[Content Review Framework]
 * xref:../README.adoc[Documentation Standards Overview]
+
+== Output
+
+Workflow conformance to the ext-point output contract:
+
+[source,toon]
+----
+status: success | error
+display_detail: "<{docs_reviewed} docs reviewed, {phases_passed}/3 phases passed>"
+docs_reviewed: {N}
+phases_passed: {N}
+----

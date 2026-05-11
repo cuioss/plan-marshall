@@ -230,7 +230,7 @@ For codebase-wide changes requiring discovery and analysis.
 | **9c. Read Target Skill Design Intent** | For each deliverable that adds capability to an existing skill, classify the skill's design model and record it on the deliverable | Read the target skill's `SKILL.md` and design-intent docs; classify as `script-deterministic`, `LLM-driven`, or `hybrid`; record the classification in the deliverable's `**Design notes:**` block; reroute or justify when the proposed implementation contradicts the model. Detailed procedure: [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md#step-9c-read-target-skill-design-intent). |
 | **10. Execute Workflow** | Run discovery, analysis, write solution | Follow change-type instructions, resolve verification commands, write `solution_outline.md`. Step 10 includes a consumer-sweep when the deliverable deletes/renames a public symbol — see [`consumer-sweep.md`](standards/consumer-sweep.md). |
 | **10b. Self-Modifying Classification** | Classify deliverables that touch plan-marshall runtime infrastructure and surface phasing decision | When predicate fires (path heuristic + `compatibility: breaking` + hard-cutover language), prompt author via `AskUserQuestion` for split / inline-rationale / additive-mode resolution. Standard: [`ref-workflow-architecture/standards/self-modifying-classification.md`](../ref-workflow-architecture/standards/self-modifying-classification.md). |
-| **11. Q-Gate Verification** | Full quality verification (with surgical bypass) | Bypass when surgical+bug_fix/tech_debt/verification+1 deliverable; otherwise spawn the q-gate validation agent (role: `q_gate_validation`; resolved via `manage-config models read --role q_gate_validation` to compute `q-gate-validation-agent` for `inherit` or `q-gate-validation-agent-{level}` for any other level — see [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md) for the canonical three-step dispatch). The agent runs phase-3-applicable validators: existing checks 2.1-2.7, consumer-sweep §2.9, **argparse-validator §2.10**, **tier-delta-validator §2.13**, **self-modifying-phased-rollout-validator §2.16**, **architecture-mismatch-validator §2.17**. |
+| **11. Q-Gate Verification** | Full quality verification (with surgical bypass) | Bypass when surgical+bug_fix/tech_debt/verification+1 deliverable; otherwise dispatch the q-gate validation workflow under role `cross.q-gate-validation` (resolved via `manage-config models resolve-target --role cross.q-gate-validation`; see [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md) for the canonical dispatch). The workflow runs phase-3-applicable validators: existing checks 2.1-2.7, consumer-sweep §2.9, **argparse-validator §2.10**, **tier-delta-validator §2.13**, **self-modifying-phased-rollout-validator §2.16**, **architecture-mismatch-validator §2.17**. |
 
 **Step 10 may also refine `scope_estimate`**: After Complex Track discovery and deliverable composition, the concrete Affected files lists may narrow the actual scope. Phase-3-outline MAY downgrade `scope_estimate` (e.g., `multi_module` → `single_module`, or `single_module` → `surgical`) and persist via `manage-references set --field scope_estimate`. Refinement happens BEFORE Step 11 so the bypass rule sees the refined value.
 
@@ -248,7 +248,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline:qgate-bypass) Q-Gate skipped — scope_estimate=surgical, change_type={change_type}, 1 deliverable"
 ```
 
-Otherwise, resolve the variant target via `manage-config models read --role q_gate_validation` and spawn `plan-marshall:{target}` (canonical `q-gate-validation-agent` when level is `inherit`/empty; `q-gate-validation-agent-{level}` otherwise). Auto-loop on pending findings as documented in the detail standards.
+Otherwise, resolve the dispatch target via `manage-config models resolve-target --role cross.q-gate-validation` and dispatch `plan-marshall:{target}` with workflow `plan-marshall:plan-marshall/workflow/q-gate-validation.md`. Auto-loop on pending findings as documented in the detail standards.
 
 **CRITICAL**: If Complex Track skill workflow fails, do NOT fall back to grep/search. Fail clearly.
 
@@ -385,6 +385,21 @@ deliverable_count: {N}
 qgate_passed: {true|false}
 qgate_pending_count: {0 if no findings}
 ```
+
+---
+
+## Output
+
+The "Return Results" block above (under Step 12) is the single source of truth for the return TOON. The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
+
+```toon
+status: success | error
+display_detail: "<track {track}, {deliverable_count} deliverables, {qgate_pending_count} pending>"
+```
+
+`display_detail` shape on success: `"track {track}, {deliverable_count} deliverables, {qgate_pending_count} pending"` (e.g. `"track complex, 5 deliverables, 0 pending"`); ≤80 chars, ASCII, no trailing period. On error, carries the short error label from § Error Handling.
+
+All other fields (`plan_id`, `track`, `deliverable_count`, `qgate_passed`, `qgate_pending_count`) are documented in "Return Results" above.
 
 ---
 

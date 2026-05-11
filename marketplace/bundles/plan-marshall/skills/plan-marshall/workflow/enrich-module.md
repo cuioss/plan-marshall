@@ -20,7 +20,7 @@ Skills the caller MUST forward in `skills[]`: `plan-marshall:manage-architecture
 
 ## Workflow
 
-The per-module enrichment body is the canonical Steps 5–8 documented in [`../SKILL.md`](../SKILL.md) §§ "Steps 5-8: Per-Module Enrichment", "Step 6: Write Responsibility", "Step 7: Key Packages & Dependencies", "Step 8: Resolve Skill Domains". Execute those four steps for the single `{module}` provided in the prompt body. Do NOT iterate — each dispatch handles one module; the caller fans out across modules in parallel.
+The per-module enrichment body is the canonical Steps 5–8 documented in [`../../manage-architecture/SKILL.md`](../../manage-architecture/SKILL.md) §§ "Steps 5-8: Per-Module Enrichment", "Step 6: Write Responsibility", "Step 7: Key Packages & Dependencies", "Step 8: Resolve Skill Domains". Execute those four steps for the single `{module}` provided in the prompt body. Do NOT iterate — each dispatch handles one module; the caller fans out across modules in parallel.
 
 The intra-module step ordering MUST be preserved:
 - Step 5 (load raw data) feeds Steps 6–7.

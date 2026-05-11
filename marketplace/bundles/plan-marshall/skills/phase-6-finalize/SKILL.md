@@ -397,27 +397,49 @@ Do NOT cache the live HEAD across loop iterations — read it fresh per step so 
 
 For each step reference:
 
-**Agent-suitable built-in steps** (self-contained, no user interaction) — each dispatches to a named, enforcement-bearing agent (NOT a generic Task agent):
+**Agent-suitable built-in steps** (self-contained, no user interaction) — each dispatches to `plan-marshall:execution-context-{level}` with the role-resolved workflow doc:
 
-| Step reference | Canonical agent (role) | Variant suffix resolution |
-|----------------|------------------------|---------------------------|
-| `default:create-pr` | `plan-marshall:create-pr-agent` (role: `pr_creation`) | resolved via `manage-config models read --role pr_creation` |
-| `default:automated-review` | `plan-marshall:automated-review-agent` (role: `automated_review`) | resolved via `manage-config models read --role automated_review` |
-| `default:sonar-roundtrip` | `plan-marshall:sonar-roundtrip-agent` (role: `sonar_roundtrip`) | resolved via `manage-config models read --role sonar_roundtrip` |
-| `default:lessons-capture` | `plan-marshall:lessons-capture-agent` (role: `lessons_capture`) | resolved via `manage-config models read --role lessons_capture` |
+| Step reference | Role key | Workflow doc |
+|----------------|----------|--------------|
+| `default:create-pr` | `phase-6.create-pr` | `plan-marshall:phase-6-finalize/workflow/create-pr.md` |
+| `default:lessons-capture` | `phase-6.lessons-capture` | `plan-marshall:phase-6-finalize/workflow/lessons-capture.md` |
+| `default:automated-review` | (no key; uses `models.default`) | `plan-marshall:phase-6-finalize/workflow/automated-review.md` |
+| `default:sonar-roundtrip` | (no key; uses `models.default`) | `plan-marshall:phase-6-finalize/workflow/sonar-roundtrip.md` |
 
-**Variant resolution pattern** (applies to every row above): before dispatching, resolve the role's level and compute the target agent name:
+`automated-review` and `sonar-roundtrip` are orchestrator workflows — their LLM-judgement core is a single internal `cross.triage` dispatch (which carries its own role key). The outer wrapper runs at `models.default` since the body is mostly script execution and one sub-dispatch.
+
+**Dispatch pattern** — for rows with a role key, resolve the target via the role key:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models read --role <role>
+target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models resolve-target --role <role-key>)
 ```
 
-Read the `level` field from the TOON output. Compute the target agent:
-- `level == "inherit"` or empty → `target = <canonical>` (no suffix)
-- otherwise → `target = <canonical>-<level>` (variant)
+For the no-key rows (orchestrator workflows), resolve via `models.default`:
 
-Dispatch via `Task: plan-marshall:<target>` with the existing prompt and timeout unchanged. See [`plan-marshall:plan-marshall/standards/role-variants.md`](../plan-marshall/standards/role-variants.md) for the full variant-routing contract.
+```bash
+level=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models read --default)
+target="execution-context"
+if [ -n "$level" ] && [ "$level" != "inherit" ]; then
+  target="execution-context-$level"
+fi
+```
+
+Dispatch:
+
+```
+Task: plan-marshall:{target}
+  prompt: |
+    name: <step-name>
+    plan_id: {plan_id}
+    skills[N]:
+    - <step-specific skills>
+    workflow: <workflow-doc-from-table>
+    WORKTREE: {worktree_path}
+```
+
+The 5-field prompt-body contract (`name`, `plan_id`, `skills[]`, `workflow`, `WORKTREE`) is documented in [`plan-marshall:extension-api/standards/ext-point-execution-context-workflow`](../extension-api/standards/ext-point-execution-context-workflow.md). The variant resolution (canonical no-suffix for `inherit`/empty level; `execution-context-{level}` otherwise) lives in [`plan-marshall:plan-marshall/standards/role-variants.md`](../plan-marshall/standards/role-variants.md).
 
 **Inline-only built-in steps** (require user interaction, sequential dependency, or are bounded polling primitives that fit comfortably under the host platform's per-call Bash ceiling):
 - `commit-push` (git working directory state), `architecture-refresh` (AskUserQuestion for Tier-1 prompt mode; consumes `architecture-pre/` snapshot from phase-1-init Step 5d), `ci-wait` (bounded `ci wait` polling primitive — the `ci wait` script enforces its own `--timeout` ceiling; the dispatcher invokes it inline with a Bash timeout matching that ceiling), `branch-cleanup` (AskUserQuestion), `record-metrics` (must run immediately before `archive-plan` on the still-live plan directory), `archive-plan` (must be last, moves plan files)

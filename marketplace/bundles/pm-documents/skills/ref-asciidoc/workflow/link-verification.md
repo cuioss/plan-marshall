@@ -2,6 +2,7 @@
 :toc: left
 :toclevels: 3
 :sectnums:
+:implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 
 == Overview
 
@@ -520,3 +521,15 @@ steps:
 
 * xref:../README.adoc[Documentation Standards Overview]
 * AsciiDoc Cross-Reference Syntax: https://docs.asciidoctor.org/asciidoc/latest/macros/xref/
+
+== Output
+
+Workflow conformance to the ext-point output contract:
+
+[source,toon]
+----
+status: success | error
+display_detail: "<{N} links verified, {failed} failed>"
+links_verified: {N}
+links_failed: {N}
+----

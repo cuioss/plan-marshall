@@ -565,7 +565,7 @@ _AUTOMATED_REVIEW_MD = (
     / 'plan-marshall'
     / 'skills'
     / 'phase-6-finalize'
-    / 'standards'
+    / 'workflow'
     / 'automated-review.md'
 )
 _JSONL_FORMAT_MD = (
@@ -580,7 +580,7 @@ _TRIAGE_MD = (
     MARKETPLACE_ROOT
     / 'plan-marshall'
     / 'skills'
-    / 'phase-6-finalize'
+    / 'plan-marshall'
     / 'workflow'
     / 'triage.md'
 )

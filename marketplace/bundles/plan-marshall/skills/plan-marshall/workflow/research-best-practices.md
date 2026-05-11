@@ -269,3 +269,16 @@ If you discover issues or improvements during execution, activate `plan-marshall
 - Component: `{type: "skill", name: "dev-general-practices", standards: "research-best-practices.md", bundle: "plan-marshall"}`
 - Category: bug | improvement | pattern | anti-pattern
 - Summary and detail of the finding
+
+## Output
+
+```toon
+status: success | error
+display_detail: "<{N} sources synthesized on {topic-short}>"
+topic: "{topic}"
+sources_analyzed: {N}
+findings_high_confidence: {N}
+references[{N}]{url,domain,priority}: ...
+```
+
+`display_detail` shape: `"{sources_analyzed} sources synthesized on {topic-short}"` (truncate `topic` so total length ≤80 chars); ASCII, no trailing period. The free-form structured-research body documented in "Response format" is the human-facing payload; this Output block is the minimum contract the dispatcher reads.

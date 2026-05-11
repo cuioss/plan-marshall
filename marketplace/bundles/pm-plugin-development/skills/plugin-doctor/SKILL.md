@@ -317,6 +317,20 @@ Loaded per workflow via Progressive Disclosure table above. Key files:
 
 ---
 
+## Output
+
+plugin-doctor returns per-workflow shapes (see Workflows 1-10 above). The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
+
+```toon
+status: pass | fail | error
+display_detail: "<{N} components scanned, {findings} findings>"
+total_issues: {N}
+```
+
+`display_detail` shape: `"{components} components scanned, {findings} findings"` (e.g. `"42 components scanned, 0 findings"`); ≤80 chars, ASCII, no trailing period. Per-workflow returns layer additional `rules_run[]` / `issues[]` rows on top of these mandatory fields.
+
+---
+
 ## Rule Definitions
 
 See [references/rule-catalog.md](references/rule-catalog.md) for the complete catalog of rules that plugin-doctor validates (agent, workflow, command, skill, script, content, and PM-workflow rules).

@@ -423,17 +423,20 @@ def _discover_all_finalize_steps() -> list[dict]:
     all_steps: list[dict] = []
     claude_skills = Path('.claude/skills')
 
-    # Source 1: Built-in steps — read order from standards/{name}.md frontmatter
+    # Source 1: Built-in steps — read order from workflow/{name}.md or
+    # standards/{name}.md frontmatter (workflow/ takes precedence).
+    skill_dir = BUNDLES_DIR / 'plan-marshall' / 'skills' / 'phase-6-finalize'
     for step_name in BUILT_IN_FINALIZE_STEPS:
         bare = step_name.split(':', 1)[1] if ':' in step_name else step_name
-        standards_path = BUNDLES_DIR / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / f'{bare}.md'
+        workflow_path = skill_dir / 'workflow' / f'{bare}.md'
+        doc_path = workflow_path if workflow_path.is_file() else skill_dir / 'standards' / f'{bare}.md'
         all_steps.append(
             {
                 'name': step_name,
                 'description': BUILT_IN_FINALIZE_STEP_DESCRIPTIONS.get(step_name, step_name),
                 'type': 'built-in',
                 'source': 'built-in',
-                'order': _read_frontmatter_order(standards_path),
+                'order': _read_frontmatter_order(doc_path),
             }
         )
 

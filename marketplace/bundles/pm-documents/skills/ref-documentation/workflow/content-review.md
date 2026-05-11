@@ -2,6 +2,7 @@
 :toc: left
 :toclevels: 3
 :sectnums:
+:implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 
 == Overview
 
@@ -518,3 +519,15 @@ steps:
 * https://docs.asciidoctor.org/asciidoc/latest/[AsciiDoc Language Documentation]
 * https://www.rfc-editor.org/rfc/rfc7322[RFC 7322: RFC Style Guide]
 * https://cheatsheetseries.owasp.org/[OWASP Cheat Sheet Series]
+
+== Output
+
+Workflow conformance to the ext-point output contract:
+
+[source,toon]
+----
+status: success | error
+display_detail: "<{N} sections reviewed, {flagged} flagged>"
+sections_reviewed: {N}
+sections_flagged: {N}
+----

@@ -124,7 +124,7 @@ class TestSingleStepForm:
             assert 'ghost-step-that-does-not-exist' in result['message']
             assert 'missing standards file' in result['message']
             assert 'deleted the file without sweeping' in result['message']
-            assert result['standards_path'].endswith('phase-6-finalize/standards/ghost-step-that-does-not-exist.md')
+            assert result['standards_path'].endswith('phase-6-finalize/workflow/ghost-step-that-does-not-exist.md')
 
     def test_project_step_short_circuits_to_loadable(self):
         """External steps (project:foo) are not validated by this guard."""

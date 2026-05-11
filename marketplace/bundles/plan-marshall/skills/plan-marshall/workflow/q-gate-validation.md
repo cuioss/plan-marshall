@@ -244,7 +244,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 #### 2.9 Consumer Sweep Completeness Check
 
-Verify that deliverables which delete or rename a public symbol have enumerated every cross-bundle consumer in `Affected files`. This check enforces the outline-time consumer sweep documented in [`consumer-sweep.md`](../skills/phase-3-outline/standards/consumer-sweep.md) at Q-Gate time, catching deliverables that skipped the sweep or applied it incompletely.
+Verify that deliverables which delete or rename a public symbol have enumerated every cross-bundle consumer in `Affected files`. This check enforces the outline-time consumer sweep documented in [`consumer-sweep.md`](../../phase-3-outline/standards/consumer-sweep.md) at Q-Gate time, catching deliverables that skipped the sweep or applied it incompletely.
 
 **Trigger condition** — Activates when the deliverable's `Change per file`, `Refactoring`, or title text matches the same delete/rename heuristic from `consumer-sweep.md` § 1 applied to a public symbol:
 
@@ -314,7 +314,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 ```
 
 **Cross-references**:
-- [`consumer-sweep.md`](../skills/phase-3-outline/standards/consumer-sweep.md) — outline-time procedure this check enforces
+- [`consumer-sweep.md`](../../phase-3-outline/standards/consumer-sweep.md) — outline-time procedure this check enforces
 - Driving lesson: `2026-04-30-23-001` (TASK-9 scope expanded silently — pm-dev-java profiles.py needed migration to per-module layout)
 
 #### 2.10 Argparse Validator
@@ -501,7 +501,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 #### 2.15 Worktree-Linter Validator
 
-Verify that no skill, agent, or script in `solution_outline.md`'s `affected_files` (or any deliverable's `Change per file` block) reintroduces the three stale worktree-handling patterns that the centralized [`worktree-handling.md`](../skills/workflow-integration-git/standards/worktree-handling.md) standard explicitly forbids. The centralized file (created in TASK-3 of plan `lesson-2026-05-07-11-001`) is the **single authoritative source** for worktree-handling rules — every check below cross-references it.
+Verify that no skill, agent, or script in `solution_outline.md`'s `affected_files` (or any deliverable's `Change per file` block) reintroduces the three stale worktree-handling patterns that the centralized [`worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) standard explicitly forbids. The centralized file (created in TASK-3 of plan `lesson-2026-05-07-11-001`) is the **single authoritative source** for worktree-handling rules — every check below cross-references it.
 
 **Activation condition**: Runs in the `3-outline` and `4-plan` phase contexts. Activates whenever a deliverable's `affected_files` contains at least one path matching `marketplace/bundles/*/skills/**/*.md`, `marketplace/bundles/*/agents/*.md`, `marketplace/bundles/*/skills/**/scripts/*.py`, or `marketplace/bundles/*/skills/**/scripts/*.sh`. Skips deliverables whose only affected files are tests, fixtures, or non-skill documentation.
 
@@ -525,7 +525,7 @@ TASK-4 of plan `lesson-2026-05-07-11-001` migrated the worktree storage location
 rg -n "\.claude/worktrees/" {affected_path}
 ```
 
-The centralized [`worktree-handling.md`](../skills/workflow-integration-git/standards/worktree-handling.md) is the only legitimate location to discuss the historical path, and only inside an explicit "Migration history" subsection. Matches outside that file are violations.
+The centralized [`worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) is the only legitimate location to discuss the historical path, and only inside an explicit "Migration history" subsection. Matches outside that file are violations.
 
 **Pattern WL-C — Missing `--plan-id` on auto-routing scripts**:
 
@@ -535,7 +535,7 @@ TASK-10 of plan `lesson-2026-05-07-11-001` extended the manage-* script contract
 rg -n "execute-script\.py\s+plan-marshall:(manage-files|manage-tasks|manage-findings|manage-references|manage-solution-outline|manage-plan-documents|manage-logging|manage-status):[^\s]+\s+[^\s]+\s+(?!.*--plan-id)" {affected_path}
 ```
 
-The whitelist of auto-routing notations matches the TASK-10 contract — see the centralized [`worktree-handling.md`](../skills/workflow-integration-git/standards/worktree-handling.md) "Auto-routing scripts" subsection for the authoritative list. Matches indicate a manage-* invocation that omits `--plan-id`.
+The whitelist of auto-routing notations matches the TASK-10 contract — see the centralized [`worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) "Auto-routing scripts" subsection for the authoritative list. Matches indicate a manage-* invocation that omits `--plan-id`.
 
 **Suppression rule**: A match in `{affected_path}` is suppressed (no finding emitted) when EITHER:
 - `{affected_path}` is the centralized `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md` itself (the standard quotes the forbidden patterns to define them), OR
@@ -580,23 +580,23 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 **Negative example**: The centralized `worktree-handling.md` itself contains the forbidden patterns inside an "Anti-pattern" subsection ("Do NOT use `cd $WORKTREE && git status`"). Suppression rule applies — silent pass.
 
 **Cross-references**:
-- Authoritative source: [`worktree-handling.md`](../skills/workflow-integration-git/standards/worktree-handling.md) (created TASK-3 of plan `lesson-2026-05-07-11-001`)
+- Authoritative source: [`worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) (created TASK-3 of plan `lesson-2026-05-07-11-001`)
 - WL-B migration source: TASK-4 of plan `lesson-2026-05-07-11-001` (`.claude/worktrees/` → `.plan/local/worktrees/`)
 - WL-C contract source: TASK-10 of plan `lesson-2026-05-07-11-001` (auto-routing `--plan-id` extension)
 - Driving lesson: `2026-05-07-11-001` (worktree-handling rules were duplicated and silently drifted across 10+ skill files; centralizing them caught a class of regressions invisible to per-skill review).
 
 #### 2.16 Self-Modifying Phased-Rollout Validator
 
-Verify that every deliverable in `solution_outline.md` whose `Affected files` list touches the plan-marshall runtime infrastructure AND whose plan declares `compatibility: breaking` AND whose narrative contains hard-cutover language carries a documented phasing rationale per the centralized [`self-modifying-classification.md`](../skills/ref-workflow-architecture/standards/self-modifying-classification.md) standard. Without this validator, plans like `lesson-2026-05-07-11-001` (PR #346) silently descope breaking-flag deletions mid-execution and ship with both surfaces alive.
+Verify that every deliverable in `solution_outline.md` whose `Affected files` list touches the plan-marshall runtime infrastructure AND whose plan declares `compatibility: breaking` AND whose narrative contains hard-cutover language carries a documented phasing rationale per the centralized [`self-modifying-classification.md`](../../ref-workflow-architecture/standards/self-modifying-classification.md) standard. Without this validator, plans like `lesson-2026-05-07-11-001` (PR #346) silently descope breaking-flag deletions mid-execution and ship with both surfaces alive.
 
 **Activation condition**: Runs in the `3-outline` phase context. Activates whenever the solution outline header declares `compatibility: breaking`. Skips silently otherwise — additive plans cannot trigger the descoping failure mode this validator guards against.
 
 **Detection logic**: For each deliverable in `solution_outline.md`:
 
-1. Extract the `**Affected files:**` block. Match each entry against the path heuristic from [`self-modifying-classification.md` § Path Heuristic](../skills/ref-workflow-architecture/standards/self-modifying-classification.md#path-heuristic) — the centralized standard is the single source of truth for the pattern set; this validator MUST consume that table verbatim and MUST NOT enumerate or duplicate the patterns inline. When `self-modifying-classification.md` adds, removes, or amends pattern entries, the validator picks them up by xref — no regex maintenance is required here, and there is no companion list in this prompt that could drift out of lockstep. The deliverable is **path-matched** when at least one affected file matches any pattern in that table.
+1. Extract the `**Affected files:**` block. Match each entry against the path heuristic from [`self-modifying-classification.md` § Path Heuristic](../../ref-workflow-architecture/standards/self-modifying-classification.md#path-heuristic) — the centralized standard is the single source of truth for the pattern set; this validator MUST consume that table verbatim and MUST NOT enumerate or duplicate the patterns inline. When `self-modifying-classification.md` adds, removes, or amends pattern entries, the validator picks them up by xref — no regex maintenance is required here, and there is no companion list in this prompt that could drift out of lockstep. The deliverable is **path-matched** when at least one affected file matches any pattern in that table.
 2. Extract the deliverable's narrative (`**Change per file:**`, `**Success Criteria:**`, surrounding prose). The deliverable is **hard-cutover** when the narrative contains any of: "remove ... entirely", "delete the ...", "drop the ...", "retire the ...", "no escape hatch", "no transition window", "zero-hit grep", "zero hits", "returns zero", or equivalent phrasing applied to a public surface (CLI flag, public API, exported symbol, manage-* subcommand, etc.).
 3. The deliverable triggers the validator when **path-matched AND hard-cutover** both hold (the plan-level `compatibility: breaking` is the activation guard, so it is already true at this point).
-4. For each triggered deliverable, search its narrative for a `**Phasing Rationale:**` block. The block satisfies the contract when it explicitly addresses all three points from [`self-modifying-classification.md` § Phasing-Rationale Contract](../skills/ref-workflow-architecture/standards/self-modifying-classification.md#phasing-rationale-contract): cache-sync ordering, verification-gate target, narrative consistency. Missing block OR a block that omits any of the three points is a violation.
+4. For each triggered deliverable, search its narrative for a `**Phasing Rationale:**` block. The block satisfies the contract when it explicitly addresses all three points from [`self-modifying-classification.md` § Phasing-Rationale Contract](../../ref-workflow-architecture/standards/self-modifying-classification.md#phasing-rationale-contract): cache-sync ordering, verification-gate target, narrative consistency. Missing block OR a block that omits any of the three points is a violation.
 
 **Finding emission template**:
 
@@ -629,7 +629,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 **Negative example (deprecation strategy)**: A plan declares `compatibility: deprecation` and modifies `marketplace/bundles/plan-marshall/skills/execute-task/SKILL.md`. The activation guard (`compatibility: breaking`) does not hold; validator does not run.
 
 **Cross-references**:
-- Authoritative source: [`self-modifying-classification.md`](../skills/ref-workflow-architecture/standards/self-modifying-classification.md)
+- Authoritative source: [`self-modifying-classification.md`](../../ref-workflow-architecture/standards/self-modifying-classification.md)
 - Companion validator: § 2.15 Worktree-Linter Validator (covers stale worktree-handling patterns; this validator covers the orthogonal phasing concern)
 - Companion procedure: phase-3-outline Step 10b (Self-Modifying Classification) — outline-time author prompt that this validator backstops at q-gate time
 - Driving lesson: `2026-05-08-09-004` (PR #346 silently descoped a "no transition window" requirement because no q-gate validator caught the missing phasing rationale)
@@ -643,7 +643,7 @@ Verify that every deliverable in `solution_outline.md` that adds capability to a
 **Detection logic**: For each activated deliverable:
 
 1. Resolve the target skill from the deliverable's affected files. When multiple skills are touched, the deliverable triggers the check separately for each touched skill; a single deliverable may emit multiple findings.
-2. Read the target skill's design model from its SKILL.md / `standards/design-intent.md` / `standards/architecture.md` per the heuristic documented in [`phase-3-outline/standards/outline-workflow-detail.md` § Step 9c](../skills/phase-3-outline/standards/outline-workflow-detail.md#step-9c-read-target-skill-design-intent). Classify as `script-deterministic`, `LLM-driven`, or `hybrid`.
+2. Read the target skill's design model from its SKILL.md / `standards/design-intent.md` / `standards/architecture.md` per the heuristic documented in [`phase-3-outline/standards/outline-workflow-detail.md` § Step 9c](../../phase-3-outline/standards/outline-workflow-detail.md#step-9c-read-target-skill-design-intent). Classify as `script-deterministic`, `LLM-driven`, or `hybrid`.
 3. Extract the deliverable's `**Design notes:**` block. The block satisfies the contract when ALL of the following hold:
    - The block exists.
    - The block names a specific design model (`script-deterministic`, `LLM-driven`, or `hybrid`).
@@ -682,7 +682,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 **Negative example (clean extension)**: A plan adds a new validator subsection to `q-gate-validation-agent.md` (LLM-driven). The `**Design notes:**` block reads "Extends the existing LLM-driven design model of execution-context.q-gate-validation — adds a new validator subsection §N.NN with detection logic, finding emission template, and pass/fail criteria following the existing §2.x pattern". Validator passes silently.
 
 **Cross-references**:
-- Authoritative source: [`phase-3-outline/standards/outline-workflow-detail.md` § Step 9c](../skills/phase-3-outline/standards/outline-workflow-detail.md#step-9c-read-target-skill-design-intent) (the procedure this validator enforces)
+- Authoritative source: [`phase-3-outline/standards/outline-workflow-detail.md` § Step 9c](../../phase-3-outline/standards/outline-workflow-detail.md#step-9c-read-target-skill-design-intent) (the procedure this validator enforces)
 - Companion validator: § 2.10 Argparse Validator (script-shape compliance) and § 2.16 Self-Modifying Phased-Rollout Validator (orthogonal — phasing rationale for breaking plans)
 - Companion rule: phase-4-plan SKILL.md § "Integration Deliverable Narrative Constraint" (xref-vs-inline) — operates on a different axis but compose with this validator when a single deliverable both integrates a central standard AND adds capability to an existing skill
 - Driving lessons: outline-discipline aggregate `2026-05-04-20-002` (recurring mismatch between proposed implementation strategy and target skill's documented design model)
@@ -796,7 +796,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 Return verification results - detailed findings in sinks:
 
 ```toon
-status: success
+status: success | error
+display_detail: "<{flagged}/{N} flagged, {qgate_pending_count} pending>"
 plan_id: {plan_id}
 deliverables_verified: {N}
 passed: {count}
@@ -805,6 +806,8 @@ missing_coverage: {count}
 findings_recorded: {count}
 qgate_pending_count: {count}
 ```
+
+`display_detail` shape: `"{flagged}/{N} flagged, {qgate_pending_count} pending"` (e.g. `"2/7 flagged, 3 pending"`); ≤80 chars, ASCII, no trailing period.
 
 **OUTPUT RULE**: Do NOT output verbose text. All verification details are logged to decision.log and findings to artifacts/qgate-3-outline.jsonl. Only output the final TOON summary block.
 

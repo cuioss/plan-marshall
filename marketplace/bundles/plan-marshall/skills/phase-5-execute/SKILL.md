@@ -468,7 +468,7 @@ If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
 - A `profile=verification` task completes with `verification.passed: false` / `next_action: requires_triage`, OR
 - Step 9 marked a task `blocked` with reason `no_changes_detected` or `verification_mismatch`
 
-The per-finding LLM core (FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over the failing findings) is owned by [`../phase-6-finalize/workflow/triage.md`](../phase-6-finalize/workflow/triage.md) and dispatched as `cross.triage` with `finding_type=verification-failure`.
+The per-finding LLM core (FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over the failing findings) is owned by [`../plan-marshall/workflow/triage.md`](../plan-marshall/workflow/triage.md) and dispatched as `cross.triage` with `finding_type=verification-failure`.
 
 #### Planned-failure exception (breaking-refactor task split)
 
@@ -518,7 +518,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 (One `qgate add` call per finding; the verification task's structured `findings[]` output drives this loop.)
 
-**11d**: Dispatch the per-finding triage core via [`../phase-6-finalize/workflow/triage.md`](../phase-6-finalize/workflow/triage.md) — single source of truth for the FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions, smart grouping, action bodies, overflow handling, and the Scope-Deviation Escalation guard. The dispatch is by-reference (the subagent queries the store as its first workflow step).
+**11d**: Dispatch the per-finding triage core via [`../plan-marshall/workflow/triage.md`](../plan-marshall/workflow/triage.md) — single source of truth for the FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions, smart grouping, action bodies, overflow handling, and the Scope-Deviation Escalation guard. The dispatch is by-reference (the subagent queries the store as its first workflow step).
 
 Compute the target via the role resolver, then dispatch:
 
@@ -537,14 +537,14 @@ Task: plan-marshall:{target}
     - plan-marshall:manage-tasks
     - plan-marshall:manage-architecture
     - plan-marshall:manage-config
-    workflow: plan-marshall:phase-6-finalize/workflow/triage.md
+    workflow: plan-marshall:plan-marshall/workflow/triage.md
 
     finding_type: verification-failure
 
     WORKTREE: {worktree_path}
 ```
 
-The Scope-Deviation Escalation guard lives in [`triage.md`](../phase-6-finalize/workflow/triage.md) § Step 6 — the triage subagent raises `AskUserQuestion` with the four canonical options (Hold / Accept-with-rationale / Split / FIX-here-anyway) when a decision would soften a request-level hard requirement (zero-hit grep gates, "no transition window" intents, "remove flag entirely" cutovers, etc.). The canonical contract is documented in [`../ref-workflow-architecture/standards/scope-deviation-escalation.md`](../ref-workflow-architecture/standards/scope-deviation-escalation.md); the work-log line `[STATUS] Gate N deferred status accepted` is forbidden as a stand-in for the AskUserQuestion thread — the escalation MUST happen first; logging confirms the user's decision afterward.
+The Scope-Deviation Escalation guard lives in [`triage.md`](../plan-marshall/workflow/triage.md) § Step 6 — the triage subagent raises `AskUserQuestion` with the four canonical options (Hold / Accept-with-rationale / Split / FIX-here-anyway) when a decision would soften a request-level hard requirement (zero-hit grep gates, "no transition window" intents, "remove flag entirely" cutovers, etc.). The canonical contract is documented in [`../ref-workflow-architecture/standards/scope-deviation-escalation.md`](../ref-workflow-architecture/standards/scope-deviation-escalation.md); the work-log line `[STATUS] Gate N deferred status accepted` is forbidden as a stand-in for the AskUserQuestion thread — the escalation MUST happen first; logging confirms the user's decision afterward.
 
 **11e**: Inspect the triage subagent's return:
 
@@ -567,7 +567,7 @@ After every task in the phase has completed (and Step 11 has resolved any per-ta
      resolve --command quality-gate --audit-plan-id {plan_id}
    ```
 
-2. Execute the returned `executable`. On non-zero exit, persist the failures to the Q-Gate findings store (`manage-findings qgate add --type quality-gate-failure …`) and dispatch [`../phase-6-finalize/workflow/triage.md`](../phase-6-finalize/workflow/triage.md) as `cross.triage` with `finding_type=quality-gate-failure` — same shape as Step 11d above, only the finding type changes. The triage subagent's return drives the same fix-task / suppress / accept branch (Step 11e). After triage resolves, do **NOT** re-run the sweep — Step 11b runs at most once per phase entry.
+2. Execute the returned `executable`. On non-zero exit, persist the failures to the Q-Gate findings store (`manage-findings qgate add --type quality-gate-failure …`) and dispatch [`../plan-marshall/workflow/triage.md`](../plan-marshall/workflow/triage.md) as `cross.triage` with `finding_type=quality-gate-failure` — same shape as Step 11d above, only the finding type changes. The triage subagent's return drives the same fix-task / suppress / accept branch (Step 11e). After triage resolves, do **NOT** re-run the sweep — Step 11b runs at most once per phase entry.
 
 3. Log the outcome:
 
@@ -725,6 +725,22 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 - **IF `finalize_without_asking == true`**: Log and auto-continue to finalize phase
 - **ELSE (default)**: Stop and display `"Run '/plan-marshall action=finalize plan={plan_id}' when ready."`
+
+---
+
+## Output
+
+phase-5-execute returns on three terminal paths (queue empty → transition; fatal error; triage `blocked`). The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
+
+```toon
+status: success | error | blocked
+display_detail: "<{tasks_completed} tasks complete, {tasks_remaining} remaining>"
+plan_id: {plan_id}
+tasks_completed: {N}
+tasks_remaining: {N}
+```
+
+`display_detail` shape on success: `"{tasks_completed} tasks complete, {tasks_remaining} remaining"` (e.g. `"7 tasks complete, 0 remaining"`). On `blocked`: `"{task_number} blocked: {short reason}"`. On error: short error label from § Error Handling. All values are ≤80 chars, ASCII, no trailing period.
 
 ---
 

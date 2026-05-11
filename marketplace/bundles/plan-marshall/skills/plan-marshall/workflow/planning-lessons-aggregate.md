@@ -1,3 +1,7 @@
+---
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+---
+
 # Planning Workflow — Action: lessons-aggregate
 
 Workflow for the `lessons-aggregate` action (aggressive cross-lesson aggregation + superseded-stub prune in a single command). Extracted from `workflow/planning.md` to keep that file under the bloat threshold.
@@ -151,3 +155,14 @@ Log the final outcome:
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id global --level INFO --message "(plan-marshall:lessons-aggregate) Aggregation complete — {len(groups)} group(s) processed, {len(top_n_commands)} headline command(s) surfaced"
 ```
+
+## Output
+
+Top-level orchestrator workflow. Conformance to the ext-point output contract:
+
+```toon
+status: success | error
+display_detail: "<aggregated {N} lessons, pruned {M} stubs>"
+```
+
+The orchestrator emits this shape when wrapped in a `Task: execution-context-{level}` dispatch.

@@ -2,6 +2,7 @@
 name: default:lessons-capture
 description: Record lessons learned
 order: 60
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
 # Lessons Capture
@@ -91,3 +92,13 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
   --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done \
   --display-detail "no lessons recorded"
 ```
+
+## Output
+
+```toon
+status: success | error
+display_detail: "<{N} lessons recorded or `no lessons recorded`>"
+lessons_recorded: {N}
+```
+
+The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded verbatim via `mark-step-done --display-detail` above.

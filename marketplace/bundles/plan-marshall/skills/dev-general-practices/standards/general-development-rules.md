@@ -51,48 +51,45 @@ This applies equally to production code, test code, and documentation.
 
 **How to Research:**
 
-**Use research-best-practices-agent** (NOT web search tools directly).
+**Dispatch the research-best-practices workflow** (NOT web search tools directly).
 
-(1) Resolve the level for role `research`:
+Compute the dispatch target via the role resolver (recommended levels: `high` or `xxhigh` — research benefits from the most capable model):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models read --role research
+target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models resolve-target --role cross.research)
 ```
 
-(2) Compute the target:
-- `level == "inherit"` or empty → `target = research-best-practices-agent`
-- otherwise → `target = research-best-practices-agent-<level>`
-
-(3) Dispatch (recommended levels: `high` or `xxhigh` — research benefits from the most capable model):
+Dispatch:
 
 ```
-Task:
-  subagent_type: plan-marshall:{target}
-  description: Research {topic} best practices
+Task: plan-marshall:{target}
   prompt: |
-    Research current best practices for {specific topic}.
+    name: research-best-practices
+    plan_id: {plan_id}
+    skills[1]:
+    - plan-marshall:dev-general-practices
+    workflow: plan-marshall:plan-marshall/workflow/research-best-practices.md
+    WORKTREE: {worktree_path}
 
-    Focus on:
-    - Latest recommendations (2025+)
-    - Industry standard approaches
-    - Official documentation if available
-    - Community consensus patterns
+    topic: {specific topic}
 ```
+
+The workflow body covers research scope and the synthesis contract; the prompt body's `topic` field substitutes into the workflow's `{topic}` placeholders.
 
 **DO NOT use these patterns** (outdated approaches):
 - "Use MCP tools like Perplexity, DuckDuckGo" (Too generic, no structured research)
 - "Search GitHub" (Not comprehensive, misses documentation)
 - Direct WebSearch without structured analysis (Lacks synthesis)
 
-**ALWAYS use research-best-practices-agent:**
+**ALWAYS dispatch the research-best-practices workflow:**
 - Structured comprehensive research
 - Analyzes top 10+ sources
 - Provides confidence levels
 - Maintains reference trails
 - Synthesizes findings from multiple sources
 
-**Example:** Need Java testing best practices → spawn `plan-marshall:research-best-practices-agent` with prompt "Research best practices for Java unit testing with JUnit 5"
+**Example:** Need Java testing best practices → dispatch the research workflow with `topic: "Java unit testing with JUnit 5"`.
 
 ### Principle 3: Apply Judgment Within Constraints
 

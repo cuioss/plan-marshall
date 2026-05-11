@@ -2,6 +2,7 @@
 name: default:create-pr
 description: Create pull request
 order: 20
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
 # Create PR
@@ -138,3 +139,14 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 ```
 
 Note: there is no "skipped" branch — when the manifest excludes `create-pr`, the dispatcher does not run this document at all, so no step record is written. The renderer treats absent records as "not configured" rather than "skipped".
+
+## Output
+
+```toon
+status: success | error
+display_detail: "<#{pr_number} or 'existing PR #{pr_number}'>"
+pr_number: {pr_number}
+branch: {branch}
+```
+
+The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded verbatim via `mark-step-done --display-detail` above; it is the same string the orchestrator surfaces.

@@ -164,13 +164,13 @@ Wherever a triage decision needs to be made, the consumer:
    ```
 
 The orchestration is identical across consumers (PR review GitHub, PR review GitLab, Sonar). For the per-consumer step lists:
-- [`phase-6-finalize/standards/automated-review.md`](../../phase-6-finalize/standards/automated-review.md) — PR review consumer dispatch.
-- [`phase-6-finalize/standards/sonar-roundtrip.md`](../../phase-6-finalize/standards/sonar-roundtrip.md) — Sonar consumer dispatch.
+- [`phase-6-finalize/workflow/automated-review.md`](../../phase-6-finalize/workflow/automated-review.md) — PR review consumer dispatch.
+- [`phase-6-finalize/workflow/sonar-roundtrip.md`](../../phase-6-finalize/workflow/sonar-roundtrip.md) — Sonar consumer dispatch.
 - [`workflow-pr-doctor/standards/automated-review-lifecycle.md`](../../workflow-pr-doctor/standards/automated-review-lifecycle.md) — pr-doctor's automated-review lifecycle pointer.
 
 ### By-reference triage dispatch
 
-The per-finding LLM core (steps 4–5 above — load `ext-triage-{domain}`, decide FIX/SUPPRESS/ACCEPT/AskUserQuestion, act on the decision) factors out into one shared workflow doc, [`phase-6-finalize/workflow/triage.md`](../../phase-6-finalize/workflow/triage.md), dispatched as `cross.triage` from every consumer (`phase-6` `automated-review` + `sonar-roundtrip` manifest steps, `phase-5` Steps 11/11b verification-failure / quality-gate-failure triage, `workflow-pr-doctor` per-finding loop).
+The per-finding LLM core (steps 4–5 above — load `ext-triage-{domain}`, decide FIX/SUPPRESS/ACCEPT/AskUserQuestion, act on the decision) factors out into one shared workflow doc, [`plan-marshall/workflow/triage.md`](../../plan-marshall/workflow/triage.md), dispatched as `cross.triage` from every consumer (`phase-6` `automated-review` + `sonar-roundtrip` manifest steps, `phase-5` Steps 11/11b verification-failure / quality-gate-failure triage, `workflow-pr-doctor` per-finding loop).
 
 **The dispatch passes `finding_type` only — never the findings content.** The triage subagent's first workflow step is its own `manage-findings query --plan-id {plan_id} --type {finding_type} --resolution pending` call against the same store, which means:
 
@@ -243,7 +243,7 @@ For the formal extension contract, the resolver path, and the implementation pat
 | Storage tree, CLI surface, dedup semantics | [`manage-findings/SKILL.md`](../../manage-findings/SKILL.md) |
 | JSONL schema, type taxonomy, severity values, resolution model | [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) |
 | Per-producer CLI surface | [`workflow-integration-github/SKILL.md`](../../workflow-integration-github/SKILL.md), [`workflow-integration-gitlab/SKILL.md`](../../workflow-integration-gitlab/SKILL.md), [`workflow-integration-sonar/SKILL.md`](../../workflow-integration-sonar/SKILL.md), [`build-python/SKILL.md`](../../build-python/SKILL.md), [`build-maven/SKILL.md`](../../build-maven/SKILL.md), [`build-gradle/SKILL.md`](../../build-gradle/SKILL.md), [`build-npm/SKILL.md`](../../build-npm/SKILL.md) |
-| Per-consumer step list | [`phase-6-finalize/standards/automated-review.md`](../../phase-6-finalize/standards/automated-review.md), [`phase-6-finalize/standards/sonar-roundtrip.md`](../../phase-6-finalize/standards/sonar-roundtrip.md), [`workflow-pr-doctor/standards/automated-review-lifecycle.md`](../../workflow-pr-doctor/standards/automated-review-lifecycle.md) |
+| Per-consumer step list | [`phase-6-finalize/workflow/automated-review.md`](../../phase-6-finalize/workflow/automated-review.md), [`phase-6-finalize/workflow/sonar-roundtrip.md`](../../phase-6-finalize/workflow/sonar-roundtrip.md), [`workflow-pr-doctor/standards/automated-review-lifecycle.md`](../../workflow-pr-doctor/standards/automated-review-lifecycle.md) |
 | Invariant capture / verify plumbing, row schema, structured error envelope | [`plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md) |
 | Extension contract, implementor list, resolver | [`extension-api/standards/ext-point-triage.md`](../../extension-api/standards/ext-point-triage.md) |
 | Glossary entries (finding, Q-Gate, assessment) | [`glossary.md`](glossary.md) |

@@ -2,6 +2,7 @@
 name: default:sonar-roundtrip
 description: Sonar analysis roundtrip
 order: 40
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
 # Sonar Roundtrip
@@ -75,7 +76,7 @@ Task: plan-marshall:{target}
     - plan-marshall:manage-architecture
     - plan-marshall:manage-config
     - plan-marshall:workflow-integration-sonar
-    workflow: plan-marshall:phase-6-finalize/workflow/triage.md
+    workflow: plan-marshall:plan-marshall/workflow/triage.md
 
     finding_type: sonar-issue
 
@@ -207,3 +208,16 @@ Note: there is no "config disabled" branch — when the manifest excludes `sonar
 | `outcome == failed` | n/a | RETRY (unchanged — same as the general rule) |
 | `outcome == loop_back` | n/a | RE-FIRE (treat as no record — same as the general rule for loop_back) |
 | no record | n/a | DISPATCH (unchanged — same as the general rule) |
+
+## Output
+
+```toon
+status: success | error | loop_back
+display_detail: "<{N} issues, {fixed} fixed, {suppressed} suppressed, {accepted} accepted>"
+issues_fetched: {N}
+issues_fixed: {N}
+issues_suppressed: {N}
+issues_accepted: {N}
+```
+
+Orchestrator workflow — the LLM core is delegated to `cross.triage` via the internal sub-dispatch. The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded via `mark-step-done --display-detail`. On `loop_back`, the calling step re-fires on the next phase entry per the HEAD-dependent resumability rules above.

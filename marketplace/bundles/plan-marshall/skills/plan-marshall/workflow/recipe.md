@@ -1,3 +1,7 @@
+---
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+---
+
 # Recipe Workflow
 
 Workflow for creating plans from predefined recipes — repeatable transformations that already know WHAT to do and HOW.
@@ -107,13 +111,30 @@ AskUserQuestion:
 
 ### Step 2: Create Plan via Init Agent
 
-Use the selected recipe to create a plan. Resolve the level for role `phase_init` (`manage-config models read --role phase_init`); compute `target = phase-agent` when level is `inherit`/empty, else `target = phase-agent-{level}`. Dispatch:
+Use the selected recipe to create a plan. Compute the dispatch target via the role resolver:
+
+```bash
+target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models resolve-target --role phase-1)
+```
+
+Dispatch:
 
 ```
 Task: plan-marshall:{target}
-  Input: skill=plan-marshall:phase-1-init, source=recipe, content={recipe_key}
-  Output: plan_id, domains array
+  prompt: |
+    name: phase-1-init
+    plan_id: none
+    skills[1]:
+    - plan-marshall:phase-1-init
+    workflow: plan-marshall:phase-1-init/SKILL.md
+    WORKTREE: .
+
+    source: recipe
+    content: {recipe_key}
 ```
+
+The agent returns `plan_id` and `domains` in its TOON.
 
 ### Step 3: Store Recipe Metadata
 
@@ -189,3 +210,14 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 - `plan-marshall:extension-api` — `provides_recipes()` method in ExtensionBase
 - `plan-marshall:phase-2-refine` — Recipe shortcut (scope selection only)
 - `plan-marshall:phase-3-outline` — Recipe-aware routing (skip change-type detection)
+
+## Output
+
+Top-level orchestrator workflow. Conformance to the ext-point output contract:
+
+```toon
+status: success | error
+display_detail: "<recipe {recipe_key} created plan {plan_id}>"
+```
+
+The orchestrator emits this shape when wrapped in a `Task: execution-context-{level}` dispatch. When entered interactively, progress is surfaced via `manage-logging` records on each phase boundary.

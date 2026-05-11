@@ -71,7 +71,7 @@ _PHASE_6_SKILL_MD = (
 )
 _AUTOMATED_REVIEW_MD = (
     _REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall'
-    / 'skills' / 'phase-6-finalize' / 'standards' / 'automated-review.md'
+    / 'skills' / 'phase-6-finalize' / 'workflow' / 'automated-review.md'
 )
 
 
@@ -217,7 +217,7 @@ _TRIAGE_MD = (
     / 'bundles'
     / 'plan-marshall'
     / 'skills'
-    / 'phase-6-finalize'
+    / 'plan-marshall'
     / 'workflow'
     / 'triage.md'
 )
@@ -226,14 +226,14 @@ _TRIAGE_MD = (
 def test_fix_path_posts_thread_reply_before_terminal_done():
     """Regression-guard the FIX action ordering and the loop-back outcome.
 
-    The FIX action body in ``phase-6-finalize/workflow/triage.md`` must
+    The FIX action body in ``plan-marshall/workflow/triage.md`` must
     invoke (in order):
 
         prepare-add  →  commit-add  →  prepare-comment  →
         thread-reply  →  resolve-thread  →  manage-findings resolve
 
     and the calling step's Branch C ("loop-back recorded") in
-    ``phase-6-finalize/standards/automated-review.md`` must record
+    ``phase-6-finalize/workflow/automated-review.md`` must record
     ``--outcome loop_back``, NOT ``--outcome done``. This test reads
     both files and asserts both invariants. It is a structural
     regression-guard against future edits that accidentally re-order

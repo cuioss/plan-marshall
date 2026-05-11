@@ -1,3 +1,7 @@
+---
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+---
+
 # Planning Workflows (Phases 1-4)
 
 Workflows for plan creation and setup phases: init, refine, outline, and plan.
@@ -78,24 +82,30 @@ Create a new plan and automatically continue to 2-refine/3-outline/4-plan phases
 
 **1-Init Phase** uses a single agent.
 
-(1) Resolve the level for role `phase_init`:
+Compute the dispatch target via the role resolver:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models read --role phase_init
+target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models resolve-target --role phase-1)
 ```
 
-(2) Compute the target:
-- `level == "inherit"` or empty → `target = phase-agent`
-- otherwise → `target = phase-agent-<level>`
-
-(3) Dispatch:
+Dispatch:
 
 ```
 Task: plan-marshall:{target}
-  Input: skill=plan-marshall:phase-1-init, source={source}, content={content}
-  Output: plan_id, domains array
+  prompt: |
+    name: phase-1-init
+    plan_id: none
+    skills[1]:
+    - plan-marshall:phase-1-init
+    workflow: plan-marshall:phase-1-init/SKILL.md
+    WORKTREE: .
+
+    source: {source}
+    content: {content}
 ```
+
+The agent returns `plan_id` and `domains` in its TOON.
 
 **Metrics**: After the init agent completes and `plan_id` is known, record the
 `1-init → 2-refine` boundary in a single fused call (forwarding the agent's
@@ -167,7 +177,7 @@ section below MUST NOT call `start-phase 3-outline` again. Continue to
 
 ## Action: outline (3-Outline + 4-Plan Phases)
 
-See [`workflow/planning-outline.md`](planning-outline.md) for the full workflow. The outline action runs the 3-outline phase (loaded directly in main context with Q-Gate auto-loop and a user review gate guarded by `plan_without_asking`) and then the 4-plan phase (dispatched via `plan-marshall:phase-agent` with `skill=plan-marshall:phase-4-plan`). Both phases record metrics via fused `phase-boundary` calls and capture phase handshake invariants on completion. After tasks are created, the action either auto-continues to execute or stops based on `execute_without_asking` config.
+See [`workflow/planning-outline.md`](planning-outline.md) for the full workflow. The outline action runs the 3-outline phase (loaded directly in main context with Q-Gate auto-loop and a user review gate guarded by `plan_without_asking`) and then the 4-plan phase (dispatched via `plan-marshall:execution-context-{level}` with workflow `plan-marshall:phase-4-plan/SKILL.md` under role `phase-4`). Both phases record metrics via fused `phase-boundary` calls and capture phase handshake invariants on completion. After tasks are created, the action either auto-continues to execute or stops based on `execute_without_asking` config.
 
 ---
 
@@ -306,17 +316,29 @@ If the user selects "Aggregate aggressively", route to `Action: lessons-aggregat
 
 ### Convert lesson to plan
 
-When a specific lesson is selected, convert it to a plan using the canonical `phase-agent` invocation with a `lesson_id` reference. Resolve the level for role `phase_init` (`manage-config models read --role phase_init`); compute `target = phase-agent` when level is `inherit`/empty, else `target = phase-agent-{level}`. Dispatch:
+When a specific lesson is selected, convert it to a plan via a `lesson_id` reference. Compute the dispatch target via the role resolver, then dispatch:
+
+```bash
+target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models resolve-target --role phase-1)
+```
 
 ```
 Task: plan-marshall:{target}
-  Input: skill=plan-marshall:phase-1-init, lesson_id={lesson_id}
-  Output: plan_id, domain
+  prompt: |
+    name: phase-1-init
+    plan_id: none
+    skills[1]:
+    - plan-marshall:phase-1-init
+    workflow: plan-marshall:phase-1-init/SKILL.md
+    WORKTREE: .
+
+    lesson_id: {lesson_id}
 ```
 
-Passing `lesson_id` triggers `phase-1-init` Step 4 ("From Lesson") to resolve the lesson body from `lessons-learned/` and Step 5b ("Move Lesson File Into Plan Directory") to relocate the lesson file into the new plan directory via `manage-lessons convert-to-plan`. Both side effects are automatic — the caller only supplies `lesson_id`.
+The agent returns `plan_id` and `domain` in its TOON. Passing `lesson_id` triggers `phase-1-init` Step 4 ("From Lesson") to resolve the lesson body from `lessons-learned/` and Step 5b ("Move Lesson File Into Plan Directory") to relocate the lesson file into the new plan directory via `manage-lessons convert-to-plan`. Both side effects are automatic — the caller only supplies `lesson_id`.
 
-**Anti-pattern (prohibited):** Never invoke `phase-agent` with `skill=phase-1-init, source=lesson, content={verbatim lesson text}`. Inline `content` is the `description` source path and causes `phase-1-init` to treat the input as a free-form description — Step 5b is skipped and the original lesson file is orphaned in `lessons-learned/` instead of being archived inside the plan directory. Always reference the lesson by `lesson_id`; never paste its body.
+**Anti-pattern (prohibited):** Never dispatch the lesson conversion with `source=lesson, content={verbatim lesson text}` in the prompt body. Inline `content` is the `description` source path and causes `phase-1-init` to treat the input as a free-form description — Step 5b is skipped and the original lesson file is orphaned in `lessons-learned/` instead of being archived inside the plan directory. Always reference the lesson by `lesson_id`; never paste its body.
 
 ### Analyze all lessons
 
@@ -457,3 +479,14 @@ The `route` command returns skill names for each phase:
 | 4-plan | `task-plan` | Create tasks from deliverables |
 | 5-execute | `plan-execute` | Execute implementation tasks + verification |
 | 6-finalize | `plan-finalize` | Finalize with commit/PR |
+
+## Output
+
+Top-level orchestrator workflow — entered from the `/plan-marshall` slash command, not dispatched as a unit. The workflow drives multiple phase agents to completion; its terminal return is a user-visible status display rather than a TOON consumed by a parent. Conformance to the ext-point output contract is degenerate:
+
+```toon
+status: success | error
+display_detail: "<plan {plan_id} reached {phase}>"
+```
+
+The orchestrator emits this shape only when wrapped in a `Task: execution-context-{level}` dispatch (e.g., from automated tooling). When entered interactively, the workflow surfaces its progress via `manage-logging` + `mark-step-done` records on each phase boundary; the terminal user-facing message replaces the TOON.

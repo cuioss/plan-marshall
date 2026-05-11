@@ -216,6 +216,21 @@ Transition from refine to outline with `manage-status transition --completed 2-r
 
 ---
 
+## Output
+
+Step 13.6 (above) is the single source of truth for the return TOON. The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
+
+```toon
+status: success | error
+display_detail: "<{confidence}% confidence, track {track}, {qgate_pending_count} pending>"
+```
+
+`display_detail` shape on success: `"{confidence}% confidence, track {track}, {qgate_pending_count} pending"` (e.g. `"92% confidence, track complex, 0 pending"`); ≤80 chars, ASCII, no trailing period. On error, carries the short error label from § Error Handling.
+
+All other fields (`plan_id`, `confidence`, `track`, `track_reasoning`, `scope_estimate`, `compatibility`, `compatibility_description`, `domains`, `qgate_pending_count`) are documented in Step 13.6 above.
+
+---
+
 ## Error Handling
 
 | Error | Action |

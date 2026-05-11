@@ -76,9 +76,9 @@ def test_order_between_deploy_target_and_create_pr():
     deploy_target = _parse_frontmatter(_DEPLOY_TARGET_SKILL_MD)
     sync_step = _parse_frontmatter(_SKILL_MD)
 
-    # Hard-coded create-pr order (20) — sourced from the bundled standards doc.
+    # Hard-coded create-pr order (20) — sourced from the bundled workflow doc.
     create_pr_md = (
-        MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'create-pr.md'
+        MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow' / 'create-pr.md'
     )
     create_pr = _parse_frontmatter(create_pr_md)
 

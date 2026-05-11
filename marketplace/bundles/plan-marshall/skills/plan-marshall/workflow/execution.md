@@ -1,3 +1,7 @@
+---
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+---
+
 # Execution Workflows (Phases 5 & 7)
 
 Workflows for plan execution phases: execute (task implementation + verification) and finalize (commit, PR).
@@ -289,3 +293,14 @@ Cannot finalize: 5 tasks remaining.
 Complete all tasks first, then run:
   /plan-marshall plan="jwt-auth" action="finalize"
 ```
+
+## Output
+
+Top-level orchestrator workflow. Conformance to the ext-point output contract:
+
+```toon
+status: success | error
+display_detail: "<plan {plan_id} reached {terminal_phase}>"
+```
+
+The orchestrator emits this shape when wrapped in a `Task: execution-context-{level}` dispatch. When entered interactively, progress is surfaced via `manage-logging` records on each phase boundary; the terminal user-facing message replaces the TOON.

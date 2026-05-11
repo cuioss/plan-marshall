@@ -857,28 +857,35 @@ If `status: not_found` or `value != lesson`, skip Step 13.5 — log nothing and 
 
 **Dispatch the validator agent** (lesson-derived plans only):
 
-(1) Resolve the level for role `q_gate_validation`:
+Compute the dispatch target via the role resolver:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models read --role q_gate_validation
+target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models resolve-target --role cross.q-gate-validation)
 ```
 
-(2) Compute the target agent name:
-- `level == "inherit"` or empty → `target = q-gate-validation-agent`
-- otherwise → `target = q-gate-validation-agent-<level>`
-
-(3) Dispatch the role-resolved variant:
+Dispatch:
 
 ```
 Task: plan-marshall:{target}
-  Input:
+  prompt: |
+    name: cross.q-gate-validation
     plan_id: {plan_id}
+    skills[6]:
+    - plan-marshall:manage-solution-outline
+    - plan-marshall:manage-findings
+    - plan-marshall:manage-plan-documents
+    - plan-marshall:manage-status
+    - plan-marshall:manage-architecture
+    - plan-marshall:manage-logging
+    workflow: plan-marshall:plan-marshall/workflow/q-gate-validation.md
+    WORKTREE: {worktree_path}
+
     activation_context: 2-refine
     validators: [narrative-vs-code-validator]
 ```
 
-The agent reads the source lesson body from the plan directory (`lesson-{id}.md` archived alongside `request.md`), extracts concrete code claims, probes the current code state for each, and emits a finding per `stale` or `invalid` claim using `--source qgate-narrative-vs-code`. See q-gate-validation-agent.md § 2.14 for the canonical detection logic and finding emission template.
+The agent reads the source lesson body from the plan directory (`lesson-{id}.md` archived alongside `request.md`), extracts concrete code claims, probes the current code state for each, and emits a finding per `stale` or `invalid` claim using `--source qgate-narrative-vs-code`. See the q-gate validation workflow for the canonical detection logic and finding emission template.
 
 **Aggregate the findings** — read pending findings to update the running count returned in Step 13:
 

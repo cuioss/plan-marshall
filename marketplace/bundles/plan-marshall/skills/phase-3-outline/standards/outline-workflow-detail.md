@@ -158,23 +158,28 @@ The recipe skill handles: discovery, deliverable creation, and solution outline 
 
 ### Spawn Detection Agent
 
-(1) Resolve the level for role `change_type_detection`:
+Resolve the dispatch target via the resolver — no dedicated role key (the LLM path rarely fires); level is sourced from `models.default`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models read --role change_type_detection
+level=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models read --default)
+target="execution-context"
+if [ -n "$level" ] && [ "$level" != "inherit" ]; then
+  target="execution-context-$level"
+fi
 ```
 
-(2) Compute the target:
-- `level == "inherit"` or empty → `target = detect-change-type-agent`
-- otherwise → `target = detect-change-type-agent-<level>`
-
-(3) Dispatch:
+Dispatch:
 
 ```
 Task: plan-marshall:{target}
-  Input:
+  prompt: |
+    name: detect-change-type
     plan_id: {plan_id}
+    skills[1]:
+    - plan-marshall:manage-status
+    workflow: plan-marshall:phase-3-outline/workflow/detect-change-type.md
+    WORKTREE: {worktree_path}
 ```
 
 **Agent Output** (TOON):
@@ -725,23 +730,31 @@ The worked-examples table in Step 8 (above) applies verbatim to Step 11 — the 
 
 If the bypass rule above did NOT fire, spawn the Q-Gate validation agent.
 
-(1) Resolve the level for role `q_gate_validation`:
+Compute the dispatch target via the role resolver:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models read --role q_gate_validation
+target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models resolve-target --role cross.q-gate-validation)
 ```
 
-(2) Compute the target:
-- `level == "inherit"` or empty → `target = q-gate-validation-agent`
-- otherwise → `target = q-gate-validation-agent-<level>`
-
-(3) Dispatch:
+Dispatch:
 
 ```
 Task: plan-marshall:{target}
-  Input:
+  prompt: |
+    name: cross.q-gate-validation
     plan_id: {plan_id}
+    skills[6]:
+    - plan-marshall:manage-solution-outline
+    - plan-marshall:manage-findings
+    - plan-marshall:manage-plan-documents
+    - plan-marshall:manage-status
+    - plan-marshall:manage-architecture
+    - plan-marshall:manage-logging
+    workflow: plan-marshall:plan-marshall/workflow/q-gate-validation.md
+    WORKTREE: {worktree_path}
+
+    activation_context: 3-outline
 ```
 
 **Q-Gate reads from**:
