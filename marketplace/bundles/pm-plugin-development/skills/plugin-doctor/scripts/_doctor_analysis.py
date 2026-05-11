@@ -20,15 +20,79 @@ from _analyze_markdown import (
     check_resolver_gap,
     get_bloat_classification,
 )
-from _analyze_shared import check_agent_glob_resolver_workaround
+from _analyze_shared import check_agent_glob_resolver_workaround, extract_frontmatter
 
 # Subdirectories that may contain markdown sub-documents
 SUBDOC_DIRS = ['references', 'standards', 'workflows', 'templates']
+
+# Regex that validates a ``quality.file-bloat`` ack tag value.
+# An ack tag must start with ``ack-`` followed by at least one
+# lowercase alphanumeric-or-hyphen character, providing a human-readable
+# rationale slug (e.g. ``ack-validator-registry``).
+_ACK_TAG_RE = re.compile(r'^ack-[a-z0-9_-]+$')
 
 # Constructors whose calls must include allow_abbrev=False to prevent prefix
 # matching of retired flags. See rule-catalog.md (argparse_safety) and
 # lesson 2026-04-17-012.
 _ARGPARSE_SAFETY_CONSTRUCTORS = ('ArgumentParser', 'add_parser')
+
+
+def _read_file_bloat_ack_tag(content: str) -> str | None:
+    """Extract the rationale slug from a ``quality.file-bloat`` frontmatter ack.
+
+    Reads the raw YAML text returned by ``extract_frontmatter`` and looks for
+    a ``quality`` block containing a ``file-bloat`` key.  When the value
+    matches ``ack-<rationale-slug>``, returns the rationale slug without the
+    ``ack-`` prefix (e.g. ``'validator-registry'``).  Returns ``None`` when
+    the key is missing or the value does not match the expected shape.
+
+    Supported YAML shapes::
+
+        quality:
+          file-bloat: ack-rationale-slug
+
+    or inline (not standard but tolerated)::
+
+        quality.file-bloat: ack-rationale-slug
+    """
+    _, frontmatter_text = extract_frontmatter(content)
+    if not frontmatter_text:
+        return None
+
+    # Match nested form: under a `quality:` block, a `file-bloat: value` line.
+    nested_match = re.search(
+        r'^quality\s*:\s*\n(?:[ \t]+\S.*\n)*?[ \t]+file-bloat\s*:\s*(.+)',
+        frontmatter_text,
+        re.MULTILINE,
+    )
+    if nested_match:
+        value = nested_match.group(1).strip().strip('"\'')
+        if _ACK_TAG_RE.match(value):
+            return value[len('ack-'):]
+        return None
+
+    # Match dotted inline form: quality.file-bloat: value
+    inline_match = re.search(
+        r'^quality\.file-bloat\s*:\s*(.+)',
+        frontmatter_text,
+        re.MULTILINE,
+    )
+    if inline_match:
+        value = inline_match.group(1).strip().strip('"\'')
+        if _ACK_TAG_RE.match(value):
+            return value[len('ack-'):]
+
+    return None
+
+
+def _has_file_bloat_ack(content: str) -> tuple[bool, str | None]:
+    """Return ``(ack_present, ack_tag)`` for a markdown file content string.
+
+    Returns ``(True, '<tag>')`` when a valid ``quality.file-bloat: ack-*``
+    frontmatter key is present, or ``(False, None)`` otherwise.
+    """
+    tag = _read_file_bloat_ack_tag(content)
+    return (tag is not None, tag)
 
 
 def analyze_component(component: dict, active_rules: frozenset[str] | None = None) -> dict:
@@ -416,19 +480,29 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
             }
         )
 
-    # Check bloat
+    # Check bloat — suppressed when the file carries a valid file-bloat ack tag.
     bloat = analysis.get('bloat', {}).get('classification', 'NORMAL')
     if bloat in ('CRITICAL', 'BLOATED'):
-        issues.append(
-            {
-                'type': 'file-bloat',
-                'file': file_path,
-                'severity': 'warning' if bloat == 'BLOATED' else 'error',
-                'fixable': False,
-                'classification': bloat,
-                'line_count': analysis.get('metrics', {}).get('line_count', 0),
-            }
-        )
+        # Read raw file content to inspect frontmatter for an ack tag.
+        try:
+            _raw_content = Path(file_path).read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            _raw_content = ''
+        _ack_present, _ack_tag = _has_file_bloat_ack(_raw_content)
+        if not _ack_present:
+            issues.append(
+                {
+                    'type': 'file-bloat',
+                    'file': file_path,
+                    'severity': 'warning' if bloat == 'BLOATED' else 'error',
+                    'fixable': False,
+                    'classification': bloat,
+                    'line_count': analysis.get('metrics', {}).get('line_count', 0),
+                }
+            )
+        else:
+            # Ack present — surface the tag in the analysis output for audit.
+            analysis.setdefault('bloat_ack_tag', _ack_tag)
 
     # Check checklist patterns
     checklists = analysis.get('checklist_patterns', {})
@@ -541,13 +615,18 @@ def analyze_subdocuments(skill_dir: Path) -> list[dict]:
 
             issues: list[dict] = []
             if bloat_class in ('CRITICAL', 'BLOATED'):
-                issues.append(
-                    {
-                        'type': 'subdoc-bloat',
-                        'classification': bloat_class,
-                        'line_count': line_count,
-                    }
-                )
+                # Suppress when the subdoc has a valid file-bloat ack tag.
+                _subdoc_ack_present, _subdoc_ack_tag = _has_file_bloat_ack(content)
+                if not _subdoc_ack_present:
+                    issues.append(
+                        {
+                            'type': 'subdoc-bloat',
+                            'classification': bloat_class,
+                            'line_count': line_count,
+                        }
+                    )
+                else:
+                    entry['bloat_ack_tag'] = _subdoc_ack_tag
             if has_forbidden:
                 issues.append(
                     {
