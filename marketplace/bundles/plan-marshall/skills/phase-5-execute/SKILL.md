@@ -2,6 +2,7 @@
 name: phase-5-execute
 description: Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.json files sequentially.
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
 # Phase Execute Skill

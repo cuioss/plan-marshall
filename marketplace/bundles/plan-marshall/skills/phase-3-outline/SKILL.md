@@ -2,6 +2,7 @@
 name: phase-3-outline
 description: Two-track solution outline creation - Simple Track for localized changes, Complex Track for codebase-wide discovery
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
 # Phase Outline Skill

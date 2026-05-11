@@ -2,6 +2,7 @@
 name: phase-4-plan
 description: Domain-agnostic task planning from deliverables with skill resolution and optimization
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
 # Phase Plan Skill

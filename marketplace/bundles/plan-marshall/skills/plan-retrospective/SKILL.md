@@ -4,6 +4,7 @@ description: Opt-in plan quality audit — analyzes artifacts, logs, metrics, ch
 user-invocable: true
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Skill
 order: 995
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
 # Plan Retrospective Skill

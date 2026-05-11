@@ -2,6 +2,7 @@
 name: workflow-pr-doctor
 description: Diagnose and fix PR issues (build, reviews, Sonar)
 user-invocable: true
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
 # PR Doctor Skill
