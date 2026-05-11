@@ -48,7 +48,6 @@ Public API
 from __future__ import annotations
 
 import ast
-import re
 from pathlib import Path
 
 RULE_ID = 'orphan-argparse-flag'
@@ -88,7 +87,7 @@ def _first_string_arg(node: ast.Call) -> str | None:
 
 def _kw_string(call: ast.Call, kwname: str) -> str | None:
     for kw in call.keywords:
-        if kw.arg == kwname and isinstance(kw.value, ast.Constant):
+        if kw.arg == kwname and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
             return kw.value.value
     return None
 
@@ -169,9 +168,9 @@ def _collect_set_defaults(tree: ast.AST) -> dict[str, str]:
     return mapping
 
 
-def _collect_function_bodies(tree: ast.AST) -> dict[str, ast.FunctionDef]:
-    """Return a mapping of function-name → FunctionDef node."""
-    funcs: dict[str, ast.FunctionDef] = {}
+def _collect_function_bodies(tree: ast.AST) -> dict[str, ast.FunctionDef | ast.AsyncFunctionDef]:
+    """Return a mapping of function-name → FunctionDef node (sync or async)."""
+    funcs: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             funcs[node.name] = node
@@ -183,7 +182,7 @@ def _collect_function_bodies(tree: ast.AST) -> dict[str, ast.FunctionDef]:
 # ---------------------------------------------------------------------------
 
 
-def _handler_uses_vars_args(func_body: ast.FunctionDef) -> bool:
+def _handler_uses_vars_args(func_body: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     """Return True when the handler uses ``vars(args)`` or ``**kwargs``-like patterns.
 
     When True, static analysis cannot determine which attrs are accessed —
@@ -203,7 +202,7 @@ def _handler_uses_vars_args(func_body: ast.FunctionDef) -> bool:
     return False
 
 
-def _handler_reads_attr(func_body: ast.FunctionDef, dest: str) -> bool:
+def _handler_reads_attr(func_body: ast.FunctionDef | ast.AsyncFunctionDef, dest: str) -> bool:
     """Return True when ``func_body`` contains ``args.{dest}`` attribute access."""
     for node in ast.walk(func_body):
         if isinstance(node, ast.Attribute):

@@ -22,8 +22,6 @@ import importlib.util
 import sys
 from pathlib import Path
 
-import pytest
-
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 _SCRIPTS_DIR = (
     PROJECT_ROOT
@@ -100,7 +98,7 @@ class TestBuildAuthoritativeFieldSet:
     def test_extracts_field_from_set_metadata_key(self, tmp_path: Path) -> None:
         """A ``set-metadata --key my_custom_field`` write is captured."""
         mp = _make_marketplace(tmp_path)
-        skill_dir = _add_bundle_markdown(
+        _add_bundle_markdown(
             mp, 'my-bundle', 'my-skill', 'SKILL.md',
             'python3 .plan/execute-script.py foo:bar:baz set-metadata --key my_custom_field --value x\n',
         )

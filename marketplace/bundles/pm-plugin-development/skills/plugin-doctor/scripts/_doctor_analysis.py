@@ -38,12 +38,13 @@ _ARGPARSE_SAFETY_CONSTRUCTORS = ('ArgumentParser', 'add_parser')
 
 
 def _read_file_bloat_ack_tag(content: str) -> str | None:
-    """Extract the ``quality.file-bloat`` ack tag value from frontmatter content.
+    """Extract the rationale slug from a ``quality.file-bloat`` frontmatter ack.
 
     Reads the raw YAML text returned by ``extract_frontmatter`` and looks for
-    a ``quality`` block containing a ``file-bloat`` key.  Returns the ack tag
-    string (e.g. ``'ack-validator-registry'``) when present and valid, or
-    ``None`` otherwise.
+    a ``quality`` block containing a ``file-bloat`` key.  When the value
+    matches ``ack-<rationale-slug>``, returns the rationale slug without the
+    ``ack-`` prefix (e.g. ``'validator-registry'``).  Returns ``None`` when
+    the key is missing or the value does not match the expected shape.
 
     Supported YAML shapes::
 
@@ -67,7 +68,7 @@ def _read_file_bloat_ack_tag(content: str) -> str | None:
     if nested_match:
         value = nested_match.group(1).strip().strip('"\'')
         if _ACK_TAG_RE.match(value):
-            return value
+            return value[len('ack-'):]
         return None
 
     # Match dotted inline form: quality.file-bloat: value
@@ -79,7 +80,7 @@ def _read_file_bloat_ack_tag(content: str) -> str | None:
     if inline_match:
         value = inline_match.group(1).strip().strip('"\'')
         if _ACK_TAG_RE.match(value):
-            return value
+            return value[len('ack-'):]
 
     return None
 

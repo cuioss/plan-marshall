@@ -108,7 +108,6 @@ def is_whitelisted(file_path: Path) -> bool:
 
 def _classify(file_path: Path) -> str:
     """Classify a file as ``production_script`` or ``test_assertion``."""
-    path_str = str(file_path)
     for part in file_path.parts:
         if part in ('test', 'tests'):
             return 'test_assertion'

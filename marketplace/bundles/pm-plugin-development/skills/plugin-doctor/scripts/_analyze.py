@@ -15,24 +15,17 @@ Output: JSON to stdout.
 
 import argparse
 
+from _analyze_cmd_root_anchoring import analyze_cmd_root_anchoring
 from _analyze_coverage import analyze_tool_coverage, cmd_coverage
 from _analyze_crossfile import DEFAULT_SIMILARITY_THRESHOLD, cmd_cross_file
-
-# Import subcommand handlers
-from _analyze_markdown import analyze_markdown_file, cmd_markdown
-
-# Re-export shared utilities for other scripts that import from analyze
-from _analyze_shared import (
-    detect_component_type,
-    extract_frontmatter,
-)
-from _analyze_structure import analyze_skill_structure, cmd_structure
-from _analyze_cmd_root_anchoring import analyze_cmd_root_anchoring
 from _analyze_executor_path_in_production import analyze_executor_path_in_production
+from _analyze_markdown import analyze_markdown_file, cmd_markdown
 from _analyze_metadata_field_validity import analyze_metadata_field_validity
 from _analyze_orphan_argparse_flags import analyze_orphan_argparse_flags
 from _analyze_resolution_branch_markers import analyze_resolution_branch_markers
+from _analyze_shared import detect_component_type, extract_frontmatter
 from _analyze_shell_active_tokens import analyze_shell_active_tokens
+from _analyze_structure import analyze_skill_structure, cmd_structure
 from _analyze_verb_chains import analyze_verb_chains
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 

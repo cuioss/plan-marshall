@@ -104,7 +104,7 @@ def _first_string_arg(node: ast.Call) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def _has_root_prelude(func: ast.FunctionDef) -> bool:
+def _has_root_prelude(func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     """Return True when ``func`` contains a ``find_marketplace_root(...)`` call.
 
     The check is order-tolerant: it looks through all statements in the
@@ -233,7 +233,7 @@ def analyze_cmd_root_anchoring(script_path: Path) -> list[dict]:
     func_to_parser_var, parser_flags = _build_subparser_flag_map(tree)
 
     # Collect all top-level cmd_* function definitions.
-    cmd_functions: list[ast.FunctionDef] = []
+    cmd_functions: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             if node.name.startswith('cmd_'):

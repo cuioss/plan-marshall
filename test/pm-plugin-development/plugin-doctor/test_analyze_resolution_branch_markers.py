@@ -19,8 +19,6 @@ import importlib.util
 import sys
 from pathlib import Path
 
-import pytest
-
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 _SCRIPTS_DIR = (
     PROJECT_ROOT
@@ -297,8 +295,10 @@ class TestMultipleStandardsFiles:
         (standards_dir / 'a.md').write_text(
             '# Section\nNo resolution here.\n', encoding='utf-8'
         )
+        # Body deliberately omits the side-effect keyword set
+        # (log/metadata/status/artifact/record/emit/persist/update/write).
         (standards_dir / 'b.md').write_text(
-            '## Resolution\n\n### Skip\n\nJust skip it, no log.\n',
+            '## Resolution\n\n### Skip\n\nSimply move on.\n',
             encoding='utf-8',
         )
         findings = analyze_resolution_branch_markers(skill_dir)

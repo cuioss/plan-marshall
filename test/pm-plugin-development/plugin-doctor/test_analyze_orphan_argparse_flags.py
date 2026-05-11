@@ -17,8 +17,6 @@ import importlib.util
 import sys
 from pathlib import Path
 
-import pytest
-
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 _SCRIPTS_DIR = (
     PROJECT_ROOT

@@ -22,8 +22,6 @@ import importlib.util
 import sys
 from pathlib import Path
 
-import pytest
-
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 _SCRIPTS_DIR = (
     PROJECT_ROOT
@@ -36,6 +34,20 @@ _SCRIPTS_DIR = (
 )
 
 sys.path.insert(0, str(_SCRIPTS_DIR))
+
+# file_ops lives in a different bundle; add its dir to sys.path so
+# `from file_ops import ...` resolves via the normal import machinery
+# (this is the same arrangement conftest/PYTHONPATH provides at runtime).
+_FILE_OPS_DIR = (
+    PROJECT_ROOT
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'tools-file-ops'
+    / 'scripts'
+)
+sys.path.insert(0, str(_FILE_OPS_DIR))
 
 
 def _load_module(name: str, filename: str):
@@ -50,7 +62,6 @@ def _load_module(name: str, filename: str):
 # Load dependency chain in order
 _load_module('_analyze_shared', '_analyze_shared.py')
 _load_module('_analyze_markdown', '_analyze_markdown.py')
-_load_module('file_ops', 'file_ops.py')
 _load_module('_analyze_structure', '_analyze_structure.py')
 _load_module('_analyze_coverage', '_analyze_coverage.py')
 _load_module('_analyze_crossfile', '_analyze_crossfile.py')
@@ -147,7 +158,7 @@ class TestAckHelpers:
         )
         ack_present, tag = _has_file_bloat_ack(content)
         assert ack_present is True
-        assert tag == 'ack-validator-registry'
+        assert tag == 'validator-registry'
 
     def test_malformed_ack_value(self) -> None:
         """Malformed ack value (e.g. 'yes') does not suppress."""
@@ -184,7 +195,7 @@ class TestAckHelpers:
         )
         ack_present, tag = _has_file_bloat_ack(content)
         assert ack_present is True
-        assert tag == 'ack-large-doc-v2'
+        assert tag == 'large-doc-v2'
 
     def test_ack_without_rationale_slug_invalid(self) -> None:
         """Bare 'ack-' without a following slug is invalid."""
@@ -356,7 +367,8 @@ class TestSubdocBloatAck:
             frontmatter = f'---\nname: doc\nquality:\n  file-bloat: {ack_tag}\n---\n'
         else:
             frontmatter = '---\nname: doc\n---\n'
-        content = frontmatter + 'body\n' * 400  # 400+ lines → BLOATED subdoc
+        # Subdoc BLOATED threshold is >600 lines (see _analyze_markdown.get_bloat_classification).
+        content = frontmatter + 'body\n' * 650
         md = sub / 'big.md'
         md.write_text(content, encoding='utf-8')
         return md
