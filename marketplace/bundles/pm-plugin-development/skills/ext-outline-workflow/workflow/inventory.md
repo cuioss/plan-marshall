@@ -1,6 +1,10 @@
+---
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+---
+
 # Marketplace Inventory Workflow
 
-Loads marketplace inventory via the `tools-marketplace-inventory` script with caller-specified component types, content filter, bundle scope, and test / project-skill inclusion flags. Persists a filtered inventory file under the plan's work directory. Carved from the legacy `ext-outline-inventory-agent.md` (deleted in Phase 5 of the agents-to-execution-context refactor); dispatched via `Task: plan-marshall:execution-context-{level}` with this doc as `workflow`.
+Loads marketplace inventory via the `tools-marketplace-inventory` script with caller-specified component types, content filter, bundle scope, and test / project-skill inclusion flags. Persists a filtered inventory file under the plan's work directory.
 
 ## Inputs
 

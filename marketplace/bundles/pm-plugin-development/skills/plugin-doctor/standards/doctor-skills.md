@@ -111,7 +111,7 @@ Skill directory names must not end with a noun suffix reserved for spawnable mar
 
 ### Validate Sub-Document Quality
 
-All `.md` files in `references/`, `standards/`, `workflows/`, and `templates/` are checked for content quality.
+All `.md` files in `references/`, `standards/`, `workflow/`, and `templates/` are checked for content quality.
 
 **Checks performed** (automated via `analyze` subcommand):
 - **Bloat classification**: Sub-documents use `subdoc` thresholds (LARGE >400, BLOATED >600, CRITICAL >800 lines)

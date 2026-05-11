@@ -1,6 +1,10 @@
+---
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+---
+
 # Triage Workflow
 
-Single source of truth for the per-finding triage workflow shared by every call site that needs FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over findings in the per-plan findings store. Dispatched via `cross.triage` (role key) under `plan-marshall:execution-context-{level}`.
+Single source of truth for the per-finding triage workflow shared by every call site that needs FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over findings in the per-plan findings store. Dispatched under the `cross.triage` role key. The smart-grouping algorithm spec lives in [`../../dev-general-practices/standards/granularity.md`](../../dev-general-practices/standards/granularity.md) § 5.2; this document is the executable consumer.
 
 ## Call sites
 
@@ -95,7 +99,7 @@ Findings sharing both a domain and a rule_id almost always land on the same outc
 
 ### 3c. Act sequentially on each decision (within the group)
 
-Cross-group feedback (TASK-N references) requires sequential action between groups, but actions within a group can run in document order. The action body is identical to the legacy per-finding loop:
+Cross-group feedback (TASK-N references) requires sequential action between groups, but actions within a group can run in document order. The action body:
 
 - **FIX** — allocate fix task FIRST (so the task number is known for the thread reply), then post the thread reply chain, then resolve the finding.
 
@@ -225,7 +229,7 @@ Scope-deviation detection signals (the LLM checks these against the loaded plan 
 
 ## Step 7: Loop-back signalling
 
-`loop_back_needed: true` when any decision in any group resolved to FIX. The orchestrator handles the actual re-fire (the manifest dispatcher in phase-5-execute / phase-6-finalize re-enters the calling step on next phase entry; HEAD-dependent steps in phase-6 already track this via `--head-at-completion`). This workflow does NOT call `manage-status set-phase` directly — that is the calling manifest step's responsibility (the legacy automated-review.md / sonar-roundtrip.md inline orchestration owns the phase-5 handoff).
+`loop_back_needed: true` when any decision in any group resolved to FIX. The orchestrator handles the actual re-fire (the manifest dispatcher in phase-5-execute / phase-6-finalize re-enters the calling step on next phase entry; HEAD-dependent steps in phase-6 already track this via `--head-at-completion`). This workflow does NOT call `manage-status set-phase` directly — that is the calling manifest step's responsibility.
 
 ## Output
 
@@ -244,7 +248,3 @@ deferred_user_questions: {Q}   # only present when AskUserQuestion fired
 ```
 
 `status: loop_back` when `fix_tasks_created > 0` OR `overflow_deferred > 0`. Otherwise `status: success` (every pending finding resolved without creating new tasks).
-
-## Provenance
-
-This workflow factored out of the legacy per-finding sequential triage loops in `automated-review.md` and `sonar-roundtrip.md`, plus the inline triage in `phase-5-execute/SKILL.md` Steps 11 / 11b. The smart-grouping algorithm spec lives in [`../../../dev-general-practices/standards/granularity.md`](../../dev-general-practices/standards/granularity.md) § 5.2 (added in Phase 6 Goal A of the agents-to-execution-context refactor); this document is the executable consumer.

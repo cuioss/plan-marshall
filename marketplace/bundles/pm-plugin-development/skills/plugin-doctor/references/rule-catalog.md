@@ -231,7 +231,7 @@ Seven forward-looking lint rules added as part of the lesson-2026-05-05-18-001 p
 
 **Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_metadata_field_validity.py`
 
-**Scope**: All markdown under each skill directory (`SKILL.md`, `standards/`, `references/`, `workflows/`, `templates/`).
+**Scope**: All markdown under each skill directory (`SKILL.md`, `standards/`, `references/`, `workflow/`, `templates/`).
 
 **Intent**: Flag backtick snake_case tokens that appear within three lines of a `metadata` or `set-metadata` mention and refer to field names not established by any `set-metadata --key {field}` invocation in the marketplace.
 

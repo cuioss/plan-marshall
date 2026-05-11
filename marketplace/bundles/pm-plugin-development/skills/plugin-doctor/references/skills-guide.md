@@ -11,12 +11,12 @@ skill-name/
 ├── SKILL.md              (required: frontmatter + workflows)
 ├── scripts/              (optional: deterministic logic, stdlib-only)
 ├── references/           (optional: WHAT rules to apply)
-├── workflows/            (optional: HOW to execute)
+├── workflow/            (optional: HOW to execute)
 ├── templates/            (optional: output templates)
 └── assets/               (optional: images, diagrams)
 ```
 
-Each directory serves one purpose: `references/` = criteria/standards, `workflows/` = procedures/steps, `templates/` = boilerplate with placeholders. Do not mix content types within a directory.
+Each directory serves one purpose: `references/` = criteria/standards, `workflow/` = procedures/steps, `templates/` = boilerplate with placeholders. Do not mix content types within a directory.
 
 ## SKILL.md Frontmatter
 

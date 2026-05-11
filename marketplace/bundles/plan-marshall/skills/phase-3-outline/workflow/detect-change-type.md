@@ -1,8 +1,10 @@
+---
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+---
+
 # Detect Change-Type Workflow
 
-LLM-judgement workflow that analyses a plan's clarified request and detects its change type (`feature`, `bug_fix`, `tech_debt`, `enhancement`, `verification`, `analysis`). Carved from the legacy `detect-change-type-agent.md` (deleted in Phase 5 of the agents-to-execution-context refactor); preserved as the rare-LLM-fallback path for the new deterministic heuristic script (`manage-status:change-type-heuristic`, added in Task 8 / Phase 4a — that script handles the unambiguous majority and dispatches this workflow only when the heuristic returns `ambiguous`).
-
-Dispatch shape (post-refactor): `Task: plan-marshall:execution-context-{level}` with this doc as `workflow` and `level` resolved from `models.default` (NOT from a dedicated role key — the LLM call rarely fires and the work is small binary-classification).
+LLM-judgement workflow that analyses a plan's clarified request and detects its change type (`feature`, `bug_fix`, `tech_debt`, `enhancement`, `verification`, `analysis`). Used as the LLM-fallback path when the `manage-status:change-type-heuristic` deterministic classifier returns `ambiguous`. No dedicated role key — the LLM call rarely fires and the level is resolved from `models.default`.
 
 ## Inputs
 

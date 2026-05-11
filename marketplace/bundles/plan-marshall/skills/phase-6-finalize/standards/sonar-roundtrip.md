@@ -75,7 +75,7 @@ Task: plan-marshall:{target}
     - plan-marshall:manage-architecture
     - plan-marshall:manage-config
     - plan-marshall:workflow-integration-sonar
-    workflow: plan-marshall:phase-6-finalize/standards/triage.md
+    workflow: plan-marshall:phase-6-finalize/workflow/triage.md
 
     finding_type: sonar-issue
 

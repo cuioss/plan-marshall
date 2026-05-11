@@ -48,7 +48,7 @@ Use /plan-marshall to complete 1-init through 4-plan phases first.
 
 **Metrics**: The start of `5-execute` was already recorded by the
 `4-plan → 5-execute` fused boundary call emitted at the end of the planning
-workflow (see `workflows/planning.md`). When the execute workflow is entered
+workflow (see `workflow/planning.md`). When the execute workflow is entered
 directly (e.g. via `/plan-marshall action=execute plan={plan_id}` against a
 plan already past `4-plan`), use a fused boundary call to close the
 previously active phase and start `5-execute` in one step:

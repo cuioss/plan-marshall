@@ -23,7 +23,7 @@ from _analyze_markdown import (
 from _analyze_shared import check_agent_glob_resolver_workaround, extract_frontmatter
 
 # Subdirectories that may contain markdown sub-documents
-SUBDOC_DIRS = ['references', 'standards', 'workflows', 'templates']
+SUBDOC_DIRS = ['references', 'standards', 'workflow', 'templates']
 
 # Regex that validates a ``quality.file-bloat`` ack tag value.
 # An ack tag must start with ``ack-`` followed by at least one
@@ -203,7 +203,7 @@ def analyze_component(component: dict, active_rules: frozenset[str] | None = Non
                     analysis['coverage'] = coverage
                     issues.extend(extract_issues_from_coverage_analysis(coverage, skill_md_path, 'skill'))
 
-        # Sub-document analysis (references/, standards/, workflows/, templates/)
+        # Sub-document analysis (references/, standards/, workflow/, templates/)
         subdoc_results = analyze_subdocuments(skill_dir)
         if subdoc_results:
             analysis['subdocuments'] = subdoc_results
@@ -584,7 +584,7 @@ def extract_issues_from_coverage_analysis(coverage: dict, file_path: str, compon
 def analyze_subdocuments(skill_dir: Path) -> list[dict]:
     """Analyze markdown sub-documents in a skill directory.
 
-    Checks references/, standards/, workflows/, templates/ for:
+    Checks references/, standards/, workflow/, templates/ for:
     - Line count and bloat classification
     - Forbidden metadata sections
     - Hardcoded script paths

@@ -34,7 +34,7 @@ The wizard (`marshall-steward` Models submenu) surfaces both effective and pendi
 | `sonar_roundtrip` | `sonar-roundtrip-agent.md` | plan-marshall | effective | Dispatched by phase-6-finalize Step 3. |
 | `lessons_capture` | `lessons-capture-agent.md` | plan-marshall | effective | Dispatched by phase-6-finalize Step 3. |
 | `change_type_detection` | `detect-change-type-agent.md` | plan-marshall | effective | Dispatched by phase-3-outline change-type detection. |
-| `phase_init` | `phase-agent.md` | plan-marshall | effective | Phase-agent dispatched for phase-1-init by `plan-marshall/workflows/planning.md` and `recipe.md`. |
+| `phase_init` | `phase-agent.md` | plan-marshall | effective | Phase-agent dispatched for phase-1-init by `plan-marshall/workflow/planning.md` and `recipe.md`. |
 | `phase_plan` | `phase-agent.md` | plan-marshall | effective | Phase-agent dispatched for phase-4-plan by `planning.md`. |
 | `tool_coverage_analysis` | `tool-coverage-agent.md` | pm-plugin-development | effective | Dispatched by `plugin-doctor/standards/doctor-marketplace.md`. |
 | `component_analysis` | `ext-outline-component-agent.md` | pm-plugin-development | pending | No dispatch site reads this role today; schema validates. Variants are emitted by the build target so activation is a one-line dispatch-site change when a workflow starts using the agent. |

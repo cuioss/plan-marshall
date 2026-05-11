@@ -1,6 +1,10 @@
+---
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+---
+
 # Tool Coverage Workflow
 
-Semantic analysis of tool declarations vs actual usage in a single marketplace component. Carved from the legacy `tool-coverage-agent.md` (deleted in Phase 5 of the agents-to-execution-context refactor); dispatched as `cross.plugin-doctor` with `scope=tool-coverage` (or invoked stand-alone via `Task: plan-marshall:execution-context-{level}` with this doc as `workflow`).
+Semantic analysis of tool declarations vs actual usage in a single marketplace component. Dispatched under the `cross.plugin-doctor` role key with `scope=tool-coverage`.
 
 ## Inputs
 

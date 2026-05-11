@@ -1,8 +1,12 @@
+---
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+---
+
 # Q-Gate Validation Workflow
 
-Verify solution outline deliverables against request intent and assessments — catch false positives, missing coverage, and scope drift. Carved from the legacy `q-gate-validation-agent.md` (deleted in Phase 5 of the agents-to-execution-context refactor); dispatched as `cross.q-gate-validation` (role key) under `plan-marshall:execution-context-{level}`.
+Verify solution outline deliverables against request intent and assessments — catch false positives, missing coverage, and scope drift. Dispatched under the `cross.q-gate-validation` role key.
 
-Two call sites in the post-refactor scope: phase-3 outline-time Q-Gate (Complex Track Step 11) and phase-4 plan-time Q-Gate (Step 9b). Each call site activates a different validator subset via runtime `activation_context` / `validators` parameters; the role key stays shared.
+Two call sites: phase-3 outline-time Q-Gate (Complex Track Step 11) and phase-4 plan-time Q-Gate (Step 9b). Each call site activates a different validator subset via runtime `activation_context` / `validators` parameters; the role key stays shared.
 
 ## Role boundaries
 

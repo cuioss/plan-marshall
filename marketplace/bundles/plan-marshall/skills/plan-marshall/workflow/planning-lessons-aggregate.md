@@ -1,6 +1,6 @@
 # Planning Workflow — Action: lessons-aggregate
 
-Workflow for the `lessons-aggregate` action (aggressive cross-lesson aggregation + superseded-stub prune in a single command). Extracted from `workflows/planning.md` to keep that file under the bloat threshold.
+Workflow for the `lessons-aggregate` action (aggressive cross-lesson aggregation + superseded-stub prune in a single command). Extracted from `workflow/planning.md` to keep that file under the bloat threshold.
 
 > **cwd for `.plan/execute-script.py` calls**: `manage-*` scripts (Bucket A) resolve `.plan/` via `git rev-parse --git-common-dir` and work from any cwd — do **NOT** pin cwd, do **NOT** pass routing flags, and never use `env -C`. Build / CI / Sonar scripts (Bucket B) accept `--plan-id {plan_id}` (preferred — auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (escape hatch / explicit override); the two flags are mutually exclusive. See `plan-marshall:tools-script-executor/standards/cwd-policy.md`.
 

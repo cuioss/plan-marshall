@@ -170,7 +170,7 @@ The orchestration is identical across consumers (PR review GitHub, PR review Git
 
 ### By-reference triage dispatch
 
-The per-finding LLM core (steps 4–5 above — load `ext-triage-{domain}`, decide FIX/SUPPRESS/ACCEPT/AskUserQuestion, act on the decision) factors out into one shared workflow doc, [`phase-6-finalize/standards/triage.md`](../../phase-6-finalize/standards/triage.md), dispatched as `cross.triage` from every consumer (`phase-6` `automated-review` + `sonar-roundtrip` manifest steps, `phase-5` Steps 11/11b verification-failure / quality-gate-failure triage, `workflow-pr-doctor` per-finding loop).
+The per-finding LLM core (steps 4–5 above — load `ext-triage-{domain}`, decide FIX/SUPPRESS/ACCEPT/AskUserQuestion, act on the decision) factors out into one shared workflow doc, [`phase-6-finalize/workflow/triage.md`](../../phase-6-finalize/workflow/triage.md), dispatched as `cross.triage` from every consumer (`phase-6` `automated-review` + `sonar-roundtrip` manifest steps, `phase-5` Steps 11/11b verification-failure / quality-gate-failure triage, `workflow-pr-doctor` per-finding loop).
 
 **The dispatch passes `finding_type` only — never the findings content.** The triage subagent's first workflow step is its own `manage-findings query --plan-id {plan_id} --type {finding_type} --resolution pending` call against the same store, which means:
 

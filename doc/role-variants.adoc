@@ -63,7 +63,7 @@ doc/refactor/02-build-system/plan.md § Variant Emission   (build view)
 == Quick reference
 
 * **Configure a role** — set `plan.models.roles.<role>` in `.plan/marshal.json` to one of `low | medium | high | xhigh | xxhigh | inherit`. See `role-variants.md`.
-* **Resolve a role at dispatch** — `python3 .plan/execute-script.py plan-marshall:manage-config:manage-config models read --role <role>` returns `level: <value>`. See dispatch-site patches in `phase-3-outline`, `phase-4-plan`, `phase-6-finalize`, `plan-marshall/workflows/planning.md` and `recipe.md`.
+* **Resolve a role at dispatch** — `python3 .plan/execute-script.py plan-marshall:manage-config:manage-config models read --role <role>` returns `level: <value>`. See dispatch-site patches in `phase-3-outline`, `phase-4-plan`, `phase-6-finalize`, `plan-marshall/workflow/planning.md` and `recipe.md`.
 * **Make a new agent role-eligible** — add `implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor` to its frontmatter; remove any hardcoded `model:` / `effort:`. Plugin-doctor enforces both rules. See `ext-point-dynamic-level-executor.md`.
 * **Inspect emitted variants** — generate the Claude target output (`python3 marketplace/targets/generate.py --target claude --output target/claude`) and look under `target/claude/{bundle}/agents/{base}-{level}.md`. The canonical no-suffix file remains the `inherit` target.
 

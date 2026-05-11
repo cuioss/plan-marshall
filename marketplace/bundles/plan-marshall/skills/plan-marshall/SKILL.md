@@ -69,15 +69,15 @@ Route based on action parameter. Load the appropriate workflow document and foll
 
 | Action | Workflow Document | Description |
 |--------|-------------------|-------------|
-| `list` (default) | `Read workflows/planning.md` | List all plans |
-| `init` | `Read workflows/planning.md` | Create new plan, auto-continue to refine |
-| `outline` | `Read workflows/planning-outline.md` | Run outline and plan phases |
-| `cleanup` | `Read workflows/planning.md` | Remove completed plans |
-| `lessons` | `Read workflows/planning.md` | List and convert lessons |
-| `lessons-aggregate` | `Read workflows/planning-lessons-aggregate.md` | Aggressive cross-lesson aggregation + superseded-stub prune in a single command |
-| `execute` | `Read workflows/execution.md` | Execute implementation tasks + verification |
-| `finalize` | `Read workflows/execution.md` | Commit, push, PR |
-| `recipe` | `Read workflows/recipe.md` | Create plan from predefined recipe |
+| `list` (default) | `Read workflow/planning.md` | List all plans |
+| `init` | `Read workflow/planning.md` | Create new plan, auto-continue to refine |
+| `outline` | `Read workflow/planning-outline.md` | Run outline and plan phases |
+| `cleanup` | `Read workflow/planning.md` | Remove completed plans |
+| `lessons` | `Read workflow/planning.md` | List and convert lessons |
+| `lessons-aggregate` | `Read workflow/planning-lessons-aggregate.md` | Aggressive cross-lesson aggregation + superseded-stub prune in a single command |
+| `execute` | `Read workflow/execution.md` | Execute implementation tasks + verification |
+| `finalize` | `Read workflow/execution.md` | Commit, push, PR |
+| `recipe` | `Read workflow/recipe.md` | Create plan from predefined recipe |
 
 ### Auto-Detection (plan parameter without action)
 
@@ -90,18 +90,18 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-ro
 
 | Current Phase | Workflow Document | Action |
 |---------------|-------------------|--------|
-| 1-init | `Read workflows/planning.md` | `init` |
-| 2-refine | `Read workflows/planning.md` | `init` (continues refine) |
-| 3-outline | `Read workflows/planning-outline.md` | `outline` |
-| 4-plan | `Read workflows/planning-outline.md` | `outline` (continues plan) |
-| 5-execute | `Read workflows/execution.md` | `execute` |
-| 6-finalize | `Read workflows/execution.md` | `finalize` |
+| 1-init | `Read workflow/planning.md` | `init` |
+| 2-refine | `Read workflow/planning.md` | `init` (continues refine) |
+| 3-outline | `Read workflow/planning-outline.md` | `outline` |
+| 4-plan | `Read workflow/planning-outline.md` | `outline` (continues plan) |
+| 5-execute | `Read workflow/execution.md` | `execute` |
+| 6-finalize | `Read workflow/execution.md` | `finalize` |
 
 ### Execution
 
 After determining the action and workflow document:
 
-1. **Read** the workflow document (`workflows/planning.md` or `workflows/execution.md`)
+1. **Read** the workflow document (`workflow/planning.md` or `workflow/execution.md`)
 2. **Navigate** to the section for the resolved action
 3. **Follow** the workflow instructions in that section
 

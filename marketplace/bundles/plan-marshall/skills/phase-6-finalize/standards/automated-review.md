@@ -121,7 +121,7 @@ Task: plan-marshall:{target}
     - plan-marshall:manage-architecture
     - plan-marshall:manage-config
     - plan-marshall:tools-integration-ci
-    workflow: plan-marshall:phase-6-finalize/standards/triage.md
+    workflow: plan-marshall:phase-6-finalize/workflow/triage.md
 
     finding_type: pr-comment
     pr_number: {pr_number}

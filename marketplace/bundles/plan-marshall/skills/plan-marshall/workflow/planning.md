@@ -17,7 +17,7 @@ Workflows for plan creation and setup phases: init, refine, outline, and plan.
 | `cleanup` | Remove completed plans |
 | `lessons` | List and convert lessons to plans |
 | `lessons-aggregate` | Aggressive cross-lesson aggregation + superseded-stub prune in a single command |
-| `recipe` | Create plan from recipe (routes to `workflows/recipe.md`) |
+| `recipe` | Create plan from recipe (routes to `workflow/recipe.md`) |
 
 ---
 
@@ -67,7 +67,7 @@ AskUserQuestion:
 **Step 4**: Handle selection:
 - **Plan selected**: Auto-detect action from plan's current phase
 - **"Create new plan"**: Route to `Action: init`
-- **"Create plan from recipe"**: Route to `Action: recipe` (load `workflows/recipe.md`)
+- **"Create plan from recipe"**: Route to `Action: recipe` (load `workflow/recipe.md`)
 - **"List lessons"**: Route to `Action: lessons`
 
 ---
@@ -167,7 +167,7 @@ section below MUST NOT call `start-phase 3-outline` again. Continue to
 
 ## Action: outline (3-Outline + 4-Plan Phases)
 
-See [`workflows/planning-outline.md`](planning-outline.md) for the full workflow. The outline action runs the 3-outline phase (loaded directly in main context with Q-Gate auto-loop and a user review gate guarded by `plan_without_asking`) and then the 4-plan phase (dispatched via `plan-marshall:phase-agent` with `skill=plan-marshall:phase-4-plan`). Both phases record metrics via fused `phase-boundary` calls and capture phase handshake invariants on completion. After tasks are created, the action either auto-continues to execute or stops based on `execute_without_asking` config.
+See [`workflow/planning-outline.md`](planning-outline.md) for the full workflow. The outline action runs the 3-outline phase (loaded directly in main context with Q-Gate auto-loop and a user review gate guarded by `plan_without_asking`) and then the 4-plan phase (dispatched via `plan-marshall:phase-agent` with `skill=plan-marshall:phase-4-plan`). Both phases record metrics via fused `phase-boundary` calls and capture phase handshake invariants on completion. After tasks are created, the action either auto-continues to execute or stops based on `execute_without_asking` config.
 
 ---
 
@@ -376,7 +376,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ## Action: lessons-aggregate
 
-See [`workflows/planning-lessons-aggregate.md`](planning-lessons-aggregate.md) for the full workflow. Aggressive cross-lesson aggregation in a single command: classify the active lessons corpus, ask the user once for confirmation, then for each multi-lesson group rewrite the primary lesson's body and title, supersede the absorbed lessons, and optionally prune the resulting `.md` stubs. The orchestrator counterpart to the read-only `manage-lessons aggregate` verb.
+See [`workflow/planning-lessons-aggregate.md`](planning-lessons-aggregate.md) for the full workflow. Aggressive cross-lesson aggregation in a single command: classify the active lessons corpus, ask the user once for confirmation, then for each multi-lesson group rewrite the primary lesson's body and title, supersede the absorbed lessons, and optionally prune the resulting `.md` stubs. The orchestrator counterpart to the read-only `manage-lessons aggregate` verb.
 
 ---
 

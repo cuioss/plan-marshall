@@ -120,7 +120,7 @@ All 9 workflows follow the same pattern:
 
    Use `--name` to filter by component name (e.g., `--name phase-4-plan`) instead of fetching all components and filtering manually.
 
-   This performs markdown analysis, coverage extraction, and reference validation for all matching components. For skills, it also analyzes sub-documents (`references/*.md`, `standards/*.md`, `workflows/*.md`, `templates/*.md`) for bloat, forbidden metadata, and hardcoded script paths. The output includes per-component analysis results in TOON format with a `subdocuments` key for skills.
+   This performs markdown analysis, coverage extraction, and reference validation for all matching components. For skills, it also analyzes sub-documents (`references/*.md`, `standards/*.md`, `workflow/*.md`, `templates/*.md`) for bloat, forbidden metadata, and hardcoded script paths. The output includes per-component analysis results in TOON format with a `subdocuments` key for skills.
 
 ### Phase 1.5: LLM Optimization Check
 

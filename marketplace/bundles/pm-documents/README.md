@@ -75,13 +75,13 @@ pm-documents/
     ├── ref-asciidoc/             # AsciiDoc formatting skill (5 workflows)
     │   ├── SKILL.md
     │   ├── references/           # AsciiDoc format standards (lookup)
-    │   ├── workflows/            # Link verification protocol
+    │   ├── workflow/            # Link verification protocol
     │   ├── templates/            # Document templates
     │   └── scripts/              # Format/validate/link scripts
     ├── ref-documentation/        # Content quality skill (4 workflows)
     │   ├── SKILL.md
     │   ├── references/           # Tone, core, organization standards
-    │   ├── workflows/            # Review orchestration, content review
+    │   ├── workflow/            # Review orchestration, content review
     │   └── scripts/              # Review/tone analysis scripts
     ├── manage-adr/               # ADR management skill (5 workflows)
     │   ├── SKILL.md

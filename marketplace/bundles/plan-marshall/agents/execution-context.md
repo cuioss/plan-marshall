@@ -21,7 +21,7 @@ Single generic dispatcher for every `Task:` invocation in the plan-marshall work
 | `name` | Yes | Human label for logging, `mark-step-done`, metrics. Used in `[STATUS] (plan-marshall:execution-context.{name})` lines. |
 | `plan_id` | Yes | Plan identifier. Sentinel `none` is permitted for free-standing dispatches outside any plan, but every plan-bound dispatch MUST pass the real id. Every script call inside this envelope forwards `--plan-id {plan_id}`. |
 | `skills[]` | Yes | Skill notations to load after `dev-general-practices`, in order. MAY be empty `[]`. `plan-marshall:dev-general-practices` MUST NOT appear in this list — it is loaded implicitly. |
-| `workflow` | Conditional | Bundle-prefixed notation for the standards/SKILL doc to follow (e.g., `plan-marshall:phase-6-finalize/standards/triage.md`). **Exactly one** of `workflow` or `instructions` must be present. |
+| `workflow` | Conditional | Bundle-prefixed notation for the workflow doc to follow (e.g., `plan-marshall:phase-6-finalize/workflow/triage.md` or `plan-marshall:phase-1-init/SKILL.md`). Implementor lives under `workflow/` or SKILL.md per `ext-point-execution-context-workflow`. **Exactly one** of `workflow` or `instructions` must be present. |
 | `instructions` | Conditional | Inline imperative description of the task. Treated as the workflow content verbatim. **Exactly one** of `workflow` or `instructions` must be present. |
 | `WORKTREE` | Yes | Repo-relative working-directory path — the active worktree path when a worktree is in use, or the literal `.` for the main checkout. NEVER absolute. The orchestrator resolved this once; this agent uses it verbatim for every `git -C {WORKTREE} …` and as the root for every Edit/Write/Read. No internal re-resolution. |
 | `*` | No | Workflow-specific runtime inputs (e.g., `finding_type`, `pr_number`, `scope`, `track`, `task_number`). The workflow doc declares its own input table; this dispatcher forwards them through to the workflow body's `{placeholder}` tokens. |
@@ -97,12 +97,12 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **When `workflow` is present:**
 
-The `workflow` value is a bundle-prefixed notation that the dispatcher resolves to a concrete filesystem path. Two notation forms are accepted:
+The `workflow` value is a bundle-prefixed notation that the dispatcher resolves to a concrete filesystem path. Two notation forms are accepted (per `plan-marshall:extension-api/standards/ext-point-execution-context-workflow`):
 
 | Notation | Resolves to |
 |----------|-------------|
 | `{bundle}:{skill}/SKILL.md` | `marketplace/bundles/{bundle}/skills/{skill}/SKILL.md` |
-| `{bundle}:{skill}/standards/{file}.md` | `marketplace/bundles/{bundle}/skills/{skill}/standards/{file}.md` |
+| `{bundle}:{skill}/workflow/{file}.md` | `marketplace/bundles/{bundle}/skills/{skill}/workflow/{file}.md` |
 
 Read the resolved path with the `Read` tool. If the file does not exist or the notation is malformed, STOP and return:
 

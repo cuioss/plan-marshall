@@ -383,7 +383,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics accu
 
 Replace the placeholders with the integers parsed from the dispatched agent's `<usage>...</usage>` block. The script reads `.plan/plans/{plan_id}/work/metrics-accumulator-5-execute.toon` (initialising it on first call), sums in the supplied values, increments `samples`, and writes the file back. The on-disk file is the only source of truth — do NOT also keep a parallel tally in model context. See `manage-metrics/standards/data-format.md` § "Per-Phase Subagent Accumulator" for the file schema.
 
-The orchestrator's `phase-boundary` call in `workflows/execution.md` (recorded at end of execute) reads this accumulator as a fallback when its `--total-tokens` / `--tool-uses` / `--duration-ms` flags are omitted. Inline tasks contribute nothing — `manage-metrics enrich` (run by `phase-6-finalize:default:record-metrics`) sweeps the transcript for any subagent `<usage>` tags whose timestamp falls inside the `5-execute` window and adds them to the per-phase `subagent_*` columns of the metrics report as a post-hoc safety net.
+The orchestrator's `phase-boundary` call in `workflow/execution.md` (recorded at end of execute) reads this accumulator as a fallback when its `--total-tokens` / `--tool-uses` / `--duration-ms` flags are omitted. Inline tasks contribute nothing — `manage-metrics enrich` (run by `phase-6-finalize:default:record-metrics`) sweeps the transcript for any subagent `<usage>` tags whose timestamp falls inside the `5-execute` window and adds them to the per-phase `subagent_*` columns of the metrics report as a post-hoc safety net.
 
 ### Step 9: Independent Change Verification
 
@@ -467,7 +467,7 @@ If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
 - A `profile=verification` task completes with `verification.passed: false` / `next_action: requires_triage`, OR
 - Step 9 marked a task `blocked` with reason `no_changes_detected` or `verification_mismatch`
 
-The per-finding LLM core (FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over the failing findings) is owned by [`../phase-6-finalize/standards/triage.md`](../phase-6-finalize/standards/triage.md) and dispatched as `cross.triage` with `finding_type=verification-failure`. The inline triage branches in this step's later sub-sections will be rewired to that dispatch in Task 4 of the agents-to-execution-context refactor.
+The per-finding LLM core (FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over the failing findings) is owned by [`../phase-6-finalize/workflow/triage.md`](../phase-6-finalize/workflow/triage.md) and dispatched as `cross.triage` with `finding_type=verification-failure`.
 
 #### Planned-failure exception (breaking-refactor task split)
 
@@ -517,7 +517,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 (One `qgate add` call per finding; the verification task's structured `findings[]` output drives this loop.)
 
-**11d**: Dispatch the per-finding triage core via [`../phase-6-finalize/standards/triage.md`](../phase-6-finalize/standards/triage.md) — single source of truth for the FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions, smart grouping, action bodies, overflow handling, and the Scope-Deviation Escalation guard. The dispatch is by-reference (the subagent queries the store as its first workflow step).
+**11d**: Dispatch the per-finding triage core via [`../phase-6-finalize/workflow/triage.md`](../phase-6-finalize/workflow/triage.md) — single source of truth for the FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions, smart grouping, action bodies, overflow handling, and the Scope-Deviation Escalation guard. The dispatch is by-reference (the subagent queries the store as its first workflow step).
 
 Compute the target via the role resolver, then dispatch:
 
@@ -536,20 +536,20 @@ Task: plan-marshall:{target}
     - plan-marshall:manage-tasks
     - plan-marshall:manage-architecture
     - plan-marshall:manage-config
-    workflow: plan-marshall:phase-6-finalize/standards/triage.md
+    workflow: plan-marshall:phase-6-finalize/workflow/triage.md
 
     finding_type: verification-failure
 
     WORKTREE: {worktree_path}
 ```
 
-The Scope-Deviation Escalation guard lives in [`triage.md`](../phase-6-finalize/standards/triage.md) § Step 6 — the triage subagent raises `AskUserQuestion` with the four canonical options (Hold / Accept-with-rationale / Split / FIX-here-anyway) when a decision would soften a request-level hard requirement (zero-hit grep gates, "no transition window" intents, "remove flag entirely" cutovers, etc.). The canonical contract is documented in [`../ref-workflow-architecture/standards/scope-deviation-escalation.md`](../ref-workflow-architecture/standards/scope-deviation-escalation.md); the work-log line `[STATUS] Gate N deferred status accepted` is forbidden as a stand-in for the AskUserQuestion thread — the escalation MUST happen first; logging confirms the user's decision afterward.
+The Scope-Deviation Escalation guard lives in [`triage.md`](../phase-6-finalize/workflow/triage.md) § Step 6 — the triage subagent raises `AskUserQuestion` with the four canonical options (Hold / Accept-with-rationale / Split / FIX-here-anyway) when a decision would soften a request-level hard requirement (zero-hit grep gates, "no transition window" intents, "remove flag entirely" cutovers, etc.). The canonical contract is documented in [`../ref-workflow-architecture/standards/scope-deviation-escalation.md`](../ref-workflow-architecture/standards/scope-deviation-escalation.md); the work-log line `[STATUS] Gate N deferred status accepted` is forbidden as a stand-in for the AskUserQuestion thread — the escalation MUST happen first; logging confirms the user's decision afterward.
 
 **11e**: Inspect the triage subagent's return:
 
 - If `fix_tasks_created > 0` → increment `verify_iteration` in task metadata, reset the verification task to `pending`, continue the execution loop (fix tasks will execute before the re-queued verification task via `depends_on`).
 - If `fix_tasks_created == 0` AND `overflow_deferred == 0` → mark the verification task complete (all findings suppressed / accepted / `taken_into_account`), continue to Step 11b.
-- If `overflow_deferred > 0` → leave the verification task `pending`; the orchestrator re-fires the triage dispatch on the next phase-5 entry (same iteration cap as the legacy per-finding loop).
+- If `overflow_deferred > 0` → leave the verification task `pending`; the orchestrator re-fires the triage dispatch on the next phase-5 entry (the iteration cap is unchanged).
 
 ### Step 11b: Final Quality Sweep (After All Tasks)
 
@@ -566,7 +566,7 @@ After every task in the phase has completed (and Step 11 has resolved any per-ta
      resolve --command quality-gate --audit-plan-id {plan_id}
    ```
 
-2. Execute the returned `executable`. On non-zero exit, persist the failures to the Q-Gate findings store (`manage-findings qgate add --type quality-gate-failure …`) and dispatch [`../phase-6-finalize/standards/triage.md`](../phase-6-finalize/standards/triage.md) as `cross.triage` with `finding_type=quality-gate-failure` — same shape as Step 11d above, only the finding type changes. The triage subagent's return drives the same fix-task / suppress / accept branch (Step 11e). After triage resolves, do **NOT** re-run the sweep — Step 11b runs at most once per phase entry.
+2. Execute the returned `executable`. On non-zero exit, persist the failures to the Q-Gate findings store (`manage-findings qgate add --type quality-gate-failure …`) and dispatch [`../phase-6-finalize/workflow/triage.md`](../phase-6-finalize/workflow/triage.md) as `cross.triage` with `finding_type=quality-gate-failure` — same shape as Step 11d above, only the finding type changes. The triage subagent's return drives the same fix-task / suppress / accept branch (Step 11e). After triage resolves, do **NOT** re-run the sweep — Step 11b runs at most once per phase entry.
 
 3. Log the outcome:
 

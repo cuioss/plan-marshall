@@ -22,7 +22,7 @@ skills[6]:
 - plan-marshall:manage-status
 - plan-marshall:manage-architecture
 - plan-marshall:manage-logging
-workflow:    plan-marshall:q-gate-validation/standards/workflow.md
+workflow:    plan-marshall:q-gate-validation/workflow/q-gate-validation.md
 WORKTREE:    {repo-relative-path}
 ```
 

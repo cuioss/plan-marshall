@@ -869,7 +869,7 @@ _EXECUTION_WORKFLOW_MD = (
     / 'plan-marshall'
     / 'skills'
     / 'plan-marshall'
-    / 'workflows'
+    / 'workflow'
     / 'execution.md'
 )
 _PHASE_LIFECYCLE_MD = (
@@ -906,7 +906,7 @@ class TestLoopBackWithoutAskingContract:
        flag-set, flag-unset, and cap-reached branches.
     3. The canonical ``[STATUS] Loop-back iteration {N}/{max}`` work-log
        line is documented.
-    4. ``plan-marshall/workflows/execution.md`` carries a "Loop-back
+    4. ``plan-marshall/workflow/execution.md`` carries a "Loop-back
        continuation" subsection mirroring the forward
        ``finalize_without_asking`` block.
     5. ``ref-workflow-architecture/standards/phase-lifecycle.md`` mentions
@@ -1096,12 +1096,12 @@ class TestLoopBackWithoutAskingContract:
             'SKILL.md truth table must reference both flags'
         )
 
-    # ---- workflows/execution.md "Loop-back continuation" subsection -----
+    # ---- workflow/execution.md "Loop-back continuation" subsection -----
 
     def test_execution_workflow_has_loop_back_continuation_subsection(
         self, execution_workflow_text: str
     ):
-        """``plan-marshall/workflows/execution.md`` MUST carry a "Loop-back
+        """``plan-marshall/workflow/execution.md`` MUST carry a "Loop-back
         continuation" subsection that mirrors the existing forward
         ``finalize_without_asking`` block."""
         text = execution_workflow_text

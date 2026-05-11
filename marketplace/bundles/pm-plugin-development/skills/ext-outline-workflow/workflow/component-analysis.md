@@ -1,6 +1,10 @@
+---
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+---
+
 # Component Analysis Workflow
 
-Semantic analysis of marketplace component files (skills, agents, commands, tests) against a request, with each file classified as CERTAIN_INCLUDE / CERTAIN_EXCLUDE / UNCERTAIN. Carved from the legacy `ext-outline-component-agent.md` (deleted in Phase 5 of the agents-to-execution-context refactor); dispatched via `Task: plan-marshall:execution-context-{level}` with this doc as `workflow`.
+Semantic analysis of marketplace component files (skills, agents, commands, tests) against a request, with each file classified as CERTAIN_INCLUDE / CERTAIN_EXCLUDE / UNCERTAIN.
 
 ## Contract reference
 
@@ -48,7 +52,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings as
 | `{reasoning}` | Why this decision |
 | `{evidence}` | Specific lines / sections |
 
-The `--agent` value is `execution-context/{component_type}` (post-refactor); the legacy value `ext-outline-component-agent/{component_type}` is retired alongside the agent deletion in Phase 5.
+The `--agent` value is `execution-context/{component_type}`.
 
 ## Component-specific context
 
