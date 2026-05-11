@@ -134,12 +134,22 @@ def test_preset_levels_are_subset_of_cmd_models_allowed_levels(preset_name: str)
         f"preset '{preset_name}' default level '{preset['default']}' "
         f'is not in _cmd_models.ALLOWED_LEVELS {list(cmd_models.ALLOWED_LEVELS)}'
     )
-    # Every per-role level value must also be in ALLOWED_LEVELS.
-    for role, level in preset['roles'].items():
-        assert level in cmd_models.ALLOWED_LEVELS, (
-            f"preset '{preset_name}' role '{role}' level '{level}' "
-            f'is not in _cmd_models.ALLOWED_LEVELS {list(cmd_models.ALLOWED_LEVELS)}'
-        )
+    # Every leaf-level value in the (possibly nested) roles map must be in
+    # ALLOWED_LEVELS. Walks flat-group string values and nested-group dicts.
+    for group, group_value in preset['roles'].items():
+        if isinstance(group_value, str):
+            assert group_value in cmd_models.ALLOWED_LEVELS, (
+                f"preset '{preset_name}' role '{group}' level "
+                f"'{group_value}' is not in _cmd_models.ALLOWED_LEVELS "
+                f'{list(cmd_models.ALLOWED_LEVELS)}'
+            )
+        else:
+            for subkey, level in group_value.items():
+                assert level in cmd_models.ALLOWED_LEVELS, (
+                    f"preset '{preset_name}' role '{group}.{subkey}' level "
+                    f"'{level}' is not in _cmd_models.ALLOWED_LEVELS "
+                    f'{list(cmd_models.ALLOWED_LEVELS)}'
+                )
 
 
 def test_local_allowed_levels_matches_cmd_models_allowed_levels() -> None:
@@ -159,12 +169,29 @@ def test_local_allowed_levels_matches_cmd_models_allowed_levels() -> None:
     ['economic', 'balanced', 'high-end'],
 )
 def test_preset_role_keys_are_subset_of_cmd_models_known_roles(preset_name: str) -> None:
+    """Every preset role key must be registered in _cmd_models.KNOWN_ROLES.
+
+    Walks both top-level groups and nested subkeys: for a flat-group entry
+    (string value), the top-level key must be in KNOWN_ROLES; for a nested
+    entry (dict value), every subkey must be in the group's declared schema.
+    """
     preset = mp.ModelPresets.get(preset_name)
-    for role in preset['roles']:
-        assert role in cmd_models.KNOWN_ROLES, (
-            f"preset '{preset_name}' role '{role}' is not in "
+    for group, group_value in preset['roles'].items():
+        assert group in cmd_models.KNOWN_ROLES, (
+            f"preset '{preset_name}' role group '{group}' is not in "
             f'_cmd_models.KNOWN_ROLES — registry rename or preset typo'
         )
+        schema = cmd_models.KNOWN_ROLES[group]
+        if isinstance(group_value, dict):
+            assert schema is not None, (
+                f"preset '{preset_name}' nests group '{group}', but the "
+                f'registry declares it flat'
+            )
+            for subkey in group_value:
+                assert subkey in schema, (
+                    f"preset '{preset_name}' subkey '{group}.{subkey}' is "
+                    f"not registered (valid: {list(schema)})"
+                )
 
 
 # =============================================================================
@@ -224,9 +251,12 @@ def test_get_returns_deep_copy_top_level_mutation_does_not_leak() -> None:
 
 
 def test_get_returns_deep_copy_nested_roles_mutation_does_not_leak() -> None:
-    original_roles = dict(mp.ModelPresets.BALANCED['roles'])
+    import copy as _copy
+    original_roles = _copy.deepcopy(mp.ModelPresets.BALANCED['roles'])
     snapshot = mp.ModelPresets.get('balanced')
-    snapshot['roles']['q_gate_validation'] = 'CORRUPTED'
+    # Mutate both a top-level flat entry and a nested-group subkey.
+    snapshot['roles']['phase-2'] = 'CORRUPTED'
+    snapshot['roles']['cross']['research'] = 'CORRUPTED'
     snapshot['roles']['INJECTED'] = 'CORRUPTED'
     # Class-level constant's roles dict must not be mutated by either edit.
     assert mp.ModelPresets.BALANCED['roles'] == original_roles

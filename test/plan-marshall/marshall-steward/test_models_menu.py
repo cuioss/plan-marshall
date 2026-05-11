@@ -74,19 +74,26 @@ def _read_models_block(plan_dir: Path) -> dict:
 
 
 def test_round_trip_default_and_role_persist():
-    """Set default=medium and roles.q_gate_validation=high; resolver returns saved values."""
+    """Set default=medium and roles.cross.q-gate-validation=high; resolver returns saved values."""
     with PlanContext() as ctx:
         _seed_marshal(
             ctx.fixture_dir,
-            {'default': 'medium', 'roles': {'q_gate_validation': 'high'}},
+            {
+                'default': 'medium',
+                'roles': {'cross': {'q-gate-validation': 'high'}},
+            },
         )
 
-        result_role = cmd_models(Namespace(role='q_gate_validation'))
-        result_other = cmd_models(Namespace(role='research'))
+        result_role = cmd_models(
+            Namespace(role='cross.q-gate-validation', phase=None, default=False)
+        )
+        result_other = cmd_models(
+            Namespace(role='cross.research', phase=None, default=False)
+        )
 
         assert result_role['status'] == 'success'
         assert result_role['level'] == 'high'
-        assert result_role['source'] == 'models.roles.q_gate_validation'
+        assert result_role['source'] == 'models.roles.cross.q-gate-validation'
 
         assert result_other['status'] == 'success'
         assert result_other['level'] == 'medium'
@@ -94,7 +101,10 @@ def test_round_trip_default_and_role_persist():
 
         # Re-read marshal.json — stored block matches what the wizard would have written.
         block = _read_models_block(ctx.fixture_dir)
-        assert block == {'default': 'medium', 'roles': {'q_gate_validation': 'high'}}
+        assert block == {
+            'default': 'medium',
+            'roles': {'cross': {'q-gate-validation': 'high'}},
+        }
 
 
 def test_round_trip_repeated_reads_do_not_mutate():
@@ -118,16 +128,21 @@ def test_round_trip_repeated_reads_do_not_mutate():
 
 
 def test_invalid_level_refused_at_read():
-    """`models.roles.q_gate_validation = 'ultra'` errors out — wizard refuses save."""
+    """`models.roles.cross.q-gate-validation = 'ultra'` errors out — wizard refuses save."""
     with PlanContext() as ctx:
-        _seed_marshal(ctx.fixture_dir, {'roles': {'q_gate_validation': 'ultra'}})
+        _seed_marshal(
+            ctx.fixture_dir,
+            {'roles': {'cross': {'q-gate-validation': 'ultra'}}},
+        )
 
-        result = cmd_models(Namespace(role='q_gate_validation'))
+        result = cmd_models(
+            Namespace(role='cross.q-gate-validation', phase=None, default=False)
+        )
 
         assert result['status'] == 'error'
         assert "invalid level 'ultra'" in result['error']
         # The error names the source so the wizard can re-prompt with context.
-        assert 'models.roles.q_gate_validation' in result['error']
+        assert 'models.roles.cross.q-gate-validation' in result['error']
 
 
 def test_reserved_max_level_explicit_error():
@@ -148,15 +163,16 @@ def test_reserved_max_level_explicit_error():
 
 
 def test_pending_role_surfaced_not_hidden():
-    """Pending role keys validate and resolve — wizard surfaces them in the registry walk."""
+    """Every registered role key validates and resolves — wizard surfaces them in the registry walk."""
     with PlanContext() as ctx:
-        _seed_marshal(ctx.fixture_dir, {'roles': {'phase_refine': 'medium'}})
+        # phase-2 in the new registry corresponds to the legacy 'phase_refine'.
+        _seed_marshal(ctx.fixture_dir, {'roles': {'phase-2': 'medium'}})
 
-        result = cmd_models(Namespace(role='phase_refine'))
+        result = cmd_models(Namespace(role='phase-2', phase=None, default=False))
 
         assert result['status'] == 'success'
         assert result['level'] == 'medium'
-        # No "unknown role" warning — phase_refine is a known pending role.
+        # No "unknown role" warning — phase-2 is a known registered role.
         assert 'warnings' not in result
 
 

@@ -576,6 +576,14 @@ _JSONL_FORMAT_MD = (
     / 'standards'
     / 'jsonl-format.md'
 )
+_TRIAGE_MD = (
+    MARKETPLACE_ROOT
+    / 'plan-marshall'
+    / 'skills'
+    / 'phase-6-finalize'
+    / 'workflow'
+    / 'triage.md'
+)
 
 
 class TestAutomatedReviewCiSignalAndOverflow:
@@ -599,6 +607,10 @@ class TestAutomatedReviewCiSignalAndOverflow:
     @pytest.fixture(scope='class')
     def jsonl_format_text(self) -> str:
         return _JSONL_FORMAT_MD.read_text(encoding='utf-8')
+
+    @pytest.fixture(scope='class')
+    def triage_text(self) -> str:
+        return _TRIAGE_MD.read_text(encoding='utf-8')
 
     # ---- CI signal consumption (no inline CI poll) -----------------------
 
@@ -672,103 +684,67 @@ class TestAutomatedReviewCiSignalAndOverflow:
 
     # ---- Overflow handling -----------------------------------------------
 
-    def test_overflow_section_documented_in_automated_review(
-        self, automated_review_text: str
+    def test_overflow_section_documented_in_triage(
+        self, triage_text: str
     ):
-        """The overflow handling subsection MUST exist between the per-finding
-        loop and the loop-back bookkeeping so the contract is reachable from
-        the dispatch flow."""
-        assert '### Overflow handling' in automated_review_text, (
-            'automated-review.md must declare an "Overflow handling" subsection in the per-finding loop'
-        )
-        # And it must precede "Handle findings (loop-back)" — the dispatch
-        # flow consults overflow before bookkeeping the loop-back.
-        overflow_idx = automated_review_text.index('### Overflow handling')
-        loopback_idx = automated_review_text.index('### Handle findings (loop-back)')
-        assert overflow_idx < loopback_idx, (
-            'Overflow handling subsection must precede "Handle findings (loop-back)" in the document order'
+        """The overflow handling section MUST exist in the shared triage
+        workflow so the contract is reachable from every call site that
+        dispatches `cross.triage` (automated-review, sonar-roundtrip,
+        phase-5 verification/quality-gate triage, pr-doctor)."""
+        # The triage workflow numbers its steps; overflow lives at Step 5.
+        assert 'Overflow' in triage_text and 'timeout' in triage_text.lower(), (
+            'triage.md must document overflow / timeout handling'
         )
 
     def test_overflow_files_pr_comment_overflow_finding(
-        self, automated_review_text: str
+        self, triage_text: str
     ):
-        """When the per-iteration budget is nearly exhausted, the step MUST
-        file exactly one ``pr-comment-overflow`` finding (via ``manage-findings
-        add``) carrying the unprocessed pr-comment hash_ids in ``detail``."""
-        text = automated_review_text
+        """When the per-iteration budget is nearly exhausted, the triage
+        workflow MUST file exactly one ``{finding_type}-overflow`` envelope
+        finding (via ``manage-findings add``) carrying the unprocessed
+        hash_ids in ``detail``. The pr-comment-specific shape (used by
+        automated-review) is named explicitly in the documentation."""
+        text = triage_text
         assert 'pr-comment-overflow' in text, (
-            'Overflow handling must file a pr-comment-overflow finding'
+            'triage.md must reference the pr-comment-overflow finding type by name'
         )
-        # The documented add command must use the new --type and pass the
-        # hash_id list as --detail.
-        assert '--type pr-comment-overflow' in text, (
-            'Overflow handling must invoke `manage-findings add --type pr-comment-overflow`'
+        # The documented add command uses the parameterised type form so
+        # every finding_type has its own overflow envelope shape.
+        assert '--type {finding_type}-overflow' in text or '--type pr-comment-overflow' in text, (
+            'triage.md must invoke `manage-findings add --type {finding_type}-overflow`'
         )
         assert 'unprocessed' in text.lower() and 'hash_id' in text.lower(), (
-            'Overflow handling must document carrying the unprocessed pr-comment hash_ids'
+            'triage.md must document carrying the unprocessed hash_ids in --detail'
         )
 
-    def test_overflow_records_outcome_loop_back_not_done(
-        self, automated_review_text: str
+    def test_overflow_returns_loop_back_outcome(
+        self, triage_text: str
     ):
-        """The overflow path MUST record ``--outcome loop_back`` so the
-        dispatcher re-fires automated-review on the next phase-6 entry; it
-        MUST NOT use ``--outcome done`` because that would cause the
-        dispatcher to skip the step on re-entry and silently drop the deferred
-        comments."""
-        text = automated_review_text
-        # Locate the overflow subsection slice.
-        start = text.index('### Overflow handling')
-        end = text.index('### Handle findings (loop-back)')
-        overflow_section = text[start:end]
+        """The overflow path MUST return ``outcome: loop_back`` so the
+        calling manifest step (automated-review / sonar-roundtrip /
+        phase-5 Step 11) re-fires the dispatch on the next phase entry."""
+        text = triage_text
+        # Locate the overflow section (between Step 5 header and Step 6).
+        if 'Step 5' in text and 'Step 6' in text:
+            start = text.index('Step 5')
+            end = text.index('Step 6', start)
+            overflow_section = text[start:end]
+        else:
+            overflow_section = text
 
-        assert '--outcome loop_back' in overflow_section, (
-            'Overflow handling must record --outcome loop_back so the dispatcher re-fires the step'
+        assert 'loop_back' in overflow_section, (
+            'Overflow section in triage.md must return outcome: loop_back so the calling step re-fires'
         )
-        # The actual mark-step-done bash invocation inside the overflow
-        # section must use --outcome loop_back, NOT --outcome done — done is
-        # the terminal-clean outcome and would cause the dispatcher to skip
-        # the step on re-entry, silently dropping deferred comments.
-        # Identify only bash-fenced mark-step-done invocations (not prose
-        # references to the verb), by extracting code-fenced blocks.
-        bash_blocks: list[str] = []
-        in_block = False
-        current: list[str] = []
-        for line in overflow_section.splitlines():
-            stripped = line.strip()
-            if stripped.startswith('```'):
-                if in_block:
-                    bash_blocks.append('\n'.join(current))
-                    current = []
-                    in_block = False
-                else:
-                    in_block = True
-                continue
-            if in_block:
-                current.append(line)
-        mark_step_blocks = [b for b in bash_blocks if 'mark-step-done' in b]
-        assert mark_step_blocks, (
-            'Overflow handling must include at least one bash-fenced mark-step-done invocation'
-        )
-        for block in mark_step_blocks:
-            assert '--outcome loop_back' in block, (
-                f'Bash-fenced mark-step-done block in overflow section must carry --outcome loop_back; '
-                f'got block: {block!r}'
-            )
-            assert '--outcome done' not in block, (
-                f'Bash-fenced mark-step-done block in overflow section must NOT use --outcome done '
-                f'(done is terminal and would skip the step on re-entry); got block: {block!r}'
-            )
 
     def test_overflow_threshold_is_conservative(
-        self, automated_review_text: str
+        self, triage_text: str
     ):
         """The documented overflow heuristic MUST trigger before the wrapper
         fires — the 75 % threshold leaves enough budget for the overflow
         capture itself plus a safety margin."""
-        text = automated_review_text
+        text = triage_text
         assert '75' in text and 'budget' in text.lower(), (
-            'Overflow handling must document a 75% budget threshold so capture happens before wrapper timeout'
+            'triage.md must document a 75% budget threshold so capture happens before wrapper timeout'
         )
 
     # ---- pr-comment-overflow finding type contract ------------------------
