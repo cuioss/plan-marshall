@@ -51,84 +51,46 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qu
 
 If the result's `findings` list is empty, the gate is clean — proceed directly to "Handle findings (loop-back)" with `loop_back_needed = false`, then "Mark Step Complete" Branch A (`quality gate passed`).
 
-### Per-finding dispatch loop (consumer-side triage)
+### Dispatch the per-finding triage core
 
-For each finding in the query result, perform the following sequence. Process findings sequentially — never batch the per-finding decision through a single LLM call.
+When the query above returns one or more pending `sonar-issue` findings, dispatch the shared triage workflow [`standards/triage.md`](triage.md) — single source of truth for the per-finding LLM-judgement core, the smart-grouping algorithm, the per-outcome action bodies (FIX / SUPPRESS / ACCEPT / AskUserQuestion), the overflow / timeout handling, and the Scope-Deviation Escalation guard.
 
-**1. Detect domain** from the finding's `file_path`:
+The dispatch is **by reference** — the prompt carries `finding_type=sonar-issue` only; the triage subagent issues its own `manage-findings query` against the same store as its first workflow step.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture which-module \
-  --path {finding.file_path}
-```
-
-Read the resolved domain key from the TOON output. If the path falls outside any registered module, default to the project's primary domain as recorded in `marshal.json` `skill_domains`.
-
-**2. Resolve the triage extension skill for the domain**:
+Compute the target variant via the role resolver, then dispatch:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  resolve-workflow-skill-extension --domain {detected_domain} --type triage
+target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models resolve-target --role cross.triage)
 ```
 
-Read the returned `skill` reference (e.g., `pm-dev-java:ext-triage-java`).
-
-**3. Load the resolved triage extension into the main context**:
-
 ```
-Skill: {bundle}:ext-triage-{domain}
+Task: plan-marshall:{target}
+  prompt: |
+    name: cross.triage
+    plan_id: {plan_id}
+    skills[5]:
+    - plan-marshall:manage-findings
+    - plan-marshall:manage-tasks
+    - plan-marshall:manage-architecture
+    - plan-marshall:manage-config
+    - plan-marshall:workflow-integration-sonar
+    workflow: plan-marshall:phase-6-finalize/standards/triage.md
+
+    finding_type: sonar-issue
+
+    WORKTREE: {worktree_path}
 ```
 
-The loaded extension brings its `standards/severity.md`, `standards/suppression.md`, and `standards/pr-comment-disposition.md` into context. For Sonar findings, the `severity.md` and `suppression.md` documents are the load-bearing inputs (the disposition table is PR-comment-specific; severity drives the Sonar fix-vs-suppress-vs-accept decision).
+For Sonar findings, the loaded `ext-triage-{domain}` skill's `severity.md` and `suppression.md` documents are the load-bearing inputs to the per-finding decision (the `pr-comment-disposition.md` table is PR-comment-specific). The triage workflow's "ACCEPT" action body for `sonar-issue` dispatches Sonar dismissal via `workflow-integration-sonar` (per the skill's standards) rather than a PR thread reply.
 
-**4. Decide per-finding** using the loaded standards. The four canonical outcomes are:
-
-| Decision | Meaning |
-|----------|---------|
-| **FIX** | The Sonar rule identifies a real defect. Create a fix task and loop back. |
-| **SUPPRESS** | The rule is correct in pattern-match terms, but the loaded standards justify suppressing it (false positive, framework-mandated pattern, generated code, etc.). Apply the domain-specific NOSONAR / `@SuppressWarnings` annotation. |
-| **ACCEPT** | The issue addresses an acceptable trade-off or is out of scope for this plan. Dismiss in Sonar with rationale. |
-| **AskUserQuestion** | The loaded standards leave the call genuinely ambiguous (e.g., MAJOR severity in a non-domain file with no matching suppression rule). Ask the user — one question per finding, never batched. |
-
-**5. Act on the decision**:
-
-- **FIX** — Create a fix task via the two-step prepare-add → commit-add flow (see "Handle findings (loop-back)" below). Then:
-
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
-    --plan-id {plan_id} --hash-id {finding.hash_id} --resolution fixed \
-    --detail "{rationale referencing the fix task number}"
-  ```
-
-- **SUPPRESS** — Apply the domain-specific suppression annotation (NOSONAR comment, `@SuppressWarnings("java:S{rule}")`, `# noqa: {rule}`, `// eslint-disable-line {rule}`, etc.) to the source location identified by `{finding.file_path}:{finding.line}`, using the syntax from the loaded `suppression.md`. Then:
-
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
-    --plan-id {plan_id} --hash-id {finding.hash_id} --resolution suppressed \
-    --detail "{rationale referencing the loaded standard rule}"
-  ```
-
-- **ACCEPT** — Dismiss the issue in Sonar with rationale (via the workflow-integration-sonar dismissal surface; see that skill's standards for the canonical command). Then:
-
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
-    --plan-id {plan_id} --hash-id {finding.hash_id} --resolution accepted \
-    --detail "{rationale}"
-  ```
-
-- **AskUserQuestion** — Ask the user via the `AskUserQuestion` tool. Then act on the user's answer using the matching path above. After acting:
-
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
-    --plan-id {plan_id} --hash-id {finding.hash_id} --resolution {fixed|suppressed|accepted|taken_into_account} \
-    --detail "{user's stated rationale}"
-  ```
+When the subagent returns `status: loop_back` it has created fix tasks (FIX outcomes), filed an overflow envelope, or both — proceed to "Handle findings (loop-back)" with `loop_back_needed = true`. When it returns `status: success` every finding resolved as SUPPRESS / ACCEPT / `taken_into_account` (no FIX, no overflow) — proceed with `loop_back_needed = false`.
 
 ### Handle findings (loop-back)
 
-**On findings** that resolved to **FIX** (one or more `sonar-issue` findings closed with `--resolution fixed` and a fix-task reference), `loop_back_needed = true`:
+**On `loop_back` return from the triage dispatch** (one or more `sonar-issue` findings closed with `--resolution fixed` and a fix-task reference, OR an overflow envelope was filed), `loop_back_needed = true`:
 
-1. Create fix tasks for the FIX-decision Sonar issues (same two-step prepare-add → commit-add flow as `automated-review.md`).
+1. The triage dispatch already allocated the fix tasks (see [`triage.md`](triage.md) § Step 3c FIX action). No further task allocation here.
 2. Loop back to phase-5-execute via:
 
    ```bash
@@ -138,7 +100,7 @@ The loaded extension brings its `standards/severity.md`, `standards/suppression.
 
 3. Continue until clean or max iterations (3).
 
-When NO finding resolved to **FIX** (every finding closed as SUPPRESS / ACCEPT / taken_into_account, or the query returned empty), `loop_back_needed = false` — proceed directly to "Phase Boundary Re-Capture" below.
+When the triage dispatch returns `status: success` (every finding closed as SUPPRESS / ACCEPT / `taken_into_account`, or the query returned empty), `loop_back_needed = false` — proceed directly to "Phase Boundary Re-Capture" below.
 
 ## Phase Boundary Re-Capture (intra-finalize gate)
 

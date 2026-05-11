@@ -506,44 +506,50 @@ After the test-contract task completes, the standard verification path resumes �
 
 **11b**: If `verify_iteration >= verification_max_iterations` (from phase-5-execute config, default 5) → mark task `blocked`, log, continue to Step 12.
 
-**11c**: Load domain triage extension via extension-api (`provides_triage()`).
+**11c**: Persist each failing finding to the Q-Gate findings store (producer-side; the triage dispatch reads from the store by reference):
 
-**11d**: Persist findings to Q-Gate:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} --phase 5-execute \
-  --source qgate --type {finding_type} --severity {severity} \
+  --source qgate --type verification-failure --severity {severity} \
   --message "{finding_message}" --detail "{file}:{line}"
 ```
 
-**11e**: Triage each finding:
-- **FIX** → create fix task (`origin: fix`, `profile: implementation`, depends on nothing)
-- **SUPPRESS** → log suppression, resolve finding
-- **ACCEPT** → log as technical debt, resolve finding (see Scope-Deviation Escalation guard below — ACCEPT cannot be auto-selected when the finding represents a softening of a request-level hard requirement)
+(One `qgate add` call per finding; the verification task's structured `findings[]` output drives this loop.)
 
-#### Scope-Deviation Escalation (Step 11 guard)
+**11d**: Dispatch the per-finding triage core via [`../phase-6-finalize/standards/triage.md`](../phase-6-finalize/standards/triage.md) — single source of truth for the FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions, smart grouping, action bodies, overflow handling, and the Scope-Deviation Escalation guard. The dispatch is by-reference (the subagent queries the store as its first workflow step).
 
-Before recording any FIX/SUPPRESS/ACCEPT decision that would soften a request-level hard requirement (zero-hit grep gates, "no transition window" intents, "remove flag entirely" cutovers, etc.), this step MUST raise an `AskUserQuestion` per the canonical contract in [`../ref-workflow-architecture/standards/scope-deviation-escalation.md`](../ref-workflow-architecture/standards/scope-deviation-escalation.md). The standard is the single source of truth for the deviation taxonomy, the three-option AskUserQuestion shape (Hold / Accept-with-rationale / Split), and the prohibited "log-and-continue" anti-pattern.
+Compute the target via the role resolver, then dispatch:
 
-**Detection**: The decision softens a hard requirement when the finding cites a deviation from a measurable gate or structural intent declared in the plan's request, solution outline, or deliverable narrative. Use the standard's "Hard-Requirement Softening: Definition" section to classify.
+```bash
+target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models resolve-target --role cross.triage)
+```
 
-**Guard application**:
+```
+Task: plan-marshall:{target}
+  prompt: |
+    name: cross.triage
+    plan_id: {plan_id}
+    skills[4]:
+    - plan-marshall:manage-findings
+    - plan-marshall:manage-tasks
+    - plan-marshall:manage-architecture
+    - plan-marshall:manage-config
+    workflow: plan-marshall:phase-6-finalize/standards/triage.md
 
-- **FIX** branch → no escalation needed (the dispatcher is already enforcing the requirement by creating a fix task).
-- **SUPPRESS** branch → escalate when the suppression would cause the requirement to fail in a future verification run. Pure noise suppression (linter false positives, etc.) does not require escalation.
-- **ACCEPT** branch → escalate whenever the finding cites a hard requirement. ACCEPT-as-technical-debt is NOT auto-selectable for hard-requirement softenings; the user must explicitly choose "Accept with rationale" via the canonical AskUserQuestion and supply the mandatory written rationale.
+    finding_type: verification-failure
 
-**Resolution**: On user resolution, follow the side-effect contract in `scope-deviation-escalation.md`:
+    WORKTREE: {worktree_path}
+```
 
-- **Hold** → re-route through FIX or BLOCKED (no scope reduction recorded).
-- **Accept-with-rationale** → persist the rationale to `decision.log` at INFO level using the canonical `(scope-deviation:accept)` caller-name marker (downstream tooling — PR-body emitter, retrospective scanner — keys off this exact marker to find recorded deviations) AND surface the rationale verbatim in the PR body under a "Scope Deviation Accepted" subsection.
-- **Split** → seed a successor lesson via `manage-lessons add` capturing the deferred portion.
+The Scope-Deviation Escalation guard lives in [`triage.md`](../phase-6-finalize/standards/triage.md) § Step 6 — the triage subagent raises `AskUserQuestion` with the four canonical options (Hold / Accept-with-rationale / Split / FIX-here-anyway) when a decision would soften a request-level hard requirement (zero-hit grep gates, "no transition window" intents, "remove flag entirely" cutovers, etc.). The canonical contract is documented in [`../ref-workflow-architecture/standards/scope-deviation-escalation.md`](../ref-workflow-architecture/standards/scope-deviation-escalation.md); the work-log line `[STATUS] Gate N deferred status accepted` is forbidden as a stand-in for the AskUserQuestion thread — the escalation MUST happen first; logging confirms the user's decision afterward.
 
-The work-log line `[STATUS] Gate N deferred status accepted` is forbidden as a stand-in for the AskUserQuestion thread — the escalation MUST happen first; logging confirms the user's decision afterward.
+**11e**: Inspect the triage subagent's return:
 
-**11f**: If fix tasks created → increment `verify_iteration` in task metadata, reset verification task to `pending`, continue execution loop (fix tasks will execute before the re-queued verification task via `depends_on`).
-
-**11g**: If no fix tasks → mark verification task complete (all findings suppressed/accepted), continue to Step 11b.
+- If `fix_tasks_created > 0` → increment `verify_iteration` in task metadata, reset the verification task to `pending`, continue the execution loop (fix tasks will execute before the re-queued verification task via `depends_on`).
+- If `fix_tasks_created == 0` AND `overflow_deferred == 0` → mark the verification task complete (all findings suppressed / accepted / `taken_into_account`), continue to Step 11b.
+- If `overflow_deferred > 0` → leave the verification task `pending`; the orchestrator re-fires the triage dispatch on the next phase-5 entry (same iteration cap as the legacy per-finding loop).
 
 ### Step 11b: Final Quality Sweep (After All Tasks)
 
@@ -560,7 +566,7 @@ After every task in the phase has completed (and Step 11 has resolved any per-ta
      resolve --command quality-gate --audit-plan-id {plan_id}
    ```
 
-2. Execute the returned `executable`. On non-zero exit, route the failure through the Step 11 triage loop (treat as a single-finding verification failure) so the Step 11 fix-task / suppress / accept branch handles remediation. After triage resolves, do **NOT** re-run the sweep — Step 11b runs at most once per phase entry.
+2. Execute the returned `executable`. On non-zero exit, persist the failures to the Q-Gate findings store (`manage-findings qgate add --type quality-gate-failure …`) and dispatch [`../phase-6-finalize/standards/triage.md`](../phase-6-finalize/standards/triage.md) as `cross.triage` with `finding_type=quality-gate-failure` — same shape as Step 11d above, only the finding type changes. The triage subagent's return drives the same fix-task / suppress / accept branch (Step 11e). After triage resolves, do **NOT** re-run the sweep — Step 11b runs at most once per phase entry.
 
 3. Log the outcome:
 
