@@ -12,8 +12,6 @@ implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-execut
 
 # Execution Context
 
-# resolver-glob-exempt: generic dispatcher — forwards Glob/Grep capabilities to dispatched workflows that legitimately need filesystem traversal during plan-phase execution
-
 Single generic dispatcher for every `Task:` invocation in the plan-marshall workflow. Loads foundational practices, loads caller-specified skills, then drives the caller-specified workflow (or inline instructions) to completion. The model/effort pinning lives in the variant frontmatter (`execution-context-{low|medium|high|xhigh|xxhigh}` — emitted by the build target). The workflow doc, skill prerequisites, and plan context flow through the `Task:` prompt body as runtime inputs.
 
 ## Input — Prompt-Body Contract
@@ -145,3 +143,5 @@ display_detail: "<≤80 char ASCII summary, no trailing period>"
 Plus any workflow-specific return fields declared in the workflow doc's output contract. The `display_detail` constraints (≤80 chars, ASCII-only, no trailing period) are the canonical agent-return-shape rules — single source of truth is `plan-marshall:ref-workflow-architecture/standards/agents.md`.
 
 If the workflow itself failed to declare a return contract, the minimum two fields (`status`, `display_detail`) are still required from this dispatcher.
+
+# resolver-glob-exempt: forwards tool capabilities to dispatched workflows
