@@ -4,7 +4,7 @@
 
 Overview and entry-point map for the per-role model variant-emission system. The canonical specifications live next to the code they govern; this document is a navigational summary that points there.
 
-Authors configure `models.roles.<name>` in `.plan/marshal.json`. The Claude target emits `{base}-{level}.md` agent variants for every canonical agent that opts in via `implements: ext-point-dynamic-level-executor`. Dispatch sites resolve the role's level via `manage-config models read --role <role>` and call the matching variant by name. End users get the right model per role at dispatch time without any user-side build step.
+Authors configure `models.roles.<key>` (hierarchical kebab-case keys like `cross.research`, `phase-6.create-pr`) in `.plan/marshal.json`. The Claude target emits six `execution-context[-{level}].md` agent variants for the sole role-eligible agent. Dispatch sites resolve the target via `manage-config models resolve-target --role <key>` and call the matching variant by name. End users get the right model per role at dispatch time without any user-side build step or Claude Code restart.
 
 == Where things live
 
@@ -14,15 +14,19 @@ Authors configure `models.roles.<name>` in `.plan/marshal.json`. The Claude targ
 
 | User
 | link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/role-variants.md[`plan-marshall/standards/role-variants.md`]
-| Stand-alone end-user / project-author guide. Configuration walkthrough, troubleshooting (invalid levels, pending roles, `CLAUDE_CODE_SUBAGENT_MODEL` env-var override, session-restart requirement). Read this first.
+| Stand-alone end-user / project-author guide. Configuration walkthrough, troubleshooting (invalid keys, `CLAUDE_CODE_SUBAGENT_MODEL` env-var override, level resolution rules). Read this first.
 
 | User (wizard)
 | link:../marketplace/bundles/plan-marshall/skills/marshall-steward/standards/models-menu.md[`marshall-steward/standards/models-menu.md`]
-| `/marshall-steward` → Models submenu UX contract: validation rules, persistence, restart-hint behavior.
+| `/marshall-steward` → Models submenu UX contract: preset-picker workflow with `economic` / `balanced` / `high-end` payloads sourced from `model_presets.py`.
 
-| Architecture (extension point)
+| Architecture (extension point — agent emission)
 | link:../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-dynamic-level-executor.md[`extension-api/standards/ext-point-dynamic-level-executor.md`]
-| Contract every variant-eligible canonical agent must satisfy: required `implements:` value, optional `levels:` whitelist, forbidden `model:`/`effort:` on canonical, validation rules, worked example.
+| Contract the sole variant-eligible canonical agent (`plan-marshall:execution-context`) satisfies: required `implements:` value, optional `levels:` whitelist, forbidden `model:`/`effort:` on canonical, validation rules.
+
+| Architecture (extension point — workflow body)
+| link:../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-execution-context-workflow.md[`extension-api/standards/ext-point-execution-context-workflow.md`]
+| Contract every workflow doc dispatched through `execution-context` satisfies: `implements:` declaration in frontmatter (or AsciiDoc attribute), input contract (`plan_id`, `WORKTREE`, `skills[]`, plus workflow-specific runtime inputs), output contract (`status` + `display_detail` + workflow-specific return fields).
 
 | Architecture (level binding)
 | link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-levels.md[`plan-marshall/standards/model-levels.md`]
@@ -30,7 +34,7 @@ Authors configure `models.roles.<name>` in `.plan/marshal.json`. The Claude targ
 
 | Architecture (role registry)
 | link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-roles.md[`plan-marshall/standards/model-roles.md`]
-| Role-key → canonical-agent table, with per-row effective-vs-pending status and the per-phase-roles-share-phase-agent pattern.
+| Hierarchical 15-key role registry (7 groups: `phase-1` through `phase-6`, `cross`). Three accepted lookup forms (`--role phase-1`, `--role phase-6.create-pr`, `--phase phase-6 --role create-pr`). Polymorphic-value resolver rules. Lists every workflow doc each role key drives.
 
 | Build system
 | link:refactor/02-build-system/plan.md[`doc/refactor/02-build-system/plan.md`] § Variant Emission
@@ -44,13 +48,16 @@ Authors configure `models.roles.<name>` in `.plan/marshal.json`. The Claude targ
 role-variants.md  (user)                          ── single config target
         │
         ├─ model-levels.md     (level → primitive)
-        ├─ model-roles.md      (role → canonical)
-        └─ marshall-steward/standards/models-menu.md   (wizard)
+        ├─ model-roles.md      (role-key → workflow doc)
+        └─ marshall-steward/standards/models-menu.md   (wizard preset picker)
 
-ext-point-dynamic-level-executor.md  (contract)
+ext-point-dynamic-level-executor.md  (agent contract — execution-context)
         │
-        ├─ model-levels.md
-        └─ role-variants.md    (user-facing target)
+        └─ model-levels.md
+
+ext-point-execution-context-workflow.md  (workflow doc contract — all workflow/*.md)
+        │
+        └─ model-roles.md      (which role key drives this workflow)
 
 doc/refactor/02-build-system/plan.md § Variant Emission   (build view)
         │
@@ -62,10 +69,10 @@ doc/refactor/02-build-system/plan.md § Variant Emission   (build view)
 
 == Quick reference
 
-* **Configure a role** — set `plan.models.roles.<role>` in `.plan/marshal.json` to one of `low | medium | high | xhigh | xxhigh | inherit`. See `role-variants.md`.
-* **Resolve a role at dispatch** — `python3 .plan/execute-script.py plan-marshall:manage-config:manage-config models read --role <role>` returns `level: <value>`. See dispatch-site patches in `phase-3-outline`, `phase-4-plan`, `phase-6-finalize`, `plan-marshall/workflow/planning.md` and `recipe.md`.
-* **Make a new agent role-eligible** — add `implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor` to its frontmatter; remove any hardcoded `model:` / `effort:`. Plugin-doctor enforces both rules. See `ext-point-dynamic-level-executor.md`.
-* **Inspect emitted variants** — generate the Claude target output (`python3 marketplace/targets/generate.py --target claude --output target/claude`) and look under `target/claude/{bundle}/agents/{base}-{level}.md`. The canonical no-suffix file remains the `inherit` target.
+* **Configure a role** — set `plan.models.roles.<group>.<key>` in `.plan/marshal.json` to one of `low | medium | high | xhigh | xxhigh | inherit`. See `role-variants.md` for the polymorphic resolution rules.
+* **Resolve a role at dispatch** — `python3 .plan/execute-script.py plan-marshall:manage-config:manage-config models resolve-target --role <key>` returns the canonical or variant name directly (e.g. `execution-context` for `inherit`, `execution-context-high` otherwise). See `model-roles.md`.
+* **Add a new workflow doc** — place it under `{bundle}:{skill}/workflow/{file}.md` (single-phase consumer) or `plan-marshall/skills/plan-marshall/workflow/{file}.md` (multi-phase / cross-cutting), declare `implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow` in frontmatter, and document the Output contract (`status` + `display_detail`).
+* **Inspect emitted variants** — generate the Claude target output (`python3 marketplace/targets/generate.py --target claude --output target/claude`) and look under `target/claude/plan-marshall/agents/execution-context[-{level}].md`. The canonical no-suffix file remains the `inherit` target.
 
 == Rationale for keeping the canonical specs in `marketplace/bundles/`
 

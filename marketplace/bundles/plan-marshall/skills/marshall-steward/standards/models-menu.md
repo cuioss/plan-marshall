@@ -4,7 +4,7 @@
 
 ## Overview
 
-The Models submenu is a single preset-picker. The user chooses one of three named presets — `economic`, `balanced`, `high-end` — and the wizard delegates to `manage-config models apply-preset`, which **completely overwrites** the `models` block with the preset payload. Per-role values come from the `ModelPresets` constant-class in [`plan-marshall/scripts/model_presets.py`](../../plan-marshall/scripts/model_presets.py); validation against the level enum from [`plan-marshall:plan-marshall/standards/model-levels.md`](../../plan-marshall/standards/model-levels.md) is enforced at constant-class construction (an import-time `_validate_preset` self-check) and re-validated defense-in-depth at write time inside `manage-config`. The wizard prints the **restart hint** after any successful save (Claude Code loads agent files at session start, so new variant routing applies only after restart).
+The Models submenu is a single preset-picker. The user chooses one of three named presets — `economic`, `balanced`, `high-end` — and the wizard delegates to `manage-config models apply-preset`, which **completely overwrites** the `models` block with the preset payload. Per-role values come from the `ModelPresets` constant-class in [`plan-marshall/scripts/model_presets.py`](../../plan-marshall/scripts/model_presets.py); validation against the level enum from [`plan-marshall:plan-marshall/standards/model-levels.md`](../../plan-marshall/standards/model-levels.md) is enforced at constant-class construction (an import-time `_validate_preset` self-check) and re-validated defense-in-depth at write time inside `manage-config`. The new preset takes effect on the next dispatch — the resolver reads `marshal.json` fresh per call, so no Claude Code restart is required.
 
 > For per-role fine-tuning beyond the three presets, edit `.plan/marshal.json` directly. The wizard intentionally does not expose per-role editing — the preset-then-manual-edit split keeps the wizard small and the tweak point obvious.
 
@@ -68,13 +68,7 @@ with `<name>` set to the canonical preset name (`economic`, `balanced`, or `high
 After a successful save:
 
 1. Print the confirmation: `Saved: applied preset '<name>'`.
-2. **Print the restart hint verbatim**:
-
-   > **Restart Claude Code to pick up new variant routing.** Agent files load at session start; mid-session edits don't apply until you exit and re-enter.
-
-   The hint fires unconditionally after any successful preset application — even when the on-disk block already matched the chosen preset (the user might restart anyway, and clarity beats cleverness).
-
-3. Return to the **Main Menu** (not back into the Models submenu — the user is now done).
+2. Return to the **Main Menu** (not back into the Models submenu — the user is now done).
 
 When the user picks "Back to Main Menu" in Step 2, return to the Main Menu without making any changes.
 

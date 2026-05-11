@@ -1,0 +1,115 @@
+= User Configuration — Per-Role Models
+:toc:
+:toclevels: 3
+
+How project authors tune which model runs for each LLM-judgement workflow in plan-marshall.
+
+== The 15-Key Registry
+
+The role registry is hierarchical kebab-case, 15 keys across 7 groups:
+
+* `phase-1` through `phase-5` — single-workflow phase keys (the phase's main LLM-judgement workflow)
+* `phase-6` — nested with sub-keys (`pre-submission-self-review`, `create-pr`, `lessons-capture`, `retrospective`, `pr-doctor`) since the finalize phase dispatches several different workflows with different cost profiles
+* `cross` — nested with sub-keys (`research`, `triage`, `q-gate-validation`, `plugin-doctor`, `manage-architecture-enrich-module`) for workflows that fire from multiple phases
+
+The canonical map (which workflow doc each role drives) lives in link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-roles.md[`model-roles.md`].
+
+== Polymorphic JSON Shape
+
+The `.plan/marshal.json` `models.roles` block accepts polymorphic values. A flat-group key takes a plain string; a nested-group key takes either a per-sub-key object or a single string that applies to every sub-key:
+
+[source,json]
+----
+{
+  "models": {
+    "default": "medium",
+    "roles": {
+      "phase-2": "high",
+      "phase-3": "high",
+      "phase-6": {
+        "create-pr": "medium",
+        "lessons-capture": "low",
+        "retrospective": "xhigh"
+      },
+      "cross": {
+        "research": "xxhigh",
+        "triage": "high",
+        "q-gate-validation": "high"
+      }
+    }
+  }
+}
+----
+
+When `phase-6` is a plain string (e.g. `"phase-6": "low"`), every sub-key under it resolves to that value. When `phase-6` is an object, only explicitly-listed sub-keys are overridden — unlisted sub-keys fall back to `models.default`.
+
+Resolution order, deepest first:
+
+1. The explicit sub-key (e.g. `models.roles.cross.research`)
+2. The group's plain-string value (e.g. `models.roles.phase-6: "low"`)
+3. `models.default`
+4. `inherit` (canonical no-suffix variant; inherits parent's model)
+
+== Three Accepted Lookup Forms
+
+The resolver accepts three input forms, mapping to the same resolution:
+
+[source,bash]
+----
+manage-config models resolve-target --role phase-1                   # flat
+manage-config models resolve-target --role phase-6.create-pr         # dotted
+manage-config models resolve-target --phase phase-6 --role create-pr # two-flag
+----
+
+== Preset Shortcuts
+
+Three named presets cover most usage. Apply via `/marshall-steward` Models submenu (preset-picker) or directly:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models apply-preset --name {economic|balanced|high-end}
+----
+
+Payloads live in link:../marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/model_presets.py[`model_presets.py`] (`ModelPresets.ECONOMIC`, `BALANCED`, `HIGH_END`). The wizard delegates to `apply-preset`, which completely overwrites the `models` block.
+
+== No-Restart Semantics
+
+The resolver reads `.plan/marshal.json` fresh on every dispatch. A `models` edit (manual or via the wizard) takes effect on the **next** dispatch — no Claude Code restart, no `/sync-plugin-cache`, no target regeneration required. The six emitted `execution-context` variants are static; only which variant the resolver selects changes.
+
+A restart IS required when target/claude/ is regenerated (e.g., variant frontmatter changes), but that is a developer-side meta-project flow, not a user-side configuration flow.
+
+== Worked Example
+
+A project author wants the research workflow to run on Opus, every Q-Gate check on Opus, the finalize workflows on Sonnet, and everything else on the default. Their `.plan/marshal.json`:
+
+[source,json]
+----
+{
+  "models": {
+    "default": "medium",
+    "roles": {
+      "cross": {
+        "research": "xxhigh",
+        "q-gate-validation": "high",
+        "triage": "high"
+      },
+      "phase-6": "medium"
+    }
+  }
+}
+----
+
+After saving:
+
+* The next `cross.research` dispatch hits `execution-context-xxhigh` (Opus, effort xhigh).
+* The next `cross.q-gate-validation` or `cross.triage` dispatch hits `execution-context-high` (Sonnet, effort high).
+* Every `phase-6.*` dispatch hits `execution-context-medium` (Sonnet, effort medium).
+* Every other dispatch (phase-1 through phase-5, `cross.plugin-doctor`, `cross.manage-architecture-enrich-module`) hits `execution-context-medium` via the `models.default` fallback.
+
+== Related
+
+* link:role-variants.adoc[doc/role-variants.adoc] — entry-point map
+* link:execution-context-overview.adoc[doc/execution-context-overview.adoc] — why one dispatcher
+* link:build-system.adoc[doc/build-system.adoc] — variant emission pipeline
+* link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/role-variants.md[`role-variants.md`] — stand-alone end-user guide (the canonical version of this content)
