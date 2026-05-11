@@ -27,6 +27,8 @@ Central reference for all extension-related configuration paths in `marshal.json
 | `plan.phase-5-execute.finalize_without_asking` | User config | plan-marshall orchestrator | - |
 | `plan.phase-5-execute.verification_max_iterations` | User config | phase-5-execute | - |
 | `plan.phase-6-finalize.steps` | Built-in + `provides_finalize_steps()` | phase-6-finalize | [ext-point-finalize-steps.md](ext-point-finalize-steps.md) |
+| `plan.phase-6-finalize.loop_back_without_asking` | User config | phase-6-finalize, plan-marshall orchestrator | - |
+| `plan.phase-6-finalize.max_iterations` | User config | phase-6-finalize (loop-back ceiling) | - |
 
 ## Build Configuration (run-configuration.json)
 

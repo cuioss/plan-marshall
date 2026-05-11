@@ -464,6 +464,80 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 1. Read the generic change-type instructions from this skill's own standards directory: read `standards/change-{change_type}.md` (relative to this skill)
 2. Follow the instructions from that file for discovery, analysis, and deliverable creation
 
+### Step 9c: Read Target Skill Design Intent
+
+**Purpose**: Before authoring any deliverable that adds capability to an existing skill, classify the target skill's design model so the proposed implementation extends (rather than contradicts) the existing model. The classification is recorded on the deliverable in a `**Design notes:**` block and is the input the q-gate validation agent's `architecture-mismatch-validator` (§2.17, see `q-gate-validation-agent.md`) consumes to surface design-model violations as blocking findings.
+
+**When to apply**: this step fires for every deliverable that lists at least one `marketplace/bundles/{bundle}/skills/{skill}/**` path under `**Affected files:**`. Deliverables that touch only standards documentation in an existing skill (`standards/**/*.md`) ALSO count — design-intent classification applies to the standards body, not just executable code. Deliverables that do not touch existing skills (brand-new skill creation, docs-only outside a skill, non-marketplace changes) skip this step.
+
+**Procedure** (run once per qualifying deliverable, before its `**Change per file:**` block is finalised):
+
+1. **Read the target skill's SKILL.md**.
+
+   ```
+   Read: marketplace/bundles/{bundle}/skills/{skill}/SKILL.md
+   ```
+
+   Skim for the `Role` declaration in the opening paragraph, the `Workflow` / `Standards (Load On-Demand)` section, and any `Enforcement` block.
+
+2. **Read the target skill's design-intent docs** when present. Common locations:
+
+   - `standards/design-intent.md` (explicit design-intent doc; canonical when present)
+   - `standards/architecture.md` (when the skill documents its own architecture)
+   - The skill's `Role` paragraph plus the `Standards Reference` table (fallback when no dedicated design-intent doc exists)
+
+3. **Classify the design model**. The classification is a single token chosen from three values:
+
+   - **`script-deterministic`** — the skill's logic lives in a Python / shell / TypeScript script under `scripts/{name}.py` (or equivalent). The SKILL.md narrative documents the script's CLI shape, subcommands, and return contract. The skill has zero or near-zero LLM cognitive work — the script does the work, the SKILL.md narrative tells callers how to invoke it.
+
+     *Examples*: `manage-execution-manifest`, `manage-tasks`, `manage-status`, `manage-findings`, `manage-logging` — every `manage-*` skill is script-deterministic by construction.
+
+   - **`LLM-driven`** — the skill has no script entry point. The SKILL.md narrative is the executable definition: an LLM agent loads the skill (via `Skill: {ref}`) and follows the prose steps in-context. The skill may invoke other scripts as steps, but the orchestration logic, the decision-making, and the artifact production are all performed by the LLM.
+
+     *Examples*: `phase-3-outline` (this skill), `phase-4-plan`, `q-gate-validation-agent`, `plugin-doctor`, `plan-retrospective`.
+
+   - **`hybrid`** — the skill has both a Python script and a non-trivial LLM prose body. The script handles a deterministic sub-task (file I/O, validation, dispatch); the LLM prose body handles the remaining cognitive work. Hybrid skills carry both a `scripts/` directory and substantive `Workflow` prose.
+
+     *Examples*: `phase-5-execute` (script-driven task loop + LLM execution of individual tasks), `phase-6-finalize` (script-driven step dispatcher + LLM finalize-step bodies), `phase-2-refine` (script-driven status updates + LLM clarification dialogue).
+
+   **Detection heuristic** (apply in order; first match wins):
+
+   - The skill has a `scripts/` directory containing at least one `*.py` AND the SKILL.md narrative consists primarily of CLI documentation (subcommand tables, parameter lists, return-shape examples) → `script-deterministic`.
+   - The skill has no `scripts/` directory at all → `LLM-driven`.
+   - The skill has a `scripts/` directory AND the SKILL.md narrative has substantive cognitive prose (workflow steps, decision rules, in-prose dispatch logic that the LLM follows) → `hybrid`.
+
+4. **Record the classification on the deliverable**. Emit a `**Design notes:**` block immediately after the `**Intent gloss:**` block (or after `**Metadata:**` when no intent gloss is required) carrying:
+
+   ```markdown
+   **Design notes:** Extends the existing {script-deterministic | LLM-driven | hybrid} design model of `{bundle}:{skill}` — {one-sentence rationale}.
+   ```
+
+   The rationale sentence MUST name the specific element of the design model the proposed implementation extends. Generic rationale ("matches the existing model") fails the validator; the sentence has to be specific enough that a reader can verify it.
+
+   **Examples** (illustrative, not normative):
+
+   - `**Design notes:** Extends the existing script-deterministic design model of `plan-marshall:manage-execution-manifest` — adds a new `validate-loadable` CLI subcommand alongside the existing `compose` / `read` / `validate` subcommands.`
+   - `**Design notes:** Extends the existing LLM-driven design model of `plan-marshall:phase-3-outline` — adds a new prose step that the outline agent reads and follows; no script entry point is introduced.`
+   - `**Design notes:** Extends the existing hybrid design model of `plan-marshall:phase-6-finalize` — adds a new built-in step backed by `standards/{name}.md` for the LLM body and `manage-status mark-step-done` for the script-side termination.`
+
+5. **Detect divergence and reroute**. If the proposed implementation strategy contradicts the target skill's design model, the outline MUST either reroute the implementation to fit the model OR justify the divergence in the `**Design notes:**` block (in which case the q-gate validator will surface the divergence for explicit human approval).
+
+   **Canonical mismatch shapes** (the validator's recurrence signals — see q-gate-validation-agent.md §2.17):
+
+   - **Script-side check evaluators proposed for an LLM-driven skill aspect** — e.g., a deliverable adds a Python script that walks SKILL.md prose for a regex match. The aspect is LLM-driven (the SKILL.md narrative is read in-context by the agent); a script-side regex evaluator is the wrong model. **Reroute**: the check belongs in `q-gate-validation-agent.md` as a new validator subsection (LLM-driven) OR in `plugin-doctor` if it is a structural-compliance check (also LLM-driven by §-based dispatch).
+   - **LLM-driven workflow proposed for a script-deterministic skill aspect** — e.g., a deliverable adds an SKILL.md narrative step that performs file I/O the script already handles. The aspect is script-deterministic; LLM-driven narrative steps that re-do script work are duplication. **Reroute**: extend the script's CLI surface (new subcommand or flag) and replace the proposed narrative step with a single invocation of the new CLI shape.
+   - **Hybrid skill change that breaks the script/LLM boundary** — e.g., a deliverable moves deterministic dispatch logic from the script into LLM prose, or moves LLM cognitive work into the script. The skill's hybrid design model has a documented script/LLM boundary; changes that cross the boundary contradict the model. **Reroute**: respect the existing boundary, OR document the boundary shift explicitly in the `**Design notes:**` block as a deliberate refactor (the validator will surface it for review).
+
+   **When divergence is justified**: the `**Design notes:**` block names both the existing model and the divergence rationale. The block MUST take the form:
+
+   ```markdown
+   **Design notes:** Diverges from the existing {model} design model of `{bundle}:{skill}` — {one-sentence rationale for the divergence}, {one-sentence statement of how the new model is documented going forward}.
+   ```
+
+   The "documented going forward" half is required: a divergence that does not update the skill's own design-intent declaration silently creates two design models in the same skill, which is worse than the original gap. The deliverable's task list MUST include an edit to the skill's design-intent doc (or to SKILL.md's `Role` paragraph) that records the new model.
+
+**Validator linkage**: the `architecture-mismatch-validator` in `q-gate-validation-agent.md` (§2.17 — added by deliverable 9 of this plan) parses the `**Design notes:**` block on every deliverable that touches an existing skill and emits an `architecture-mismatch` finding with `severity: blocking` when the block is absent, generic, or contradicts the skill's documented design model. Phase-3-outline's Step 11 auto-loops on blocking findings (see "Step 11: Q-Gate Verification" below), so a missing or contradictory `**Design notes:**` block forces a re-outline pass before phase transition.
+
 ### Step 10: Execute Change-Type Workflow and Write Solution
 
 **Purpose**: Execute the loaded change-type instructions, resolve verification commands, and write the solution outline.

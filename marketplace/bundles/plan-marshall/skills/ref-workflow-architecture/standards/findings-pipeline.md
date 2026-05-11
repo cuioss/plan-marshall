@@ -15,33 +15,35 @@ The plan-marshall findings pipeline routes every quality signal — PR review co
 │  │ workflow-integration-│       │  .plan/plans/{id}/   │────────▶│        │ │
 │  │  github (PR review)  │       │  artifacts/findings/ │         │ phase- │ │
 │  │ workflow-integration-│       │   ├─ pr-comment.jsonl│         │ 6-fin- │ │
-│  │  gitlab (MR review)  │       │   ├─ sonar-issue     │         │ alize: │ │
-│  │ workflow-integration-│       │   │     .jsonl       │         │  auto- │ │
-│  │  sonar (issues)      │       │   ├─ build-error     │         │  matedR│ │
+│  │  gitlab (MR review)  │       │   ├─ pr-comment-     │         │ alize: │ │
+│  │ workflow-integration-│       │   │  overflow.jsonl  │         │  auto- │ │
+│  │  sonar (issues)      │       │   ├─ sonar-issue     │         │  matedR│ │
 │  │ build-python /       │       │   │     .jsonl       │         │  view, │ │
-│  │ build-maven /        │       │   ├─ test-failure    │         │  sonar-│ │
+│  │ build-maven /        │       │   ├─ build-error     │         │  sonar-│ │
 │  │ build-gradle /       │       │   │     .jsonl       │         │  round-│ │
-│  │ build-npm            │       │   ├─ lint-issue      │         │  trip  │ │
+│  │ build-npm            │       │   ├─ test-failure    │         │  trip  │ │
 │  │   (with --plan-id)   │       │   │     .jsonl       │         │        │ │
-│  └──────────────────────┘       │   ├─ qgate-{phase}   │         └───┬────┘ │
+│  └──────────────────────┘       │   ├─ lint-issue      │         └───┬────┘ │
 │            │                    │   │     .jsonl       │             │      │
-│            │ producer-mismatch  │   ├─ assessments     │             │      │
-│            │ (Q-Gate finding)   │   │     .jsonl       │             │      │
-│            ▼                    │   └─ … per-type      │   per-finding      │
-│  ┌──────────────────────┐       │                      │   dispatch         │
-│  │  qgate-{phase}.jsonl │       │  CLI: add / query /  │             │      │
-│  │  (producer fidelity  │       │       resolve /      │             ▼      │
-│  │   contract surface)  │       │       promote        │   ┌──────────────┐ │
-│  └──────────────────────┘       │       qgate {add,    │   │ ext-triage-  │ │
-│                                 │              query,  │   │   {domain}   │ │
-│                                 │              resolve}│   │ (knowledge   │ │
-│                                 │       assessment {…} │   │  skill)      │ │
-│                                 └──────────┬───────────┘   │              │ │
-│                                            │               │ Severity,    │ │
-│                                            │ pending count │ suppression, │ │
-│                                            ▼               │ pr-comment   │ │
-│                          ┌──────────────────────────────┐  │ disposition  │ │
-│                          │  phase_handshake invariant   │  └──────────────┘ │
+│            │ producer-mismatch  │   ├─ qgate-{phase}   │             │      │
+│            │ (Q-Gate finding)   │   │     .jsonl       │   per-finding      │
+│            ▼                    │   ├─ assessments     │   dispatch         │
+│  ┌──────────────────────┐       │   │     .jsonl       │             │      │
+│  │  qgate-{phase}.jsonl │       │   └─ … per-type      │             ▼      │
+│  │  (producer fidelity  │       │                      │   ┌──────────────┐ │
+│  │   contract surface)  │       │  CLI: add / query /  │   │ ext-triage-  │ │
+│  └──────────────────────┘       │       resolve /      │   │   {domain}   │ │
+│                                 │       promote        │   │ (knowledge   │ │
+│                                 │       qgate {add,    │   │  skill)      │ │
+│                                 │              query,  │   │              │ │
+│                                 │              resolve}│   │ Severity,    │ │
+│                                 │       assessment {…} │   │ suppression, │ │
+│                                 └──────────┬───────────┘   │ pr-comment   │ │
+│                                            │               │ disposition  │ │
+│                                            │ pending count └──────────────┘ │
+│                                            ▼                                │
+│                          ┌──────────────────────────────┐                   │
+│                          │  phase_handshake invariant   │                   │
 │                          │  pending_findings_           │                   │
 │                          │   blocking_count             │                   │
 │                          │                              │                   │
@@ -59,6 +61,36 @@ The plan-marshall findings pipeline routes every quality signal — PR review co
 │                          └──────────────────────────────┘                   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+The diagram shows the per-finding dispatch path. A separate **completed-CI signal** lane upstream of the `automated-review` consumer is documented below — `ci-wait` does not produce a `manage-findings` record; it writes a `phase_steps["6-finalize"]["ci-wait"].outcome` record on `manage-status` that `automated-review` reads before invoking the producer-stage. Splitting CI-wait out of `automated-review` keeps the consumer's per-iteration triage budget bounded by comment volume rather than CI queue depth:
+
+```
+   ci-wait step                                     automated-review step
+   (phase-6-finalize)                               (phase-6-finalize)
+   ┌─────────────────┐                              ┌─────────────────────┐
+   │  ci wait        │── outcome=done ─────────────▶│ read manage-status  │
+   │  (1800 s budget)│   (manage-status, NOT a     │ ci-wait record:     │
+   │                 │    findings record)          │ proceed when green, │
+   │  on success:    │                              │ surface ci_failure  │
+   │  mark-step-done │                              │ when failed/absent  │
+   │  ci-wait done   │                              └──────────┬──────────┘
+   │  with display:  │                                         │
+   │  CI success     │                                         ▼
+   └─────────────────┘                              ┌─────────────────────┐
+                                                    │ comments-stage      │
+                                                    │ (producer)          │
+                                                    │       ▼             │
+                                                    │ per-finding         │
+                                                    │ dispatch (consumer) │
+                                                    │ — overflow path:    │
+                                                    │   pr-comment-       │
+                                                    │   overflow finding  │
+                                                    │   + outcome=        │
+                                                    │   loop_back         │
+                                                    └─────────────────────┘
+```
+
+The **`pr-comment-overflow` finding** files when the consumer's 900 s triage budget is nearly exhausted before all `pr-comment` findings are processed. Unlike `pr-comment` (a `findings` record produced by `comments-stage`), `pr-comment-overflow` is filed by the consumer itself — it carries the unprocessed `pr-comment` `hash_id`s in `detail` so the next iteration can prioritise them. The type is non-blocking; the deferred work is handled by `loop_back` re-entry, not by gating the boundary. See [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) § `pr-comment-overflow` for the type's full contract.
 
 The pipeline is structurally enforced: producers can never bypass the store (no inline-JSON batch surfaces remain in LLM-callable scope), consumers can never bypass the per-domain decision-grounding knowledge (every triage decision loads `ext-triage-{domain}`), and boundaries can never be crossed with unresolved blocking findings (the invariant raises `BlockingFindingsPresent`).
 

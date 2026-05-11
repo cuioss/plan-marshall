@@ -148,7 +148,9 @@ AskUserQuestion:
     - label: "Execute without asking"
       description: "Auto-continue from planning (phase 4) to execution (phase 5)"
     - label: "Finalize without asking"
-      description: "Auto-continue from execution (phase 5) to finalize (phase 6)"
+      description: "Auto-continue from execution (phase 5) to finalize (phase 6) [forward direction]"
+    - label: "Loop-back without asking"
+      description: "Auto-continue when a phase-6 step records outcome=loop_back: dispatch the execute pipeline inline against fix tasks and re-enter finalize, capped by phase-6-finalize.max_iterations [reverse direction; symmetric counterpart of finalize_without_asking]"
 ```
 
 Apply: for each selected gate, set to `true`. For each deselected gate, set to `false`.
@@ -166,6 +168,11 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set --field finalize_without_asking --value {true|false}
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize set --field loop_back_without_asking --value {true|false}
 ```
 
 ---
@@ -237,8 +244,10 @@ AskUserQuestion:
       description: "Commit and push changes"
     - label: "create_pr"
       description: "Create pull request"
+    - label: "ci_wait"
+      description: "Poll CI to completion (1800 s budget); writes completed-CI signal automated-review consumes"
     - label: "automated_review"
-      description: "CI automated review"
+      description: "CI automated review (consumes ci-wait signal; triage-only 900 s budget)"
     - label: "sonar_roundtrip"
       description: "Sonar analysis roundtrip"
     # Page 2 (if paging needed):

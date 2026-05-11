@@ -127,6 +127,43 @@ message: {error_description}
 recovery: {recovery_suggestion}
 ```
 
+## Peer-Pattern Consistency Audit
+
+When a source lesson identifies a *missing pattern* in one finalize-standards file (e.g., "`branch-cleanup.md` does not declare its `order: <int>` frontmatter", "`commit-push.md` is missing the `manage-status mark-step-done` termination call"), the Q-Gate audit MUST extend the cleanup beyond the single file the lesson called out. A one-off fix is rarely sufficient — the same drift typically exists across peer files in the same `standards/` directory because they were authored by the same template, edited in the same plan, or copied from one another. Surfacing the divergence at audit time converts a one-off fix into a coverage sweep at marginal cost: the audit is **one grep**, and the fix is the same edit applied to the additional divergent files.
+
+**Audit procedure** (applies whenever a lesson surfaces a peer-pattern claim):
+
+1. **Enumerate siblings** — list every `.md` file in the same `standards/` directory as the file the lesson called out (typically `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/` for finalize standards, but the rule is stated generically and applies to any sibling-standards directory in the bundle):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+     files --module {bundle:skill} --filter "standards/*.md"
+   ```
+
+   Glob fallback for sub-module lookup or when the architecture verb returns elision:
+
+   ```
+   Glob: marketplace/bundles/{bundle}/skills/{skill}/standards/*.md
+   ```
+
+2. **Grep each peer for the pattern claim** — for every peer-pattern claim in the lesson (any sentence of the form "all standards must declare X", "every step terminates with Y", "each standards doc carries frontmatter Z"), grep every sibling for the pattern:
+
+   ```
+   Grep: pattern={pattern} path=marketplace/bundles/{bundle}/skills/{skill}/standards/ glob=*.md output_mode=files_with_matches
+   ```
+
+   Invert the result: the files NOT in the match set are the divergent siblings.
+
+3. **Add divergent siblings to the cleanup plan as additional deliverables** — NOT as a follow-up plan. Every divergent sibling becomes an additional deliverable (or an additional `Affected files` entry on the originating deliverable) so the fix lands in the same plan as the originating one-off. Following the **Path / Constant Migration Sub-pattern** (see `phase-4-plan/SKILL.md`) is appropriate when the count exceeds the single-task threshold; for ≤ 3 divergent siblings, fold them into the originating deliverable's `Affected files` and let one task agent handle the sweep.
+
+**Why same-plan, not follow-up plan** — splitting the sweep into a follow-up plan loses the audit context: the next planner sees the originating fix in isolation and re-discovers the divergence weeks or months later. A same-plan sweep keeps the rationale (the lesson body that surfaced the original gap) attached to every fix, so a future reader auditing any one of the additional deliverables can trace the rationale back to the originating lesson without archaeology.
+
+**Why "one grep, same edit"** — the audit cost is asymmetric: enumerating siblings is one `architecture files` call, grepping for a pattern is one `Grep` call, and the fix is the same edit pasted into the divergent files. The marginal cost of fixing N additional files is O(N) trivial edits; the marginal cost of NOT fixing them is O(N) future regressions, each of which requires its own lesson → plan → fix cycle. The audit converts an expensive lazy-fix cycle into a cheap eager-fix sweep.
+
+**Generic applicability** — the audit rule is stated generically so it applies to any sibling-standards directory in the bundle (`manage-execution-manifest/standards/`, `phase-4-plan/standards/`, `ref-workflow-architecture/standards/`, etc.), not just `phase-6-finalize/standards/`. The lesson's peer-pattern claim names the target directory; the audit applies the same enumeration + grep + add-to-cleanup-plan flow regardless of which sibling-standards directory is in scope.
+
+**Cross-reference**: the **Path / Constant Migration Sub-pattern** in `phase-4-plan/SKILL.md` codifies the five-task decomposition (code / test / prose / example / verification) when the divergent-sibling count exceeds the single-task threshold or when prose / example sweeps materially extend the work. The two rules compose: the audit identifies the surface, and the migration sub-pattern shapes the task decomposition.
+
 ## Mark Step Complete
 
 This document also serves as the `validation` finalize step entry in `required-steps.md`: it captures the end-of-pipeline validation pass. Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time.

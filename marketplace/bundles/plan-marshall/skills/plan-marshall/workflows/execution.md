@@ -256,6 +256,30 @@ Handles:
 
 All three `manage-metrics` commands (`end-phase`, `enrich`, `generate`) are executed inside `default:record-metrics` on the live plan directory before `default:archive-plan` runs. The fused `phase-boundary` subcommand is intentionally NOT used here because plan finalization has no "next phase" to start. Do NOT add any `manage-metrics` invocation after `Skill: plan-marshall:phase-6-finalize` returns — a post-archive write recreates `.plan/local/plans/{plan_id}/` as an orphan directory.
 
+### Loop-back continuation
+
+When `phase-6-finalize` returns with a loop-back signal (`status: loop_back`, `next_phase: 5-execute`) — caused by a step recording `outcome: loop_back` (FIX disposition on a `pr-comment` finding, `pr-comment-overflow` capture, or sonar-roundtrip FIX) — the orchestrator's behaviour mirrors the forward `finalize_without_asking` shape but is gated by the symmetric reverse-direction knob.
+
+**Config check** — Read `loop_back_without_asking` to determine the next action:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize get --field loop_back_without_asking --audit-plan-id {plan_id}
+```
+
+**IF `loop_back_without_asking == true`**:
+- Log: `"(plan-marshall:plan-marshall) Config: loop_back_without_asking=true — auto-continuing to execute pipeline"`
+- The actual inline dispatch is performed inside `phase-6-finalize/SKILL.md` Step 3 § Loop-back continuation hook (item 7b in the Step 3 dispatch loop). The hook re-dispatches `Skill: plan-marshall:phase-5-execute --plan-id {plan_id}` against the freshly-allocated fix tasks, then re-enters the finalize FOR loop with the resumable re-entry check skipping already-`done` steps. The hook is capped by `phase-6-finalize.max_iterations` (default 3); beyond that the loop halts and prompts the user even with this flag set.
+- The hook then transitions `5-execute → 6-finalize` via the standard `phase-5-execute.finalize_without_asking` gate. When that gate is `false`, the inline cycle halts at the same prompt the forward path uses — so symmetric loop-back is doubly-gated: both `loop_back_without_asking` AND `finalize_without_asking` must be `true` for full unattended execution.
+- Continue control flow at the orchestrator level by waiting for `phase-6-finalize` to return again; either it returns `status: success` (clean finalize) or another `status: loop_back` (next iteration up to the cap).
+
+**ELSE (default)**:
+- Display: `"Loop-back signalled. Run '/plan-marshall action=execute plan={plan_id}' to dispatch the fix tasks."`
+- Display: `"After fix tasks complete, run '/plan-marshall action=finalize plan={plan_id}' to re-enter finalize."`
+- **STOP**
+
+The conservative default (`loop_back_without_asking == false`) preserves backwards compatibility: existing plans halt and prompt on every loop_back outcome regardless of `finalize_without_asking`. Plans that want full unattended cycles must opt into both knobs.
+
 ### Finalize Validation
 
 If finalize requested but tasks incomplete:

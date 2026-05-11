@@ -227,39 +227,15 @@ src/Bar.java,10,Missing null check,error
 
 ---
 
-### Step 3: Sync Worktree With Main (Once per phase)
+### Step 3: Baseline Fast-Path Check (Once per phase)
 
-Before the execute loop begins, bring the feature branch up to date against `origin/{base_branch}` so coding starts on a current base rather than one potentially stale since `phase-1-init`. Full procedure, git invocations, fast-path semantics, conflict contract, and main-checkout fallback are documented in [standards/sync-with-main.md](standards/sync-with-main.md).
+Substantive baseline reconciliation now happens at refine time — see [phase-2-refine/standards/refine-workflow-detail.md § Step 3d](../../phase-2-refine/standards/refine-workflow-detail.md#step-3d-baseline-reconciliation). Phase-5-execute is a fast-path "still clean?" verification: if the worktree branch is still ahead of (or merged with) `origin/{base_branch}`, continue to the task loop; if upstream commits have landed since the refine baseline-reconciliation pass, error out with a clear redirect — re-running phase-2-refine is the documented path. Phase-5-execute MUST NOT perform substantive reconciliation (no merge, no rebase).
+
+Full procedure, fast-path semantics, error contract, and main-checkout fallback are documented in [standards/sync-with-main.md](standards/sync-with-main.md).
 
 Inlined flow:
 
-1. **Read `rebase_on_execute_start`** (default `true`):
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-     plan phase-5-execute get --field rebase_on_execute_start --audit-plan-id {plan_id}
-   ```
-
-   If the returned `value` is `false`, skip this step and log:
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-     work --plan-id {plan_id} --level INFO \
-     --message "[STATUS] (plan-marshall:phase-5-execute) Sync skipped: rebase_on_execute_start=false"
-   ```
-
-   Proceed to Step 4.
-
-2. **Read `rebase_strategy`** (default `merge`, valid values `merge` | `rebase`):
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-     plan phase-5-execute get --field rebase_strategy --audit-plan-id {plan_id}
-   ```
-
-   Record the returned `value` as `{strategy}` — it is referenced in points 6, 7, and 8 below.
-
-3. **Resolve `base_branch` and `worktree_path`** from `references.json` (written at `phase-1-init` Step 6):
+1. **Resolve `base_branch` and `worktree_path`** from `references.json` (written at `phase-1-init` Step 6):
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
@@ -268,73 +244,41 @@ Inlined flow:
 
    Extract `base_branch` and `worktree_path`. If `worktree_path` is absent, the plan runs against the main checkout; substitute `.` for `{worktree_path}` in every git command below.
 
-4. **Fetch base**:
+2. **Fetch base** (read-only network round-trip):
 
    ```bash
    git -C {worktree_path} fetch origin {base_branch}
    ```
 
-5. **Fast-path check** — if the current branch tip already contains `origin/{base_branch}`, skip strategy application:
+3. **Fast-path check** — verify the current branch tip already contains `origin/{base_branch}`:
 
    ```bash
    git -C {worktree_path} merge-base --is-ancestor origin/{base_branch} HEAD
    ```
 
-   Exit code `0` means already up to date. Log and continue to Step 4:
+   Exit code `0` means up to date. Log and continue to Step 4:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      work --plan-id {plan_id} --level INFO \
-     --message "[STATUS] (plan-marshall:phase-5-execute) Sync skipped: already up to date with origin/{base_branch}"
+     --message "[STATUS] (plan-marshall:phase-5-execute) Baseline fast-path: worktree already up to date with origin/{base_branch}"
    ```
 
-6. **Apply strategy** — first record the current HEAD so the success path (point 8) can compute the incorporated commit range:
+4. **Drift contract** — exit code non-zero means upstream has new commits the worktree does not contain. ABORT the phase fail-loud: do NOT merge, do NOT rebase, do NOT continue to Step 4. Capture the divergent commits:
 
    ```bash
-   git -C {worktree_path} rev-parse HEAD
+   git -C {worktree_path} log --oneline HEAD..origin/{base_branch}
    ```
 
-   Record the output as `{previous_HEAD}`. Then apply the chosen strategy:
-
-   - `merge`:
-
-     ```bash
-     git -C {worktree_path} merge --no-edit origin/{base_branch}
-     ```
-
-   - `rebase`:
-
-     ```bash
-     git -C {worktree_path} rebase origin/{base_branch}
-     ```
-
-7. **Conflict contract** — if the strategy command exits non-zero, ABORT the phase fail-loud: do NOT auto-resolve, do NOT continue to Step 4. Leave conflict markers in the worktree, surface the failure in `work.log` at ERROR level with `{worktree_path}` and the conflicted files, and exit without entering the task loop. First capture the conflicted files:
-
-   ```bash
-   git -C {worktree_path} diff --name-only --diff-filter=U
-   ```
-
-   Record the output as `{files}`. Then log the conflict:
+   Record the output as `{divergent_commits}`. Then log the failure with the documented redirect:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      work --plan-id {plan_id} --level ERROR \
-     --message "[ERROR] (plan-marshall:phase-5-execute) Sync conflict at {worktree_path} — strategy={strategy}, conflicted files: {files}. Phase aborted; resolve manually and re-run."
+     --message "[ERROR] (plan-marshall:phase-5-execute) Baseline drift at {worktree_path} — origin/{base_branch} contains commits not in HEAD: {divergent_commits}. Phase aborted; re-run phase-2-refine to absorb upstream changes via Step 3d (Baseline Reconciliation), then re-enter phase-5-execute."
    ```
 
-8. **Success** — compute the incorporated commit range from `{previous_HEAD}` captured in point 6:
-
-   ```bash
-   git -C {worktree_path} rev-list --abbrev-commit --reverse {previous_HEAD}..HEAD
-   ```
-
-   Record the output as `{short_sha_range}`. Then record to `decision.log`:
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-     decision --plan-id {plan_id} --level INFO \
-     --message "(plan-marshall:phase-5-execute) Synced worktree with origin/{base_branch} via {strategy} — commits {short_sha_range}"
-   ```
+   Phase-5-execute does NOT perform substantive reconciliation. Re-running phase-2-refine surfaces the upstream commits as Q-Gate findings, the iterate-to-confidence loop absorbs them, and the user explicitly drives the rebase/merge through the refine clarifications. The fast-path here is the structural complement: it ensures execute starts only when refine has already reconciled the baseline.
 
 Proceed to Step 4.
 

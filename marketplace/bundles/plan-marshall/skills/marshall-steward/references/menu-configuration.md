@@ -142,11 +142,16 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute get
 ```
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize get
+```
 
 Display current gate values, then ask user which transitions should auto-continue (multi-select):
 - "Plan without asking" → outline to planning
 - "Execute without asking" → planning to execution
-- "Finalize without asking" → execution to finalize
+- "Finalize without asking" → execution to finalize [forward direction]
+- "Loop-back without asking" → finalize loop_back → execute inline [reverse direction; symmetric counterpart, bounded by phase-6-finalize.max_iterations]
 
 Apply each selection via manage-config:
 ```bash
@@ -160,6 +165,10 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set --field finalize_without_asking --value {true|false}
+```
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize set --field loop_back_without_asking --value {true|false}
 ```
 
 ---
@@ -231,8 +240,10 @@ AskUserQuestion:
       description: "Commit and push changes"
     - label: "default:create-pr"
       description: "Create pull request"
+    - label: "default:ci-wait"
+      description: "Poll CI to completion (1800 s budget); writes completed-CI signal automated-review consumes"
     - label: "default:automated-review"
-      description: "CI automated review"
+      description: "CI automated review (consumes ci-wait signal; triage-only 900 s budget)"
     - label: "default:lessons-capture (Recommended)"
       description: "Record lessons learned"
     - label: "plan-marshall:plan-retrospective (Opt-in)"
