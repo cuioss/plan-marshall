@@ -601,7 +601,7 @@ def _markdown_targets(skill_dir: Path) -> list[Path]:
     """Return the markdown files subject to verb-chain scanning.
 
     Scope: ``SKILL.md`` and ``standards/*.md`` only. Other directories
-    (``references/``, ``templates/``, ``workflows/``) are out of scope
+    (``references/``, ``templates/``, ``workflow/``) are out of scope
     for this rule.
     """
     targets: list[Path] = []

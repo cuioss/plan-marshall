@@ -187,8 +187,8 @@ Provides consolidated report with aggregated results.
 
 **Step 1: Load Orchestration Standards**
 
-Read workflows/review-orchestration.md for detailed phase sequencing, failure handling, and consolidated report template.
-Read workflows/content-review.md for the tone analysis decision framework.
+Read workflow/review-orchestration.md for detailed phase sequencing, failure handling, and consolidated report template.
+Read workflow/content-review.md for the tone analysis decision framework.
 
 **Step 2: Discover Files**
 
@@ -226,7 +226,7 @@ Delegate to ref-asciidoc verify-links workflow, then classify results:
 python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc classify-links --input target/links.json --output target/classified.json
 ```
 
-For `must-verify-manual` links, follow the manual verification protocol in workflows/review-orchestration.md.
+For `must-verify-manual` links, follow the manual verification protocol in workflow/review-orchestration.md.
 
 **CONTINUE** to Phase 3 regardless of link results.
 
@@ -238,11 +238,11 @@ Skip if skip_content=true. Run tone analysis:
 python3 .plan/execute-script.py pm-documents:ref-documentation:docs analyze-tone --file {file_path} --output target/tone-analysis.json
 ```
 
-Apply the tone analysis decision framework from workflows/content-review.md to each flagged phrase.
+Apply the tone analysis decision framework from workflow/content-review.md to each flagged phrase.
 
 **Step 6: Aggregate and Report**
 
-Combine all phase results and generate consolidated report following the template in workflows/review-orchestration.md.
+Combine all phase results and generate consolidated report following the template in workflow/review-orchestration.md.
 
 Overall status: PASS (zero issues), WARNINGS (non-critical), FAILURES (critical issues found).
 
@@ -423,7 +423,7 @@ All reference material is in the `references/` directory:
 
 ## Workflow Documents
 
-All workflow procedures are in the `workflows/` directory:
+All workflow procedures are in the `workflow/` directory:
 
 | Workflow | Purpose | When to Load |
 |----------|---------|--------------|

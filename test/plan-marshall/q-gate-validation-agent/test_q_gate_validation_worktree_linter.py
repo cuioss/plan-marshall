@@ -47,7 +47,14 @@ from conftest import MARKETPLACE_ROOT  # type: ignore[import-not-found]
 # -----------------------------------------------------------------------------
 
 
-_AGENT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'agents' / 'q-gate-validation-agent.md'
+_AGENT_PATH = (
+    MARKETPLACE_ROOT
+    / 'plan-marshall'
+    / 'skills'
+    / 'plan-marshall'
+    / 'workflow'
+    / 'q-gate-validation.md'
+)
 
 _WORKTREE_HANDLING_PATH = (
     MARKETPLACE_ROOT

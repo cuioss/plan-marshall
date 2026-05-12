@@ -2,6 +2,7 @@
 name: phase-1-init
 description: Init phase skill. Creates plan directory, request.md, references, and status. Complete initialization in a single agent call.
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
 # Phase Init Skill
@@ -37,7 +38,7 @@ Skill: plan-marshall:dev-general-practices
 Activate when:
 - Starting a new plan (no existing plan_id)
 - User provides task via description, lesson_id, or issue URL
-- Called by phase-agent (with skill=plan-marshall:phase-1-init)
+- Dispatched via `plan-marshall:execution-context-{level}` with `workflow: plan-marshall:phase-1-init/SKILL.md`
 
 ---
 
@@ -365,7 +366,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **Probe — directory-tree presence (NOT single-file)**:
 
-Use the `Read` tool against `<project_root>/.plan/project-architecture/_project.json` to detect whether the architecture descriptor exists. If `_project.json` is present and non-empty, the directory tree is considered to exist. The directory-tree-presence anchor is robust across schema evolutions (legacy `derived-data.json` + `llm-enriched.json` and current `_project.json` + per-module dirs).
+Use the `Read` tool against `<project_root>/.plan/project-architecture/_project.json` to detect whether the architecture descriptor exists. If `_project.json` is present and non-empty, the directory tree is considered to exist.
 
 **Greenfield branch**:
 
@@ -653,6 +654,21 @@ warnings[N]:
 
 ---
 
+## Output
+
+Step 12 (above) is the single source of truth for the return TOON. The summary of the contract — the two fields every workflow doc that implements `ext-point-execution-context-workflow` MUST return — is:
+
+```toon
+status: success | error
+display_detail: "<plan {plan_id} created, domain {domain}>"
+```
+
+`display_detail` shape on success: `"plan {plan_id} created, domain {domain}"` (e.g. `"plan 2026-05-11-15-007 created, domain plan-marshall"`); ≤80 chars, ASCII, no trailing period. On error, `display_detail` carries the short error label (see § Error Handling for the structured envelope).
+
+All other fields (`plan_id`, `domain`, `next_phase`, `worktree_path`, `source`, `artifacts`, `warnings[]`) are documented in Step 12 above and form the rest of the return payload.
+
+---
+
 ## Error Handling
 
 On any error, **first log the error** to work-log (if plan directory exists):
@@ -695,7 +711,7 @@ recovery: Use --plan-id to specify different ID, or resume existing
 
 ### Agent Integration
 
-This skill is called by `plan-marshall:phase-agent` (with `skill=plan-marshall:phase-1-init`). The agent completes the full init phase in a single call.
+This skill is dispatched as the workflow body of `plan-marshall:execution-context-{level}` with `workflow: plan-marshall:phase-1-init/SKILL.md`. The dispatched agent completes the full init phase in a single call.
 
 ### Command Integration
 
@@ -712,8 +728,7 @@ This skill does not invoke `manage-metrics` itself — phase boundary metric
 recording happens in the orchestrator (`plan-marshall:plan-marshall`
 workflows). When the orchestrator transitions out of `1-init`, it MUST use
 the fused `manage-metrics phase-boundary --prev-phase 1-init --next-phase
-2-refine` call instead of the legacy `end-phase` + `start-phase` +
-`generate` sequence. See
+2-refine` call. See
 `marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md` §
 `phase-boundary` for the API.
 

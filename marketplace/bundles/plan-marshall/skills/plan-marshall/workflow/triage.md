@@ -1,0 +1,250 @@
+---
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+---
+
+# Triage Workflow
+
+Single source of truth for the per-finding triage workflow shared by every call site that needs FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over findings in the per-plan findings store. Dispatched under the `cross.triage` role key. The smart-grouping algorithm is documented inline below (§ Step 2: Smart grouping).
+
+## Call sites
+
+| Call site | `finding_type` | Producer |
+|-----------|----------------|----------|
+| `phase-6-finalize` `automated-review` manifest step | `pr-comment` | `workflow-integration-github:github_pr comments-stage` (or GitLab equivalent) |
+| `phase-6-finalize` `sonar-roundtrip` manifest step | `sonar-issue` | `workflow-integration-sonar:sonar fetch-and-store` |
+| `phase-5-execute` Step 11 (verification-failure triage) | `verification-failure` | Build runner output captured to `findings/qgate-5-execute.jsonl` |
+| `phase-5-execute` Step 11b (final quality sweep) | `quality-gate-failure` | Same as above |
+| `workflow-pr-doctor` internal per-finding loop | varies | Doctor surface |
+
+All call sites pass `finding_type` and `plan_id` only. **Findings live in the per-plan findings store** ([`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md)) — never inline in the dispatch prompt.
+
+## Inputs
+
+| Prompt-body field | Required | Description |
+|-------------------|:--------:|-------------|
+| `finding_type` | Yes | One of `pr-comment`, `sonar-issue`, `verification-failure`, `quality-gate-failure`. Determines the producer surface, the suppression syntax, and which standards inside the loaded `ext-triage-{domain}` extension are load-bearing. |
+| `plan_id` | Yes | Forwarded to every `manage-findings` / `manage-tasks` / `tools-integration-ci` call. |
+| `WORKTREE` | Yes | Used verbatim for `git -C {WORKTREE}` and as the root for every Edit/Write/Read. |
+| `pr_number` | Conditional | Required when `finding_type=pr-comment` (and for `sonar-issue` when triage needs thread replies on the active PR). |
+| `iteration` | No | Loop-back iteration number (1..3). Surfaced in `display_detail` on `loop_back` outcomes. |
+
+Skills the caller MUST forward in `skills[]`:
+- `plan-marshall:manage-findings` — store queries and resolutions
+- `plan-marshall:manage-tasks` — fix-task allocation
+- `plan-marshall:manage-architecture` — `which-module` for domain detection
+- `plan-marshall:manage-config` — extension resolution
+- `plan-marshall:tools-integration-ci` — PR thread replies when `pr_number` is set
+
+Domain-triage extensions (`{bundle}:ext-triage-{domain}`) are loaded on demand inside this workflow — they are NOT pre-loaded by the caller.
+
+## Step 1: Query the findings store
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query \
+  --plan-id {plan_id} --type {finding_type} --resolution pending
+```
+
+This is **by-reference** — the store is the single source of truth. Loop-back re-entry sees only findings still `pending`; the orchestrator's earlier query is just a gate-keeping count.
+
+**If empty** → return immediately with `status: success`, `display_detail: "0 finding(s) — nothing to triage"`, `loop_back_needed: false`.
+
+## Step 2: Pre-group by `(domain, rule_id)`
+
+For each finding, resolve its domain once:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture which-module \
+  --path {finding.file_path}
+```
+
+If `which-module` returns `module: null`, fall back to the primary domain recorded in `marshal.json` `skill_domains`.
+
+Build groups keyed by `(domain, rule_id)`. Findings with an empty `rule_id` (free-form PR comments without bot rule tags, etc.) form singleton groups.
+
+| Finding type | `rule_id` source | Typical group size |
+|--------------|------------------|--------------------|
+| `sonar-issue` | Sonar rule key (e.g., `java:S1135`) | 1–N per `(rule, file-cluster)` |
+| `pr-comment` | Bot rule tag when exposed; else `(comment thread + nearest rule_id/line_range)` heuristic; else singleton | usually 1, occasionally 2–5 |
+| `verification-failure` | Test class / test method name as a coarse `rule_id` | 1–N per failing class |
+| `quality-gate-failure` | Lint rule / compiler error code (e.g., `E501`, `unused-variable`, `mypy: arg-type`) | often many |
+
+## Step 3: Iterate groups sequentially, batched LLM decision within each
+
+For each group, in order:
+
+### 3a. Load the domain extension (idempotent within a dispatch)
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  resolve-workflow-skill-extension --domain {group.domain} --type triage
+```
+
+```
+Skill: {returned_extension_skill}
+```
+
+The extension brings its `standards/severity.md`, `standards/suppression.md`, and `standards/pr-comment-disposition.md` into context. Once loaded for a domain, do not reload for subsequent same-domain groups.
+
+### 3b. One batched LLM decision per group
+
+For all findings in the group, decide in one pass. Return per-finding outcomes:
+
+```toon
+decisions[N]{hash_id, outcome, rationale}:
+  {hash-1}, {FIX|SUPPRESS|ACCEPT|ASK_USER_QUESTION}, "{rationale}"
+  ...
+```
+
+Findings sharing both a domain and a rule_id almost always land on the same outcome once the loaded standards are in context — batching the *decision* call is the natural shape. The `rationale` field MUST cite the specific rule from the loaded standard (e.g., `suppression.md#java-s1135-todo-tracking`).
+
+### 3c. Act sequentially on each decision (within the group)
+
+Cross-group feedback (TASK-N references) requires sequential action between groups, but actions within a group can run in document order. The action body:
+
+- **FIX** — allocate fix task FIRST (so the task number is known for the thread reply), then post the thread reply chain, then resolve the finding.
+
+  Allocate via the two-step prepare-add → commit-add flow:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks prepare-add \
+    --plan-id {plan_id}
+  ```
+
+  Write the task YAML to the returned scratch path (title, deliverable: 0, domain matching the finding, profile: implementation, description quoting the finding, steps targeting `{finding.file_path}`), then:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks commit-add \
+    --plan-id {plan_id}
+  ```
+
+  Capture the returned task number as `{N}`. Then (only for finding types with PR threads — `pr-comment` always, `sonar-issue` when `pr_number` is set):
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
+    --project-dir {WORKTREE} pr prepare-comment \
+    --plan-id {plan_id} --pr-number {pr_number}
+  ```
+
+  Write `Will be addressed by TASK-{N}; see follow-up commit on this branch` to the returned scratch path, then:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
+    --project-dir {WORKTREE} pr thread-reply \
+    --pr-number {pr_number} --thread-id {finding.thread_id} --plan-id {plan_id}
+  ```
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
+    --project-dir {WORKTREE} pr resolve-thread \
+    --pr-number {pr_number} --thread-id {finding.thread_id}
+  ```
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
+    --plan-id {plan_id} --hash-id {finding.hash_id} --resolution fixed \
+    --detail "Will be addressed by TASK-{N}"
+  ```
+
+- **SUPPRESS** — apply the domain-specific annotation to `{finding.file_path}:{finding.line}` using the syntax from the loaded `suppression.md` (NOSONAR, `@SuppressWarnings("java:S{rule}")`, `# noqa: {rule}`, `// eslint-disable-line {rule}`, etc.). Then post a thread acknowledgement (PR-thread types only), resolve the thread, and:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
+    --plan-id {plan_id} --hash-id {finding.hash_id} --resolution suppressed \
+    --detail "{rationale citing loaded rule}"
+  ```
+
+- **ACCEPT** — for `pr-comment` post a thread reply with rationale and resolve. For `sonar-issue` dismiss in Sonar with rationale (via `workflow-integration-sonar` dismissal surface). For `verification-failure` / `quality-gate-failure` no PR surface — accept is store-only. Then:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
+    --plan-id {plan_id} --hash-id {finding.hash_id} --resolution accepted \
+    --detail "{rationale}"
+  ```
+
+- **AskUserQuestion** — defer to Step 4 below. AskUserQuestion outcomes within a batched decision do not block the rest of the group's actions; they are collected and surfaced at end-of-group.
+
+### 3d. Collect AskUserQuestion deferrals
+
+Findings flagged `ASK_USER_QUESTION` in a batched decision are NOT acted on immediately. Push the `{hash_id, rationale}` onto a per-dispatch deferred-questions list and continue to the next finding in the group.
+
+## Step 4: Raise deferred AskUserQuestions after every group has run its batched decision
+
+After all groups have completed their batched decisions and their non-AskUserQuestion actions, walk the deferred-questions list and raise one `AskUserQuestion` per finding. Per-question shape: four canonical options (Hold / Accept-with-rationale / Split-into-fix-task / FIX-here). Act on the user's answer using the matching action body from Step 3c. Batching the *decision* call does NOT batch the user-prompt UX.
+
+After acting:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
+  --plan-id {plan_id} --hash-id {finding.hash_id} --resolution {fixed|suppressed|accepted|taken_into_account} \
+  --detail "{user's stated rationale}"
+```
+
+## Step 5: Overflow / timeout handling
+
+Triage runs under the dispatcher's 900 s per-agent wrapper. When the budget is nearly exhausted before all groups have been triaged, **break with `loop_back` rather than risking a wrapper timeout mid-group**.
+
+**When to overflow**: before starting the next group, evaluate:
+
+- Wrapper budget ≥ 75 % consumed (≥ 675 s elapsed) AND at least one unprocessed group remains.
+- Pending-group count × observed per-group wall-clock would exceed the 900 s ceiling.
+
+**How to overflow**:
+
+1. Collect the `hash_id` of every finding in unprocessed groups.
+2. Capture one envelope finding via `manage-findings add` (per-type the producer convention: `pr-comment-overflow`, `sonar-issue-overflow`, etc. — `triage-overflow` is the generic name when no per-type overflow type exists yet):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings add \
+     --plan-id {plan_id} --type {finding_type}-overflow \
+     --title "Triage budget exhausted: {N} {finding_type} finding(s) deferred" \
+     --severity warning \
+     --detail "{comma-separated hash_ids}"
+   ```
+
+3. Return `outcome: loop_back` with a display detail naming the deferred count. The phase-6 dispatcher's `loop_back` semantics re-fire the calling manifest step on next entry; the next dispatch's Step 1 query sees only still-pending findings.
+
+4. **Resolve the overflow envelope** in a subsequent iteration once every named `hash_id` has been individually closed:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
+     --plan-id {plan_id} --hash-id {overflow_hash_id} --resolution fixed \
+     --detail "All deferred {finding_type} findings resolved across iterations {start}..{end}"
+   ```
+
+The overflow path counts against the calling step's iteration cap (3) — at cap exhaustion the step is marked `failed` and the user is prompted on next phase entry.
+
+## Step 6: Scope-Deviation Escalation guard
+
+When the batched decision for a group would imply a fix outside the **plan's scope** (touching a module the plan does not own, opening a refactor task that is not in any deliverable, expanding the plan's domain set), the LLM MUST NOT silently produce a FIX. Instead, emit a deferred AskUserQuestion (Step 3d) with the canonical four options:
+
+1. **Accept with rationale** — record the scope deviation as an `accepted` finding, log a `(scope-deviation:accept)` decision via `manage-logging decision`, do NOT create a fix task.
+2. **Hold** — defer this finding to a follow-up plan; record `taken_into_account` with the deferral rationale.
+3. **Split** — allocate a fix task in a separate deliverable that the user explicitly creates (asks the orchestrator to file a sub-plan).
+4. **FIX-here anyway** — proceed with the standard FIX action body, with the user accepting the scope deviation explicitly.
+
+Scope-deviation detection signals (the LLM checks these against the loaded plan context):
+- The finding's `file_path` is not under any `modules[]` entry that this plan's deliverables claim.
+- The required fix would introduce a new domain to the plan's `domains[]` set.
+- The finding's body explicitly references a refactor / restructure / migration that the plan did not authorise.
+
+## Step 7: Loop-back signalling
+
+`loop_back_needed: true` when any decision in any group resolved to FIX. The orchestrator handles the actual re-fire (the manifest dispatcher in phase-5-execute / phase-6-finalize re-enters the calling step on next phase entry; HEAD-dependent steps in phase-6 already track this via `--head-at-completion`). This workflow does NOT call `manage-status set-phase` directly — that is the calling manifest step's responsibility.
+
+## Output
+
+```toon
+status: success | loop_back | error
+display_detail: "<≤80 char ASCII summary>"
+finding_type: {finding_type}
+findings_processed: {N}
+findings_resolved: {M}
+fix_tasks_created: {K}
+fix_task_numbers[K]:
+  - {task_number_1}
+  - ...
+overflow_deferred: {O}        # only present when overflow fired
+deferred_user_questions: {Q}   # only present when AskUserQuestion fired
+```
+
+`status: loop_back` when `fix_tasks_created > 0` OR `overflow_deferred > 0`. Otherwise `status: success` (every pending finding resolved without creating new tasks).

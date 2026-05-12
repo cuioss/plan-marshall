@@ -269,7 +269,7 @@ User: /plan-marshall action=recipe
   │ Package source: packages        │ ◄── derived
   └────────────────┬────────────────┘
                    │
-  recipe.md Step 2: phase-agent (skill=phase-1-init)
+  recipe.md Step 2: execution-context (workflow=phase-1-init/SKILL.md)
          │ creates plan, plan_id = "recipe-java-impl"
          │
   recipe.md Step 3: store metadata
@@ -351,6 +351,6 @@ recipe_package_source ───────► recipe_package_source ───�
 ## Related
 
 - [architecture-diagram.md](architecture-diagram.md) — Change-type routing (normal plans)
-- `plan-marshall:plan-marshall` workflows/recipe.md — Recipe workflow entry point
+- `plan-marshall:plan-marshall` workflow/recipe.md — Recipe workflow entry point
 - `plan-marshall:recipe-refactor-to-profile-standards` — Built-in recipe skill
 - `plan-marshall:extension-api` extension-contract.md#provides_recipes — Recipe extension API contract

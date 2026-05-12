@@ -17,7 +17,7 @@ Unified entry point for plan lifecycle management covering all 6 phases.
 - Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
 - Never implement tasks directly — this skill creates and manages plans only
 - Do not invent script notations — use only those documented in workflow files
-- Never spawn an unconstrained generic subagent for any work inside a phase (1-init through 6-finalize). Use `plan-marshall:phase-agent` with an explicit `skill=` argument, a dedicated named plan-marshall agent, or inline main-context execution. A generic subagent has no plan-marshall enforcement context, inherits broad tool access, and will violate workflow hard rules. Subagent rules propagate through the agent definition, not through the caller's prompt. (Lesson: `2026-04-24-12-001`.)
+- Never spawn an unconstrained generic subagent (e.g. `Task: general-purpose`) for any work inside a phase (1-init through 6-finalize). Use `plan-marshall:execution-context-{level}` with a `workflow:` notation pointing at the workflow doc, or inline main-context execution. A generic subagent has no plan-marshall enforcement context, inherits broad tool access, and will violate workflow hard rules. Subagent rules propagate through the agent definition, not through the caller's prompt. (Lesson: `2026-04-24-12-001`.)
 
 **Constraints:**
 - Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
@@ -69,15 +69,15 @@ Route based on action parameter. Load the appropriate workflow document and foll
 
 | Action | Workflow Document | Description |
 |--------|-------------------|-------------|
-| `list` (default) | `Read workflows/planning.md` | List all plans |
-| `init` | `Read workflows/planning.md` | Create new plan, auto-continue to refine |
-| `outline` | `Read workflows/planning-outline.md` | Run outline and plan phases |
-| `cleanup` | `Read workflows/planning.md` | Remove completed plans |
-| `lessons` | `Read workflows/planning.md` | List and convert lessons |
-| `lessons-aggregate` | `Read workflows/planning-lessons-aggregate.md` | Aggressive cross-lesson aggregation + superseded-stub prune in a single command |
-| `execute` | `Read workflows/execution.md` | Execute implementation tasks + verification |
-| `finalize` | `Read workflows/execution.md` | Commit, push, PR |
-| `recipe` | `Read workflows/recipe.md` | Create plan from predefined recipe |
+| `list` (default) | `Read workflow/planning.md` | List all plans |
+| `init` | `Read workflow/planning.md` | Create new plan, auto-continue to refine |
+| `outline` | `Read workflow/planning-outline.md` | Run outline and plan phases |
+| `cleanup` | `Read workflow/planning.md` | Remove completed plans |
+| `lessons` | `Read workflow/planning.md` | List and convert lessons |
+| `lessons-aggregate` | `Read workflow/planning-lessons-aggregate.md` | Aggressive cross-lesson aggregation + superseded-stub prune in a single command |
+| `execute` | `Read workflow/execution.md` | Execute implementation tasks + verification |
+| `finalize` | `Read workflow/execution.md` | Commit, push, PR |
+| `recipe` | `Read workflow/recipe.md` | Create plan from predefined recipe |
 
 ### Auto-Detection (plan parameter without action)
 
@@ -90,18 +90,18 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-ro
 
 | Current Phase | Workflow Document | Action |
 |---------------|-------------------|--------|
-| 1-init | `Read workflows/planning.md` | `init` |
-| 2-refine | `Read workflows/planning.md` | `init` (continues refine) |
-| 3-outline | `Read workflows/planning-outline.md` | `outline` |
-| 4-plan | `Read workflows/planning-outline.md` | `outline` (continues plan) |
-| 5-execute | `Read workflows/execution.md` | `execute` |
-| 6-finalize | `Read workflows/execution.md` | `finalize` |
+| 1-init | `Read workflow/planning.md` | `init` |
+| 2-refine | `Read workflow/planning.md` | `init` (continues refine) |
+| 3-outline | `Read workflow/planning-outline.md` | `outline` |
+| 4-plan | `Read workflow/planning-outline.md` | `outline` (continues plan) |
+| 5-execute | `Read workflow/execution.md` | `execute` |
+| 6-finalize | `Read workflow/execution.md` | `finalize` |
 
 ### Execution
 
 After determining the action and workflow document:
 
-1. **Read** the workflow document (`workflows/planning.md` or `workflows/execution.md`)
+1. **Read** the workflow document (`workflow/planning.md` or `workflow/execution.md`)
 2. **Navigate** to the section for the resolved action
 3. **Follow** the workflow instructions in that section
 
@@ -196,4 +196,4 @@ The resolutions counted as **resolved** (and therefore non-blocking) are: `fixed
 
 | Agent | Purpose |
 |-------|---------|
-| `plan-marshall:phase-agent` | Generic phase agent: loads caller-specified skill and delegates |
+| `plan-marshall:execution-context` | Generic dispatcher: loads caller-specified skills + workflow doc and follows it |

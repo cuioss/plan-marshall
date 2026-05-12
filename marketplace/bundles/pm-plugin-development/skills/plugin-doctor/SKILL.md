@@ -2,6 +2,7 @@
 name: plugin-doctor
 description: Diagnose and fix quality issues in marketplace components with automated safe fixes and prompted risky fixes
 user-invocable: true
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
 # Plugin Doctor Skill
@@ -120,7 +121,7 @@ All 9 workflows follow the same pattern:
 
    Use `--name` to filter by component name (e.g., `--name phase-4-plan`) instead of fetching all components and filtering manually.
 
-   This performs markdown analysis, coverage extraction, and reference validation for all matching components. For skills, it also analyzes sub-documents (`references/*.md`, `standards/*.md`, `workflows/*.md`, `templates/*.md`) for bloat, forbidden metadata, and hardcoded script paths. The output includes per-component analysis results in TOON format with a `subdocuments` key for skills.
+   This performs markdown analysis, coverage extraction, and reference validation for all matching components. For skills, it also analyzes sub-documents (`references/*.md`, `standards/*.md`, `workflow/*.md`, `templates/*.md`) for bloat, forbidden metadata, and hardcoded script paths. The output includes per-component analysis results in TOON format with a `subdocuments` key for skills.
 
 ### Phase 1.5: LLM Optimization Check
 
@@ -313,6 +314,20 @@ Loaded per workflow via Progressive Disclosure table above. Key files:
 ### Templates (templates/)
 
 - `tool-coverage-results.toon` - TOON template for aggregating tool-coverage-agent results
+
+---
+
+## Output
+
+plugin-doctor returns per-workflow shapes (see Workflows 1-10 above). The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
+
+```toon
+status: pass | fail | error
+display_detail: "<{N} components scanned, {findings} findings>"
+total_issues: {N}
+```
+
+`display_detail` shape: `"{components} components scanned, {findings} findings"` (e.g. `"42 components scanned, 0 findings"`); ≤80 chars, ASCII, no trailing period. Per-workflow returns layer additional `rules_run[]` / `issues[]` rows on top of these mandatory fields.
 
 ---
 

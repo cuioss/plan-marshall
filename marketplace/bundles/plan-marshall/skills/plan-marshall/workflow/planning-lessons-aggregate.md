@@ -1,6 +1,10 @@
+---
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+---
+
 # Planning Workflow — Action: lessons-aggregate
 
-Workflow for the `lessons-aggregate` action (aggressive cross-lesson aggregation + superseded-stub prune in a single command). Extracted from `workflows/planning.md` to keep that file under the bloat threshold.
+Workflow for the `lessons-aggregate` action (aggressive cross-lesson aggregation + superseded-stub prune in a single command).
 
 > **cwd for `.plan/execute-script.py` calls**: `manage-*` scripts (Bucket A) resolve `.plan/` via `git rev-parse --git-common-dir` and work from any cwd — do **NOT** pin cwd, do **NOT** pass routing flags, and never use `env -C`. Build / CI / Sonar scripts (Bucket B) accept `--plan-id {plan_id}` (preferred — auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (escape hatch / explicit override); the two flags are mutually exclusive. See `plan-marshall:tools-script-executor/standards/cwd-policy.md`.
 
@@ -151,3 +155,14 @@ Log the final outcome:
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id global --level INFO --message "(plan-marshall:lessons-aggregate) Aggregation complete — {len(groups)} group(s) processed, {len(top_n_commands)} headline command(s) surfaced"
 ```
+
+## Output
+
+Top-level orchestrator workflow. Conformance to the ext-point output contract:
+
+```toon
+status: success | error
+display_detail: "<aggregated {N} lessons, pruned {M} stubs>"
+```
+
+The orchestrator emits this shape when wrapped in a `Task: execution-context-{level}` dispatch.

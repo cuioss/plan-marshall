@@ -6,7 +6,7 @@ user-invocable: false
 
 # Sonar Workflow Skill
 
-Sonar provider for the findings-pipeline `sonar-issue` producer. Fetches gate-blocking issues from SonarQube/SonarCloud, applies the pre-filter (`sonar-rules.json`), and writes one finding per surviving issue via `manage-findings add`. Consumer dispatch lives in [`phase-6-finalize/standards/sonar-roundtrip.md`](../phase-6-finalize/standards/sonar-roundtrip.md).
+Sonar provider for the findings-pipeline `sonar-issue` producer. Fetches gate-blocking issues from SonarQube/SonarCloud, applies the pre-filter (`sonar-rules.json`), and writes one finding per surviving issue via `manage-findings add`. Consumer dispatch lives in [`phase-6-finalize/workflow/sonar-roundtrip.md`](../phase-6-finalize/workflow/sonar-roundtrip.md).
 
 > **Architectural context**: This SKILL.md owns the producer-side CLI surface. For the producer→store→consumer→gate flow that connects this producer to the unified store, the per-domain `ext-triage` consumer dispatch, and the invariant gate, see [`ref-workflow-architecture/standards/findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md).
 

@@ -370,7 +370,7 @@ description: |
   Migrate miscellaneous agents from JSON to TOON output format.
 
 steps[3]{number,target,status}:
-1,pm-plugin-development/agents/tool-coverage-agent.md,pending
+1,plan-marshall/agents/execution-context.md,pending
 2,pm-dev-builder/agents/gradle-builder.md,pending
 3,pm-dev-frontend/skills/javascript/SKILL.md,pending
 

@@ -25,12 +25,7 @@ See [`model-levels.md`](model-levels.md) for the full level → `(model, effort)
 
 ## The Role Registry
 
-A **role** is a stable key naming a class of dispatch (e.g., `q_gate_validation`, `pr_creation`, `research`). The full registry — which roles exist, which canonical agent each binds to, and which roles are effective vs pending — lives in [`model-roles.md`](model-roles.md).
-
-Highlights:
-
-- **Effective roles** (have runtime effect today): `q_gate_validation`, `research`, `pr_creation`, `automated_review`, `sonar_roundtrip`, `lessons_capture`, `change_type_detection`, `phase_init`, `phase_plan`, `component_analysis`, `inventory_analysis`, `tool_coverage_analysis`.
-- **Pending roles** (schema-validates but no runtime effect yet): `phase_refine`, `phase_outline`, `phase_execute`, `phase_finalize`, `retrospective`, `implementation`, `testing`, `build_runner`. Configuration is preserved across saves; activation lands in a future plan.
+A **role** is a stable key naming a class of dispatch (e.g., `cross.q-gate-validation`, `phase-6.create-pr`, `cross.research`). The registry is hierarchical (kebab-case, 15 keys across 7 groups: `phase-1` through `phase-6`, plus `cross`). The full registry — which roles exist, which workflow doc each binds to, and the three accepted lookup forms (`--role phase-1`, `--role phase-6.create-pr`, `--phase phase-6 --role create-pr`) — lives in [`model-roles.md`](model-roles.md).
 
 ## How to Configure
 
@@ -48,8 +43,6 @@ The wizard:
 - Edits `models.default` via prompt — your plan-wide fallback level.
 - Walks the role registry, letting you set each role to a specific level or leave it on `default`.
 - Refuses invalid levels (e.g., typos) at save time.
-- Flags **pending** roles so you know configuration is preserved but not yet effective.
-- Prints a **restart hint** after saving — Claude Code loads agent files at session start, so new variant routing applies only after you exit and re-enter.
 
 ### Option B: Edit `marshal.json` Directly
 
@@ -60,10 +53,15 @@ The schema lives at `.plan/marshal.json` under the `models` key:
   "models": {
     "default": "medium",
     "roles": {
-      "q_gate_validation": "high",
-      "research": "xxhigh",
-      "automated_review": "high",
-      "lessons_capture": "low"
+      "cross": {
+        "research": "xxhigh",
+        "q-gate-validation": "high",
+        "triage": "high"
+      },
+      "phase-6": {
+        "create-pr": "medium",
+        "lessons-capture": "low"
+      }
     }
   }
 }
@@ -71,11 +69,12 @@ The schema lives at `.plan/marshal.json` under the `models` key:
 
 Resolution order for any role:
 
-1. `models.roles.<role>` — explicit per-role override.
-2. `models.default` — plan-wide default.
-3. `inherit` — implicit fallback when neither is set.
+1. The deepest explicit per-role override (e.g. `models.roles.cross.research`).
+2. The parent group's plain-string value (e.g. `models.roles.phase-2: "high"` applies to every workflow under phase-2).
+3. `models.default` — plan-wide default.
+4. `inherit` — implicit fallback when neither is set.
 
-Restart Claude Code after editing. The `models` block is **opt-in** — when absent entirely, behavior is unchanged from before this system existed (every subagent inherits the parent model).
+The `models` block is **opt-in** — when absent entirely, every subagent inherits the parent session's model. The dispatcher resolves the level at dispatch time via `manage-config models resolve-target --role <key>`, so no Claude Code restart is required after editing.
 
 ### Recommended Starting Configuration
 
@@ -86,10 +85,11 @@ For most workflows, this gets you most of the value at modest cost:
   "models": {
     "default": "medium",
     "roles": {
-      "research": "xxhigh",
-      "q_gate_validation": "high",
-      "automated_review": "high",
-      "sonar_roundtrip": "high"
+      "cross": {
+        "research": "xxhigh",
+        "q-gate-validation": "high",
+        "triage": "high"
+      }
     }
   }
 }
@@ -97,13 +97,13 @@ For most workflows, this gets you most of the value at modest cost:
 
 ## What Happens at Dispatch Time
 
-When a dispatch site fires (e.g., phase-6-finalize calling the `pr_creation` agent):
+When a dispatch site fires (e.g., phase-6-finalize dispatching the `phase-6.create-pr` workflow):
 
-1. The site calls `manage-config models read --role pr_creation` to resolve your level.
-2. If level is `inherit` (or the resolver returned `inherit` as the implicit fallback), the dispatch targets the **canonical** no-suffix variant: `Task: plan-marshall:create-pr-agent`. The runtime inherits the parent's model.
-3. Otherwise, the dispatch targets a **variant**: `Task: plan-marshall:create-pr-agent-{level}`. The variant has `model:` and `effort:` baked into its frontmatter, so Claude Code runs the subagent on those exact settings.
+1. The site calls `manage-config models resolve-target --role phase-6.create-pr` to resolve the dispatch target directly.
+2. If level is `inherit` (or the resolver returned `inherit` as the implicit fallback), the target is the **canonical** no-suffix variant: `Task: plan-marshall:execution-context`. The runtime inherits the parent's model.
+3. Otherwise, the target is a **variant**: `Task: plan-marshall:execution-context-{level}`. The variant has `model:` and `effort:` baked into its frontmatter, so Claude Code runs the subagent on those exact settings.
 
-Variants are emitted at build time into `target/claude/{bundle}/agents/`, then synced into the plugin cache via `/sync-plugin-cache`. The canonical agent file you see in the marketplace source has neither `model:` nor `effort:` — those fields are forbidden on canonicals and the build target sets them on variants.
+The dispatched `execution-context` agent reads the caller-supplied `workflow` (the doc path inside the prompt body) and executes it. One agent + one set of six emitted variants drives every plan-marshall `Task:` invocation in the marketplace. Variants are emitted at build time into `target/claude/plan-marshall/agents/`, then synced into the plugin cache via `/sync-plugin-cache`.
 
 ## Troubleshooting
 
@@ -111,10 +111,9 @@ Variants are emitted at build time into `target/claude/{bundle}/agents/`, then s
 
 **Check:**
 
-1. Did you restart Claude Code after editing? Agent files load at session start; mid-session edits don't apply until restart. (The wizard prints this hint after every Models save.)
-2. Is the role status `effective` in [`model-roles.md`](model-roles.md)? **pending** roles validate at save but produce no runtime effect.
-3. Is the level spelled correctly (`high`, not `High` or `hi`)?
-4. Is `target/claude/` regenerated? Run the `project:finalize-step-deploy-target` step (or `python3 marketplace/targets/generate.py --target claude --output target/claude`) to refresh emitted variants, then `/sync-plugin-cache` to push them into the plugin cache.
+1. Is the role spelled correctly per the hierarchical registry in [`model-roles.md`](model-roles.md)? Keys are kebab-case (`cross.q-gate-validation`, not `q_gate_validation`).
+2. Is the level spelled correctly (`high`, not `High` or `hi`)?
+3. Is `target/claude/` regenerated? Run the `project:finalize-step-deploy-target` step (or `python3 marketplace/targets/generate.py --target claude --output target/claude`) to refresh emitted variants, then `/sync-plugin-cache` to push them into the plugin cache.
 
 ### Symptom: A role configured as `xxhigh` is not running on Opus
 
@@ -134,25 +133,23 @@ Restart Claude Code after the unset.
 
 Valid levels are `low`, `medium`, `high`, `xhigh`, `xxhigh`, `inherit`. The reserved keyword `max` is not yet supported (planned future-additive option for "the highest tier the runtime supports") — use `xxhigh` for the current top tier.
 
-## Migration
+## Recommended `cross.research` Setting
 
-If you previously relied on `research-best-practices-agent`'s implicit Opus pin (the agent used to declare `model: opus` directly), that pin has been removed as part of this system's rollout. Behaviour delta: with no `models` block, the research agent now inherits the parent session's model instead of forcing Opus.
-
-To restore the previous behaviour, set:
+The `research` workflow benefits from the most capable model — every other workflow stays at the user's chosen default. To set:
 
 ```json
 {
   "models": {
     "roles": {
-      "research": "xxhigh"
+      "cross": {
+        "research": "xxhigh"
+      }
     }
   }
 }
 ```
 
 (or `xhigh` if you don't need Opus-4.7's `xhigh` effort tier).
-
-All other canonical agents had no `model:` line previously, so their dispatch behaviour is unchanged when no `models` block is configured.
 
 ## Cross-References
 

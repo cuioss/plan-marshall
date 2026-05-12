@@ -1,6 +1,10 @@
+---
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+---
+
 # Planning Workflow — Action: outline
 
-Workflow for the `outline` action (3-Outline + 4-Plan phases). Extracted from `workflows/planning.md` to keep that file under the bloat threshold.
+Workflow for the `outline` action (3-Outline + 4-Plan phases).
 
 > **cwd for `.plan/execute-script.py` calls**: `manage-*` scripts (Bucket A) resolve `.plan/` via `git rev-parse --git-common-dir` and work from any cwd — do **NOT** pin cwd, do **NOT** pass routing flags, and never use `env -C`. Build / CI / Sonar scripts (Bucket B) accept `--plan-id {plan_id}` (preferred — auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (escape hatch / explicit override); the two flags are mutually exclusive. See `plan-marshall:tools-script-executor/standards/cwd-policy.md`.
 
@@ -225,13 +229,27 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake veri
   --plan-id {plan_id} --phase 3-outline --strict
 ```
 
-Resolve the level for role `phase_plan` (`manage-config models read --role phase_plan`); compute `target = phase-agent` when level is `inherit`/empty, else `target = phase-agent-{level}`. Dispatch:
+Compute the dispatch target via the role resolver:
+
+```bash
+target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models resolve-target --role phase-4)
+```
+
+Dispatch:
 
 ```
 Task: plan-marshall:{target}
-  Input: skill=plan-marshall:phase-4-plan, plan_id={plan_id}
-  Output: tasks created with domain, profile, skills
+  prompt: |
+    name: phase-4-plan
+    plan_id: {plan_id}
+    skills[1]:
+    - plan-marshall:phase-4-plan
+    workflow: plan-marshall:phase-4-plan/SKILL.md
+    WORKTREE: {worktree_path}
 ```
+
+The agent returns the task creation summary (`tasks` array with `domain`, `profile`, `skills`) in its TOON.
 
 **Metrics**: After the plan agent completes, record the `4-plan → 5-execute`
 boundary in a single fused call (forwarding the agent's `<usage>` data to
@@ -244,7 +262,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phas
   --tool-uses {tool_uses from <usage>}
 ```
 
-**Phase handshake**: Capture invariants for the just-completed phase. The `5-execute` entry verifies this row before the task loop runs (see `workflows/execution.md`):
+**Phase handshake**: Capture invariants for the just-completed phase. The `5-execute` entry verifies this row before the task loop runs (see `workflow/execution.md`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
@@ -254,7 +272,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capt
 Log task plan agent invocation:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:plan-marshall) Invoked phase-agent for phase-4-plan"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:plan-marshall) Invoked execution-context for phase-4-plan"
 ```
 
 **Step 4b**: Transition phase after tasks created:
@@ -271,9 +289,20 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 **IF `execute_without_asking == true`**:
 - Log: `"(plan-marshall:plan-marshall) Config: execute_without_asking=true — auto-continuing to execute"`
-- Load `workflows/execution.md` and follow **Action: execute** with `plan_id`
+- Load `workflow/execution.md` and follow **Action: execute** with `plan_id`
 
 **ELSE (default)**:
 - Display: `"Tasks created. Ready to execute."`
 - Display: `"Run '/plan-marshall action=execute plan={plan_id}' when ready."`
 - **STOP** (current behavior)
+
+## Output
+
+Top-level orchestrator workflow. Conformance to the ext-point output contract:
+
+```toon
+status: success | error
+display_detail: "<plan {plan_id} reached {terminal_phase}>"
+```
+
+The orchestrator emits this shape when wrapped in a `Task: execution-context-{level}` dispatch.

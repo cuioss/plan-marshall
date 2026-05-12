@@ -18,7 +18,7 @@ import argparse
 
 from _cmd_ext_defaults import cmd_ext_defaults
 from _cmd_init import cmd_init
-from _cmd_models import cmd_models, cmd_models_apply_preset
+from _cmd_models import cmd_models, cmd_models_apply_preset, cmd_models_resolve_target
 from _cmd_skill_domains import (
     cmd_list_verify_steps,
     cmd_skill_domains,
@@ -250,10 +250,55 @@ def main() -> int:
     )
     models_sub = p_models.add_subparsers(dest='verb', required=True, help='Operation')
     models_read = models_sub.add_parser(
-        'read', help='Resolve the level keyword for a role', allow_abbrev=False
+        'read',
+        help='Resolve the level keyword for a role (or fetch models.default)',
+        allow_abbrev=False,
+    )
+    # `--role` accepts the bare-group form ("phase-1"), the dotted form
+    # ("phase-6.create-pr"), or the flat-subkey form combined with `--phase`
+    # ("--phase phase-6 --role create-pr"). `--default` is mutually exclusive
+    # with role lookup and short-circuits to models.default.
+    models_read_target = models_read.add_mutually_exclusive_group(required=True)
+    models_read_target.add_argument(
+        '--role',
+        help=(
+            'Role key (see model-roles.md registry). Accepted forms: bare '
+            'group "phase-1"; dotted "phase-6.create-pr"; or use --phase '
+            'plus a bare subkey.'
+        ),
+    )
+    models_read_target.add_argument(
+        '--default',
+        action='store_true',
+        help='Return models.default directly (no role lookup).',
     )
     models_read.add_argument(
-        '--role', required=True, help='Role key (see model-roles.md registry)'
+        '--phase',
+        help=(
+            'Role group (e.g. "phase-6", "cross") used with --role for the '
+            'two-flag lookup form. Mutually compatible only with bare-subkey '
+            '--role values; --role must not itself include a dot in this mode.'
+        ),
+    )
+
+    models_resolve_target = models_sub.add_parser(
+        'resolve-target',
+        help='Resolve a role to its execution-context-{level} variant target name',
+        allow_abbrev=False,
+    )
+    models_resolve_target.add_argument(
+        '--role',
+        required=True,
+        help=(
+            'Role key (same accepted forms as `models read --role`). '
+            'Returns the variant target name `execution-context-{level}` '
+            '(or the canonical `execution-context` when the resolved level '
+            'is `inherit`).'
+        ),
+    )
+    models_resolve_target.add_argument(
+        '--phase',
+        help='Role group, used with --role for the two-flag form.',
     )
     models_apply_preset = models_sub.add_parser(
         'apply-preset',
@@ -381,6 +426,8 @@ def main() -> int:
             return 2
         if args.verb == 'apply-preset':
             result = cmd_models_apply_preset(args)
+        elif args.verb == 'resolve-target':
+            result = cmd_models_resolve_target(args)
         else:
             result = cmd_models(args)
     elif args.noun == 'resolve-domain-skills':

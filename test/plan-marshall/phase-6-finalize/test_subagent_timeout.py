@@ -59,13 +59,13 @@ _mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
 
 _PHASE_6_SKILL_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'SKILL.md'
 _AUTOMATED_REVIEW_MD = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'automated-review.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow' / 'automated-review.md'
 )
 _SONAR_ROUNDTRIP_MD = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'sonar-roundtrip.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow' / 'sonar-roundtrip.md'
 )
 _LESSONS_CAPTURE_MD = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'lessons-capture.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow' / 'lessons-capture.md'
 )
 
 

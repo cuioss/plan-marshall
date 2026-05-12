@@ -4,7 +4,7 @@ Defines when a deliverable touches the runtime infrastructure that the plan itse
 
 A plan is **self-modifying** when one or more of its deliverables edits the script/skill set that `phase-5-execute` and `execute-task` need to dispatch tasks, run verification gates, and resolve build commands. Without an explicit phasing strategy, self-modifying plans tend to ship "keep both surfaces alongside" outcomes that silently descope hard breaking-change requirements.
 
-This standard is the single source of truth for the path heuristic, the classification rule, the phasing-rationale contract, and the split-vs-single-plan decision. Three callers reference it: `phase-3-outline` (outline-time deliverable classification), `phase-4-plan` (task-split enforcement), and `q-gate-validation-agent` (q-gate validator §2.16).
+This standard is the single source of truth for the path heuristic, the classification rule, the phasing-rationale contract, and the split-vs-single-plan decision. Three callers reference it: `phase-3-outline` (outline-time deliverable classification), `phase-4-plan` (task-split enforcement), and the `cross.q-gate-validation` workflow (q-gate validator §2.16).
 
 ## Path Heuristic
 
@@ -75,7 +75,7 @@ Three callers reference this standard. When the standard's path heuristic, class
 |--------|-----------|---------|
 | `plan-marshall:phase-3-outline` (Outline-Workflow Detail § Self-Modifying Classification) | Path heuristic + classification rule | Classify each deliverable at outline time; prompt the author for phasing strategy when the rule fires |
 | `plan-marshall:phase-4-plan` (SKILL § Self-Modifying Phasing Enforcement) | Phasing-rationale contract + split rule | Refuse to create tasks for self-modifying + breaking deliverables that lack phasing rationale OR a peer plan |
-| `plan-marshall:q-gate-validation-agent` (§2.16 Self-Modifying Phased-Rollout Validator) | All three sections | Q-Gate validator that emits a finding when a deliverable matches the rule and has no phasing rationale |
+| `plan-marshall:plan-marshall/workflow/q-gate-validation.md` § 2.16 (Self-Modifying Phased-Rollout Validator) | All three sections | Q-Gate validator that emits a finding when a deliverable matches the rule and has no phasing rationale |
 
 ## Related
 

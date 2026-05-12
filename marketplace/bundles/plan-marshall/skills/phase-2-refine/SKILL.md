@@ -2,6 +2,7 @@
 name: phase-2-refine
 description: Iterative request clarification until confidence threshold reached
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
 # Phase 2: Refine Request
@@ -187,7 +188,7 @@ When confidence reaches threshold:
 2. **Persist `scope_estimate`** to `references.json` via `manage-references set --field scope_estimate --value {scope_estimate}` (one of `none | surgical | single_module | multi_module | broad`)
 3. **Log decisions** to decision.log (scope, domains -- with duplicate guard)
 4. **Run Q-Gate verification checks**: module mapping completeness, track-scope consistency, scope realism, confidence justification
-5. **Spawn `plan-marshall:q-gate-validation-agent` for the narrative-vs-code-validator** — lesson-derived plans only. When `status.json` reports `plan_source: lesson`, dispatch the agent so its `narrative-vs-code-validator` (q-gate-validation-agent.md § 2.14) runs over the source lesson narrative against current code state. Findings flow into the same `qgate_pending_count` aggregate as the inline checks above and are consumed by the orchestrator's existing 3-iteration auto-loop. See [`refine-workflow-detail.md` Step 13.5](standards/refine-workflow-detail.md#step-135-spawn-q-gate-validation-agent--lesson-derived-plans-only) for the exact dispatch invocation, activation guard, and findings-aggregation contract. Skipped silently when `plan_source != lesson`.
+5. **Dispatch the `cross.q-gate-validation` workflow for the narrative-vs-code-validator** — lesson-derived plans only. When `status.json` reports `plan_source: lesson`, dispatch `plan-marshall:plan-marshall/workflow/q-gate-validation.md` so its `narrative-vs-code-validator` (§ 2.14 of that doc) runs over the source lesson narrative against current code state. Findings flow into the same `qgate_pending_count` aggregate as the inline checks above and are consumed by the orchestrator's existing 3-iteration auto-loop. See [`refine-workflow-detail.md` Step 13.5](standards/refine-workflow-detail.md#step-135-spawn-q-gate-validation-agent--lesson-derived-plans-only) for the exact dispatch invocation, activation guard, and findings-aggregation contract. Skipped silently when `plan_source != lesson`.
 6. **Return output**:
 
 ```toon
@@ -215,6 +216,21 @@ Transition from refine to outline with `manage-status transition --completed 2-r
 
 ---
 
+## Output
+
+Step 13.6 (above) is the single source of truth for the return TOON. The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
+
+```toon
+status: success | error
+display_detail: "<{confidence}% confidence, track {track}, {qgate_pending_count} pending>"
+```
+
+`display_detail` shape on success: `"{confidence}% confidence, track {track}, {qgate_pending_count} pending"` (e.g. `"92% confidence, track complex, 0 pending"`); ≤80 chars, ASCII, no trailing period. On error, carries the short error label from § Error Handling.
+
+All other fields (`plan_id`, `confidence`, `track`, `track_reasoning`, `scope_estimate`, `compatibility`, `compatibility_description`, `domains`, `qgate_pending_count`) are documented in Step 13.6 above.
+
+---
+
 ## Error Handling
 
 | Error | Action |
@@ -239,8 +255,7 @@ This skill does not invoke `manage-metrics` itself. The orchestrator
 (`plan-marshall:plan-marshall` workflows) records the `2-refine → 3-outline`
 boundary via the fused `manage-metrics phase-boundary` call — see
 `marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md` §
-`phase-boundary` for the API. The legacy `end-phase` + `start-phase` +
-`generate` sequence is no longer used at orchestrator boundaries.
+`phase-boundary` for the API.
 
 ---
 

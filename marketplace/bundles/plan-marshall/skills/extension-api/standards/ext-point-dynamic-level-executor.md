@@ -1,12 +1,14 @@
 # Extension Point: Dynamic-Level Executor
 
-> **Type**: Agent Extension (declarative, build-time variant emission) | **Declaration**: `implements:` frontmatter on agent file | **Implementations**: 11 | **Status**: Active
+> **Type**: Agent Extension (declarative, build-time variant emission) | **Declaration**: `implements:` frontmatter on agent file | **Implementations**: 1 (`execution-context`) | **Status**: Active
 
 ## Overview
 
 The `ext-point-dynamic-level-executor` extension point declares that a marketplace agent participates in role-based variant emission. It is the only extension point in the `ext-point-*` family whose consumer is an **agent file** (not a skill); the implementor is the agent's frontmatter, and the producer is the build target (`marketplace/targets/claude/`).
 
-When an agent declares this extension point, the build target emits one variant agent file per ordinal level (`low`, `medium`, `high`, `xhigh`, `xxhigh`) into `target/claude/{bundle}/agents/`, each variant pinned to a specific `(model, effort)` primitive. The canonical no-suffix file is also emitted (with `implements:` and `levels:` stripped) so the `inherit` resolution case dispatches the user-configured-or-default model. Dispatch sites resolve the role's level via `manage-config models read --role <name>` and call the matching variant by name (`{base}-{level}`) or the canonical (when level is `inherit`).
+When an agent declares this extension point, the build target emits one variant agent file per ordinal level (`low`, `medium`, `high`, `xhigh`, `xxhigh`) into `target/claude/{bundle}/agents/`, each variant pinned to a specific `(model, effort)` primitive. The canonical no-suffix file is also emitted (with `implements:` and `levels:` stripped) so the `inherit` resolution case dispatches the user-configured-or-default model. Dispatch sites resolve the role's level via `manage-config models resolve-target --role <key>` (which returns the canonical name when level is `inherit`/empty, otherwise the per-level variant `execution-context-{level}`) and call the matching variant by name.
+
+The marketplace ships exactly one implementor — `plan-marshall:execution-context` — the single generic dispatcher that drives every plan-marshall `Task:` invocation. Arbitrary workflow bodies are dispatched through the six emitted variants via the companion workflow-doc ext-point (`ext-point-execution-context-workflow`).
 
 The end-to-end trace:
 
@@ -107,25 +109,25 @@ The build target enforces these rules at emission time:
 | Variant `name:` matches `{canonical-name}-{level}` exactly | Per-variant | Build error: variant name mismatch |
 | Canonical no-suffix file always emitted (regardless of `levels:`) | Per-agent | Build error: canonical missing |
 
-The plugin-doctor `hardcoded-model-on-canonical` lint rule (deliverable 9) enforces the first two rules at edit time, before the build target runs.
+The plugin-doctor `hardcoded-model-on-canonical` lint rule enforces the first two rules at edit time, before the build target runs.
 
 ## Worked Example
 
 ### Canonical agent (input)
 
-`marketplace/bundles/plan-marshall/agents/sonar-roundtrip-agent.md`:
+`marketplace/bundles/plan-marshall/agents/execution-context.md`:
 
 ```yaml
 ---
-name: sonar-roundtrip-agent
-description: SonarQube/SonarCloud round-trip — fetch, triage, fix or suppress issues
+name: execution-context
+description: Generic dispatcher for every plan-marshall Task: invocation
 implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor
-tools: [Read, Write, Edit, Bash, Grep, Glob, Task, Skill]
+tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill
 ---
 
-# Sonar Roundtrip Agent
+# Execution Context
 
-...agent body unchanged...
+...agent body...
 ```
 
 ### Emitted files (output)
@@ -134,36 +136,38 @@ The build target produces:
 
 ```
 target/claude/plan-marshall/agents/
-├── sonar-roundtrip-agent.md          # canonical, implements/levels stripped
-├── sonar-roundtrip-agent-low.md      # model: haiku
-├── sonar-roundtrip-agent-medium.md   # model: sonnet, effort: medium
-├── sonar-roundtrip-agent-high.md     # model: sonnet, effort: high
-├── sonar-roundtrip-agent-xhigh.md    # model: opus, effort: high
-└── sonar-roundtrip-agent-xxhigh.md   # model: opus, effort: xhigh (Opus-4.7-only)
+├── execution-context.md          # canonical, implements/levels stripped
+├── execution-context-low.md      # model: haiku
+├── execution-context-medium.md   # model: sonnet, effort: medium
+├── execution-context-high.md     # model: sonnet, effort: high
+├── execution-context-xhigh.md    # model: opus, effort: high
+└── execution-context-xxhigh.md   # model: opus, effort: xhigh (Opus-4.7-only)
 ```
 
-`target/claude/plan-marshall/.claude-plugin/plugin.json` registers six agent entries for this canonical (the canonical + five variants).
+`target/claude/plan-marshall/.claude-plugin/plugin.json` registers six agent entries for the canonical (the canonical + five variants).
 
 ### Dispatch site
 
-`marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md`:
+Every dispatch site computes the target via the role resolver and dispatches the matching `execution-context` variant with the 5-field prompt body (`name`, `plan_id`, `skills[]`, `workflow`, `WORKTREE`):
 
 ```bash
-# Resolve level for the sonar_roundtrip role
-level=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models read --role sonar_roundtrip --plan-id {plan_id})
-
-# Compute target agent name
-target=sonar-roundtrip-agent
-if [[ "$level" != "inherit" && -n "$level" ]]; then
-  target=sonar-roundtrip-agent-$level
-fi
+# Resolve the dispatch target for the cross.triage role
+target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models resolve-target --role cross.triage)
 
 # Dispatch
-Task: plan-marshall:$target
+Task: plan-marshall:{target}
+  prompt: |
+    name: cross.triage
+    plan_id: {plan_id}
+    skills[N]:
+    - <workflow-required skills>
+    workflow: plan-marshall:plan-marshall/workflow/triage.md
+    WORKTREE: {worktree_path}
+    finding_type: pr-comment
 ```
 
-When the user has set `models.roles.sonar_roundtrip = "high"` in `.plan/marshal.json`, the resolver returns `high` and the dispatch becomes `Task: plan-marshall:sonar-roundtrip-agent-high`. When unset, the resolver falls back to `models.default` then `inherit`, dispatching the canonical no-suffix file which inherits the parent session's model.
+The `resolve-target` subcommand returns `execution-context` when the level is `inherit`/empty, and `execution-context-{level}` otherwise. The dispatched variant runs the caller-specified `workflow` doc against the resolved `(model, effort)` primitive baked into the variant's frontmatter.
 
 ## Cross-References
 
@@ -181,14 +185,6 @@ When the user has set `models.roles.sonar_roundtrip = "high"` in `.plan/marshal.
 
 | Bundle | Agent | `levels:` whitelist |
 |--------|-------|---------------------|
-| plan-marshall | automated-review-agent | (default — all five) |
-| plan-marshall | create-pr-agent | (default — all five) |
-| plan-marshall | detect-change-type-agent | (default — all five) |
-| plan-marshall | lessons-capture-agent | (default — all five) |
-| plan-marshall | phase-agent | (default — all five) |
-| plan-marshall | q-gate-validation-agent | (default — all five) |
-| plan-marshall | research-best-practices-agent | (default — all five; recommended setting `high` or `xxhigh`) |
-| plan-marshall | sonar-roundtrip-agent | (default — all five) |
-| pm-plugin-development | ext-outline-component-agent | (default — all five) |
-| pm-plugin-development | ext-outline-inventory-agent | (default — all five) |
-| pm-plugin-development | tool-coverage-agent | (default — all five) |
+| plan-marshall | execution-context | (default — all five) |
+
+This is the sole implementor. The agent is a generic dispatcher whose body is parameterised by the `workflow` field in its prompt-body contract (see [`ext-point-execution-context-workflow`](ext-point-execution-context-workflow.md) for the workflow-doc side of the contract). Any number of workflow docs across the marketplace can be dispatched through the six emitted variants of this one agent.

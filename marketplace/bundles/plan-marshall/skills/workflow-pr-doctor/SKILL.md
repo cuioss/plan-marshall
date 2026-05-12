@@ -2,6 +2,7 @@
 name: workflow-pr-doctor
 description: Diagnose and fix PR issues (build, reviews, Sonar)
 user-invocable: true
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
 # PR Doctor Skill
@@ -35,7 +36,7 @@ Diagnose and fix pull request issues with parameterized checks.
 | `handoff` | optional | Handoff structure from previous phase (JSON, see schema below) |
 | `max-fix-attempts` | optional | Maximum fix-verify-commit cycles before giving up (default: 3) |
 | `plan-id` | optional | Plan identifier — when set, pr-doctor resolves the active worktree via `manage-status get-worktree-path` and forwards `--project-dir {resolved}` to every child script. Mutually exclusive with `project-dir`. |
-| `project-dir` | optional | Absolute path to the checkout/worktree to operate against (legacy / escape hatch). When set, pr-doctor forwards `--project-dir {value}` to every child script invocation (ci, build, sonar, github/gitlab). Mutually exclusive with `plan-id`. Omit both for default behavior (inherited cwd). |
+| `project-dir` | optional | Absolute path to the checkout/worktree to operate against (explicit-override escape hatch). When set, pr-doctor forwards `--project-dir {value}` to every child script invocation (ci, build, sonar, github/gitlab). Mutually exclusive with `plan-id`. Omit both for default behavior (inherited cwd). |
 
 ## --plan-id / --project-dir Forwarding Contract
 
@@ -268,6 +269,8 @@ Based on checks parameter:
 
 The keyword-classifier-as-decision-authority pattern (a single batch classifier deciding `code_change` / `explain` / `ignore` for a whole list of comments) is RETIRED — every per-finding decision goes through the loaded `ext-triage-{domain}` skill's standards. Commits for FIX-decision changes still flow through the git skill.
 
+The smart-grouping shape and the canonical per-finding action bodies (FIX / SUPPRESS / ACCEPT / AskUserQuestion) used here are documented as a single source of truth in [`../plan-marshall/workflow/triage.md`](../plan-marshall/workflow/triage.md). The internal per-finding loop above may sub-dispatch `cross.triage` (one extra envelope per pr-doctor run, with the triage-tier model independently selected) or iterate in-context inside pr-doctor's own envelope; in-context iteration is the default.
+
 **SONAR_QUALITY**: Delegate to workflow-integration-sonar "Fix Issues" workflow. The Sonar skill handles batch triage and fix-vs-suppress classification. The pr-doctor executes each action and commits via the git skill.
 
 **Protected files check**: Before applying any fix, check the file path against `protected_files` from the handoff constraints. If a fix would modify a protected file, skip that fix and report it as "skipped — protected file" in the summary. Do not prompt the user for each protected file — just skip and log.
@@ -384,6 +387,17 @@ python3 .plan/execute-script.py plan-marshall:workflow-pr-doctor:pr_doctor parse
 ```
 
 **Output:** TOON with merged parameters and validation warnings. Explicit CLI parameters always take precedence over handoff values.
+
+## Output
+
+pr-doctor's return shape varies by mode. The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
+
+```toon
+status: success | error | ci_failure | loop_back
+display_detail: "<PR {pr_number} diagnosed, {issues} issues, {fixes} fixes applied>"
+```
+
+`display_detail` shape on success: `"PR {pr_number} diagnosed, {issues} issues, {fixes} fixes applied"` (e.g. `"PR #123 diagnosed, 2 issues, 1 fix applied"`); ≤80 chars, ASCII, no trailing period. The Automated Review Lifecycle mode (see "Mode: Automated Review Lifecycle" above) carries `ci_failure` and `loop_back_needed` additional fields when relevant.
 
 ## Error Handling
 

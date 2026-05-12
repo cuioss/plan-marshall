@@ -71,7 +71,7 @@ _PHASE_6_SKILL_MD = (
 )
 _AUTOMATED_REVIEW_MD = (
     _REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall'
-    / 'skills' / 'phase-6-finalize' / 'standards' / 'automated-review.md'
+    / 'skills' / 'phase-6-finalize' / 'workflow' / 'automated-review.md'
 )
 
 
@@ -211,35 +211,48 @@ def test_dispatcher_re_fires_on_loop_back():
 # =============================================================================
 
 
-def test_fix_path_posts_thread_reply_before_terminal_done():
-    """Regression-guard the FIX action ordering and Branch C outcome.
+_TRIAGE_MD = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'plan-marshall'
+    / 'workflow'
+    / 'triage.md'
+)
 
-    The FIX action body in automated-review.md must invoke (in order):
+
+def test_fix_path_posts_thread_reply_before_terminal_done():
+    """Regression-guard the FIX action ordering and the loop-back outcome.
+
+    The FIX action body in ``plan-marshall/workflow/triage.md`` must
+    invoke (in order):
 
         prepare-add  →  commit-add  →  prepare-comment  →
         thread-reply  →  resolve-thread  →  manage-findings resolve
 
-    and Branch C ("loop-back recorded") must record ``--outcome loop_back``,
-    NOT ``--outcome done``. This test reads the standards file and asserts both
-    invariants. It is a structural regression-guard against future edits that
-    accidentally re-order the chain or downgrade Branch C to ``done``.
+    and the calling step's Branch C ("loop-back recorded") in
+    ``phase-6-finalize/workflow/automated-review.md`` must record
+    ``--outcome loop_back``, NOT ``--outcome done``. This test reads
+    both files and asserts both invariants. It is a structural
+    regression-guard against future edits that accidentally re-order
+    the chain or downgrade Branch C to ``done``.
     """
-    body = _AUTOMATED_REVIEW_MD.read_text(encoding='utf-8')
+    triage_body = _TRIAGE_MD.read_text(encoding='utf-8')
 
-    # Locate the FIX action block. The "FIX" bullet starts with
-    # "- **FIX**" and runs until the next top-level disposition bullet
-    # ("- **SUPPRESS**").
+    # Locate the FIX action block in triage.md. The "FIX" bullet starts
+    # with "- **FIX**" and runs until the next top-level disposition
+    # bullet ("- **SUPPRESS**").
     fix_marker = '- **FIX**'
     suppress_marker = '- **SUPPRESS**'
-    fix_start = body.find(fix_marker)
-    suppress_start = body.find(suppress_marker, fix_start)
-    assert fix_start != -1, 'FIX action block not found in automated-review.md'
+    fix_start = triage_body.find(fix_marker)
+    suppress_start = triage_body.find(suppress_marker, fix_start)
+    assert fix_start != -1, 'FIX action block not found in triage.md'
     assert suppress_start != -1, 'SUPPRESS marker not found after FIX block'
-    fix_block = body[fix_start:suppress_start]
+    fix_block = triage_body[fix_start:suppress_start]
 
-    # The chain must appear in the FIX block in the exact order. We search
-    # forward, tracking the cursor so each successive token must occur AFTER
-    # the previous one.
+    # The chain must appear in the FIX block in the exact order.
     expected_chain = [
         'prepare-add',
         'commit-add',
@@ -257,23 +270,18 @@ def test_fix_path_posts_thread_reply_before_terminal_done():
         )
         cursor = idx + len(token)
 
-    # Branch C must use --outcome loop_back, not --outcome done.
+    # The calling site's Branch C is in automated-review.md. It must use
+    # --outcome loop_back, not --outcome done.
+    auto_body = _AUTOMATED_REVIEW_MD.read_text(encoding='utf-8')
     branch_c_marker = '**Branch C'
-    branch_c_start = body.find(branch_c_marker)
+    branch_c_start = auto_body.find(branch_c_marker)
     assert branch_c_start != -1, 'Branch C section not found in automated-review.md'
-    # Branch C runs until end of file or next "## " section. Use a
-    # conservative end window: the rest of the file.
-    branch_c_block = body[branch_c_start:]
+    branch_c_block = auto_body[branch_c_start:]
     assert '--outcome loop_back' in branch_c_block, (
         'Branch C must record `--outcome loop_back` (not `done`).'
     )
-    # The mark-step-done command in Branch C must NOT be `--outcome done`.
-    # We assert that immediately after the Branch C marker, the first
-    # mark-step-done invocation references loop_back.
     next_mark = branch_c_block.find('mark-step-done')
     assert next_mark != -1, 'Branch C does not invoke mark-step-done'
-    # The flag pair `--outcome done` must NOT be the one used in this command.
-    # Inspect a window of ~400 chars after `mark-step-done`.
     window = branch_c_block[next_mark:next_mark + 400]
     assert '--outcome done' not in window, (
         'Branch C mark-step-done must not use --outcome done — that is the '

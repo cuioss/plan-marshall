@@ -1,3 +1,7 @@
+---
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+---
+
 # Execution Workflows (Phases 5 & 7)
 
 Workflows for plan execution phases: execute (task implementation + verification) and finalize (commit, PR).
@@ -48,7 +52,7 @@ Use /plan-marshall to complete 1-init through 4-plan phases first.
 
 **Metrics**: The start of `5-execute` was already recorded by the
 `4-plan → 5-execute` fused boundary call emitted at the end of the planning
-workflow (see `workflows/planning.md`). When the execute workflow is entered
+workflow (see `workflow/planning.md`). When the execute workflow is entered
 directly (e.g. via `/plan-marshall action=execute plan={plan_id}` against a
 plan already past `4-plan`), use a fused boundary call to close the
 previously active phase and start `5-execute` in one step:
@@ -88,9 +92,9 @@ For each task:
 3. Mark task complete
 4. Repeat until all tasks done
 
-### After phase-agent returns
+### After execution-context returns
 
-After every `phase-agent` dispatch returns control to the orchestrator —
+After every `execution-context` dispatch returns control to the orchestrator —
 whether the agent ran the full execute loop to completion, voluntarily
 emitted a "Returning control" line with pending tasks, was cancelled by the
 host platform, raised a fatal error, or returned for a reason the
@@ -132,7 +136,7 @@ Substitute `{cause}` with one of the five values from the table above and
 `phase-boundary` call MUST only fire on a clean exit, defined as
 `termination-cause == unknown` AND `manage-tasks list --status pending`
 returning zero pending tasks. For every other classified cause, the
-orchestrator MUST re-dispatch the phase-agent (recoverable cases) or escalate
+orchestrator MUST re-dispatch the execution-context (recoverable cases) or escalate
 to the user (`error` / repeated `harness_cancellation`) — it MUST NOT
 transition to `6-finalize` while pending work remains. This fence is the
 control-flow analogue of the Step 12a "Pending-tasks transition guard" in
@@ -289,3 +293,14 @@ Cannot finalize: 5 tasks remaining.
 Complete all tasks first, then run:
   /plan-marshall plan="jwt-auth" action="finalize"
 ```
+
+## Output
+
+Top-level orchestrator workflow. Conformance to the ext-point output contract:
+
+```toon
+status: success | error
+display_detail: "<plan {plan_id} reached {terminal_phase}>"
+```
+
+The orchestrator emits this shape when wrapped in a `Task: execution-context-{level}` dispatch. When entered interactively, progress is surfaced via `manage-logging` records on each phase boundary; the terminal user-facing message replaces the TOON.

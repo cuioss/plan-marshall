@@ -17,11 +17,7 @@
     "create",
     "maintain"
   ],
-  "agents": [
-    "./agents/ext-outline-component-agent.md",
-    "./agents/ext-outline-inventory-agent.md",
-    "./agents/tool-coverage-agent.md"
-  ],
+  "agents": [],
   "commands": [],
   "skills": [
     "./skills/ext-outline-workflow",

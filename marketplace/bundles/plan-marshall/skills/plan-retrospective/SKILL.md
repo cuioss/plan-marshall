@@ -4,6 +4,7 @@ description: Opt-in plan quality audit — analyzes artifacts, logs, metrics, ch
 user-invocable: true
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Skill
 order: 995
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
 # Plan Retrospective Skill
@@ -113,7 +114,7 @@ For each aspect below, produce a TOON fragment on disk at `work/fragment-{aspect
 | 12 | Chat history (conditional) | (LLM on session transcript) | `references/chat-history-analysis.md` |
 | 13 | Lessons proposal | (LLM on compiled fragments) | `references/lessons-proposal.md` |
 
-**Aspect 11 (manifest decisions)** is skipped when `execution.toon` is absent (legacy plans pre-dating the manifest deliverable). When present, the aspect loads the manifest via `plan-marshall:manage-execution-manifest:manage-execution-manifest read --plan-id {plan-id}` and pairs it with matching `(plan-marshall:phase-4-plan:manifest)` decision-log entries — manifest = WHAT was decided, decision.log = WHY. The cross-check engine is `plan-marshall:plan-retrospective:check-manifest-consistency` which evaluates each manifest assumption against the actual end-of-execute diff and emits one finding per violation. See `standards/manifest-crosscheck.md` for the cross-check matrix.
+**Aspect 11 (manifest decisions)** is skipped when `execution.toon` is absent. When present, the aspect loads the manifest via `plan-marshall:manage-execution-manifest:manage-execution-manifest read --plan-id {plan-id}` and pairs it with matching `(plan-marshall:phase-4-plan:manifest)` decision-log entries — manifest = WHAT was decided, decision.log = WHY. The cross-check engine is `plan-marshall:plan-retrospective:check-manifest-consistency` which evaluates each manifest assumption against the actual end-of-execute diff and emits one finding per violation. See `standards/manifest-crosscheck.md` for the cross-check matrix.
 
 **Aspect 12** is skipped when `--session-id` is absent.
 
@@ -144,7 +145,7 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
   add --plan-id {plan_id} --aspect manifest-decisions --fragment-file work/fragment-manifest-decisions.toon
 ```
 
-Skip the aspect entirely when the manifest file is absent (legacy plans).
+Skip the aspect entirely when the manifest file is absent.
 
 **Aspect 12 (chat-history, conditional)** — when `--session-id` is present, first resolve the absolute transcript path via the canonical resolver, then follow the LLM pattern above (Write fragment file, then `collect-fragments add`).
 
@@ -221,6 +222,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 
 ```toon
 status: success
+display_detail: "<{aspects} aspects, {lessons_recorded} lessons recorded>"
 plan_id: {plan_id or basename of archived_plan_path}
 mode: {finalize-step|user-invocable|archived}
 report_path: {absolute path to report}
@@ -233,11 +235,23 @@ On error:
 
 ```toon
 status: error
+display_detail: "<retrospective error: {code}>"
 plan_id: {id}
 mode: {mode}
 error: {code}
 message: {human-readable}
 ```
+
+## Output
+
+Step 7 (above) is the single source of truth for the return TOON. The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
+
+```toon
+status: success | error
+display_detail: "<{aspects_dispatched} aspects, {lessons_recorded} lessons recorded>"
+```
+
+`display_detail` shape on success: `"{aspects_dispatched} aspects, {lessons_recorded} lessons recorded"` (e.g. `"8 aspects, 3 lessons recorded"`); ≤80 chars, ASCII, no trailing period.
 
 ## Related
 

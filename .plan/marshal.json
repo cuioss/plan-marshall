@@ -30,7 +30,7 @@
       "pr_merge_strategy": "squash",
       "steps": [
         "default:pre-push-quality-gate",
-        "default:pre-submission-self-review",
+        "project:finalize-step-pre-submission-self-review",
         "default:commit-push",
         "project:finalize-step-deploy-target",
         "project:finalize-step-sync-plugin-cache",

@@ -2,11 +2,12 @@
 name: phase-4-plan
 description: Domain-agnostic task planning from deliverables with skill resolution and optimization
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
 # Phase Plan Skill
 
-**Role**: Domain-agnostic workflow skill for transforming solution outline deliverables into optimized, executable tasks. Loaded by `plan-marshall:phase-agent`.
+**Role**: Domain-agnostic workflow skill for transforming solution outline deliverables into optimized, executable tasks. Dispatched as the workflow body of `plan-marshall:execution-context-{level}` (`workflow: plan-marshall:phase-4-plan/SKILL.md`).
 
 **Key Pattern**: Reads deliverables with metadata and profiles list from `solution_outline.md`, creates one task per deliverable per profile (1:N mapping), resolves skills from architecture based on `module` + `profile`, creates tasks with explicit skill lists. **No aggregation** - each deliverable maps to exactly one task per profile.
 
@@ -128,6 +129,7 @@ The Phase Entry Protocol's `phase_handshake verify --phase 3-outline --strict` c
 
 ```toon
 status: success | error
+display_detail: "<{M} tasks across {N} groups>"
 plan_id: {echo}
 summary:
   deliverables_processed: N
@@ -137,6 +139,8 @@ tasks_created[M]: {number, title, deliverable, depends_on}
 execution_order: {parallel groups}
 message: {error message if status=error}
 ```
+
+`display_detail` shape: `"{tasks_created} tasks across {parallelizable_groups} groups"` on success; ≤80 chars, ASCII, no trailing period.
 
 ## Related
 
@@ -305,17 +309,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ### Step 6: Create Tasks
 
 For each deliverable, compose one task record per profile, then persist all
-records in a single atomic call via `manage-tasks batch-add`. The batch path
-replaces the legacy per-task `prepare-add` → Write → `commit-add` loop with
-one atomic transaction (all-or-nothing semantics — see
+records in a single atomic call via `manage-tasks batch-add` — one atomic
+transaction with all-or-nothing semantics. See
 `marketplace/bundles/plan-marshall/skills/manage-tasks/standards/task-contract.md`
 § "Atomic Batch Insertion (`batch-add`)" for the JSON array schema and
-failure modes).
+failure modes.
 
-The legacy three-step path-allocate flow remains available for ad-hoc
-single-task additions (Q-Gate auto-loop, fix tasks dispatched outside this
-phase) but MUST NOT be used here when more than one task is being created in
-the same phase invocation.
+The three-step path-allocate flow (`prepare-add` → Write → `commit-add`)
+is available for ad-hoc single-task additions (Q-Gate auto-loop, fix tasks
+dispatched outside this phase) but MUST NOT be used here when more than one
+task is being created in the same phase invocation.
 
 **Breaking-refactor task split**: When the deliverable's `compatibility=breaking` OR its `change_type` is `tech_debt` or `feature_breaking`, AND it touches code paths covered by existing module tests, allocate the implementation and `module_testing` tasks per the task-split contract in [standards/breaking-refactor-task-split.md](standards/breaking-refactor-task-split.md) — the test-contract task carries `depends_on: [TASK-{implementation_number}]` and its description enumerates both the pre-existing tests being rewritten and any new regression tests pinning the new contract. This is the planning-side half of the breaking-refactor pair; phase-5-execute applies the planned-failure exception when the implementation task's verification fails in exactly the way the test-contract task is scoped to fix.
 
@@ -410,7 +413,7 @@ Compose every task record for this phase invocation into one JSON array, then pe
 
 Sequential numbering is assigned in array order at call time. On any validation failure no `TASK-NNN.json` is written.
 
-**Step 6a — Stage the JSON array under the plan's `work/` tree via the `Write` tool.** Use the `Write` tool directly to write the batch JSON to `.plan/local/plans/{plan_id}/work/tasks-batch.json`. This path is covered by the `Write(.plan/**)` permission rule, so no permission prompt is triggered, and writing through a structured tool keeps the JSON payload off the shell argument boundary. The intermediate `manage-files write` call is **no longer required** for this canonical flow.
+**Step 6a — Stage the JSON array under the plan's `work/` tree via the `Write` tool.** Use the `Write` tool directly to write the batch JSON to `.plan/local/plans/{plan_id}/work/tasks-batch.json`. This path is covered by the `Write(.plan/**)` permission rule, so no permission prompt is triggered, and writing through a structured tool keeps the JSON payload off the shell argument boundary.
 
 If a script-mediated path is preferred (for example, when the staging file already lives outside `.plan/`), the optional `manage-files write --content-file PATH` form is documented separately in `marketplace/bundles/plan-marshall/skills/manage-files/SKILL.md` (write subcommand reference). Both forms produce the same staged file; only the canonical `Write`-tool form is exercised by this phase.
 
@@ -421,7 +424,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
   batch-add --plan-id {plan_id} --tasks-file .plan/local/plans/{plan_id}/work/tasks-batch.json
 ```
 
-The `--tasks-file PATH` form is the canonical entrypoint for phase-4-plan (and any other caller that produces more than one task at a time). The legacy inline `--tasks-json` form is mutually exclusive with `--tasks-file` and remains supported as a secondary option for trivial payloads only — it is NOT used by this phase.
+The `--tasks-file PATH` form is the canonical entrypoint for phase-4-plan (and any other caller that produces more than one task at a time). The inline `--tasks-json` form is mutually exclusive with `--tasks-file` and is reserved for trivial payloads only — it is NOT used by this phase.
 
 > **TOON quoting rule for `verification.commands` (ENFORCED)**
 >
@@ -656,28 +659,35 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Dispatch the validator agent**.
 
-(1) Resolve the level for role `q_gate_validation`:
+Compute the dispatch target via the role resolver:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models read --role q_gate_validation
+target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models resolve-target --role cross.q-gate-validation)
 ```
 
-(2) Compute the target:
-- `level == "inherit"` or empty → `target = q-gate-validation-agent`
-- otherwise → `target = q-gate-validation-agent-<level>`
-
-(3) Dispatch:
+Dispatch:
 
 ```
 Task: plan-marshall:{target}
-  Input:
+  prompt: |
+    name: cross.q-gate-validation
     plan_id: {plan_id}
+    skills[6]:
+    - plan-marshall:manage-solution-outline
+    - plan-marshall:manage-findings
+    - plan-marshall:manage-plan-documents
+    - plan-marshall:manage-status
+    - plan-marshall:manage-architecture
+    - plan-marshall:manage-logging
+    workflow: plan-marshall:plan-marshall/workflow/q-gate-validation.md
+    WORKTREE: {worktree_path}
+
     activation_context: 4-plan
     validators: [module-mapping-validator, scope-criterion-validator]
 ```
 
-The agent reads `solution_outline.md` (for the deliverables and their `success_criterion`/`affected_files` blocks) and the just-written `TASK-*.json` files (for `module_testing` task targets), runs the validator detection logic documented in q-gate-validation-agent.md §§ 2.11–2.12, and emits findings using `--source qgate-module-mapping` / `--source qgate-scope-criterion`. See those sections for the canonical detection logic and finding emission templates.
+The agent reads `solution_outline.md` (for the deliverables and their `success_criterion`/`affected_files` blocks) and the just-written `TASK-*.json` files (for `module_testing` task targets), runs the module-mapping and scope-criterion validator detection logic, and emits findings using `--source qgate-module-mapping` / `--source qgate-scope-criterion`. See the q-gate validation workflow for the canonical detection logic and finding emission templates.
 
 **Aggregate the findings** — read pending findings to update the running count returned in Step 11:
 
@@ -870,7 +880,7 @@ If deliverable metadata incomplete:
 
 ## Integration
 
-**Invoked by**: `plan-marshall:phase-agent` (with skill=plan-marshall:phase-4-plan)
+**Invoked by**: `plan-marshall:execution-context-{level}` (with `workflow: plan-marshall:phase-4-plan/SKILL.md`)
 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Read deliverables (list-deliverables, read)

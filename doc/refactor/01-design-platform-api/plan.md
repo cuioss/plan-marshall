@@ -397,6 +397,26 @@ alternative: "Remove unsupported tools from agent frontmatter or inline the agen
 
 **Note**: `Task` and `Skill` are explicitly mapped — they are NOT Claude-only. This aligns with the cross-cutting principle: *all agents are included*.
 
+#### Accepted Risk: `AskUserQuestion` from an OpenCode subagent
+
+Several plan-marshall workflows include steps that prompt the user mid-dispatch (e.g.,
+phase-6-finalize `branch-cleanup`'s deletion confirmation, `architecture-refresh` tier-1
+mode prompt, the phase-3-outline self-modifying classification gate, the phase-4-plan
+self-modifying phasing escalation, phase-2-refine Step 11 clarification questions).
+On Claude Code, subagents call `AskUserQuestion` and the prompt propagates back to the
+host UI; every existing finalize agent relies on this implicitly.
+
+OpenCode's `task` tool semantics around child-tool re-prompting are not documented in
+this repo and have not been validated in a live OpenCode session. **This is accepted as
+a known risk for cluster 01**: the cluster ships assuming OpenCode subagents can prompt
+the user via the platform's native `ask` (or equivalent) tool. If validation in cluster
+04 (Validate and Document) surfaces that OpenCode subagents cannot prompt, the affected
+step kinds will need an `inline_only: true` flag on their dispatch — but that retrofit
+is a small contract addition, not a redesign.
+
+This risk is **not** a blocker for cluster 01 design or implementation; it is documented
+here for the cluster-04 validation pass to verify.
+
 #### When `subagent dispatch` Returns `no-op`
 
 The calling skill has three options:

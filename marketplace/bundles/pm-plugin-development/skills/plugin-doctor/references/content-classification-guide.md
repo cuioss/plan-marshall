@@ -11,7 +11,7 @@ Provides criteria for the LLM to classify markdown files as reference, workflow,
 | Category | Characteristics | Target Directory |
 |----------|-----------------|------------------|
 | `reference` | Rules, criteria, standards, lookup tables, "what to do" | `references/` |
-| `workflow` | Steps, phases, procedures, decision trees, "how to execute" | `workflows/` |
+| `workflow` | Steps, phases, procedures, decision trees, "how to execute" | `workflow/` |
 | `template` | Placeholders, boilerplate, fill-in-the-blank structure | `templates/` |
 | `mixed` | Contains multiple categories - needs splitting | Split required |
 
@@ -44,7 +44,7 @@ Evaluate each file with these questions in order:
 - Sections: "### Steps", "## Phases", "## Execution Flow"
 - Content: decision matrices, flowcharts, state machines
 
-**Target**: `workflows/`
+**Target**: `workflow/`
 
 ### 3. Is this a reference?
 
@@ -129,9 +129,9 @@ When moving files to correct directories:
 
 | Current Suffix | In Directory | Action |
 |----------------|--------------|--------|
-| `-protocol.md` | workflows/ | Remove suffix → `{name}.md` |
-| `-framework.md` | workflows/ | Remove suffix → `{name}.md` |
-| `-workflow.md` | workflows/ | Remove suffix → `{name}.md` |
+| `-protocol.md` | workflow/ | Remove suffix → `{name}.md` |
+| `-framework.md` | workflow/ | Remove suffix → `{name}.md` |
+| `-workflow.md` | workflow/ | Remove suffix → `{name}.md` |
 | `-standards.md` | references/ | Keep as-is |
 | `-guide.md` | references/ | Keep as-is |
 | `-template.*` | templates/ | Keep as-is |
@@ -162,7 +162,7 @@ Reasoning:
   - Describes verification procedure with decision tree
   - Focuses on HOW to verify links
   - Despite "protocol" name, content is procedural
-Recommended Location: workflows/link-verification.md
+Recommended Location: workflow/link-verification.md
 Needs Splitting: no
 ```
 

@@ -13,7 +13,7 @@ Parse `session_id` from the TOON output. Resolution order: `~/.cache/plan-marsha
 **Forbidden resolution patterns** (all trip the Bash sandbox or produce garbage):
 
 - `echo "$CLAUDE_SESSION_ID"` — invented env-var name, not exposed by Claude Code; expansion triggers the `simple_expansion` sandbox heuristic and prompts the user
-- `printenv`, `env | grep`, `$(...)` command substitution — forbidden by [`../../plan-marshall/workflows/planning.md`](../../plan-marshall/workflows/planning.md) for the one env-var case it handles; same prohibition applies here
+- `printenv`, `env | grep`, `$(...)` command substitution — forbidden by [`../../plan-marshall/workflow/planning.md`](../../plan-marshall/workflow/planning.md) for the one env-var case it handles; same prohibition applies here
 - Any other `$VAR` expansion — the **only** allow-listed env-var read pattern in plan-marshall is `echo "TERM_PROGRAM=$TERM_PROGRAM"` (installed by the marshall-steward wizard for IDE hand-off)
 
 As a last resort (fresh checkout, stripped `.claude` config, hook has not fired yet), use `AskUserQuestion` to ask the user for the id — but prefer the resolver in every other case, since users typically do not know where to find the id in the Claude Code UI.

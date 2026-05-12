@@ -1,6 +1,6 @@
 # Doctor Skill Content Workflow
 
-Comprehensive analysis and refactoring of skill subdirectory content (references/, workflows/, templates/).
+Comprehensive analysis and refactoring of skill subdirectory content (references/, workflow/, templates/).
 
 ## Parameters
 
@@ -62,7 +62,7 @@ Reasoning:
   - {observation 1}
   - {observation 2}
 Current Location: {directory}
-Correct Location: {references/|workflows/|templates/}
+Correct Location: {references/|workflow/|templates/}
 Needs Move: {yes|no}
 Needs Splitting: {yes|no}
 ```

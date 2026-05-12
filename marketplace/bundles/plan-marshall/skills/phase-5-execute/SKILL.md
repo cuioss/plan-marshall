@@ -2,6 +2,7 @@
 name: phase-5-execute
 description: Execute phase skill for plan management. DUMB TASK RUNNER that executes tasks from TASK-*.json files sequentially.
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
 # Phase Execute Skill
@@ -33,7 +34,7 @@ Skill: plan-marshall:dev-general-practices
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
 - On phase entry (Step 4), resolve the active worktree absolute path and surface it as a `[STATUS]` work-log line so it stays visible in model context throughout the run.
-- Every subagent dispatch (Task / Skill / phase-agent invocation) MUST embed the Worktree Header in the dispatch prompt when a worktree is active (see **Dispatch Protocol** below) AND MUST pass `plan_id` as an input parameter to satisfy the subagent's Input Contract (e.g., `execute-task`, `phase-agent`). Prompt embedding and parameter passing are both required — the former propagates the constraint through free-form delegation, the latter satisfies the structured interface.
+- Every subagent dispatch (Task / Skill / execution-context invocation) MUST embed the Worktree Header in the dispatch prompt when a worktree is active (see **Dispatch Protocol** below) AND MUST pass `plan_id` as an input parameter to satisfy the subagent's Input Contract (e.g., `execute-task`, `execution-context`). Prompt embedding and parameter passing are both required — the former propagates the constraint through free-form delegation, the latter satisfies the structured interface.
 
 See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (path convention, never-edit-main-checkout invariant, dispatch header propagation, `--plan-id` two-state contract).
 
@@ -43,14 +44,14 @@ The Phase Entry Protocol's `phase_handshake verify --phase {previous_phase_key} 
 
 ## Dispatch Protocol (Worktree Header)
 
-**REQUIREMENT**: When the plan runs in an isolated worktree (see the `[STATUS] Active worktree` work-log line from Step 4), every subagent dispatch prompt — including `Task:`, `Skill:` invocations that accept free-form prompts, and `phase-agent` delegations — MUST begin with the canonical path-free Worktree Header:
+**REQUIREMENT**: When the plan runs in an isolated worktree (see the `[STATUS] Active worktree` work-log line from Step 4), every subagent dispatch prompt — including `Task:`, `Skill:` invocations that accept free-form prompts, and `execution-context` delegations — MUST begin with the canonical path-free Worktree Header:
 
 ```
 WORKTREE: --plan-id {plan_id}
 Resolved internally via `manage-status get-worktree-path`. All Edit/Write/Read tool calls and tool invocations (git -C, mvn -f, etc.) MUST target the resolved worktree path, NOT the main checkout. See workflow-integration-git/standards/worktree-handling.md for the canonical contract.
 ```
 
-The header is **path-free**: it carries `--plan-id {plan_id}` rather than the absolute worktree path. The dispatched skill resolves the path internally via `manage-status get-worktree-path --plan-id {plan_id}`. This replaces earlier path-leaking forms (`--project-dir <abs>`, `--worktree-path <abs>`) so the worktree absolute path no longer appears in dispatch prompts. The complete contract — header semantics, propagation rules, the `--plan-id` two-state binding, and rationale — is documented in `workflow-integration-git/standards/worktree-handling.md` § Dispatch Protocol.
+The header is **path-free**: it carries `--plan-id {plan_id}` rather than the absolute worktree path. The dispatched skill resolves the path internally via `manage-status get-worktree-path --plan-id {plan_id}`. The worktree absolute path MUST NOT appear in dispatch prompts. The complete contract — header semantics, propagation rules, the `--plan-id` two-state binding, and rationale — is documented in `workflow-integration-git/standards/worktree-handling.md` § Dispatch Protocol.
 
 The `[STATUS] Active worktree: ...` work-log line is the observability signal that the worktree was detected; embedding the header in every dispatch prompt is the active propagation mechanism. Skip the header only when no worktree is active.
 
@@ -309,7 +310,7 @@ Locate the `phases[name=5-execute]` row in the returned TOON and read its `statu
     work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Starting execute phase — {N} tasks pending"
   ```
 
-- If `status == in_progress` (re-entry; e.g., orchestrator re-dispatched a phase-agent after a previous turn ended without completing the queue) → emit:
+- If `status == in_progress` (re-entry; e.g., orchestrator re-dispatched a execution-context after a previous turn ended without completing the queue) → emit:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -350,7 +351,7 @@ Returns next task with status `pending` or `in_progress`, including embedded goa
 
 For each step in task's `steps[]` array:
 1. Parse the step text
-2. Execute the action (delegate if specified) — when delegating to a subagent via `Task:`, `Skill:` (prompt-accepting), or `phase-agent`, the prompt MUST begin with the Worktree Header from the **Dispatch Protocol** section above (omit only when no worktree is active).
+2. Execute the action (delegate if specified) — when delegating to a subagent via `Task:`, `Skill:` (prompt-accepting), or `execution-context`, the prompt MUST begin with the Worktree Header from the **Dispatch Protocol** section above (omit only when no worktree is active).
 3. Mark step complete via `manage-tasks:finalize-step`
 
 ### Step 7: Mark Step Complete
@@ -365,7 +366,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 
 ### Step 8: Log Task Completion
 
-After each task completes, the canonical `[OUTCOME]` work-log line is emitted **inside `manage-tasks finalize-step`** — see `manage-tasks/SKILL.md` § "Script-Level [OUTCOME] Emission" for the contract. The script fires exactly one `[OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-NNN: {title} ({M} steps)` line on the task-closing finalize call. **Skills MUST NOT emit a manual `[OUTCOME]` line here** — duplicating the script-level guard creates double entries, and re-implementing the emission in skill prose was the failure mode that lesson `2026-05-08-14-001` documents (the line was lost whenever a phase-agent was re-dispatched and the original agent's working context was discarded before its caller-side `[OUTCOME]` could fire).
+After each task completes, the canonical `[OUTCOME]` work-log line is emitted **inside `manage-tasks finalize-step`** — see `manage-tasks/SKILL.md` § "Script-Level [OUTCOME] Emission" for the contract. The script fires exactly one `[OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-NNN: {title} ({M} steps)` line on the task-closing finalize call. **Skills MUST NOT emit a manual `[OUTCOME]` line here** — duplicating the script-level guard creates double entries, and re-implementing the emission in skill prose was the failure mode that lesson `2026-05-08-14-001` documents (the line was lost whenever a execution-context was re-dispatched and the original agent's working context was discarded before its caller-side `[OUTCOME]` could fire).
 
 Immediately after the script-emitted `[OUTCOME]` line, emit one `[ARTIFACT]` work-log entry per file the task changed by diffing the task-start SHA (recorded at `in_progress` transition as `task_start_sha`) against the current HEAD. See `standards/workflow.md` § **Artifact Emission at Task Completion** for the authoritative procedure, status-code mapping, and rename-handling rule. The artifact entries use a deliberate three-segment caller prefix `(plan-marshall:phase-5-execute:{task_number})` — a documented exception to the usual two-segment `(bundle:skill)` convention in [manage-logging/standards/log-format.md](../manage-logging/standards/log-format.md). Emit nothing when the diff is empty. This step precedes `manage-tasks next` so the audit trail for each task is flushed before the orchestrator advances.
 
@@ -383,7 +384,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics accu
 
 Replace the placeholders with the integers parsed from the dispatched agent's `<usage>...</usage>` block. The script reads `.plan/plans/{plan_id}/work/metrics-accumulator-5-execute.toon` (initialising it on first call), sums in the supplied values, increments `samples`, and writes the file back. The on-disk file is the only source of truth — do NOT also keep a parallel tally in model context. See `manage-metrics/standards/data-format.md` § "Per-Phase Subagent Accumulator" for the file schema.
 
-The orchestrator's `phase-boundary` call in `workflows/execution.md` (recorded at end of execute) reads this accumulator as a fallback when its `--total-tokens` / `--tool-uses` / `--duration-ms` flags are omitted. Inline tasks contribute nothing — `manage-metrics enrich` (run by `phase-6-finalize:default:record-metrics`) sweeps the transcript for any subagent `<usage>` tags whose timestamp falls inside the `5-execute` window and adds them to the per-phase `subagent_*` columns of the metrics report as a post-hoc safety net.
+The orchestrator's `phase-boundary` call in `workflow/execution.md` (recorded at end of execute) reads this accumulator as a fallback when its `--total-tokens` / `--tool-uses` / `--duration-ms` flags are omitted. Inline tasks contribute nothing — `manage-metrics enrich` (run by `phase-6-finalize:default:record-metrics`) sweeps the transcript for any subagent `<usage>` tags whose timestamp falls inside the `5-execute` window and adds them to the per-phase `subagent_*` columns of the metrics report as a post-hoc safety net.
 
 ### Step 9: Independent Change Verification
 
@@ -467,6 +468,8 @@ If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
 - A `profile=verification` task completes with `verification.passed: false` / `next_action: requires_triage`, OR
 - Step 9 marked a task `blocked` with reason `no_changes_detected` or `verification_mismatch`
 
+The per-finding LLM core (FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over the failing findings) is owned by [`../plan-marshall/workflow/triage.md`](../plan-marshall/workflow/triage.md) and dispatched as `cross.triage` with `finding_type=verification-failure`.
+
 #### Planned-failure exception (breaking-refactor task split)
 
 **Applies before** the standard triage branches below. When a task with `profile: implementation` produces a verification failure and a downstream task with `profile: module_testing` and explicit `depends_on: [TASK-{current_task_number}]` exists, the dispatcher MAY proceed to the dependent task without flagging the failure as an error — this is the only case where "tests fail" is the planned outcome of the implementation step.
@@ -504,44 +507,50 @@ After the test-contract task completes, the standard verification path resumes �
 
 **11b**: If `verify_iteration >= verification_max_iterations` (from phase-5-execute config, default 5) → mark task `blocked`, log, continue to Step 12.
 
-**11c**: Load domain triage extension via extension-api (`provides_triage()`).
+**11c**: Persist each failing finding to the Q-Gate findings store (producer-side; the triage dispatch reads from the store by reference):
 
-**11d**: Persist findings to Q-Gate:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} --phase 5-execute \
-  --source qgate --type {finding_type} --severity {severity} \
+  --source qgate --type verification-failure --severity {severity} \
   --message "{finding_message}" --detail "{file}:{line}"
 ```
 
-**11e**: Triage each finding:
-- **FIX** → create fix task (`origin: fix`, `profile: implementation`, depends on nothing)
-- **SUPPRESS** → log suppression, resolve finding
-- **ACCEPT** → log as technical debt, resolve finding (see Scope-Deviation Escalation guard below — ACCEPT cannot be auto-selected when the finding represents a softening of a request-level hard requirement)
+(One `qgate add` call per finding; the verification task's structured `findings[]` output drives this loop.)
 
-#### Scope-Deviation Escalation (Step 11 guard)
+**11d**: Dispatch the per-finding triage core via [`../plan-marshall/workflow/triage.md`](../plan-marshall/workflow/triage.md) — single source of truth for the FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions, smart grouping, action bodies, overflow handling, and the Scope-Deviation Escalation guard. The dispatch is by-reference (the subagent queries the store as its first workflow step).
 
-Before recording any FIX/SUPPRESS/ACCEPT decision that would soften a request-level hard requirement (zero-hit grep gates, "no transition window" intents, "remove flag entirely" cutovers, etc.), this step MUST raise an `AskUserQuestion` per the canonical contract in [`../ref-workflow-architecture/standards/scope-deviation-escalation.md`](../ref-workflow-architecture/standards/scope-deviation-escalation.md). The standard is the single source of truth for the deviation taxonomy, the three-option AskUserQuestion shape (Hold / Accept-with-rationale / Split), and the prohibited "log-and-continue" anti-pattern.
+Compute the target via the role resolver, then dispatch:
 
-**Detection**: The decision softens a hard requirement when the finding cites a deviation from a measurable gate or structural intent declared in the plan's request, solution outline, or deliverable narrative. Use the standard's "Hard-Requirement Softening: Definition" section to classify.
+```bash
+target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models resolve-target --role cross.triage)
+```
 
-**Guard application**:
+```
+Task: plan-marshall:{target}
+  prompt: |
+    name: cross.triage
+    plan_id: {plan_id}
+    skills[4]:
+    - plan-marshall:manage-findings
+    - plan-marshall:manage-tasks
+    - plan-marshall:manage-architecture
+    - plan-marshall:manage-config
+    workflow: plan-marshall:plan-marshall/workflow/triage.md
 
-- **FIX** branch → no escalation needed (the dispatcher is already enforcing the requirement by creating a fix task).
-- **SUPPRESS** branch → escalate when the suppression would cause the requirement to fail in a future verification run. Pure noise suppression (linter false positives, etc.) does not require escalation.
-- **ACCEPT** branch → escalate whenever the finding cites a hard requirement. ACCEPT-as-technical-debt is NOT auto-selectable for hard-requirement softenings; the user must explicitly choose "Accept with rationale" via the canonical AskUserQuestion and supply the mandatory written rationale.
+    finding_type: verification-failure
 
-**Resolution**: On user resolution, follow the side-effect contract in `scope-deviation-escalation.md`:
+    WORKTREE: {worktree_path}
+```
 
-- **Hold** → re-route through FIX or BLOCKED (no scope reduction recorded).
-- **Accept-with-rationale** → persist the rationale to `decision.log` at INFO level using the canonical `(scope-deviation:accept)` caller-name marker (downstream tooling — PR-body emitter, retrospective scanner — keys off this exact marker to find recorded deviations) AND surface the rationale verbatim in the PR body under a "Scope Deviation Accepted" subsection.
-- **Split** → seed a successor lesson via `manage-lessons add` capturing the deferred portion.
+The Scope-Deviation Escalation guard lives in [`triage.md`](../plan-marshall/workflow/triage.md) § Step 6 — the triage subagent raises `AskUserQuestion` with the four canonical options (Hold / Accept-with-rationale / Split / FIX-here-anyway) when a decision would soften a request-level hard requirement (zero-hit grep gates, "no transition window" intents, "remove flag entirely" cutovers, etc.). The canonical contract is documented in [`../ref-workflow-architecture/standards/scope-deviation-escalation.md`](../ref-workflow-architecture/standards/scope-deviation-escalation.md); the work-log line `[STATUS] Gate N deferred status accepted` is forbidden as a stand-in for the AskUserQuestion thread — the escalation MUST happen first; logging confirms the user's decision afterward.
 
-The work-log line `[STATUS] Gate N deferred status accepted` is forbidden as a stand-in for the AskUserQuestion thread — the escalation MUST happen first; logging confirms the user's decision afterward.
+**11e**: Inspect the triage subagent's return:
 
-**11f**: If fix tasks created → increment `verify_iteration` in task metadata, reset verification task to `pending`, continue execution loop (fix tasks will execute before the re-queued verification task via `depends_on`).
-
-**11g**: If no fix tasks → mark verification task complete (all findings suppressed/accepted), continue to Step 11b.
+- If `fix_tasks_created > 0` → increment `verify_iteration` in task metadata, reset the verification task to `pending`, continue the execution loop (fix tasks will execute before the re-queued verification task via `depends_on`).
+- If `fix_tasks_created == 0` AND `overflow_deferred == 0` → mark the verification task complete (all findings suppressed / accepted / `taken_into_account`), continue to Step 11b.
+- If `overflow_deferred > 0` → leave the verification task `pending`; the orchestrator re-fires the triage dispatch on the next phase-5 entry (the iteration cap is unchanged).
 
 ### Step 11b: Final Quality Sweep (After All Tasks)
 
@@ -558,7 +567,7 @@ After every task in the phase has completed (and Step 11 has resolved any per-ta
      resolve --command quality-gate --audit-plan-id {plan_id}
    ```
 
-2. Execute the returned `executable`. On non-zero exit, route the failure through the Step 11 triage loop (treat as a single-finding verification failure) so the Step 11 fix-task / suppress / accept branch handles remediation. After triage resolves, do **NOT** re-run the sweep — Step 11b runs at most once per phase entry.
+2. Execute the returned `executable`. On non-zero exit, persist the failures to the Q-Gate findings store (`manage-findings qgate add --type quality-gate-failure …`) and dispatch [`../plan-marshall/workflow/triage.md`](../plan-marshall/workflow/triage.md) as `cross.triage` with `finding_type=quality-gate-failure` — same shape as Step 11d above, only the finding type changes. The triage subagent's return drives the same fix-task / suppress / accept branch (Step 11e). After triage resolves, do **NOT** re-run the sweep — Step 11b runs at most once per phase entry.
 
 3. Log the outcome:
 
@@ -690,9 +699,9 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 When `per_task_budget_reserve` is set, use its value as `N`. **Fallback when the knob is absent**: use the conservative default `N = 50000` tokens. The fallback exists so plans that have not yet migrated to the manifest-driven model still observe a deterministic yield boundary rather than running until the host platform forces a `harness_cancellation`. Plans that need a different reserve raise the value in `marshal.json`'s `plan.phase-5-execute.per_task_budget_reserve` slot.
 
-**Cross-reference to the three terminal outcomes** — the sentinel is the **continue-vs-yield** decision, not a fourth terminal outcome. When the sentinel says "yield", the agent still MUST exit via one of the three documented terminal paths above (queue empty → transition; fatal error → structured error TOON; triage `blocked` → manage-tasks status update). Yielding does NOT mean "return a partial-completion checkpoint" — that path is explicitly forbidden by the section above. The orchestrator re-dispatches the phase-agent on the next round; the in-flight task's state is already persisted by `manage-tasks finalize-step` so resumption is lossless.
+**Cross-reference to the three terminal outcomes** — the sentinel is the **continue-vs-yield** decision, not a fourth terminal outcome. When the sentinel says "yield", the agent still MUST exit via one of the three documented terminal paths above (queue empty → transition; fatal error → structured error TOON; triage `blocked` → manage-tasks status update). Yielding does NOT mean "return a partial-completion checkpoint" — that path is explicitly forbidden by the section above. The orchestrator re-dispatches the execution-context on the next round; the in-flight task's state is already persisted by `manage-tasks finalize-step` so resumption is lossless.
 
-**Audit diagnostic ledger** — when investigating throughput regressions (e.g., "why did this run process 1 task at ~119k tokens while a prior run processed 4 at ~210k?"), compare the work-log entries between `phase-agent`-mediated dispatches and direct `phase-5-execute` dispatches. The phase-agent layer adds a small fixed cost per dispatch (skill-load + Worktree Header echo); the difference between the two trace shapes is the per-dispatch overhead and is the first thing to inspect when budget accounting drifts.
+**Audit diagnostic ledger** — when investigating throughput regressions (e.g., "why did this run process 1 task at ~119k tokens while a prior run processed 4 at ~210k?"), inspect the per-dispatch overhead in the work log. Each `execution-context` dispatch carries a fixed cost (skill-load preamble + Worktree Header echo + return-TOON marshalling); the ratio of overhead to useful work per dispatch is the first thing to check when budget accounting drifts.
 
 ---
 
@@ -716,6 +725,22 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 - **IF `finalize_without_asking == true`**: Log and auto-continue to finalize phase
 - **ELSE (default)**: Stop and display `"Run '/plan-marshall action=finalize plan={plan_id}' when ready."`
+
+---
+
+## Output
+
+phase-5-execute returns on three terminal paths (queue empty → transition; fatal error; triage `blocked`). The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
+
+```toon
+status: success | error | blocked
+display_detail: "<{tasks_completed} tasks complete, {tasks_remaining} remaining>"
+plan_id: {plan_id}
+tasks_completed: {N}
+tasks_remaining: {N}
+```
+
+`display_detail` shape on success: `"{tasks_completed} tasks complete, {tasks_remaining} remaining"` (e.g. `"7 tasks complete, 0 remaining"`). On `blocked`: `"{task_number} blocked: {short reason}"`. On error: short error label from § Error Handling. All values are ≤80 chars, ASCII, no trailing period.
 
 ---
 

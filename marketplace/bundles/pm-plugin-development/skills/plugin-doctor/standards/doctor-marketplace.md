@@ -38,30 +38,29 @@ Parse the JSON output to get:
 
 2. **Tool Coverage Analysis via Agents** (for items in `components_for_tool_analysis`):
 
-   Resolve the level for role `tool_coverage_analysis` ONCE before spawning:
+   Compute the dispatch target via the role resolver ONCE before spawning:
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-     models read --role tool_coverage_analysis
+   target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+     models resolve-target --role cross.plugin-doctor)
    ```
 
-   Compute the target agent name:
-   - `level == "inherit"` or empty → `target = tool-coverage-agent`
-   - otherwise → `target = tool-coverage-agent-<level>`
+   Dispatch `plan-marshall:{target}` for each component in parallel (one Task call per file in a single message):
 
-   Spawn `pm-plugin-development:{target}` for each component. **Use parallel spawning** for efficiency:
    ```
-   # Spawn multiple agents in parallel (single message with multiple Task calls)
-   Task: pm-plugin-development:{target} (file1)
-   Task: pm-plugin-development:{target} (file2)
-   Task: pm-plugin-development:{target} (file3)
-   ...
-   ```
+   Task: plan-marshall:{target}
+     prompt: |
+       name: tool-coverage
+       plan_id: {plan_id}
+       skills[1]:
+       - pm-plugin-development:plugin-doctor
+       workflow: pm-plugin-development:plugin-doctor/workflow/tool-coverage.md
+       WORKTREE: {worktree_path}
 
-   Each agent receives:
-   - file_path: {file}
-   - declared_tools: {declared_tools}
-   - component_type: {type}
+       file_path: {file}
+       declared_tools: {declared_tools}
+       component_type: {type}
+   ```
 
    The agent semantically determines:
    - Which tools are actually USED (not just mentioned in docs)

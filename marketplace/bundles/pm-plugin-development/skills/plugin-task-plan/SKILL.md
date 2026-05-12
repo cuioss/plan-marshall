@@ -25,12 +25,12 @@ user-invocable: false
 ```yaml
 # CORRECT - file paths from deliverable
 steps:
-  - marketplace/bundles/plan-marshall/agents/phase-agent.md
+  - marketplace/bundles/plan-marshall/agents/execution-context.md
   - marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md
 
 # WRONG - descriptive text (violates contract)
 steps[2]{number,target,status}:
-1,Convert phase-agent outputs,pending
+1,Convert execution-context outputs,pending
 2,Convert phase-3-outline skill outputs,pending
 ```
 
@@ -170,7 +170,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
 #   phase: 5-execute
 #   description: Convert all JSON output blocks to TOON format in plan-marshall phase components.
 #   steps:
-#     - marketplace/bundles/plan-marshall/agents/phase-agent.md
+#     - marketplace/bundles/plan-marshall/agents/execution-context.md
 #     - marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md
 #     - marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md
 #     - marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md
@@ -301,7 +301,7 @@ The `steps` field lists ALL files to migrate (copied from `Affected files`):
 ```yaml
 title: Migrate plan-marshall Phase Components to TOON Format
 steps:
-  - marketplace/bundles/plan-marshall/agents/phase-agent.md
+  - marketplace/bundles/plan-marshall/agents/execution-context.md
   - marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md
   - marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md
   - marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md
@@ -408,7 +408,7 @@ If deliverable lacks required parameters:
 
 ## Integration
 
-**Caller**: `plan-marshall:phase-agent` (generic phase agent, via skill delegation)
+**Caller**: `plan-marshall:execution-context` (generic dispatcher, via workflow delegation)
 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Read solution and list deliverables (list-deliverables, read)

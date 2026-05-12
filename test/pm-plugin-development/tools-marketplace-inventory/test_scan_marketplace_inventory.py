@@ -433,39 +433,48 @@ def test_scripts_exclude_private_modules():
 
 def test_name_pattern_filters_agents():
     """Test --name-pattern filters agents by pattern."""
-    result = run_script(SCRIPT_PATH, '--direct-result', '--resource-types', 'agents', '--name-pattern', 'phase-*')
-    assert result.returncode == 0, f'Script returned error: {result.stderr}'
-
-    data = parse_toon(result.stdout)
-    bundles = get_bundles(data)
-    total_agents = data.get('statistics', {}).get('total_agents', 0)
-    assert total_agents >= 1, 'Should find at least 1 phase-related agent'
-
-    # Verify all agents match the pattern (agents are strings in default mode)
-    for bundle in bundles:
-        for agent in bundle.get('agents', []):
-            agent_name = agent if isinstance(agent, str) else agent.get('name', '')
-            assert agent_name.startswith('phase-'), f'Agent {agent_name} should match phase-* pattern'
-
-
-def test_name_pattern_multiple_patterns():
-    """Test --name-pattern with multiple pipe-separated patterns."""
     result = run_script(
-        SCRIPT_PATH, '--direct-result', '--resource-types', 'agents', '--name-pattern', 'phase-*|detect-*'
+        SCRIPT_PATH, '--direct-result', '--resource-types', 'agents', '--name-pattern', 'execution-*'
     )
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_toon(result.stdout)
     bundles = get_bundles(data)
     total_agents = data.get('statistics', {}).get('total_agents', 0)
-    assert total_agents >= 2, 'Should find at least 2 agents matching phase-* or detect-* patterns'
+    assert total_agents >= 1, 'Should find at least 1 execution-context agent'
+
+    # Verify all agents match the pattern (agents are strings in default mode)
+    for bundle in bundles:
+        for agent in bundle.get('agents', []):
+            agent_name = agent if isinstance(agent, str) else agent.get('name', '')
+            assert agent_name.startswith('execution-'), (
+                f'Agent {agent_name} should match execution-* pattern'
+            )
+
+
+def test_name_pattern_multiple_patterns():
+    """Test --name-pattern with multiple pipe-separated patterns."""
+    result = run_script(
+        SCRIPT_PATH,
+        '--direct-result',
+        '--resource-types',
+        'agents',
+        '--name-pattern',
+        'execution-*|*-context',
+    )
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = parse_toon(result.stdout)
+    bundles = get_bundles(data)
+    total_agents = data.get('statistics', {}).get('total_agents', 0)
+    assert total_agents >= 1, 'Should find at least 1 agent matching execution-* or *-context patterns'
 
     # Verify all agents match one of the patterns (agents are strings in default mode)
     for bundle in bundles:
         for agent in bundle.get('agents', []):
             agent_name = agent if isinstance(agent, str) else agent.get('name', '')
-            assert agent_name.startswith('phase-') or agent_name.startswith('detect-'), (
-                f'Agent {agent_name} should match phase-* or detect-* pattern'
+            assert agent_name.startswith('execution-') or agent_name.endswith('-context'), (
+                f'Agent {agent_name} should match execution-* or *-context pattern'
             )
 
 
@@ -550,7 +559,7 @@ def test_combined_bundle_and_name_pattern():
         '--resource-types',
         'agents',
         '--name-pattern',
-        'phase-*',
+        'execution-*',
     )
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
@@ -559,11 +568,13 @@ def test_combined_bundle_and_name_pattern():
     assert len(bundles) == 1, 'Should have exactly 1 bundle'
     assert bundles[0]['name'] == 'plan-marshall', 'Bundle should be plan-marshall'
 
-    # Should find phase-agent and other agents
+    # Should find execution-context and any other agents
     agents = bundles[0].get('agents', [])
     assert len(agents) >= 1, 'Should find at least 1 agent in plan-marshall'
     agent_names = [a if isinstance(a, str) else a.get('name', '') for a in agents]
-    assert any('phase-agent' in n for n in agent_names), f'Should find phase-agent, got: {agent_names}'
+    assert any('execution-context' in n for n in agent_names), (
+        f'Should find execution-context, got: {agent_names}'
+    )
 
 
 # =============================================================================

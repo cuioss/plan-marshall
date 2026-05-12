@@ -51,48 +51,45 @@ This applies equally to production code, test code, and documentation.
 
 **How to Research:**
 
-**Use research-best-practices-agent** (NOT web search tools directly).
+**Dispatch the research-best-practices workflow** (NOT web search tools directly).
 
-(1) Resolve the level for role `research`:
+Compute the dispatch target via the role resolver (recommended levels: `high` or `xxhigh` — research benefits from the most capable model):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models read --role research
+target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models resolve-target --role cross.research)
 ```
 
-(2) Compute the target:
-- `level == "inherit"` or empty → `target = research-best-practices-agent`
-- otherwise → `target = research-best-practices-agent-<level>`
-
-(3) Dispatch (recommended levels: `high` or `xxhigh` — research benefits from the most capable model):
+Dispatch:
 
 ```
-Task:
-  subagent_type: plan-marshall:{target}
-  description: Research {topic} best practices
+Task: plan-marshall:{target}
   prompt: |
-    Research current best practices for {specific topic}.
+    name: research-best-practices
+    plan_id: {plan_id}
+    skills[1]:
+    - plan-marshall:dev-general-practices
+    workflow: plan-marshall:plan-marshall/workflow/research-best-practices.md
+    WORKTREE: {worktree_path}
 
-    Focus on:
-    - Latest recommendations (2025+)
-    - Industry standard approaches
-    - Official documentation if available
-    - Community consensus patterns
+    topic: {specific topic}
 ```
+
+The workflow body covers research scope and the synthesis contract; the prompt body's `topic` field substitutes into the workflow's `{topic}` placeholders.
 
 **DO NOT use these patterns** (outdated approaches):
 - "Use MCP tools like Perplexity, DuckDuckGo" (Too generic, no structured research)
 - "Search GitHub" (Not comprehensive, misses documentation)
 - Direct WebSearch without structured analysis (Lacks synthesis)
 
-**ALWAYS use research-best-practices-agent:**
+**ALWAYS dispatch the research-best-practices workflow:**
 - Structured comprehensive research
 - Analyzes top 10+ sources
 - Provides confidence levels
 - Maintains reference trails
 - Synthesizes findings from multiple sources
 
-**Example:** Need Java testing best practices → spawn `plan-marshall:research-best-practices-agent` with prompt "Research best practices for Java unit testing with JUnit 5"
+**Example:** Need Java testing best practices → dispatch the research workflow with `topic: "Java unit testing with JUnit 5"`.
 
 ### Principle 3: Apply Judgment Within Constraints
 
@@ -190,7 +187,7 @@ For complete patterns including file operations, content search, and Bash safety
 
 These rules apply to ALL development work in plan-marshall-governed repositories — ad-hoc tasks, plan execution, and subagent work alike. They exist because the LLM regularly violates them despite softer guidance, so skill-level reinforcement is necessary.
 
-- **No unconstrained generic subagents inside plan-marshall phase work** — Never spawn an unconstrained generic subagent for any work inside a phase (1-init through 6-finalize). Use `plan-marshall:phase-agent` with an explicit `skill=` argument, a dedicated named plan-marshall agent, or inline main-context execution. A generic subagent has no plan-marshall enforcement context, inherits broad tool access, and will violate workflow hard rules. Subagent rules propagate through the agent definition, not through the caller's prompt. (Lesson: `2026-04-24-12-001`.)
+- **No unconstrained generic subagents inside plan-marshall phase work** — Never spawn an unconstrained generic subagent (e.g. `Task: general-purpose`) for any work inside a phase (1-init through 6-finalize). Use `plan-marshall:execution-context-{level}` with a `workflow:` notation pointing at the workflow doc, or inline main-context execution. A generic subagent has no plan-marshall enforcement context, inherits broad tool access, and will violate workflow hard rules. Subagent rules propagate through the agent definition, not through the caller's prompt. (Lesson: `2026-04-24-12-001`.)
 
 ### Structured queries first
 
@@ -235,5 +232,5 @@ If the architecture verb truly cannot answer (e.g., target is sub-module, target
 | File operations (find/read/search/write/edit) | See Principle 4 for complete tool selection guide |
 | Need to create document | Ask user first |
 | Need to add dependency | Ask user first |
-| About to spawn an unconstrained generic subagent for phase work | Use `plan-marshall:phase-agent`, a named plan-marshall agent, or inline main-context execution |
+| About to spawn an unconstrained generic subagent for phase work | Use `plan-marshall:execution-context-{level}` with a `workflow:` notation, or inline main-context execution |
 

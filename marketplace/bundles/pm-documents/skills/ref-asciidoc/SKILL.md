@@ -460,7 +460,7 @@ All reference material is in the `references/` directory:
 
 ## Workflow Documents
 
-All workflow procedures are in the `workflows/` directory:
+All workflow procedures are in the `workflow/` directory:
 
 | Workflow | Purpose | When to Load |
 |----------|---------|--------------|

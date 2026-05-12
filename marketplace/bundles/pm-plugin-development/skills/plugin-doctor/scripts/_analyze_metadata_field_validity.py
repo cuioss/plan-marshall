@@ -179,7 +179,7 @@ def scan_skill_for_undefined_fields(
     """Scan all markdown in ``skill_dir`` for undefined metadata field references.
 
     Covers ``SKILL.md`` and all markdown in ``standards/``, ``references/``,
-    ``workflows/``, and ``templates/`` sub-directories.
+    ``workflow/``, and ``templates/`` sub-directories.
     """
     findings: list[dict] = []
     targets: list[Path] = []
