@@ -248,3 +248,7 @@ deferred_user_questions: {Q}   # only present when AskUserQuestion fired
 ```
 
 `status: loop_back` when `fix_tasks_created > 0` OR `overflow_deferred > 0`. Otherwise `status: success` (every pending finding resolved without creating new tasks).
+
+## Related
+
+- [dispatch-granularity.md](../../extension-api/standards/dispatch-granularity.md) § 5.1–5.2 — the shared-triage-core principle and why smart grouping beats either pure sequential or full-batch shapes. The algorithm specifics live in this doc (single source of truth); the granularity doc explains why the dispatch shape is shared across five call sites and bundled rather than per-iteration.

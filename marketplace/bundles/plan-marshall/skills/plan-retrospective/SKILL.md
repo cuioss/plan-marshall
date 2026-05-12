@@ -34,6 +34,10 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 Skill: plan-marshall:dev-general-practices
 ```
 
+## Dispatch shape: 8 aspects iterate inside one envelope
+
+This workflow dispatches under the `phase-6.retrospective` role key as **one** `execution-context-{level}` envelope. The 8 LLM analytical aspects (metrics, decision/work logs, references vs deliverables, deliverable vs lesson alignment, scope-deviation footprint, behavioural observations, chat-history aspect when `--session-id` is present, lesson-quality audit) iterate **in-context inside that single envelope** — the orchestrator never spawns N × envelope per aspect. Bundling matches granularity Heuristic 2 (steps share context): every aspect reads the same plan artefacts, runs the same skill loads, and contributes to the same final retrospective document. Per-aspect dispatch would pay 8× envelope cost with no parallelism payoff. See [`../extension-api/standards/dispatch-granularity.md`](../extension-api/standards/dispatch-granularity.md) § 3.
+
 ## Input Contract
 
 | Parameter | Type | Required | Description |

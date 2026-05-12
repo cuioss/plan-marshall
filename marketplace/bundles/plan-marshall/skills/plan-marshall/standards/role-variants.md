@@ -10,18 +10,19 @@ You configure a small JSON block in `.plan/marshal.json`. The build target emits
 
 ## The Level Palette
 
-Five ordinal tiers plus a sentinel:
+Six ordinal tiers plus a sentinel:
 
 | Level | Model | Effort | When to use |
 |-------|-------|--------|-------------|
 | `low` | Haiku | (n/a) | Mechanical tasks: log scrubbing, simple lookups, deterministic transforms. |
 | `medium` | Sonnet | medium | Default for routine work — most code edits, doc updates. |
 | `high` | Sonnet | high | Analytical work: PR review, validation, multi-file reasoning. |
-| `xhigh` | Opus | high | Heavy reasoning: complex refactors, deep root-cause analysis. |
-| `xxhigh` | Opus | xhigh | Top tier (Opus-4.7-only). Research, novel problem decomposition. |
+| `xhigh` | Opus | medium | Opus reasoning without max thinking — fills the Sonnet-high → Opus-high cost/quality gap. |
+| `xxhigh` | Opus | high | High-effort Opus — today's standard Opus top tier. |
+| `max` | Opus | xhigh | Top tier (Opus-4.7-only). Research, novel problem decomposition; build-time guard skips emission when the alias does not accept `effort: xhigh`. |
 | `inherit` | (parent) | (parent) | Sentinel: dispatch the canonical, inheriting whatever the parent session uses. |
 
-See [`model-levels.md`](model-levels.md) for the full level → `(model, effort)` primitive binding, alias rules, and the `xxhigh` build-time guard.
+See [`model-levels.md`](model-levels.md) for the full level → `(model, effort)` primitive binding, alias rules, and the `max` build-time guard.
 
 ## The Role Registry
 
@@ -54,7 +55,7 @@ The schema lives at `.plan/marshal.json` under the `models` key:
     "default": "medium",
     "roles": {
       "cross": {
-        "research": "xxhigh",
+        "research": "max",
         "q-gate-validation": "high",
         "triage": "high"
       },
@@ -86,7 +87,7 @@ For most workflows, this gets you most of the value at modest cost:
     "default": "medium",
     "roles": {
       "cross": {
-        "research": "xxhigh",
+        "research": "max",
         "q-gate-validation": "high",
         "triage": "high"
       }
@@ -103,7 +104,24 @@ When a dispatch site fires (e.g., phase-6-finalize dispatching the `phase-6.crea
 2. If level is `inherit` (or the resolver returned `inherit` as the implicit fallback), the target is the **canonical** no-suffix variant: `Task: plan-marshall:execution-context`. The runtime inherits the parent's model.
 3. Otherwise, the target is a **variant**: `Task: plan-marshall:execution-context-{level}`. The variant has `model:` and `effort:` baked into its frontmatter, so Claude Code runs the subagent on those exact settings.
 
-The dispatched `execution-context` agent reads the caller-supplied `workflow` (the doc path inside the prompt body) and executes it. One agent + one set of six emitted variants drives every plan-marshall `Task:` invocation in the marketplace. Variants are emitted at build time into `target/claude/plan-marshall/agents/`, then synced into the plugin cache via `/sync-plugin-cache`.
+The dispatched `execution-context` agent reads the caller-supplied `workflow` (the doc path inside the prompt body) and executes it. One agent + one set of seven emitted variants (canonical + six levels) drives every plan-marshall `Task:` invocation in the marketplace. Variants are emitted at build time into `target/claude/plan-marshall/agents/`, then synced into the plugin cache via `/sync-plugin-cache`.
+
+## Migration Note — `xhigh` / `xxhigh` rebind
+
+Plan-marshall is pre-1.0. The recent palette expansion — inserting `xhigh = opus-medium` and promoting `max` to live — rebinds the existing `xhigh` and `xxhigh` keywords to **weaker** primitives than they previously resolved to:
+
+| Level | Previous binding | New binding |
+|-------|------------------|-------------|
+| `xhigh` | `opus, high` | `opus, medium` |
+| `xxhigh` | `opus, xhigh` | `opus, high` |
+| `max` | (reserved — not accepted by resolver) | `opus, xhigh` (Opus-4.7-only) |
+
+There is no auto-migration. **User-side action** for any consumer `marshal.json` that was already opted in to per-role levels:
+
+- If you previously wanted *Opus, high* under `xhigh` → now point at `xxhigh`.
+- If you previously wanted *Opus, xhigh* under `xxhigh` → now point at `max`.
+
+Configs that did not opt in to per-role levels (or that only used `low`/`medium`/`high`) are unaffected.
 
 ## Troubleshooting
 
@@ -115,9 +133,9 @@ The dispatched `execution-context` agent reads the caller-supplied `workflow` (t
 2. Is the level spelled correctly (`high`, not `High` or `hi`)?
 3. Is `target/claude/` regenerated? Run the `project:finalize-step-deploy-target` step (or `python3 marketplace/targets/generate.py --target claude --output target/claude`) to refresh emitted variants, then `/sync-plugin-cache` to push them into the plugin cache.
 
-### Symptom: A role configured as `xxhigh` is not running on Opus
+### Symptom: A role configured as `max` is not running on Opus
 
-`xxhigh` resolves to `(opus, xhigh)`, which is currently Opus-4.7-only. The build target's guard refuses to emit the `xxhigh` variant when the canonical's resolved alias does not accept `effort: xhigh` — the dispatch falls back to the canonical, which inherits the parent's model. Check `.plan/logs/` for the build warning naming the canonical and the missing capability.
+`max` resolves to `(opus, xhigh)`, which is currently Opus-4.7-only. The build target's guard refuses to emit the `max` variant when the canonical's resolved alias does not accept `effort: xhigh` — the dispatch falls back to the canonical, which inherits the parent's model. Check `.plan/logs/` for the build warning naming the canonical and the missing capability.
 
 ### Symptom: Set a level but it's not even visible to the resolver
 
@@ -131,7 +149,7 @@ Restart Claude Code after the unset.
 
 ### Symptom: Wizard refuses my level value
 
-Valid levels are `low`, `medium`, `high`, `xhigh`, `xxhigh`, `inherit`. The reserved keyword `max` is not yet supported (planned future-additive option for "the highest tier the runtime supports") — use `xxhigh` for the current top tier.
+Valid levels are `low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`, `inherit`. There are currently no reserved-future keywords; future palette expansion may add to the reserved set with a clear error message.
 
 ## Recommended `cross.research` Setting
 
@@ -142,14 +160,14 @@ The `research` workflow benefits from the most capable model — every other wor
   "models": {
     "roles": {
       "cross": {
-        "research": "xxhigh"
+        "research": "max"
       }
     }
   }
 }
 ```
 
-(or `xhigh` if you don't need Opus-4.7's `xhigh` effort tier).
+(or `xxhigh` if you don't need Opus-4.7's `xhigh` effort tier — the `max` variant gracefully degrades to canonical when the alias does not accept `effort: xhigh`.)
 
 ## Cross-References
 

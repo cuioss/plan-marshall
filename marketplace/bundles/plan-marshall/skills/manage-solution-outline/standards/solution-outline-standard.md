@@ -413,12 +413,12 @@ The `change_type` field uses the fixed vocabulary defined in `plan-marshall:ref-
 | `tech_debt` | 5 | Refactoring, cleanup, migration, removal | Group by target format or bundle |
 | `verification` | 6 | Validate, check, confirm | Group by verification scope |
 
-#### Agent Resolution
+#### Workflow Resolution
 
-Change types determine which agent handles the outline workflow:
-1. Detect change_type from request (detect-change-type-agent)
-2. Resolve agent from domain config or use generic fallback
-3. Agent creates deliverables appropriate for the change type
+Change types determine which workflow handles the outline phase:
+1. Detect change_type from request (`manage-status:change-type-heuristic` script; LLM fallback via `models.default` when ambiguous)
+2. Resolve domain skill from domain config or use generic fallback
+3. The `phase-3` outline dispatch creates deliverables appropriate for the change type, with the domain skill loaded as a `skills[]` entry in the prompt body
 
 ### Execution Modes
 

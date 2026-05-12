@@ -145,16 +145,15 @@ def test_invalid_level_refused_at_read():
         assert 'models.roles.cross.q-gate-validation' in result['error']
 
 
-def test_reserved_max_level_explicit_error():
-    """`max` is reserved; wizard error explicitly steers user to `xxhigh`."""
+def test_max_level_resolves_for_research():
+    """`max` is a live level (promoted from reserved-future); resolves cleanly."""
     with PlanContext() as ctx:
         _seed_marshal(ctx.fixture_dir, {'default': 'max'})
 
-        result = cmd_models(Namespace(role='research'))
+        result = cmd_models(Namespace(role='cross.research'))
 
-        assert result['status'] == 'error'
-        assert 'reserved' in result['error']
-        assert 'xxhigh' in result['error']
+        assert result['status'] == 'success'
+        assert result['level'] == 'max'
 
 
 # =============================================================================

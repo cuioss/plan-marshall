@@ -45,7 +45,7 @@ Every invocation of this skill MUST provide the following inputs:
 | `task_number` | number | Yes | Numeric task id to execute |
 | `worktree_path` | string | Deprecated | **Deprecated** — kept only for backward compatibility with callers that still pass an absolute path. New callers MUST forward only `plan_id`. When supplied, the value MUST agree with the path resolved from `plan_id`; treat any disagreement as fail-loud. |
 
-Callers (typically `phase-agent` dispatching this skill) MUST forward `plan_id` verbatim — no absolute-path forwarding is required. Child subagent dispatches issued from within this skill MUST echo the path-free Worktree Header verbatim into their own prompts (template: `WORKTREE: --plan-id {plan_id}` plus the resolution-and-rationale block defined in `plan-marshall:phase-5-execute` § Dispatch Protocol).
+Callers (typically `execution-context-{level}` dispatching this skill via the `phase-5` role key) MUST forward `plan_id` verbatim — no absolute-path forwarding is required. Child subagent dispatches issued from within this skill MUST echo the path-free Worktree Header verbatim into their own prompts (template: `WORKTREE: --plan-id {plan_id}` plus the resolution-and-rationale block defined in `plan-marshall:phase-5-execute` § Dispatch Protocol).
 
 All profiles share the steps below. Profile-specific steps are documented in each profile section.
 

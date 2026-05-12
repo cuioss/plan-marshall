@@ -55,6 +55,8 @@ METRICS_MD = 'metrics.md'
 PHASE_NAMES = list(PHASES)
 ACCUMULATOR_FILE_TEMPLATE = 'work/metrics-accumulator-{phase}.toon'
 DISPATCH_BOUNDARY_FILE_TEMPLATE = 'work/metrics-dispatch-boundaries-{phase}.toon'
+ANCHOR_DEFAULT_PATH = '.plan/temp/refactor-execution-context-anchor/anchors.toon'
+ANCHOR_DEFAULT_THRESHOLD_PERCENT = 20.0
 DISPATCH_TERMINATION_CAUSES = (
     'voluntary_checkpoint',
     'task_complete_returned_verbatim',
@@ -666,10 +668,10 @@ def _dispatch_boundary_path(plan_id: str, phase: str) -> Path:
 
 
 def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
-    """Record one tabular row per phase-agent dispatch termination.
+    """Record one tabular row per phase Task dispatch termination.
 
     Appends a TOON row to ``work/metrics-dispatch-boundaries-{phase}.toon``
-    capturing why a phase-agent dispatch ended (voluntary checkpoint,
+    capturing why a phase Task dispatch ended (voluntary checkpoint,
     bare task_complete return, harness cancellation, error, unknown) along
     with the dispatched agent's <usage> totals at the time of return. The
     accumulating file becomes the audit trail for diagnosing
@@ -826,6 +828,243 @@ def _extract_text_payload(content: object) -> str:
                     chunks.append(text)
         return '\n'.join(chunks)
     return ''
+
+
+def _parse_anchor_file(path: Path) -> tuple[dict[str, dict[str, int]], dict, str | None]:
+    """Parse the anchor TOON file.
+
+    Returns:
+        (per_plan_phase_totals, metadata, error). On parse failure
+        ``error`` is a human-readable message and the other return
+        values are empty.
+
+    The anchor file's authoritative shape is described in
+    ``.plan/temp/refactor-execution-context-anchor/anchors.toon``:
+
+    - One ``anchors[N]`` row per source plan (informational; only
+      ``plan_id`` and ``description`` are used).
+    - A ``phases:`` block keyed by plan_id mapping each phase to the
+      anchor ``total_tokens`` (or ``-1`` for "(not recorded)").
+    - A ``threshold:`` block with ``warn_percent``.
+
+    The parser is intentionally narrow — only the per-phase totals and
+    the threshold are needed for ``compare-anchor`` to produce its
+    table.
+    """
+    if not path.exists():
+        return {}, {}, f'anchor file not found: {path}'
+    try:
+        text = path.read_text(encoding='utf-8')
+    except OSError as exc:
+        return {}, {}, f'cannot read anchor file: {exc}'
+
+    per_plan: dict[str, dict[str, int]] = {}
+    metadata: dict = {}
+    in_phases = False
+    in_threshold = False
+    current_plan_id: str | None = None
+
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
+        leading = len(line) - len(line.lstrip(' '))
+        stripped = line.lstrip(' ')
+
+        if stripped.startswith('phases:'):
+            in_phases = True
+            in_threshold = False
+            current_plan_id = None
+            continue
+        if stripped.startswith('threshold:'):
+            in_threshold = True
+            in_phases = False
+            current_plan_id = None
+            continue
+        if stripped.startswith('anchors['):
+            in_phases = False
+            in_threshold = False
+            continue
+
+        if in_phases:
+            if leading == 2 and stripped.endswith(':'):
+                current_plan_id = stripped[:-1].strip()
+                per_plan.setdefault(current_plan_id, {})
+                continue
+            if leading == 4 and current_plan_id and ':' in stripped:
+                phase_key, _, raw_val = stripped.partition(':')
+                phase_key = phase_key.strip()
+                raw_val = raw_val.strip()
+                try:
+                    per_plan[current_plan_id][phase_key] = int(raw_val)
+                except ValueError:
+                    return (
+                        {},
+                        {},
+                        (
+                            f"malformed token count '{raw_val}' for phase "
+                            f"'{phase_key}' in plan '{current_plan_id}' "
+                            f'(anchor file {path})'
+                        ),
+                    )
+            continue
+
+        if in_threshold:
+            if leading == 2 and ':' in stripped:
+                key, _, raw_val = stripped.partition(':')
+                key = key.strip()
+                raw_val = raw_val.strip()
+                try:
+                    metadata[key] = float(raw_val) if '.' in raw_val else int(raw_val)
+                except ValueError:
+                    metadata[key] = raw_val
+            continue
+
+    return per_plan, metadata, None
+
+
+def _classify_delta(anchor: int, post: int, threshold_percent: float) -> tuple[float, str]:
+    """Compute the percentage delta and the per-phase verdict label.
+
+    Returns ``(percent_delta, verdict)`` where ``verdict`` is one of:
+
+    - ``ok``         — delta is within threshold (no breach).
+    - ``warn``       — growth exceeded threshold (regression gate fires).
+    - ``improved``   — strictly negative delta (cheaper than anchor).
+    - ``unmeasured`` — anchor or post value is missing (``-1``).
+    """
+    if anchor == -1 or post == -1:
+        return 0.0, 'unmeasured'
+    if anchor == 0:
+        # Anchor recorded as zero is anomalous; treat as unmeasured.
+        return 0.0, 'unmeasured'
+    pct = (post - anchor) / anchor * 100.0
+    if pct < 0.0:
+        return pct, 'improved'
+    if pct > threshold_percent:
+        return pct, 'warn'
+    return pct, 'ok'
+
+
+def cmd_compare_anchor(args: argparse.Namespace) -> dict:
+    """Compare per-phase ``total_tokens`` against anchor data.
+
+    Loads the anchor TOON file (default
+    ``.plan/temp/refactor-execution-context-anchor/anchors.toon``) and
+    the live plan's ``work/metrics.toon``, computes per-phase deltas,
+    and emits a TOON table. Driven by the Phase 4d dispatch-cost
+    regression gate documented in
+    ``.plan/local/refactor-agents-reviewed/07-rollout.md`` § 4.4.
+
+    Inputs:
+        ``--plan-id``        Live plan whose ``work/metrics.toon`` is
+                             the post-refactor measurement set.
+        ``--anchor-plan``    Anchor plan_id to compare against. Must be
+                             present in the anchor file. Required.
+        ``--anchor-file``    Override the default anchor file path.
+        ``--threshold-percent``  Override the warn threshold (default
+                             from the anchor file's ``threshold.warn_percent``
+                             entry, or ``20`` when absent).
+
+    Behaviour:
+        - Anchor or live cell missing → ``verdict: unmeasured`` (no
+          regression gate fire — one-sided measurement).
+        - Live cell > anchor by more than ``threshold_percent`` →
+          ``verdict: warn``; the gate has fired and the failing
+          dispatch must be re-bundled or scripted.
+        - Strict-negative delta → ``verdict: improved``; otherwise
+          ``ok``.
+
+    Output (TOON):
+        ``rows[N]{phase,anchor_tokens,post_tokens,delta_tokens,delta_percent,verdict}``
+        Plus aggregate fields ``gate_status``, ``warn_count``,
+        ``unmeasured_count``, ``threshold_percent``,
+        ``anchor_plan``, ``anchor_file``.
+    """
+    plan_id = require_valid_plan_id(args)
+    anchor_plan = args.anchor_plan
+    anchor_path = Path(args.anchor_file or ANCHOR_DEFAULT_PATH)
+
+    per_plan_anchors, metadata, parse_error = _parse_anchor_file(anchor_path)
+    if parse_error:
+        return {'status': 'error', 'error': 'anchor_unreadable', 'message': parse_error}
+
+    if anchor_plan not in per_plan_anchors:
+        available = sorted(per_plan_anchors.keys())
+        return {
+            'status': 'error',
+            'error': 'anchor_plan_not_found',
+            'message': (
+                f"anchor plan '{anchor_plan}' not present in {anchor_path}; "
+                f'available: {available}'
+            ),
+        }
+
+    raw_threshold: object
+    if args.threshold_percent is not None:
+        raw_threshold = args.threshold_percent
+        threshold_source = '--threshold-percent'
+    else:
+        raw_threshold = metadata.get('warn_percent', ANCHOR_DEFAULT_THRESHOLD_PERCENT)
+        threshold_source = 'anchor file threshold.warn_percent'
+    try:
+        threshold = float(raw_threshold)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return {
+            'status': 'error',
+            'error': 'invalid_threshold',
+            'message': (
+                f"threshold '{raw_threshold}' from {threshold_source} is not a "
+                f'valid number'
+            ),
+        }
+
+    live = read_metrics_raw(plan_id)
+    live_phases = live.get('phases', {})
+    anchor_phases = per_plan_anchors[anchor_plan]
+
+    rows: list[dict] = []
+    warn_count = 0
+    unmeasured_count = 0
+    for phase_name in PHASE_NAMES:
+        anchor_tokens = anchor_phases.get(phase_name, -1)
+        live_row = live_phases.get(phase_name, {})
+        post_raw = live_row.get('total_tokens', -1) if isinstance(live_row, dict) else -1
+        try:
+            post_tokens = int(post_raw)
+        except (TypeError, ValueError):
+            post_tokens = -1
+
+        pct, verdict = _classify_delta(anchor_tokens, post_tokens, threshold)
+        if verdict == 'warn':
+            warn_count += 1
+        elif verdict == 'unmeasured':
+            unmeasured_count += 1
+        delta_tokens = post_tokens - anchor_tokens if verdict != 'unmeasured' else 0
+        rows.append(
+            {
+                'phase': phase_name,
+                'anchor_tokens': anchor_tokens,
+                'post_tokens': post_tokens,
+                'delta_tokens': delta_tokens,
+                'delta_percent': round(pct, 2),
+                'verdict': verdict,
+            }
+        )
+
+    gate_status = 'breach' if warn_count > 0 else 'pass'
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'anchor_plan': anchor_plan,
+        'anchor_file': str(anchor_path),
+        'threshold_percent': threshold,
+        'rows': rows,
+        'gate_status': gate_status,
+        'warn_count': warn_count,
+        'unmeasured_count': unmeasured_count,
+    }
 
 
 def cmd_enrich(args: argparse.Namespace) -> dict:
@@ -1051,14 +1290,14 @@ def main() -> int:
     # record-dispatch-boundary
     rdb = subparsers.add_parser(
         'record-dispatch-boundary',
-        help='Record one tabular row per phase-agent dispatch termination',
+        help='Record one tabular row per phase Task dispatch termination',
         description=(
             'Append a TOON row to work/metrics-dispatch-boundaries-{phase}.toon '
-            'capturing the termination cause of a phase-agent dispatch '
+            'capturing the termination cause of a phase Task dispatch '
             '(voluntary_checkpoint | task_complete_returned_verbatim | '
             'harness_cancellation | error | unknown) and the dispatched '
             "agent's <usage> totals at the time of return. The orchestrator "
-            'invokes this on every phase-agent return so plan-retrospective '
+            'invokes this on every phase Task return so plan-retrospective '
             'can correlate agent-initiated re-dispatch events with '
             '[OUTCOME]-log coverage gaps (lesson 2026-05-08-14-001).'
         ),
@@ -1071,7 +1310,7 @@ def main() -> int:
         '--termination-cause',
         required=True,
         choices=list(DISPATCH_TERMINATION_CAUSES),
-        help='Why the phase-agent dispatch terminated.',
+        help='Why the phase Task dispatch terminated.',
     )
     rdb.add_argument(
         '--total-tokens',
@@ -1098,6 +1337,49 @@ def main() -> int:
     add_plan_id_arg(enr)
     add_session_id_arg(enr)
     enr.set_defaults(func=cmd_enrich)
+
+    # compare-anchor
+    cmp = subparsers.add_parser(
+        'compare-anchor',
+        help='Compare per-phase total_tokens against anchor data (dispatch-cost regression gate)',
+        description=(
+            'Load the anchor TOON file and the live plan metrics.toon, compute '
+            'per-phase deltas, and emit a TOON table. Drives the Phase 4d '
+            'dispatch-cost regression gate from the agents → execution-context '
+            'refactor rollout (07-rollout.md § 4.4). A per-phase growth > '
+            "--threshold-percent (default 20) fires gate_status: breach; the "
+            'failing dispatch must be re-bundled or scripted before merge. '
+            "Cells missing in either set are reported as verdict: unmeasured "
+            '(one-sided measurement — no gate fire).'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(cmp)
+    cmp.add_argument(
+        '--anchor-plan',
+        required=True,
+        help='Anchor plan_id to compare against (must be present in --anchor-file).',
+    )
+    cmp.add_argument(
+        '--anchor-file',
+        default=None,
+        help=(
+            f'Path to the anchor TOON file. Defaults to {ANCHOR_DEFAULT_PATH} (the '
+            'refactor-execution-context anchor set).'
+        ),
+    )
+    cmp.add_argument(
+        '--threshold-percent',
+        type=float,
+        default=None,
+        help=(
+            'Override the regression-gate threshold (percent growth that fires '
+            'verdict: warn). Defaults to the anchor file\'s threshold.warn_percent '
+            f'entry, or {ANCHOR_DEFAULT_THRESHOLD_PERCENT} when absent.'
+        ),
+    )
+    cmp.set_defaults(func=cmd_compare_anchor)
 
     args = parse_args_with_toon_errors(parser)
     result = args.func(args)

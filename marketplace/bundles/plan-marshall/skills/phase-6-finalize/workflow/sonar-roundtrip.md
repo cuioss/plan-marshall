@@ -13,7 +13,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Timeout Contract
 
-This step runs as a Task agent (`plan-marshall:sonar-roundtrip-agent`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget covers the full roundtrip: producer fetch+store, per-finding triage dispatch, optional fix-task creation, and (on loop-back) the `manage-status set-phase --phase 5-execute` handoff.
+This step runs as inline orchestration (producer fetch + finding enumeration in main context) plus a single `cross.triage` Task dispatch (`plan-marshall:execution-context-{level}` resolved via `manage-config models resolve-target --role cross.triage`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget covers the full roundtrip: producer fetch+store, the per-finding triage dispatch (one envelope, smart grouping inside — see `plan-marshall:plan-marshall/workflow/triage.md`), optional fix-task creation, and (on loop-back) the `manage-status set-phase --phase 5-execute` handoff.
 
 **Graceful degradation**: When the wrapper expires:
 

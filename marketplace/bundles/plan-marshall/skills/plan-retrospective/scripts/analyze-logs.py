@@ -318,8 +318,9 @@ def cluster_dispatches(
       - re_entering_markers: count of `[STATUS] ... Re-entering execute phase` lines.
 
     The cluster count gives the LLM rule a way to flag plans where the
-    orchestrator re-dispatched the phase-agent more times than there are
-    Re-entering markers (the symptom of D2's re-entry logging being skipped).
+    orchestrator re-dispatched the per-task `phase-5` envelope more times
+    than there are Re-entering markers (the symptom of D2's re-entry logging
+    being skipped).
     """
     timestamps: list[float] = []
     for line in work_log_lines + script_log_lines:

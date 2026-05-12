@@ -55,6 +55,6 @@ Canonical definitions for terms used across the plan-marshall bundle. When a ter
 | Term | Definition |
 |------|-----------|
 | **TOON** | Text-Oriented Object Notation — the standard output format for all plan-marshall scripts. Key-value pairs with `status: success` or `status: error` envelope. See `ref-toon-format` skill for full specification. |
-| **thin agent pattern** | Architectural pattern where a single parameterized agent (`phase-agent`) loads different skills via a `skill` parameter, delegating all logic to the loaded skill. Keeps agents minimal (~70 lines). |
+| **thin agent pattern** | Architectural pattern where every `Task:` dispatch targets the generic `execution-context-{level}` dispatcher with the workflow doc, the skill load list, and the plan id passed through the prompt body. Keeps the agent surface to a single canonical body emitted as five level variants. See [agents.md](agents.md) for the full contract. |
 | **executor** | The `execute-script.py` entry point that resolves 3-part notation (`bundle:skill:script`) to file paths and runs scripts with proper PYTHONPATH setup. |
 | **3-part notation** | Script invocation format: `{bundle}:{skill}:{script}` (e.g., `plan-marshall:manage-status:manage_status`). The script name matches the Python filename without `.py` extension. |

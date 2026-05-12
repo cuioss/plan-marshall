@@ -10,7 +10,7 @@ The contract pinned here:
   canonical no-suffix file with ``implements:`` and ``levels:`` stripped.
 - ``model:``/``effort:`` is set on variants per the level table; haiku
   variants omit ``effort:``.
-- ``xxhigh`` is suppressed when the canonical alias does not accept
+- ``max`` is suppressed when the canonical alias does not accept
   ``effort: xhigh``.
 - ``model:``/``effort:`` on a canonical with ``implements:`` is a build
   error.
@@ -122,10 +122,10 @@ def test_is_role_eligible_false_for_other_extension_point():
     assert not is_role_eligible(fm)
 
 
-def test_selected_levels_default_returns_all_five():
+def test_selected_levels_default_returns_all_six():
     fm, _ = parse_frontmatter(f'---\nname: x\nimplements: {EXTENSION_POINT}\n---\nbody')
     assert fm is not None
-    assert selected_levels(fm) == ['low', 'medium', 'high', 'xhigh', 'xxhigh']
+    assert selected_levels(fm) == ['low', 'medium', 'high', 'xhigh', 'xxhigh', 'max']
 
 
 def test_selected_levels_whitelist_filters():
@@ -164,12 +164,35 @@ def test_render_variant_high_sets_model_and_effort():
     assert 'effort: high' in rendered
 
 
-def test_render_variant_xxhigh_uses_opus_xhigh():
+def test_render_variant_xxhigh_uses_opus_high():
+    """`xxhigh` resolves to `(opus, high)` under the rebound palette."""
     fm, body = parse_frontmatter(
         f'---\nname: poc-agent\nimplements: {EXTENSION_POINT}\n---\nbody\n'
     )
     assert fm is not None
     rendered = render_variant(fm, body, 'xxhigh')
+    assert 'model: opus' in rendered
+    assert 'effort: high' in rendered
+
+
+def test_render_variant_xhigh_uses_opus_medium():
+    """`xhigh` resolves to `(opus, medium)` under the rebound palette."""
+    fm, body = parse_frontmatter(
+        f'---\nname: poc-agent\nimplements: {EXTENSION_POINT}\n---\nbody\n'
+    )
+    assert fm is not None
+    rendered = render_variant(fm, body, 'xhigh')
+    assert 'model: opus' in rendered
+    assert 'effort: medium' in rendered
+
+
+def test_render_variant_max_uses_opus_xhigh():
+    """`max` resolves to `(opus, xhigh)` — Opus-4.7-only top tier."""
+    fm, body = parse_frontmatter(
+        f'---\nname: poc-agent\nimplements: {EXTENSION_POINT}\n---\nbody\n'
+    )
+    assert fm is not None
+    rendered = render_variant(fm, body, 'max')
     assert 'model: opus' in rendered
     assert 'effort: xhigh' in rendered
 
@@ -179,7 +202,7 @@ def test_render_variant_xxhigh_uses_opus_xhigh():
 # =============================================================================
 
 
-def test_emit_variants_default_levels_creates_six_files(tmp_path: Path, mapping_path: Path):
+def test_emit_variants_default_levels_creates_seven_files(tmp_path: Path, mapping_path: Path):
     src = _write(
         tmp_path / 'src' / 'poc.md',
         f'---\nname: poc\ntools: Read\nimplements: {EXTENSION_POINT}\n---\nbody\n',
@@ -187,9 +210,9 @@ def test_emit_variants_default_levels_creates_six_files(tmp_path: Path, mapping_
     dest = tmp_path / 'out' / 'poc.md'
     result = emit_variants_for_agent(src, dest, mapping_path)
     assert result is not None
-    # canonical + 5 variants
+    # canonical + 6 variants
     assert dest.exists()
-    for level in ['low', 'medium', 'high', 'xhigh', 'xxhigh']:
+    for level in ['low', 'medium', 'high', 'xhigh', 'xxhigh', 'max']:
         assert (dest.parent / f'poc-{level}.md').exists(), level
     assert sorted(result.variants_emitted) == sorted(LEVEL_TABLE.keys())
     assert result.variants_skipped == []
@@ -225,8 +248,8 @@ def test_emit_variants_canonical_strips_role_fields(tmp_path: Path, mapping_path
     assert 'tools: Read' in canonical_text  # other fields preserved
 
 
-def test_emit_variants_skips_xxhigh_when_opus_lacks_xhigh(tmp_path: Path):
-    """Opus alias with supports_effort missing `xhigh`: xxhigh is suppressed."""
+def test_emit_variants_skips_max_when_opus_lacks_xhigh(tmp_path: Path):
+    """Opus alias with supports_effort missing `xhigh`: `max` is suppressed."""
     mapping = tmp_path / 'mapping_opus_no_xhigh.json'
     mapping.write_text(
         json.dumps(
@@ -243,30 +266,31 @@ def test_emit_variants_skips_xxhigh_when_opus_lacks_xhigh(tmp_path: Path):
     )
     src = _write(
         tmp_path / 'src' / 'poc.md',
-        f'---\nname: poc\nimplements: {EXTENSION_POINT}\nlevels: [high, xxhigh]\n---\nbody\n',
+        f'---\nname: poc\nimplements: {EXTENSION_POINT}\nlevels: [high, xxhigh, max]\n---\nbody\n',
     )
     dest = tmp_path / 'out' / 'poc.md'
     result = emit_variants_for_agent(src, dest, mapping)
     assert result is not None
     assert (dest.parent / 'poc-high.md').exists()
-    assert not (dest.parent / 'poc-xxhigh.md').exists()
-    skipped_xxhigh = [(lvl, reason) for lvl, reason in result.variants_skipped if lvl == 'xxhigh']
-    assert skipped_xxhigh, 'xxhigh should be in variants_skipped'
-    assert 'xhigh' in skipped_xxhigh[0][1].lower()
+    assert (dest.parent / 'poc-xxhigh.md').exists()  # opus-high is fine
+    assert not (dest.parent / 'poc-max.md').exists()
+    skipped_max = [(lvl, reason) for lvl, reason in result.variants_skipped if lvl == 'max']
+    assert skipped_max, 'max should be in variants_skipped'
+    assert 'xhigh' in skipped_max[0][1].lower()
 
 
-def test_emit_variants_emits_xxhigh_when_opus_supports_xhigh(tmp_path: Path, mapping_path: Path):
-    """Default fixture: opus supports xhigh, xxhigh variant is emitted."""
+def test_emit_variants_emits_max_when_opus_supports_xhigh(tmp_path: Path, mapping_path: Path):
+    """Default fixture: opus supports xhigh, `max` variant is emitted."""
     src = _write(
         tmp_path / 'src' / 'poc.md',
-        f'---\nname: poc\nimplements: {EXTENSION_POINT}\nlevels: [xxhigh]\n---\nbody\n',
+        f'---\nname: poc\nimplements: {EXTENSION_POINT}\nlevels: [max]\n---\nbody\n',
     )
     dest = tmp_path / 'out' / 'poc.md'
     result = emit_variants_for_agent(src, dest, mapping_path)
     assert result is not None
-    assert (dest.parent / 'poc-xxhigh.md').exists()
-    assert 'xxhigh' in result.variants_emitted
-    assert all(lvl != 'xxhigh' for lvl, _reason in result.variants_skipped)
+    assert (dest.parent / 'poc-max.md').exists()
+    assert 'max' in result.variants_emitted
+    assert all(lvl != 'max' for lvl, _reason in result.variants_skipped)
 
 
 def test_emit_variants_canonical_with_model_raises(tmp_path: Path, mapping_path: Path):

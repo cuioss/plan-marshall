@@ -173,7 +173,8 @@ The `resolve-target` subcommand returns `execution-context` when the level is `i
 
 | Document | Content |
 |----------|---------|
-| [`model-levels.md`](../../plan-marshall/standards/model-levels.md) | Level → `(model, effort)` primitive binding; alias rules; `xxhigh` guard rationale |
+| [`model-levels.md`](../../plan-marshall/standards/model-levels.md) | Level → `(model, effort)` primitive binding; alias rules; `max` guard rationale |
+| [`dispatch-granularity.md`](dispatch-granularity.md) | Granularity heuristics — when a step earns a dispatch envelope vs. running inline. Sibling extension-point doc. |
 | [`model-roles.md`](../../plan-marshall/standards/model-roles.md) | Role registry mapping role keys to canonical agents |
 | [`role-variants.md`](../../plan-marshall/standards/role-variants.md) | User-facing centralised doc for configuring `models.roles.<name>` |
 | `marketplace/targets/claude/emitter.py` | Variant emission implementation |

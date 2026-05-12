@@ -290,7 +290,7 @@ def discover_agents(bundle_dir: Path, plugin_data: dict) -> dict:
     agents_list = plugin_data.get('agents', [])
 
     for agent_ref in agents_list:
-        # agent_ref is like "./agents/tool-coverage-agent.md"
+        # agent_ref is like "./agents/execution-context.md"
         agent_path = bundle_dir / agent_ref.lstrip('./')
         if agent_path.is_file() and agent_path.suffix == '.md':
             agent_name = agent_path.stem  # Remove .md extension

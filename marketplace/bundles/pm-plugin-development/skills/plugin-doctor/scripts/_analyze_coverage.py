@@ -76,8 +76,10 @@ def analyze_tool_coverage(file_path: Path) -> dict:
     """Analyze tool declarations in file (deterministic only).
 
     NOTE: This function only extracts declared tools from frontmatter.
-    Semantic analysis of tool USAGE (missing/unused detection) is delegated
-    to the LLM via tool-coverage-agent for accurate context understanding.
+    Semantic analysis of tool USAGE (missing/unused detection) runs in-line
+    inside the `cross.plugin-doctor` dispatch when its scope covers tool-
+    coverage — the LLM reads the same file in-context for accurate
+    understanding.
 
     Returns declared tools and structural info for LLM analysis.
     """

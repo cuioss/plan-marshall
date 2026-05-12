@@ -6,7 +6,7 @@ Workflow-focused design principles for building goal-based skills.
 
 **Principle**: Skill directory names MUST be verb phrases that describe the action the skill performs. Noun-suffix names are reserved for spawnable marketplace agents.
 
-**Rationale**: Noun-suffix skill names (e.g., `task-executor`) cause the LLM to treat the skill as a spawnable agent and invoke it directly rather than through its wrapping phase-agent. Verb-first names (e.g., `execute-task`) align with the marketplace convention that skills describe actions while agents use the `-agent` suffix.
+**Rationale**: Noun-suffix skill names (e.g., `task-executor`) cause the LLM to treat the skill as a spawnable agent and invoke it directly rather than through its wrapping `execution-context-{level}` dispatch. Verb-first names (e.g., `execute-task`) align with the marketplace convention that skills describe actions while agent bodies live under the canonical `execution-context` dispatcher.
 
 ### Prescribed Pattern: Verb-First Names
 

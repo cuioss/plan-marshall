@@ -224,7 +224,7 @@ If verification fails:
 ## Integration
 
 ### Called By
-- `plan-marshall:phase-agent` - Generic phase agent (via skill delegation)
+- `plan-marshall:execution-context-{level}` - Generic execution-context dispatcher (loaded via the `workflow` prompt-body field)
 
 ### Uses
 - `pm-plugin-development:plugin-architecture` - Architecture principles

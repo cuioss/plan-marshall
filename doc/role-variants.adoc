@@ -30,7 +30,7 @@ Authors configure `models.roles.<key>` (hierarchical kebab-case keys like `cross
 
 | Architecture (level binding)
 | link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-levels.md[`plan-marshall/standards/model-levels.md`]
-| Single source of truth for the five ordinal levels (`low / medium / high / xhigh / xxhigh`) plus the `inherit` sentinel. Maps each to a `(model, effort)` pair. Aliases-not-IDs rule. `xxhigh` Opus-4.7-only build-time guard.
+| Single source of truth for the six ordinal levels (`low / medium / high / xhigh / xxhigh / max`) plus the `inherit` sentinel. Maps each to a `(model, effort)` pair. Aliases-not-IDs rule. `max` Opus-4.7-only build-time guard.
 
 | Architecture (role registry)
 | link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-roles.md[`plan-marshall/standards/model-roles.md`]
@@ -38,7 +38,7 @@ Authors configure `models.roles.<key>` (hierarchical kebab-case keys like `cross
 
 | Build system
 | link:refactor/02-build-system/plan.md[`doc/refactor/02-build-system/plan.md`] § Variant Emission
-| Cluster-02 contributor view: variant-generation algorithm, `levels:` whitelist mechanics, `xxhigh` model-support guard, drift-check semantics, deploy-step + sync-skill integration.
+| Cluster-02 contributor view: variant-generation algorithm, `levels:` whitelist mechanics, `max` model-support guard, drift-check semantics, deploy-step + sync-skill integration.
 |===
 
 == How the pieces fit
@@ -69,7 +69,7 @@ doc/refactor/02-build-system/plan.md § Variant Emission   (build view)
 
 == Quick reference
 
-* **Configure a role** — set `plan.models.roles.<group>.<key>` in `.plan/marshal.json` to one of `low | medium | high | xhigh | xxhigh | inherit`. See `role-variants.md` for the polymorphic resolution rules.
+* **Configure a role** — set `plan.models.roles.<group>.<key>` in `.plan/marshal.json` to one of `low | medium | high | xhigh | xxhigh | max | inherit`. See `role-variants.md` for the polymorphic resolution rules.
 * **Resolve a role at dispatch** — `python3 .plan/execute-script.py plan-marshall:manage-config:manage-config models resolve-target --role <key>` returns the canonical or variant name directly (e.g. `execution-context` for `inherit`, `execution-context-high` otherwise). See `model-roles.md`.
 * **Add a new workflow doc** — place it under `{bundle}:{skill}/workflow/{file}.md` (single-phase consumer) or `plan-marshall/skills/plan-marshall/workflow/{file}.md` (multi-phase / cross-cutting), declare `implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow` in frontmatter, and document the Output contract (`status` + `display_detail`).
 * **Inspect emitted variants** — generate the Claude target output (`python3 marketplace/targets/generate.py --target claude --output target/claude`) and look under `target/claude/plan-marshall/agents/execution-context[-{level}].md`. The canonical no-suffix file is the `inherit` target.

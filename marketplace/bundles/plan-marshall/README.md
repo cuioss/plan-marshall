@@ -40,11 +40,11 @@ This bundle provides **core infrastructure** organized into functional areas:
 
 | Agent | Description |
 |-------|-------------|
-| `research-best-practices-agent` | Web research for best practices and recommendations |
+| `execution-context` | Generic execution-context dispatcher (canonical + 5 level variants). Every `Task:` dispatch in this bundle targets `plan-marshall:execution-context` (canonical, inherits parent model) or `plan-marshall:execution-context-{level}` (variant pinned by level resolved from the role key). The workflow doc and skill list flow through the prompt body. |
 
 ## Entry Points and Discoverability
 
-The primary workflow entry points are **skills**, not commands. The `plan-marshall` skill orchestrates the full plan lifecycle (create, outline, execute, finalize), and `marshall-steward` handles project configuration. Both are invoked via `Skill:` directives or by phase-agent delegation. The commands in `commands/` serve narrower, tool-specific purposes (IDE diagnostics, agent file sync). To start a planning workflow, load the `plan-marshall:plan-marshall` skill.
+The primary workflow entry points are **skills**, not commands. The `plan-marshall` skill orchestrates the full plan lifecycle (create, outline, execute, finalize), and `marshall-steward` handles project configuration. Both are invoked via `Skill:` directives or by `execution-context-{level}` delegation. The commands in `commands/` serve narrower, tool-specific purposes (IDE diagnostics, agent file sync). To start a planning workflow, load the `plan-marshall:plan-marshall` skill.
 
 ## Key Concepts
 

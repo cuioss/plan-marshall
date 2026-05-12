@@ -786,7 +786,7 @@ If `qgate_pending_count > 0`, the orchestrator (planning.md) decides whether to 
 
 ---
 
-### Step 13.5: Spawn q-gate-validation-agent — lesson-derived plans only
+### Step 13.5: Dispatch `cross.q-gate-validation` — lesson-derived plans only
 
 **Purpose**: Run the `narrative-vs-code-validator` (plan-marshall/workflow/q-gate-validation.md § 2.14) over the source lesson narrative so concrete code claims (file paths, profile→target mappings, function names, argument shapes, behavioral assertions) are reconciled against current code state at refine time. Catches silent baseline drift between lesson capture and plan execution before the outline locks intent.
 
@@ -847,7 +847,7 @@ Parse `filtered_count` from the output and ADD it to the `qgate_pending_count` a
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-2-refine:qgate) Spawned q-gate-validation-agent for narrative-vs-code-validator (lesson plan); pending findings now {qgate_pending_count}"
+  --message "(plan-marshall:phase-2-refine:qgate) Dispatched cross.q-gate-validation for narrative-vs-code-validator (lesson plan); pending findings now {qgate_pending_count}"
 ```
 
 This step runs AFTER the inline lightweight Q-Gate checks (above) and BEFORE Step 14 (Transition Phase). The placement is load-bearing: inline checks first means cheap structural findings are recorded before the more expensive narrative cross-check; validator second ensures lesson-driven findings can re-enter refine alongside the inline ones.

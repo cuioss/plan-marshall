@@ -39,7 +39,7 @@ The script returns the absolute path when `metadata.use_worktree == true` and an
 
 ## Dispatch Protocol (Subagent Header Propagation)
 
-When the plan runs in an isolated worktree, every subagent dispatch — `Task:`, `Skill:` invocations that accept free-form prompts, and `phase-agent` delegations — MUST embed the **Worktree Header** as the first lines of the dispatch prompt:
+When the plan runs in an isolated worktree, every subagent dispatch — `Task:` invocations against `plan-marshall:execution-context-{level}`, `Skill:` invocations that accept free-form prompts, and any other delegation — MUST embed the **Worktree Header** as the first lines of the dispatch prompt:
 
 ```
 WORKTREE: --plan-id {plan_id}
@@ -53,7 +53,7 @@ NEVER edit the main checkout.
 Two requirements coexist:
 
 - **Prompt embedding** — the header propagates the constraint through free-form delegation so child agents inherit the worktree binding even when they call further subagents.
-- **Parameter passing** — the structured input contract of the dispatched skill (e.g., `execute-task`, `phase-agent`) takes `plan_id` as an explicit parameter; the embedded header does not replace the parameter, it reinforces it.
+- **Parameter passing** — the structured input contract of the dispatched workflow (e.g., `execute-task`, the per-phase workflow doc loaded by `execution-context-{level}`) takes `plan_id` as an explicit prompt-body field; the embedded header does not replace the field, it reinforces it.
 
 The path-free `--plan-id` form is the **preferred contract** for Bucket B scripts (build wrappers, CI integration, Sonar). It replaces earlier path-leaking forms (`--worktree-path <abs>`) so the worktree absolute path no longer leaks into model context. The dispatched script resolves the path internally via `manage-status get-worktree-path`. The `--project-dir <abs>` flag remains as an **explicit override / escape hatch** for the rare case where a caller already holds an absolute path (e.g., post-worktree-removal cleanup, fixture-driven test invocations). `--plan-id` and `--project-dir` are mutually exclusive at every call site; passing both is a hard error.
 

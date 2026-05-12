@@ -99,3 +99,7 @@ When a plan runs in an isolated worktree, the canonical `{path}` is the worktree
 | general-development-rules.md | Boy Scout Rule, ask users, research, tool usage, dependencies |
 | tool-usage-patterns.md | Tool selection, file operations, content search, Bash safety, build resolution |
 | argument-naming.md | Typed-ID flags, read-verb canonicalization, `--module` over `--name`, stdlib log-level names for `manage-*` scripts |
+
+## See Also
+
+- [`extension-api:dispatch-granularity`](../extension-api/standards/dispatch-granularity.md) — Dispatch granularity heuristics (10K rule, script-over-dispatch, bundle-over-iterate, per-iteration only when models differ or parallel; find the LLM core). Lives in `extension-api` because it governs decisions about the `execution-context` extension point.

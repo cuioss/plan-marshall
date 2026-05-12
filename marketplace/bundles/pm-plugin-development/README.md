@@ -14,13 +14,9 @@ This bundle follows the **goal-based organization** pattern where components are
 
 ## Components
 
-### Agents (3)
+### Agents (0)
 
-| Agent | Description |
-|-------|-------------|
-| `ext-outline-component-agent` | Analyze component files against request using semantic reasoning |
-| `ext-outline-inventory-agent` | Load marketplace inventory and perform initial scope assessment |
-| `tool-coverage-agent` | Analyze tool declarations vs actual usage in a component file |
+This bundle defines no canonical agents of its own. Plugin-development workflows dispatch through `plan-marshall:execution-context-{level}` using role keys defined in `plan-marshall/standards/model-roles.md` — notably `cross.plugin-doctor` (with `scope` as a runtime input) for diagnostics scoped to a subset of marketplace components. Workflow docs (under `ext-outline-workflow/` and `plugin-doctor/`) are loaded as `workflow` prompt-body inputs to `execution-context-{level}`.
 
 ### Skills - User-Invocable (4)
 

@@ -212,3 +212,6 @@ Each agent follows the same pattern:
 
 - [skill-loading.md](skill-loading.md) — Two-tier skill loading
 - [phases.md](phases.md) — 6-phase model
+- [call-graph.md](call-graph.md) — Holistic visual call graph for every dispatch path starting from `plan-marshall` (Mermaid diagrams: per-phase detail, cross-phase fan-in, 15-key registry overlay, dispatch-vs-script verdict table)
+- [dispatch-walkthrough.md](dispatch-walkthrough.md) — Worked end-to-end traces of three representative dispatches: phase-2-refine entry, phase-6 automated-review with `cross.triage`, phase-6 architecture-refresh Tier-1 fan-out
+- [../../extension-api/standards/dispatch-granularity.md](../../extension-api/standards/dispatch-granularity.md) — Dispatch granularity heuristics: when to dispatch vs script vs inline

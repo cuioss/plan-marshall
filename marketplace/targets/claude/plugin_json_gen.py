@@ -67,7 +67,7 @@ def _expanded_agent_entries(agents_dir: Path, mapping_path: Path = _OPENCODE_MAP
     For each agent file:
     - If the file declares the dynamic-level-executor extension point,
       emit one entry per selected level plus the canonical no-suffix
-      entry. The ``xxhigh`` entry is suppressed when the resolved alias
+      entry. The ``max`` entry is suppressed when the resolved alias
       cannot accept ``effort: xhigh`` (mirrors the build-time skip in
       ``variant_emitter``).
     - Otherwise, emit a single entry for the agent's filename.
@@ -90,7 +90,7 @@ def _expanded_agent_entries(agents_dir: Path, mapping_path: Path = _OPENCODE_MAP
         base_name = frontmatter.name or path.stem
         # Canonical (inherit) entry.
         entries.append(f'./agents/{base_name}.md')
-        # Per-level variants (with xxhigh guard).
+        # Per-level variants (with max guard for opus, xhigh).
         for level in selected_levels(frontmatter):
             primitive = LEVEL_TABLE[level]
             if primitive['effort'] == 'xhigh':

@@ -76,4 +76,4 @@ Possible errors:
 This standard is implemented by:
 - `plan-marshall:manage-status:manage_status delete-plan` - Script command
 - `plan-marshall:phase-1-init` - Skill workflow (Step 3)
-- `plan-marshall:phase-agent` - Generic phase agent
+- `plan-marshall:execution-context` - Generic execution-context dispatcher (canonical + 5 level variants)

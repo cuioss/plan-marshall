@@ -336,7 +336,7 @@ def test_resolve_target_inherit_returns_canonical():
 
 def test_resolve_target_each_level():
     """Every level keyword produces the matching variant target name."""
-    levels = ('low', 'medium', 'high', 'xhigh', 'xxhigh')
+    levels = ('low', 'medium', 'high', 'xhigh', 'xxhigh', 'max')
     for level in levels:
         with PlanContext(plan_id=f'resolve-target-{level}') as ctx:
             _write_marshal_with_models(
@@ -386,8 +386,8 @@ def test_invalid_level_at_default_errors():
         assert 'models.default' in result['error']
 
 
-def test_reserved_max_level_errors():
-    """`max` is reserved; using it produces a clear migration message."""
+def test_max_level_resolves_to_max_variant():
+    """`max` is a live level; resolver returns it and the variant target."""
     with PlanContext() as ctx:
         _write_marshal_with_models(
             ctx.fixture_dir,
@@ -396,9 +396,38 @@ def test_reserved_max_level_errors():
 
         result = cmd_models(_ns(role='phase-2'))
 
-        assert result['status'] == 'error'
-        assert 'reserved' in result['error'].lower()
-        assert "use 'xxhigh'" in result['error']
+        assert result['status'] == 'success'
+        assert result['level'] == 'max'
+
+        target_result = cmd_models_resolve_target(_ns(role='phase-2'))
+        assert target_result['status'] == 'success'
+        assert target_result['target'] == 'execution-context-max'
+
+
+def test_legacy_xhigh_xxhigh_resolve_silent_downgrade():
+    """Old `xhigh` / `xxhigh` keywords still resolve after the palette rebind.
+
+    Migration contract: pre-1.0 palette expansion rebinds the existing
+    keywords to weaker primitives (xhigh: opus-high → opus-medium; xxhigh:
+    opus-xhigh → opus-high). The resolver still accepts the keywords so
+    consumer marshal.json files do not break — they silently bind to the
+    new primitive. There is no auto-migration.
+    """
+    with PlanContext() as ctx:
+        _write_marshal_with_models(
+            ctx.fixture_dir,
+            {'roles': {'phase-2': 'xhigh', 'phase-3': 'xxhigh'}},
+        )
+
+        # Both keywords still resolve cleanly.
+        for role, expected_level in (('phase-2', 'xhigh'), ('phase-3', 'xxhigh')):
+            result = cmd_models(_ns(role=role))
+            assert result['status'] == 'success', f'{role}: {result}'
+            assert result['level'] == expected_level
+
+            target_result = cmd_models_resolve_target(_ns(role=role))
+            assert target_result['status'] == 'success'
+            assert target_result['target'] == f'execution-context-{expected_level}'
 
 
 # =============================================================================
