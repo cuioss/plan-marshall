@@ -2,26 +2,30 @@
 
 Holistic view of every dispatch path in the plan-marshall bundle: orchestrator entry, per-phase dispatches under the 10 phase-bound role keys, cross-phase shared LLM cores under the 5 `cross.*` role keys, plus the inline-script steps that earn no envelope. Companions:
 
-- **`agents.md`** — the dispatch contract (prompt-body fields, `Task: execution-context-{level}` shape, mandatory rules).
+- **`agents.md`** — the dispatch contract (prompt-body fields, `Task: execution-context` shape, mandatory rules).
 - **`dispatch-walkthrough.md`** — three concrete end-to-end traces for representative dispatches.
 - **`../../extension-api/standards/dispatch-granularity.md`** — the heuristics that decide which call sites get a dispatch envelope vs. an inline script.
 - **`../../plan-marshall/standards/model-roles.md`** — the 15-key role registry (per-call-site level resolution).
 
 This doc is the **graph** view; the others are the **contract**, **examples**, and **heuristics** views of the same surface.
 
+> **Note on the dispatch target name.** Every dispatch in the graphs below is written as `execution-context` for clarity. The actual `Task:` target on the wire is `execution-context-{level}` where `{level}` ∈ `{low, medium, high, xhigh, xxhigh, max, inherit}` is resolved at dispatch time via `manage-config models resolve-target --role <role-key>`. The level is a runtime detail (chosen by the role-key registry), not a structural one — so the graphs hide it.
+
 Legend (used in every diagram below):
 
 ```
 ┌──────┐
-│ BOX  │  LLM dispatch envelope (Task: execution-context-{level})
+│ BOX  │  LLM dispatch envelope (Task: execution-context)
 └──────┘
 
   /SCR/    Deterministic script (no envelope)
   ?USR?    AskUserQuestion gate (propagates to host UI)
 [CROSS]   cross.* shared LLM core (envelope; fan-in from multiple sites)
 
-  ──►      Unconditional flow
-  ┄┄►      Conditional / fallback / predicate-gated flow
+  ──►      In-context flow (within an envelope / orchestrator context)
+  ══►      Task dispatch — crosses a subagent envelope boundary
+  ┄┄►      Conditional in-context flow (predicate-gated, no envelope)
+  ╵┄═►     Conditional dispatch (predicate-gated, crosses an envelope)
 ```
 
 ---
@@ -49,7 +53,7 @@ Legend (used in every diagram below):
 │   │  • Resolves the target via                                          │    │
 │   │      manage-config models resolve-target --role <role-key>          │    │
 │   │  • Dispatches each phase as:                                        │    │
-│   │      Task: plan-marshall:execution-context-{level}                  │    │
+│   │      Task: plan-marshall:execution-context                          │    │
 │   │      prompt body = name + plan_id + skills[] + workflow + WORKTREE  │    │
 │   │  • Marks step done via                                              │    │
 │   │      manage-status mark-step-done                                   │    │
@@ -57,20 +61,20 @@ Legend (used in every diagram below):
 │   │      manage-status transition                                       │    │
 │   └─────────────────────────────────────────────────────────────────────┘    │
 │    │                                                                          │
-│    ├──► phase-1     role=phase-1     workflow=phase-1-init/SKILL.md           │
-│    ├──► phase-2     role=phase-2     workflow=phase-2-refine/SKILL.md         │
-│    ├──► phase-3     role=phase-3     workflow=phase-3-outline/SKILL.md        │
-│    ├──► phase-4     role=phase-4     workflow=phase-4-plan/SKILL.md           │
-│    ├──► phase-5     role=phase-5     workflow=execute-task/SKILL.md           │
-│    │                 (one dispatch per task in the queue)                     │
-│    └──► phase-6     role=phase-6.{step}                                       │
-│                      workflow=phase-6-finalize/workflow/{step}.md             │
-│                      (one dispatch per dispatched manifest step)              │
+│    ╞══► execution-context   role=phase-1   workflow=phase-1-init/SKILL.md     │
+│    ╞══► execution-context   role=phase-2   workflow=phase-2-refine/SKILL.md   │
+│    ╞══► execution-context   role=phase-3   workflow=phase-3-outline/SKILL.md  │
+│    ╞══► execution-context   role=phase-4   workflow=phase-4-plan/SKILL.md     │
+│    ╞══► execution-context   role=phase-5   workflow=execute-task/SKILL.md     │
+│    │                                 (one dispatch per task in the queue)     │
+│    ╘══► execution-context   role=phase-6.{step}                               │
+│                              workflow=phase-6-finalize/workflow/{step}.md     │
+│                              (one dispatch per dispatched manifest step)      │
 │                                                                               │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The orchestrator never spawns a raw `Task: general-purpose`. Every subagent dispatch targets `plan-marshall:execution-context` (canonical inherit) or `plan-marshall:execution-context-{level}` (variant resolved from a role key). The workflow doc + skill loads flow through the prompt body — see `agents.md` for the full contract.
+The orchestrator never spawns a raw `Task: general-purpose`. Every subagent dispatch targets `plan-marshall:execution-context` (with the level variant resolved from the role key). The workflow doc + skill loads flow through the prompt body — see `agents.md` for the full contract.
 
 ---
 
@@ -82,7 +86,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────────┐
-│  PHASE-1 ENVELOPE          role=phase-1                                       │
+│  PHASE-1 ENVELOPE          execution-context    role=phase-1                  │
 │  ════════════════                                                             │
 │                                                                               │
 │  Inside the dispatch:                                                         │
@@ -92,7 +96,8 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │    /manage-lessons lesson-auto-suggest/  (script)                             │
 │      │                                                                        │
 │      │  ambiguous (no recipe match)                                           │
-│      ╵┄┄►  execution-context-{level}  (LLM fallback — uses models.default)    │
+│      ╵┄═►  execution-context  (LLM fallback — uses models.default,            │
+│                                no role key)                                   │
 │                                                                               │
 │    /manage-config domain-detect/         (script)                             │
 │      │                                                                        │
@@ -110,7 +115,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────────┐
-│  PHASE-2 ENVELOPE          role=phase-2                                       │
+│  PHASE-2 ENVELOPE          execution-context    role=phase-2                  │
 │  ════════════════                                                             │
 │                                                                               │
 │  Inside the dispatch (the confidence loop iterates HERE — never N envelopes): │
@@ -130,7 +135,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │  After the envelope returns:                                                  │
 │                                                                               │
 │    Step 13.5 (lesson-derived plans only)                                      │
-│      ╵┄┄► [cross.q-gate-validation]   (separate envelope, shared core)        │
+│      ╵┄═►  [cross.q-gate-validation]   (separate envelope, shared core)       │
 │                                                                               │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -147,11 +152,12 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │    /manage-status change-type-heuristic/   (script — keyword classifier)      │
 │      │                                                                        │
 │      │  ambiguous                                                             │
-│      ╵┄┄►  execution-context-{level}   (LLM fallback — uses models.default)   │
+│      ╵┄═►  execution-context   (LLM fallback — uses models.default,           │
+│                                 no role key)                                  │
 │      │                                                                        │
 │      ▼                                                                        │
 │                                                                               │
-│  PHASE-3 ENVELOPE           role=phase-3                                      │
+│  PHASE-3 ENVELOPE           execution-context    role=phase-3                 │
 │    track={simple OR complex} runtime input — same envelope, same role         │
 │                                                                               │
 │    Simple Track (Steps 6-8)                                                   │
@@ -166,7 +172,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │                                                                               │
 │  After the envelope returns:                                                  │
 │                                                                               │
-│    Step 11 ╵┄┄► [cross.q-gate-validation]                                     │
+│    Step 11 ╵┄═►  [cross.q-gate-validation]                                    │
 │                                                                               │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -175,7 +181,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────────┐
-│  PHASE-4 ENVELOPE          role=phase-4                                       │
+│  PHASE-4 ENVELOPE          execution-context    role=phase-4                  │
 │  ════════════════                                                             │
 │                                                                               │
 │  Orchestrator-side prep:                                                      │
@@ -199,7 +205,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │      keyword-drift / structural-token-drift                                   │
 │      │                                                                        │
 │      │  ambiguous validators                                                  │
-│      ╵┄┄► [cross.q-gate-validation]   (Step 9b — fires only when needed)      │
+│      ╵┄═►  [cross.q-gate-validation]   (Step 9b — fires only when needed)     │
 │                                                                               │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -216,7 +222,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │      │ for each task in dependency order                                      │
 │      ▼                                                                        │
 │   ┌─────────────────────────────────────────────────────────────────────┐    │
-│   │  PHASE-5 ENVELOPE           role=phase-5                            │    │
+│   │  PHASE-5 ENVELOPE        execution-context    role=phase-5          │    │
 │   │  ════════════════                                                   │    │
 │   │                                                                     │    │
 │   │    workflow=execute-task/SKILL.md                                   │    │
@@ -225,6 +231,9 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │   │    Steps: execute → verify (LLM + scripts inside)                   │    │
 │   │    Returns verification.passed: true|false                          │    │
 │   └─────────────────────────────────────────────────────────────────────┘    │
+│      ▲                                                                        │
+│      ║ (one Task dispatch per queue item)                                     │
+│      ║                                                                        │
 │      │                                                                        │
 │      ├── verification.passed: true                                            │
 │      │     │                                                                  │
@@ -241,7 +250,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │      └── verification.passed: false   (Steps 11 / 11b)                        │
 │            │                                                                  │
 │            │  finding_type = verification-failure OR quality-gate-failure     │
-│            ╵┄┄►  [cross.triage]                                               │
+│            ╵┄═►  [cross.triage]                                               │
 │                    │ fix_tasks_created                                        │
 │                    └──► back to task queue                                    │
 │                                                                               │
@@ -272,23 +281,23 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │   │     /github_pr comments-stage/                                     │     │
 │   │     /manage-findings query/  (count check)                         │     │
 │   │       │ pending > 0                                                │     │
-│   │       ╵┄┄► [cross.triage]   finding_type=pr-comment                │     │
+│   │       ╵┄═►  [cross.triage]   finding_type=pr-comment               │     │
 │   │                                                                    │     │
 │   │    sonar-roundtrip    ┐                                            │     │
 │   │     /sonar fetch-and-store/                                        │     │
 │   │     /manage-findings query/  (count check)                         │     │
 │   │       │ pending > 0                                                │     │
-│   │       ╵┄┄► [cross.triage]   finding_type=sonar-issue               │     │
+│   │       ╵┄═►  [cross.triage]   finding_type=sonar-issue              │     │
 │   │                                                                    │     │
 │   │    architecture-refresh   ┐                                        │     │
 │   │     /Tier 0 inline:   discover affected modules/                   │     │
 │   │       │ per affected module (parallel fan-out)                     │     │
-│   │       ╵┄┄►  [cross.manage-architecture-enrich-module] × N          │     │
+│   │       ╞══►  [cross.manage-architecture-enrich-module] × N          │     │
 │   │                                                                    │     │
-│   │    ┌──────────────────────────────────────────┐                    │     │
-│   │    │ create-pr      → phase-6.create-pr       │                    │     │
-│   │    │ lessons-capture → phase-6.lessons-capture │                    │     │
-│   │    └──────────────────────────────────────────┘                    │     │
+│   │    ┌──────────────────────────────────────────────────────────┐    │     │
+│   │    │  ══►  execution-context  role=phase-6.create-pr          │    │     │
+│   │    │  ══►  execution-context  role=phase-6.lessons-capture    │    │     │
+│   │    └──────────────────────────────────────────────────────────┘    │     │
 │   │       (dedicated dispatches — LLM cores for body composition       │     │
 │   │        and lesson extraction)                                      │     │
 │   │                                                                    │     │
@@ -302,15 +311,18 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │   │   /project:finalize-step-sync-plugin-cache/    (inline)            │     │
 │   │   /project:finalize-step-regenerate-executor/  (inline)            │     │
 │   │    project:finalize-step-plugin-doctor                             │     │
-│   │       ╵┄┄►  [cross.plugin-doctor]                                  │     │
+│   │       ╵┄═►  [cross.plugin-doctor]                                  │     │
 │   │    project:finalize-step-pre-submission-self-review                │     │
-│   │       ╵┄┄►  phase-6.pre-submission-self-review   (LLM dispatch)    │     │
+│   │       ══►  execution-context  role=phase-6.pre-submission-         │     │
+│   │            self-review                                             │     │
 │   │                                                                    │     │
 │   │  OPT-IN STEPS (not in default 17-step set):                        │     │
-│   │    phase-6.retrospective    (8 LLM aspects iterate IN-CONTEXT)     │     │
-│   │    phase-6.pr-doctor        (diagnose + report + internal loop;    │     │
-│   │                              sub-dispatches [cross.triage] when    │     │
-│   │                              the iteration crosses ~10 findings)   │     │
+│   │    ══►  execution-context  role=phase-6.retrospective              │     │
+│   │            (8 LLM aspects iterate IN-CONTEXT)                      │     │
+│   │    ══►  execution-context  role=phase-6.pr-doctor                  │     │
+│   │            (diagnose + report + internal loop;                     │     │
+│   │             sub-dispatches [cross.triage] when the iteration       │     │
+│   │             crosses ~10 findings)                                  │     │
 │   │                                                                    │     │
 │   └────────────────────────────────────────────────────────────────────┘     │
 │                                                                               │
@@ -321,32 +333,32 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 
 ## 3. Cross-phase shared cores — fan-in
 
-The five `cross.*` keys are shared LLM-judgement workflows dispatched from multiple call sites. The dispatch contract (workflow doc + skills + runtime inputs) is identical at every site; only the runtime inputs differ.
+The five `cross.*` keys are shared LLM-judgement workflows dispatched from multiple call sites. The dispatch contract (workflow doc + skills + runtime inputs) is identical at every site; only the runtime inputs differ. Every arrow below is a `Task: execution-context` dispatch crossing an envelope boundary.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────────┐
 │  CROSS-PHASE FAN-IN                                                           │
 │  ══════════════════                                                           │
 │                                                                               │
-│   phase-5 Step 11   (verification-failure)        ──┐                         │
-│   phase-5 Step 11b  (quality-gate-failure)        ──┤                         │
-│   phase-6 automated-review                        ──┼──►  [cross.triage]      │
-│   phase-6 sonar-roundtrip                         ──┤                         │
-│   phase-6.pr-doctor (internal loop > ~10 finds)   ──┘                         │
+│   phase-5 Step 11   (verification-failure)        ═╗                          │
+│   phase-5 Step 11b  (quality-gate-failure)        ═╣                          │
+│   phase-6 automated-review                        ═╬══►  [cross.triage]       │
+│   phase-6 sonar-roundtrip                         ═╣                          │
+│   phase-6.pr-doctor (internal loop > ~10 finds)   ═╝                          │
 │                                                                               │
-│   phase-2 Step 13.5 (lesson plans only)           ──┐                         │
-│   phase-3 Step 11   (outline-time Q-Gate)         ──┼──►  [cross.q-gate-      │
-│   phase-4 Step 9b   (plan-time Q-Gate)            ──┘       validation]       │
+│   phase-2 Step 13.5 (lesson plans only)           ═╗                          │
+│   phase-3 Step 11   (outline-time Q-Gate)         ═╬══►  [cross.q-gate-       │
+│   phase-4 Step 9b   (plan-time Q-Gate)            ═╝       validation]        │
 │                                                                               │
-│   any phase loading dev-general-practices         ──►   [cross.research]      │
+│   any phase loading dev-general-practices         ═══►  [cross.research]      │
 │   (when external research is needed; ad-hoc)                                  │
 │                                                                               │
-│   project:finalize-step-plugin-doctor (meta-only) ──┐                         │
-│   user-invocable plugin-doctor CLI                ──┴──►  [cross.plugin-      │
+│   project:finalize-step-plugin-doctor (meta-only) ═╗                          │
+│   user-invocable plugin-doctor CLI                ═╩══►  [cross.plugin-       │
 │                                                              doctor]          │
 │                                                                               │
 │   phase-6 architecture-refresh Tier-1                                         │
-│     ──►  [cross.manage-architecture-enrich-module]  × N parallel              │
+│     ══►  [cross.manage-architecture-enrich-module]  × N parallel              │
 │          (one envelope per affected module — the only per-iteration           │
 │           parallel dispatch in the contract)                                  │
 │                                                                               │
@@ -361,7 +373,7 @@ The five `cross.*` keys are shared LLM-judgement workflows dispatched from multi
 
 ## 4. The 15-key role registry — overlay
 
-The hierarchical role registry (`marshal.json` `models.roles`) groups every dispatch site under one of 7 groups. The resolver walks deepest-first to pick a level, then the variant emitter pins the `(model, effort)` primitive.
+The hierarchical role registry (`marshal.json` `models.roles`) groups every dispatch site under one of 7 groups. The resolver walks deepest-first to pick a level, then the variant emitter pins the `(model, effort)` primitive that ends up baked into the dispatched `execution-context-{level}` variant frontmatter.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────────┐
@@ -403,7 +415,7 @@ The resolver accepts three lookup forms:
 - `--role phase-6.create-pr`             — dotted
 - `--phase phase-6 --role create-pr`     — two-flag
 
-Level values resolve to `(model, effort)` per `../../plan-marshall/standards/model-levels.md` (six tiers: `low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`, plus the `inherit` sentinel).
+Level values resolve to `(model, effort)` per `../../plan-marshall/standards/model-levels.md` (six tiers: `low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`, plus the `inherit` sentinel). The graphs above abbreviate the dispatched target to `execution-context`; on the wire it's `execution-context-{level}` with `{level}` filled in by the resolver.
 
 ---
 
@@ -444,12 +456,19 @@ The granularity heuristics live in `../../extension-api/standards/dispatch-granu
 
 ## 6. Reading the graphs
 
-- **Boxes drawn with `┌ ─ ┐ │ └ ┘`** — LLM dispatch envelopes (`Task: execution-context-{level}`). Each carries a fixed ~5–15 K-token overhead (system prompt + skill loads + workflow doc + prompt envelope + tool round-trips). Earns its cost only when the LLM-judgement work clears ~10 K tokens (see `../../extension-api/standards/dispatch-granularity.md` § 1).
+- **Boxes drawn with `┌ ─ ┐ │ └ ┘`** — LLM dispatch envelopes (`Task: execution-context`). Each carries a fixed ~5–15 K-token overhead (system prompt + skill loads + workflow doc + prompt envelope + tool round-trips). Earns its cost only when the LLM-judgement work clears ~10 K tokens (see `../../extension-api/standards/dispatch-granularity.md` § 1).
 - **`/text/`** — Deterministic scripts. No envelope. Invoked via `python3 .plan/execute-script.py <notation> ...` from the calling context.
 - **`?text?`** — `AskUserQuestion` gates. Propagate to the host UI from whichever context raises them.
 - **`[cross.*]`** — Shared LLM cores. Same role-key surface seen from multiple call sites — see § 3 for the fan-in map.
-- **`──►`** — Unconditional flow.
-- **`╵┄┄►`** — Conditional / fallback / predicate-gated flow (e.g., "if pending findings > 0", "ambiguous heuristic case").
+
+Edge styles (designed so the dispatch boundary is unambiguous at a glance):
+
+- **`──►`** — In-context flow. Within an envelope or within the orchestrator's context.
+- **`══►`** — `Task:` dispatch — crosses a subagent envelope boundary (the parent context does NOT continue inside; it waits for the dispatch to return).
+- **`┄┄►`** — Conditional in-context flow. Predicate-gated (e.g., "if pending findings > 0"), but does not cross an envelope.
+- **`╵┄═►`** — Conditional dispatch. Predicate-gated AND crosses an envelope. The most common pattern in this graph: a script computes a predicate, then escalates by dispatching an LLM core only when the predicate trips.
+
+The actual target on the wire is always `execution-context-{level}` where `{level}` is resolved by `manage-config models resolve-target --role <role-key>`. The graphs hide the `-{level}` suffix because it is a runtime choice (driven by `marshal.json` `models.roles`), not a structural one.
 
 The granularity heuristics in `../../extension-api/standards/dispatch-granularity.md` justify each verdict in § 5's table. The contract every dispatched workflow satisfies (input contract, output contract, Worktree Header) lives in `agents.md` and `../../extension-api/standards/ext-point-execution-context-workflow.md`. Concrete code-level traces for three representative dispatches live in `dispatch-walkthrough.md`.
 
