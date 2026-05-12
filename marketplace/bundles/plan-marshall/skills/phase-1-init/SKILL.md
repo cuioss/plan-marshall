@@ -541,23 +541,21 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 7: Detect Domain
 
-Query configured domains from marshal.json and select appropriate domain for the task.
-
-**If domain parameter provided**: Use override value directly.
-
-**Otherwise**, query available domains:
+Run the deterministic detector; only raise `AskUserQuestion` on the ambiguous branch. There is no LLM dispatch on this code path — multi-match cases are genuinely human-input territory.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  skill-domains list --audit-plan-id {plan_id}
+  domain-detect --plan-id {plan_id} [--domain-override {domain}]
 ```
 
-**Domain selection logic**:
-1. If only one non-system domain configured → use it automatically
-2. If task context clearly matches one domain → use it
-3. Otherwise, ask user to select from configured domains via AskUserQuestion
+The script reads `request.md` (clarified_request → original_input fallback; lesson-{id}.md takes precedence when present), scans every configured non-system domain in `marshal.json` plus its bundle / skill aliases, and returns one of:
 
-**After selecting domain**, log the decision:
+- **Single-domain auto-select** (`source=single_domain_configured`): only one non-system domain is configured → that domain wins regardless of narrative.
+- **Unambiguous narrative match** (`source` = lesson body or request section): exactly one domain's alias set intersects the narrative tokens.
+- **Explicit override** (`source=cli_override`): `--domain-override` resolved to a known domain.
+- **Ambiguous** (`ambiguous: true`): multi-match OR zero-match. The caller MUST raise `AskUserQuestion` with the `candidates` list (when present) so the user picks the right domain; no auto-selection in this branch.
+
+**After resolving the domain**, log the decision:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
