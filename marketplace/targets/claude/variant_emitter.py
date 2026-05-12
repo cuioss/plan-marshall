@@ -3,15 +3,16 @@
 Detects canonical agents that declare ``implements:
 plan-marshall:extension-api/standards/ext-point-dynamic-level-executor``
 in their YAML frontmatter and emits one variant agent file per ordinal
-level (``low``, ``medium``, ``high``, ``xhigh``, ``xxhigh``) plus the
-canonical no-suffix file (with ``implements:`` and ``levels:`` stripped).
+level (``low``, ``medium``, ``high``, ``xhigh``, ``xxhigh``, ``max``)
+plus the canonical no-suffix file (with ``implements:`` and ``levels:``
+stripped).
 
 The level → ``(model, effort)`` primitive binding is the canonical
 table from ``plan-marshall:plan-marshall/standards/model-levels.md``.
-The ``xxhigh`` build-time guard reads
+The ``max`` build-time guard reads
 ``marketplace/targets/opencode/mapping.json`` to decide whether the
 resolved model alias accepts ``effort: xhigh``; when it does not, the
-``xxhigh`` variant is skipped (the canonical falls back to ``inherit``
+``max`` variant is skipped (the canonical falls back to ``inherit``
 at runtime).
 """
 
@@ -29,8 +30,9 @@ LEVEL_TABLE: dict[str, dict[str, str | None]] = {
     'low': {'model': 'haiku', 'effort': None},
     'medium': {'model': 'sonnet', 'effort': 'medium'},
     'high': {'model': 'sonnet', 'effort': 'high'},
-    'xhigh': {'model': 'opus', 'effort': 'high'},
-    'xxhigh': {'model': 'opus', 'effort': 'xhigh'},
+    'xhigh': {'model': 'opus', 'effort': 'medium'},
+    'xxhigh': {'model': 'opus', 'effort': 'high'},
+    'max': {'model': 'opus', 'effort': 'xhigh'},
 }
 
 @dataclass(frozen=True)
@@ -165,9 +167,9 @@ def selected_levels(frontmatter: Frontmatter) -> list[str]:
     """Return the list of levels to emit for this canonical.
 
     When ``levels:`` is present, only listed levels are emitted (filtered
-    against the known palette). When absent, all five levels are emitted
+    against the known palette). When absent, all six levels are emitted
     in canonical order (``low``, ``medium``, ``high``, ``xhigh``,
-    ``xxhigh``).
+    ``xxhigh``, ``max``).
     """
     if frontmatter.levels is None:
         return list(LEVEL_TABLE.keys())

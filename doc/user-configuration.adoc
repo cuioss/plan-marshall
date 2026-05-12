@@ -29,10 +29,10 @@ The `.plan/marshal.json` `models.roles` block accepts polymorphic values. A flat
       "phase-6": {
         "create-pr": "medium",
         "lessons-capture": "low",
-        "retrospective": "xhigh"
+        "retrospective": "xxhigh"
       },
       "cross": {
-        "research": "xxhigh",
+        "research": "max",
         "triage": "high",
         "q-gate-validation": "high"
       }
@@ -75,13 +75,13 @@ Payloads live in link:../marketplace/bundles/plan-marshall/skills/plan-marshall/
 
 == No-Restart Semantics
 
-The resolver reads `.plan/marshal.json` fresh on every dispatch. A `models` edit (manual or via the wizard) takes effect on the **next** dispatch — no Claude Code restart, no `/sync-plugin-cache`, no target regeneration required. The six emitted `execution-context` variants are static; only which variant the resolver selects changes.
+The resolver reads `.plan/marshal.json` fresh on every dispatch. A `models` edit (manual or via the wizard) takes effect on the **next** dispatch — no Claude Code restart, no `/sync-plugin-cache`, no target regeneration required. The seven emitted `execution-context` variants (canonical + six levels) are static; only which variant the resolver selects changes.
 
 A restart IS required when target/claude/ is regenerated (e.g., variant frontmatter changes), but that is a developer-side meta-project flow, not a user-side configuration flow.
 
 == Worked Example
 
-A project author wants the research workflow to run on Opus, every Q-Gate check on Opus, the finalize workflows on Sonnet, and everything else on the default. Their `.plan/marshal.json`:
+A project author wants the research workflow at the absolute top tier, every Q-Gate check on Sonnet-high, the finalize workflows on Sonnet-medium, and everything else on the default. Their `.plan/marshal.json`:
 
 [source,json]
 ----
@@ -90,7 +90,7 @@ A project author wants the research workflow to run on Opus, every Q-Gate check 
     "default": "medium",
     "roles": {
       "cross": {
-        "research": "xxhigh",
+        "research": "max",
         "q-gate-validation": "high",
         "triage": "high"
       },
@@ -102,10 +102,19 @@ A project author wants the research workflow to run on Opus, every Q-Gate check 
 
 After saving:
 
-* The next `cross.research` dispatch hits `execution-context-xxhigh` (Opus, effort xhigh).
+* The next `cross.research` dispatch hits `execution-context-max` (Opus, effort xhigh — Opus-4.7-only; gracefully degrades to canonical when the alias does not accept `effort: xhigh`).
 * The next `cross.q-gate-validation` or `cross.triage` dispatch hits `execution-context-high` (Sonnet, effort high).
 * Every `phase-6.*` dispatch hits `execution-context-medium` (Sonnet, effort medium).
 * Every other dispatch (phase-1 through phase-5, `cross.plugin-doctor`, `cross.manage-architecture-enrich-module`) hits `execution-context-medium` via the `models.default` fallback.
+
+== Migration note — `xhigh` / `xxhigh` rebind
+
+Plan-marshall is pre-1.0. The recent palette expansion (insert `xhigh = opus-medium`, promote `max` to live) rebinds the existing `xhigh` and `xxhigh` keywords to weaker primitives than they previously resolved to. Consumer `marshal.json` files that already set per-role levels are unaffected at the resolver level (the keywords still resolve), but the *primitive* the variant pins is now weaker. User-side action: any role that previously needed *Opus, high* under `xhigh` should be re-pointed at `xxhigh`; any role that previously needed *Opus, xhigh* under `xxhigh` should be re-pointed at `max`. There is no auto-migration.
+
+| Level | Previous binding | New binding |
+| `xhigh` | `opus, high` | `opus, medium` |
+| `xxhigh` | `opus, xhigh` | `opus, high` |
+| `max` | (reserved — refused) | `opus, xhigh` (Opus-4.7-only) |
 
 == Related
 

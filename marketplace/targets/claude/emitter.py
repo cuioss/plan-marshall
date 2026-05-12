@@ -33,7 +33,7 @@ EXCLUDED_DIR_NAMES = frozenset({'__pycache__', '.pytest_cache', '.mypy_cache', '
 EXCLUDED_RELATIVE_FILES = frozenset({Path('.claude-plugin') / 'plugin.json'})
 
 # Path to the OpenCode mapping file (reused by the Claude target's
-# xxhigh build-time guard to consult model_map alias→ID resolution).
+# max build-time guard to consult model_map alias→ID resolution).
 _OPENCODE_MAPPING = Path(__file__).resolve().parent.parent / 'opencode' / 'mapping.json'
 
 

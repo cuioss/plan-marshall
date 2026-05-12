@@ -10,7 +10,7 @@ under three named profiles:
   bumps the four phase-group roles that most consistently benefit from
   extra reasoning to ``high``.
 - ``HIGH_END`` — maximum-quality profile; defaults to ``high`` and pushes
-  the deep-reasoning cross-phase roles to ``xhigh`` / ``xxhigh``.
+  the deep-reasoning cross-phase roles to ``xhigh`` / ``xxhigh`` / ``max``.
 
 The presets sit alongside the role registry inside the
 ``plan-marshall:plan-marshall`` skill so that policy decisions about
@@ -22,10 +22,10 @@ plain Python dicts — not :class:`enum.Enum`, not :func:`dataclasses.dataclass`
 ``marshal.json``.
 
 Levels use only the values listed in ``ALLOWED_LEVELS``
-(``low|medium|high|xhigh|xxhigh|inherit``). The ``max`` level is
-reserved (future-additive) and is therefore forbidden in presets — a
-self-check (:func:`_validate_preset`) runs at import time and raises
-:class:`ValueError` if any preset deviates.
+(``low|medium|high|xhigh|xxhigh|max|inherit``). The ``RESERVED_LEVELS``
+tuple is currently empty; a self-check (:func:`_validate_preset`) runs
+at import time and raises :class:`ValueError` if any preset references
+an unknown level.
 
 Hierarchical shape: a preset's ``roles`` block carries a top-level entry
 per role group. The value is either a string (for flat single-workflow
@@ -47,11 +47,12 @@ import copy
 # so this module remains free of any import-time dependency on the
 # ``manage-config`` skill scripts; the test suite cross-checks the two
 # tuples for drift.
-ALLOWED_LEVELS: tuple[str, ...] = ('low', 'medium', 'high', 'xhigh', 'xxhigh', 'inherit')
+ALLOWED_LEVELS: tuple[str, ...] = ('low', 'medium', 'high', 'xhigh', 'xxhigh', 'max', 'inherit')
 
-# ``max`` is reserved as a future-additive level (see ``model-levels.md``).
-# Presets must never reference it; ``_validate_preset`` raises if they do.
-RESERVED_LEVELS: tuple[str, ...] = ('max',)
+# No levels are currently reserved. ``max`` was promoted from reserved-future
+# to live (resolves to opus, xhigh — Opus-4.7-only) so presets may reference
+# it. Future palette expansion may repopulate this tuple.
+RESERVED_LEVELS: tuple[str, ...] = ()
 
 
 class ModelPresets:
@@ -124,7 +125,7 @@ class ModelPresets:
                 'pr-doctor': 'xhigh',
             },
             'cross': {
-                'research': 'xxhigh',
+                'research': 'max',
                 'triage': 'xhigh',
                 'q-gate-validation': 'xhigh',
                 'plugin-doctor': 'xhigh',
@@ -132,7 +133,9 @@ class ModelPresets:
         },
     }
     """Maximum-quality preset. Default ``high``; pushes the analytical phase
-    groups and the deep-reasoning cross-phase cores to ``xhigh`` / ``xxhigh``.
+    groups and the deep-reasoning cross-phase cores to ``xhigh`` / ``xxhigh`` /
+    ``max``. ``cross.research`` rides at ``max`` (Opus-4.7-only — falls back
+    to canonical when the alias does not accept ``effort: xhigh``).
     Use for high-stakes plans where the extra reasoning cost is justified by
     output quality."""
 
@@ -159,7 +162,7 @@ class ModelPresets:
         ),
         'high-end': (
             'Maximum-quality preset — default high, with reasoning-heavy '
-            'roles pushed to xhigh / xxhigh.'
+            'roles pushed to xhigh / xxhigh / max.'
         ),
     }
 
@@ -247,7 +250,7 @@ def _validate_level_keyword(level: str, where: str) -> None:
     if level in RESERVED_LEVELS:
         raise ValueError(
             f"{where} level '{level}' is reserved (future-additive); "
-            f"use 'xxhigh' for the current top tier"
+            f"use 'max' for the current top tier"
         )
     if level not in ALLOWED_LEVELS:
         raise ValueError(

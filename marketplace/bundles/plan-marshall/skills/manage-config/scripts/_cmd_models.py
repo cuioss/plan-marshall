@@ -41,12 +41,12 @@ from _config_core import (
 from model_presets import ModelPresets  # type: ignore[import-not-found]
 
 # Allowed-levels enum, kept in lock-step with model-levels.md.
-ALLOWED_LEVELS = ('low', 'medium', 'high', 'xhigh', 'xxhigh', 'inherit')
+ALLOWED_LEVELS = ('low', 'medium', 'high', 'xhigh', 'xxhigh', 'max', 'inherit')
 
-# `max` is reserved as a future-additive level (see model-levels.md). It is
-# recognised by the resolver only to produce a clear error message rather than
-# falling through to the generic invalid-level branch.
-RESERVED_LEVELS = ('max',)
+# No levels are currently reserved. `max` was promoted from reserved-future to
+# live (resolves to opus, xhigh — Opus-4.7-only). Future palette expansion may
+# repopulate this tuple.
+RESERVED_LEVELS: tuple[str, ...] = ()
 
 # The role registry, kept in lock-step with model-roles.md.
 #
@@ -101,7 +101,7 @@ def _validate_level(value: str, source: str) -> tuple[bool, str | None]:
         return (
             False,
             f"level '{value}' at {source} is reserved (future-additive); "
-            f"use 'xxhigh' for the current top tier",
+            f"use 'max' for the current top tier",
         )
     return (
         False,
