@@ -1,6 +1,6 @@
 # Extension Point: Execution-Context Workflow
 
-> **Type**: Workflow-Doc Extension (declarative, runtime-read) | **Declaration**: `implements:` frontmatter on workflow standards doc or SKILL.md | **Status**: Active
+> **Type**: Workflow-Doc Extension (declarative, runtime-read) | **Declaration**: `implements:` frontmatter on workflow doc or SKILL.md | **Status**: Active
 
 ## Overview
 
@@ -29,7 +29,7 @@ The implementor MUST live at one of these paths:
 
 The `workflow/` directory (singular) is the marketplace convention for workflow docs. Reference / contract / configuration docs live under `standards/`; tool-loaded reference material lives under `references/`.
 
-**Every** file under `workflow/` MUST be a `.md` markdown file, MUST declare `implements:` in YAML frontmatter (the `---` block at the top of the file), and MUST document its Output section as a top-level `## Output` heading per the contract below. There is no orchestrator-exception: even top-level workflows the LLM follows directly in the main context (e.g., `plan-marshall/workflow/planning.md`, `recipe.md`, `execution.md`) declare the ext-point — their Output section is degenerate (a `status` + `display_detail` shape emitted when the workflow is wrapped in a `Task: execution-context-{level}` dispatch; interactive entry surfaces the same conceptual state via `manage-logging` records and the terminal user message).
+Every file under `workflow/` MUST be a `.md` markdown file. There is no orchestrator-exception: even top-level workflows the LLM follows directly in the main context (e.g., `plan-marshall/workflow/planning.md`, `recipe.md`, `execution.md`) declare the ext-point — their Output section is degenerate (a `status` + `display_detail` shape emitted when the workflow is wrapped in a `Task: execution-context-{level}` dispatch; interactive entry surfaces the same conceptual state via `manage-logging` records and the terminal user message).
 
 A skill MAY hold zero, one, or many `workflow/*.md` files. A SKILL.md MAY itself implement the ext-point when the skill's primary deliverable is one workflow (e.g., the six phase-N skills). When both apply, SKILL.md typically describes the skill and points at one or more `workflow/*.md` implementors that carry the actual dispatch bodies.
 
@@ -73,13 +73,7 @@ The implementor MUST NOT redeclare `dev-general-practices` in its own steps — 
 
 ## Plugin-Doctor Enforcement
 
-Lint rule `workflow-doc-implements-contract`:
-
-- Every file whose frontmatter declares `implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow` MUST also declare an Output section containing at minimum the `status` and `display_detail` fields.
-- Implementors MUST NOT carry the redundant "Dispatched via Task:…" prose anywhere in their body.
-- Files under `*/workflow/*.md` that do NOT carry the `implements:` declaration are presumed to be orchestrator / reference workflows; the rule does not require conformance from them, but the marketplace inventory surfaces them separately so the distinction is visible.
-
-The rule is enumerable via filesystem glob plus a single frontmatter check, making it cheap to run as part of the marketplace quality gate.
+The lint rule `workflow-doc-implements-contract` enforces every requirement in this document by filesystem glob plus frontmatter check: the `implements:` frontmatter is present, the Output section declares at minimum `status` and `display_detail`, and the Forbidden constraints above are honoured. Cheap enough to run as part of the marketplace quality gate.
 
 ## Cross-references
 
