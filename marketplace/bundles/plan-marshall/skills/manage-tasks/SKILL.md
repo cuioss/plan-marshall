@@ -75,6 +75,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `add-step` | `--plan-id --task-number --target [--after]` | Add step to task |
 | `remove-step` | `--plan-id --task-number --step` | Remove step from task |
 | `rename-path` | `--plan-id --old-path --new-path` | Record path rename and rewrite step targets |
+| `qgate-mechanical-checks` | `--plan-id [--no-emit]` | Run the six deterministic Q-Gate checks for phase-4-plan Step 9 (coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Pure regex + graph + filesystem; no LLM dispatch. Each failure becomes a Q-Gate finding under `--source qgate` so phase-4-plan's existing aggregate consumes it. Returns `total_failed`, per-check counts, and an `ambiguous` flag the caller uses to decide whether the LLM `cross.q-gate-validation` dispatch still needs to fire. |
 
 ### Script-Level `[OUTCOME]` Emission (`finalize-step`)
 
