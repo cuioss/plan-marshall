@@ -607,6 +607,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `delete-plan` | `--plan-id` | Delete entire plan directory |
 | `route` | `--phase` | Get skill name for phase |
 | `get-routing-context` | `--plan-id` | Get combined routing context |
+| `change-type-heuristic` | `--plan-id [--persist]` | Deterministic change-type classifier for phase-3-outline Step 4. Reads the clarified-request narrative (falling back to original_input) and scores it against a fixed keyword table — returns one of `feature`, `bug_fix`, `tech_debt`, `enhancement`, `verification`, `analysis`, or `ambiguous=true` when no keyword fires / two change types tie / confidence < 0.7. With `--persist`, writes the resolved change_type to `status.metadata.change_type` (skipped in the ambiguous branch so the LLM `detect-change-type` workflow is the single writer there). |
 | `self-test` | _(none)_ | Verify manage-status health |
 
 ---

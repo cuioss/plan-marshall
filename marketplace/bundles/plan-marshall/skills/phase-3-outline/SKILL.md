@@ -174,7 +174,23 @@ For detailed procedures (metadata reads, recipe resolution, skill loading), see 
 
 **Purpose**: Determine the change type for agent routing.
 
-Dispatch the `detect-change-type` workflow (`plan-marshall:phase-3-outline/workflow/detect-change-type.md` via `execution-context-{level}` resolved from `models.default`) which persists `change_type` to status.json metadata. After detection, apply post-check: if the workflow returned `analysis` but request contains action words (`fix`, `implement`, `improve`, `update`, `create`, `refactor`, `migrate`, `remove`, `restructure`), override to `enhancement` or `tech_debt` as appropriate.
+Run the deterministic classifier first; only dispatch the LLM workflow on the ambiguous branch.
+
+**Step 4a — Heuristic classifier (deterministic, no envelope):**
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+  change-type-heuristic --plan-id {plan_id} --persist
+```
+
+The script reads `clarified_request` (falling back to `original_input`) from `request.md`, scores it against the fixed keyword tables, applies the compound-intent guard and the bug-fix-vs-tech-debt object disambiguation, and either:
+
+- returns one of `feature` / `bug_fix` / `tech_debt` / `enhancement` / `verification` / `analysis` with `ambiguous=false` (and persists to `status.metadata.change_type` with `--persist`), OR
+- returns `ambiguous=true` when no keyword fires, the top two scores tie, or confidence falls below `0.7`.
+
+**Step 4b — LLM fallback (only when `ambiguous=true`):**
+
+Dispatch the `detect-change-type` workflow (`plan-marshall:phase-3-outline/workflow/detect-change-type.md` via `execution-context-{level}` resolved from `models.default`). The workflow persists `change_type` to status.json metadata itself. Skip this dispatch when Step 4a resolved without ambiguity — the heuristic already wrote the value.
 
 For detailed procedures (agent spawning, metadata read, post-check override logic), see [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md#step-4-detect-change-type-detail).
 
