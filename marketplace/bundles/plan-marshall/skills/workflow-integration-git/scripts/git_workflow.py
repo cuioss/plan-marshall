@@ -51,6 +51,7 @@ import textwrap
 from pathlib import Path
 from typing import Any
 
+from _cmd_baseline_reconcile import cmd_baseline_reconcile
 from file_ops import get_worktree_root  # type: ignore[import-not-found]
 from git_provider import run_git  # type: ignore[import-not-found]
 from marketplace_paths import git_main_checkout_root  # type: ignore[import-not-found]
@@ -1428,6 +1429,58 @@ Examples:
                         'flags': ['--base'],
                         'required': True,
                         'help': 'Base ref to rebase onto (e.g., main, origin/main)',
+                    },
+                ],
+            },
+            {
+                'name': 'baseline-reconcile',
+                'help': (
+                    'Mechanical baseline reconciliation for phase-2-refine Step 3d '
+                    '(fetch + diff + merge-tree conflict detection; no LLM dispatch)'
+                ),
+                'handler': cmd_baseline_reconcile,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': True,
+                        'help': 'Plan identifier (mandatory — resolves worktree path and base branch)',
+                    },
+                    {
+                        'flags': ['--base-branch'],
+                        'dest': 'base_branch',
+                        'help': (
+                            'Optional override for the upstream base branch. '
+                            'Default reads from plan config phase-2-refine.base_branch, '
+                            'falling back to main.'
+                        ),
+                    },
+                    {
+                        'flags': ['--worktree-path'],
+                        'dest': 'worktree_path',
+                        'help': (
+                            'Optional override for the worktree path. Default reads '
+                            'metadata.worktree_path from status.json.'
+                        ),
+                    },
+                    {
+                        'flags': ['--skip-fetch'],
+                        'dest': 'skip_fetch',
+                        'action': 'store_true',
+                        'help': (
+                            'Skip the git fetch origin {base_branch} round-trip. '
+                            'Use in tests with seeded local refs; the environment '
+                            'variable PLAN_MARSHALL_SKIP_FETCH=1 has the same effect.'
+                        ),
+                    },
+                    {
+                        'flags': ['--no-emit'],
+                        'dest': 'no_emit',
+                        'action': 'store_true',
+                        'help': (
+                            'Run the checks and return the result TOON without writing '
+                            'any Q-Gate findings (dry-run).'
+                        ),
                     },
                 ],
             },

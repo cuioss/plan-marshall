@@ -64,6 +64,7 @@ emitting tasks that named lesson IDs that did not exist in the inventory).
 
 import argparse
 
+from _cmd_qgate_mechanical import cmd_qgate_mechanical
 from _cmd_rename import cmd_rename_path
 from _cmd_step import cmd_add_step, cmd_finalize_step, cmd_remove_step
 from _tasks_crud import cmd_batch_add, cmd_commit_add, cmd_prepare_add, cmd_remove, cmd_update
@@ -299,6 +300,29 @@ def build_parser() -> argparse.ArgumentParser:
     p_rename.add_argument('--old-path', required=True, help='Original path before rename')
     p_rename.add_argument('--new-path', required=True, help='New path after rename')
 
+    # qgate-mechanical-checks
+    p_qgate = subparsers.add_parser(
+        'qgate-mechanical-checks',
+        help='Run deterministic Q-Gate checks for phase-4-plan Step 9 (no LLM dispatch)',
+        description=(
+            'Run the six deterministic Q-Gate checks over the just-written tasks '
+            'and parent deliverables: coverage, skill-resolution, acyclic, '
+            'files-exist, keyword-drift, structural-token-drift. Each failure is '
+            'emitted as a Q-Gate finding under --source qgate so phase-4-plan\'s '
+            'existing aggregate loop consumes it without modification. Pure regex '
+            '+ graph + filesystem; no LLM dispatch. Use --no-emit to inspect the '
+            'check results without writing findings.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(p_qgate)
+    p_qgate.add_argument(
+        '--no-emit',
+        action='store_true',
+        help='Run the checks and return the result TOON without writing any findings (dry-run).',
+    )
+
     return parser
 
 
@@ -320,6 +344,7 @@ COMMANDS = {
     'add-step': cmd_add_step,
     'remove-step': cmd_remove_step,
     'rename-path': cmd_rename_path,
+    'qgate-mechanical-checks': cmd_qgate_mechanical,
 }
 
 

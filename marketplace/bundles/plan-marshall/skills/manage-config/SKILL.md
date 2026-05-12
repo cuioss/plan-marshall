@@ -235,6 +235,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `plan` | `{phase} get/set`, set-steps, add-step, remove-step, set-max-iterations |
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
 | `init` | Initialize marshal.json (with optional `--force`) |
+| `domain-detect` | `--plan-id [--domain-override]` (deterministic detector for phase-1-init Step 7; walks `request.md` clarified narrative for explicit mentions of configured `skill_domains` and their bundle aliases; returns `domain` + `ambiguous` boolean. Single-domain projects auto-select; multi-match or zero-match returns `ambiguous=true` so the caller raises `AskUserQuestion` — no LLM dispatch fallback applies.) |
 
 ---
 

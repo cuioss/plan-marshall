@@ -34,6 +34,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
+from _cmd_auto_suggest import cmd_auto_suggest
 from _lessons_crud import set_body  # type: ignore[import-not-found]
 from constants import DIR_LESSONS, LESSON_CATEGORIES  # type: ignore[import-not-found]
 from file_ops import (  # type: ignore[import-not-found]
@@ -1573,6 +1574,38 @@ def main() -> int:
         help='Report what would be removed without unlinking anything.',
     )
     cleanup_parser.set_defaults(func=cmd_cleanup_superseded)
+
+    # auto-suggest — recipe-registry matcher for phase-1-init Step 5c.
+    auto_suggest_parser = subparsers.add_parser(
+        'auto-suggest',
+        help='Recipe-registry matcher for phase-1-init Step 5c (no LLM dispatch)',
+        description=(
+            "Scan the marketplace recipe registry (manage-config list-recipes) and "
+            "return up to --max-suggestions recipes ordered by deterministic "
+            "confidence. The score blends keyword overlap (request narrative vs "
+            "recipe description), domain alignment, and scope alignment. With "
+            "--emit (default), each suggestion is also written as an info-severity "
+            "Q-Gate finding so the orchestrator can surface the list. Use "
+            "--no-emit to inspect suggestions without writing findings."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    auto_suggest_parser.add_argument('--plan-id', dest='plan_id', required=True, help='Plan identifier')
+    auto_suggest_parser.add_argument(
+        '--max-suggestions',
+        dest='max_suggestions',
+        type=int,
+        default=3,
+        help='Maximum number of suggestions returned (default: 3).',
+    )
+    auto_suggest_parser.add_argument(
+        '--no-emit',
+        dest='no_emit',
+        action='store_true',
+        help='Return suggestions without writing Q-Gate findings (dry-run).',
+    )
+    auto_suggest_parser.set_defaults(func=cmd_auto_suggest)
 
     args = parse_args_with_toon_errors(parser)
     result = args.func(args)

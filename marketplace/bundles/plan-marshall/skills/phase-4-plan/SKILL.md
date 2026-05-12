@@ -585,23 +585,31 @@ The composer's `decision.log` entry (one per applied rule) provides the audit tr
 
 ### Run Q-Gate Checks
 
-After tasks are created, verify:
-
-1. **Deliverable Coverage**: Every deliverable has >= 1 task? No orphan tasks without a deliverable?
-2. **Skill Resolution Valid**: Every task has skills resolved? No "skill not found" entries?
-3. **Dependency Graph Acyclic**: No circular dependencies between tasks?
-4. **Steps Valid**: Every step is a concrete file path (not glob/ellipsis)? Files exist on disk?
-
-### Record Findings
-
-For each issue found:
+Invoke the deterministic mechanical-checks subcommand once. It runs the six
+mechanical verifications (coverage, skill-resolution, acyclic, files-exist,
+keyword-drift, structural-token-drift) and emits one Q-Gate finding per
+failure into the phase-4-plan store via the same `qgate add` API the inline
+prose used to call — pure regex + graph + filesystem, no LLM dispatch:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  qgate add --plan-id {plan_id} --phase 4-plan --source qgate \
-  --type triage --title "{check}: {issue_title}" \
-  --detail "{detailed_reason}"
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  qgate-mechanical-checks --plan-id {plan_id}
 ```
+
+The six checks correspond to:
+
+1. **Deliverable Coverage**: Every deliverable has >= 1 task; no task references a deliverable that does not exist in `solution_outline.md`.
+2. **Skill Resolution Valid**: Every non-verification task has a non-empty `domain` and every `skills[]` entry matches the `bundle:skill` shape.
+3. **Dependency Graph Acyclic**: `depends_on` across all tasks forms a DAG (Kahn-style topological pass).
+4. **Steps Valid**: Every step target on non-verification tasks resolves on disk.
+5. **Keyword-drift**: Planning-domain keywords (`PR review`, `CI`, `merge comments`, `pipeline`, `automated review`, `build check`, `review comments`) appearing in a `task.description` but absent from the parent deliverable's haystack (title + metadata + profiles + affected files + verification).
+6. **Structural-token-drift**: `TASK-NNN` numbering monotonic, starting at `TASK-001`, no gaps.
+
+Parse the return TOON: `total_failed` is the aggregate finding count for the
+inline checks (added to `qgate_pending_count` returned in Step 11), and
+`ambiguous` is `true` when `solution_outline.md` was missing or unparseable —
+in that case the LLM `cross.q-gate-validation` dispatch in Step 9b is the
+only authoritative pass and the orchestrator MUST still fire it.
 
 ### Log Q-Gate Result
 
@@ -610,27 +618,14 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-4-plan:qgate) Verification: {passed_count} passed, {flagged_count} flagged"
 ```
 
-### Keyword-drift check (warn-only)
+### Description-token preservation check (warn-only)
 
-After all tasks are created, scan each `task.description` for planning-domain keywords that the author may have substituted for the deliverable's actual semantics. For each task:
+This check is distinct from the script's `structural_token_drift` check
+(which validates TASK-NNN file numbering monotonicity). It catches silent
+regularization of structural tokens in `task.description` against the
+parent deliverable's haystack.
 
-1. Build a deny-list of planning-domain keywords: `PR review`, `CI`, `merge comments`, `pipeline`, `automated review`, `build check`, `review comments`.
-2. Build an outline-text haystack: concatenate the parent deliverable's Title, Metadata, Intent gloss, Profiles, Affected files, Change per file, Verification, and Success Criteria sections as plain text.
-3. For each keyword present in the `description` but ABSENT from the haystack, emit a warning Q-Gate finding:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  qgate add --plan-id {plan_id} --phase 4-plan --source qgate \
-  --type warning \
-  --title "Description drift: TASK-{N} uses '{keyword}' not present in deliverable outline" \
-  --detail "{description excerpt}; deliverable {deliverable_number} outline does not mention '{keyword}'"
-```
-
-**Rigor**: this check is warn-only. Phase-4-plan MUST proceed to completion regardless of warnings — the operator reviews findings at the phase-4 gate.
-
-### Structural-token-drift check (warn-only)
-
-After all tasks are created, scan each `task.description` for structural tokens that are not present in the parent deliverable body. Structural tokens are numeric literals, flag-style tokens, and quoted identifiers — the same three categories defined in Step 6 mitigation 3 ("Structural-token preservation"). This check catches silent regularization of structural data (e.g. `990 / 1000` rewritten as `90 / 100`) that the Keyword-drift check does not cover.
+After all tasks are created, scan each `task.description` for structural tokens that are not present in the parent deliverable body. Structural tokens are numeric literals, flag-style tokens, and quoted identifiers — the same three categories defined in Step 6 mitigation 3 ("Structural-token preservation"). This check catches silent regularization of structural data (e.g. `990 / 1000` rewritten as `90 / 100`) that the keyword-drift check does not cover.
 
 1. Build an outline-text haystack: concatenate the parent deliverable's Title, Metadata, Intent gloss, Profiles, Affected files, Change per file, Verification, and Success Criteria sections as plain text. The Title is included because mitigation 1 requires `task.description` to begin with a verbatim title quote — any structural tokens in the title must therefore also be present in the haystack, otherwise they surface as false-positive drift findings.
 2. Extract structural tokens from `task.description`:
@@ -885,7 +880,7 @@ If deliverable metadata incomplete:
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Read deliverables (list-deliverables, read)
 - `plan-marshall:manage-architecture:architecture` - Query module skills (module --module {module}) and resolve commands (resolve --command {cmd} --module {module}). Uses `--audit-plan-id`, NOT `--plan-id`.
-- `plan-marshall:manage-tasks:manage-tasks` - Create tasks atomically via `batch-add --tasks-file PATH` (preferred for multi-task creation in this phase, where `PATH` is staged via `manage-files write` to `.plan/local/plans/{plan_id}/work/tasks-batch.json`). Single ad-hoc adds may use the path-allocate flow (`prepare-add` → Write TOON → `commit-add`).
+- `plan-marshall:manage-tasks:manage-tasks` - Create tasks atomically via `batch-add --tasks-file PATH` (preferred for multi-task creation in this phase, where `PATH` is staged via `manage-files write` to `.plan/local/plans/{plan_id}/work/tasks-batch.json`). Single ad-hoc adds may use the path-allocate flow (`prepare-add` → Write TOON → `commit-add`). Step 9 invokes `qgate-mechanical-checks` for the deterministic Q-Gate sweep.
 - `plan-marshall:manage-files:manage-files` - Stage the batch JSON array (via `write --file work/tasks-batch.json`) so the payload never crosses the shell argument boundary.
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-lessons:manage-lessons` - Record lessons on issues (add)

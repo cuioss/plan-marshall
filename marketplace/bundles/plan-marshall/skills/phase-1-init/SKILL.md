@@ -316,6 +316,19 @@ Do not proceed to Step 6 unless both post-conditions hold.
 
 **Applicability**: This step runs **only when `source == lesson`**. Skip entirely for `description`, `issue`, or `recipe` sources. (When `source == recipe`, the user has already chosen a recipe explicitly — auto-suggest never overrides an explicit choice.)
 
+**Step 5c-pre — registry-wide auto-suggest (deterministic, no envelope)**:
+
+For any source other than `recipe`, optionally run the registry matcher to surface candidate recipes:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons \
+  auto-suggest --plan-id {plan_id}
+```
+
+The script scans the live recipe registry, blends keyword overlap with domain/scope alignment, and returns the top 3 recipes ordered by confidence. Each suggestion is also written as an info-severity Q-Gate finding so the orchestrator can surface the list in the audit log. When `suggestions[0].confidence` clears the auto-accept floor (caller-side, typically 0.7) the orchestrator MAY persist `status.metadata.recipe_key = suggestions[0].key` without prompting; below that floor the list is surfaced for user selection (no auto-persist).
+
+**Step 5c-lesson — doc-shaped predicate (lesson-source only)**:
+
 Inspect the lesson body (now at `.plan/local/plans/{plan_id}/lesson-{lesson_id}.md` after Step 5b) and decide whether to auto-suggest the `lesson_cleanup` recipe. The goal is to route doc-shaped lessons (small, prescriptive, no code refactor required) through `recipe-lesson-cleanup` so they get a slim surgical manifest instead of going through the full refine/outline/Q-Gate pipeline.
 
 **Heuristic — "doc-shaped" predicate**:
@@ -528,23 +541,21 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 7: Detect Domain
 
-Query configured domains from marshal.json and select appropriate domain for the task.
-
-**If domain parameter provided**: Use override value directly.
-
-**Otherwise**, query available domains:
+Run the deterministic detector; only raise `AskUserQuestion` on the ambiguous branch. There is no LLM dispatch on this code path — multi-match cases are genuinely human-input territory.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  skill-domains list --audit-plan-id {plan_id}
+  domain-detect --plan-id {plan_id} [--domain-override {domain}]
 ```
 
-**Domain selection logic**:
-1. If only one non-system domain configured → use it automatically
-2. If task context clearly matches one domain → use it
-3. Otherwise, ask user to select from configured domains via AskUserQuestion
+The script reads `request.md` (clarified_request → original_input fallback; lesson-{id}.md takes precedence when present), scans every configured non-system domain in `marshal.json` plus its bundle / skill aliases, and returns one of:
 
-**After selecting domain**, log the decision:
+- **Single-domain auto-select** (`source=single_domain_configured`): only one non-system domain is configured → that domain wins regardless of narrative.
+- **Unambiguous narrative match** (`source` = lesson body or request section): exactly one domain's alias set intersects the narrative tokens.
+- **Explicit override** (`source=cli_override`): `--domain-override` resolved to a known domain.
+- **Ambiguous** (`ambiguous: true`): multi-match OR zero-match. The caller MUST raise `AskUserQuestion` with the `candidates` list (when present) so the user picks the right domain; no auto-selection in this branch.
+
+**After resolving the domain**, log the decision:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

@@ -16,6 +16,7 @@ Usage:
 
 import argparse
 
+from _cmd_domain_detect import cmd_domain_detect
 from _cmd_ext_defaults import cmd_ext_defaults
 from _cmd_init import cmd_init
 from _cmd_models import cmd_models, cmd_models_apply_preset, cmd_models_resolve_target
@@ -390,6 +391,26 @@ def main() -> int:
     # --- list-verify-steps ---
     subparsers.add_parser('list-verify-steps', help='List all available verify steps', allow_abbrev=False)
 
+    # --- domain-detect ---
+    p_dd = subparsers.add_parser(
+        'domain-detect',
+        help='Deterministic domain detector for phase-1-init Step 7 (no LLM dispatch)',
+        description=(
+            "Walk the plan's clarified-request narrative for explicit mentions of "
+            "configured skill_domains and return the matching domain. Single-domain "
+            "projects auto-select. Multi-match or no-match returns ambiguous=true so "
+            "the caller raises an AskUserQuestion — no LLM fallback applies."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    p_dd.add_argument('--plan-id', dest='plan_id', required=True, help='Plan identifier')
+    p_dd.add_argument(
+        '--domain-override',
+        dest='domain_override',
+        help='Explicit domain (bypasses narrative scan; must match a configured domain key).',
+    )
+
     args = parse_args_with_toon_errors(parser)
 
     if args.noun is None:
@@ -440,6 +461,8 @@ def main() -> int:
         result = cmd_configure_execute_task_skills(args)
     elif args.noun == 'resolve-execute-task-skill':
         result = cmd_resolve_execute_task_skill(args)
+    elif args.noun == 'domain-detect':
+        result = cmd_domain_detect(args)
     elif args.noun == 'list-recipes':
         result = cmd_list_recipes(args)
     elif args.noun == 'resolve-recipe':

@@ -26,6 +26,8 @@ Usage:
 
 import argparse
 
+from _cmd_aggregate_confidence import cmd_aggregate_confidence
+from _cmd_change_type_heuristic import cmd_change_type_heuristic
 from _cmd_lifecycle import cmd_archive, cmd_create, cmd_delete_plan, cmd_transition
 from _cmd_mark_step import cmd_mark_step_done
 from _cmd_routing import cmd_get_routing_context, cmd_route, cmd_self_test
@@ -214,6 +216,79 @@ def main() -> int:
         ),
     )
     mark_step_parser.set_defaults(func=cmd_mark_step_done)
+
+    # change-type-heuristic
+    change_type_parser = subparsers.add_parser(
+        'change-type-heuristic',
+        help='Deterministic change-type classifier for phase-3-outline Step 4 (no LLM dispatch)',
+        description=(
+            "Classify a plan's clarified-request narrative against a fixed "
+            "keyword table and return one of feature, bug_fix, tech_debt, "
+            "enhancement, verification, analysis — or ambiguous=true when "
+            "no keyword fires, when the top two scores tie, or when "
+            "confidence falls below 0.7. Use --persist to write the result "
+            "to status.metadata.change_type when the heuristic resolves "
+            "(persistence is skipped in the ambiguous branch so the LLM "
+            "detect-change-type workflow is the single writer there)."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(change_type_parser)
+    change_type_parser.add_argument(
+        '--persist',
+        action='store_true',
+        help='Persist the resolved change_type to status.metadata.change_type when not ambiguous.',
+    )
+    change_type_parser.set_defaults(func=cmd_change_type_heuristic)
+
+    # aggregate-confidence — weighted-math aggregator for phase-2-refine Step 10.
+    aggregate_confidence_parser = subparsers.add_parser(
+        'aggregate-confidence',
+        help='Weighted-math confidence aggregator for phase-2-refine Step 10 (no LLM dispatch)',
+        description=(
+            "Compute the overall confidence from per-dimension scores using the "
+            "fixed weights from phase-2-refine SKILL.md Step 10: correctness 20%, "
+            "completeness 20%, consistency 20%, non-duplication 10%, ambiguity 20%, "
+            "module-mapping 10%. Scores are 0..100; missing dimensions default to 0 "
+            "and are reported in missing_dimensions. Use --scores-file PATH (JSON "
+            "object keyed by dimension) for batch input, or pass individual "
+            "--<dimension> N flags; the two forms are mutually exclusive when "
+            "--scores-file is supplied (CLI flags still override file values for "
+            "any keys they specify). With --persist, the overall confidence is "
+            "written to status.metadata.confidence."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(aggregate_confidence_parser)
+    aggregate_confidence_parser.add_argument(
+        '--scores-file',
+        dest='scores_file',
+        default=None,
+        help='Path to a JSON object keyed by dimension name (kebab- or snake-case).',
+    )
+    for flag, dest in (
+        ('--correctness', 'correctness'),
+        ('--completeness', 'completeness'),
+        ('--consistency', 'consistency'),
+        ('--non-duplication', 'non_duplication'),
+        ('--ambiguity', 'ambiguity'),
+        ('--module-mapping', 'module_mapping'),
+    ):
+        aggregate_confidence_parser.add_argument(
+            flag,
+            dest=dest,
+            type=float,
+            default=None,
+            help=f'Score 0..100 for the {dest.replace("_", " ")} dimension.',
+        )
+    aggregate_confidence_parser.add_argument(
+        '--persist',
+        action='store_true',
+        help='Persist the overall confidence to status.metadata.confidence.',
+    )
+    aggregate_confidence_parser.set_defaults(func=cmd_aggregate_confidence)
 
     # self-test
     self_test_parser = subparsers.add_parser('self-test', help='Verify manage-status health', allow_abbrev=False)
