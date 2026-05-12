@@ -220,85 +220,31 @@ Skip Step 3d entirely when ANY of the following hold:
 - No base branch is configured for the plan.
 - The repo has no remote (e.g., a brand-new clone for fixtures).
 
-When the guard does not skip, proceed to the sync sub-steps below.
+The `baseline-reconcile` script invoked in Sub-step 3d.1 below enforces the guard itself and returns `status: skipped` with a `reason` field when any condition holds.
 
-### Sub-step 3d.1 — Resolve the base branch
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-2-refine get --field base_branch --audit-plan-id {plan_id}
-```
-
-Fall back to the repo default (`main` for plan-marshall, project-configured otherwise) when `base_branch` is not set.
-
-### Sub-step 3d.2 — Resolve the worktree path
+### Sub-step 3d.1 — Run the mechanical predicate
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-worktree-path \
-  --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow \
+  baseline-reconcile --plan-id {plan_id}
 ```
 
-Use the returned absolute path as `{worktree_path}` for the git invocations below. Do NOT pin cwd via `env -C` for the manage-* scripts; `git` invocations DO need the worktree path because `git` is a Bucket B tool by convention.
+The script resolves the worktree path (from `status.metadata.worktree_path`), reads `base_branch` from the plan's phase-2-refine config (falling back to `main`), runs `git fetch origin {base_branch}` (the only network round-trip), and computes:
 
-### Sub-step 3d.3 — Fetch the upstream tip
+- `upstream_commits[]` — every commit that landed on `origin/{base_branch}` since the plan's captured `worktree_sha`, each entry with its touched files.
+- `conflicts[]` — files whose three-way merge against `origin/{base_branch}` fails (`git merge-tree --write-tree HEAD origin/{base_branch}`). The worktree is NOT modified.
 
-```bash
-git -C {worktree_path} fetch origin {base_branch}
-```
+When the merge is clean (`conflict_count == 0`) the script returns success and emits no findings — phase-2-refine treats this as the fast-path and skips Sub-step 3d.2.
 
-This is the only network round-trip. Subsequent diff/log queries are local.
+When conflicts exist, the script emits ONE Q-Gate finding per conflicted file under `--source qgate`. Findings are recorded against `phase 2-refine` and flow into the existing iterate-to-confidence loop via the standard Q-Gate finding-resolution path.
 
-### Sub-step 3d.4 — Compute overlap with the request narrative
+### Sub-step 3d.2 — LLM scope-classification (only when upstream commits landed)
 
-Surface diff against the captured baseline:
+The script reports `upstream_commit_count` and `upstream_commits[].files`; the phase-2 dispatch consumes that data and decides whether each upstream commit overlaps the request's affected-files candidate set in a way that warrants additional re-authoring. This judgement stays bundled in the existing `phase-2` dispatch envelope — the script is the mechanical predicate only. The classification step may add further findings beyond the merge-conflict set the script already emitted, log per-commit decisions, or proceed to Step 8 when none of the upstream commits overlap the request scope.
 
-```bash
-git -C {worktree_path} log --oneline {worktree_sha}..origin/{base_branch}
-```
+### Sub-step 3d.3 — Feedback Loop
 
-Where `{worktree_sha}` is the captured worktree SHA from the phase-1-init handshake (read via `manage-status read --plan-id {plan_id}` and consume `metadata.worktree_sha` if present, otherwise use the worktree's current `HEAD`).
-
-If the log returns zero commits → fast-path: log the clean state and return without emitting findings:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine:baseline) Fast-path — origin/{base_branch} unchanged since phase-1-init; no reconciliation needed"
-```
-
-If the log returns commits, continue to Sub-step 3d.5.
-
-### Sub-step 3d.5 — Surface overlap as Q-Gate findings
-
-For each upstream commit, list the files it touched:
-
-```bash
-git -C {worktree_path} show --stat --format= {commit_sha}
-```
-
-Compare each touched file against the request narrative's affected-files candidate set (loaded from `request.md` and any `module_mapping.toon` produced by phase-1-init):
-
-- **No overlap** — log the commit and continue:
-
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-    decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine:baseline) Upstream commit {sha} ({subject}) — no overlap with request"
-  ```
-
-- **Overlap detected** — emit a Q-Gate finding with `severity: blocking` so the iterate-to-confidence loop addresses the drift:
-
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-    qgate add --plan-id {plan_id} --phase 2-refine \
-    --source qgate-baseline-reconciliation --type triage \
-    --severity blocking \
-    --title "Q-Gate: upstream commit {sha} overlaps request surface" \
-    --detail "Commit {sha} ({subject}) landed on origin/{base_branch} since phase-1-init and touches files in the request's affected-files candidate set: {overlap_paths}. Re-author the request narrative against the new baseline (Steps 8-12 will iterate to confidence again) OR justify in clarifications why the upstream change is irrelevant to the request scope." \
-    --audit-plan-id {plan_id}
-  ```
-
-### Sub-step 3d.6 — Feedback Loop
-
-Findings emitted in Sub-step 3d.5 flow into the Step 8-12 iterate-to-confidence loop via the standard Q-Gate finding-resolution path. The loop reads pending findings at Step 1 (next iteration), surfaces them as clarifications in Step 11, and the user-supplied resolution feeds the request update in Step 12. The loop terminates when confidence reaches threshold AND no pending baseline findings remain.
+Findings emitted by the script and by Sub-step 3d.2's classification step flow into the Step 8-12 iterate-to-confidence loop via the standard Q-Gate finding-resolution path. The loop reads pending findings at Step 1 (next iteration), surfaces them as clarifications in Step 11, and the user-supplied resolution feeds the request update in Step 12. The loop terminates when confidence reaches threshold AND no pending baseline findings remain.
 
 ### Conflict Handling
 
