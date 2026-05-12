@@ -519,7 +519,7 @@ Match also accepts the literal `cd "$WORKTREE"` / `cd ${worktree_path}` shapes. 
 
 **Pattern WL-B — Hard-coded `.claude/worktrees/` references**:
 
-Worktree storage lives under `.plan/local/worktrees/`. Hard-coded `.claude/worktrees/` substrings in skill/agent prose, script literals, or examples are stale and MUST be rewritten.
+The forbidden substring is named in the heading above and matched by the regex below. Worktree storage lives under `.plan/local/worktrees/`; hits in skill / agent prose, script literals, or examples are stale and MUST be rewritten.
 
 ```bash
 rg -n "\.claude/worktrees/" {affected_path}
