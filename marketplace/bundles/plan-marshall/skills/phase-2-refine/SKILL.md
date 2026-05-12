@@ -159,7 +159,17 @@ Otherwise → track = complex
 
 ### Step 10: Evaluate Confidence
 
-Aggregate findings into weighted confidence score:
+Aggregate the per-dimension scores from Steps 8 / 9 into a single weighted confidence via the deterministic aggregator:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+  aggregate-confidence --plan-id {plan_id} \
+  --correctness {N} --completeness {N} --consistency {N} \
+  --non-duplication {N} --ambiguity {N} --module-mapping {N} \
+  --persist
+```
+
+The dimension weights are fixed (no LLM judgement remains in this step):
 
 | Dimension | Weight |
 |-----------|--------|
@@ -169,6 +179,10 @@ Aggregate findings into weighted confidence score:
 | Non-Duplication | 10% |
 | Ambiguity | 20% |
 | Module Mapping | 10% |
+
+For batch input, the analyzer can stage the per-dimension scores as JSON at `.plan/local/plans/{plan_id}/work/confidence-scores.json` and pass `--scores-file {path}` instead of individual flags. Missing dimensions default to 0 and surface in `missing_dimensions` so the caller can detect a malformed analyzer return.
+
+The script returns `{confidence, breakdown[]{dimension, score, weight, weighted}, missing_dimensions, persisted}`; with `--persist`, the overall confidence also lands in `status.metadata.confidence` so phase-3-outline and downstream consumers can read it without re-running the math.
 
 If confidence >= threshold → Step 13. Otherwise → Step 11.
 
