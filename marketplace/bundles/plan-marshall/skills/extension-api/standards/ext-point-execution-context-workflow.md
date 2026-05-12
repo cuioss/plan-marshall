@@ -31,8 +31,6 @@ The `workflow/` directory (singular) is the marketplace convention for workflow 
 
 **Every** file under `workflow/` MUST be a `.md` markdown file, MUST declare `implements:` in YAML frontmatter (the `---` block at the top of the file), and MUST document its Output section as a top-level `## Output` heading per the contract below. There is no orchestrator-exception: even top-level workflows the LLM follows directly in the main context (e.g., `plan-marshall/workflow/planning.md`, `recipe.md`, `execution.md`) declare the ext-point — their Output section is degenerate (a `status` + `display_detail` shape emitted when the workflow is wrapped in a `Task: execution-context-{level}` dispatch; interactive entry surfaces the same conceptual state via `manage-logging` records and the terminal user message).
 
-There is no second doc-format convention. AsciiDoc content under `workflow/` is a marketplace error — convert the body to markdown or move the file out of `workflow/` (to `references/` for tool-loaded reference material).
-
 A skill MAY hold zero, one, or many `workflow/*.md` files. A SKILL.md MAY itself implement the ext-point when the skill's primary deliverable is one workflow (e.g., the six phase-N skills). When both apply, SKILL.md typically describes the skill and points at one or more `workflow/*.md` implementors that carry the actual dispatch bodies.
 
 **Cross-phase / multi-consumer placement rule**: when a workflow is consumed from multiple phases or from outside any phase (e.g., `triage`, `q-gate-validation`, `research-best-practices`, `enrich-module`), place it under `plan-marshall/skills/plan-marshall/workflow/` rather than under any single consumer phase. Single-phase workflows live under the consumer phase's `skill/workflow/`.
