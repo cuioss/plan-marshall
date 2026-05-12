@@ -293,7 +293,9 @@ def _check_files_exist(
             target = (step.get('target') or '').strip()
             if not target:
                 continue
-            candidate = repo_root / target if not target.startswith('/') else Path(target)
+            # ``Path / target`` already returns Path(target) verbatim when target
+            # is absolute, so the relative / absolute split is handled by pathlib.
+            candidate = repo_root / target
             if not candidate.exists():
                 failed += 1
                 emitted += _emit_finding(
@@ -350,16 +352,28 @@ def _check_keyword_drift(
     emitted = 0
     by_number: dict[int, dict[str, Any]] = {int(d['number']): d for d in deliverables}
 
+    # Pre-compile the keyword patterns once per call (independent of N tasks);
+    # cache per-deliverable haystacks so two tasks under the same deliverable
+    # reuse the concatenation work.
+    patterns: list[tuple[str, re.Pattern[str]]] = [
+        (keyword, re.compile(r'\b' + re.escape(keyword) + r'\b', re.IGNORECASE))
+        for keyword in _PLANNING_KEYWORDS
+    ]
+    haystack_cache: dict[int, str] = {}
+
     for t in tasks:
         description = (t.get('description') or '').strip()
         if not description:
             continue
-        deliverable = by_number.get(int(t.get('deliverable', 0)))
+        d_num = int(t.get('deliverable', 0))
+        deliverable = by_number.get(d_num)
         if deliverable is None:
             continue
-        haystack = _build_haystack(deliverable)
-        for keyword in _PLANNING_KEYWORDS:
-            pattern = re.compile(r'\b' + re.escape(keyword) + r'\b', re.IGNORECASE)
+        haystack = haystack_cache.get(d_num)
+        if haystack is None:
+            haystack = _build_haystack(deliverable)
+            haystack_cache[d_num] = haystack
+        for keyword, pattern in patterns:
             if pattern.search(description) and not pattern.search(haystack):
                 failed += 1
                 excerpt = description[:120].replace('\n', ' ')
@@ -370,7 +384,7 @@ def _check_keyword_drift(
                         f'{keyword!r} not present in deliverable outline'
                     ),
                     detail=(
-                        f'{excerpt}; deliverable {deliverable["number"]} '
+                        f'{excerpt}; deliverable {d_num} '
                         f'outline does not mention {keyword!r}'
                     ),
                     emit=emit,
@@ -449,7 +463,10 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
             'message': f'Plan directory not found: {plan_dir}',
         }
 
-    repo_root = git_main_checkout_root() or plan_dir.resolve().parent.parent.parent
+    # plan_dir resolves to .plan/local/plans/{plan_id} — four levels deep
+    # from the repo root, so the fallback walks four parents when the git
+    # resolver is unavailable (e.g. tests outside a git checkout).
+    repo_root = git_main_checkout_root() or plan_dir.resolve().parent.parent.parent.parent
 
     task_dir = get_tasks_dir(plan_id)
     all_tasks = [task for _path, task in get_all_tasks(task_dir)]

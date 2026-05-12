@@ -130,30 +130,42 @@ def _list_upstream_commits(
     baseline_sha: str,
     base_branch: str,
 ) -> list[dict[str, Any]]:
-    """Return ``[{sha, subject, files}]`` for upstream commits since ``baseline_sha``."""
+    """Return ``[{sha, subject, files}]`` for upstream commits since ``baseline_sha``.
+
+    Uses a single ``git log --name-only`` call so the subprocess cost is
+    O(1) in the number of commits — long upstream divergence does not
+    require N + 1 subprocesses. The output groups each commit's metadata
+    line with its touched-file list separated by a blank line.
+    """
     rc, stdout, _ = run_git(
         [
             '-C',
             worktree_path,
             'log',
             f'{baseline_sha}..origin/{base_branch}',
+            '--name-only',
             '--pretty=format:%H%x09%s',
         ]
     )
     if rc != 0 or not stdout:
         return []
+
     commits: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
     for line in stdout.splitlines():
-        if '\t' not in line:
+        if '\t' in line and not line.startswith(' '):
+            # ``{sha}\t{subject}`` header for a new commit.
+            sha, subject = line.split('\t', 1)
+            if len(sha) >= 7 and all(ch in '0123456789abcdefABCDEF' for ch in sha):
+                current = {'sha': sha, 'subject': subject, 'files': []}
+                commits.append(current)
+                continue
+        if current is None:
             continue
-        sha, subject = line.split('\t', 1)
-        rc_files, files_stdout, _ = run_git(
-            ['-C', worktree_path, 'show', '--name-only', '--pretty=format:', sha]
-        )
-        files: list[str] = []
-        if rc_files == 0 and files_stdout:
-            files = [f for f in files_stdout.splitlines() if f.strip()]
-        commits.append({'sha': sha, 'subject': subject, 'files': files})
+        stripped = line.strip()
+        if not stripped:
+            continue
+        current['files'].append(stripped)
     return commits
 
 
