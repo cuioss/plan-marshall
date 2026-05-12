@@ -9,222 +9,312 @@ Holistic view of every dispatch path in the plan-marshall bundle: orchestrator e
 
 This doc is the **graph** view; the others are the **contract**, **examples**, and **heuristics** views of the same surface.
 
+Legend (used in every diagram below):
+
+```
+┌──────┐
+│ BOX  │  LLM dispatch envelope (Task: execution-context-{level})
+└──────┘
+
+  /SCR/    Deterministic script (no envelope)
+  ?USR?    AskUserQuestion gate (propagates to host UI)
+[CROSS]   cross.* shared LLM core (envelope; fan-in from multiple sites)
+
+  ──►      Unconditional flow
+  ┄┄►      Conditional / fallback / predicate-gated flow
+```
+
 ---
 
 ## 1. Top-level entry
 
-```mermaid
-flowchart TD
-    User([User])
-    Slash[/plan-marshall slash command/]
-    Marshall[plan-marshall skill]
-    Status[(manage-status<br/>state machine)]
-
-    User -->|"/plan-marshall action=create task=..."| Slash
-    Slash -->|"Skill:"| Marshall
-    Marshall -->|"manage-status transition<br/>(drives phase loop)"| Status
-
-    Marshall -->|"Task: execution-context-{level}<br/>role=phase-1, workflow=phase-1-init/SKILL.md"| P1
-    Marshall -->|"Task: execution-context-{level}<br/>role=phase-2, workflow=phase-2-refine/SKILL.md"| P2
-    Marshall -->|"Task: execution-context-{level}<br/>role=phase-3, workflow=phase-3-outline/SKILL.md"| P3
-    Marshall -->|"Task: execution-context-{level}<br/>role=phase-4, workflow=phase-4-plan/SKILL.md"| P4
-    Marshall -->|"Task: execution-context-{level}<br/>per-task: role=phase-5,<br/>workflow=execute-task/SKILL.md"| P5
-    Marshall -->|"Task: execution-context-{level}<br/>per-step: role=phase-6.{step},<br/>workflow=phase-6-finalize/workflow/{step}.md"| P6
-
-    P1[phase-1-init envelope]:::dispatched
-    P2[phase-2-refine envelope]:::dispatched
-    P3[phase-3-outline envelope]:::dispatched
-    P4[phase-4-plan envelope]:::dispatched
-    P5[phase-5-execute<br/>per-task envelope]:::dispatched
-    P6[phase-6-finalize<br/>per-step envelopes]:::dispatched
-
-    classDef dispatched fill:#e8f4ff,stroke:#2563eb,color:#000
+```
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                                                                               │
+│                       TOP-LEVEL DISPATCH ENTRY                                │
+│                                                                               │
+│   USER                                                                        │
+│    │                                                                          │
+│    │  /plan-marshall action=create task=...                                   │
+│    ▼                                                                          │
+│   /plan-marshall slash command/                                               │
+│    │                                                                          │
+│    │  Skill: plan-marshall:plan-marshall                                      │
+│    ▼                                                                          │
+│   ┌─────────────────────────────────────────────────────────────────────┐    │
+│   │  plan-marshall skill   (orchestrator, main context)                 │    │
+│   │  ═══════════════════                                                │    │
+│   │                                                                     │    │
+│   │  • Reads manage-status / manage-architecture state                  │    │
+│   │  • Resolves the target via                                          │    │
+│   │      manage-config models resolve-target --role <role-key>          │    │
+│   │  • Dispatches each phase as:                                        │    │
+│   │      Task: plan-marshall:execution-context-{level}                  │    │
+│   │      prompt body = name + plan_id + skills[] + workflow + WORKTREE  │    │
+│   │  • Marks step done via                                              │    │
+│   │      manage-status mark-step-done                                   │    │
+│   │  • Drives the phase loop via                                        │    │
+│   │      manage-status transition                                       │    │
+│   └─────────────────────────────────────────────────────────────────────┘    │
+│    │                                                                          │
+│    ├──► phase-1     role=phase-1     workflow=phase-1-init/SKILL.md           │
+│    ├──► phase-2     role=phase-2     workflow=phase-2-refine/SKILL.md         │
+│    ├──► phase-3     role=phase-3     workflow=phase-3-outline/SKILL.md        │
+│    ├──► phase-4     role=phase-4     workflow=phase-4-plan/SKILL.md           │
+│    ├──► phase-5     role=phase-5     workflow=execute-task/SKILL.md           │
+│    │                 (one dispatch per task in the queue)                     │
+│    └──► phase-6     role=phase-6.{step}                                       │
+│                      workflow=phase-6-finalize/workflow/{step}.md             │
+│                      (one dispatch per dispatched manifest step)              │
+│                                                                               │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The orchestrator never spawns a raw `Task: general-purpose`. Every subagent dispatch targets `plan-marshall:execution-context` (canonical inherit) or `plan-marshall:execution-context-{level}` (variant resolved from a role key via `manage-config models resolve-target`). The workflow doc + skill loads flow through the prompt body.
+The orchestrator never spawns a raw `Task: general-purpose`. Every subagent dispatch targets `plan-marshall:execution-context` (canonical inherit) or `plan-marshall:execution-context-{level}` (variant resolved from a role key). The workflow doc + skill loads flow through the prompt body — see `agents.md` for the full contract.
 
 ---
 
 ## 2. Per-phase detail
 
-Each phase envelope runs the workflow doc inside the subagent context, calling inline scripts and sometimes sub-dispatching cross-phase cores. Hexagons are scripts (deterministic — no envelope). Blue rounded boxes are LLM dispatches (envelopes).
+Each phase envelope runs the workflow doc inside the subagent context, calling inline scripts and sometimes sub-dispatching cross-phase cores.
 
 ### 2.1 phase-1-init
 
-```mermaid
-flowchart LR
-    P1((phase-1<br/>dispatch))
-
-    subgraph Inside["Inside the phase-1 envelope"]
-        S5d[/manage-architecture<br/>snapshot/]:::script
-        S5c[/manage-lessons<br/>lesson-auto-suggest/]:::script
-        S7[/manage-config<br/>domain-detect/]:::script
-        S6[/manage-references<br/>init/]:::script
-        AUQ{AskUserQuestion<br/>when ambiguous}:::user
-    end
-
-    P1 --> S5d
-    P1 --> S5c
-    P1 --> S7
-    P1 --> S6
-
-    S5c -.->|"ambiguous → fallback<br/>(uses models.default,<br/>no role key)"| LessonFB[execution-context-{level}<br/>fallback dispatch]:::dispatched
-    S7 -.->|"ambiguous"| AUQ
-
-    classDef script fill:#fef3c7,stroke:#d97706,color:#000
-    classDef dispatched fill:#e8f4ff,stroke:#2563eb,color:#000
-    classDef user fill:#fce7f3,stroke:#be185d,color:#000
+```
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  PHASE-1 ENVELOPE          role=phase-1                                       │
+│  ════════════════                                                             │
+│                                                                               │
+│  Inside the dispatch:                                                         │
+│                                                                               │
+│    /manage-architecture snapshot/        (script)                             │
+│    /manage-references init/              (script)                             │
+│    /manage-lessons lesson-auto-suggest/  (script)                             │
+│      │                                                                        │
+│      │  ambiguous (no recipe match)                                           │
+│      ╵┄┄►  execution-context-{level}  (LLM fallback — uses models.default)    │
+│                                                                               │
+│    /manage-config domain-detect/         (script)                             │
+│      │                                                                        │
+│      │  ambiguous (multi-domain or zero match)                                │
+│      ╵┄┄►  ?AskUserQuestion?            (human-input territory)               │
+│                                                                               │
+│    LLM judgement inside the envelope: pre-flight reference verification       │
+│    (Step 4b — bundles into this envelope, shares manage-architecture          │
+│     / manage-references context with the rest of the phase)                   │
+│                                                                               │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 2.2 phase-2-refine
 
-```mermaid
-flowchart LR
-    P2((phase-2<br/>dispatch))
-
-    subgraph Inside["Inside the phase-2 envelope (confidence loop iterates here)"]
-        S3d[/workflow-integration-git<br/>baseline-reconcile/]:::script
-        S10[/manage-status<br/>aggregate-confidence/]:::script
-        LLM[LLM judgement<br/>Steps 3b/3c/8/9/10/11/12<br/>iterates in-context]
-        AUQ{Step 11<br/>AskUserQuestion}:::user
-    end
-
-    P2 --> S3d
-    P2 --> LLM
-    LLM --> S10
-    LLM --> AUQ
-
-    P2 -.->|"Step 13.5<br/>(lesson-derived plans)"| QG[cross.q-gate-validation<br/>dispatch]:::cross
-
-    classDef script fill:#fef3c7,stroke:#d97706,color:#000
-    classDef cross fill:#dcfce7,stroke:#15803d,color:#000
-    classDef user fill:#fce7f3,stroke:#be185d,color:#000
+```
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  PHASE-2 ENVELOPE          role=phase-2                                       │
+│  ════════════════                                                             │
+│                                                                               │
+│  Inside the dispatch (the confidence loop iterates HERE — never N envelopes): │
+│                                                                               │
+│    /workflow-integration-git baseline-reconcile/    (script — Step 3d)        │
+│      │  emits findings → bundled-in LLM classification                        │
+│      ▼                                                                        │
+│    LLM judgement loop        Steps 3b/3c/8/9/10/11/12                         │
+│    ─────────────────                                                          │
+│    • Step 3b/3c: source / proposed-fix verification                           │
+│    • Step  8:    analyze request quality                                      │
+│    • Step  9:    analyze in architecture context                              │
+│    • Step 10:    /manage-status aggregate-confidence/  (script — pure math)   │
+│    • Step 11:    ?AskUserQuestion? (clarify with user)                        │
+│    • Step 12:    refine request → loop back to 8 until confidence ≥ threshold │
+│                                                                               │
+│  After the envelope returns:                                                  │
+│                                                                               │
+│    Step 13.5 (lesson-derived plans only)                                      │
+│      ╵┄┄► [cross.q-gate-validation]   (separate envelope, shared core)        │
+│                                                                               │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 2.3 phase-3-outline
 
-```mermaid
-flowchart LR
-    Pre[/manage-status<br/>change-type-heuristic<br/>Step 4/]:::script
-    P3((phase-3<br/>dispatch))
-
-    Pre -.->|"ambiguous → fallback<br/>(models.default)"| CTLLM[execution-context-{level}<br/>change-type-detect<br/>fallback]:::dispatched
-    Pre --> P3
-
-    subgraph Inside["Inside the phase-3 envelope (Simple OR Complex Track)"]
-        Track{track=<br/>simple OR complex}
-        Simple[Simple Track Steps 6-8<br/>iterate in-context]
-        Complex[Complex Track Steps 9c+10+10b<br/>per-deliverable loop in-context]
-        S6V[/target validation<br/>ls -la per target/]:::script
-        S9D[/architecture<br/>which-module/]:::script
-    end
-
-    Track --> Simple
-    Track --> Complex
-    Simple --> S6V
-    Complex --> S9D
-
-    P3 -.->|"Step 11"| QG[cross.q-gate-validation<br/>dispatch]:::cross
-
-    classDef script fill:#fef3c7,stroke:#d97706,color:#000
-    classDef dispatched fill:#e8f4ff,stroke:#2563eb,color:#000
-    classDef cross fill:#dcfce7,stroke:#15803d,color:#000
+```
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  PHASE-3 ENTRY + ENVELOPE                                                     │
+│  ═════════════════════════                                                    │
+│                                                                               │
+│  Before the dispatch (orchestrator-side, Step 4):                             │
+│                                                                               │
+│    /manage-status change-type-heuristic/   (script — keyword classifier)      │
+│      │                                                                        │
+│      │  ambiguous                                                             │
+│      ╵┄┄►  execution-context-{level}   (LLM fallback — uses models.default)   │
+│      │                                                                        │
+│      ▼                                                                        │
+│                                                                               │
+│  PHASE-3 ENVELOPE           role=phase-3                                      │
+│    track={simple OR complex} runtime input — same envelope, same role         │
+│                                                                               │
+│    Simple Track (Steps 6-8)                                                   │
+│      • /target validation: ls -la per affected file/   (script)               │
+│      • LLM: create deliverables                                               │
+│      • LLM: Simple Q-Gate                                                     │
+│                                                                               │
+│    Complex Track (Steps 9-11)                                                 │
+│      • /domain-resolve, /architecture which-module/   (scripts)               │
+│      • LLM: Steps 9c + 10 + 10b iterate per-deliverable IN-CONTEXT            │
+│        (per-deliverable loop never spawns per-iteration subagents)            │
+│                                                                               │
+│  After the envelope returns:                                                  │
+│                                                                               │
+│    Step 11 ╵┄┄► [cross.q-gate-validation]                                     │
+│                                                                               │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 2.4 phase-4-plan
 
-```mermaid
-flowchart LR
-    P4((phase-4<br/>dispatch))
-
-    subgraph Inside["Inside the phase-4 envelope (task-creation loop iterates here)"]
-        S3[/manage-solution-outline<br/>load deliverables/]:::script
-        S4[/manage-tasks<br/>dependency graph/]:::script
-        Loop[Steps 5+6+7<br/>per-deliverable LLM loop<br/>in-context]
-        S8[/manage-tasks<br/>topological sort/]:::script
-        S8b[/manage-execution-manifest<br/>compose/]:::script
-        S9[/manage-tasks<br/>qgate-mechanical-checks/]:::script
-        AUQ{Step 6<br/>AskUserQuestion}:::user
-    end
-
-    P4 --> S3
-    S3 --> S4
-    S4 --> Loop
-    Loop --> AUQ
-    Loop --> S8
-    S8 --> S8b
-    S8b --> S9
-
-    S9 -.->|"Step 9b<br/>(ambiguous validators)"| QG[cross.q-gate-validation<br/>dispatch]:::cross
-
-    classDef script fill:#fef3c7,stroke:#d97706,color:#000
-    classDef cross fill:#dcfce7,stroke:#15803d,color:#000
-    classDef user fill:#fce7f3,stroke:#be185d,color:#000
+```
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  PHASE-4 ENVELOPE          role=phase-4                                       │
+│  ════════════════                                                             │
+│                                                                               │
+│  Orchestrator-side prep:                                                      │
+│    /manage-solution-outline load-deliverables/   (script — Step 3)            │
+│    /manage-tasks dependency-graph/               (script — Step 4)            │
+│                                                                               │
+│  Inside the dispatch (Steps 5+6+7 — task-creation loop iterates HERE):        │
+│                                                                               │
+│    LLM judgement loop, per deliverable                                        │
+│    ─────────────────────────────────                                          │
+│    • Step 5: create tasks from profiles (1:N, optional-skill LLM matching)    │
+│    • Step 6: anchoring, breaking-refactor split, self-modifying check         │
+│                ?AskUserQuestion? when split decision is ambiguous             │
+│    • Step 7: holistic verification tasks                                      │
+│                                                                               │
+│  Orchestrator-side post:                                                      │
+│    /manage-tasks topological-sort/               (script — Step 8)            │
+│    /manage-execution-manifest compose/           (script — Step 8b)           │
+│    /manage-tasks qgate-mechanical-checks/        (script — Step 9)            │
+│      coverage / skill-resolution / acyclic / files-exist /                    │
+│      keyword-drift / structural-token-drift                                   │
+│      │                                                                        │
+│      │  ambiguous validators                                                  │
+│      ╵┄┄► [cross.q-gate-validation]   (Step 9b — fires only when needed)      │
+│                                                                               │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 2.5 phase-5-execute
 
-```mermaid
-flowchart TD
-    Orch[phase-5-execute orchestrator<br/>in main context]
-    Queue[/manage-tasks<br/>task queue/]:::script
-    Step9[/Step 9 independent<br/>change verification:<br/>git diff + grep + exit code/]:::script
-    Verify[/Built-in verification:<br/>quality_check, build_verify,<br/>coverage_check/]:::script
-
-    Orch --> Queue
-    Queue -->|"per task"| P5((phase-5<br/>per-task dispatch))
-
-    subgraph Inside["Inside the per-task phase-5 envelope"]
-        Exec[execute-task workflow<br/>+ task-declared skills]
-    end
-
-    P5 --> Exec
-    Exec -->|"verification.passed: false"| Step11Trig[Step 11/11b<br/>orchestrator triggers triage]
-    Step11Trig -.->|"finding_type=<br/>verification-failure |<br/>quality-gate-failure"| Tri[cross.triage<br/>dispatch]:::cross
-    Tri -->|"fix_tasks_created"| Queue
-    Exec -->|"verification.passed: true"| Step9
-    Step9 --> Verify
-
-    classDef script fill:#fef3c7,stroke:#d97706,color:#000
-    classDef cross fill:#dcfce7,stroke:#15803d,color:#000
+```
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  PHASE-5-EXECUTE ORCHESTRATOR    (main context)                               │
+│  ════════════════════════════                                                 │
+│                                                                               │
+│   /manage-tasks task-queue/   (script)                                        │
+│      │                                                                        │
+│      │ for each task in dependency order                                      │
+│      ▼                                                                        │
+│   ┌─────────────────────────────────────────────────────────────────────┐    │
+│   │  PHASE-5 ENVELOPE           role=phase-5                            │    │
+│   │  ════════════════                                                   │    │
+│   │                                                                     │    │
+│   │    workflow=execute-task/SKILL.md                                   │    │
+│   │    skills[] = task-declared list from TASK-N.json                   │    │
+│   │                                                                     │    │
+│   │    Steps: execute → verify (LLM + scripts inside)                   │    │
+│   │    Returns verification.passed: true|false                          │    │
+│   └─────────────────────────────────────────────────────────────────────┘    │
+│      │                                                                        │
+│      ├── verification.passed: true                                            │
+│      │     │                                                                  │
+│      │     ▼                                                                  │
+│      │   /Step 9 independent change verification/    (3 deterministic         │
+│      │     • git-diff empty-test                      re-checks; NO LLM)      │
+│      │     • obfuscation-pattern grep                                         │
+│      │     • exit-code compare                                                │
+│      │     │                                                                  │
+│      │     ▼                                                                  │
+│      │   /Built-in verification:                                              │
+│      │     quality_check / build_verify / coverage_check/   (scripts)         │
+│      │                                                                        │
+│      └── verification.passed: false   (Steps 11 / 11b)                        │
+│            │                                                                  │
+│            │  finding_type = verification-failure OR quality-gate-failure     │
+│            ╵┄┄►  [cross.triage]                                               │
+│                    │ fix_tasks_created                                        │
+│                    └──► back to task queue                                    │
+│                                                                               │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 2.6 phase-6-finalize
 
-```mermaid
-flowchart TD
-    Manifest[/manage-execution-manifest<br/>read steps/]:::script
-    Loop[per-step dispatch loop]
-
-    Manifest --> Loop
-
-    Loop --> CP[phase-6.create-pr<br/>dispatch]:::dispatched
-    Loop --> LC[phase-6.lessons-capture<br/>dispatch]:::dispatched
-    Loop --> AR[automated-review<br/>orchestration]
-    Loop --> SR[sonar-roundtrip<br/>orchestration]
-    Loop --> ArchR[architecture-refresh<br/>orchestration]
-    Loop --> Inline[10 inline-only steps:<br/>commit-push, ci-wait, branch-cleanup,<br/>pre-push-quality-gate, record-metrics,<br/>archive-plan, finalize-step-print-phase-breakdown,<br/>project:finalize-step-deploy-target,<br/>project:finalize-step-sync-plugin-cache,<br/>project:finalize-step-regenerate-executor]:::script
-    Loop --> PSSR[phase-6.pre-submission-self-review<br/>dispatch<br/>meta-project only]:::dispatched
-    Loop --> PD[project:finalize-step-plugin-doctor<br/>meta-project only]
-    Loop --> Retro[phase-6.retrospective<br/>opt-in]:::dispatched
-    Loop --> PrDr[phase-6.pr-doctor<br/>opt-in]:::dispatched
-
-    AR --> ARS[/ci pr wait-for-comments<br/>github_pr comments-stage<br/>manage-findings query/]:::script
-    ARS -.->|"if pending > 0"| Tri1[cross.triage<br/>finding_type=pr-comment]:::cross
-
-    SR --> SRS[/sonar fetch-and-store<br/>manage-findings query/]:::script
-    SRS -.->|"if pending > 0"| Tri2[cross.triage<br/>finding_type=sonar-issue]:::cross
-
-    ArchR --> ArchT0[/Tier 0 inline:<br/>discover affected modules/]:::script
-    ArchT0 -->|"per affected module<br/>(parallel)"| Enrich[cross.manage-architecture-<br/>enrich-module<br/>N parallel dispatches]:::cross
-
-    PD -.-> Plg[cross.plugin-doctor<br/>dispatch]:::cross
-
-    PrDr -.->|"when iteration > ~10 findings"| Tri3[cross.triage<br/>sub-dispatch]:::cross
-
-    classDef script fill:#fef3c7,stroke:#d97706,color:#000
-    classDef dispatched fill:#e8f4ff,stroke:#2563eb,color:#000
-    classDef cross fill:#dcfce7,stroke:#15803d,color:#000
+```
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  PHASE-6-FINALIZE  ORCHESTRATOR    (main context)                             │
+│  ══════════════════════════════                                               │
+│                                                                               │
+│   /manage-execution-manifest read-steps/   (script)                           │
+│      │                                                                        │
+│      │ per-step dispatch loop                                                 │
+│      ▼                                                                        │
+│   ┌────────────────────────────────────────────────────────────────────┐     │
+│   │                                                                    │     │
+│   │  DEFAULT BUILT-IN STEPS — manifest order:                          │     │
+│   │                                                                    │     │
+│   │   /commit-push/                  (inline — trivial)                │     │
+│   │   /ci-wait/                      (inline — polls CI)               │     │
+│   │   /pre-push-quality-gate/        (inline — build invocation)       │     │
+│   │                                                                    │     │
+│   │    automated-review   ┐                                            │     │
+│   │     /ci pr wait-for-comments/                                      │     │
+│   │     /github_pr comments-stage/                                     │     │
+│   │     /manage-findings query/  (count check)                         │     │
+│   │       │ pending > 0                                                │     │
+│   │       ╵┄┄► [cross.triage]   finding_type=pr-comment                │     │
+│   │                                                                    │     │
+│   │    sonar-roundtrip    ┐                                            │     │
+│   │     /sonar fetch-and-store/                                        │     │
+│   │     /manage-findings query/  (count check)                         │     │
+│   │       │ pending > 0                                                │     │
+│   │       ╵┄┄► [cross.triage]   finding_type=sonar-issue               │     │
+│   │                                                                    │     │
+│   │    architecture-refresh   ┐                                        │     │
+│   │     /Tier 0 inline:   discover affected modules/                   │     │
+│   │       │ per affected module (parallel fan-out)                     │     │
+│   │       ╵┄┄►  [cross.manage-architecture-enrich-module] × N          │     │
+│   │                                                                    │     │
+│   │    ┌──────────────────────────────────────────┐                    │     │
+│   │    │ create-pr      → phase-6.create-pr       │                    │     │
+│   │    │ lessons-capture → phase-6.lessons-capture │                    │     │
+│   │    └──────────────────────────────────────────┘                    │     │
+│   │       (dedicated dispatches — LLM cores for body composition       │     │
+│   │        and lesson extraction)                                      │     │
+│   │                                                                    │     │
+│   │   /branch-cleanup/               (inline — git ops + AUQ)          │     │
+│   │   /record-metrics/               (inline — script)                 │     │
+│   │   /archive-plan/                 (inline — script; MUST be last)   │     │
+│   │   /finalize-step-print-phase-breakdown/   (inline — renderer)      │     │
+│   │                                                                    │     │
+│   │  PROJECT STEPS (meta-project only):                                │     │
+│   │   /project:finalize-step-deploy-target/        (inline)            │     │
+│   │   /project:finalize-step-sync-plugin-cache/    (inline)            │     │
+│   │   /project:finalize-step-regenerate-executor/  (inline)            │     │
+│   │    project:finalize-step-plugin-doctor                             │     │
+│   │       ╵┄┄►  [cross.plugin-doctor]                                  │     │
+│   │    project:finalize-step-pre-submission-self-review                │     │
+│   │       ╵┄┄►  phase-6.pre-submission-self-review   (LLM dispatch)    │     │
+│   │                                                                    │     │
+│   │  OPT-IN STEPS (not in default 17-step set):                        │     │
+│   │    phase-6.retrospective    (8 LLM aspects iterate IN-CONTEXT)     │     │
+│   │    phase-6.pr-doctor        (diagnose + report + internal loop;    │     │
+│   │                              sub-dispatches [cross.triage] when    │     │
+│   │                              the iteration crosses ~10 findings)   │     │
+│   │                                                                    │     │
+│   └────────────────────────────────────────────────────────────────────┘     │
+│                                                                               │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -233,38 +323,34 @@ flowchart TD
 
 The five `cross.*` keys are shared LLM-judgement workflows dispatched from multiple call sites. The dispatch contract (workflow doc + skills + runtime inputs) is identical at every site; only the runtime inputs differ.
 
-```mermaid
-flowchart LR
-    P5S11[phase-5 Step 11<br/>verification-failure]
-    P5S11b[phase-5 Step 11b<br/>quality-gate-failure]
-    P6AR[phase-6 automated-review]
-    P6SR[phase-6 sonar-roundtrip]
-    P6PD[phase-6.pr-doctor<br/>internal loop]
-
-    P5S11 -.-> Tri[cross.triage]:::cross
-    P5S11b -.-> Tri
-    P6AR -.-> Tri
-    P6SR -.-> Tri
-    P6PD -.-> Tri
-
-    P2S135[phase-2 Step 13.5<br/>lesson plans only]
-    P3S11[phase-3 Step 11<br/>outline-time Q-Gate]
-    P4S9b[phase-4 Step 9b<br/>plan-time Q-Gate]
-
-    P2S135 -.-> QG[cross.q-gate-validation]:::cross
-    P3S11 -.-> QG
-    P4S9b -.-> QG
-
-    Any[any phase loading<br/>dev-general-practices] -.->|"when external<br/>research needed"| Res[cross.research]:::cross
-
-    MetaPD[project:finalize-step-plugin-doctor<br/>meta-project only]
-    UI[user-invocable<br/>plugin-doctor CLI]
-    MetaPD -.-> Plg[cross.plugin-doctor]:::cross
-    UI -.-> Plg
-
-    P6Arch[phase-6 architecture-refresh<br/>Tier 1] -.->|"N parallel<br/>(one per module)"| Enrich[cross.manage-architecture-<br/>enrich-module]:::cross
-
-    classDef cross fill:#dcfce7,stroke:#15803d,color:#000
+```
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  CROSS-PHASE FAN-IN                                                           │
+│  ══════════════════                                                           │
+│                                                                               │
+│   phase-5 Step 11   (verification-failure)        ──┐                         │
+│   phase-5 Step 11b  (quality-gate-failure)        ──┤                         │
+│   phase-6 automated-review                        ──┼──►  [cross.triage]      │
+│   phase-6 sonar-roundtrip                         ──┤                         │
+│   phase-6.pr-doctor (internal loop > ~10 finds)   ──┘                         │
+│                                                                               │
+│   phase-2 Step 13.5 (lesson plans only)           ──┐                         │
+│   phase-3 Step 11   (outline-time Q-Gate)         ──┼──►  [cross.q-gate-      │
+│   phase-4 Step 9b   (plan-time Q-Gate)            ──┘       validation]       │
+│                                                                               │
+│   any phase loading dev-general-practices         ──►   [cross.research]      │
+│   (when external research is needed; ad-hoc)                                  │
+│                                                                               │
+│   project:finalize-step-plugin-doctor (meta-only) ──┐                         │
+│   user-invocable plugin-doctor CLI                ──┴──►  [cross.plugin-      │
+│                                                              doctor]          │
+│                                                                               │
+│   phase-6 architecture-refresh Tier-1                                         │
+│     ──►  [cross.manage-architecture-enrich-module]  × N parallel              │
+│          (one envelope per affected module — the only per-iteration           │
+│           parallel dispatch in the contract)                                  │
+│                                                                               │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 `cross.triage` is the most-shared core. Inside its envelope, findings are pre-grouped by `(domain, rule_id)` and a single batched LLM decision per group decides FIX / SUPPRESS / ACCEPT / AskUserQuestion. The findings live in the per-plan store and are queried **by reference** as the subagent's first workflow step — they are never embedded in the prompt body. Full algorithm in `../../plan-marshall/workflow/triage.md`.
@@ -277,39 +363,45 @@ flowchart LR
 
 The hierarchical role registry (`marshal.json` `models.roles`) groups every dispatch site under one of 7 groups. The resolver walks deepest-first to pick a level, then the variant emitter pins the `(model, effort)` primitive.
 
-```mermaid
-flowchart TD
-    Roles[models.roles<br/>in marshal.json]
-
-    Roles --> P1[phase-1]:::flat
-    Roles --> P2[phase-2]:::flat
-    Roles --> P3[phase-3]:::flat
-    Roles --> P4[phase-4]:::flat
-    Roles --> P5[phase-5]:::flat
-    Roles --> P6Group[phase-6]
-    Roles --> CrossGroup[cross]
-
-    P6Group --> P6PSSR[phase-6.<br/>pre-submission-self-review]:::flat
-    P6Group --> P6CPr[phase-6.<br/>create-pr]:::flat
-    P6Group --> P6LC[phase-6.<br/>lessons-capture]:::flat
-    P6Group --> P6Retro[phase-6.<br/>retrospective]:::flat
-    P6Group --> P6PrDr[phase-6.<br/>pr-doctor]:::flat
-
-    CrossGroup --> CTri[cross.triage]:::flat
-    CrossGroup --> CQG[cross.q-gate-validation]:::flat
-    CrossGroup --> CRes[cross.research]:::flat
-    CrossGroup --> CPlg[cross.plugin-doctor]:::flat
-    CrossGroup --> CEnr[cross.manage-architecture-<br/>enrich-module]:::flat
-
-    Default[models.default<br/>plan-wide fallback]
-    Inherit[inherit sentinel<br/>parent's model]
-    Roles -.->|"fallback when role unset"| Default
-    Default -.->|"fallback when default unset"| Inherit
-
-    classDef flat fill:#fef3c7,stroke:#d97706,color:#000
+```
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  models.roles  (in marshal.json)                                              │
+│  ═══════════════════════════════                                              │
+│                                                                               │
+│   models.roles                                                                │
+│     ├── phase-1                                       (flat — 1 workflow)     │
+│     ├── phase-2                                       (flat — 1 workflow)     │
+│     ├── phase-3                                       (flat — 1 workflow)     │
+│     ├── phase-4                                       (flat — 1 workflow)     │
+│     ├── phase-5                                       (flat — 1 workflow)     │
+│     ├── phase-6                                                               │
+│     │     ├── pre-submission-self-review                                      │
+│     │     ├── create-pr                                                       │
+│     │     ├── lessons-capture                                                 │
+│     │     ├── retrospective         (opt-in)                                  │
+│     │     └── pr-doctor             (opt-in)                                  │
+│     └── cross                                                                 │
+│           ├── triage                                                          │
+│           ├── q-gate-validation                                               │
+│           ├── research                                                        │
+│           ├── plugin-doctor                                                   │
+│           └── manage-architecture-enrich-module                               │
+│                                                                               │
+│   Fallback chain (deepest first):                                             │
+│     1. models.roles.<group>.<sub>      explicit per-role override             │
+│     2. models.roles.<group>            group-wide value (string at the group) │
+│     3. models.default                  plan-wide default                      │
+│     4. inherit                         sentinel — canonical no-suffix variant │
+│                                                                               │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-15 keys total: 5 flat phase-level + 5 phase-6 sub-keys + 5 cross sub-keys. The resolver accepts dotted notation (`--role phase-6.create-pr`), two-flag form (`--phase phase-6 --role create-pr`), or flat (`--role phase-1`).
+**15 keys total** — 5 flat phase-level + 5 phase-6 sub-keys + 5 cross sub-keys.
+
+The resolver accepts three lookup forms:
+- `--role phase-1`                       — flat
+- `--role phase-6.create-pr`             — dotted
+- `--phase phase-6 --role create-pr`     — two-flag
 
 Level values resolve to `(model, effort)` per `../../plan-marshall/standards/model-levels.md` (six tiers: `low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`, plus the `inherit` sentinel).
 
@@ -317,12 +409,12 @@ Level values resolve to `(model, effort)` per `../../plan-marshall/standards/mod
 
 ## 5. The dispatch-vs-script verdict — at a glance
 
-The granularity heuristics live in `../../extension-api/standards/dispatch-granularity.md`. Cross-reference for each candidate workflow:
+The granularity heuristics live in `../../extension-api/standards/dispatch-granularity.md`. Per-candidate verdict:
 
 | Candidate work | Verdict | Reason |
 |----------------|---------|--------|
 | phase-1 Step 5c lesson auto-suggest | Script + LLM fallback | Recipe registry match is deterministic; ambiguous case escalates. |
-| phase-1 Step 7 domain detection | Script + AskUserQuestion | Single match auto-selects; ambiguity is human-input territory, not LLM. |
+| phase-1 Step 7 domain detection | Script + AskUserQuestion | Single match auto-selects; ambiguity is human-input territory. |
 | phase-2 confidence loop | Bundle into `phase-2` | Steps 3b/3c/8/9/10/11/12 share context. |
 | phase-2 Step 3d baseline reconciliation | Hybrid — script + bundle | git fetch/diff is mechanical; classification bundles into `phase-2`. |
 | phase-2 Step 10 confidence aggregation | Script | Pure weighted math. |
@@ -332,7 +424,7 @@ The granularity heuristics live in `../../extension-api/standards/dispatch-granu
 | phase-3 Step 11 Q-Gate (outline-time) | `cross.q-gate-validation` | Shared core. |
 | phase-4 Steps 5+6+7 task creation | Bundle into `phase-4` | Per-deliverable loop iterates in-context. |
 | phase-4 Step 9 mechanical Q-Gate checks | Script | Pure regex + graph + filesystem. |
-| phase-4 Step 9b LLM Q-Gate | `cross.q-gate-validation` | Shared core (only when mechanical script returns ambiguous). |
+| phase-4 Step 9b LLM Q-Gate | `cross.q-gate-validation` | Shared core (fires only when mechanical script returns ambiguous). |
 | phase-5 per-task execution | `phase-5` per-task dispatch | One envelope per task; the implementation+testing+build_runner pending keys collapsed into this. |
 | phase-5 Step 9 independent verification | Inline scripts | git diff + grep + exit-code; no LLM. |
 | phase-5 Step 11/11b triage | `cross.triage` | Shared core. |
@@ -352,12 +444,12 @@ The granularity heuristics live in `../../extension-api/standards/dispatch-granu
 
 ## 6. Reading the graphs
 
-- **Round/rectangular blue nodes** — LLM dispatches (envelopes). Each carries a fixed ~5–15 K-token overhead (system prompt + skill loads + workflow doc + prompt envelope + tool round-trips). They earn their cost only when the LLM-judgement work clears ~10 K tokens.
-- **Hexagons (`/.../`)** — Deterministic scripts. No envelope. Invoked via `python3 .plan/execute-script.py <notation> ...` from the orchestrator's context.
-- **Pink diamonds** — `AskUserQuestion` gates. Propagate to the host UI directly from whichever context raises them.
-- **Green nodes** — `cross.*` shared LLM cores. Same role-key surface seen from multiple call sites.
-- **Solid arrows** — Unconditional flow.
-- **Dashed arrows** — Conditional / fallback / gated by a predicate (e.g., "if pending findings > 0", "ambiguous heuristic case").
+- **Boxes drawn with `┌ ─ ┐ │ └ ┘`** — LLM dispatch envelopes (`Task: execution-context-{level}`). Each carries a fixed ~5–15 K-token overhead (system prompt + skill loads + workflow doc + prompt envelope + tool round-trips). Earns its cost only when the LLM-judgement work clears ~10 K tokens (see `../../extension-api/standards/dispatch-granularity.md` § 1).
+- **`/text/`** — Deterministic scripts. No envelope. Invoked via `python3 .plan/execute-script.py <notation> ...` from the calling context.
+- **`?text?`** — `AskUserQuestion` gates. Propagate to the host UI from whichever context raises them.
+- **`[cross.*]`** — Shared LLM cores. Same role-key surface seen from multiple call sites — see § 3 for the fan-in map.
+- **`──►`** — Unconditional flow.
+- **`╵┄┄►`** — Conditional / fallback / predicate-gated flow (e.g., "if pending findings > 0", "ambiguous heuristic case").
 
 The granularity heuristics in `../../extension-api/standards/dispatch-granularity.md` justify each verdict in § 5's table. The contract every dispatched workflow satisfies (input contract, output contract, Worktree Header) lives in `agents.md` and `../../extension-api/standards/ext-point-execution-context-workflow.md`. Concrete code-level traces for three representative dispatches live in `dispatch-walkthrough.md`.
 
