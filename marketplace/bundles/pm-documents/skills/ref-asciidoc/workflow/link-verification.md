@@ -1,148 +1,126 @@
-= Link Verification Protocol
-:toc: left
-:toclevels: 3
-:sectnums:
-:implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+---
+implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+---
 
-== Overview
+# Link Verification Protocol
 
 This standard defines the protocol for verifying links in AsciiDoc documentation, with critical emphasis on manual verification before any link removal to prevent accidental deletion of valid links.
 
-== Core Principle
+## Core Principle
 
 **NEVER blindly trust automated link verification tools.** Always perform manual verification with the Read tool before removing any link.
 
-== Link Types
+## Link Types
 
-=== Cross-Reference File Links
+### Cross-Reference File Links
 
 Format: `xref:path/to/file.adoc[Link Text]`
 
 **Characteristics:**
 
-* Relative paths from current file's directory
-* Must resolve to existing `.adoc` files
-* Can include anchor fragments: `xref:file.adoc#section[Text]`
+- Relative paths from current file's directory
+- Must resolve to existing `.adoc` files
+- Can include anchor fragments: `xref:file.adoc#section[Text]`
 
-=== Internal Anchor References
+### Internal Anchor References
 
 Format: `<<anchor-id>>` or `<<anchor-id, Display Text>>`
 
 **Characteristics:**
 
-* Reference to section within same document
-* Anchor defined with `[#anchor-id]` before section header
-* Must match existing section anchor
+- Reference to section within same document
+- Anchor defined with `[#anchor-id]` before section header
+- Must match existing section anchor
 
-=== External URLs
+### External URLs
 
 Format: `link:https://example.com[Text]` or `https://example.com`
 
 **Characteristics:**
 
-* External HTTP/HTTPS links
-* May become broken over time
-* Require network access to verify
+- External HTTP/HTTPS links
+- May become broken over time
+- Require network access to verify
 
-== Verification Workflow
+## Verification Workflow
 
-=== Step 1: Run Automated Detection
+### Step 1: Run Automated Detection
 
 Execute the verify-links subcommand to identify potential broken links:
 
-[source,bash]
-----
+```bash
 python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc verify-links --file path/to/file.adoc --report target/links.md
-----
+```
 
 **Output:** JSON report with broken link candidates
 
-=== Step 2: Classify Broken Link Candidates
+### Step 2: Classify Broken Link Candidates
 
 Use the classify-links subcommand to categorize detected issues:
 
-[source,bash]
-----
+```bash
 python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc classify-links --input target/links.json --output target/classified.json
-----
+```
 
 **Categories:**
 
-* `likely-false-positive`: Anchors, localhost, file:// URLs
-* `must-verify-manual`: External links requiring Read verification
-* `definitely-broken`: Non-existent files (verified by script)
+- `likely-false-positive`: Anchors, localhost, file:// URLs
+- `must-verify-manual`: External links requiring Read verification
+- `definitely-broken`: Non-existent files (verified by script)
 
-=== Step 3: Manual Verification (CRITICAL)
+### Step 3: Manual Verification (CRITICAL)
 
 For each link classified as `must-verify-manual` or `definitely-broken`:
 
-==== Extract Target Path
+#### Extract Target Path
 
 From xref: `xref:../../doc/spec.adoc[Label]` → extract `../../doc/spec.adoc`
 
-==== Resolve Absolute Path
+#### Resolve Absolute Path
 
-[source,bash]
-----
+```bash
 cd {directory_of_current_file}
 realpath {relative_target_path}
-----
+```
 
 **Example:**
 
-* Current file: `/project/standards/logging/guide.adoc`
-* Link target: `../../requirements/spec.adoc`
-* Resolved: `/project/requirements/spec.adoc`
+- Current file: `/project/standards/logging/guide.adoc`
+- Link target: `../../requirements/spec.adoc`
+- Resolved: `/project/requirements/spec.adoc`
 
-==== Verify with Read Tool
+#### Verify with Read Tool
 
-[source]
-----
+```
 Read(file_path="/project/requirements/spec.adoc")
-----
+```
 
 **Decision Matrix:**
 
-[cols="1,1,2"]
-|===
-|Read Result |Script Report |Action
+| Read Result | Script Report | Action |
+|-------------|---------------|--------|
+| Success (file exists) | Broken | **Keep link** — Script false positive |
+| Error (file not found) | Broken | **Ask user** — Genuinely broken |
+| Success | Valid | No action needed |
+| Error | Valid | Script missed issue — report to user |
 
-|Success (file exists)
-|Broken
-|**Keep link** - Script false positive
-
-|Error (file not found)
-|Broken
-|**Ask user** - Genuinely broken
-
-|Success
-|Valid
-|No action needed
-
-|Error
-|Valid
-|Script missed issue - report to user
-|===
-
-==== Search for Similar Files (Optional)
+#### Search for Similar Files (Optional)
 
 If file not found, search for similar names using Glob:
 
-[source]
-----
+```
 Glob(pattern="project/requirements/**/*spec*")
-----
+```
 
 Suggest alternatives to user before removal.
 
-=== Step 4: User Confirmation
+### Step 4: User Confirmation
 
 **NEVER remove links without explicit user approval.**
 
 **Confirmation Template:**
 
-[source]
-----
+```
 WARNING: About to remove cross-reference link
 
 File: standards/logging/guide.adoc
@@ -169,13 +147,13 @@ AskUserQuestion:
         - label: "Keep link"
           description: "Keep link for manual review"
       multiSelect: false
-----
+```
 
-== False Positive Patterns
+## False Positive Patterns
 
-=== Acceptable Link Patterns (DO NOT REMOVE)
+### Acceptable Link Patterns (DO NOT REMOVE)
 
-==== Internal Anchors
+#### Internal Anchors
 
 Format: `xref:file.adoc#anchor[Text]` or `<<anchor-id>>`
 
@@ -183,23 +161,23 @@ Format: `xref:file.adoc#anchor[Text]` or `<<anchor-id>>`
 
 **Verification:** Read file and search for `[#anchor-id]` or matching section header.
 
-==== Localhost URLs
+#### Localhost URLs
 
 Format: `link:http://localhost:8080[Dev Server]`
 
 **Reason:** Intentional reference to local development environment.
 
-**Action:** Keep - document as development URL.
+**Action:** Keep — document as development URL.
 
-==== File Protocol URLs
+#### File Protocol URLs
 
 Format: `link:file:///path/to/local/file[Local File]`
 
 **Reason:** Reference to local filesystem, may be valid on user's machine.
 
-**Action:** Ask user - may be intentional local reference.
+**Action:** Ask user — may be intentional local reference.
 
-==== Generated Documentation
+#### Generated Documentation
 
 Format: `xref:target/generated/api-docs.adoc[API Docs]`
 
@@ -207,51 +185,49 @@ Format: `xref:target/generated/api-docs.adoc[API Docs]`
 
 **Action:** Keep if referenced in build documentation.
 
-== Internal Anchor Handling
+## Internal Anchor Handling
 
-=== When Anchor Not Found
+### When Anchor Not Found
 
 **Strategy:** Add anchor before matching section header rather than removing reference.
 
-==== Convert Anchor ID to Section Title
+#### Convert Anchor ID to Section Title
 
 Rules:
 
-* Replace hyphens with spaces: `owasp-top-10` → `owasp top 10`
-* Capitalize words: `owasp top 10` → `OWASP Top 10`
-* Preserve numbers: `2021` → `2021`
-* Handle acronyms: `cwe` → `CWE`
+- Replace hyphens with spaces: `owasp-top-10` → `owasp top 10`
+- Capitalize words: `owasp top 10` → `OWASP Top 10`
+- Preserve numbers: `2021` → `2021`
+- Handle acronyms: `cwe` → `CWE`
 
-==== Search for Matching Section
+#### Search for Matching Section
 
 Read file and search for:
 
-* Exact match: `== OWASP Top 10 2021`
-* Partial match: `== OWASP Top 10`
-* Case variations: `== Owasp top 10`
+- Exact match: `== OWASP Top 10 2021`
+- Partial match: `== OWASP Top 10`
+- Case variations: `== Owasp top 10`
 
-==== Add Anchor
+#### Add Anchor
 
 If section found, add anchor immediately before header:
 
-[source,asciidoc]
-----
+```asciidoc
 [#owasp-top-10-2021]
 == OWASP Top 10 2021
-----
+```
 
 **Format Rules:**
 
-* Anchor line immediately before header (no blank line)
-* Use `[#id]` format (NOT `[[id]]`)
-* ID should be lowercase with hyphens
+- Anchor line immediately before header (no blank line)
+- Use `[#id]` format (NOT `[[id]]`)
+- ID should be lowercase with hyphens
 
-==== Report if Section Not Found
+#### Report if Section Not Found
 
 If no matching section:
 
-[source]
-----
+```
 WARNING: Anchor reference found but no matching section
 
 Anchor: <<owasp-top-10-2021>>
@@ -277,11 +253,11 @@ AskUserQuestion:
         - label: "Remove reference"
           description: "Delete the broken anchor reference"
       multiSelect: false
-----
+```
 
-== Path Resolution
+## Path Resolution
 
-=== Relative Path Calculation
+### Relative Path Calculation
 
 **Base Directory:** Directory containing the current AsciiDoc file (NOT project root).
 
@@ -294,54 +270,51 @@ AskUserQuestion:
 
 **Example:**
 
-[source]
-----
+```
 Current file:  /project/standards/java/logging.adoc
 Link target:   ../../requirements/spec.adoc
 
 Step 1: /project/standards/java/
 Step 2: /project/standards/java/../../requirements/spec.adoc
 Step 3: /project/requirements/spec.adoc (normalized)
-----
+```
 
-=== Common Path Errors
+### Common Path Errors
 
-==== Resolving from Wrong Base
+#### Resolving from Wrong Base
 
 **WRONG:**
 
-[source,python]
-----
+```python
 # Resolving from project root
 base = "/project/"
 target = "../../requirements/spec.adoc"
 # Results in /requirements/spec.adoc (outside project!)
-----
+```
 
 **CORRECT:**
 
-[source,python]
-----
+```python
 # Resolving from current file's directory
 base = "/project/standards/java/"
 target = "../../requirements/spec.adoc"
 # Results in /project/requirements/spec.adoc
-----
+```
 
-== Script Trust Policy
+## Script Trust Policy
 
-=== Script Output Classification
+### Script Output Classification
 
-**Trust Level: LOW** - Always verify manually
+**Trust Level: LOW** — Always verify manually
 
 **Known Script Limitations:**
 
-* May not detect dynamically generated anchors
-* May report false positives for included files
-* May not handle complex path resolution
-* May timeout on large documentation sets
+- May not detect dynamically generated anchors
+- May report false positives for included files
+- May not handle complex path resolution
+- May timeout on large documentation sets
 
-=== When Script Reports "Broken"
+### When Script Reports "Broken"
 
 **ALWAYS:**
 
@@ -357,26 +330,25 @@ target = "../../requirements/spec.adoc"
 3. Skip manual verification
 4. Ignore path resolution
 
-== Link Removal Policy
+## Link Removal Policy
 
-=== Criteria for Removal
+### Criteria for Removal
 
 Link may be removed ONLY if ALL conditions met:
 
-1. **Script reports broken** - Automated detection flagged issue
-2. **Manual verification confirms** - Read tool confirms file not found
-3. **No alternatives found** - No similar files or updated paths exist
-4. **User approves** - Explicit user confirmation received
-5. **Documented** - Removal reason recorded in commit/report
+1. **Script reports broken** — Automated detection flagged issue
+2. **Manual verification confirms** — Read tool confirms file not found
+3. **No alternatives found** — No similar files or updated paths exist
+4. **User approves** — Explicit user confirmation received
+5. **Documented** — Removal reason recorded in commit/report
 
-=== Removal Process
+### Removal Process
 
-==== Document Link Before Removal
+#### Document Link Before Removal
 
 Record in report:
 
-[source]
-----
+```
 Removed broken link:
 - File: standards/security/guide.adoc
 - Line: 125
@@ -385,35 +357,33 @@ Removed broken link:
 - Reason: File not found, confirmed with Read tool
 - Alternatives searched: /project/archive/*.adoc (none found)
 - User approval: Yes (timestamp)
-----
+```
 
-==== Use Edit Tool
+#### Use Edit Tool
 
-[source]
-----
+```
 Edit(
   file_path="standards/security/guide.adoc",
   old_string="See xref:../../archive/old-spec.adoc[Old Specification] for details.",
   new_string="See archived specification (no longer available) for details."
 )
-----
+```
 
 **Preserve Context:** Don't remove entire sentence, just update reference.
 
-== Re-validation
+## Re-validation
 
-=== After Fixes Applied
+### After Fixes Applied
 
 **Always re-run verification** to confirm:
 
-* Removed links no longer reported
-* Added anchors resolve correctly
-* No new issues introduced
+- Removed links no longer reported
+- Added anchors resolve correctly
+- No new issues introduced
 
-=== Comparison Report
+### Comparison Report
 
-[source]
-----
+```
 ## Link Verification - Before/After
 
 **Before Fixes:**
@@ -432,16 +402,15 @@ Edit(
 
 **Remaining:**
 - 2 issues require manual intervention
-----
+```
 
-== Integration with Workflows
+## Integration with Workflows
 
-=== verify-links Workflow
+### `verify-links` Workflow
 
 Reference this protocol in the verify-links workflow:
 
-[source,yaml]
-----
+```yaml
 workflow: verify-links
 steps:
   1. Run asciidoc verify-links
@@ -450,50 +419,49 @@ steps:
   4. User confirmation for removals
   5. Re-validation
   6. Report generation
-----
+```
 
-=== comprehensive-review Workflow
+### `comprehensive-review` Workflow
 
 Link verification is SECOND step (after format validation):
 
-[source,yaml]
-----
+```yaml
 workflow: comprehensive-review
 steps:
   1. Format validation (must pass before proceeding)
   2. Link verification (this protocol)
   3. Content review (tone, accuracy, sources)
-----
+```
 
-== Best Practices
+## Best Practices
 
-=== Prevention
+### Prevention
 
 **During Documentation Creation:**
 
-* Test links immediately after adding
-* Use absolute paths from project root where possible
-* Document external URLs with access date
-* Add anchors when creating section headers
+- Test links immediately after adding
+- Use absolute paths from project root where possible
+- Document external URLs with access date
+- Add anchors when creating section headers
 
 **During Refactoring:**
 
-* Search for xrefs to files before moving/renaming
-* Update all references in same commit
-* Run link verification after structural changes
+- Search for xrefs to files before moving/renaming
+- Update all references in same commit
+- Run link verification after structural changes
 
-=== Maintenance
+### Maintenance
 
 **Regular Reviews:**
 
-* Verify external URLs quarterly
-* Check for moved/renamed files
-* Update cross-references after major restructuring
-* Document deprecated references
+- Verify external URLs quarterly
+- Check for moved/renamed files
+- Update cross-references after major restructuring
+- Document deprecated references
 
-== Tools and Scripts
+## Tools and Scripts
 
-=== asciidoc verify-links
+### `asciidoc verify-links`
 
 **Purpose:** Automated detection of broken links
 
@@ -501,7 +469,7 @@ steps:
 
 **Output:** JSON with broken link candidates
 
-=== asciidoc classify-links
+### `asciidoc classify-links`
 
 **Purpose:** Classify broken link candidates to reduce false positives
 
@@ -509,7 +477,7 @@ steps:
 
 **Output:** JSON with categorized issues (likely-false-positive, must-verify-manual, definitely-broken)
 
-=== Manual Verification with Read Tool
+### Manual Verification with Read Tool
 
 **Purpose:** Definitive verification of link target existence
 
@@ -517,19 +485,18 @@ steps:
 
 **Advantage:** Direct file system access, no parsing errors
 
-== References
+## References
 
-* xref:../README.adoc[Documentation Standards Overview]
-* AsciiDoc Cross-Reference Syntax: https://docs.asciidoctor.org/asciidoc/latest/macros/xref/
+- [Documentation Standards Overview](../../ref-documentation/README.adoc)
+- [AsciiDoc Cross-Reference Syntax](https://docs.asciidoctor.org/asciidoc/latest/macros/xref/)
 
-== Output
+## Output
 
 Workflow conformance to the ext-point output contract:
 
-[source,toon]
-----
+```toon
 status: success | error
 display_detail: "<{N} links verified, {failed} failed>"
 links_verified: {N}
 links_failed: {N}
-----
+```

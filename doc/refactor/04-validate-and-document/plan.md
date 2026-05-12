@@ -45,6 +45,17 @@ The OpenCode target generates output under `target/opencode/` (see [02 — Build
 # Exit 2 = generation failed (e.g., unmapped tool in agent, invalid frontmatter)
 ```
 
+### Execution-context post-refactor validation
+
+Carried over from the `refactor-execution-context` PR (the 11 named-agent → 1 `execution-context` consolidation; see `.plan/local/refactor-agents-reviewed/`). The Claude target was validated end-to-end during that PR; the OpenCode runtime was not. Cluster 04 owns the OpenCode side now.
+
+- [ ] **Implementation**: deploy the post-refactor surface to an OpenCode test environment via `python3 marketplace/targets/generate.py --target opencode --output target/opencode`. Confirm exactly one `execution-context` agent emerges under `.opencode/agents/`, plus per-level variants if the OpenCode adapter emits them (or just the canonical if the OpenCode adapter uses the `model:` invocation argument instead of variant filenames). Smoke-test a fresh-init plan flow + a finalize sweep on OpenCode.
+- [ ] **Testing**:
+      - `AskUserQuestion` from an OpenCode subagent — the accepted risk from [`01-design-platform-api/plan.md`](../01-design-platform-api/plan.md) (and `07-rollout.md` § 4.3 in the predecessor planning set). First real OpenCode test of `execution-context`; the entire dispatcher contract assumes subagents can `AskUserQuestion` back to the user.
+      - By-reference triage path — OpenCode subagent dispatched as `cross.triage` loads `manage-findings`, queries the per-plan findings store, processes findings with smart grouping, returns TOON.
+      - Per-iteration parallel dispatch — `cross.manage-architecture-enrich-module` fans N dispatches in parallel under OpenCode's `task` tool model.
+- [ ] **Documentation**: record any OpenCode-specific divergence in [`01-design-platform-api/plan.md`](../01-design-platform-api/plan.md) § `subagent dispatch`. If `AskUserQuestion` does not work as expected, escalate via the cluster-01 accepted-risk follow-up and document in [`doc/build-system.adoc`](../../build-system.adoc). If the by-reference triage shape or parallel dispatch surface issues, document the workaround in [`doc/build-system.adoc`](../../build-system.adoc) § Dispatch-Cost Considerations.
+
 ## Health Checks
 
 `platform-runtime health-check --checks all` verifies:
