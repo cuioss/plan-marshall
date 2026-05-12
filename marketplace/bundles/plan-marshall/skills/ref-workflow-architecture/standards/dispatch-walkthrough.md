@@ -1,6 +1,6 @@
 # Dispatch Walkthrough — Worked Examples
 
-Concrete end-to-end traces of `execution-context-{level}` dispatches at three representative call sites: a single-workflow phase entry, a finalize step that sub-dispatches `cross.triage` by reference, and a per-iteration parallel fan-out. For the dispatch contract itself (prompt-body fields, role-key resolution, mandatory rules), see [`agents.md`](agents.md). For the heuristics that decide *whether* a step should dispatch, see [`../../extension-api/standards/dispatch-granularity.md`](../../extension-api/standards/dispatch-granularity.md).
+Concrete end-to-end traces of `execution-context-{level}` dispatches at three representative call sites: a single-workflow phase entry, a finalize step that sub-dispatches `cross.triage` by reference, and a per-iteration parallel fan-out. For the dispatch contract itself (prompt-body fields, role-key resolution, mandatory rules), see [`agents.md`](agents.md). For the heuristics that decide *whether* a step should dispatch, see [`../../extension-api/standards/dispatch-granularity.md`](../../extension-api/standards/dispatch-granularity.md). For the holistic visual call graph covering every dispatch path (not just these three exemplars), see [`call-graph.md`](call-graph.md).
 
 ## Generic eight-step sequence
 

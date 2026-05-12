@@ -124,6 +124,7 @@ The wrong shape — per-iteration sequential dispatch into separate envelopes �
 
 - The execution-context dispatch contract — [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md)
 - Worked dispatch traces (phase-2 entry, finalize automated-review with `cross.triage`, architecture-refresh Tier-1 fan-out) — [`ref-workflow-architecture/standards/dispatch-walkthrough.md`](../../ref-workflow-architecture/standards/dispatch-walkthrough.md)
+- Holistic visual call graph — [`ref-workflow-architecture/standards/call-graph.md`](../../ref-workflow-architecture/standards/call-graph.md)
 - The role-key registry — [`plan-marshall/standards/model-roles.md`](../../plan-marshall/standards/model-roles.md)
 - The triage smart-grouping algorithm in full — [`plan-marshall:plan-marshall/workflow/triage.md`](../../plan-marshall/workflow/triage.md)
 - Level → primitive table — [`plan-marshall/standards/model-levels.md`](../../plan-marshall/standards/model-levels.md)
