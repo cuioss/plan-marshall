@@ -22,7 +22,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 ---
 
-**Step 2**: Load outline phase skill directly (maintains main context)
+**Step 2**: Dispatch the outline phase under role key `phase-3` (single-workflow phase with `track={simple|complex}` runtime input — see [`call-graph.md`](../../ref-workflow-architecture/standards/call-graph.md) § 2.3).
 
 **Metrics**: The start of `3-outline` was already recorded by the
 `2-refine → 3-outline` fused boundary call above (or by the
@@ -55,15 +55,30 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake veri
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:plan-marshall) Loading plan-marshall:phase-3-outline"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:plan-marshall) Dispatching execution-context for phase-3-outline"
 ```
 
-```
-Skill: plan-marshall:phase-3-outline
-  Arguments: --plan-id {plan_id}
+Compute the dispatch target via the role resolver:
+
+```bash
+target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models resolve-target --role phase-3)
 ```
 
-The skill runs in main conversation context and CAN spawn Task agents for parallel analysis.
+Dispatch:
+
+```
+Task: plan-marshall:{target}
+  prompt: |
+    name: phase-3-outline
+    plan_id: {plan_id}
+    skills[1]:
+    - plan-marshall:phase-3-outline
+    workflow: plan-marshall:phase-3-outline/SKILL.md
+    WORKTREE: {worktree_path}
+```
+
+The agent returns the outline summary (`track`, `deliverable_count`, `qgate_pending_count`, etc.) in its TOON. The Complex-Track per-deliverable loop (Steps 9c + 10 + 10b) iterates *inside* this envelope; the per-deliverable loop never spawns per-iteration subagents.
 
 Log solution outline creation:
 ```bash
@@ -81,8 +96,8 @@ MAX_QGATE_ITERATIONS = 3
 
 WHILE qgate_pending_count > 0 AND qgate_iteration < MAX_QGATE_ITERATIONS:
   qgate_iteration += 1
-  1. Log: "(plan-marshall:plan-marshall:qgate) Auto-fix iteration {qgate_iteration}/{MAX_QGATE_ITERATIONS}: {count} findings — re-entering phase-3-outline"
-  2. Re-invoke phase-3-outline skill (phase reads findings at Step 1 and addresses them)
+  1. Log: "(plan-marshall:plan-marshall:qgate) Auto-fix iteration {qgate_iteration}/{MAX_QGATE_ITERATIONS}: {count} findings — re-dispatching phase-3-outline"
+  2. Re-dispatch phase-3-outline via the same Task: plan-marshall:{target} envelope used in Step 2 (phase reads findings at Step 1 and addresses them)
   3. Check qgate_pending_count from phase return
 
 IF qgate_pending_count > 0 AND qgate_iteration >= MAX_QGATE_ITERATIONS:
@@ -211,7 +226,7 @@ AskUserQuestion:
     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
       decision --plan-id {plan_id} --level INFO --message "(plan-marshall:plan-marshall) User review: {count} change requests recorded to artifacts/qgate-3-outline.jsonl"
     ```
-  - Re-invoke phase-3-outline skill (phase reads Q-Gate findings at Step 1)
+  - Re-dispatch phase-3-outline via the same Task: plan-marshall:{target} envelope used in Step 2 (phase reads Q-Gate findings at Step 1)
   - **Loop back to Step 3a**
 
 ---
