@@ -99,6 +99,10 @@ A step is active if and only if it appears in `manifest.phase_6.steps`. Absent s
 
 ---
 
+## Dispatched workflows vs inline steps
+
+Of the 17 default + project finalize steps, **6 dispatch** and **11 run inline**. Dispatched steps (and their role keys): `pre-submission-self-review` → **`phase-6.pre-submission-self-review`** (meta-project-only — see Phase 3a of [`07-rollout.md`](../../../../.plan/local/refactor-agents-reviewed/07-rollout.md)); `create-pr` → **`phase-6.create-pr`**; `lessons-capture` → **`phase-6.lessons-capture`**; `automated-review` + `sonar-roundtrip` share **`cross.triage`** by-reference (the manifest orchestration scripts run inline; the LLM core dispatches once when findings exist); `architecture-refresh` is hybrid (Tier 0 inline scripts; Tier 1 fans out **`cross.manage-architecture-enrich-module`** per affected module — the only per-iteration parallel dispatch in the contract); `project:finalize-step-plugin-doctor` (meta-project only) → **`cross.plugin-doctor`**. Two opt-in dispatched steps exist outside the default set: **`phase-6.retrospective`** (8 LLM aspects iterate inside one envelope) and **`phase-6.pr-doctor`** (diagnose + report + internal triage). The 11 inline steps (`commit-push`, `ci-wait`, `branch-cleanup`, `pre-push-quality-gate`, `record-metrics`, `archive-plan`, `finalize-step-print-phase-breakdown`, `architecture-refresh` Tier 0, `project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`, `project:finalize-step-regenerate-executor`) are pure scripts or trivial orchestration that earn no envelope. For the rationale see [granularity.md](../dev-general-practices/standards/granularity.md) § 5 (find the LLM core, not the wrapping step).
+
 ## Step Types
 
 Three step types are supported, distinguished by prefix notation:
@@ -489,27 +493,25 @@ FOR each step_id in manifest.phase_6.steps:
   5. Dispatch with timeout wrapper:
      Resolve the per-agent timeout budget from the table above (15 min for sonar/automated-review, 5 min for knowledge/lessons; no explicit budget for other steps).
 
-     - BUILT-IN (agent-suitable) — route each step_ref to its named agent via the Task tool, wrapped with the resolved timeout. Dispatch MUST name the specific agent below so the step's enforcement envelope (input contract, required skill loads, prohibited actions) is carried into the subagent context; a generic unscoped agent selection is NOT valid.
+     - BUILT-IN (agent-suitable) — route each step_ref to the generic `execution-context-{level}` dispatcher via the Task tool, passing the step's workflow doc and role key through the prompt body, wrapped with the resolved timeout. The workflow-doc-bearing dispatch carries the step's enforcement envelope (input contract, required skill loads, prohibited actions) inside the subagent context via the loaded skills + workflow; a generic unscoped dispatch with no workflow doc is NOT valid.
 
-       **Three-step role-aware dispatch** (applies to all four built-in agent-suitable steps):
+       **Role-aware dispatch** (applies to all four built-in agent-suitable steps):
 
-       (1) Resolve the role's level via the resolver:
+       (1) Resolve the level-bound target via the resolver:
            ```
-           level = python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-             models read --role <role>
+           target = python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+             models resolve-target --role <role>
            ```
-       (2) Compute the target agent name:
-           - `level == "inherit"` or empty → `target = <canonical>`
-           - otherwise → `target = <canonical>-<level>`
-       (3) Dispatch via `Task(subagent_type: plan-marshall:<target>, …)`.
+           Returns `execution-context-{level}` (variant), or canonical `execution-context` for `inherit`/empty.
+       (2) Dispatch via `Task(subagent_type: plan-marshall:<target>, …)` with prompt body `name`, `plan_id`, `skills[]`, `workflow: plan-marshall:phase-6-finalize/workflow/{name}.md`, `WORKTREE`.
 
-       Per-step canonical agents and roles:
-         * default:create-pr        -> canonical: create-pr-agent          | role: pr_creation
-         * default:automated-review -> canonical: automated-review-agent   | role: automated_review   | timeout: 900s
-         * default:sonar-roundtrip  -> canonical: sonar-roundtrip-agent    | role: sonar_roundtrip    | timeout: 900s
-         * default:lessons-capture  -> canonical: lessons-capture-agent    | role: lessons_capture    | timeout: 300s
+       Per-step workflow docs and role keys:
+         * default:create-pr        -> workflow: workflow/create-pr.md        | role: phase-6.create-pr
+         * default:automated-review -> workflow: workflow/automated-review.md | role: cross.triage         | timeout: 900s
+         * default:sonar-roundtrip  -> workflow: workflow/sonar-roundtrip.md  | role: cross.triage         | timeout: 900s
+         * default:lessons-capture  -> workflow: workflow/lessons-capture.md  | role: phase-6.lessons-capture | timeout: 300s
 
-       Each agent reads its corresponding standards document (standards/{name}.md) and executes all steps within the agent context. Pass `--plan-id {plan_id}` and, when an `{iteration}` counter applies, `--iteration {iteration}`. Embed the Worktree Header from `plan-marshall:phase-5-execute` Dispatch Protocol in every agent prompt so the worktree constraint propagates.
+       The subagent's body loads `dev-general-practices` + the prompt's `skills[]`, then `Read`s the workflow doc and executes its steps inside the dispatch envelope. Pass `--plan-id {plan_id}` and, when an `{iteration}` counter applies, `--iteration {iteration}` as workflow-specific runtime inputs in the prompt body. The Worktree Header is conveyed via the always-required `WORKTREE` prompt-body field; the subagent resolves the worktree path internally and propagates it into any further dispatches it issues.
 
        **On timeout** (the dispatch does not return within the budget):
          a. Log ERROR:

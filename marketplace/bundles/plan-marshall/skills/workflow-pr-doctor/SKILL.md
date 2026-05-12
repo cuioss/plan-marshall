@@ -136,6 +136,10 @@ python3 .plan/execute-script.py plan-marshall:workflow-pr-doctor:pr_doctor track
   --category build --current 0
 ```
 
+## Dispatch shape: per-finding loop iterates inside one envelope (with one recorded exception)
+
+This workflow dispatches under the `phase-6.pr-doctor` role key as one `execution-context-{level}` envelope. The per-finding triage loop iterates **in-context inside that envelope** — diagnose + report + per-finding triage run inside the same dispatch; the orchestrator never spawns per-finding subagents from outside. The **one recorded exception**: when the per-finding iteration crosses ~10 findings, the internal loop sub-dispatches `cross.triage` (one envelope, smart grouping inside — see [`../plan-marshall/workflow/triage.md`](../plan-marshall/workflow/triage.md) § Step 2). The sub-dispatch trade-off is bounded by the granularity rule: an extra envelope is paid only when the triage iteration earns it (~10K tokens of LLM-judgement work). See [`../dev-general-practices/standards/granularity.md`](../dev-general-practices/standards/granularity.md) § 5.3.
+
 ## Workflow
 
 ### Step 1: Process Handoff Input

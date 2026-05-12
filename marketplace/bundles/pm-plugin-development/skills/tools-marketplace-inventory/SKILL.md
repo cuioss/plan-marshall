@@ -69,7 +69,7 @@ base_path: /path/to/marketplace/bundles
 plan-marshall:
   path: marketplace/bundles/plan-marshall
   agents[1]:
-    - research-best-practices-agent
+    - execution-context
   commands[2]:
     - tools-fix-intellij-diagnostics
     - tools-sync-agents-file
@@ -156,7 +156,7 @@ The `resolve-dependencies.py` script tracks and resolves all dependency relation
 ```
 bundle:skill                    # Skill (e.g., plan-marshall:phase-1-init)
 bundle:skill:script             # Script (e.g., plan-marshall:manage-files:manage-files)
-bundle:agents:name              # Agent (e.g., plan-marshall:agents:phase-agent)
+bundle:agents:name              # Agent (e.g., plan-marshall:agents:execution-context)
 bundle:commands:name            # Command (e.g., plan-marshall:commands:tools-fix)
 ```
 

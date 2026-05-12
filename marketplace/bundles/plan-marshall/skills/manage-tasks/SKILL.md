@@ -90,9 +90,9 @@ canonical work-log entry **before returning**:
 This emission is **unconditional and lives inside the script boundary** — it
 fires for every task completion regardless of which orchestrator dispatched
 the closing call. The motivating gap (lesson `2026-05-08-14-001`) was that the
-caller-side emission in `phase-5-execute` was lost whenever a phase-agent was
-re-dispatched and the original agent's working context was discarded before
-its `[OUTCOME]` line could be written. Moving the emission into the script
+caller-side emission in `phase-5-execute` was lost whenever a per-task
+`phase-5` dispatch was re-fired and the original envelope's working context
+was discarded before its `[OUTCOME]` line could be written. Moving the emission into the script
 removes the dependency on the caller's working context.
 
 **Defaults** (used when the optional overrides below are omitted):
@@ -389,9 +389,9 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 | `phase-6-finalize` | `list` | Query task completion for PR summary |
 | Task executors | `read`, `finalize-step` | Read task details and mark steps done |
 
-### With phase-agent (phase-4-plan)
+### With phase-4-plan dispatch
 
-Task-plan agents create tasks during plan refinement using the three-step flow:
+The `phase-4` task-planning dispatch creates tasks during plan refinement using the three-step flow:
 
 ```bash
 # Step 1

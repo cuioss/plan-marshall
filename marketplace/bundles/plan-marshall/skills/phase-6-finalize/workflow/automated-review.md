@@ -15,7 +15,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Timeout Contract
 
-This step runs as a Task agent (`plan-marshall:automated-review-agent`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget is **triage-only**: it covers the review-bot buffer, producer-side comments-stage, per-finding triage dispatch, thread replies, and thread resolution. CI wait time is bounded separately by the preceding `ci-wait` step's 1800 s budget — splitting CI-wait out keeps this triage budget bounded by comment volume rather than CI queue depth.
+This step runs as inline orchestration (producer fetch + finding enumeration in main context) plus a single `cross.triage` Task dispatch (`plan-marshall:execution-context-{level}` resolved via `manage-config models resolve-target --role cross.triage`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget is **triage-only**: it covers the review-bot buffer, producer-side comments-stage, per-finding triage dispatch, thread replies, and thread resolution. CI wait time is bounded separately by the preceding `ci-wait` step's 1800 s budget — splitting CI-wait out keeps this triage budget bounded by comment volume rather than CI queue depth.
 
 **Graceful degradation**: When the wrapper expires:
 

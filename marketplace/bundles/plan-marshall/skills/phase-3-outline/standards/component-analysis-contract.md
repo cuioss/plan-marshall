@@ -1,10 +1,10 @@
-# Component Analysis Agent Contract
+# Component Analysis Workflow Contract
 
-Interface contract for domain-specific component analysis agents spawned during the outline phase. Agents implementing this contract analyze component files against a request using semantic reasoning and persist assessments for downstream deliverable creation.
+Interface contract for domain-specific component-analysis workflow docs dispatched during the outline phase. Workflows implementing this contract analyse component files against a request using semantic reasoning and persist assessments for downstream deliverable creation.
 
 ## Implementors
 
-- `pm-plugin-development:ext-outline-component-agent` — marketplace plugin components (skills, agents, commands)
+- `pm-plugin-development:ext-outline-workflow` — marketplace plugin components (skills, agents, commands). The component-analysis workflow doc lives under that skill's `workflow/` directory and is dispatched via `execution-context-{level}` against the appropriate outline role key.
 
 ## Invocation Context
 
@@ -12,10 +12,10 @@ Interface contract for domain-specific component analysis agents spawned during 
 phase-3-outline (Complex Track)
   → Step 9: Resolve domain or generic change-type instructions
     → domain outline skill (e.g., ext-outline-workflow)
-      → Task: {component-analysis-agent}   ← this contract
+      → Task: plan-marshall:execution-context-{level} with workflow: {component-analysis-workflow.md}   ← this contract
 ```
 
-The agent runs as a Task (subagent) spawned by the domain outline skill. It has context isolation and cannot spawn further agents.
+The dispatch runs as a Task (subagent) under the generic `execution-context-{level}` dispatcher with `workflow` and `skills[]` passed in the prompt body. It has context isolation and cannot spawn further subagents.
 
 ## Input Parameters
 

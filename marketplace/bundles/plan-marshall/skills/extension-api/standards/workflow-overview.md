@@ -8,14 +8,16 @@ Contract specification for the 6-phase workflow execution model.
 
 ## 6-Phase Execution Model
 
-| Phase | Agent Call | Purpose | Output |
-|-------|------------|---------|--------|
-| **1-init** | `plan-phase-agent phase=1-init` | Initialize plan | status.json, request.md, references.json |
-| **2-refine** | `plan-phase-agent phase=2-refine` | Clarify request | Refined request with confidence score |
-| **3-outline** | `plan-phase-agent phase=3-outline` | Create solution outline | solution_outline.md |
-| **4-plan** | `plan-phase-agent phase=4-plan` | Decompose into tasks | TASK-*.toon |
-| **5-execute** | `plan-phase-agent phase=5-execute task_number=1` | Run implementation + verification | Modified + verified project files |
-| **6-finalize** | `plan-phase-agent phase=6-finalize` | Commit, PR, automated review | Git commit, PR |
+Every phase dispatches through `Task: plan-marshall:execution-context-{level}` with the role key resolved via `manage-config models resolve-target`. The workflow doc + skill list flow through the prompt body.
+
+| Phase | Role key | Workflow doc | Purpose | Output |
+|-------|----------|--------------|---------|--------|
+| **1-init** | `phase-1` | `plan-marshall:phase-1-init/SKILL.md` | Initialize plan | status.json, request.md, references.json |
+| **2-refine** | `phase-2` | `plan-marshall:phase-2-refine/SKILL.md` | Clarify request | Refined request with confidence score |
+| **3-outline** | `phase-3` | `plan-marshall:phase-3-outline/SKILL.md` | Create solution outline | solution_outline.md |
+| **4-plan** | `phase-4` | `plan-marshall:phase-4-plan/SKILL.md` | Decompose into tasks | TASK-*.json |
+| **5-execute** | `phase-5` | `plan-marshall:execute-task/SKILL.md` (one dispatch per task) | Run implementation + verification | Modified + verified project files |
+| **6-finalize** | per-step keys (see `phase-6-finalize/SKILL.md` § Dispatched workflows vs inline steps) | Per-step workflow docs under `phase-6-finalize/workflow/` | Commit, PR, automated review | Git commit, PR |
 
 ### Phase Transitions
 

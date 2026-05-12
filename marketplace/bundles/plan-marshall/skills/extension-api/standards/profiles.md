@@ -116,7 +116,7 @@ Domain-specific profile skills CAN:
 
 All profiles share the same execution contract. The system default for all profiles is `plan-marshall:execute-task`.
 
-**Invocation**: Phase `5-execute` via `plan-phase-agent plan_id={plan_id} phase=5-execute task_number={task_number}`
+**Invocation**: Phase `5-execute` via `Task: plan-marshall:execution-context-{level}` (target resolved via `manage-config models resolve-target --role phase-5`) with the `execute-task` workflow doc and `plan_id` + `task_number` in the prompt body.
 
 ### Input Parameters
 

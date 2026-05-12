@@ -135,7 +135,8 @@ target/opencode/
 │       └── SKILL.md
 │   └── ...
 ├── agent/
-│   └── automated-review-agent.md
+│   └── execution-context.md
+│   └── execution-context-{low,medium,high,xhigh,xxhigh}.md
 │   └── ...
 ├── command/
 │   └── tools-fix-intellij-diagnostics.md

@@ -32,6 +32,10 @@ Skill: plan-marshall:dev-general-practices
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
 
+## Dispatched workflows vs inline steps
+
+This phase dispatches under one role key: **`phase-3`** (flat — one workflow with `track={simple|complex}` runtime input; Simple Track and Complex Track share the envelope and the role key). The Complex Track bundles Steps 9c (per-deliverable design-intent classification), 10 (the heavyweight design body), and 10b (self-modifying classification) into one `phase-3` envelope — the per-deliverable loop iterates *inside* the dispatch. Mechanical sub-procedures stay inline: Step 4 detect-change-type uses `manage-status:change-type-heuristic` (heuristic-first, dispatches `models.default` when ambiguous — no role key); Simple Track Step 6 target validation is a Bash one-liner; Complex Track Step 9 domain-resolution and Step 10b consumer-sweep run as scripts. Step 11 Q-Gate validation dispatches under **`cross.q-gate-validation`** (shared with phase-2 and phase-4). For the rationale see [granularity.md](../dev-general-practices/standards/granularity.md) § 3–4 (bundle when steps share context; per-iteration only when models differ or parallel).
+
 ## cwd for `.plan/execute-script.py` calls
 
 > `manage-*` scripts (Bucket A) resolve `.plan/` via `git rev-parse --git-common-dir` and work from any cwd — do **NOT** pin cwd, do **NOT** pass routing flags, and never use `env -C`. Build / CI / Sonar scripts (Bucket B) accept `--plan-id {plan_id}` (preferred — auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (explicit override / escape hatch); the two flags are mutually exclusive. See `plan-marshall:tools-script-executor/standards/cwd-policy.md`.
@@ -475,6 +479,7 @@ All other fields (`plan_id`, `track`, `deliverable_count`, `qgate_passed`, `qgat
 - [workflow-architecture](../../ref-workflow-architecture) - Workflow architecture overview
 - [outline-workflow-detail.md](standards/outline-workflow-detail.md) - Detailed track procedures (Q-Gate re-entry, recipe detection, change-type detection, Simple/Complex track steps)
 - [consumer-sweep.md](standards/consumer-sweep.md) - Outline-time procedure that enumerates cross-bundle consumers of deleted/renamed public symbols before deliverable finalization (mandatory when delete/rename language applies to a public symbol)
+- [granularity.md](../dev-general-practices/standards/granularity.md) - Dispatch granularity heuristics (10K rule, script-over-dispatch, bundle-over-iterate) — orienting reference for why the Complex Track bundles Steps 9c + 10 + 10b into one `phase-3` dispatch rather than dispatching per-deliverable
 
 ### Phase-boundary metric bookkeeping
 

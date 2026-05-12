@@ -336,7 +336,7 @@ This operation does **not** spawn the subagent itself. Both Claude Code and Open
 
 | Argument | Description |
 |----------|-------------|
-| `--agent` | Agent name (matches the agent markdown filename without `.md`, e.g., `phase-agent`) |
+| `--agent` | Agent name (matches the agent markdown filename without `.md`, e.g., `execution-context` or `execution-context-high`) |
 | `--prompt-file` | Path to a prompt markdown file (optional; if omitted, the agent's own body is used) |
 | `--context` | JSON string of key-value pairs to inject into the prompt (optional) |
 
@@ -434,8 +434,8 @@ The calling skill has three options:
 ```bash
 python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
   subagent dispatch \
-  --agent "detect-change-type-agent" \
-  --context '{"plan_id": "my-plan", "files": ["src/Foo.java"]}'
+  --agent "execution-context-high" \
+  --context '{"plan_id": "my-plan", "workflow": "plan-marshall:phase-3-outline/SKILL.md", "skills": []}'
 ```
 
 Output:
@@ -444,25 +444,25 @@ status: success
 platform: claude
 invocation:
   tool: Task
-  description: "Detect change type"
+  description: "Run phase-3 outline"
   prompt: "...agent body with context merged..."
-  subagent_type: "detect-change-type-agent"
+  subagent_type: "execution-context-high"
 ```
 
 Caller then executes:
 ```
-Task: description="Detect change type" prompt="..." subagent_type="detect-change-type-agent"
+Task: description="Run phase-3 outline" prompt="..." subagent_type="execution-context-high"
 ```
 
-**Example 2: Dispatch agent with Task/Skill on OpenCode (all tools mapped)**
+**Example 2: Dispatch execution-context with Task/Skill on OpenCode (all tools mapped)**
 
-`phase-agent` uses `Task` and `Skill` in its `tools:` frontmatter. Both are mapped:
+`execution-context` uses `Task` and `Skill` in its `tools:` frontmatter. Both are mapped:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
   subagent dispatch \
-  --agent "phase-agent" \
-  --context '{"skill": "plan-marshall:phase-1-init"}'
+  --agent "execution-context" \
+  --context '{"workflow": "plan-marshall:phase-1-init/SKILL.md", "skills": []}'
 ```
 
 Output:
@@ -471,9 +471,9 @@ status: success
 platform: opencode
 invocation:
   tool: task
-  description: "Run phase init"
+  description: "Run phase-1 init"
   prompt: "...agent body with context merged..."
-  subagent_type: "phase-agent"
+  subagent_type: "execution-context"
 ```
 
 Note: OpenCode permissions are set in agent frontmatter (`tools:` field) or `opencode.json` (`agent.{name}.permission`), not at `task` invocation time. The caller uses the invocation parameters to spawn the subagent via the `task` tool.

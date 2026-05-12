@@ -119,7 +119,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-recipe --recipe {recipe_key}
 ```
 
-3. Set `change_type` from recipe's `default_change_type` (skip detect-change-type-agent):
+3. Set `change_type` from recipe's `default_change_type` (skip `manage-status:change-type-heuristic` and any LLM fallback):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
   --plan-id {plan_id} \
@@ -365,7 +365,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 Bypass the Simple Q-Gate when ALL of the following predicates hold:
 
 1. `scope_estimate == surgical` (read from references.json — phase-2-refine sets it in Step 13; phase-3-outline MAY refine it in Step 6 after deliverables crystalize).
-2. `change_type ∈ {bug_fix, tech_debt, verification}` (read from status.json metadata — set in Step 4 by detect-change-type-agent).
+2. `change_type ∈ {bug_fix, tech_debt, verification}` (read from status.json metadata — set in Step 4 by `manage-status:change-type-heuristic`, with LLM fallback via `models.default` when the heuristic is ambiguous).
 3. `deliverable_count == 1` (exactly one deliverable was created in Step 7).
 
 When all three predicates hold, emit the bypass decision log entry and skip directly to Step 12 (do NOT execute the per-deliverable checks):
@@ -499,7 +499,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
    - **`LLM-driven`** — the skill has no script entry point. The SKILL.md narrative is the executable definition: an LLM agent loads the skill (via `Skill: {ref}`) and follows the prose steps in-context. The skill may invoke other scripts as steps, but the orchestration logic, the decision-making, and the artifact production are all performed by the LLM.
 
-     *Examples*: `phase-3-outline` (this skill), `phase-4-plan`, `q-gate-validation-agent`, `plugin-doctor`, `plan-retrospective`.
+     *Examples*: `phase-3-outline` (this skill), `phase-4-plan`, `plan-marshall:plan-marshall/workflow/q-gate-validation.md` (dispatched via `cross.q-gate-validation`), `plugin-doctor`, `plan-retrospective`.
 
    - **`hybrid`** — the skill has both a Python script and a non-trivial LLM prose body. The script handles a deterministic sub-task (file I/O, validation, dispatch); the LLM prose body handles the remaining cognitive work. Hybrid skills carry both a `scripts/` directory and substantive `Workflow` prose.
 

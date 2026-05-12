@@ -42,6 +42,10 @@ When persisting the multi-task batch (Step 6 → 6a/6b), the following shell sho
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
 - Batch JSON staging files MUST live under `.plan/local/plans/{plan_id}/work/`. Never use `Write` to `/tmp/`, `/var/`, or any path outside the plan's `work/` directory. (Cross-reference: see anti-pattern callout at SKILL.md:30 for the shell-substitution shortcut prohibition; both rules apply together.)
 
+## Dispatched workflows vs inline steps
+
+This phase dispatches under one role key: **`phase-4`** (flat — single workflow). The bundled task-creation activity (Steps 5+6+7 — per-deliverable task creation, anchoring/breaking-refactor split, holistic verification tasks) iterates *inside* one `phase-4` envelope; the per-deliverable loop never spawns per-iteration subagents. Mechanical sub-procedures stay inline as scripts: Step 3 deliverable load, Step 4 dependency graph, Step 8 topological sort, Step 8b execution manifest composition, and Step 9 Q-Gate mechanical checks (via `manage-tasks:qgate-mechanical-checks` — coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Step 9b LLM Q-Gate dispatches under **`cross.q-gate-validation`** (shared with phase-2 and phase-3) only when the mechanical script returns `ambiguous`. For the rationale see [granularity.md](../dev-general-practices/standards/granularity.md) § 2–4.
+
 ## cwd for `.plan/execute-script.py` calls
 
 > `manage-*` scripts (Bucket A) resolve `.plan/` via `git rev-parse --git-common-dir` and work from any cwd — do **NOT** pin cwd, do **NOT** pass routing flags, and never use `env -C`. Build / CI / Sonar scripts (Bucket B) accept `--plan-id {plan_id}` (preferred — auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (explicit override / escape hatch); the two flags are mutually exclusive. See `plan-marshall:tools-script-executor/standards/cwd-policy.md`.
@@ -148,6 +152,7 @@ message: {error message if status=error}
 |----------|---------|
 | [Task Creation Flow](references/task-creation-flow.md) | Visual overview of the 1:N task creation flow and output structure |
 | [Breaking-Refactor Task Split](standards/breaking-refactor-task-split.md) | Task-split contract for `tech_debt` / `feature_breaking` deliverables that intentionally invalidate existing test contracts (allocates `implementation` + `module_testing` task pair with `depends_on` linkage); paired with the phase-5-execute planned-failure exception |
+| [Dispatch Granularity](../dev-general-practices/standards/granularity.md) | The 10K rule, script-over-dispatch, bundle-over-iterate, per-iteration only when models differ or parallel — explains why Steps 5+6+7 bundle into one `phase-4` dispatch and why Step 9's mechanical Q-Gate checks live in `manage-tasks:qgate-mechanical-checks` rather than a dispatch |
 
 ## Workflow
 
@@ -644,9 +649,9 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Rigor**: this check is warn-only. Phase-4-plan MUST proceed to completion regardless of warnings — the operator reviews findings at the phase-4 gate.
 
-### Step 9b: Spawn q-gate-validation-agent for mechanical validators
+### Step 9b: Dispatch `cross.q-gate-validation` for mechanical validators
 
-**Purpose**: Run the `module-mapping-validator` and `scope-criterion-validator` from `q-gate-validation-agent.md` (§§ 2.11, 2.12) over the just-created tasks and the parent deliverables. Both validators reconcile LLM-authored task/deliverable shape against live ground truth (architecture which-module, architecture find/marketplace grep) and emit findings that the orchestrator's existing 3-iteration auto-loop consumes.
+**Purpose**: Run the `module-mapping-validator` and `scope-criterion-validator` from `plan-marshall:plan-marshall/workflow/q-gate-validation.md` (§§ 2.11, 2.12) over the just-created tasks and the parent deliverables. Both validators reconcile LLM-authored task/deliverable shape against live ground truth (architecture which-module, architecture find/marketplace grep) and emit findings that the orchestrator's existing 3-iteration auto-loop consumes.
 
 **Activation guard**: Unconditional — runs after every successful phase-4-plan invocation, regardless of `plan_source`. Both validators apply to every plan (lesson-derived, issue-derived, recipe-derived, free-form). Skip only when the Q-Gate inline checks above (Step 9) have already exhausted the orchestrator's `verification_max_iterations` budget — in that case the orchestrator will already be aborting the auto-loop.
 
@@ -698,7 +703,7 @@ Parse `filtered_count` from the output and ADD it to the `qgate_pending_count` a
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-4-plan:qgate) Spawned q-gate-validation-agent for module-mapping + scope-criterion validators; pending findings now {qgate_pending_count}"
+  --message "(plan-marshall:phase-4-plan:qgate) Dispatched cross.q-gate-validation for module-mapping + scope-criterion validators; pending findings now {qgate_pending_count}"
 ```
 
 This step runs AFTER the inline Q-Gate checks of Step 9 and BEFORE Step 10 (Record Issues as Lessons) / Step 11 (Transition Phase and Return Results). The placement is load-bearing: inline checks first means cheap structural findings are recorded before the more expensive cross-bundle queries; validator second ensures architecture-anchored findings can re-enter phase-4-plan alongside the inline ones.
@@ -795,7 +800,7 @@ When all three conditions hold, the task narrative MUST carry a sentence of the 
 **Failure-mode rationale**: this constraint was hardened in response to two recurring drift patterns:
 
 1. **PR #348 path-heuristic copy-paste** — `phase-3-outline/standards/outline-workflow-detail.md` Step 10b inlined the self-modifying-plan path list instead of xref-ing `ref-workflow-architecture/standards/self-modifying-classification.md` § Path Heuristic. A subsequent extension of the path heuristic landed only in the central standard; the integration site silently kept the old list and missed two new path classes (`marketplace/targets/**`, `.../skills/sync-plugin-cache/**`).
-2. **q-gate-validator §2.16 keyword-list drift** — the validator's hard-cutover keyword list was duplicated in `q-gate-validation-agent.md` §2.16. An extension of the keyword list landed only in the central standard; the validator agent continued matching the stale list until a manual audit caught the divergence.
+2. **q-gate-validator §2.16 keyword-list drift** — the validator's hard-cutover keyword list was duplicated in the q-gate-validation workflow doc §2.16. An extension of the keyword list landed only in the central standard; the validator workflow continued matching the stale list until a manual audit caught the divergence.
 
 Both failures share the same shape: a copy-pasted *enforcement-critical* rule body that drifted because the integration site was not declared as a downstream consumer of the central standard. The constraint converts that latent contract ("everyone keep your copy in sync") into an explicit one ("xref the central standard; never inline-copy"). The q-gate validator §2.16 architecture-mismatch finding (added in deliverable 9 of this plan) reinforces the same boundary at the outline phase, so the constraint is enforced at both planning time and validation time.
 

@@ -211,9 +211,9 @@ See [data-format.md](standards/data-format.md) for the on-disk schema.
 
 ### record-dispatch-boundary
 
-Record one TOON-tabular row per phase-agent dispatch termination. Designed to
+Record one TOON-tabular row per phase Task dispatch termination. Designed to
 be called by the orchestrator (`plan-marshall` workflows) immediately after
-every phase-agent return so the audit trail captures *why* the dispatch
+every phase Task return so the audit trail captures *why* the dispatch
 ended — voluntary checkpoint, bare `task_complete` echo, harness
 cancellation, error, or unknown — together with the dispatched agent's
 `<usage>` totals at termination time. The accumulating file is the audit
@@ -256,6 +256,50 @@ timestamp: 2026-05-08T14:23:11Z
 rows_recorded: 4
 dispatch_boundary_file: work/metrics-dispatch-boundaries-5-execute.toon
 ```
+
+### compare-anchor
+
+Compare the live plan's per-phase `total_tokens` against anchor data captured before the agents → execution-context refactor. Drives the Phase 4d dispatch-cost regression gate documented in `.plan/local/refactor-agents-reviewed/07-rollout.md` § 4.4.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics compare-anchor \
+  --plan-id {plan_id} --anchor-plan {anchor_plan_id} \
+  [--anchor-file PATH] [--threshold-percent N]
+```
+
+**Parameters:**
+- `--anchor-plan` — Anchor plan_id to compare against. Must be present in the anchor file (e.g. `2026-05-08-cluster-02-build-system-deploy-target` for the feature anchor, `2026-05-11-lesson-2026-05-08-19-003` for the bug-fix anchor).
+- `--anchor-file` — Path to the anchor TOON file. Defaults to `.plan/temp/refactor-execution-context-anchor/anchors.toon`.
+- `--threshold-percent` — Override the regression-gate threshold (percent growth that fires `verdict: warn`). Defaults to the anchor file's `threshold.warn_percent` entry, or `20` when absent.
+
+**Behaviour:** For each phase, the script reads the anchor `total_tokens` and the live plan's `work/metrics.toon` `total_tokens` and computes:
+
+- `verdict: warn` — live > anchor by more than the threshold. The regression gate fires; the failing dispatch must be re-bundled or scripted before merge.
+- `verdict: improved` — strictly negative delta (cheaper than anchor).
+- `verdict: ok` — within threshold.
+- `verdict: unmeasured` — anchor or live cell missing (`-1`). One-sided measurement; gate does not fire on this row.
+
+**Output:**
+
+```toon
+status: success
+plan_id: my-plan
+anchor_plan: 2026-05-08-cluster-02-build-system-deploy-target
+anchor_file: .plan/temp/refactor-execution-context-anchor/anchors.toon
+threshold_percent: 20.0
+gate_status: pass | breach
+warn_count: 0
+unmeasured_count: 2
+rows[6]{phase,anchor_tokens,post_tokens,delta_tokens,delta_percent,verdict}:
+  - 1-init,54364,52000,-2364,-4.35,improved
+  - 2-refine,-1,38420,0,0.0,unmeasured
+  - 3-outline,200695,195000,-5695,-2.84,improved
+  - 4-plan,129031,131000,1969,1.53,ok
+  - 5-execute,-1,225000,0,0.0,unmeasured
+  - 6-finalize,166982,170000,3018,1.81,ok
+```
+
+`gate_status: breach` indicates one or more phases failed the gate; the run cannot ship until the failing dispatches are tightened. The script does NOT mutate any state — it is read-only.
 
 ### enrich
 

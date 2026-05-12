@@ -40,7 +40,7 @@ This applies equally to production code, test code, and documentation.
 
 ### Principle 2: Always Research Topics
 
-**Rule:** Always research topics using the research-best-practices-agent. The goal is to find the most recent best practices for a given technology or framework.
+**Rule:** Always research topics using the `cross.research` dispatch. The goal is to find the most recent best practices for a given technology or framework.
 
 **When to Research:**
 - Need current best practices for a technology/framework
@@ -170,7 +170,7 @@ For complete patterns including file operations, content search, and Bash safety
 **Required Approval Process:**
 
 1. **Identify need for dependency**
-2. **Research alternatives** using research-best-practices-agent if needed
+2. **Research alternatives** using `cross.research` dispatch if needed
 3. **Ask user** with specific recommendation:
    ```
    I need to add {functionality}. I recommend adding {dependency-name} because:
@@ -227,7 +227,7 @@ If the architecture verb truly cannot answer (e.g., target is sub-module, target
 | Situation | Action |
 |-----------|--------|
 | Uncertain about requirements | Ask user |
-| Need current best practices | Use research-best-practices-agent |
+| Need current best practices | Use `cross.research` dispatch |
 | Would need to guess | Ask user |
 | File operations (find/read/search/write/edit) | See Principle 4 for complete tool selection guide |
 | Need to create document | Ask user first |

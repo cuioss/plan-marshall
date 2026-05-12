@@ -30,6 +30,10 @@ Comprehensive diagnostic and fix skill for marketplace components. Combines diag
 
 Provides unified doctor workflows following the pattern: **Diagnose → Auto-Fix Safe → Prompt Risky → Verify**
 
+## Dispatch shape: per-rule analyses run inside one envelope; `scope` selects the rule subset
+
+This workflow dispatches under the `cross.plugin-doctor` role key as one `execution-context-{level}` envelope. The per-rule analyses (skill structure, agent frontmatter, command compliance, tool coverage, etc.) iterate **in-context inside that envelope** — `scope` is a runtime input that selects which rule subset fires, NOT a fan-out into per-rule subagents. Bundling matches granularity Heuristic 2: every rule reads the same marketplace tree, shares the same plugin-doctor skill loads, and contributes findings to the same TOON return. Per-rule dispatch would pay ~10× envelope cost for analyses that share substantial context. See the granularity standard under `plan-marshall:dev-general-practices` for the heuristics behind this bundling rule.
+
 ## Workflow Decision Tree
 
 Select workflow based on input and execute immediately.
@@ -313,7 +317,7 @@ Loaded per workflow via Progressive Disclosure table above. Key files:
 
 ### Templates (templates/)
 
-- `tool-coverage-results.toon` - TOON template for aggregating tool-coverage-agent results
+- `tool-coverage-results.toon` - TOON template for aggregating tool-coverage analysis results (produced by the plugin-doctor tool-coverage rule, which today runs in-line inside `cross.plugin-doctor` when its scope covers tool-coverage)
 
 ---
 
