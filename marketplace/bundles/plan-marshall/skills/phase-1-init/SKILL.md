@@ -316,6 +316,19 @@ Do not proceed to Step 6 unless both post-conditions hold.
 
 **Applicability**: This step runs **only when `source == lesson`**. Skip entirely for `description`, `issue`, or `recipe` sources. (When `source == recipe`, the user has already chosen a recipe explicitly — auto-suggest never overrides an explicit choice.)
 
+**Step 5c-pre — registry-wide auto-suggest (deterministic, no envelope)**:
+
+For any source other than `recipe`, optionally run the registry matcher to surface candidate recipes:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons \
+  auto-suggest --plan-id {plan_id}
+```
+
+The script scans the live recipe registry, blends keyword overlap with domain/scope alignment, and returns the top 3 recipes ordered by confidence. Each suggestion is also written as an info-severity Q-Gate finding so the orchestrator can surface the list in the audit log. When `suggestions[0].confidence` clears the auto-accept floor (caller-side, typically 0.7) the orchestrator MAY persist `status.metadata.recipe_key = suggestions[0].key` without prompting; below that floor the list is surfaced for user selection (no auto-persist).
+
+**Step 5c-lesson — doc-shaped predicate (lesson-source only)**:
+
 Inspect the lesson body (now at `.plan/local/plans/{plan_id}/lesson-{lesson_id}.md` after Step 5b) and decide whether to auto-suggest the `lesson_cleanup` recipe. The goal is to route doc-shaped lessons (small, prescriptive, no code refactor required) through `recipe-lesson-cleanup` so they get a slim surgical manifest instead of going through the full refine/outline/Q-Gate pipeline.
 
 **Heuristic — "doc-shaped" predicate**:

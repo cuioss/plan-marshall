@@ -426,6 +426,7 @@ The classification logic for the read-side corpus operations lives under `refere
 | `from-error` | `--context` | Create from JSON error context (programmatic; body synthesized from context) |
 | `convert-to-plan` | `--lesson-id --plan-id` | Move lesson into a plan directory as `lesson-{id}.md`. This is the move-semantics replacement for marking a lesson "applied". |
 | `cleanup-superseded` | `[--lesson-id ID ...] \| [--retention-days N] [--dry-run]` | Prune superseded `.md` stubs while preserving tombstones. Age-filtered when `--retention-days` (falls back to `system.retention.lessons_superseded_days`, hard fallback 7); explicit when `--lesson-id` is repeated. |
+| `auto-suggest` | `--plan-id [--max-suggestions N] [--no-emit]` | Recipe-registry matcher for phase-1-init Step 5c. Scans the live recipe registry (`manage-config list-recipes`) and returns up to `--max-suggestions` recipes (default 3) ordered by deterministic confidence — keyword overlap (request narrative ∩ recipe description) + domain alignment + scope alignment. Each suggestion is also written as a plan-scoped `tip` finding (`artifacts/findings/tip.jsonl`) so the orchestrator can surface them in the audit log; pass `--no-emit` to inspect without writing findings. No LLM dispatch — the matcher is pure regex + set algebra. Falls through to the existing Step 5c LLM path when no recipe clears the 0.35 confidence floor. |
 
 ---
 
