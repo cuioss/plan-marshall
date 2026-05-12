@@ -35,7 +35,7 @@ Skill: plan-marshall:dev-general-practices
 
 ## Dispatched workflows vs inline steps
 
-This phase dispatches under one role key: **`phase-1`** (flat — single workflow). Step 4b reference verification bundles into the `phase-1` envelope (it shares the same `manage-architecture` / `manage-references` context the rest of the phase needs). Mechanical sub-procedures stay inline as scripts: Step 5c lesson auto-suggest uses `manage-lessons:lesson-auto-suggest` (heuristic-first, dispatches the existing lesson-cleanup workflow only when ambiguous); Step 6 references initialisation, Step 5d architecture snapshot, and Step 7 domain detection (`manage-config:domain-detect`) are pure scripts. For the rationale see [granularity.md](../dev-general-practices/standards/granularity.md) § 2 (Heuristic 1 — script over dispatch).
+This phase dispatches under one role key: **`phase-1`** (flat — single workflow). Step 4b reference verification bundles into the `phase-1` envelope (it shares the same `manage-architecture` / `manage-references` context the rest of the phase needs). Mechanical sub-procedures stay inline as scripts: Step 5c lesson auto-suggest uses `manage-lessons:lesson-auto-suggest` (heuristic-first, dispatches the existing lesson-cleanup workflow only when ambiguous); Step 6 references initialisation, Step 5d architecture snapshot, and Step 7 domain detection (`manage-config:domain-detect`) are pure scripts. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2 (Heuristic 1 — script over dispatch).
 
 ## When to Activate This Skill
 

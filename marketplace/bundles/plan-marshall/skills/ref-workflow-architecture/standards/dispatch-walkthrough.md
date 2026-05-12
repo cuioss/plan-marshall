@@ -1,6 +1,6 @@
 # Dispatch Walkthrough — Worked Examples
 
-Concrete end-to-end traces of `execution-context-{level}` dispatches at three representative call sites: a single-workflow phase entry, a finalize step that sub-dispatches `cross.triage` by reference, and a per-iteration parallel fan-out. For the dispatch contract itself (prompt-body fields, role-key resolution, mandatory rules), see [`agents.md`](agents.md). For the heuristics that decide *whether* a step should dispatch, see [`../../dev-general-practices/standards/granularity.md`](../../dev-general-practices/standards/granularity.md).
+Concrete end-to-end traces of `execution-context-{level}` dispatches at three representative call sites: a single-workflow phase entry, a finalize step that sub-dispatches `cross.triage` by reference, and a per-iteration parallel fan-out. For the dispatch contract itself (prompt-body fields, role-key resolution, mandatory rules), see [`agents.md`](agents.md). For the heuristics that decide *whether* a step should dispatch, see [`../../extension-api/standards/dispatch-granularity.md`](../../extension-api/standards/dispatch-granularity.md).
 
 ## Generic eight-step sequence
 
@@ -297,14 +297,14 @@ Per-iteration parallel earns its envelope cost only because:
 - Modules are independent (no cross-module data flow during enrichment).
 - Wall-time savings (3 parallel × ~60 s ≈ 60 s total, vs. sequential 3 × 60 s = 180 s).
 
-Every other per-X loop in the system runs *inside* a single envelope (one envelope iterates internally). Sequential per-iteration dispatch is the worst shape — linear envelope cost × N with no parallelism payoff. See [`../../dev-general-practices/standards/granularity.md`](../../dev-general-practices/standards/granularity.md) § 4 (Heuristic 3).
+Every other per-X loop in the system runs *inside* a single envelope (one envelope iterates internally). Sequential per-iteration dispatch is the worst shape — linear envelope cost × N with no parallelism payoff. See [`../../extension-api/standards/dispatch-granularity.md`](../../extension-api/standards/dispatch-granularity.md) § 4 (Heuristic 3).
 
 ---
 
 ## Cross-references
 
 - The dispatch contract (prompt-body fields, mandatory rules) — [`agents.md`](agents.md)
-- Granularity heuristics (why dispatch vs script vs inline) — [`../../dev-general-practices/standards/granularity.md`](../../dev-general-practices/standards/granularity.md)
+- Granularity heuristics (why dispatch vs script vs inline) — [`../../extension-api/standards/dispatch-granularity.md`](../../extension-api/standards/dispatch-granularity.md)
 - The triage smart-grouping algorithm — [`../../plan-marshall/workflow/triage.md`](../../plan-marshall/workflow/triage.md)
 - Workflow-doc implementor contract — [`../../extension-api/standards/ext-point-execution-context-workflow.md`](../../extension-api/standards/ext-point-execution-context-workflow.md)
 - Level → primitive table — [`../../plan-marshall/standards/model-levels.md`](../../plan-marshall/standards/model-levels.md)

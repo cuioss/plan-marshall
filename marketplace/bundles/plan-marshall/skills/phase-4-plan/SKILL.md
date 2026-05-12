@@ -44,7 +44,7 @@ When persisting the multi-task batch (Step 6 → 6a/6b), the following shell sho
 
 ## Dispatched workflows vs inline steps
 
-This phase dispatches under one role key: **`phase-4`** (flat — single workflow). The bundled task-creation activity (Steps 5+6+7 — per-deliverable task creation, anchoring/breaking-refactor split, holistic verification tasks) iterates *inside* one `phase-4` envelope; the per-deliverable loop never spawns per-iteration subagents. Mechanical sub-procedures stay inline as scripts: Step 3 deliverable load, Step 4 dependency graph, Step 8 topological sort, Step 8b execution manifest composition, and Step 9 Q-Gate mechanical checks (via `manage-tasks:qgate-mechanical-checks` — coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Step 9b LLM Q-Gate dispatches under **`cross.q-gate-validation`** (shared with phase-2 and phase-3) only when the mechanical script returns `ambiguous`. For the rationale see [granularity.md](../dev-general-practices/standards/granularity.md) § 2–4.
+This phase dispatches under one role key: **`phase-4`** (flat — single workflow). The bundled task-creation activity (Steps 5+6+7 — per-deliverable task creation, anchoring/breaking-refactor split, holistic verification tasks) iterates *inside* one `phase-4` envelope; the per-deliverable loop never spawns per-iteration subagents. Mechanical sub-procedures stay inline as scripts: Step 3 deliverable load, Step 4 dependency graph, Step 8 topological sort, Step 8b execution manifest composition, and Step 9 Q-Gate mechanical checks (via `manage-tasks:qgate-mechanical-checks` — coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Step 9b LLM Q-Gate dispatches under **`cross.q-gate-validation`** (shared with phase-2 and phase-3) only when the mechanical script returns `ambiguous`. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2–4.
 
 ## cwd for `.plan/execute-script.py` calls
 
@@ -152,7 +152,7 @@ message: {error message if status=error}
 |----------|---------|
 | [Task Creation Flow](references/task-creation-flow.md) | Visual overview of the 1:N task creation flow and output structure |
 | [Breaking-Refactor Task Split](standards/breaking-refactor-task-split.md) | Task-split contract for `tech_debt` / `feature_breaking` deliverables that intentionally invalidate existing test contracts (allocates `implementation` + `module_testing` task pair with `depends_on` linkage); paired with the phase-5-execute planned-failure exception |
-| [Dispatch Granularity](../dev-general-practices/standards/granularity.md) | The 10K rule, script-over-dispatch, bundle-over-iterate, per-iteration only when models differ or parallel — explains why Steps 5+6+7 bundle into one `phase-4` dispatch and why Step 9's mechanical Q-Gate checks live in `manage-tasks:qgate-mechanical-checks` rather than a dispatch |
+| [Dispatch Granularity](../extension-api/standards/dispatch-granularity.md) | The 10K rule, script-over-dispatch, bundle-over-iterate, per-iteration only when models differ or parallel — explains why Steps 5+6+7 bundle into one `phase-4` dispatch and why Step 9's mechanical Q-Gate checks live in `manage-tasks:qgate-mechanical-checks` rather than a dispatch |
 
 ## Workflow
 

@@ -80,3 +80,4 @@ The lint rule `workflow-doc-implements-contract` enforces every requirement in t
 - [`ext-point-dynamic-level-executor`](ext-point-dynamic-level-executor.md) — companion ext-point for the agent side.
 - [`agents/execution-context.md`](../../../agents/execution-context.md) — the dispatcher that loads workflow-doc implementors.
 - [`ref-workflow-architecture/standards/dispatch-walkthrough.md`](../../ref-workflow-architecture/standards/dispatch-walkthrough.md) — worked end-to-end traces showing how the prompt-body fields and Output contract flow through three representative dispatches.
+- [`dispatch-granularity.md`](dispatch-granularity.md) — granularity heuristics: when a step earns an `execution-context` dispatch envelope vs. running inline as a script.

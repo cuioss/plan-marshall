@@ -32,7 +32,7 @@ Provides unified doctor workflows following the pattern: **Diagnose → Auto-Fix
 
 ## Dispatch shape: per-rule analyses run inside one envelope; `scope` selects the rule subset
 
-This workflow dispatches under the `cross.plugin-doctor` role key as one `execution-context-{level}` envelope. The per-rule analyses (skill structure, agent frontmatter, command compliance, tool coverage, etc.) iterate **in-context inside that envelope** — `scope` is a runtime input that selects which rule subset fires, NOT a fan-out into per-rule subagents. Bundling matches granularity Heuristic 2: every rule reads the same marketplace tree, shares the same plugin-doctor skill loads, and contributes findings to the same TOON return. Per-rule dispatch would pay ~10× envelope cost for analyses that share substantial context. See the granularity standard under `plan-marshall:dev-general-practices` for the heuristics behind this bundling rule.
+This workflow dispatches under the `cross.plugin-doctor` role key as one `execution-context-{level}` envelope. The per-rule analyses (skill structure, agent frontmatter, command compliance, tool coverage, etc.) iterate **in-context inside that envelope** — `scope` is a runtime input that selects which rule subset fires, NOT a fan-out into per-rule subagents. Bundling matches granularity Heuristic 2: every rule reads the same marketplace tree, shares the same plugin-doctor skill loads, and contributes findings to the same TOON return. Per-rule dispatch would pay ~10× envelope cost for analyses that share substantial context. See the dispatch-granularity standard under `plan-marshall:extension-api` for the heuristics behind this bundling rule.
 
 ## Workflow Decision Tree
 

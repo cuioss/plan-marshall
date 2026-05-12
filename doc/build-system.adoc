@@ -54,7 +54,7 @@ No new agent file is required — the new workflow is dispatched through the exi
 
 == Dispatch-Cost Considerations
 
-Each `Task:` dispatch carries a fixed overhead (skill-load preamble, Worktree Header echo, return-TOON marshalling). The granularity heuristics in link:../marketplace/bundles/plan-marshall/skills/dev-general-practices[`dev-general-practices`] govern when a step belongs in a dispatch envelope vs. inline in the orchestrator's context:
+Each `Task:` dispatch carries a fixed overhead (skill-load preamble, Worktree Header echo, return-TOON marshalling). The granularity heuristics in link:../marketplace/bundles/plan-marshall/skills/extension-api/standards/dispatch-granularity.md[`extension-api:dispatch-granularity`] govern when a step belongs in a dispatch envelope vs. inline in the orchestrator's context:
 
 * **Script-over-dispatch**: deterministic work (regex matches, structural checks, build invocations) lives in a script; the dispatch is reserved for LLM judgement.
 * **Bundle-shared-context**: a multi-step LLM workflow runs inside ONE dispatch envelope rather than N sequential dispatches.

@@ -62,7 +62,7 @@ The Phase Entry Protocol's `phase_handshake verify --phase 1-init --strict` call
 
 ## Dispatched workflows vs inline steps
 
-This phase dispatches under one role key: **`phase-2`** (flat — single workflow). The confidence loop (Steps 3b/3c/8/9/10/11/12) iterates *inside* one dispatch envelope; the orchestrator never spawns per-iteration subagents. Mechanical sub-procedures stay inline: Step 3d baseline reconciliation runs via the `workflow-integration-git:baseline-reconcile` script (LLM-bearing classification is bundled into `phase-2`); Step 10 confidence aggregation runs via the `manage-status:aggregate-confidence` script. Step 13.5 Q-Gate validation is its own dispatch under **`cross.q-gate-validation`** (shared with phase-3 and phase-4). For the rationale see [granularity.md](../dev-general-practices/standards/granularity.md) § 3 (Heuristic 2 — bundle when steps share context).
+This phase dispatches under one role key: **`phase-2`** (flat — single workflow). The confidence loop (Steps 3b/3c/8/9/10/11/12) iterates *inside* one dispatch envelope; the orchestrator never spawns per-iteration subagents. Mechanical sub-procedures stay inline: Step 3d baseline reconciliation runs via the `workflow-integration-git:baseline-reconcile` script (LLM-bearing classification is bundled into `phase-2`); Step 10 confidence aggregation runs via the `manage-status:aggregate-confidence` script. Step 13.5 Q-Gate validation is its own dispatch under **`cross.q-gate-validation`** (shared with phase-3 and phase-4). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 3 (Heuristic 2 — bundle when steps share context).
 
 ---
 
