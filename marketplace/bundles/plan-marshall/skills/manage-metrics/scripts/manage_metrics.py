@@ -893,10 +893,20 @@ def _parse_anchor_file(path: Path) -> tuple[dict[str, dict[str, int]], dict, str
                 continue
             if leading == 4 and current_plan_id and ':' in stripped:
                 phase_key, _, raw_val = stripped.partition(':')
+                phase_key = phase_key.strip()
+                raw_val = raw_val.strip()
                 try:
-                    per_plan[current_plan_id][phase_key.strip()] = int(raw_val.strip())
+                    per_plan[current_plan_id][phase_key] = int(raw_val)
                 except ValueError:
-                    continue
+                    return (
+                        {},
+                        {},
+                        (
+                            f"malformed token count '{raw_val}' for phase "
+                            f"'{phase_key}' in plan '{current_plan_id}' "
+                            f'(anchor file {path})'
+                        ),
+                    )
             continue
 
         if in_threshold:
@@ -990,9 +1000,24 @@ def cmd_compare_anchor(args: argparse.Namespace) -> dict:
             ),
         }
 
-    threshold = float(args.threshold_percent) if args.threshold_percent is not None else float(
-        metadata.get('warn_percent', ANCHOR_DEFAULT_THRESHOLD_PERCENT)
-    )
+    raw_threshold: object
+    if args.threshold_percent is not None:
+        raw_threshold = args.threshold_percent
+        threshold_source = '--threshold-percent'
+    else:
+        raw_threshold = metadata.get('warn_percent', ANCHOR_DEFAULT_THRESHOLD_PERCENT)
+        threshold_source = 'anchor file threshold.warn_percent'
+    try:
+        threshold = float(raw_threshold)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return {
+            'status': 'error',
+            'error': 'invalid_threshold',
+            'message': (
+                f"threshold '{raw_threshold}' from {threshold_source} is not a "
+                f'valid number'
+            ),
+        }
 
     live = read_metrics_raw(plan_id)
     live_phases = live.get('phases', {})
