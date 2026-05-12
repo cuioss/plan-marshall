@@ -269,7 +269,7 @@ User: /plan-marshall action=recipe
   │ Package source: packages        │ ◄── derived
   └────────────────┬────────────────┘
                    │
-  recipe.md Step 2: phase-agent (skill=phase-1-init)
+  recipe.md Step 2: execution-context (workflow=phase-1-init/SKILL.md)
          │ creates plan, plan_id = "recipe-java-impl"
          │
   recipe.md Step 3: store metadata

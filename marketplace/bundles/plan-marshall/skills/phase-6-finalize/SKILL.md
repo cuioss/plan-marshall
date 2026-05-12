@@ -371,7 +371,7 @@ cache holds, which is exactly the published bundle definitions.
 |-----------------|--------------------|--------|
 | `outcome == done` AND `head_at_completion == HEAD` | matches | SKIP (steady-state — gate already validated this exact tree) |
 | `outcome == done` AND `head_at_completion != HEAD` | differs | RE-FIRE (treat as no record — HEAD has advanced past the validated SHA) |
-| `outcome == done` AND `head_at_completion` absent | n/a | RE-FIRE (legacy record from before SHA tracking; safe default is to re-run) |
+| `outcome == done` AND `head_at_completion` absent | n/a | RE-FIRE (record is incomplete without a SHA; safe default is to re-run) |
 | `outcome == failed` | n/a | RETRY (unchanged — same as the general rule) |
 | `outcome == loop_back` | n/a | RE-FIRE (treat as no record — same as the general rule for loop_back) |
 | no record OR any other value | n/a | DISPATCH (unchanged — same as the general rule) |
@@ -461,7 +461,7 @@ FOR each step_id in manifest.phase_6.steps:
            Read this fresh per iteration; do NOT cache across the loop.
              - IF outcome == "done" AND head_at_completion == live HEAD: SKIP this step
              - IF outcome == "done" AND head_at_completion != live HEAD: RE-FIRE (treat as no record — dispatch as fresh run)
-             - IF outcome == "done" AND head_at_completion is absent: RE-FIRE (legacy record from before SHA tracking; dispatch as fresh run)
+             - IF outcome == "done" AND head_at_completion is absent: RE-FIRE (record is incomplete without a SHA; dispatch as fresh run)
              - IF outcome == "failed": RETRY (proceed to dispatch as fresh run)
              - IF outcome == "loop_back": RE-FIRE (treat as no record — dispatch as fresh run)
              - IF no record OR any other value: dispatch normally
@@ -645,7 +645,7 @@ Do NOT add any further `manage-metrics` invocations after `default:archive-plan`
 
 ### Step 4: Render Final Output Template
 
-The legacy "Mark Plan Complete" step (a separate `manage-status transition --completed 6-finalize` call) was removed. `default:archive-plan` in Step 3 now atomically marks the active phase done and sets `current_phase: complete` on the live status.json BEFORE moving the plan directory — see `manage-status:_cmd_lifecycle.py cmd_archive`. A follow-up `transition` call would always fail with `file_not_found` because archive has already invalidated the live path.
+`default:archive-plan` in Step 3 atomically marks the active phase done and sets `current_phase: complete` on the live status.json BEFORE moving the plan directory — see `manage-status:_cmd_lifecycle.py cmd_archive`. A separate `manage-status transition --completed 6-finalize` call MUST NOT be issued from this phase; it would fail with `file_not_found` because archive has already invalidated the live path.
 
 **This step ALWAYS runs** — it is NOT configurable via the `steps` list. It is the terminal action of the phase, invoked after `default:archive-plan` returns in Step 3.
 
@@ -820,7 +820,7 @@ The Step 3 dispatch loop is fully resumable across re-entries: each step's `stat
 |---------------------|-----------------------------------|--------|
 | `done` | matches live `git -C {worktree_path} rev-parse HEAD` | Skip dispatch entirely (steady-state — gate already validated this exact tree). |
 | `done` | differs from live HEAD | Re-fire (treat as no record — HEAD has advanced past the validated SHA, e.g., after a loop-back commit). |
-| `done` | `head_at_completion` field absent | Re-fire (legacy record from before SHA tracking; safe default is to re-run). |
+| `done` | `head_at_completion` field absent | Re-fire (record is incomplete without a SHA; safe default is to re-run). |
 | `failed` | n/a | Retry from scratch (unchanged). |
 | (no record) | n/a | Dispatch as a first-time run (unchanged). |
 | any other value | n/a | Dispatch as a first-time run (unchanged). |

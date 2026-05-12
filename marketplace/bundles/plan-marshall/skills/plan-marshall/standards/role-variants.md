@@ -74,7 +74,7 @@ Resolution order for any role:
 3. `models.default` — plan-wide default.
 4. `inherit` — implicit fallback when neither is set.
 
-The `models` block is **opt-in** — when absent entirely, behavior is unchanged from before this system existed (every subagent inherits the parent model). The dispatcher resolves the level at dispatch time via `manage-config models resolve-target --role <key>`, so no Claude Code restart is required after editing.
+The `models` block is **opt-in** — when absent entirely, every subagent inherits the parent session's model. The dispatcher resolves the level at dispatch time via `manage-config models resolve-target --role <key>`, so no Claude Code restart is required after editing.
 
 ### Recommended Starting Configuration
 
@@ -150,8 +150,6 @@ The `research` workflow benefits from the most capable model — every other wor
 ```
 
 (or `xhigh` if you don't need Opus-4.7's `xhigh` effort tier).
-
-All other canonical agents had no `model:` line previously, so their dispatch behaviour is unchanged when no `models` block is configured.
 
 ## Cross-References
 

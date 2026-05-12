@@ -251,7 +251,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 |-----------------|--------------------|--------|
 | `outcome == done` AND `head_at_completion == HEAD` | matches | SKIP (steady-state — review already cleared this exact tree) |
 | `outcome == done` AND `head_at_completion != HEAD` | differs | RE-FIRE (treat as no record — HEAD has advanced past the validated SHA; re-fetch comments and re-triage against the new tree) |
-| `outcome == done` AND `head_at_completion` absent | n/a | RE-FIRE (legacy record from before SHA tracking; safe default is to re-run) |
+| `outcome == done` AND `head_at_completion` absent | n/a | RE-FIRE (record is incomplete without a SHA; safe default is to re-run) |
 | `outcome == failed` | n/a | RETRY (unchanged — same as the general rule) |
 | `outcome == loop_back` | n/a | RE-FIRE (treat as no record — same as the general rule for loop_back) |
 | no record | n/a | DISPATCH (unchanged — same as the general rule) |

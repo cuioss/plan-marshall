@@ -38,7 +38,7 @@ Skill: plan-marshall:dev-general-practices
 Activate when:
 - Starting a new plan (no existing plan_id)
 - User provides task via description, lesson_id, or issue URL
-- Called by phase-agent (with skill=plan-marshall:phase-1-init)
+- Dispatched via `plan-marshall:execution-context-{level}` with `workflow: plan-marshall:phase-1-init/SKILL.md`
 
 ---
 
@@ -366,7 +366,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **Probe — directory-tree presence (NOT single-file)**:
 
-Use the `Read` tool against `<project_root>/.plan/project-architecture/_project.json` to detect whether the architecture descriptor exists. If `_project.json` is present and non-empty, the directory tree is considered to exist. The directory-tree-presence anchor is robust across schema evolutions (legacy `derived-data.json` + `llm-enriched.json` and current `_project.json` + per-module dirs).
+Use the `Read` tool against `<project_root>/.plan/project-architecture/_project.json` to detect whether the architecture descriptor exists. If `_project.json` is present and non-empty, the directory tree is considered to exist.
 
 **Greenfield branch**:
 
@@ -711,7 +711,7 @@ recovery: Use --plan-id to specify different ID, or resume existing
 
 ### Agent Integration
 
-This skill is called by `plan-marshall:phase-agent` (with `skill=plan-marshall:phase-1-init`). The agent completes the full init phase in a single call.
+This skill is dispatched as the workflow body of `plan-marshall:execution-context-{level}` with `workflow: plan-marshall:phase-1-init/SKILL.md`. The dispatched agent completes the full init phase in a single call.
 
 ### Command Integration
 
@@ -728,8 +728,7 @@ This skill does not invoke `manage-metrics` itself — phase boundary metric
 recording happens in the orchestrator (`plan-marshall:plan-marshall`
 workflows). When the orchestrator transitions out of `1-init`, it MUST use
 the fused `manage-metrics phase-boundary --prev-phase 1-init --next-phase
-2-refine` call instead of the legacy `end-phase` + `start-phase` +
-`generate` sequence. See
+2-refine` call. See
 `marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md` §
 `phase-boundary` for the API.
 

@@ -86,7 +86,7 @@ Skill directory names must not end with a noun suffix reserved for spawnable mar
 2. Check whether it ends with any reserved suffix listed above.
 3. Detection is case-sensitive against the literal directory name as it appears on disk.
 
-**Rationale**: Noun-suffix skill names (e.g. `task-executor`) cause the LLM to treat the skill as a spawnable agent and invoke it directly rather than through its wrapping phase-agent. See `pm-plugin-development:plugin-architecture` `references/skill-design.md` "Skill Naming Convention" for the full rationale.
+**Rationale**: Noun-suffix skill names (e.g. `task-executor`) cause the LLM to treat the skill as a spawnable agent and invoke it directly rather than through its dispatching `execution-context`. See `pm-plugin-development:plugin-architecture` `references/skill-design.md` "Skill Naming Convention" for the full rationale.
 
 **If violation found**: Flag as unfixable (`fixable: false`). Renaming a skill directory is a cross-cutting change that also requires updating `plugin.json`, every inbound `Skill:` reference, script notations, and the executor — all of which must happen outside this auto-fix loop.
 

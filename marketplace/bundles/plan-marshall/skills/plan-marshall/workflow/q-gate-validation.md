@@ -519,7 +519,7 @@ Match also accepts the literal `cd "$WORKTREE"` / `cd ${worktree_path}` shapes. 
 
 **Pattern WL-B — Hard-coded `.claude/worktrees/` references**:
 
-TASK-4 of plan `lesson-2026-05-07-11-001` migrated the worktree storage location from `.claude/worktrees/` to `.plan/local/worktrees/`. Hard-coded `.claude/worktrees/` substrings in skill/agent prose, script literals, or examples are now stale and MUST be rewritten.
+Worktree storage lives under `.plan/local/worktrees/`. Hard-coded `.claude/worktrees/` substrings in skill/agent prose, script literals, or examples are stale and MUST be rewritten.
 
 ```bash
 rg -n "\.claude/worktrees/" {affected_path}
@@ -529,13 +529,13 @@ The centralized [`worktree-handling.md`](../../workflow-integration-git/standard
 
 **Pattern WL-C — Missing `--plan-id` on auto-routing scripts**:
 
-TASK-10 of plan `lesson-2026-05-07-11-001` extended the manage-* script contract so that worktree-aware scripts auto-route to the correct worktree when `--plan-id` is supplied. Skills and agents that invoke an auto-routing script without passing `--plan-id` will silently target the main checkout — defeating worktree isolation.
+Worktree-aware `manage-*` scripts auto-route to the correct worktree when `--plan-id` is supplied. Skills and agents that invoke an auto-routing script without passing `--plan-id` will silently target the main checkout — defeating worktree isolation.
 
 ```bash
 rg -n "execute-script\.py\s+plan-marshall:(manage-files|manage-tasks|manage-findings|manage-references|manage-solution-outline|manage-plan-documents|manage-logging|manage-status):[^\s]+\s+[^\s]+\s+(?!.*--plan-id)" {affected_path}
 ```
 
-The whitelist of auto-routing notations matches the TASK-10 contract — see the centralized [`worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) "Auto-routing scripts" subsection for the authoritative list. Matches indicate a manage-* invocation that omits `--plan-id`.
+The whitelist of auto-routing notations is the authoritative list at [`worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) "Auto-routing scripts" subsection. Matches indicate a manage-* invocation that omits `--plan-id`.
 
 **Suppression rule**: A match in `{affected_path}` is suppressed (no finding emitted) when EITHER:
 - `{affected_path}` is the centralized `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md` itself (the standard quotes the forbidden patterns to define them), OR
@@ -562,8 +562,8 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 | Pattern | `{pattern_explanation}` |
 |---------|-------------------------|
 | WL-A | "Direct `cd <worktree_path>` shell compounds are forbidden — use `git -C`, `mvn -f`, `pytest --rootdir`, or the appropriate path-flag form documented in worktree-handling.md" |
-| WL-B | "Hard-coded `.claude/worktrees/` references are stale (TASK-4 migrated worktree storage to `.plan/local/worktrees/`) — update the reference per worktree-handling.md" |
-| WL-C | "manage-* invocation omits `--plan-id`; auto-routing scripts (TASK-10 contract) silently target the main checkout when `--plan-id` is missing — see worktree-handling.md 'Auto-routing scripts' subsection" |
+| WL-B | "Hard-coded `.claude/worktrees/` references are stale — worktree storage lives under `.plan/local/worktrees/`; update the reference per worktree-handling.md" |
+| WL-C | "manage-* invocation omits `--plan-id`; auto-routing scripts silently target the main checkout when `--plan-id` is missing — see worktree-handling.md 'Auto-routing scripts' subsection" |
 
 **Pass criteria** (silent — no finding emitted):
 - Every grep returns no matches across the three patterns, OR
@@ -651,7 +651,7 @@ Verify that every deliverable in `solution_outline.md` that adds capability to a
    - The block carries a one-sentence rationale that names a specific element of the design model (generic phrases like "matches the existing model" or "fits the architecture" fail this check — the rationale has to identify the specific extension point).
 4. Missing block, mismatched model, generic rationale, OR a `Diverges from` form without the "documented going forward" half is a violation.
 
-**Recurrence signal**: the most common shape of this failure — and the one that motivated this validator — is a deliverable that proposes script-side check evaluators for an LLM-driven aspect, OR proposes LLM-driven narrative steps that re-do work the target script already does. Both shapes contradict the target skill's design model and would be caught by Step 9c if the outline followed the procedure, but historically they survive into phase-5-execute because Step 9c was not previously enforced.
+**Recurrence signal**: the most common shape of this failure is a deliverable that proposes script-side check evaluators for an LLM-driven aspect, OR proposes LLM-driven narrative steps that re-do work the target script already does. Both shapes contradict the target skill's design model. Step 9c catches them at outline time when the outline follows the procedure; this validator catches them at Q-Gate time when it does not.
 
 **Finding emission template**:
 

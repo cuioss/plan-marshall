@@ -92,9 +92,9 @@ For each task:
 3. Mark task complete
 4. Repeat until all tasks done
 
-### After phase-agent returns
+### After execution-context returns
 
-After every `phase-agent` dispatch returns control to the orchestrator —
+After every `execution-context` dispatch returns control to the orchestrator —
 whether the agent ran the full execute loop to completion, voluntarily
 emitted a "Returning control" line with pending tasks, was cancelled by the
 host platform, raised a fatal error, or returned for a reason the
@@ -136,7 +136,7 @@ Substitute `{cause}` with one of the five values from the table above and
 `phase-boundary` call MUST only fire on a clean exit, defined as
 `termination-cause == unknown` AND `manage-tasks list --status pending`
 returning zero pending tasks. For every other classified cause, the
-orchestrator MUST re-dispatch the phase-agent (recoverable cases) or escalate
+orchestrator MUST re-dispatch the execution-context (recoverable cases) or escalate
 to the user (`error` / repeated `harness_cancellation`) — it MUST NOT
 transition to `6-finalize` while pending work remains. This fence is the
 control-flow analogue of the Step 12a "Pending-tasks transition guard" in

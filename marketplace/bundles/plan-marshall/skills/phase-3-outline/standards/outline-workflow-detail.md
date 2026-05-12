@@ -772,9 +772,9 @@ Task: plan-marshall:{target}
 
 The agent applies the following mechanical validators automatically when invoked from this phase. Each validator is documented in `plan-marshall/workflow/q-gate-validation.md` with its activation condition, detection logic, finding emission template, and positive/negative examples. The activation is dispatched by the agent based on phase context — phase-3-outline does not pass validator names; the agent reads `phase: 3-outline` from the audit and runs the applicable subset.
 
-| Validator (q-gate-validation-agent §) | Artifact consumed | Finding `--source` |
+| Validator (`plan-marshall/workflow/q-gate-validation.md` §) | Artifact consumed | Finding `--source` |
 |---------------------------------------|-------------------|--------------------|
-| Consumer Sweep Completeness (§ 2.9) — shipped by PR #323 | `solution_outline.md`, worktree grep results | `qgate` (legacy unscoped source — preserved for backwards compatibility) |
+| Consumer Sweep Completeness (§ 2.9) | `solution_outline.md`, worktree grep results | `qgate` (unscoped source) |
 | Argparse Validator (§ 2.10) | `solution_outline.md` (every embedded `python3 .plan/execute-script.py ...` invocation), live `--help` output of each cited script | `qgate-argparse` |
 | Tier-Delta Validator (§ 2.13) | `solution_outline.md` (tiered/variant section pairs and their delta tables) | `qgate-tier-delta` |
 | Self-Modifying Phased-Rollout Validator (§ 2.16) | `solution_outline.md` (each deliverable's Affected files + compatibility header + narrative), `self-modifying-classification.md` heuristic | `qgate-self-modifying-rollout` |

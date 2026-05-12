@@ -26,7 +26,7 @@ Authors configure `models.roles.<key>` (hierarchical kebab-case keys like `cross
 
 | Architecture (extension point — workflow body)
 | link:../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-execution-context-workflow.md[`extension-api/standards/ext-point-execution-context-workflow.md`]
-| Contract every workflow doc dispatched through `execution-context` satisfies: `implements:` declaration in frontmatter (or AsciiDoc attribute), input contract (`plan_id`, `WORKTREE`, `skills[]`, plus workflow-specific runtime inputs), output contract (`status` + `display_detail` + workflow-specific return fields).
+| Contract every workflow doc dispatched through `execution-context` satisfies: `implements:` declaration in YAML frontmatter, input contract (`plan_id`, `WORKTREE`, `skills[]`, plus workflow-specific runtime inputs), output contract (`status` + `display_detail` + workflow-specific return fields).
 
 | Architecture (level binding)
 | link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-levels.md[`plan-marshall/standards/model-levels.md`]
@@ -72,7 +72,7 @@ doc/refactor/02-build-system/plan.md § Variant Emission   (build view)
 * **Configure a role** — set `plan.models.roles.<group>.<key>` in `.plan/marshal.json` to one of `low | medium | high | xhigh | xxhigh | inherit`. See `role-variants.md` for the polymorphic resolution rules.
 * **Resolve a role at dispatch** — `python3 .plan/execute-script.py plan-marshall:manage-config:manage-config models resolve-target --role <key>` returns the canonical or variant name directly (e.g. `execution-context` for `inherit`, `execution-context-high` otherwise). See `model-roles.md`.
 * **Add a new workflow doc** — place it under `{bundle}:{skill}/workflow/{file}.md` (single-phase consumer) or `plan-marshall/skills/plan-marshall/workflow/{file}.md` (multi-phase / cross-cutting), declare `implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow` in frontmatter, and document the Output contract (`status` + `display_detail`).
-* **Inspect emitted variants** — generate the Claude target output (`python3 marketplace/targets/generate.py --target claude --output target/claude`) and look under `target/claude/plan-marshall/agents/execution-context[-{level}].md`. The canonical no-suffix file remains the `inherit` target.
+* **Inspect emitted variants** — generate the Claude target output (`python3 marketplace/targets/generate.py --target claude --output target/claude`) and look under `target/claude/plan-marshall/agents/execution-context[-{level}].md`. The canonical no-suffix file is the `inherit` target.
 
 == Rationale for keeping the canonical specs in `marketplace/bundles/`
 

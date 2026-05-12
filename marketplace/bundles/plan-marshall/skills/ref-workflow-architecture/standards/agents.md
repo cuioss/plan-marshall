@@ -100,11 +100,10 @@ Understanding when to use `Skill:` vs `Task:` is critical for proper context man
 
 | Scenario | Use | Reason |
 |----------|-----|--------|
-| Phase invocation from orchestrator | `Skill:` | Need to spawn analysis agents |
-| Domain extension loading | `Skill:` | Inherits spawning ability |
-| Leaf-level file analysis | `Task:` | Isolated, focused work |
-| Init phase (no spawning needed) | `Task:` | Simple, isolated execution |
-| Plan phase (no spawning needed) | `Task:` | Simple, isolated execution |
+| Workflow needs `AskUserQuestion` against the user | `Skill:` (main context) | Subagents cannot reach the user |
+| Workflow spawns further `Task:` dispatches internally | `Skill:` (main context) | Subagents cannot spawn subagents |
+| Workflow is a focused, self-contained LLM job with a return-TOON contract | `Task: execution-context-{level}` | Pinned model/effort per role key, isolated context |
+| Per-iteration parallel work (one envelope per input item) | `Task:` fan-out | Only when each subagent runs independently |
 
 ---
 
@@ -165,7 +164,7 @@ Each agent follows the same pattern:
 │  │  name: {agent-name}                                                  │  │
 │  │  description: {what it does}                                         │  │
 │  │  tools: Read, Bash, ...                                              │  │
-│  │  model: sonnet                                                       │  │
+│  │  implements: plan-marshall:extension-api/standards/...               │  │
 │  │  ---                                                                 │  │
 │  │                                                                      │  │
 │  │  # {Agent Name}                                                      │  │
@@ -197,7 +196,7 @@ Each agent follows the same pattern:
 - Spawn other agents (subagent constraint)
 - Invoke commands (commands are user-facing)
 - Hardcode skill names (must resolve from marshal.json)
-- Cross scope boundaries (init agent doesn't create tasks)
+- Cross scope boundaries (the workflow doc declares its scope; the dispatcher does not extend it)
 
 **MUST DO:**
 - Access `.plan/` files ONLY via execute-script.py

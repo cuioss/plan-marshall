@@ -34,7 +34,7 @@ Skill: plan-marshall:dev-general-practices
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
 - On phase entry (Step 4), resolve the active worktree absolute path and surface it as a `[STATUS]` work-log line so it stays visible in model context throughout the run.
-- Every subagent dispatch (Task / Skill / phase-agent invocation) MUST embed the Worktree Header in the dispatch prompt when a worktree is active (see **Dispatch Protocol** below) AND MUST pass `plan_id` as an input parameter to satisfy the subagent's Input Contract (e.g., `execute-task`, `phase-agent`). Prompt embedding and parameter passing are both required — the former propagates the constraint through free-form delegation, the latter satisfies the structured interface.
+- Every subagent dispatch (Task / Skill / execution-context invocation) MUST embed the Worktree Header in the dispatch prompt when a worktree is active (see **Dispatch Protocol** below) AND MUST pass `plan_id` as an input parameter to satisfy the subagent's Input Contract (e.g., `execute-task`, `execution-context`). Prompt embedding and parameter passing are both required — the former propagates the constraint through free-form delegation, the latter satisfies the structured interface.
 
 See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (path convention, never-edit-main-checkout invariant, dispatch header propagation, `--plan-id` two-state contract).
 
@@ -44,14 +44,14 @@ The Phase Entry Protocol's `phase_handshake verify --phase {previous_phase_key} 
 
 ## Dispatch Protocol (Worktree Header)
 
-**REQUIREMENT**: When the plan runs in an isolated worktree (see the `[STATUS] Active worktree` work-log line from Step 4), every subagent dispatch prompt — including `Task:`, `Skill:` invocations that accept free-form prompts, and `phase-agent` delegations — MUST begin with the canonical path-free Worktree Header:
+**REQUIREMENT**: When the plan runs in an isolated worktree (see the `[STATUS] Active worktree` work-log line from Step 4), every subagent dispatch prompt — including `Task:`, `Skill:` invocations that accept free-form prompts, and `execution-context` delegations — MUST begin with the canonical path-free Worktree Header:
 
 ```
 WORKTREE: --plan-id {plan_id}
 Resolved internally via `manage-status get-worktree-path`. All Edit/Write/Read tool calls and tool invocations (git -C, mvn -f, etc.) MUST target the resolved worktree path, NOT the main checkout. See workflow-integration-git/standards/worktree-handling.md for the canonical contract.
 ```
 
-The header is **path-free**: it carries `--plan-id {plan_id}` rather than the absolute worktree path. The dispatched skill resolves the path internally via `manage-status get-worktree-path --plan-id {plan_id}`. This replaces earlier path-leaking forms (`--project-dir <abs>`, `--worktree-path <abs>`) so the worktree absolute path no longer appears in dispatch prompts. The complete contract — header semantics, propagation rules, the `--plan-id` two-state binding, and rationale — is documented in `workflow-integration-git/standards/worktree-handling.md` § Dispatch Protocol.
+The header is **path-free**: it carries `--plan-id {plan_id}` rather than the absolute worktree path. The dispatched skill resolves the path internally via `manage-status get-worktree-path --plan-id {plan_id}`. The worktree absolute path MUST NOT appear in dispatch prompts. The complete contract — header semantics, propagation rules, the `--plan-id` two-state binding, and rationale — is documented in `workflow-integration-git/standards/worktree-handling.md` § Dispatch Protocol.
 
 The `[STATUS] Active worktree: ...` work-log line is the observability signal that the worktree was detected; embedding the header in every dispatch prompt is the active propagation mechanism. Skip the header only when no worktree is active.
 
@@ -310,7 +310,7 @@ Locate the `phases[name=5-execute]` row in the returned TOON and read its `statu
     work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Starting execute phase — {N} tasks pending"
   ```
 
-- If `status == in_progress` (re-entry; e.g., orchestrator re-dispatched a phase-agent after a previous turn ended without completing the queue) → emit:
+- If `status == in_progress` (re-entry; e.g., orchestrator re-dispatched a execution-context after a previous turn ended without completing the queue) → emit:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -351,7 +351,7 @@ Returns next task with status `pending` or `in_progress`, including embedded goa
 
 For each step in task's `steps[]` array:
 1. Parse the step text
-2. Execute the action (delegate if specified) — when delegating to a subagent via `Task:`, `Skill:` (prompt-accepting), or `phase-agent`, the prompt MUST begin with the Worktree Header from the **Dispatch Protocol** section above (omit only when no worktree is active).
+2. Execute the action (delegate if specified) — when delegating to a subagent via `Task:`, `Skill:` (prompt-accepting), or `execution-context`, the prompt MUST begin with the Worktree Header from the **Dispatch Protocol** section above (omit only when no worktree is active).
 3. Mark step complete via `manage-tasks:finalize-step`
 
 ### Step 7: Mark Step Complete
@@ -366,7 +366,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 
 ### Step 8: Log Task Completion
 
-After each task completes, the canonical `[OUTCOME]` work-log line is emitted **inside `manage-tasks finalize-step`** — see `manage-tasks/SKILL.md` § "Script-Level [OUTCOME] Emission" for the contract. The script fires exactly one `[OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-NNN: {title} ({M} steps)` line on the task-closing finalize call. **Skills MUST NOT emit a manual `[OUTCOME]` line here** — duplicating the script-level guard creates double entries, and re-implementing the emission in skill prose was the failure mode that lesson `2026-05-08-14-001` documents (the line was lost whenever a phase-agent was re-dispatched and the original agent's working context was discarded before its caller-side `[OUTCOME]` could fire).
+After each task completes, the canonical `[OUTCOME]` work-log line is emitted **inside `manage-tasks finalize-step`** — see `manage-tasks/SKILL.md` § "Script-Level [OUTCOME] Emission" for the contract. The script fires exactly one `[OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-NNN: {title} ({M} steps)` line on the task-closing finalize call. **Skills MUST NOT emit a manual `[OUTCOME]` line here** — duplicating the script-level guard creates double entries, and re-implementing the emission in skill prose was the failure mode that lesson `2026-05-08-14-001` documents (the line was lost whenever a execution-context was re-dispatched and the original agent's working context was discarded before its caller-side `[OUTCOME]` could fire).
 
 Immediately after the script-emitted `[OUTCOME]` line, emit one `[ARTIFACT]` work-log entry per file the task changed by diffing the task-start SHA (recorded at `in_progress` transition as `task_start_sha`) against the current HEAD. See `standards/workflow.md` § **Artifact Emission at Task Completion** for the authoritative procedure, status-code mapping, and rename-handling rule. The artifact entries use a deliberate three-segment caller prefix `(plan-marshall:phase-5-execute:{task_number})` — a documented exception to the usual two-segment `(bundle:skill)` convention in [manage-logging/standards/log-format.md](../manage-logging/standards/log-format.md). Emit nothing when the diff is empty. This step precedes `manage-tasks next` so the audit trail for each task is flushed before the orchestrator advances.
 
@@ -699,9 +699,9 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 When `per_task_budget_reserve` is set, use its value as `N`. **Fallback when the knob is absent**: use the conservative default `N = 50000` tokens. The fallback exists so plans that have not yet migrated to the manifest-driven model still observe a deterministic yield boundary rather than running until the host platform forces a `harness_cancellation`. Plans that need a different reserve raise the value in `marshal.json`'s `plan.phase-5-execute.per_task_budget_reserve` slot.
 
-**Cross-reference to the three terminal outcomes** — the sentinel is the **continue-vs-yield** decision, not a fourth terminal outcome. When the sentinel says "yield", the agent still MUST exit via one of the three documented terminal paths above (queue empty → transition; fatal error → structured error TOON; triage `blocked` → manage-tasks status update). Yielding does NOT mean "return a partial-completion checkpoint" — that path is explicitly forbidden by the section above. The orchestrator re-dispatches the phase-agent on the next round; the in-flight task's state is already persisted by `manage-tasks finalize-step` so resumption is lossless.
+**Cross-reference to the three terminal outcomes** — the sentinel is the **continue-vs-yield** decision, not a fourth terminal outcome. When the sentinel says "yield", the agent still MUST exit via one of the three documented terminal paths above (queue empty → transition; fatal error → structured error TOON; triage `blocked` → manage-tasks status update). Yielding does NOT mean "return a partial-completion checkpoint" — that path is explicitly forbidden by the section above. The orchestrator re-dispatches the execution-context on the next round; the in-flight task's state is already persisted by `manage-tasks finalize-step` so resumption is lossless.
 
-**Audit diagnostic ledger** — when investigating throughput regressions (e.g., "why did this run process 1 task at ~119k tokens while a prior run processed 4 at ~210k?"), compare the work-log entries between `phase-agent`-mediated dispatches and direct `phase-5-execute` dispatches. The phase-agent layer adds a small fixed cost per dispatch (skill-load + Worktree Header echo); the difference between the two trace shapes is the per-dispatch overhead and is the first thing to inspect when budget accounting drifts.
+**Audit diagnostic ledger** — when investigating throughput regressions (e.g., "why did this run process 1 task at ~119k tokens while a prior run processed 4 at ~210k?"), inspect the per-dispatch overhead in the work log. Each `execution-context` dispatch carries a fixed cost (skill-load preamble + Worktree Header echo + return-TOON marshalling); the ratio of overhead to useful work per dispatch is the first thing to check when budget accounting drifts.
 
 ---
 

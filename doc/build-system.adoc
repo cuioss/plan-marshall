@@ -40,11 +40,11 @@ The middle hop (`target/claude/`) is produced by `marketplace/targets/generate.p
 The `marketplace/targets/claude/emitter.py` reader walks each bundle. For an agent declaring `implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor`, the emitter produces six files:
 
 1. The **canonical** no-suffix file (e.g. `execution-context.md`) with `implements:` and `levels:` stripped. Claude Code dispatches this when the resolver returns `inherit`. The dispatched subagent inherits the parent session's model.
-2. Five **variants** (`execution-context-{low|medium|high|xhigh|xxhigh}.md`), each with `model:` and `effort:` baked into the frontmatter from the level → primitive mapping in [`model-levels.md`](../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-levels.md).
+2. Five **variants** (`execution-context-{low|medium|high|xhigh|xxhigh}.md`), each with `model:` and `effort:` baked into the frontmatter from the level → primitive mapping in link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-levels.md[`model-levels.md`].
 
 `plugin.json` registers all six entries for the canonical so Claude Code's agent registry sees every variant.
 
-After the refactor, the marketplace ships exactly one role-eligible canonical agent: `plan-marshall:execution-context`. Every plan-marshall `Task:` invocation dispatches one of its six variants. The workflow body the agent runs is supplied at dispatch time via the `workflow` field in the prompt body, per [`ext-point-execution-context-workflow`](../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-execution-context-workflow.md).
+The marketplace ships exactly one role-eligible canonical agent: `plan-marshall:execution-context`. Every plan-marshall `Task:` invocation dispatches one of its six variants. The workflow body the agent runs is supplied at dispatch time via the `workflow` field in the prompt body, per link:../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-execution-context-workflow.md[`ext-point-execution-context-workflow.md`].
 
 == Adding a Workflow Doc
 
@@ -54,11 +54,11 @@ No new agent file is required — the new workflow is dispatched through the exi
 
 == Dispatch-Cost Considerations
 
-Each `Task:` dispatch carries a fixed overhead (skill-load preamble, Worktree Header echo, return-TOON marshalling). The granularity heuristics in [`dev-general-practices`](../marketplace/bundles/plan-marshall/skills/dev-general-practices) govern when a step belongs in a dispatch envelope vs. inline in the orchestrator's context:
+Each `Task:` dispatch carries a fixed overhead (skill-load preamble, Worktree Header echo, return-TOON marshalling). The granularity heuristics in link:../marketplace/bundles/plan-marshall/skills/dev-general-practices[`dev-general-practices`] govern when a step belongs in a dispatch envelope vs. inline in the orchestrator's context:
 
 * **Script-over-dispatch**: deterministic work (regex matches, structural checks, build invocations) lives in a script; the dispatch is reserved for LLM judgement.
 * **Bundle-shared-context**: a multi-step LLM workflow runs inside ONE dispatch envelope rather than N sequential dispatches.
-* **Per-iteration only when parallel-or-different-models**: spinning up N parallel dispatches is justified when each subagent runs independently (the only such case in the post-refactor surface is `cross.manage-architecture-enrich-module`).
+* **Per-iteration only when parallel-or-different-models**: spinning up N parallel dispatches is justified when each subagent runs independently — the sole such role in the marketplace is `cross.manage-architecture-enrich-module`.
 
 == Adapter System
 

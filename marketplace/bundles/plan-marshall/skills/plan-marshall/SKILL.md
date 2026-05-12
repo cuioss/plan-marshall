@@ -17,7 +17,7 @@ Unified entry point for plan lifecycle management covering all 6 phases.
 - Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
 - Never implement tasks directly — this skill creates and manages plans only
 - Do not invent script notations — use only those documented in workflow files
-- Never spawn an unconstrained generic subagent for any work inside a phase (1-init through 6-finalize). Use `plan-marshall:phase-agent` with an explicit `skill=` argument, a dedicated named plan-marshall agent, or inline main-context execution. A generic subagent has no plan-marshall enforcement context, inherits broad tool access, and will violate workflow hard rules. Subagent rules propagate through the agent definition, not through the caller's prompt. (Lesson: `2026-04-24-12-001`.)
+- Never spawn an unconstrained generic subagent (e.g. `Task: general-purpose`) for any work inside a phase (1-init through 6-finalize). Use `plan-marshall:execution-context-{level}` with a `workflow:` notation pointing at the workflow doc, or inline main-context execution. A generic subagent has no plan-marshall enforcement context, inherits broad tool access, and will violate workflow hard rules. Subagent rules propagate through the agent definition, not through the caller's prompt. (Lesson: `2026-04-24-12-001`.)
 
 **Constraints:**
 - Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
@@ -196,4 +196,4 @@ The resolutions counted as **resolved** (and therefore non-blocking) are: `fixed
 
 | Agent | Purpose |
 |-------|---------|
-| `plan-marshall:phase-agent` | Generic phase agent: loads caller-specified skill and delegates |
+| `plan-marshall:execution-context` | Generic dispatcher: loads caller-specified skills + workflow doc and follows it |

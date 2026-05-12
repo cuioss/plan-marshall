@@ -8,7 +8,7 @@ The `ext-point-dynamic-level-executor` extension point declares that a marketpla
 
 When an agent declares this extension point, the build target emits one variant agent file per ordinal level (`low`, `medium`, `high`, `xhigh`, `xxhigh`) into `target/claude/{bundle}/agents/`, each variant pinned to a specific `(model, effort)` primitive. The canonical no-suffix file is also emitted (with `implements:` and `levels:` stripped) so the `inherit` resolution case dispatches the user-configured-or-default model. Dispatch sites resolve the role's level via `manage-config models resolve-target --role <key>` (which returns the canonical name when level is `inherit`/empty, otherwise the per-level variant `execution-context-{level}`) and call the matching variant by name.
 
-The marketplace ships exactly one implementor — `plan-marshall:execution-context` — the single generic dispatcher that drives every plan-marshall `Task:` invocation. The per-named-agent variant proliferation (11 canonicals × 6 levels = 66 emitted files) was retired in favour of a workflow-doc ext-point (`ext-point-execution-context-workflow`) that allows arbitrary workflow bodies to be dispatched through the same six emitted variants.
+The marketplace ships exactly one implementor — `plan-marshall:execution-context` — the single generic dispatcher that drives every plan-marshall `Task:` invocation. Arbitrary workflow bodies are dispatched through the six emitted variants via the companion workflow-doc ext-point (`ext-point-execution-context-workflow`).
 
 The end-to-end trace:
 
@@ -109,25 +109,25 @@ The build target enforces these rules at emission time:
 | Variant `name:` matches `{canonical-name}-{level}` exactly | Per-variant | Build error: variant name mismatch |
 | Canonical no-suffix file always emitted (regardless of `levels:`) | Per-agent | Build error: canonical missing |
 
-The plugin-doctor `hardcoded-model-on-canonical` lint rule (deliverable 9) enforces the first two rules at edit time, before the build target runs.
+The plugin-doctor `hardcoded-model-on-canonical` lint rule enforces the first two rules at edit time, before the build target runs.
 
 ## Worked Example
 
 ### Canonical agent (input)
 
-`marketplace/bundles/plan-marshall/agents/sonar-roundtrip-agent.md`:
+`marketplace/bundles/plan-marshall/agents/execution-context.md`:
 
 ```yaml
 ---
-name: sonar-roundtrip-agent
-description: SonarQube/SonarCloud round-trip — fetch, triage, fix or suppress issues
+name: execution-context
+description: Generic dispatcher for every plan-marshall Task: invocation
 implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor
-tools: [Read, Write, Edit, Bash, Grep, Glob, Task, Skill]
+tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill
 ---
 
-# Sonar Roundtrip Agent
+# Execution Context
 
-...agent body unchanged...
+...agent body...
 ```
 
 ### Emitted files (output)

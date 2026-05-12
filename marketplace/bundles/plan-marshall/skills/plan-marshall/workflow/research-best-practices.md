@@ -266,7 +266,7 @@ Purpose: allow users to manually improve this workflow based on real execution e
 
 If you discover issues or improvements during execution, activate `plan-marshall:manage-lessons` and record:
 
-- Component: `{type: "skill", name: "dev-general-practices", standards: "research-best-practices.md", bundle: "plan-marshall"}`
+- Component: `{type: "skill", name: "plan-marshall", workflow: "research-best-practices.md", bundle: "plan-marshall"}`
 - Category: bug | improvement | pattern | anti-pattern
 - Summary and detail of the finding
 

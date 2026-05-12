@@ -255,8 +255,7 @@ This skill does not invoke `manage-metrics` itself. The orchestrator
 (`plan-marshall:plan-marshall` workflows) records the `2-refine → 3-outline`
 boundary via the fused `manage-metrics phase-boundary` call — see
 `marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md` §
-`phase-boundary` for the API. The legacy `end-phase` + `start-phase` +
-`generate` sequence is no longer used at orchestrator boundaries.
+`phase-boundary` for the API.
 
 ---
 

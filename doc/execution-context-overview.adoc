@@ -3,15 +3,9 @@
 
 Why plan-marshall ships exactly one role-eligible agent (`plan-marshall:execution-context`), and how every plan-marshall `Task:` invocation dispatches through it.
 
-== The Proliferation Problem
+== One Generic Dispatcher
 
-Before the consolidation, plan-marshall shipped eleven canonical agents (`phase-agent`, `q-gate-validation-agent`, `automated-review-agent`, `create-pr-agent`, `sonar-roundtrip-agent`, `lessons-capture-agent`, `research-best-practices-agent`, `detect-change-type-agent`, plus three pm-plugin-development agents). Each canonical declared `implements: ext-point-dynamic-level-executor`, so the Claude target emitted six variants per canonical — sixty-six emitted agent files in total. Every new dispatch target (a new LLM-judgement workflow worth its own model-pinning role) meant a new canonical, six new emitted files, and a new role-key in the registry.
-
-Each new agent file also duplicated a body of dispatcher boilerplate: load `dev-general-practices`, load skill, locate workflow doc, execute, emit return TOON. That boilerplate diverged across canonicals (subtle differences in worktree handling, log-line formats, return-shape constraints) and was a maintenance hazard.
-
-== The One-Dispatcher Answer
-
-`plan-marshall:execution-context` is the sole role-eligible canonical agent. It owns the dispatcher boilerplate exactly once and parameterises the workflow body at dispatch time. The caller passes five prompt-body fields:
+`plan-marshall:execution-context` is the sole role-eligible canonical agent in the marketplace. It owns the dispatcher boilerplate (load `dev-general-practices`, load caller-specified skills, locate workflow doc, execute, emit return TOON) exactly once and parameterises the workflow body at dispatch time. The caller passes five prompt-body fields:
 
 * `name` — human label for logging and `mark-step-done`
 * `plan_id` — plan identifier (or sentinel `none` for free-standing dispatches)
@@ -20,6 +14,8 @@ Each new agent file also duplicated a body of dispatcher boilerplate: load `dev-
 * `WORKTREE` — repo-relative working directory (`.` for main checkout)
 
 The dispatcher loads `dev-general-practices` implicitly, then the caller-specified `skills[]`, then reads the resolved workflow path and follows it. Workflow-specific runtime inputs (`finding_type`, `track`, `scope`, etc.) flow through additional prompt-body fields the workflow doc declares.
+
+A new LLM-judgement workflow worth pinning its own model is added by writing a new workflow doc that declares `implements: ext-point-execution-context-workflow` and registering a new role key in the registry. No new agent file, no new emitted variants.
 
 == Level Variants
 

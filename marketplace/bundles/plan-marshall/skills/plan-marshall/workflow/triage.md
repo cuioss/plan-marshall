@@ -4,7 +4,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 # Triage Workflow
 
-Single source of truth for the per-finding triage workflow shared by every call site that needs FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over findings in the per-plan findings store. Dispatched under the `cross.triage` role key. The smart-grouping algorithm spec lives in [`../../dev-general-practices/standards/granularity.md`](../../dev-general-practices/standards/granularity.md) § 5.2; this document is the executable consumer.
+Single source of truth for the per-finding triage workflow shared by every call site that needs FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over findings in the per-plan findings store. Dispatched under the `cross.triage` role key. The smart-grouping algorithm is documented inline below (§ Step 2: Smart grouping).
 
 ## Call sites
 

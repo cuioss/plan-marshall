@@ -6,7 +6,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 Per-module enrichment workflow. Reads a module's discovered data, samples its documentation and source, infers `purpose` / `responsibility` / `key_packages` / `dependencies` / `skill_domains`, and writes the enrichment via the `architecture enrich` script API.
 
-Dispatched under the `cross.manage-architecture-enrich-module` role key — the only per-iteration **parallel** dispatch in the post-refactor contract. Phase-6-finalize `architecture-refresh` Tier-1 dispatches one execution-context per affected module, all in parallel.
+Dispatched under the `cross.manage-architecture-enrich-module` role key — the only per-iteration **parallel** dispatch in the marketplace. Phase-6-finalize `architecture-refresh` Tier-1 dispatches one execution-context per affected module, all in parallel.
 
 ## Inputs
 

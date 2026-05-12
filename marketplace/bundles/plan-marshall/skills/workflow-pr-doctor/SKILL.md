@@ -36,7 +36,7 @@ Diagnose and fix pull request issues with parameterized checks.
 | `handoff` | optional | Handoff structure from previous phase (JSON, see schema below) |
 | `max-fix-attempts` | optional | Maximum fix-verify-commit cycles before giving up (default: 3) |
 | `plan-id` | optional | Plan identifier — when set, pr-doctor resolves the active worktree via `manage-status get-worktree-path` and forwards `--project-dir {resolved}` to every child script. Mutually exclusive with `project-dir`. |
-| `project-dir` | optional | Absolute path to the checkout/worktree to operate against (legacy / escape hatch). When set, pr-doctor forwards `--project-dir {value}` to every child script invocation (ci, build, sonar, github/gitlab). Mutually exclusive with `plan-id`. Omit both for default behavior (inherited cwd). |
+| `project-dir` | optional | Absolute path to the checkout/worktree to operate against (explicit-override escape hatch). When set, pr-doctor forwards `--project-dir {value}` to every child script invocation (ci, build, sonar, github/gitlab). Mutually exclusive with `plan-id`. Omit both for default behavior (inherited cwd). |
 
 ## --plan-id / --project-dir Forwarding Contract
 

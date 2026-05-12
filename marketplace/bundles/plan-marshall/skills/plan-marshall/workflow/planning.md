@@ -224,7 +224,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 2: Superseded-lesson stub cleanup
 
-Prune redirect stubs (`.md` files with `status: superseded` frontmatter and a matching tombstone). Retention is hardcoded to `0` days so a freshly superseded lesson is pruned on the very next cleanup invocation; the workflow no longer reads `system.retention.lessons_superseded_days` from marshal.json. Tombstones at `.tombstones/{id}.json` are preserved so id resolution survives.
+Prune redirect stubs (`.md` files with `status: superseded` frontmatter and a matching tombstone). Retention is hardcoded to `0` days so a freshly superseded lesson is pruned on the very next cleanup invocation. Tombstones at `.tombstones/{id}.json` are preserved so id resolution survives.
 
 **2a — Dry-run to enumerate candidates:**
 
