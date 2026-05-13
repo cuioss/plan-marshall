@@ -9,6 +9,7 @@ Covers:
   - boundary works even when the previous phase had no start_time
 """
 
+import json
 from argparse import Namespace
 
 from manage_metrics import cmd_phase_boundary, cmd_start_phase  # type: ignore[import-not-found]
@@ -190,3 +191,115 @@ def test_phase_boundary_equivalent_to_three_call_sequence():
         assert 'agent_duration_ms: 600000' in content
         # Same field start-phase would have written for next
         assert '[5-execute]' in content
+
+
+# =============================================================================
+# 1-init start_time backfill (D4)
+# =============================================================================
+
+
+def _seed_status_created(plan_dir, created_ts: str) -> None:
+    """Write a minimal status.json with the given `created` timestamp."""
+    status_path = plan_dir / 'status.json'
+    status_path.write_text(
+        json.dumps({'plan_id': plan_dir.name, 'created': created_ts}),
+        encoding='utf-8',
+    )
+
+
+def test_phase_boundary_backfills_1init_start_time_from_status_created():
+    """1-init lacks start_time → cmd_phase_boundary backfills from status.json.created."""
+    with PlanContext(plan_id='boundary-backfill-01') as ctx:
+        # status.json with a known `created` timestamp, well before end_now.
+        created_ts = '2026-03-27T09:00:00+00:00'
+        _seed_status_created(ctx.plan_dir, created_ts)
+
+        # No cmd_start_phase call → metrics.toon has no 1-init.start_time.
+        result = cmd_phase_boundary(
+            _ns_boundary('boundary-backfill-01', prev_phase='1-init', next_phase='2-refine')
+        )
+        assert result['status'] == 'success'
+
+        content = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
+        # Backfilled start_time matches status.json.created.
+        assert f'start_time: {created_ts}' in content
+        # Duration computation kicked in (real wall-clock between created_ts and end_time).
+        assert 'duration_seconds:' in content
+        # Surfaced via prev_duration_seconds on the result (positive number).
+        assert 'prev_duration_seconds' in result
+        assert result['prev_duration_seconds'] > 0
+
+
+def test_phase_boundary_preserves_existing_1init_start_time():
+    """1-init.start_time already present → cmd_phase_boundary does NOT overwrite it."""
+    with PlanContext(plan_id='boundary-backfill-02') as ctx:
+        cmd_start_phase(_ns_start_phase('boundary-backfill-02', '1-init'))
+        # Override status.json.created with a value that would differ if backfill ran.
+        _seed_status_created(ctx.plan_dir, '1999-01-01T00:00:00+00:00')
+
+        # Capture the start_time written by cmd_start_phase.
+        content_pre = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
+        # Extract start_time from the 1-init block.
+        init_idx = content_pre.index('[1-init]')
+        block = content_pre[init_idx:]
+        start_line = next(line for line in block.splitlines() if line.strip().startswith('start_time:'))
+        original_start = start_line.split('start_time:', 1)[1].strip()
+        assert original_start != '1999-01-01T00:00:00+00:00'
+
+        cmd_phase_boundary(_ns_boundary('boundary-backfill-02', prev_phase='1-init', next_phase='2-refine'))
+
+        content_post = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
+        # status.json.created stays UNUSED — the original start_time wins.
+        assert '1999-01-01T00:00:00+00:00' not in content_post
+        assert f'start_time: {original_start}' in content_post
+
+
+def test_phase_boundary_no_backfill_for_non_1init_prev_phase():
+    """prev_phase != '1-init' → no status.json read, no backfill, regression guard preserved."""
+    with PlanContext(plan_id='boundary-backfill-03') as ctx:
+        # status.json present and would be readable, but the phase is not 1-init.
+        _seed_status_created(ctx.plan_dir, '2026-03-27T09:00:00+00:00')
+
+        # Transition 2-refine → 3-outline without a prior start-phase.
+        cmd_phase_boundary(_ns_boundary('boundary-backfill-03', prev_phase='2-refine', next_phase='3-outline'))
+
+        content = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
+        # The status.json.created timestamp must not have leaked into the 2-refine row.
+        refine_idx = content.index('[2-refine]')
+        next_idx = content.index('[3-outline]') if '[3-outline]' in content else len(content)
+        prev_block = content[refine_idx:next_idx]
+        assert 'start_time' not in prev_block
+
+
+def test_phase_boundary_status_json_missing_no_exception():
+    """status.json missing → call succeeds, 1-init.start_time remains absent, no exception raised."""
+    with PlanContext(plan_id='boundary-backfill-04') as ctx:
+        # Do NOT seed status.json. No prior cmd_start_phase either.
+        result = cmd_phase_boundary(
+            _ns_boundary('boundary-backfill-04', prev_phase='1-init', next_phase='2-refine')
+        )
+        assert result['status'] == 'success'
+        # Backfill skipped silently → no start_time, no duration_seconds.
+        content = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
+        init_idx = content.index('[1-init]')
+        refine_idx = content.index('[2-refine]') if '[2-refine]' in content else len(content)
+        prev_block = content[init_idx:refine_idx]
+        assert 'start_time' not in prev_block
+        assert 'duration_seconds' not in prev_block
+
+
+def test_phase_boundary_status_json_malformed_no_exception():
+    """status.json malformed → call succeeds, no backfill, no exception."""
+    with PlanContext(plan_id='boundary-backfill-05') as ctx:
+        status_path = ctx.plan_dir / 'status.json'
+        status_path.write_text('{this is not valid json', encoding='utf-8')
+
+        result = cmd_phase_boundary(
+            _ns_boundary('boundary-backfill-05', prev_phase='1-init', next_phase='2-refine')
+        )
+        assert result['status'] == 'success'
+        content = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
+        init_idx = content.index('[1-init]')
+        refine_idx = content.index('[2-refine]') if '[2-refine]' in content else len(content)
+        prev_block = content[init_idx:refine_idx]
+        assert 'start_time' not in prev_block
