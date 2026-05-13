@@ -344,6 +344,82 @@ worktrees[2]{plan_id,path,branch}:
   other,/repo/.plan/local/worktrees/other,feature/other
 ```
 
+## Canonical invocations
+
+The canonical argparse surface for `git_workflow.py`. The D4 plugin-doctor analyzer
+(`_analyze_manage_invocation.py`) reads this section as source-of-truth for markdown
+notation occurrences across the marketplace. Consuming skills xref this section by
+name (e.g., "see `workflow-integration-git` Canonical invocations →
+`worktree-create`") instead of restating the command inline. The sibling
+`git_provider.py` module exposes shared helpers (`run_git`, provider declarations)
+and has no CLI surface — it is not invoked directly.
+
+### format-commit
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow format-commit \
+  --type TYPE --subject TEXT \
+  [--scope SCOPE] [--body TEXT] [--breaking TEXT] [--footer TEXT]
+```
+
+### analyze-diff
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow analyze-diff \
+  --worktree-path ABS_PATH [--cached]
+```
+
+### detect-artifacts
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow detect-artifacts \
+  [--root DIR] [--no-gitignore]
+```
+
+### worktree-path
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-path \
+  --plan-id PLAN_ID
+```
+
+### worktree-create
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-create \
+  --plan-id PLAN_ID --branch BRANCH \
+  [--base BASE_REF]
+```
+
+### worktree-remove
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-remove \
+  --plan-id PLAN_ID [--force]
+```
+
+### worktree-list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-list
+```
+
+### worktree-rebase-to
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-rebase-to \
+  --plan-id PLAN_ID --base BASE_REF
+```
+
+### baseline-reconcile
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow baseline-reconcile \
+  --plan-id PLAN_ID \
+  [--base-branch BRANCH] [--worktree-path ABS_PATH] \
+  [--skip-fetch] [--no-emit]
+```
+
 ## Error Handling
 
 | Failure | Action |

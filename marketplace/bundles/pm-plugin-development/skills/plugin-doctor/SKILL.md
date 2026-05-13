@@ -348,6 +348,7 @@ Representative rule ids by category:
 - **Command**: `command-self-contained-notation`, `command-thin-wrapper`, `command-progressive-disclosure`, `command-completion-checks`, `command-no-embedded-standards`
 - **Skill**: `skill-enforcement-block-required`, `skill-unused-tools-declared`, `skill-naming-noun-suffix`
 - **Script**: `argparse_safety`
+- **Manage-invocation**: `manage-findings-invocation-invalid`, `manage-invocation-invalid`, `missing-canonical-block` (see [scripts/_analyze_manage_invocation.py](scripts/_analyze_manage_invocation.py) for the generalized analyzer)
 - **Content**: `checklist-pattern`
 - **PM-Workflow**: `pm-implicit-script-call` through `pm-contract-non-compliance`
 - **Test-Conventions**: `unique-fixture-basenames`, `subprocess-pythonpath`, `identifier-validator-corpus` (see [standards/doctor-test-conventions.md](standards/doctor-test-conventions.md))

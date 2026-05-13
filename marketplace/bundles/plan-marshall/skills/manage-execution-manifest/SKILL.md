@@ -234,6 +234,54 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 
 ---
 
+## Canonical invocations
+
+The canonical argparse surface for `manage-execution-manifest.py`. The D4 plugin-doctor
+analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for
+markdown notation occurrences across the marketplace. Consuming skills xref this
+section by name (e.g., "see `manage-execution-manifest` Canonical invocations →
+`compose`") instead of restating the command inline.
+
+### compose
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest compose \
+  --plan-id PLAN_ID \
+  --change-type {analysis|feature|enhancement|bug_fix|tech_debt|verification} \
+  --track {simple|complex} \
+  --scope-estimate {none|surgical|single_module|multi_module|broad} \
+  [--recipe-key KEY] [--affected-files-count N] \
+  [--phase-5-steps LIST] [--phase-6-steps LIST] \
+  [--commit-strategy {per_plan|per_deliverable|none}]
+```
+
+### read
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest read \
+  --plan-id PLAN_ID
+```
+
+### validate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest validate \
+  --plan-id PLAN_ID \
+  [--phase-5-steps LIST] [--phase-6-steps LIST]
+```
+
+### validate-loadable
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest validate-loadable \
+  --plan-id PLAN_ID \
+  (--step-id STEP_ID | --all)
+```
+
+`--step-id` and `--all` are mutually exclusive; exactly one is required.
+
+---
+
 ## Decision Rules
 
 The seven-row decision matrix is documented in [standards/decision-rules.md](standards/decision-rules.md). The matrix maps the inputs (`change_type`, `track`, `scope_estimate`, `recipe_key`, `affected_files_count`) to:

@@ -133,6 +133,259 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
 
 `standards/comment-patterns.json` is now a **pre-filter only** — it drops obvious noise (bot signatures, "lgtm", "thanks!") before findings are written, but is **no longer the decision authority** for the action category. Classification of surviving comments belongs to the LLM consumer, which reads the full body from each finding's `detail` field.
 
+## Canonical invocations
+
+The canonical argparse surface for the two CLI scripts owned by this skill,
+`github_ops.py` and `github_pr.py`. The D4 plugin-doctor analyzer
+(`_analyze_manage_invocation.py`) reads this section as source-of-truth for markdown
+notation occurrences across the marketplace. Consuming skills xref this section by
+name (e.g., "see `workflow-integration-github` Canonical invocations →
+`pr create`") instead of restating the command inline. The sibling
+`github_provider.py` module exposes provider declarations and shared helpers — it
+has no CLI surface and is not invoked directly.
+
+Both `github_ops` and `github_pr` accept the top-level `--plan-id PLAN_ID` /
+`--project-dir DIR` routing pair (mutually exclusive) consumed before argparse runs.
+
+### github_ops pr view
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr view \
+  [--head BRANCH]
+```
+
+### github_ops pr list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr list \
+  [--head BRANCH] [--state {open|closed|all}]
+```
+
+### github_ops pr create
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr create \
+  --plan-id PLAN_ID --title TEXT \
+  [--slot SLOT] [--base BRANCH] [--draft] [--head BRANCH]
+```
+
+The PR body is supplied via the path-allocate pattern — call `pr prepare-body`
+first, write the body to the returned path, then run `pr create`.
+
+### github_ops pr edit
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr edit \
+  --plan-id PLAN_ID --pr-number N \
+  [--slot SLOT] [--title TEXT]
+```
+
+### github_ops pr reply
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr reply \
+  --plan-id PLAN_ID --pr-number N [--slot SLOT]
+```
+
+### github_ops pr resolve-thread
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr resolve-thread \
+  --thread-id ID [--pr-number N]
+```
+
+### github_ops pr thread-reply
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr thread-reply \
+  --plan-id PLAN_ID --pr-number N --thread-id ID [--slot SLOT]
+```
+
+### github_ops pr reviews
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr reviews \
+  --pr-number N
+```
+
+### github_ops pr comments
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr comments \
+  --pr-number N [--unresolved-only]
+```
+
+### github_ops pr wait-for-comments
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr wait-for-comments \
+  --pr-number N [--timeout SECS] [--interval SECS]
+```
+
+### github_ops pr merge
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr merge \
+  (--pr-number N | --head BRANCH) \
+  [--strategy {merge|squash|rebase}] [--delete-branch]
+```
+
+Exactly one of `--pr-number` or `--head` is required (validated by handler).
+
+### github_ops pr auto-merge
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr auto-merge \
+  (--pr-number N | --head BRANCH) \
+  [--strategy {merge|squash|rebase}]
+```
+
+### github_ops pr update-branch
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr update-branch \
+  (--pr-number N | --head BRANCH)
+```
+
+### github_ops pr close
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr close \
+  --pr-number N
+```
+
+### github_ops pr ready
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr ready \
+  --pr-number N
+```
+
+### github_ops pr submit-review
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr submit-review \
+  --review-id PRR_ID \
+  [--event {COMMENT|APPROVE|REQUEST_CHANGES}]
+```
+
+### github_ops pr prepare-body
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr prepare-body \
+  --plan-id PLAN_ID [--for {create|edit}] [--slot SLOT]
+```
+
+### github_ops pr prepare-comment
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr prepare-comment \
+  --plan-id PLAN_ID [--for {reply|thread-reply}] [--slot SLOT]
+```
+
+### github_ops ci status
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops ci status \
+  (--pr-number N | --head BRANCH)
+```
+
+### github_ops ci wait
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops ci wait \
+  --pr-number N [--timeout SECS] [--interval SECS]
+```
+
+### github_ops ci wait-for-status-flip
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops ci wait-for-status-flip \
+  --pr-number N [--timeout SECS] [--interval SECS] \
+  [--expected {success|failure|any}]
+```
+
+### github_ops ci rerun
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops ci rerun \
+  --run-id ID
+```
+
+### github_ops ci logs
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops ci logs \
+  --run-id ID
+```
+
+### github_ops issue create
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops issue create \
+  --plan-id PLAN_ID --title TEXT \
+  [--slot SLOT] [--labels CSV]
+```
+
+### github_ops issue prepare-body
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops issue prepare-body \
+  --plan-id PLAN_ID [--slot SLOT]
+```
+
+### github_ops issue view
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops issue view \
+  --issue REF
+```
+
+### github_ops issue close
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops issue close \
+  --issue REF
+```
+
+### github_ops issue wait-for-close
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops issue wait-for-close \
+  --issue-number N [--timeout SECS] [--interval SECS]
+```
+
+### github_ops issue wait-for-label
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops issue wait-for-label \
+  --issue-number N --label TEXT \
+  [--mode {present|absent}] [--timeout SECS] [--interval SECS]
+```
+
+### github_ops branch delete
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops branch delete \
+  --remote-only --branch BRANCH
+```
+
+`--remote-only` is a required, explicit flag.
+
+### github_pr fetch-comments
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr fetch-comments \
+  [--pr N] [--unresolved-only]
+```
+
+### github_pr comments-stage
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr comments-stage \
+  --pr-number N --plan-id PLAN_ID
+```
+
 ## Error Handling
 
 | Failure | Action |
