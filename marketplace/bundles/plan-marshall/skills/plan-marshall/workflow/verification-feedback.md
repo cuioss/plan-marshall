@@ -10,13 +10,13 @@ Dispatched under the **phase-scoped** `verification-feedback` role key — the r
 
 ## Producer modes
 
-| `producer` | Replaces | Producer-side work (Step 1) | Pre-flight gate |
-|------------|----------|-----------------------------|-----------------|
-| `build-runner` | phase-5-execute Step 11 + Step 11b triage calls | Build-runner / quality-gate log parse → findings store. **Mechanical, pre-flight** — the orchestrator runs the build, captures findings via `manage-findings add`, dispatches this workflow only when `manage-findings query | count > 0`. Step 1 here is a store-only query. | Count > 0 |
-| `sonar` | phase-6-finalize `sonar-roundtrip` triage call | `workflow-integration-sonar:sonar fetch-and-store`. **Mechanical, pre-flight.** Step 1 here is a store-only query. | Count > 0 |
-| `pr-comment` | phase-6-finalize `automated-review` triage call | `workflow-integration-github:github_pr comments-stage` (or GitLab equivalent). **Mechanical, pre-flight.** Step 1 here is a store-only query. | Count > 0 |
-| `plugin-doctor` | `cross.plugin-doctor` + `/plugin-doctor` slash-command dispatch | Marketplace static analysis — **LLM-heavy**, runs inside this envelope as Step 1: iterate the plugin-doctor rule catalog in-context, scope-filter, emit one finding per violation to the store. | None — analysis IS the producer step. |
-| `pr-state` | `workflow-pr-doctor` + `/pr-doctor` slash-command + `phase-6-finalize.pr-doctor` role | Wait for CI checks; fetch build status, PR comments, and Sonar issues sequentially; emit each finding-type to the store. Step 1 here orchestrates the multi-source sweep, then the unified triage in Steps 3-6 processes the aggregated set. | None — the producer always runs; Steps 3-6 short-circuit on zero findings. |
+| `producer` | Caller surface | Producer-side work (Step 1) | Pre-flight gate |
+|------------|----------------|-----------------------------|-----------------|
+| `build-runner` | phase-5-execute Step 11 + Step 11b | Build-runner / quality-gate log parse → findings store. **Mechanical, pre-flight** — the orchestrator runs the build, captures findings via `manage-findings add`, dispatches this workflow only when `manage-findings query | count > 0`. Step 1 here is a store-only query. | Count > 0 |
+| `sonar` | phase-6-finalize `sonar-roundtrip` | `workflow-integration-sonar:sonar fetch-and-store`. **Mechanical, pre-flight.** Step 1 here is a store-only query. | Count > 0 |
+| `pr-comment` | phase-6-finalize `automated-review` | `workflow-integration-github:github_pr comments-stage` (or GitLab equivalent). **Mechanical, pre-flight.** Step 1 here is a store-only query. | Count > 0 |
+| `plugin-doctor` | `project:finalize-step-plugin-doctor` + `/plugin-doctor` slash command | Marketplace static analysis — **LLM-heavy**, runs inside this envelope as Step 1: iterate the plugin-doctor rule catalog in-context, scope-filter, emit one finding per violation to the store. | None — analysis IS the producer step. |
+| `pr-state` | `/workflow-pr-doctor` slash command | Wait for CI checks; fetch build status, PR comments, and Sonar issues sequentially; emit each finding-type to the store. Step 1 here orchestrates the multi-source sweep, then the unified triage in Steps 3-6 processes the aggregated set. | None — the producer always runs; Steps 3-6 short-circuit on zero findings. |
 
 ## Inputs
 
@@ -90,7 +90,7 @@ Then fall through to Step 2 (extension load) and Steps 3-6 (per-finding triage).
 
 ### Branch: `producer=pr-state` (multi-source PR sweep)
 
-This branch absorbs the legacy `workflow-pr-doctor` body. Walk the producer surfaces sequentially, emitting findings of each type to the store, then continue to Step 2.
+Walk the producer surfaces sequentially, emitting findings of each type to the store, then continue to Step 2.
 
 1. **Resolve worktree** — accept `--plan-id` (preferred, auto-resolves via `manage-status get-worktree-path`) OR `--project-dir` (explicit override). The resolved path is forwarded as `--project-dir {worktree}` to every child invocation below.
 

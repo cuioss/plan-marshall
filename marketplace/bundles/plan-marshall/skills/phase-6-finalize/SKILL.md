@@ -416,7 +416,7 @@ For each step reference:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-6-finalize [--role <subkey>])
+  effort resolve-target --phase phase-6-finalize [--role <subkey>])
 ```
 
 Dispatch:
@@ -489,7 +489,7 @@ FOR each step_id in manifest.phase_6.steps:
        (1) Resolve the level-bound target via the resolver:
            ```
            target = python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-             models resolve-target --phase phase-6-finalize [--role <subkey>]
+             effort resolve-target --phase phase-6-finalize [--role <subkey>]
            ```
            Returns `execution-context-{level}` (variant), or canonical `execution-context` for `inherit`/empty.
        (2) Dispatch via `Task(subagent_type: plan-marshall:<target>, …)` with prompt body `name`, `plan_id`, `skills[]`, `workflow: plan-marshall:phase-6-finalize/workflow/{name}.md`, `WORKTREE`.

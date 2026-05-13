@@ -42,7 +42,7 @@ Parse the JSON output to get:
 
    ```bash
    target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-     models resolve-target --phase phase-6-finalize --role verification-feedback)
+     effort resolve-target --phase phase-6-finalize --role verification-feedback)
    ```
 
    Dispatch `plan-marshall:{target}` for each component in parallel (one Task call per file in a single message):

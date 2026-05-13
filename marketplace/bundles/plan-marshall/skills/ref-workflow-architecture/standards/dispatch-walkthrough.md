@@ -36,7 +36,7 @@ The simplest case: a phase whose role key is flat (`phase-2-refine`), one dispat
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role phase-2-refine
+  effort resolve-target --role phase-2-refine
 ```
 
 Returns:
@@ -145,7 +145,7 @@ If pending count is 0 → skip the dispatch, mark step done. If non-zero → pro
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-6-finalize --role verification-feedback
+  effort resolve-target --phase phase-6-finalize --role verification-feedback
 ```
 
 Returns `target: execution-context-high`.
@@ -242,7 +242,7 @@ If `affected_modules` is empty → Tier-1 is skipped; the step marks done with `
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-6-finalize
+  effort resolve-target --phase phase-6-finalize
 ```
 
 Returns `target: execution-context-medium`.

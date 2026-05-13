@@ -58,11 +58,11 @@ Compute the dispatch target via the role resolver. When the research fires from 
 ```bash
 # Inside a phase context (substitute the caller's phase)
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase {caller_phase} --role research)
+  effort resolve-target --phase {caller_phase} --role research)
 
 # Standalone / no plan context
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --default)
+  effort resolve-target --default)
 ```
 
 Dispatch:

@@ -807,7 +807,7 @@ Compute the dispatch target via the role resolver:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-2-refine)
+  effort resolve-target --phase phase-2-refine)
 ```
 
 Dispatch:

@@ -40,7 +40,7 @@ Compute the variant target via the role resolver:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-6-finalize)
+  effort resolve-target --phase phase-6-finalize)
 ```
 
 Dispatch the LLM workflow with the candidate envelope:

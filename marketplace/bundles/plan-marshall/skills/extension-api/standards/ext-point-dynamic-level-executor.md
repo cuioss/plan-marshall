@@ -153,7 +153,7 @@ Every dispatch site computes the target via the role resolver and dispatches the
 ```bash
 # Resolve the dispatch target for the verification-feedback workflow under phase-6-finalize
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-6-finalize --role verification-feedback)
+  effort resolve-target --phase phase-6-finalize --role verification-feedback)
 
 # Dispatch
 Task: plan-marshall:{target}

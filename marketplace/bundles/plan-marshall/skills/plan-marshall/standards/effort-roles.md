@@ -120,14 +120,14 @@ manage-config effort resolve-target --phase phase-6-finalize --role verification
 
 ### Resolution order
 
-1. **Sub-key in the registry?** The supplied `subkey` must appear in the group's schema (see "Per-phase sub-keys" above) — unknown sub-keys error. Retired legacy keys (`cross.*`, `phase-6.{create-pr,pre-submission-self-review,lessons-capture,retrospective,pr-doctor}`) error with a remediation message naming the new target.
+1. **Sub-key in the registry?** The supplied `subkey` must appear in the group's schema (see "Per-phase sub-keys" above) — unknown sub-keys error.
 2. **`plan.<group>.effort` walked per the polymorphic-value rule**:
    - **String** at the phase entry → the value is the level. Any sub-key lookup on a string-valued effort resolves to the same value (single-level shorthand).
    - **Object** at the phase entry → sub-key supplied AND present → that value. Sub-key supplied but absent → walk to the `default` slot. Sub-key absent (bare-group lookup) → walk to the `default` slot.
 3. **Top-level `effort`** → fall through when the phase is absent OR the object lacks both the sub-key and the `default` slot.
 4. **`inherit`** → implicit final fallback when neither the per-phase `effort` nor the `plan.effort` is configured.
 
-The resolver validates the resolved value against `ALLOWED_LEVELS` from `effort-levels.md` and emits a warning (not an error) when the requested role group is not registered in this document — registry renames must not break saved configs.
+The resolver validates the resolved value against `ALLOWED_LEVELS` from `effort-levels.md`. Unknown role groups (typos, stale references) resolve to the `plan.effort` fallback with a non-fatal warning so a single misspelled key cannot wedge the whole dispatch flow.
 
 ### Sub-dispatch from inside a subagent envelope
 

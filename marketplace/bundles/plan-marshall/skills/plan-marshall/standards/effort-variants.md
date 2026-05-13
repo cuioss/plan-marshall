@@ -40,8 +40,8 @@ Run the `marshall-steward` wizard and pick the **Models** submenu:
 
 The wizard:
 
-- Shows the current `models` block (or "(not configured — defaults apply)").
-- Edits `effort` via prompt — your plan-wide fallback level.
+- Shows the current per-phase `effort` configuration (or "(not configured — defaults apply)").
+- Edits `plan.effort` via prompt — your plan-wide fallback level.
 - Walks each phase, letting you set the phase default or override individual workflow sub-keys.
 - Refuses invalid levels (e.g., typos) at save time.
 
@@ -140,20 +140,6 @@ Configs that did not opt in to per-role levels (or that only used `low`/`medium`
 1. Is the role spelled correctly per the hierarchical registry in [`effort-roles.md`](effort-roles.md)? Keys are kebab-case and match the SKILL.md name (`phase-6-finalize.verification-feedback`, not `phase_6.verification_feedback` and not the bare `phase-6-finalize`).
 2. Is the level spelled correctly (`high`, not `High` or `hi`)?
 3. Is `target/claude/` regenerated? Run the `project:finalize-step-deploy-target` step (or `python3 marketplace/targets/generate.py --target claude --output target/claude`) to refresh emitted variants, then `/sync-plugin-cache` to push them into the plugin cache.
-
-### Symptom: I get a "role key is retired" error
-
-You're reading a key from the pre-rewrite registry (`cross.*` or one of the retired `phase-6-finalize.*` sub-keys: `create-pr`, `pre-submission-self-review`, `lessons-capture`, `retrospective`, `pr-doctor`). The error message names the new target. Common mappings (using the post-rename suffixed keys):
-
-| Old key | New shape |
-|---------|-----------|
-| `cross.triage` | `--phase <caller-phase-N-suffix> --role verification-feedback` |
-| `cross.research` | `--phase <caller-phase-N-suffix>` (no `--role` — research inherits the calling phase's default) or `--default` for standalone `/research` |
-| `cross.q-gate-validation` | `--phase <caller-phase-N-suffix>` (no `--role` — q-gate-validation tracks the phase default) |
-| `cross.plugin-doctor` | `--phase phase-6-finalize --role verification-feedback` (with `producer=plugin-doctor`) |
-| `phase-6-finalize.retrospective`, `phase-6-finalize.lessons-capture` | `--phase phase-6-finalize --role post-run-review` |
-| `phase-6-finalize.pr-doctor` | `--phase phase-6-finalize --role verification-feedback` (with `producer=pr-state`) |
-| `phase-6-finalize.create-pr`, `phase-6-finalize.pre-submission-self-review` | `--phase phase-6-finalize` (no `--role` — both track the phase default) |
 
 ### Symptom: A role configured as `max` is not running on Opus
 

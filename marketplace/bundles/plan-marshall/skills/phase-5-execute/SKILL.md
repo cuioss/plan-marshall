@@ -528,7 +528,7 @@ Compute the target via the role resolver, then dispatch:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-5-execute --role verification-feedback)
+  effort resolve-target --phase phase-5-execute --role verification-feedback)
 ```
 
 ```

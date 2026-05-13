@@ -86,7 +86,7 @@ Compute the dispatch target via the role resolver:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role phase-1-init)
+  effort resolve-target --role phase-1-init)
 ```
 
 Dispatch:
@@ -152,7 +152,7 @@ Compute the dispatch target via the role resolver and resolve the active worktre
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role phase-2-refine)
+  effort resolve-target --role phase-2-refine)
 
 worktree_path=$(python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
   get-worktree-path --plan-id {plan_id})
@@ -340,7 +340,7 @@ When a specific lesson is selected, convert it to a plan via a `lesson_id` refer
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role phase-1-init)
+  effort resolve-target --role phase-1-init)
 ```
 
 ```

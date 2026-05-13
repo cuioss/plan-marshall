@@ -26,7 +26,7 @@ When `/workflow-pr-doctor` is invoked, resolve the level + target via:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-6-finalize --role verification-feedback
+  effort resolve-target --phase phase-6-finalize --role verification-feedback
 ```
 
 Then dispatch the returned `target` (`execution-context-{level}` or canonical) with this prompt body:

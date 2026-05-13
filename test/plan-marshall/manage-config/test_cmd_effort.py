@@ -50,22 +50,22 @@ def _load_module(name: str, filename: str, scripts_dir: Path):
     return mod
 
 
-_model_presets_mod = _load_module(
+_effort_presets_mod = _load_module(
     'effort_presets', 'effort_presets.py', _PLAN_MARSHALL_SCRIPTS_DIR
 )
-EffortPresets = _model_presets_mod.EffortPresets
+EffortPresets = _effort_presets_mod.EffortPresets
 
-_cmd_models_mod = _load_module(
+_cmd_effort_mod = _load_module(
     '_cmd_effort', '_cmd_effort.py', _MANAGE_CONFIG_SCRIPTS_DIR
 )
-cmd_effort = _cmd_models_mod.cmd_effort
-cmd_effort_apply_preset = _cmd_models_mod.cmd_effort_apply_preset
-KNOWN_ROLES = _cmd_models_mod.KNOWN_ROLES
+cmd_effort = _cmd_effort_mod.cmd_effort
+cmd_effort_apply_preset = _cmd_effort_mod.cmd_effort_apply_preset
+KNOWN_ROLES = _cmd_effort_mod.KNOWN_ROLES
 
 
 def _expanded_preset(preset: dict) -> dict:
-    """Return the legacy ``{"default": …, "roles": {…}}`` view of the
-    on-disk shape that ``apply-preset`` writes.
+    """Return the ``{"default": …, "roles": {…}}`` preset-payload view
+    of the on-disk shape that ``apply-preset`` writes.
 
     Per the writer in :func:`_cmd_effort._expand_phase_effort`:
       - A string-valued phase in the preset is preserved verbatim
@@ -76,9 +76,10 @@ def _expanded_preset(preset: dict) -> dict:
       - A phase the preset omits entirely is shorthand-written as the
         global default string.
 
-    The test helper translates that on-disk shape back to the legacy
-    ``{default, roles}`` view so assertions can compare the preset's
-    intent without re-implementing the inverse transform inline.
+    The test helper translates that on-disk shape back to the
+    preset-payload view (matching the ``EffortPresets`` constants) so
+    assertions can compare the preset's intent without re-implementing
+    the inverse transform inline.
     """
     default_level = preset['default']
     preset_roles = preset.get('roles', {})
@@ -106,10 +107,10 @@ from conftest import PlanContext, run_script  # noqa: E402
 def _write_marshal_with_models(fixture_dir: Path, models_block: dict | None) -> None:
     """Write marshal.json with optional effort config.
 
-    Accepts the legacy-shape ``{"default": <level>, "roles": {<phase>: ...}}``
-    payload for backwards-compat in test bodies; translates to the
-    current storage shape on disk (``plan.effort`` for the plan-wide
-    fallback, ``plan.<phase>.effort`` for per-phase overrides).
+    Accepts the preset-payload-shape ``{"default": <level>, "roles":
+    {<phase>: ...}}`` view in test bodies and translates to the on-disk
+    storage shape (``plan.effort`` for the plan-wide fallback,
+    ``plan.<phase>.effort`` for per-phase overrides).
     """
     create_marshal_json(fixture_dir)
     marshal_path = fixture_dir / 'marshal.json'
@@ -135,10 +136,12 @@ def _write_marshal_with_models(fixture_dir: Path, models_block: dict | None) -> 
 
 
 def _read_marshal_models(fixture_dir: Path) -> dict:
-    """Reconstruct the legacy ``{default, roles}`` view of effort config.
+    """Reconstruct the ``{default, roles}`` preset-payload view of
+    effort config.
 
-    Reads the new per-phase storage shape on disk and emits the legacy
-    view so existing assertions keep comparing apples-to-apples.
+    Reads the per-phase storage shape on disk and emits the
+    preset-payload view so assertions can compare against
+    ``EffortPresets`` constants directly.
     """
     marshal_path = fixture_dir / 'marshal.json'
     config = json.loads(marshal_path.read_text(encoding='utf-8'))

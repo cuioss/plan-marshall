@@ -19,7 +19,7 @@ A new LLM-judgement workflow worth pinning its own model is added by writing a n
 
 == Level Variants
 
-The Claude target emits six variants per ordinal level — `execution-context.md` (canonical, inherit), `execution-context-low.md`, `-medium.md`, `-high.md`, `-xhigh.md`, `-xxhigh.md`. Each variant has `model:` and `effort:` baked into its frontmatter. Dispatch sites resolve which variant to call via `manage-config effort resolve-target --role <key>`, which returns the canonical name when level is `inherit`/empty and the matching variant otherwise. The resolver reads `.plan/marshal.json` fresh per dispatch, so a `models` block edit takes effect on the next call — no Claude Code restart required.
+The Claude target emits six variants per ordinal level — `execution-context.md` (canonical, inherit), `execution-context-low.md`, `-medium.md`, `-high.md`, `-xhigh.md`, `-xxhigh.md`. Each variant has `model:` and `effort:` baked into its frontmatter. Dispatch sites resolve which variant to call via `manage-config effort resolve-target --role <key>`, which returns the canonical name when level is `inherit`/empty and the matching variant otherwise. The resolver reads `.plan/marshal.json` fresh per dispatch, so an edit to any `plan.<phase>.effort` attribute takes effect on the next call — no Claude Code restart required.
 
 == Where the Design Lives
 

@@ -162,7 +162,7 @@ Resolve the dispatch target via the resolver — no dedicated role key (the LLM 
 
 ```bash
 level=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models read --default)
+  effort read --default)
 target="execution-context"
 if [ -n "$level" ] && [ "$level" != "inherit" ]; then
   target="execution-context-$level"
@@ -734,7 +734,7 @@ Compute the dispatch target via the role resolver:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-3-outline)
+  effort resolve-target --phase phase-3-outline)
 ```
 
 Dispatch:

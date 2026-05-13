@@ -663,7 +663,7 @@ Compute the dispatch target via the role resolver:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-4-plan)
+  effort resolve-target --phase phase-4-plan)
 ```
 
 Dispatch:

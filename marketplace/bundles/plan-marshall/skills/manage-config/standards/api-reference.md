@@ -221,17 +221,19 @@ manage-config ext-defaults set-default --key my_setting --value fallback
 
 ---
 
-## Noun: models
+## Noun: effort
 
-Manage per-role model levels stored in the `models` block of `.plan/marshal.json`.
-The read verb is a pure resolver; the write verb completely overwrites the block
-from a named preset.
+Manage per-phase effort levels stored under each `plan.<phase>.effort`
+attribute (with `plan.effort` as the plan-wide fallback) in
+`.plan/marshal.json`. The read verb is a pure resolver; the write
+verb completely overwrites the per-phase effort configuration from a
+named preset.
 
 | Verb | Parameters | Description |
 |------|-----------|-------------|
-| `read` | `--phase` and/or `--role` (or `--default`) | Resolve the level keyword (walks `models.roles.<phase>.<subkey>` -> `models.roles.<phase>.default` -> `effort` -> `inherit`) |
+| `read` | `--phase` and/or `--role` (or `--default`) | Resolve the level keyword (walks `plan.<phase>.effort.<subkey>` -> `plan.<phase>.effort.default` -> `plan.effort` -> `inherit`) |
 | `resolve-target` | same as `read` | Resolve + compute the dispatched-variant target name (`execution-context-{level}` or canonical) |
-| `apply-preset` | `--preset` | **Completely overwrite** the `models` block with a named preset (see `effort_presets.py` for per-preset values) |
+| `apply-preset` | `--preset` | **Completely overwrite** the per-phase effort configuration with a named preset (see `effort_presets.py` for per-preset values) |
 
 ### Verb: read
 
@@ -274,19 +276,20 @@ Arguments:
   *not* used because it enforces exact case-sensitive matching of the
   canonical names and would reject the documented aliases.
 
-Semantic — **completely overwrites, fully expanded**: the existing `models`
-block is discarded entirely and replaced by the preset payload, and every
-sub-key listed in `KNOWN_ROLES` (in `_cmd_effort.py`) is written explicitly
-under `models.roles.<phase>` so users editing `marshal.json` by hand can
-see and tune every dispatch site without consulting the registry.
+Semantic — **completely overwrites, fully expanded**: every existing
+per-phase `effort` attribute is discarded entirely and replaced by the
+preset payload, and every sub-key listed in `KNOWN_ROLES` (in
+`_cmd_effort.py`) is written explicitly under `plan.<phase>.effort` so
+users editing `marshal.json` by hand can see and tune every dispatch
+site without consulting the registry.
 
 The expansion rule: every sub-key in every group of `KNOWN_ROLES` is
-written under `models.roles.<phase>` at the preset's `default` level
+written under `plan.<phase>.effort` at the preset's `default` level
 unless the preset payload defines a per-sub-key override, in which case
-the override level is preserved. The `default` value itself is also kept
-on the `plan.effort` key so the resolver's documented walk
-(`models.roles.<phase>.<subkey>` -> `models.roles.<phase>.default` ->
-`effort` -> `inherit`) keeps working unchanged.
+the override level is preserved. The `default` value itself is also
+kept on the top-level `plan.effort` key so the resolver's documented
+walk (`plan.<phase>.effort.<subkey>` -> `plan.<phase>.effort.default`
+-> `plan.effort` -> `inherit`) keeps working unchanged.
 
 Any keys present in the previous block but absent from the role registry
 are gone after the write — only known roles survive. Merging across runs
@@ -310,9 +313,9 @@ overrides_count: 5
 ```
 
 `roles_count` is the total number of sub-key entries written under
-`models.roles.<phase>` (sum of `len(KNOWN_ROLES[group])` for every group
+`plan.<phase>.effort` (sum of `len(KNOWN_ROLES[group])` for every group
 — 1+1+1+1+2+3 = 9). `overrides_count` is the number of sub-key entries
-whose written level differs from `effort` after expansion (i.e.
+whose written level differs from `plan.effort` after expansion (i.e.
 the user-visible definition of "override" — a sub-key explicitly listed
 at the same level as `default` is functionally an inherit and is not
 counted).

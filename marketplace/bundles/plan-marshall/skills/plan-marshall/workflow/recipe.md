@@ -115,7 +115,7 @@ Use the selected recipe to create a plan. Compute the dispatch target via the ro
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role phase-1-init)
+  effort resolve-target --role phase-1-init)
 ```
 
 Dispatch:
@@ -188,7 +188,7 @@ Continue through the standard phases — each phase is dispatched under its
 role key per the same contract documented in [`planning.md`](planning.md)
 ("Action: init" → 2-Refine Phase) and [`planning-outline.md`](planning-outline.md)
 ("Action: outline"). The orchestrator resolves the dispatch target via
-`models resolve-target --role phase-{N}` and dispatches
+`effort resolve-target --role phase-{N}` and dispatches
 `Task: plan-marshall:{target}` with `workflow=plan-marshall:phase-{N}-{name}/SKILL.md`.
 
 1. **2-refine** — role key `phase-2-refine`; workflow `phase-2-refine/SKILL.md`.

@@ -79,56 +79,6 @@ KNOWN_ROLES: dict[str, tuple[str, ...]] = {
     'phase-6-finalize': ('default', 'verification-feedback', 'post-run-review'),
 }
 
-# Legacy role keys retired by the phase-scoped resolver rewrite. Reads that
-# target these keys return ``status: error`` with the per-key remediation
-# below. Plan-marshall is pre-1.0; we error rather than alias-and-warn so
-# stale dispatch sites and stale marshal.json entries surface immediately.
-#
-# The remediations point at the current registry shape (phase-N-{suffix}
-# keys, no `research` sub-key — research dispatches resolve under the
-# calling phase's default or via --default).
-LEGACY_REMEDIATION: dict[tuple[str, str], str] = {
-    ('cross', 'research'): (
-        "use --phase <caller-phase-N-suffix> (no --role; research "
-        "inherits the calling phase's default) or --default for "
-        "standalone /research outside any plan"
-    ),
-    ('cross', 'triage'): (
-        "use --phase <caller-phase-N-suffix> --role verification-feedback "
-        "(producer in {build-runner, sonar, pr-comment, plugin-doctor, pr-state})"
-    ),
-    ('cross', 'q-gate-validation'): (
-        "use --phase <caller-phase-N-suffix> (no --role; q-gate-validation "
-        "tracks the calling phase's default)"
-    ),
-    ('cross', 'plugin-doctor'): (
-        "use --phase phase-6-finalize --role verification-feedback "
-        "(with producer=plugin-doctor)"
-    ),
-    ('cross', 'manage-architecture-enrich-module'): (
-        "use --phase phase-6-finalize (no --role; tracks phase-6-finalize.default)"
-    ),
-    ('phase-6', 'create-pr'): (
-        "use --phase phase-6-finalize (no --role; create-pr tracks "
-        "phase-6-finalize.default)"
-    ),
-    ('phase-6', 'pre-submission-self-review'): (
-        "use --phase phase-6-finalize (no --role; pre-submission-self-review "
-        "tracks phase-6-finalize.default)"
-    ),
-    ('phase-6', 'lessons-capture'): (
-        "use --phase phase-6-finalize --role post-run-review "
-        "(lessons-capture folded into post-run-review)"
-    ),
-    ('phase-6', 'retrospective'): (
-        "use --phase phase-6-finalize --role post-run-review "
-        "(retrospective folded into post-run-review)"
-    ),
-    ('phase-6', 'pr-doctor'): (
-        "use --phase phase-6-finalize --role verification-feedback "
-        "(with producer=pr-state)"
-    ),
-}
 
 
 def _validate_level(value: str, source: str) -> tuple[bool, str | None]:
@@ -313,16 +263,6 @@ def cmd_effort(args) -> dict:
         return error_exit(err)
     # When err is None, _split_role guarantees group is non-None.
     assert group is not None
-
-    # Retired-key check: legacy `cross.*` and `phase-6.{retired}` reads
-    # error with a remediation pointing to the new shape. Runs before the
-    # unknown-group warning so `cross.*` does not silently fall back.
-    if subkey is not None:
-        remediation = LEGACY_REMEDIATION.get((group, subkey))
-        if remediation is not None:
-            return error_exit(
-                f"role key '{group}.{subkey}' is retired; {remediation}"
-            )
 
     # Validate the plan-wide effort value (if present) once so callers see
     # invalid defaults via a clear message even when the role itself has a value.
@@ -562,8 +502,9 @@ def cmd_effort_apply_preset(args) -> dict:
                 f'cannot merge effort attribute'
             )
         phase_entry['effort'] = phase_effort
-    # Clean up legacy top-level `models` block and the prior top-level
-    # `effort` field from earlier layouts.
+    # Defensive cleanup: remove stray top-level `models` / `effort` keys so
+    # the writer's output is canonical regardless of what the caller's
+    # marshal.json looked like before this call.
     config.pop('models', None)
     config.pop('effort', None)
 
