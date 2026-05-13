@@ -88,6 +88,10 @@ When the canonical declares `levels: [high, xxhigh]`, only `{name}.md`, `{name}-
 
 The exact level → primitive table is the single source of truth in `effort-levels.md`; this contract pins the **shape** of variant emission, not the table values.
 
+### Session Restart Required After Variant Emission
+
+> **CRITICAL — Restart Claude Code session before dispatching against newly-emitted variants.** Claude Code's agent registry is **session-pinned at session start**: it scans the plugin cache exactly once when the session boots and never re-scans mid-session. Variants newly emitted by the build target — for example `execution-context-{level}` files added mid-session via `/sync-plugin-cache` or the `project:finalize-step-deploy-target` finalize step — are written to disk in real time, but the already-running session has no visibility into them. A `Task: plan-marshall:execution-context-{level}` dispatch against a freshly emitted variant fails with `Agent type 'plan-marshall:execution-context-{level}' not found` even though the file is present in the cache. The operational guardrails sit at `/sync-plugin-cache` (post-rsync warning), `/marshall-steward` (executor-regenerated / agent-set-changed warning), and `variant_emitter.py` (module docstring) — all converge on the same WHY: the registry is session-pinned at startup, so newly-emitted variants are only visible after a session restart.
+
 ### plugin.json Expansion
 
 When the build target generates per-bundle `plugin.json`, each role-eligible agent expands into N entries — one per emitted variant plus the canonical for `inherit`. Non-eligible agents emit a single entry as before. See `marketplace/targets/claude/plugin_json_gen.py` for the implementation.

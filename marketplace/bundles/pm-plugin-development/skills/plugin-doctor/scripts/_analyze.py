@@ -19,6 +19,7 @@ from _analyze_cmd_root_anchoring import analyze_cmd_root_anchoring
 from _analyze_coverage import analyze_tool_coverage, cmd_coverage
 from _analyze_crossfile import DEFAULT_SIMILARITY_THRESHOLD, cmd_cross_file
 from _analyze_executor_path_in_production import analyze_executor_path_in_production
+from _analyze_manage_findings_invocation import analyze_manage_findings_invocation
 from _analyze_markdown import analyze_markdown_file, cmd_markdown
 from _analyze_metadata_field_validity import analyze_metadata_field_validity
 from _analyze_orphan_argparse_flags import analyze_orphan_argparse_flags
@@ -33,6 +34,7 @@ from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 __all__ = [
     'analyze_cmd_root_anchoring',
     'analyze_executor_path_in_production',
+    'analyze_manage_findings_invocation',
     'analyze_markdown_file',
     'analyze_metadata_field_validity',
     'analyze_orphan_argparse_flags',

@@ -13,6 +13,7 @@ from _analyze import (
     analyze_tool_coverage,
     analyze_verb_chains,
 )
+from _analyze_manage_findings_invocation import scan_skill_for_manage_findings_invocation
 from _analyze_markdown import (
     check_checklist_patterns,
     check_display_detail_violations,
@@ -223,6 +224,18 @@ def analyze_component(component: dict, active_rules: frozenset[str] | None = Non
         if 'verb_chain' in active_rules:
             issues.extend(extract_issues_from_verb_chain_analysis(analyze_verb_chains(skill_dir)))
 
+        # manage-findings-invocation-invalid: catch invalid manage-findings
+        # invocation shapes (snake_case script position, invalid top-level
+        # subcommands like ``list-qgate``, invalid ``qgate``/``assessment``
+        # sub-verbs). Gated on ``active_rules`` mirroring the ``verb_chain``
+        # opt-in semantics so the analyzer only runs when the caller opts in.
+        if 'manage-findings-invocation-invalid' in active_rules:
+            issues.extend(
+                extract_issues_from_manage_findings_analysis(
+                    scan_skill_for_manage_findings_invocation(skill_dir)
+                )
+            )
+
     return {'component': component, 'analysis': analysis, 'issues': issues, 'issue_count': len(issues)}
 
 
@@ -256,6 +269,38 @@ def extract_issues_from_verb_chain_analysis(findings: list[dict]) -> list[dict]:
                 'script_notation': notation,
                 'verb_chain': finding.get('verb_chain', []),
                 'first_unknown_segment': unknown,
+            }
+        )
+    return issues
+
+
+def extract_issues_from_manage_findings_analysis(findings: list[dict]) -> list[dict]:
+    """Translate ``analyze_manage_findings_invocation`` output into plugin-doctor
+    issue dicts.
+
+    The analyzer returns findings with the native shape
+    (``rule_id``/``file``/``line``/``details.notation``/``details.reason``/
+    ``details.canonical_hint``). Plugin-doctor's downstream categorizer keys
+    on ``type``/``fixable`` (see ``categorize_all_issues``), so this helper
+    normalises each finding to the shared schema while preserving rule-specific
+    fields under ``details``.
+    """
+    issues: list[dict] = []
+    for finding in findings:
+        issues.append(
+            {
+                'type': 'manage-findings-invocation-invalid',
+                'rule_id': 'manage-findings-invocation-invalid',
+                'file': finding.get('file', ''),
+                'line': finding.get('line'),
+                'severity': finding.get('severity', 'error'),
+                'fixable': False,
+                'description': finding.get(
+                    'description',
+                    'manage-findings invocation uses an invalid shape '
+                    '(manage-findings-invocation-invalid)',
+                ),
+                'details': finding.get('details', {}),
             }
         )
     return issues
