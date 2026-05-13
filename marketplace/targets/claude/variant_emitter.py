@@ -14,6 +14,26 @@ The ``max`` build-time guard reads
 resolved model alias accepts ``effort: xhigh``; when it does not, the
 ``max`` variant is skipped (the canonical falls back to ``inherit``
 at runtime).
+
+SESSION RESTART REQUIRED for emitted variants
+---------------------------------------------
+
+Claude Code's agent registry is **session-pinned at session start**: it
+scans the plugin cache exactly once when the session boots and never
+re-scans mid-session. Variants emitted by this module — for example
+``execution-context-{level}`` files newly added to
+``target/claude/{bundle}/agents/`` — are written to disk in real time,
+but a Claude Code session that started **before** the emission has no
+visibility into them. Dispatching ``Task: {bundle}:{base}-{level}``
+against a freshly emitted variant from the same session fails with
+``Agent type '{bundle}:{base}-{level}' not found`` even though the
+file is present in the cache. The user (or downstream tooling) MUST
+restart the Claude Code session before dispatching against any newly-
+emitted variant. The same WHY rationale (registry is session-pinned at
+startup) is documented at the sister surfaces — ``/sync-plugin-cache``,
+``/marshall-steward``, and
+``ext-point-dynamic-level-executor.md`` — and MUST stay convergent
+across all four surfaces.
 """
 
 from __future__ import annotations
