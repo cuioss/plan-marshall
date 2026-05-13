@@ -4,19 +4,9 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 # Triage Workflow
 
-Single source of truth for the per-finding triage workflow shared by every call site that needs FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over findings in the per-plan findings store. Dispatched under the `cross.triage` role key. The smart-grouping algorithm is documented inline below (§ Step 2: Smart grouping).
+Canonical Steps 1-6 for the per-finding triage decision loop (FIX / SUPPRESS / ACCEPT / AskUserQuestion) shared by every producer mode of `verification-feedback`. Called by [`verification-feedback.md`](verification-feedback.md) Step 3+; the caller's phase context carries the resolved level (`phase-N.verification-feedback` → `phase-N.default` → `models.default`). The smart-grouping algorithm is documented inline below (§ Step 2: Smart grouping).
 
-## Call sites
-
-| Call site | `finding_type` | Producer |
-|-----------|----------------|----------|
-| `phase-6-finalize` `automated-review` manifest step | `pr-comment` | `workflow-integration-github:github_pr comments-stage` (or GitLab equivalent) |
-| `phase-6-finalize` `sonar-roundtrip` manifest step | `sonar-issue` | `workflow-integration-sonar:sonar fetch-and-store` |
-| `phase-5-execute` Step 11 (verification-failure triage) | `verification-failure` | Build runner output captured to `findings/qgate-5-execute.jsonl` |
-| `phase-5-execute` Step 11b (final quality sweep) | `quality-gate-failure` | Same as above |
-| `workflow-pr-doctor` internal per-finding loop | varies | Doctor surface |
-
-All call sites pass `finding_type` and `plan_id` only. **Findings live in the per-plan findings store** ([`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md)) — never inline in the dispatch prompt.
+**Findings live in the per-plan findings store** ([`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md)) — never inline in the dispatch prompt. Producer-mode work (CI wait, multi-source fetch, store-only query) is the responsibility of `verification-feedback.md` Step 1 and runs before this document's Steps 1-6 execute.
 
 ## Inputs
 
