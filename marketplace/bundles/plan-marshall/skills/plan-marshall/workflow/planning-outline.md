@@ -58,11 +58,14 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:plan-marshall) Dispatching execution-context for phase-3-outline"
 ```
 
-Compute the dispatch target via the role resolver:
+Compute the dispatch target via the role resolver and resolve the active worktree path so the Worktree Header can be populated explicitly (when `metadata.use_worktree==false`, `get-worktree-path` returns the main checkout, so the same call covers both flows):
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   models resolve-target --role phase-3)
+
+worktree_path=$(python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+  get-worktree-path --plan-id {plan_id})
 ```
 
 Dispatch:
