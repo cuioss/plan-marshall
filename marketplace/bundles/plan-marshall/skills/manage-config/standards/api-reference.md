@@ -229,18 +229,32 @@ from a named preset.
 
 | Verb | Parameters | Description |
 |------|-----------|-------------|
-| `read` | `--role` | Resolve the level keyword for a role (walks `models.roles.<role>` -> `models.default` -> `inherit`) |
+| `read` | `--phase` and/or `--role` (or `--default`) | Resolve the level keyword (walks `models.roles.<phase>.<subkey>` -> `models.roles.<phase>.default` -> `models.default` -> `inherit`) |
+| `resolve-target` | same as `read` | Resolve + compute the dispatched-variant target name (`execution-context-{level}` or canonical) |
 | `apply-preset` | `--preset` | **Completely overwrite** the `models` block with a named preset (see `model_presets.py` for per-preset values) |
 
 ### Verb: read
 
 ```bash
-manage-config models read --role research
+# Bare group (resolves to phase-2.default then models.default)
+manage-config models read --phase phase-2
+
+# Two-flag form
+manage-config models read --phase phase-6 --role verification-feedback
+
+# Dotted form
+manage-config models read --role phase-3.research
+
+# Zero-role fallback (standalone slash commands, LLM-fallback branches)
+manage-config models read --default
 ```
 
 Walks the documented resolution order and validates the resolved value against
-`ALLOWED_LEVELS` (`low|medium|high|xhigh|xxhigh|inherit`). Unknown role names
-produce a warning (not an error) so registry renames do not break saved configs.
+`ALLOWED_LEVELS` (`low|medium|high|xhigh|xxhigh|max|inherit`). Unknown role
+groups produce a warning (not an error) so registry renames do not break
+saved configs. Retired legacy keys (`cross.*`, the five retired `phase-6.*`
+sub-keys) return `status: error` with a remediation message naming the new
+target — see `model-roles.md` § "Per-phase sub-keys".
 
 ### Verb: apply-preset
 
@@ -262,16 +276,17 @@ Arguments:
 
 Semantic — **completely overwrites, fully expanded**: the existing `models`
 block is discarded entirely and replaced by the preset payload, and every
-entry in the role registry (`KNOWN_ROLES` in `_cmd_models.py`) is written
-explicitly under `models.roles` so users editing `marshal.json` by hand can
+sub-key listed in `KNOWN_ROLES` (in `_cmd_models.py`) is written explicitly
+under `models.roles.<phase>` so users editing `marshal.json` by hand can
 see and tune every dispatch site without consulting the registry.
 
-The expansion rule: each `KNOWN_ROLES` entry is written at `models.default`
-unless the preset payload defines a per-role override, in which case the
-override level is preserved. The `default` value itself is kept on the
-top-level `models.default` key so the resolver's documented walk
-(`models.roles.<role>` -> `models.default` -> `inherit`) keeps working
-unchanged.
+The expansion rule: every sub-key in every group of `KNOWN_ROLES` is
+written under `models.roles.<phase>` at the preset's `default` level
+unless the preset payload defines a per-sub-key override, in which case
+the override level is preserved. The `default` value itself is also kept
+on the top-level `models.default` key so the resolver's documented walk
+(`models.roles.<phase>.<subkey>` -> `models.roles.<phase>.default` ->
+`models.default` -> `inherit`) keeps working unchanged.
 
 Any keys present in the previous block but absent from the role registry
 are gone after the write — only known roles survive. Merging across runs
@@ -290,16 +305,17 @@ Success payload:
 status: success
 preset: balanced
 default: medium
-roles_count: 20
-overrides_count: 4
+roles_count: 15
+overrides_count: 9
 ```
 
-`roles_count` is the number of entries written under `models.roles` — equal
-to `len(KNOWN_ROLES)` once expansion has run. `overrides_count` is the
-number of role entries whose written level differs from `models.default`
-after expansion (i.e. the user-visible definition of "override" — a role
-explicitly listed at the same level as `default` is functionally an
-inherit and is not counted).
+`roles_count` is the total number of sub-key entries written under
+`models.roles.<phase>` (sum of `len(KNOWN_ROLES[group])` for every group
+— 2+2+2+2+3+4 = 15). `overrides_count` is the number of sub-key entries
+whose written level differs from `models.default` after expansion (i.e.
+the user-visible definition of "override" — a sub-key explicitly listed
+at the same level as `default` is functionally an inherit and is not
+counted).
 
 Common errors:
 

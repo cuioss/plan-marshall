@@ -5,22 +5,23 @@ Handles:
     models read --role <name>           (role-based level resolver)
     models read --role <group>.<sub>    (dotted-key resolver for nested groups)
     models read --phase <g> --role <s>  (two-flag form, equivalent to dotted)
+    models read --phase <g>             (bare-group lookup, polymorphic)
     models read --default               (raw models.default lookup)
     models resolve-target --role <name> (target variant name resolver)
     models apply-preset --preset <name> (complete-overwrite writer)
 
-The read path walks the hierarchical JSON per ``model-roles.md`` § Registry:
+The read path walks the hierarchical JSON per ``model-roles.md`` § Resolver:
 
-    models.roles.<group>.<subkey> -> models.roles.<group>      (when string)
+    models.roles.<group>.<subkey> -> models.roles.<group>.default
                                   -> models.default
                                   -> inherit
 
 Polymorphic value normalisation:
-    - String at ``<group>``  -> single-workflow phase; any subkey lookup
-                                resolves to the same string.
-    - Object at ``<group>`` -> multi-workflow group; walks to subkey.
-                                Bare-group lookup with object value is an
-                                error (requires --role <group>.<subkey>).
+    - String at ``<group>``  -> single-level shorthand; any sub-key lookup
+                                on a flat group resolves to the same string.
+    - Object at ``<group>`` -> per-workflow group. The optional ``default``
+                                slot serves as the in-group fallback for a
+                                bare-group lookup or an unmatched sub-key.
 
 The ``resolve-target`` subcommand collapses the per-dispatch-site recipe
 ``level = ...; target = canonical if level=="inherit" else canonical-{level}``
@@ -50,35 +51,68 @@ RESERVED_LEVELS: tuple[str, ...] = ()
 
 # The role registry, kept in lock-step with model-roles.md.
 #
-# Structure: dict[group, None | tuple[str, ...]]
-#   - value None: the group is flat (a single-workflow phase). The
-#     value at ``models.roles.<group>`` is a string level keyword.
-#   - value tuple: the group is nested (multi-workflow). Each tuple
-#     element is a valid subkey under that group.
+# Structure: dict[group, tuple[str, ...]]. Every group is polymorphic — its
+# stored value may be a string (single-level shorthand for the whole phase)
+# or an object whose recognised sub-keys are the tuple below. ``default`` is
+# the in-group fallback used when a sub-key lookup misses or the lookup is
+# bare-group.
 #
 # Lookup forms accepted by the resolver:
-#   --role <group>                  (flat group only — error for nested)
-#   --role <group>.<subkey>         (dotted form for nested groups)
+#   --role <group>                  (bare group; walks to <group>.default)
+#   --role <group>.<subkey>         (dotted form)
 #   --phase <group> --role <subkey> (two-flag form, equivalent to dotted)
-KNOWN_ROLES: dict[str, tuple[str, ...] | None] = {
-    'phase-1': None,
-    'phase-2': None,
-    'phase-3': None,
-    'phase-4': None,
-    'phase-5': None,
-    'phase-6': (
-        'pre-submission-self-review',
-        'create-pr',
-        'lessons-capture',
-        'retrospective',
-        'pr-doctor',
+#   --phase <group>                 (two-flag bare group; same as --role <group>)
+KNOWN_ROLES: dict[str, tuple[str, ...]] = {
+    'phase-1': ('default', 'research'),
+    'phase-2': ('default', 'research'),
+    'phase-3': ('default', 'research'),
+    'phase-4': ('default', 'research'),
+    'phase-5': ('default', 'verification-feedback', 'research'),
+    'phase-6': ('default', 'verification-feedback', 'post-run-review', 'research'),
+}
+
+# Legacy role keys retired by the phase-scoped resolver rewrite. Reads that
+# target these keys return ``status: error`` with the per-key remediation
+# below. Plan-marshall is pre-1.0; we error rather than alias-and-warn so
+# stale dispatch sites and stale marshal.json entries surface immediately.
+LEGACY_REMEDIATION: dict[tuple[str, str], str] = {
+    ('cross', 'research'): (
+        "use --phase <caller-phase> --role research (or --default for "
+        "standalone /research outside any plan)"
     ),
-    'cross': (
-        'research',
-        'triage',
-        'q-gate-validation',
-        'plugin-doctor',
-        'manage-architecture-enrich-module',
+    ('cross', 'triage'): (
+        "use --phase <caller-phase> --role verification-feedback "
+        "(producer in {build-runner, sonar, pr-comment, plugin-doctor, pr-state})"
+    ),
+    ('cross', 'q-gate-validation'): (
+        "use --phase <caller-phase> (no --role; q-gate-validation tracks "
+        "the calling phase's default)"
+    ),
+    ('cross', 'plugin-doctor'): (
+        "use --phase phase-6 --role verification-feedback "
+        "(with producer=plugin-doctor)"
+    ),
+    ('cross', 'manage-architecture-enrich-module'): (
+        "use --phase phase-6 (no --role; tracks phase-6.default)"
+    ),
+    ('phase-6', 'create-pr'): (
+        "use --phase phase-6 (no --role; create-pr tracks phase-6.default)"
+    ),
+    ('phase-6', 'pre-submission-self-review'): (
+        "use --phase phase-6 (no --role; pre-submission-self-review tracks "
+        "phase-6.default)"
+    ),
+    ('phase-6', 'lessons-capture'): (
+        "use --phase phase-6 --role post-run-review "
+        "(lessons-capture folded into post-run-review)"
+    ),
+    ('phase-6', 'retrospective'): (
+        "use --phase phase-6 --role post-run-review "
+        "(retrospective folded into post-run-review)"
+    ),
+    ('phase-6', 'pr-doctor'): (
+        "use --phase phase-6 --role verification-feedback "
+        "(with producer=pr-state)"
     ),
 }
 
@@ -89,8 +123,9 @@ def _validate_level(value: str, source: str) -> tuple[bool, str | None]:
     Args:
         value: The level keyword to validate.
         source: Human-readable description of where the value came from
-            (e.g. 'models.roles.phase-6.create-pr' or 'models.default') —
-            included verbatim in error messages for diagnosability.
+            (e.g. 'models.roles.phase-6.verification-feedback' or
+            'models.default') — included verbatim in error messages for
+            diagnosability.
 
     Returns:
         (True, None) when valid; (False, error_message) when invalid.
@@ -115,22 +150,24 @@ def _split_role(args) -> tuple[str | None, str | None, str | None]:
     Returns:
         (group, subkey, error). ``group`` and ``subkey`` are None when an
         error is set. ``subkey`` is None when the caller asked for a bare
-        group (legitimate for flat groups).
+        group (legitimate for every group — bare-group resolves via the
+        group's ``default`` slot or the global ``models.default``).
 
-    Supports three input shapes:
+    Supports four input shapes:
         --role <group>             -> (group, None, None)
         --role <group>.<subkey>    -> (group, subkey, None)
         --phase <g> --role <s>     -> (g, s, None)
+        --phase <g>                -> (g, None, None)
     """
     phase = getattr(args, 'phase', None)
     role = getattr(args, 'role', None)
     if role is None and phase is None:
-        return None, None, '--role (or --phase + --role) is required'
+        return None, None, '--role (or --phase [--role]) is required'
 
     if phase is not None:
-        # Two-flag form. `role` must NOT itself contain a dot in this mode.
+        # Two-flag form. `role` may be None (bare-group via --phase alone).
         if role is None:
-            return None, None, '--phase requires --role'
+            return phase, None, None
         if '.' in role:
             return (
                 None,
@@ -158,26 +195,24 @@ def _resolve_level(roles: dict, default_level: str | None, group: str, subkey: s
         ``source`` are empty strings.
 
     Resolution order:
-        1. If group is unknown -> empty level, "unknown_role" source.
-        2. If group is known and present in JSON:
-           - String at group: that value is the level (subkey ignored — the
-             group has one workflow, so any subkey resolves to the same).
-           - Object at group: walk to [subkey]; if subkey is None and
-             KNOWN_ROLES[group] is a tuple, error; if subkey is unknown
-             for this group, error.
-        3. If group is known but unset -> fall through to default_level.
-        4. If default_level is unset -> 'inherit'.
+        1. group must be in :data:`KNOWN_ROLES`.
+        2. subkey (if supplied) must be in the group's schema. Unknown
+           sub-keys error.
+        3. If ``models.roles.<group>`` is a **string**, the value is the
+           level (sub-key is informational).
+        4. If ``models.roles.<group>`` is an **object**:
+           - Sub-key supplied AND present -> that value.
+           - Sub-key supplied but absent  -> walk to the ``default`` slot.
+           - Sub-key absent (bare group)  -> walk to the ``default`` slot.
+           - No ``default`` slot          -> fall through to global default.
+        5. ``models.default`` -> fall through when nothing matched above.
+        6. ``inherit`` -> implicit final fallback.
     """
     if group not in KNOWN_ROLES:
         return '', '', f"role group '{group}' is not registered in model-roles.md"
 
     group_schema = KNOWN_ROLES[group]
-    if subkey is not None and group_schema is None:
-        # Flat group with a subkey supplied: the subkey is informational
-        # (the group has one workflow). Accept silently — any subkey
-        # resolves to the same value.
-        pass
-    if subkey is not None and group_schema is not None and subkey not in group_schema:
+    if subkey is not None and subkey not in group_schema:
         return (
             '',
             '',
@@ -187,31 +222,28 @@ def _resolve_level(roles: dict, default_level: str | None, group: str, subkey: s
 
     group_value = roles.get(group)
 
-    # Case 1: group present, scalar at group.
+    # Case 1: group present, scalar at group (single-level shorthand).
     if isinstance(group_value, str):
-        # Flat phase: subkey is informational; the value applies.
         return group_value, f'models.roles.{group}', None
 
     # Case 2: group present, object at group.
     if isinstance(group_value, dict):
-        if subkey is None:
-            return (
-                '',
-                '',
-                f"group '{group}' is a multi-workflow group; supply a "
-                f'subkey (--role {group}.<subkey> or --phase {group} '
-                f'--role <subkey>)',
-            )
-        sub_value = group_value.get(subkey)
-        if isinstance(sub_value, str):
-            return sub_value, f'models.roles.{group}.{subkey}', None
-        # Subkey absent: fall through to default.
+        if subkey is not None:
+            sub_value = group_value.get(subkey)
+            if isinstance(sub_value, str):
+                return sub_value, f'models.roles.{group}.{subkey}', None
+            # Sub-key missing from the object — walk to ``default`` slot.
 
-    # Case 3: group absent or subkey absent within object -> default.
+        default_slot = group_value.get('default')
+        if isinstance(default_slot, str):
+            return default_slot, f'models.roles.{group}.default', None
+        # No ``default`` slot — fall through to global default below.
+
+    # Case 3: group absent OR object missing both subkey + default -> global default.
     if default_level is not None:
         return default_level, 'models.default', None
 
-    # Case 4: no default set.
+    # Case 4: no default set anywhere.
     return 'inherit', 'implicit_default', None
 
 
@@ -261,6 +293,16 @@ def cmd_models(args) -> dict:
     # When err is None, _split_role guarantees group is non-None.
     assert group is not None
 
+    # Retired-key check: legacy `cross.*` and `phase-6.{retired}` reads
+    # error with a remediation pointing to the new shape. Runs before the
+    # unknown-group warning so `cross.*` does not silently fall back.
+    if subkey is not None:
+        remediation = LEGACY_REMEDIATION.get((group, subkey))
+        if remediation is not None:
+            return error_exit(
+                f"role key '{group}.{subkey}' is retired; {remediation}"
+            )
+
     # Validate the default value (if present) once so callers see invalid
     # defaults via a clear message even when the role itself has a value.
     if default_level is not None:
@@ -282,9 +324,6 @@ def cmd_models(args) -> dict:
             f"role '{warning_role}' is not registered in model-roles.md; "
             f'resolving to default/inherit. Update marshal.json or model-roles.md.'
         )
-        level, source, _ = _resolve_level(roles, default_level, '__unknown__', subkey)
-        # _resolve_level returns "unknown" error for unregistered groups,
-        # so call default/inherit directly here.
         if default_level is not None:
             level = default_level
             source = 'models.default'
@@ -343,10 +382,9 @@ def cmd_models_resolve_target(args) -> dict:
 def _expand_roles(preset_roles: dict, default_level: str) -> dict:
     """Expand a preset's per-role overrides into a fully-qualified roles map.
 
-    For every entry in KNOWN_ROLES (flat or nested), produce a value: the
-    preset's override when present, otherwise the preset's ``default``. The
-    result is the same hierarchical shape as KNOWN_ROLES (strings at flat
-    groups, nested dicts at multi-workflow groups).
+    For every entry in KNOWN_ROLES, produce a nested dict whose keys are the
+    group's schema sub-keys. Each value is the preset's override when
+    present, otherwise the preset's ``default``.
 
     The function rejects any role override in ``preset_roles`` whose key
     is not registered (defence-in-depth — model_presets does not import
@@ -354,44 +392,36 @@ def _expand_roles(preset_roles: dict, default_level: str) -> dict:
     """
     expanded: dict = {}
     for group, schema in KNOWN_ROLES.items():
-        if schema is None:
-            # Flat: a single string value applies.
-            value = preset_roles.get(group, default_level)
-            if isinstance(value, dict):
-                # Defence: a preset declared an object at a flat group.
-                # Pick the first value or fall back to default.
-                inner = next(iter(value.values()), default_level)
-                value = inner if isinstance(inner, str) else default_level
-            expanded[group] = value if isinstance(value, str) else default_level
+        preset_group = preset_roles.get(group)
+        sub_dict: dict = {}
+        if isinstance(preset_group, dict):
+            for subkey in schema:
+                sub_value = preset_group.get(subkey, default_level)
+                sub_dict[subkey] = (
+                    sub_value if isinstance(sub_value, str) else default_level
+                )
+        elif isinstance(preset_group, str):
+            # Preset wrote a string at the group: apply it to every sub-key
+            # (degraded interpretation — shorthand for "set every workflow
+            # under this phase to this level").
+            for subkey in schema:
+                sub_dict[subkey] = preset_group
         else:
-            # Nested: build the sub-dict with every known subkey expanded.
-            preset_group = preset_roles.get(group)
-            sub_dict: dict = {}
-            if isinstance(preset_group, dict):
-                for subkey in schema:
-                    sub_value = preset_group.get(subkey, default_level)
-                    sub_dict[subkey] = (
-                        sub_value if isinstance(sub_value, str) else default_level
-                    )
-            elif isinstance(preset_group, str):
-                # Preset wrote a string at a nested group: apply it to all
-                # subkeys (a reasonable degraded interpretation).
-                for subkey in schema:
-                    sub_dict[subkey] = preset_group
-            else:
-                # Preset did not declare the group: fill with default_level.
-                for subkey in schema:
-                    sub_dict[subkey] = default_level
-            expanded[group] = sub_dict
+            # Preset did not declare the group: fill with the global default.
+            for subkey in schema:
+                sub_dict[subkey] = default_level
+        expanded[group] = sub_dict
     return expanded
 
 
 def _count_overrides(expanded_roles: dict, default_level: str) -> int:
     """Count role entries whose level differs from ``default_level``.
 
-    Walks both flat and nested groups. A role written at the same level
-    as ``default`` is functionally equivalent to inheriting the default,
-    so it does NOT inflate the override count.
+    Walks both flat and nested groups (post-rewrite every group is nested,
+    but the function tolerates both shapes for forward compatibility). A
+    role written at the same level as ``default`` is functionally
+    equivalent to inheriting the default, so it does NOT inflate the
+    override count.
     """
     count = 0
     for value in expanded_roles.values():

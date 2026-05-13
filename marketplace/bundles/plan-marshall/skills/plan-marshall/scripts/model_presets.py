@@ -1,16 +1,16 @@
 """Named model-level presets for the ``manage-config models`` write API.
 
 Defines :class:`ModelPresets` — a constant-class that bundles a ``models``
-block payload (``{"default": <level>, "roles": {<group>: <level | dict>, ...}}``)
+block payload (``{"default": <level>, "roles": {<phase>: <level | dict>, ...}}``)
 under three named profiles:
 
 - ``ECONOMIC`` — minimum-cost configuration; reserves ``medium`` for the
-  reasoning-heavy roles and leaves everything else at ``low``.
+  outline + plan phases and leaves everything else at ``low``.
 - ``BALANCED`` — middle-of-the-road profile; defaults to ``medium`` and
-  bumps the four phase-group roles that most consistently benefit from
-  extra reasoning to ``high``.
+  bumps the analytical phases plus the verification-feedback workflow
+  on phase-5 and phase-6 to ``high``.
 - ``HIGH_END`` — maximum-quality profile; defaults to ``high`` and pushes
-  the deep-reasoning cross-phase roles to ``xhigh`` / ``xxhigh`` / ``max``.
+  analytical phases to ``xhigh`` with ``research`` at ``max``.
 
 The presets sit alongside the role registry inside the
 ``plan-marshall:plan-marshall`` skill so that policy decisions about
@@ -28,13 +28,14 @@ at import time and raises :class:`ValueError` if any preset references
 an unknown level.
 
 Hierarchical shape: a preset's ``roles`` block carries a top-level entry
-per role group. The value is either a string (for flat single-workflow
-phase groups like ``phase-1`` … ``phase-5``) or a nested dict (for
-multi-workflow groups ``phase-6`` and ``cross``). The :func:`_validate_preset`
-self-check tolerates both shapes; the resolver in
-``manage-config:_cmd_models`` expands a preset's overrides through the
-full ``KNOWN_ROLES`` registry at write time, so the on-disk
-``marshal.json`` is always fully qualified.
+per phase group (``phase-1`` … ``phase-6``). The value is either a string
+(single-level shorthand applied to every workflow under that phase) or a
+nested dict with optional sub-keys (``default``, ``research``,
+``verification-feedback``, ``post-run-review`` — see ``KNOWN_ROLES`` for
+the per-phase whitelist). The :func:`_validate_preset` self-check tolerates
+both shapes; the resolver in ``manage-config:_cmd_models`` expands a
+preset's overrides through the full ``KNOWN_ROLES`` registry at write
+time, so the on-disk ``marshal.json`` is always fully qualified.
 """
 
 from __future__ import annotations
@@ -83,61 +84,52 @@ class ModelPresets:
     ECONOMIC: dict = {
         'default': 'low',
         'roles': {
-            'phase-3': 'medium',
-            'phase-4': 'medium',
-            'cross': {
-                'research': 'medium',
-                'q-gate-validation': 'medium',
-            },
+            'phase-3': {'default': 'medium', 'research': 'medium'},
+            'phase-4': {'default': 'medium'},
         },
     }
-    """Minimum-cost preset. Default ``low``; bumps phase-3 outline and
-    phase-4 plan-time analysis to ``medium`` along with the two cross-phase
-    reasoning roles. Use when running large batches of routine plans where
-    output quality is acceptable at the cheapest tier."""
+    """Minimum-cost preset. Default ``low``; bumps phase-3 outline (plus its
+    research workflow) and phase-4 plan-time analysis to ``medium``. Use
+    when running large batches of routine plans where output quality is
+    acceptable at the cheapest tier."""
 
     BALANCED: dict = {
         'default': 'medium',
         'roles': {
-            'phase-2': 'high',
-            'phase-3': 'high',
-            'phase-4': 'high',
-            'cross': {
-                'research': 'high',
-                'triage': 'high',
-                'q-gate-validation': 'high',
-            },
+            'phase-2': {'default': 'high', 'research': 'high'},
+            'phase-3': {'default': 'high', 'research': 'high'},
+            'phase-4': {'default': 'high', 'research': 'high'},
+            'phase-5': {'verification-feedback': 'high'},
+            'phase-6': {'verification-feedback': 'high'},
         },
     }
     """Middle-of-the-road preset. Default ``medium``; bumps the three
-    analytical phase groups (phase-2 refine, phase-3 outline, phase-4 plan)
-    and the cross-phase research/triage/q-gate cores to ``high``. The
+    analytical phases (phase-2 refine, phase-3 outline, phase-4 plan) and
+    their per-phase research workflows to ``high``, plus the
+    verification-feedback workflow on phase-5 (build-runner triage) and
+    phase-6 (sonar / pr-comment / plugin-doctor / pr-state triage). The
     recommended default for non-trivial work."""
 
     HIGH_END: dict = {
         'default': 'high',
         'roles': {
-            'phase-2': 'xhigh',
-            'phase-3': 'xhigh',
-            'phase-4': 'xhigh',
+            'phase-2': {'default': 'xhigh', 'research': 'max'},
+            'phase-3': {'default': 'xhigh', 'research': 'max'},
+            'phase-4': {'default': 'xhigh', 'research': 'max'},
+            'phase-5': {'verification-feedback': 'xhigh'},
             'phase-6': {
-                'retrospective': 'xhigh',
-                'pr-doctor': 'xhigh',
-            },
-            'cross': {
-                'research': 'max',
-                'triage': 'xhigh',
-                'q-gate-validation': 'xhigh',
-                'plugin-doctor': 'xhigh',
+                'verification-feedback': 'xhigh',
+                'post-run-review': 'xhigh',
             },
         },
     }
-    """Maximum-quality preset. Default ``high``; pushes the analytical phase
-    groups and the deep-reasoning cross-phase cores to ``xhigh`` / ``xxhigh`` /
-    ``max``. ``cross.research`` rides at ``max`` (Opus-4.7-only — falls back
-    to canonical when the alias does not accept ``effort: xhigh``).
-    Use for high-stakes plans where the extra reasoning cost is justified by
-    output quality."""
+    """Maximum-quality preset. Default ``high``; pushes the analytical
+    phases to ``xhigh`` with their ``research`` workflows at ``max``
+    (Opus-4.7-only — falls back to canonical when the alias does not
+    accept ``effort: xhigh``). Phase-5/phase-6 verification-feedback and
+    phase-6 post-run-review (retrospective + lessons-capture) ride at
+    ``xhigh``. Use for high-stakes plans where the extra reasoning cost is
+    justified by output quality."""
 
     # ---- canonical name table -------------------------------------------
 
@@ -152,17 +144,18 @@ class ModelPresets:
 
     _DESCRIPTIONS: dict[str, str] = {
         'economic': (
-            'Minimum-cost preset — default low, with phase-3, phase-4, '
-            'and cross.research/cross.q-gate-validation bumped to medium.'
+            'Minimum-cost preset — default low, with phase-3 (outline + '
+            'research) and phase-4 bumped to medium.'
         ),
         'balanced': (
-            'Middle-of-the-road preset — default medium, with phase-2, '
-            'phase-3, phase-4, and cross.research/triage/q-gate-validation '
-            'bumped to high.'
+            'Middle-of-the-road preset — default medium, with phase-2 / '
+            'phase-3 / phase-4 (default + research) and phase-5 / phase-6 '
+            'verification-feedback bumped to high.'
         ),
         'high-end': (
-            'Maximum-quality preset — default high, with reasoning-heavy '
-            'roles pushed to xhigh / xxhigh / max.'
+            'Maximum-quality preset — default high, analytical phases at '
+            'xhigh with research at max, phase-5/6 verification-feedback '
+            'and phase-6 post-run-review at xhigh.'
         ),
     }
 
