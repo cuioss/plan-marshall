@@ -301,6 +301,32 @@ seeded_count	0
 skipped_count	0
 ```
 
+## Session Restart Required After Executor / Agent Changes
+
+> **CRITICAL — Restart Claude Code session before dispatching against
+> newly-emitted agents or notations.** Claude Code's agent registry is
+> **session-pinned at session start**: it scans the plugin cache exactly
+> once when the session boots and never re-scans mid-session. Any
+> steward operation that materially alters the agent set — executor
+> regeneration that adds new notations, a `/sync-plugin-cache` run that
+> emits new `execution-context-{level}` variants from the
+> dynamic-level executor extension point — produces files the
+> already-running session **cannot see**. Dispatching against a freshly
+> emitted variant from the same session fails with
+> `Agent type 'plan-marshall:execution-context-{level}' not found` even
+> though the file exists on disk in the cache.
+>
+> **Operational guardrail:** after running steward operations from the
+> Maintenance menu (Regenerate Executor) or the wizard's executor-
+> generation step, surface a prominent "Restart Claude Code session
+> before next dispatch" warning to the user when the operation regenerated
+> the executor OR changed the agent set. The restart is the only
+> mechanism that refreshes the registry. The same WHY rationale
+> (registry is session-pinned at startup) is documented at the sister
+> surfaces — `/sync-plugin-cache`, `variant_emitter.py`, and
+> `ext-point-dynamic-level-executor.md` — and MUST stay convergent
+> across all four surfaces.
+
 ## Architecture Refresh Tier Knobs
 
 The wizard and the maintenance Configuration submenu both expose two `architecture_refresh` tier knobs that drive the `phase-6-finalize` `architecture-refresh` step. The canonical schema, defaults, and value contract are owned by `plan-marshall:manage-run-config` (see `manage-run-config/standards/run-config-standard.md` and the `architecture-refresh get-tier-0/get-tier-1/set-tier-0/set-tier-1` subcommands documented in `manage-run-config/SKILL.md`).
