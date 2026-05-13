@@ -74,26 +74,26 @@ def _read_models_block(plan_dir: Path) -> dict:
 
 
 def test_round_trip_default_and_role_persist():
-    """Set default=medium and roles.cross.q-gate-validation=high; resolver returns saved values."""
+    """Set default=medium and roles.phase-6.verification-feedback=high; resolver returns saved values."""
     with PlanContext() as ctx:
         _seed_marshal(
             ctx.fixture_dir,
             {
                 'default': 'medium',
-                'roles': {'cross': {'q-gate-validation': 'high'}},
+                'roles': {'phase-6': {'verification-feedback': 'high'}},
             },
         )
 
         result_role = cmd_models(
-            Namespace(role='cross.q-gate-validation', phase=None, default=False)
+            Namespace(role='phase-6.verification-feedback', phase=None, default=False)
         )
         result_other = cmd_models(
-            Namespace(role='cross.research', phase=None, default=False)
+            Namespace(role='phase-3.research', phase=None, default=False)
         )
 
         assert result_role['status'] == 'success'
         assert result_role['level'] == 'high'
-        assert result_role['source'] == 'models.roles.cross.q-gate-validation'
+        assert result_role['source'] == 'models.roles.phase-6.verification-feedback'
 
         assert result_other['status'] == 'success'
         assert result_other['level'] == 'medium'
@@ -103,7 +103,7 @@ def test_round_trip_default_and_role_persist():
         block = _read_models_block(ctx.fixture_dir)
         assert block == {
             'default': 'medium',
-            'roles': {'cross': {'q-gate-validation': 'high'}},
+            'roles': {'phase-6': {'verification-feedback': 'high'}},
         }
 
 
@@ -128,21 +128,21 @@ def test_round_trip_repeated_reads_do_not_mutate():
 
 
 def test_invalid_level_refused_at_read():
-    """`models.roles.cross.q-gate-validation = 'ultra'` errors out — wizard refuses save."""
+    """`models.roles.phase-6.verification-feedback = 'ultra'` errors out — wizard refuses save."""
     with PlanContext() as ctx:
         _seed_marshal(
             ctx.fixture_dir,
-            {'roles': {'cross': {'q-gate-validation': 'ultra'}}},
+            {'roles': {'phase-6': {'verification-feedback': 'ultra'}}},
         )
 
         result = cmd_models(
-            Namespace(role='cross.q-gate-validation', phase=None, default=False)
+            Namespace(role='phase-6.verification-feedback', phase=None, default=False)
         )
 
         assert result['status'] == 'error'
         assert "invalid level 'ultra'" in result['error']
         # The error names the source so the wizard can re-prompt with context.
-        assert 'models.roles.cross.q-gate-validation' in result['error']
+        assert 'models.roles.phase-6.verification-feedback' in result['error']
 
 
 def test_max_level_resolves_for_research():
@@ -150,7 +150,7 @@ def test_max_level_resolves_for_research():
     with PlanContext() as ctx:
         _seed_marshal(ctx.fixture_dir, {'default': 'max'})
 
-        result = cmd_models(Namespace(role='cross.research'))
+        result = cmd_models(Namespace(role='phase-3.research'))
 
         assert result['status'] == 'success'
         assert result['level'] == 'max'

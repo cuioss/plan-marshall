@@ -144,51 +144,57 @@ def test_models_block_present_but_empty_returns_inherit():
 
 
 def test_dotted_lookup_returns_subkey_value():
-    """`--role phase-6.create-pr` resolves the nested object's subkey."""
+    """`--role phase-6.verification-feedback` resolves the nested object's subkey."""
     with PlanContext() as ctx:
         _write_marshal_with_models(
             ctx.fixture_dir,
             {
                 'default': 'medium',
-                'roles': {'phase-6': {'create-pr': 'high'}},
+                'roles': {'phase-6': {'verification-feedback': 'high'}},
             },
         )
 
-        result = cmd_models(_ns(role='phase-6.create-pr'))
+        result = cmd_models(_ns(role='phase-6.verification-feedback'))
 
         assert result['status'] == 'success'
         assert result['level'] == 'high'
-        assert result['source'] == 'models.roles.phase-6.create-pr'
+        assert result['source'] == 'models.roles.phase-6.verification-feedback'
 
 
-def test_dotted_lookup_subkey_unset_falls_through_to_default():
-    """Subkey absent within a multi-workflow group: falls through to default."""
+def test_dotted_lookup_subkey_unset_walks_to_default_slot():
+    """Subkey absent within a multi-workflow group: walks to <group>.default."""
     with PlanContext() as ctx:
         _write_marshal_with_models(
             ctx.fixture_dir,
-            {'default': 'medium', 'roles': {'phase-6': {'retrospective': 'high'}}},
+            {
+                'default': 'medium',
+                'roles': {'phase-6': {
+                    'default': 'low',
+                    'verification-feedback': 'high',
+                }},
+            },
         )
 
-        result = cmd_models(_ns(role='phase-6.create-pr'))
+        result = cmd_models(_ns(role='phase-6.research'))
+
+        assert result['status'] == 'success'
+        assert result['level'] == 'low'
+        assert result['source'] == 'models.roles.phase-6.default'
+
+
+def test_dotted_lookup_subkey_unset_no_default_slot_falls_to_models_default():
+    """Subkey absent + no in-group `default` slot: falls through to models.default."""
+    with PlanContext() as ctx:
+        _write_marshal_with_models(
+            ctx.fixture_dir,
+            {'default': 'medium', 'roles': {'phase-6': {'verification-feedback': 'high'}}},
+        )
+
+        result = cmd_models(_ns(role='phase-6.research'))
 
         assert result['status'] == 'success'
         assert result['level'] == 'medium'
         assert result['source'] == 'models.default'
-
-
-def test_dotted_lookup_cross_group():
-    """`cross.triage` (and other cross subkeys) resolve correctly."""
-    with PlanContext() as ctx:
-        _write_marshal_with_models(
-            ctx.fixture_dir,
-            {'default': 'low', 'roles': {'cross': {'triage': 'high'}}},
-        )
-
-        result = cmd_models(_ns(role='cross.triage'))
-
-        assert result['status'] == 'success'
-        assert result['level'] == 'high'
-        assert result['source'] == 'models.roles.cross.triage'
 
 
 def test_dotted_unknown_subkey_errors():
@@ -206,18 +212,58 @@ def test_dotted_unknown_subkey_errors():
         assert 'phase-6' in result['error']
 
 
-def test_bare_nested_group_lookup_errors():
-    """Bare-group lookup on a multi-workflow group requires --role <group>.<sub>."""
+def test_bare_group_lookup_with_object_default_slot_resolves():
+    """Bare-group lookup on an object value walks to the `default` slot."""
     with PlanContext() as ctx:
         _write_marshal_with_models(
             ctx.fixture_dir,
-            {'default': 'medium', 'roles': {'phase-6': {'create-pr': 'high'}}},
+            {
+                'default': 'medium',
+                'roles': {'phase-6': {
+                    'default': 'high',
+                    'verification-feedback': 'xhigh',
+                }},
+            },
         )
 
         result = cmd_models(_ns(role='phase-6'))
 
-        assert result['status'] == 'error'
-        assert 'multi-workflow group' in result['error']
+        assert result['status'] == 'success'
+        assert result['level'] == 'high'
+        assert result['source'] == 'models.roles.phase-6.default'
+
+
+def test_bare_group_lookup_with_object_no_default_falls_to_models_default():
+    """Bare-group on an object missing `default` slot: walks to models.default."""
+    with PlanContext() as ctx:
+        _write_marshal_with_models(
+            ctx.fixture_dir,
+            {
+                'default': 'medium',
+                'roles': {'phase-6': {'verification-feedback': 'high'}},
+            },
+        )
+
+        result = cmd_models(_ns(role='phase-6'))
+
+        assert result['status'] == 'success'
+        assert result['level'] == 'medium'
+        assert result['source'] == 'models.default'
+
+
+def test_bare_phase_via_two_flag_form():
+    """`--phase phase-N` alone (no --role) is equivalent to bare-group lookup."""
+    with PlanContext() as ctx:
+        _write_marshal_with_models(
+            ctx.fixture_dir,
+            {'default': 'medium', 'roles': {'phase-3': 'high'}},
+        )
+
+        result = cmd_models(_ns(phase='phase-3'))
+
+        assert result['status'] == 'success'
+        assert result['level'] == 'high'
+        assert result['source'] == 'models.roles.phase-3'
 
 
 # =============================================================================
@@ -226,18 +272,18 @@ def test_bare_nested_group_lookup_errors():
 
 
 def test_two_flag_form_resolves_subkey():
-    """`--phase phase-6 --role create-pr` is equivalent to the dotted form."""
+    """`--phase phase-6 --role verification-feedback` is equivalent to the dotted form."""
     with PlanContext() as ctx:
         _write_marshal_with_models(
             ctx.fixture_dir,
-            {'default': 'medium', 'roles': {'phase-6': {'create-pr': 'high'}}},
+            {'default': 'medium', 'roles': {'phase-6': {'verification-feedback': 'high'}}},
         )
 
-        result = cmd_models(_ns(role='create-pr', phase='phase-6'))
+        result = cmd_models(_ns(role='verification-feedback', phase='phase-6'))
 
         assert result['status'] == 'success'
         assert result['level'] == 'high'
-        assert result['source'] == 'models.roles.phase-6.create-pr'
+        assert result['source'] == 'models.roles.phase-6.verification-feedback'
 
 
 def test_two_flag_form_rejects_dotted_role():
@@ -245,7 +291,7 @@ def test_two_flag_form_rejects_dotted_role():
     with PlanContext() as ctx:
         _write_marshal_with_models(ctx.fixture_dir, {'default': 'medium'})
 
-        result = cmd_models(_ns(role='create-pr.extra', phase='phase-6'))
+        result = cmd_models(_ns(role='verification-feedback.extra', phase='phase-6'))
 
         assert result['status'] == 'error'
         assert 'bare subkey' in result['error']
@@ -312,10 +358,10 @@ def test_resolve_target_high_level():
     with PlanContext() as ctx:
         _write_marshal_with_models(
             ctx.fixture_dir,
-            {'default': 'medium', 'roles': {'cross': {'triage': 'high'}}},
+            {'default': 'medium', 'roles': {'phase-6': {'verification-feedback': 'high'}}},
         )
 
-        result = cmd_models_resolve_target(_ns(role='cross.triage'))
+        result = cmd_models_resolve_target(_ns(role='phase-6.verification-feedback'))
 
         assert result['status'] == 'success'
         assert result['level'] == 'high'
@@ -479,15 +525,108 @@ def test_read_does_not_mutate_marshal():
                 'default': 'medium',
                 'roles': {
                     'phase-2': 'high',
-                    'cross': {'triage': 'high'},
+                    'phase-6': {'verification-feedback': 'high'},
                 },
             },
         )
         before = _hash_marshal(ctx.fixture_dir)
 
         cmd_models(_ns(role='phase-2'))
-        cmd_models(_ns(role='cross.triage'))
+        cmd_models(_ns(role='phase-6.verification-feedback'))
         cmd_models(_ns(default=True))
-        cmd_models_resolve_target(_ns(role='cross.triage'))
+        cmd_models_resolve_target(_ns(role='phase-6.verification-feedback'))
 
         assert _hash_marshal(ctx.fixture_dir) == before
+
+
+# =============================================================================
+# Retired legacy keys (cross.* + retired phase-6.*) error with remediation
+# =============================================================================
+
+
+def test_legacy_cross_triage_errors_with_remediation():
+    """`--role cross.triage` errors and names the new target."""
+    with PlanContext() as ctx:
+        _write_marshal_with_models(ctx.fixture_dir, {'default': 'medium'})
+
+        result = cmd_models(_ns(role='cross.triage'))
+
+        assert result['status'] == 'error'
+        # Wording mentions retirement + the new key.
+        assert 'retired' in result['error']
+        assert 'verification-feedback' in result['error']
+
+
+def test_legacy_cross_research_errors_with_remediation():
+    with PlanContext() as ctx:
+        _write_marshal_with_models(ctx.fixture_dir, {'default': 'medium'})
+        result = cmd_models(_ns(role='cross.research'))
+        assert result['status'] == 'error'
+        assert 'retired' in result['error']
+        assert 'research' in result['error']
+
+
+def test_legacy_cross_q_gate_validation_errors_with_remediation():
+    with PlanContext() as ctx:
+        _write_marshal_with_models(ctx.fixture_dir, {'default': 'medium'})
+        result = cmd_models(_ns(role='cross.q-gate-validation'))
+        assert result['status'] == 'error'
+        assert 'retired' in result['error']
+
+
+def test_legacy_cross_plugin_doctor_errors_with_remediation():
+    with PlanContext() as ctx:
+        _write_marshal_with_models(ctx.fixture_dir, {'default': 'medium'})
+        result = cmd_models(_ns(role='cross.plugin-doctor'))
+        assert result['status'] == 'error'
+        assert 'plugin-doctor' in result['error']
+        assert 'producer' in result['error']
+
+
+def test_legacy_cross_enrich_module_errors_with_remediation():
+    with PlanContext() as ctx:
+        _write_marshal_with_models(ctx.fixture_dir, {'default': 'medium'})
+        result = cmd_models(_ns(role='cross.manage-architecture-enrich-module'))
+        assert result['status'] == 'error'
+        assert 'retired' in result['error']
+
+
+def test_legacy_phase_6_create_pr_errors():
+    with PlanContext() as ctx:
+        _write_marshal_with_models(ctx.fixture_dir, {'default': 'medium'})
+        result = cmd_models(_ns(role='phase-6.create-pr'))
+        assert result['status'] == 'error'
+        assert 'retired' in result['error']
+        assert 'phase-6.default' in result['error']
+
+
+def test_legacy_phase_6_pre_submission_self_review_errors():
+    with PlanContext() as ctx:
+        _write_marshal_with_models(ctx.fixture_dir, {'default': 'medium'})
+        result = cmd_models(_ns(role='phase-6.pre-submission-self-review'))
+        assert result['status'] == 'error'
+        assert 'retired' in result['error']
+
+
+def test_legacy_phase_6_lessons_capture_errors():
+    with PlanContext() as ctx:
+        _write_marshal_with_models(ctx.fixture_dir, {'default': 'medium'})
+        result = cmd_models(_ns(role='phase-6.lessons-capture'))
+        assert result['status'] == 'error'
+        assert 'post-run-review' in result['error']
+
+
+def test_legacy_phase_6_retrospective_errors():
+    with PlanContext() as ctx:
+        _write_marshal_with_models(ctx.fixture_dir, {'default': 'medium'})
+        result = cmd_models(_ns(role='phase-6.retrospective'))
+        assert result['status'] == 'error'
+        assert 'post-run-review' in result['error']
+
+
+def test_legacy_phase_6_pr_doctor_errors():
+    with PlanContext() as ctx:
+        _write_marshal_with_models(ctx.fixture_dir, {'default': 'medium'})
+        result = cmd_models(_ns(role='phase-6.pr-doctor'))
+        assert result['status'] == 'error'
+        assert 'pr-state' in result['error']

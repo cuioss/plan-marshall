@@ -183,10 +183,6 @@ def test_preset_role_keys_are_subset_of_cmd_models_known_roles(preset_name: str)
         )
         schema = cmd_models.KNOWN_ROLES[group]
         if isinstance(group_value, dict):
-            assert schema is not None, (
-                f"preset '{preset_name}' nests group '{group}', but the "
-                f'registry declares it flat'
-            )
             for subkey in group_value:
                 assert subkey in schema, (
                     f"preset '{preset_name}' subkey '{group}.{subkey}' is "
@@ -254,11 +250,12 @@ def test_get_returns_deep_copy_nested_roles_mutation_does_not_leak() -> None:
     import copy as _copy
     original_roles = _copy.deepcopy(mp.ModelPresets.BALANCED['roles'])
     snapshot = mp.ModelPresets.get('balanced')
-    # Mutate both a top-level flat entry and a nested-group subkey.
-    snapshot['roles']['phase-2'] = 'CORRUPTED'
-    snapshot['roles']['cross']['research'] = 'CORRUPTED'
+    # Mutate the top-level group dict, a nested-group subkey, and a new
+    # injected entry — none of these may leak back to the class constant.
+    snapshot['roles']['phase-3']['research'] = 'CORRUPTED'
+    snapshot['roles']['phase-3']['default'] = 'CORRUPTED'
     snapshot['roles']['INJECTED'] = 'CORRUPTED'
-    # Class-level constant's roles dict must not be mutated by either edit.
+    # Class-level constant's roles dict must not be mutated by any edit.
     assert mp.ModelPresets.BALANCED['roles'] == original_roles
     # A fresh get() must still return the pristine roles dict.
     assert mp.ModelPresets.get('balanced')['roles'] == original_roles

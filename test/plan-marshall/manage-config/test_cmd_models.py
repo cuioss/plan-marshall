@@ -66,46 +66,33 @@ KNOWN_ROLES = _cmd_models_mod.KNOWN_ROLES
 def _expanded_preset(preset: dict) -> dict:
     """Return the fully-qualified roles map that apply-preset writes to disk.
 
-    `apply-preset` expands the preset payload so every entry in the
-    hierarchical ``KNOWN_ROLES`` registry is explicit on disk, with the
-    preset's per-role overrides taking precedence over ``default``.
-    Tests use this helper to assert the on-disk shape without
-    reproducing the expansion logic inline.
+    `apply-preset` expands the preset payload so every sub-key in every
+    group of ``KNOWN_ROLES`` is explicit on disk, with the preset's
+    per-sub-key overrides taking precedence over ``default``. Every group
+    in the post-rewrite registry has a tuple schema, so the expander
+    always builds a nested dict per group.
 
-    Mirrors :func:`_cmd_models._expand_roles`: flat groups receive a
-    string value; nested groups receive a dict keyed by their declared
-    subkeys, each value defaulting to ``preset['default']`` and
-    overridden where the preset's nested block specifies a subkey.
+    Mirrors :func:`_cmd_models._expand_roles`.
     """
     default_level = preset['default']
     preset_roles = preset.get('roles', {})
     expanded_roles: dict = {}
     for group, schema in KNOWN_ROLES.items():
-        if schema is None:
-            # Flat group: scalar level value.
-            value = preset_roles.get(group, default_level)
-            if isinstance(value, dict):
-                # Degraded fallback path mirrored from the implementation.
-                inner = next(iter(value.values()), default_level)
-                value = inner if isinstance(inner, str) else default_level
-            expanded_roles[group] = value if isinstance(value, str) else default_level
+        preset_group = preset_roles.get(group)
+        sub_dict: dict = {}
+        if isinstance(preset_group, dict):
+            for subkey in schema:
+                sub_value = preset_group.get(subkey, default_level)
+                sub_dict[subkey] = (
+                    sub_value if isinstance(sub_value, str) else default_level
+                )
+        elif isinstance(preset_group, str):
+            for subkey in schema:
+                sub_dict[subkey] = preset_group
         else:
-            # Nested group: build sub-dict with every declared subkey.
-            preset_group = preset_roles.get(group)
-            sub_dict: dict = {}
-            if isinstance(preset_group, dict):
-                for subkey in schema:
-                    sub_value = preset_group.get(subkey, default_level)
-                    sub_dict[subkey] = (
-                        sub_value if isinstance(sub_value, str) else default_level
-                    )
-            elif isinstance(preset_group, str):
-                for subkey in schema:
-                    sub_dict[subkey] = preset_group
-            else:
-                for subkey in schema:
-                    sub_dict[subkey] = default_level
-            expanded_roles[group] = sub_dict
+            for subkey in schema:
+                sub_dict[subkey] = default_level
+        expanded_roles[group] = sub_dict
     return {'default': default_level, 'roles': expanded_roles}
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
@@ -134,10 +121,8 @@ def _read_marshal_models(fixture_dir: Path) -> dict:
 
 
 def _total_expanded_role_count() -> int:
-    """Total leaf-level role entries across the hierarchical KNOWN_ROLES."""
-    return sum(
-        1 if schema is None else len(schema) for schema in KNOWN_ROLES.values()
-    )
+    """Total leaf-level role entries across the phase-scoped KNOWN_ROLES."""
+    return sum(len(schema) for schema in KNOWN_ROLES.values())
 
 
 def _count_preset_overrides(preset_roles: dict) -> int:
@@ -173,47 +158,47 @@ def test_apply_preset_economic_writes_expanded_payload():
         on_disk = _read_marshal_models(ctx.fixture_dir)
         assert on_disk == _expanded_preset(ModelPresets.ECONOMIC)
 
-        # Self-documenting on-disk shape: every top-level group is a key
-        # under models.roles so the user can edit by hand. Nested groups
-        # carry every declared subkey explicitly.
+        # Self-documenting on-disk shape: every group has a dict value
+        # carrying every declared sub-key (with the global default level
+        # filling in any sub-key the preset did not override).
         for group, schema in KNOWN_ROLES.items():
             assert group in on_disk['roles'], (
                 f"group '{group}' missing from expanded on-disk roles map"
             )
-            if schema is not None:
-                for subkey in schema:
-                    assert subkey in on_disk['roles'][group], (
-                        f"subkey '{group}.{subkey}' missing from on-disk map"
-                    )
+            for subkey in schema:
+                assert subkey in on_disk['roles'][group], (
+                    f"subkey '{group}.{subkey}' missing from on-disk map"
+                )
 
-        # `phase-6.create-pr` is now an explicit entry (with the default
-        # 'low' level), so the resolver attributes it to the role row.
+        # `phase-6.verification-feedback` is now an explicit entry (with
+        # the default 'low' level since ECONOMIC does not override it),
+        # so the resolver attributes it to the role row.
         read_result = cmd_models(
-            Namespace(role='phase-6.create-pr', phase=None, default=False)
+            Namespace(role='phase-6.verification-feedback', phase=None, default=False)
         )
         assert read_result['status'] == 'success'
         assert read_result['level'] == 'low'
-        assert read_result['source'] == 'models.roles.phase-6.create-pr'
+        assert read_result['source'] == 'models.roles.phase-6.verification-feedback'
 
 
 # =============================================================================
-# (2) apply-preset balanced + models read --role research returns
-#     level: high, source: models.roles.research
+# (2) apply-preset balanced + models read --role phase-3.research returns
+#     level: high, source: models.roles.phase-3.research
 # =============================================================================
 
 
-def test_apply_preset_balanced_then_read_research_returns_high():
+def test_apply_preset_balanced_then_read_phase_3_research_returns_high():
     with PlanContext() as ctx:
         _write_marshal_with_models(ctx.fixture_dir, None)
 
         cmd_models_apply_preset(Namespace(preset='balanced'))
 
         read_result = cmd_models(
-            Namespace(role='cross.research', phase=None, default=False)
+            Namespace(role='phase-3.research', phase=None, default=False)
         )
         assert read_result['status'] == 'success'
         assert read_result['level'] == 'high'
-        assert read_result['source'] == 'models.roles.cross.research'
+        assert read_result['source'] == 'models.roles.phase-3.research'
 
 
 # =============================================================================
@@ -243,20 +228,19 @@ def test_apply_preset_high_end_overwrites_pre_seeded_block():
         # entry is explicit, none of the seeded legacy/phantom values survive.
         assert on_disk == _expanded_preset(ModelPresets.HIGH_END)
 
-        # Specifically: the seeded q_gate_validation: low does NOT survive
-        # (the new key is cross.q-gate-validation).
+        # Specifically: the seeded q_gate_validation: low does NOT survive.
         assert 'q_gate_validation' not in on_disk['roles']
-        # The post-refactor key is set to its HIGH_END override level.
-        assert on_disk['roles']['cross']['q-gate-validation'] == 'xhigh'
+        # phase-6.verification-feedback is set to its HIGH_END override level.
+        assert on_disk['roles']['phase-6']['verification-feedback'] == 'xhigh'
 
         # And the seeded phantom_role is gone entirely (overwrite, not merge —
         # only KNOWN_ROLES survive).
         assert 'phantom_role_not_in_high_end' not in on_disk['roles']
 
-        # Roles not explicitly bumped by HIGH_END are written at the default
-        # level ('high') rather than dropped.
-        # phase-5 is not in HIGH_END's overrides; it should be 'high'.
-        assert on_disk['roles']['phase-5'] == 'high'
+        # Sub-keys not explicitly bumped by HIGH_END are written at the
+        # default level ('high') rather than dropped. phase-1 has no
+        # overrides in HIGH_END; both its sub-keys should be 'high'.
+        assert on_disk['roles']['phase-1'] == {'default': 'high', 'research': 'high'}
 
 
 # =============================================================================
@@ -355,13 +339,13 @@ def test_apply_preset_round_trip_no_residue():
         on_disk = _read_marshal_models(ctx.fixture_dir)
         assert on_disk == _expanded_preset(ModelPresets.ECONOMIC)
 
-        # Specifically: any BALANCED-only role overrides (e.g.,
-        # cross.triage at 'high') must not survive the swap. Since the
-        # expansion writes every KNOWN_ROLES entry explicitly,
-        # cross.triage is now present at the ECONOMIC default ('low')
-        # rather than absent — the residue check is on the LEVEL, not
-        # the key's presence.
-        assert on_disk['roles']['cross']['triage'] == 'low'
+        # Specifically: any BALANCED-only sub-key overrides (e.g.
+        # phase-6.verification-feedback at 'high') must not survive the
+        # swap. Since the expansion writes every KNOWN_ROLES entry
+        # explicitly, every sub-key is now present at the ECONOMIC
+        # default ('low') rather than absent — the residue check is on
+        # the LEVEL, not the key's presence.
+        assert on_disk['roles']['phase-6']['verification-feedback'] == 'low'
         # phase-2 is bumped to 'high' in BALANCED but not in ECONOMIC;
-        # it should now be 'low' (the ECONOMIC default).
-        assert on_disk['roles']['phase-2'] == 'low'
+        # every sub-key should now be 'low' (the ECONOMIC default).
+        assert on_disk['roles']['phase-2'] == {'default': 'low', 'research': 'low'}
