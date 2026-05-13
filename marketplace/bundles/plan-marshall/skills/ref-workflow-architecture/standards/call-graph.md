@@ -5,11 +5,11 @@ Holistic view of every dispatch path in the plan-marshall bundle: orchestrator e
 - **`agents.md`** — the dispatch contract (prompt-body fields, `Task: execution-context` shape, mandatory rules).
 - **`dispatch-walkthrough.md`** — three concrete end-to-end traces for representative dispatches.
 - **`../../extension-api/standards/dispatch-granularity.md`** — the heuristics that decide which call sites get a dispatch envelope vs. an inline script.
-- **`../../plan-marshall/standards/model-roles.md`** — the 6-group phase-scoped role registry (per-call-site level resolution).
+- **`../../plan-marshall/standards/effort-roles.md`** — the 6-group phase-scoped role registry (per-call-site level resolution).
 
 This doc is the **graph** view; the others are the **contract**, **examples**, and **heuristics** views of the same surface.
 
-> **Note on the dispatch target name.** Every dispatch in the graphs below is written as `execution-context` for clarity. The actual `Task:` target on the wire is `execution-context-{level}` where `{level}` ∈ `{low, medium, high, xhigh, xxhigh, max, inherit}` is resolved at dispatch time via `manage-config models resolve-target --phase <caller-phase> [--role <subkey>]`. The level is a runtime detail (chosen by the role-key registry), not a structural one — so the graphs hide it.
+> **Note on the dispatch target name.** Every dispatch in the graphs below is written as `execution-context` for clarity. The actual `Task:` target on the wire is `execution-context-{level}` where `{level}` ∈ `{low, medium, high, xhigh, xxhigh, max, inherit}` is resolved at dispatch time via `manage-config effort resolve-target --phase <caller-phase> [--role <subkey>]`. The level is a runtime detail (chosen by the role-key registry), not a structural one — so the graphs hide it.
 
 Legend (used in every diagram below):
 
@@ -21,7 +21,7 @@ Legend (used in every diagram below):
   /SCR/    Deterministic script (no envelope)
   ?USR?    AskUserQuestion gate (propagates to host UI)
 [VFB]     verification-feedback envelope (producer-mode bundling;
-          fires from phase-5 build-runner and phase-6 sonar / pr-comment /
+          fires from phase-5-execute build-runner and phase-6-finalize sonar / pr-comment /
           plugin-doctor / pr-state)
 
   ──►      In-context flow (within an envelope / orchestrator context)
@@ -53,7 +53,7 @@ Legend (used in every diagram below):
 │   │                                                                     │    │
 │   │  • Reads manage-status / manage-architecture state                  │    │
 │   │  • Resolves the target via                                          │    │
-│   │      manage-config models resolve-target --role <role-key>          │    │
+│   │      manage-config effort resolve-target --role <role-key>          │    │
 │   │  • Dispatches each phase as:                                        │    │
 │   │      Task: plan-marshall:execution-context                          │    │
 │   │      prompt body = name + plan_id + skills[] + workflow + WORKTREE  │    │
@@ -63,13 +63,13 @@ Legend (used in every diagram below):
 │   │      manage-status transition                                       │    │
 │   └─────────────────────────────────────────────────────────────────────┘    │
 │    │                                                                          │
-│    ╞══► execution-context   role=phase-1   workflow=phase-1-init/SKILL.md     │
-│    ╞══► execution-context   role=phase-2   workflow=phase-2-refine/SKILL.md   │
-│    ╞══► execution-context   role=phase-3   workflow=phase-3-outline/SKILL.md  │
-│    ╞══► execution-context   role=phase-4   workflow=phase-4-plan/SKILL.md     │
-│    ╞══► execution-context   role=phase-5   workflow=execute-task/SKILL.md     │
+│    ╞══► execution-context   role=phase-1-init   workflow=phase-1-init/SKILL.md     │
+│    ╞══► execution-context   role=phase-2-refine   workflow=phase-2-refine/SKILL.md   │
+│    ╞══► execution-context   role=phase-3-outline   workflow=phase-3-outline/SKILL.md  │
+│    ╞══► execution-context   role=phase-4-plan   workflow=phase-4-plan/SKILL.md     │
+│    ╞══► execution-context   role=phase-5-execute   workflow=execute-task/SKILL.md     │
 │    │                                 (one dispatch per task in the queue)     │
-│    ╘══► execution-context   role=phase-6.{step}                               │
+│    ╘══► execution-context   role=phase-6-finalize.{step}                               │
 │                              workflow=phase-6-finalize/workflow/{step}.md     │
 │                              (one dispatch per dispatched manifest step)      │
 │                                                                               │
@@ -88,7 +88,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────────┐
-│  PHASE-1 ENVELOPE          execution-context    role=phase-1                  │
+│  PHASE-1 ENVELOPE          execution-context    role=phase-1-init                  │
 │  ════════════════                                                             │
 │                                                                               │
 │  Inside the dispatch:                                                         │
@@ -98,7 +98,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │    /manage-lessons lesson-auto-suggest/  (script)                             │
 │      │                                                                        │
 │      │  ambiguous (no recipe match)                                           │
-│      ╵┄═►  execution-context  (LLM fallback — uses models.default,            │
+│      ╵┄═►  execution-context  (LLM fallback — uses effort,            │
 │                                no role key)                                   │
 │                                                                               │
 │    /manage-config domain-detect/         (script)                             │
@@ -117,7 +117,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────────┐
-│  PHASE-2 ENVELOPE          execution-context    role=phase-2                  │
+│  PHASE-2 ENVELOPE          execution-context    role=phase-2-refine                  │
 │  ════════════════                                                             │
 │                                                                               │
 │  Inside the dispatch (the confidence loop iterates HERE — never N envelopes): │
@@ -154,12 +154,12 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │    /manage-status change-type-heuristic/   (script — keyword classifier)      │
 │      │                                                                        │
 │      │  ambiguous                                                             │
-│      ╵┄═►  execution-context   (LLM fallback — uses models.default,           │
+│      ╵┄═►  execution-context   (LLM fallback — uses effort,           │
 │                                 no role key)                                  │
 │      │                                                                        │
 │      ▼                                                                        │
 │                                                                               │
-│  PHASE-3 ENVELOPE           execution-context    role=phase-3                 │
+│  PHASE-3 ENVELOPE           execution-context    role=phase-3-outline                 │
 │    track={simple OR complex} runtime input — same envelope, same role         │
 │                                                                               │
 │    Simple Track (Steps 6-8)                                                   │
@@ -186,7 +186,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────────┐
-│  PHASE-4 ENVELOPE          execution-context    role=phase-4                  │
+│  PHASE-4 ENVELOPE          execution-context    role=phase-4-plan                  │
 │  ════════════════                                                             │
 │                                                                               │
 │  Orchestrator-side prep:                                                      │
@@ -227,7 +227,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │      │ for each task in dependency order                                      │
 │      ▼                                                                        │
 │   ┌─────────────────────────────────────────────────────────────────────┐    │
-│   │  PHASE-5 ENVELOPE        execution-context    role=phase-5          │    │
+│   │  PHASE-5 ENVELOPE        execution-context    role=phase-5-execute          │    │
 │   │  ════════════════                                                   │    │
 │   │                                                                     │    │
 │   │    workflow=execute-task/SKILL.md                                   │    │
@@ -300,8 +300,8 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │   │       ╞══►  [enrich-module] × N          │     │
 │   │                                                                    │     │
 │   │    ┌──────────────────────────────────────────────────────────┐    │     │
-│   │    │  ══►  execution-context  --phase phase-6 (no --role)          │    │     │
-│   │    │  ══►  execution-context  --phase phase-6 --role post-run-review    │    │     │
+│   │    │  ══►  execution-context  --phase phase-6-finalize (no --role)          │    │     │
+│   │    │  ══►  execution-context  --phase phase-6-finalize --role post-run-review    │    │     │
 │   │    └──────────────────────────────────────────────────────────┘    │     │
 │   │       (dedicated dispatches — LLM cores for body composition       │     │
 │   │        and lesson extraction)                                      │     │
@@ -318,13 +318,13 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │   │    project:finalize-step-plugin-doctor                             │     │
 │   │       ╵┄═►  [verification-feedback (producer=plugin-doctor)]                                  │     │
 │   │    project:finalize-step-pre-submission-self-review                │     │
-│   │       ══►  execution-context  role=phase-6.pre-submission-         │     │
+│   │       ══►  execution-context  role=phase-6-finalize.pre-submission-         │     │
 │   │            self-review                                             │     │
 │   │                                                                    │     │
 │   │  OPT-IN STEPS (not in default 17-step set):                        │     │
-│   │    ══►  execution-context  --phase phase-6 --role post-run-review              │     │
+│   │    ══►  execution-context  --phase phase-6-finalize --role post-run-review              │     │
 │   │            (8 LLM aspects iterate IN-CONTEXT)                      │     │
-│   │    ══►  execution-context  --phase phase-6 --role verification-feedback (producer=pr-state)                  │     │
+│   │    ══►  execution-context  --phase phase-6-finalize --role verification-feedback (producer=pr-state)                  │     │
 │   │            (diagnose + report + internal loop;                     │     │
 │   │             sub-dispatches [verification-feedback] when the iteration       │     │
 │   │             crosses ~10 findings)                                  │     │
@@ -338,31 +338,31 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 
 ## 3. Phase-scoped sub-keys — workflows that fire from multiple phases
 
-The phase-scoped resolver bubbles every dispatch up from the caller phase's sub-key (or default) to `models.default`. Workflows that previously lived in the retired `cross.*` group now sit as **sub-keys under every phase that invokes them** — the same workflow doc runs, the level just resolves under whichever phase fires the dispatch. Every arrow below is a `Task: execution-context` dispatch crossing an envelope boundary.
+The phase-scoped resolver bubbles every dispatch up from the caller phase's sub-key (or default) to `effort`. Workflows that previously lived in the retired `cross.*` group now sit as **sub-keys under every phase that invokes them** — the same workflow doc runs, the level just resolves under whichever phase fires the dispatch. Every arrow below is a `Task: execution-context` dispatch crossing an envelope boundary.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────────┐
 │  PHASE-SCOPED INVOCATION MAP                                                  │
 │  ══════════════════════════════                                               │
 │                                                                               │
-│   phase-5 Step 11   (verification-failure)        ═╗                          │
-│   phase-5 Step 11b  (quality-gate-failure)        ═╝══►  [verification-       │
+│   phase-5-execute Step 11   (verification-failure)        ═╗                          │
+│   phase-5-execute Step 11b  (quality-gate-failure)        ═╝══►  [verification-       │
 │                                                          feedback]            │
-│                                                          (phase-5; producer=  │
+│                                                          (phase-5-execute; producer=  │
 │                                                          build-runner)        │
 │                                                                               │
-│   phase-6 automated-review                        ═╗                          │
-│   phase-6 sonar-roundtrip                         ═╣                          │
-│   phase-6 project:finalize-step-plugin-doctor     ═╬══►  [verification-       │
+│   phase-6-finalize automated-review                        ═╗                          │
+│   phase-6-finalize sonar-roundtrip                         ═╣                          │
+│   phase-6-finalize project:finalize-step-plugin-doctor     ═╬══►  [verification-       │
 │   /workflow-pr-doctor slash command               ═╝     feedback]            │
-│                                                          (phase-6; producer=  │
+│                                                          (phase-6-finalize; producer=  │
 │                                                          pr-comment / sonar / │
 │                                                          plugin-doctor /      │
 │                                                          pr-state)            │
 │                                                                               │
-│   phase-2 Step 13.5 (lesson plans only)           ═╗                          │
-│   phase-3 Step 11   (outline-time Q-Gate)         ═╬══►  [q-gate-validation]  │
-│   phase-4 Step 9b   (plan-time Q-Gate)            ═╝     (resolves under the  │
+│   phase-2-refine Step 13.5 (lesson plans only)           ═╗                          │
+│   phase-3-outline Step 11   (outline-time Q-Gate)         ═╬══►  [q-gate-validation]  │
+│   phase-4-plan Step 9b   (plan-time Q-Gate)            ═╝     (resolves under the  │
 │                                                          calling phase's      │
 │                                                          default — no --role) │
 │                                                                               │
@@ -373,11 +373,11 @@ The phase-scoped resolver bubbles every dispatch up from the caller phase's sub-
 │                                                         or --default when     │
 │                                                         standalone)           │
 │                                                                               │
-│   phase-6 architecture-refresh Tier-1                                         │
+│   phase-6-finalize architecture-refresh Tier-1                                         │
 │     ══►  [enrich-module]  × N parallel                                        │
 │          (one envelope per affected module — the only per-iteration           │
 │           parallel dispatch in the contract; resolves under                   │
-│           --phase phase-6, no --role)                                         │
+│           --phase phase-6-finalize, no --role)                                         │
 │                                                                               │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -398,13 +398,13 @@ The hierarchical role registry (`marshal.json` `models.roles`) groups every disp
 │  ═══════════════════════════════                                              │
 │                                                                               │
 │   models.roles                                                                │
-│     ├── phase-1            (string OR { default?, research? })                │
-│     ├── phase-2            (string OR { default?, research? })                │
-│     ├── phase-3            (string OR { default?, research? })                │
-│     ├── phase-4            (string OR { default?, research? })                │
-│     ├── phase-5            (string OR { default?, verification-feedback?,     │
+│     ├── phase-1-init            (string OR { default?, research? })                │
+│     ├── phase-2-refine            (string OR { default?, research? })                │
+│     ├── phase-3-outline            (string OR { default?, research? })                │
+│     ├── phase-4-plan            (string OR { default?, research? })                │
+│     ├── phase-5-execute            (string OR { default?, verification-feedback?,     │
 │     │                        research? })                                     │
-│     └── phase-6            (typically object: { default?,                     │
+│     └── phase-6-finalize            (typically object: { default?,                     │
 │                              verification-feedback?, post-run-review?,        │
 │                              research? })                                     │
 │                                                                               │
@@ -412,23 +412,23 @@ The hierarchical role registry (`marshal.json` `models.roles`) groups every disp
 │     1. models.roles.<phase>.<subkey>   explicit per-workflow override         │
 │     2. models.roles.<phase>.default    phase-wide default slot                │
 │     3. models.roles.<phase>            string shorthand for the whole phase   │
-│     4. models.default                  plan-wide default                      │
+│     4. effort                  plan-wide default                      │
 │     5. inherit                         sentinel — canonical no-suffix variant │
 │                                                                               │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**6 top-level groups; zero mandatory keys.** A minimal config is `{}` — every dispatch resolves via `models.default` → `inherit`.
+**6 top-level groups; zero mandatory keys.** A minimal config is `{}` — every dispatch resolves via `effort` → `inherit`.
 
 The resolver accepts four lookup forms:
-- `--phase phase-6`                            — bare group (walks the bubbling chain)
-- `--role phase-6.verification-feedback`       — dotted
-- `--phase phase-6 --role verification-feedback` — two-flag
-- `--default`                                  — short-circuit, fetch `models.default`
+- `--phase phase-6-finalize`                            — bare group (walks the bubbling chain)
+- `--role phase-6-finalize.verification-feedback`       — dotted
+- `--phase phase-6-finalize --role verification-feedback` — two-flag
+- `--default`                                  — short-circuit, fetch `effort`
 
-Retired legacy keys (`cross.*` and the five retired `phase-6.{create-pr,pre-submission-self-review,lessons-capture,retrospective,pr-doctor}`) return `status: error` with a remediation message naming the new target. See `../../plan-marshall/standards/model-roles.md` for the full registry + per-key remediation table.
+Retired legacy keys (`cross.*` and the five retired `phase-6-finalize.{create-pr,pre-submission-self-review,lessons-capture,retrospective,pr-doctor}`) return `status: error` with a remediation message naming the new target. See `../../plan-marshall/standards/effort-roles.md` for the full registry + per-key remediation table.
 
-Level values resolve to `(model, effort)` per `../../plan-marshall/standards/model-levels.md` (six tiers: `low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`, plus the `inherit` sentinel). The graphs above abbreviate the dispatched target to `execution-context`; on the wire it's `execution-context-{level}` with `{level}` filled in by the resolver.
+Level values resolve to `(model, effort)` per `../../plan-marshall/standards/effort-levels.md` (six tiers: `low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`, plus the `inherit` sentinel). The graphs above abbreviate the dispatched target to `execution-context`; on the wire it's `execution-context-{level}` with `{level}` filled in by the resolver.
 
 ---
 
@@ -438,32 +438,32 @@ The granularity heuristics live in `../../extension-api/standards/dispatch-granu
 
 | Candidate work | Verdict | Reason |
 |----------------|---------|--------|
-| phase-1 Step 5c lesson auto-suggest | Script + LLM fallback | Recipe registry match is deterministic; ambiguous case escalates. |
-| phase-1 Step 7 domain detection | Script + AskUserQuestion | Single match auto-selects; ambiguity is human-input territory. |
-| phase-2 confidence loop | Bundle into `phase-2` | Steps 3b/3c/8/9/10/11/12 share context. |
-| phase-2 Step 3d baseline reconciliation | Hybrid — script + bundle | git fetch/diff is mechanical; classification bundles into `phase-2`. |
-| phase-2 Step 10 confidence aggregation | Script | Pure weighted math. |
-| phase-2 Step 13.5 Q-Gate (lesson) | `--phase phase-2` (q-gate-validation tracks phase default) | Workflow shared with phase-3 and phase-4. |
-| phase-3 Step 4 change-type | Script + LLM fallback | Keyword classifier resolves majority; ambiguous escalates. |
-| phase-3 Complex Track Steps 9c+10+10b | Bundle into `phase-3` | Per-deliverable loop iterates in-context. |
-| phase-3 Step 11 Q-Gate (outline-time) | `--phase phase-3` (q-gate-validation tracks phase default) | Bypassed when `scope_estimate=surgical` AND `change_type ∈ {bug_fix, tech_debt, verification}` AND `deliverable_count=1`. |
-| phase-4 Steps 5+6+7 task creation | Bundle into `phase-4` | Per-deliverable loop iterates in-context. |
-| phase-4 Step 9 mechanical Q-Gate checks | Script | Pure regex + graph + filesystem. |
-| phase-4 Step 9b LLM Q-Gate | `--phase phase-4` (q-gate-validation tracks phase default) | Unconditional after every successful phase-4-plan invocation (module-mapping + scope-criterion validators reconcile LLM-authored shape against live ground truth). |
-| phase-5 per-task execution | `phase-5.default` per-task dispatch | One envelope per task. |
-| phase-5 Step 9 independent verification | Inline scripts | git diff + grep + exit-code; no LLM. |
-| phase-5 Step 11/11b triage | `phase-5.verification-feedback` (producer=build-runner) | Producer pre-flight, then triage Steps 1-6. |
-| phase-6 commit-push, ci-wait, branch-cleanup, etc. (10 steps) | Inline scripts | No LLM judgement. |
-| phase-6 create-pr | `--phase phase-6` (create-pr tracks phase default) | Body composition is LLM work. |
-| phase-6 automated-review orchestration | Inline scripts + `phase-6.verification-feedback` (producer=pr-comment) | Producer + enumeration inline; triage shared envelope. |
-| phase-6 sonar-roundtrip orchestration | Inline scripts + `phase-6.verification-feedback` (producer=sonar) | Same shape. |
-| phase-6 lessons-capture | `phase-6.post-run-review` | Lesson extraction is LLM work (shares level with retrospective). |
-| phase-6 pre-submission-self-review | `--phase phase-6` (tracks phase default) | Structural review (meta-project only). |
-| phase-6 retrospective | `phase-6.post-run-review` | 8 LLM aspects iterate in-context (shares level with lessons-capture). |
-| /workflow-pr-doctor slash command | `phase-6.verification-feedback` (producer=pr-state) | Diagnose + report + internal triage via verification-feedback. |
-| phase-6 architecture-refresh Tier 0 | Inline scripts | Deterministic discover + diff. |
-| phase-6 architecture-refresh Tier 1 | `--phase phase-6` (enrich-module tracks phase default) × N parallel | The only per-iteration parallel dispatch. |
-| phase-6 project:finalize-step-plugin-doctor | `phase-6.verification-feedback` (producer=plugin-doctor) | Meta-project only. |
+| phase-1-init Step 5c lesson auto-suggest | Script + LLM fallback | Recipe registry match is deterministic; ambiguous case escalates. |
+| phase-1-init Step 7 domain detection | Script + AskUserQuestion | Single match auto-selects; ambiguity is human-input territory. |
+| phase-2-refine confidence loop | Bundle into `phase-2-refine` | Steps 3b/3c/8/9/10/11/12 share context. |
+| phase-2-refine Step 3d baseline reconciliation | Hybrid — script + bundle | git fetch/diff is mechanical; classification bundles into `phase-2-refine`. |
+| phase-2-refine Step 10 confidence aggregation | Script | Pure weighted math. |
+| phase-2-refine Step 13.5 Q-Gate (lesson) | `--phase phase-2-refine` (q-gate-validation tracks phase default) | Workflow shared with phase-3-outline and phase-4-plan. |
+| phase-3-outline Step 4 change-type | Script + LLM fallback | Keyword classifier resolves majority; ambiguous escalates. |
+| phase-3-outline Complex Track Steps 9c+10+10b | Bundle into `phase-3-outline` | Per-deliverable loop iterates in-context. |
+| phase-3-outline Step 11 Q-Gate (outline-time) | `--phase phase-3-outline` (q-gate-validation tracks phase default) | Bypassed when `scope_estimate=surgical` AND `change_type ∈ {bug_fix, tech_debt, verification}` AND `deliverable_count=1`. |
+| phase-4-plan Steps 5+6+7 task creation | Bundle into `phase-4-plan` | Per-deliverable loop iterates in-context. |
+| phase-4-plan Step 9 mechanical Q-Gate checks | Script | Pure regex + graph + filesystem. |
+| phase-4-plan Step 9b LLM Q-Gate | `--phase phase-4-plan` (q-gate-validation tracks phase default) | Unconditional after every successful phase-4-plan invocation (module-mapping + scope-criterion validators reconcile LLM-authored shape against live ground truth). |
+| phase-5-execute per-task execution | `phase-5-execute.default` per-task dispatch | One envelope per task. |
+| phase-5-execute Step 9 independent verification | Inline scripts | git diff + grep + exit-code; no LLM. |
+| phase-5-execute Step 11/11b triage | `phase-5-execute.verification-feedback` (producer=build-runner) | Producer pre-flight, then triage Steps 1-6. |
+| phase-6-finalize commit-push, ci-wait, branch-cleanup, etc. (10 steps) | Inline scripts | No LLM judgement. |
+| phase-6-finalize create-pr | `--phase phase-6-finalize` (create-pr tracks phase default) | Body composition is LLM work. |
+| phase-6-finalize automated-review orchestration | Inline scripts + `phase-6-finalize.verification-feedback` (producer=pr-comment) | Producer + enumeration inline; triage shared envelope. |
+| phase-6-finalize sonar-roundtrip orchestration | Inline scripts + `phase-6-finalize.verification-feedback` (producer=sonar) | Same shape. |
+| phase-6-finalize lessons-capture | `phase-6-finalize.post-run-review` | Lesson extraction is LLM work (shares level with retrospective). |
+| phase-6-finalize pre-submission-self-review | `--phase phase-6-finalize` (tracks phase default) | Structural review (meta-project only). |
+| phase-6-finalize retrospective | `phase-6-finalize.post-run-review` | 8 LLM aspects iterate in-context (shares level with lessons-capture). |
+| /workflow-pr-doctor slash command | `phase-6-finalize.verification-feedback` (producer=pr-state) | Diagnose + report + internal triage via verification-feedback. |
+| phase-6-finalize architecture-refresh Tier 0 | Inline scripts | Deterministic discover + diff. |
+| phase-6-finalize architecture-refresh Tier 1 | `--phase phase-6-finalize` (enrich-module tracks phase default) × N parallel | The only per-iteration parallel dispatch. |
+| phase-6-finalize project:finalize-step-plugin-doctor | `phase-6-finalize.verification-feedback` (producer=plugin-doctor) | Meta-project only. |
 
 ---
 
@@ -481,7 +481,7 @@ Edge styles (designed so the dispatch boundary is unambiguous at a glance):
 - **`┄┄►`** — Conditional in-context flow. Predicate-gated (e.g., "if pending findings > 0"), but does not cross an envelope.
 - **`╵┄═►`** — Conditional dispatch. Predicate-gated AND crosses an envelope. The most common pattern in this graph: a script computes a predicate, then escalates by dispatching an LLM core only when the predicate trips.
 
-The actual target on the wire is always `execution-context-{level}` where `{level}` is resolved by `manage-config models resolve-target --role <role-key>`. The graphs hide the `-{level}` suffix because it is a runtime choice (driven by `marshal.json` `models.roles`), not a structural one.
+The actual target on the wire is always `execution-context-{level}` where `{level}` is resolved by `manage-config effort resolve-target --role <role-key>`. The graphs hide the `-{level}` suffix because it is a runtime choice (driven by `marshal.json` `models.roles`), not a structural one.
 
 The granularity heuristics in `../../extension-api/standards/dispatch-granularity.md` justify each verdict in § 5's table. The contract every dispatched workflow satisfies (input contract, output contract, Worktree Header) lives in `agents.md` and `../../extension-api/standards/ext-point-execution-context-workflow.md`. Concrete code-level traces for three representative dispatches live in `dispatch-walkthrough.md`.
 
@@ -493,8 +493,8 @@ The granularity heuristics in `../../extension-api/standards/dispatch-granularit
 - Worked end-to-end traces — [`dispatch-walkthrough.md`](dispatch-walkthrough.md)
 - Granularity heuristics (when to dispatch vs script vs inline) — [`../../extension-api/standards/dispatch-granularity.md`](../../extension-api/standards/dispatch-granularity.md)
 - Workflow-doc implementor contract — [`../../extension-api/standards/ext-point-execution-context-workflow.md`](../../extension-api/standards/ext-point-execution-context-workflow.md)
-- Role-key registry (15 keys) — [`../../plan-marshall/standards/model-roles.md`](../../plan-marshall/standards/model-roles.md)
-- Level → `(model, effort)` primitive — [`../../plan-marshall/standards/model-levels.md`](../../plan-marshall/standards/model-levels.md)
+- Role-key registry (15 keys) — [`../../plan-marshall/standards/effort-roles.md`](../../plan-marshall/standards/effort-roles.md)
+- Level → `(model, effort)` primitive — [`../../plan-marshall/standards/effort-levels.md`](../../plan-marshall/standards/effort-levels.md)
 - Smart-grouping triage algorithm — [`../../plan-marshall/workflow/triage.md`](../../plan-marshall/workflow/triage.md)
 - Findings-pipeline (the producer/store/consumer pattern `verification-feedback` rides on) — [`findings-pipeline.md`](findings-pipeline.md)
 - Phase boundaries and phase-lifecycle — [`phase-lifecycle.md`](phase-lifecycle.md), [`phases.md`](phases.md)

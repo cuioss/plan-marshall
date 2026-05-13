@@ -240,7 +240,7 @@ When conflicts exist, the script emits ONE Q-Gate finding per conflicted file un
 
 ### Sub-step 3d.2 — LLM scope-classification (only when upstream commits landed)
 
-The script reports `upstream_commit_count` and `upstream_commits[].files`; the phase-2 dispatch consumes that data and decides whether each upstream commit overlaps the request's affected-files candidate set in a way that warrants additional re-authoring. This judgement stays bundled in the existing `phase-2` dispatch envelope — the script is the mechanical predicate only. The classification step may add further findings beyond the merge-conflict set the script already emitted, log per-commit decisions, or proceed to Step 8 when none of the upstream commits overlap the request scope.
+The script reports `upstream_commit_count` and `upstream_commits[].files`; the phase-2-refine dispatch consumes that data and decides whether each upstream commit overlaps the request's affected-files candidate set in a way that warrants additional re-authoring. This judgement stays bundled in the existing `phase-2-refine` dispatch envelope — the script is the mechanical predicate only. The classification step may add further findings beyond the merge-conflict set the script already emitted, log per-commit decisions, or proceed to Step 8 when none of the upstream commits overlap the request scope.
 
 ### Sub-step 3d.3 — Feedback Loop
 
@@ -807,7 +807,7 @@ Compute the dispatch target via the role resolver:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-2)
+  models resolve-target --phase phase-2-refine)
 ```
 
 Dispatch:

@@ -125,7 +125,7 @@ Change-type routing and domain skill resolution is handled by `plan-marshall:pha
 
 ## Detection Contract
 
-The change-type detection (`manage-status:change-type-heuristic` script, with LLM fallback via `models.default` when the heuristic returns `ambiguous`) returns:
+The change-type detection (`manage-status:change-type-heuristic` script, with LLM fallback via `effort` when the heuristic returns `ambiguous`) returns:
 
 ```toon
 status: success
@@ -149,4 +149,4 @@ reasoning: "Request describes improving existing plugin functionality"
 
 - [execute-task-skills.md](execute-task-skills.md) - Profile-based execute-task skill routing and shared workflow
 - [phases.md](phases.md) - Phase workflow overview
-- `plan-marshall:manage-status:change-type-heuristic` - Deterministic keyword-classifier script (heuristic + LLM fallback via `models.default`)
+- `plan-marshall:manage-status:change-type-heuristic` - Deterministic keyword-classifier script (heuristic + LLM fallback via `effort`)

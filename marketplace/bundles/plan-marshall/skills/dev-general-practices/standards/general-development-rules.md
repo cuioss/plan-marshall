@@ -53,7 +53,7 @@ This applies equally to production code, test code, and documentation.
 
 **Dispatch the research-best-practices workflow** (NOT web search tools directly).
 
-Compute the dispatch target via the role resolver. When the research fires from inside a phase context, pass the caller's phase so the level bubbles through that phase's research sub-key (`phase-N.research` → `phase-N.default` → `models.default`). Outside any plan (standalone `/research`), use `--default`. Recommended levels: `xhigh`, `xxhigh`, or `max` — research benefits from the most capable model:
+Compute the dispatch target via the role resolver. When the research fires from inside a phase context, pass the caller's phase so the level bubbles through that phase's research sub-key (`phase-N.research` → `phase-N.default` → `effort`). Outside any plan (standalone `/research`), use `--default`. Recommended levels: `xhigh`, `xxhigh`, or `max` — research benefits from the most capable model:
 
 ```bash
 # Inside a phase context (substitute the caller's phase)

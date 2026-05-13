@@ -516,7 +516,7 @@ def check_mark_step_done_violations(content: str) -> list:
     """Check mark-step-done invocations inside bash code fences for argument defects.
 
     Scans each fenced ```bash ... ``` block for lines referencing `mark-step-done`
-    (typically the `plan-marshall:manage-status:...` subcommand used at phase-6
+    (typically the `plan-marshall:manage-status:...` subcommand used at phase-6-finalize
     finalize step termination). For every invocation, emits up to three distinct
     findings:
 
@@ -754,7 +754,7 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
     # Prose-parameter consistency (all component types)
     workflow_prose_param_violations = check_prose_parameter_consistency(content)
 
-    # mark-step-done argument validation (phase-6 finalize step termination)
+    # mark-step-done argument validation (phase-6-finalize finalize step termination)
     mark_step_done_violations = check_mark_step_done_violations(content)
 
     # skill-resolver-gap: LLM-Glob prose without resolver call (skills only)
@@ -765,7 +765,7 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
     if component_type in ('skill', 'subdoc') and (file_path.endswith('SKILL.md') or '/standards/' in file_path):
         resolver_gap_violations = check_resolver_gap(content, file_path)
 
-    # --display-detail ASCII contract validation (phase-6 finalize renderer)
+    # --display-detail ASCII contract validation (phase-6-finalize finalize renderer)
     display_detail_violations = check_display_detail_violations(content)
 
     # hardcoded-model-on-canonical rule (agents only)

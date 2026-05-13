@@ -14,7 +14,7 @@ Usage:
 Top-level flags (consumed by the router before provider dispatch):
     --project-dir PATH   Run every gh/glab subprocess with ``cwd=PATH``. Required
                          when invoking from a checkout whose HEAD is not the
-                         branch the caller wants to operate on — e.g., phase-6
+                         branch the caller wants to operate on — e.g., phase-6-finalize
                          finalize running from the main checkout against a
                          worktree-isolated plan branch. When omitted, subprocesses
                          inherit the Python process cwd (current behaviour).

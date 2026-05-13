@@ -8,7 +8,7 @@ Visual summary of the phase-3-outline two-track workflow for human reference.
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                   │
 │  Step 1: Load Inputs                                              │
-│          → Read track from references.json (set by phase-2)      │
+│          → Read track from references.json (set by phase-2-refine)      │
 │          → Read request (clarified_request or body)              │
 │          → Read module_mapping, domains, compatibility           │
 │                                                                   │
@@ -72,7 +72,7 @@ For codebase-wide changes requiring discovery and analysis via domain skills.
 │          → Log completion                                        │
 │                                                                  │
 │  Step 9: Q-Gate Verification                                     │
-│          → Task: plan-marshall:execution-context — --phase phase-3        │
+│          → Task: plan-marshall:execution-context — --phase phase-3-outline        │
 │          → Verifies deliverables against request                 │
 │                                                                  │
 │  → Continue to Step 10                                           │

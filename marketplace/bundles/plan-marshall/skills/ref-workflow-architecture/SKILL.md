@@ -17,7 +17,7 @@ Load specific standards on-demand based on what aspect you need to understand.
 | [phases.md](standards/phases.md) | 6-phase model | Phase flow, transitions, outputs, iteration limits |
 | [agents.md](standards/agents.md) | Thin agent pattern | Agent structure, Skill: vs Task: invocation |
 | [call-graph.md](standards/call-graph.md) | Holistic dispatch call graph | Mermaid diagrams: per-phase detail, 6-group phase-scoped registry overlay, dispatch-vs-script verdict table — every dispatch path starting from `plan-marshall` |
-| [dispatch-walkthrough.md](standards/dispatch-walkthrough.md) | Worked dispatch traces | Three end-to-end examples: phase-2 entry, finalize automated-review with `verification-feedback` (producer=pr-comment), architecture-refresh Tier-1 fan-out |
+| [dispatch-walkthrough.md](standards/dispatch-walkthrough.md) | Worked dispatch traces | Three end-to-end examples: phase-2-refine entry, finalize automated-review with `verification-feedback` (producer=pr-comment), architecture-refresh Tier-1 fan-out |
 | [data-layer.md](standards/data-layer.md) | manage-* skills | Inventory, dependency graph, data flow |
 | [manage-contract.md](standards/manage-contract.md) | manage-* contract | Enforcement, error codes, shared formats |
 | [skill-loading.md](standards/skill-loading.md) | Two-tier loading | System vs domain skills, domain flow through phases |

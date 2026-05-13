@@ -170,7 +170,7 @@ The orchestration is identical across consumers (PR review GitHub, PR review Git
 
 ### By-reference triage dispatch
 
-The per-finding LLM core (steps 4–5 above — load `ext-triage-{domain}`, decide FIX/SUPPRESS/ACCEPT/AskUserQuestion, act on the decision) factors out into one shared workflow doc, [`plan-marshall/workflow/triage.md`](../../plan-marshall/workflow/triage.md), invoked from [`verification-feedback.md`](../../plan-marshall/workflow/verification-feedback.md). The verification-feedback envelope is dispatched under `--phase phase-N --role verification-feedback` with a `producer` runtime input (`build-runner` from phase-5 Steps 11/11b, `sonar` / `pr-comment` / `plugin-doctor` / `pr-state` from phase-6 finalize steps and slash commands).
+The per-finding LLM core (steps 4–5 above — load `ext-triage-{domain}`, decide FIX/SUPPRESS/ACCEPT/AskUserQuestion, act on the decision) factors out into one shared workflow doc, [`plan-marshall/workflow/triage.md`](../../plan-marshall/workflow/triage.md), invoked from [`verification-feedback.md`](../../plan-marshall/workflow/verification-feedback.md). The verification-feedback envelope is dispatched under `--phase phase-N --role verification-feedback` with a `producer` runtime input (`build-runner` from phase-5-execute Steps 11/11b, `sonar` / `pr-comment` / `plugin-doctor` / `pr-state` from phase-6-finalize finalize steps and slash commands).
 
 **The dispatch passes `producer` only — never the findings content.** The verification-feedback subagent's first workflow step is its own `manage-findings query --plan-id {plan_id} --resolution pending` call against the same store, which means:
 

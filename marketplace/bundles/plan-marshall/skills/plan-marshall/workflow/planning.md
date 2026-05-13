@@ -86,7 +86,7 @@ Compute the dispatch target via the role resolver:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role phase-1)
+  models resolve-target --role phase-1-init)
 ```
 
 Dispatch:
@@ -131,7 +131,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capt
 2. If true: Stop and display plan summary
 3. If false (default): Continue through 2-refine, 3-outline, and 4-plan phases with the new plan_id
 
-**2-Refine Phase**: Dispatch the refine phase under role key `phase-2` (single-workflow phase per [`call-graph.md`](../../ref-workflow-architecture/standards/call-graph.md) § 2.2 and [`dispatch-walkthrough.md`](../../ref-workflow-architecture/standards/dispatch-walkthrough.md) § Example A).
+**2-Refine Phase**: Dispatch the refine phase under role key `phase-2-refine` (single-workflow phase per [`call-graph.md`](../../ref-workflow-architecture/standards/call-graph.md) § 2.2 and [`dispatch-walkthrough.md`](../../ref-workflow-architecture/standards/dispatch-walkthrough.md) § Example A).
 
 The `phase-boundary` call above already recorded the start of `2-refine` — do
 not call `start-phase 2-refine` again.
@@ -152,7 +152,7 @@ Compute the dispatch target via the role resolver and resolve the active worktre
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role phase-2)
+  models resolve-target --role phase-2-refine)
 
 worktree_path=$(python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
   get-worktree-path --plan-id {plan_id})
@@ -173,7 +173,7 @@ Task: plan-marshall:{target}
 
 The agent returns confidence + track + scope_estimate + qgate_pending_count in its TOON. The 12-step confidence loop (Steps 3b/3c/8/9/10/11/12) iterates *inside* this single envelope; `AskUserQuestion` in Step 11 propagates to the host UI directly from the subagent (no main-context routing required).
 
-**Metrics**: After refine completes, record the `2-refine → 3-outline` boundary in a single fused call (forwarding the aggregated `<usage>` data from every dispatch that fired inside this phase — the `phase-2` envelope itself plus any q-gate-validation sub-dispatch at Step 13.5 for lesson-derived plans). Sum `total_tokens`, `tool_uses`, and `duration_ms` across each dispatch's `<usage>` tag:
+**Metrics**: After refine completes, record the `2-refine → 3-outline` boundary in a single fused call (forwarding the aggregated `<usage>` data from every dispatch that fired inside this phase — the `phase-2-refine` envelope itself plus any q-gate-validation sub-dispatch at Step 13.5 for lesson-derived plans). Sum `total_tokens`, `tool_uses`, and `duration_ms` across each dispatch's `<usage>` tag:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
   --plan-id {plan_id} --prev-phase 2-refine --next-phase 3-outline \
@@ -197,7 +197,7 @@ section below MUST NOT call `start-phase 3-outline` again. Continue to
 
 ## Action: outline (3-Outline + 4-Plan Phases)
 
-See [`workflow/planning-outline.md`](planning-outline.md) for the full workflow. The outline action runs the 3-outline phase (loaded directly in main context with Q-Gate auto-loop and a user review gate guarded by `plan_without_asking`) and then the 4-plan phase (dispatched via `plan-marshall:execution-context-{level}` with workflow `plan-marshall:phase-4-plan/SKILL.md` under role `phase-4`). Both phases record metrics via fused `phase-boundary` calls and capture phase handshake invariants on completion. After tasks are created, the action either auto-continues to execute or stops based on `execute_without_asking` config.
+See [`workflow/planning-outline.md`](planning-outline.md) for the full workflow. The outline action runs the 3-outline phase (loaded directly in main context with Q-Gate auto-loop and a user review gate guarded by `plan_without_asking`) and then the 4-plan phase (dispatched via `plan-marshall:execution-context-{level}` with workflow `plan-marshall:phase-4-plan/SKILL.md` under role `phase-4-plan`). Both phases record metrics via fused `phase-boundary` calls and capture phase handshake invariants on completion. After tasks are created, the action either auto-continues to execute or stops based on `execute_without_asking` config.
 
 ---
 
@@ -340,7 +340,7 @@ When a specific lesson is selected, convert it to a plan via a `lesson_id` refer
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role phase-1)
+  models resolve-target --role phase-1-init)
 ```
 
 ```

@@ -40,7 +40,7 @@ See `workflow-integration-git/standards/worktree-handling.md` for the worktree-s
 
 ## Phase-Entry Worktree Assertion
 
-The Phase Entry Protocol's `phase_handshake verify --phase {previous_phase_key} --strict` call (see [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md#phase-handshake-verify-phases-2-6)) asserts the worktree-resolution contract before any phase-5 work begins: when `metadata.use_worktree==true`, `metadata.worktree_path` MUST be non-empty AND filesystem-resolvable (the directory exists AND `git -C {path} rev-parse --show-toplevel` returns the same canonical path). When the assertion fails, the script returns `status: error, error: worktree_unresolved` and (under `--strict`) exits 1 — phase entry refuses to advance until the persisted metadata is repaired. Plans with `metadata.use_worktree==false` skip the assertion (main-checkout flow). The assertion fires uniformly at every phase boundary; see deliverable 8 in the originating lesson plan for the full contract.
+The Phase Entry Protocol's `phase_handshake verify --phase {previous_phase_key} --strict` call (see [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md#phase-handshake-verify-phases-2-6)) asserts the worktree-resolution contract before any phase-5-execute work begins: when `metadata.use_worktree==true`, `metadata.worktree_path` MUST be non-empty AND filesystem-resolvable (the directory exists AND `git -C {path} rev-parse --show-toplevel` returns the same canonical path). When the assertion fails, the script returns `status: error, error: worktree_unresolved` and (under `--strict`) exits 1 — phase entry refuses to advance until the persisted metadata is repaired. Plans with `metadata.use_worktree==false` skip the assertion (main-checkout flow). The assertion fires uniformly at every phase boundary; see deliverable 8 in the originating lesson plan for the full contract.
 
 ## Dispatch Protocol (Worktree Header)
 
@@ -109,7 +109,7 @@ Contains: Canonical `# ruff: noqa: I001, E402` + `sys.path.insert(0, ...)` prolo
 
 ## Dispatched workflows vs inline steps
 
-This phase dispatches under one role key: **`phase-5`** (resolves through `phase-5.default` — one per-task envelope). Each task in the queue gets its own `phase-5` dispatch via the `execute-task` workflow with the task-declared skill list as runtime input. The built-in verification steps (`default:quality_check`, `default:build_verify`, `default:coverage_check`) stay inline as pure build invocations — no LLM judgement, no envelope. Step 9 independent change verification stays inline (three deterministic re-checks: git-diff empty-test, obfuscation-pattern grep, exit-code compare). Steps 11 and 11b verification-failure / quality-gate-failure triage dispatch **`verification-feedback`** under `--phase phase-5 --role verification-feedback` once with `producer=build-runner` — the findings live in the per-plan store and the subagent queries them by reference (no inline findings list in the prompt). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2 and § 5.1 (script over dispatch; phase-scoped resolution + producer-mode bundling).
+This phase dispatches under one role key: **`phase-5-execute`** (resolves through `phase-5-execute.default` — one per-task envelope). Each task in the queue gets its own `phase-5-execute` dispatch via the `execute-task` workflow with the task-declared skill list as runtime input. The built-in verification steps (`default:quality_check`, `default:build_verify`, `default:coverage_check`) stay inline as pure build invocations — no LLM judgement, no envelope. Step 9 independent change verification stays inline (three deterministic re-checks: git-diff empty-test, obfuscation-pattern grep, exit-code compare). Steps 11 and 11b verification-failure / quality-gate-failure triage dispatch **`verification-feedback`** under `--phase phase-5-execute --role verification-feedback` once with `producer=build-runner` — the findings live in the per-plan store and the subagent queries them by reference (no inline findings list in the prompt). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2 and § 5.1 (script over dispatch; phase-scoped resolution + producer-mode bundling).
 
 ## Execution Loop
 
@@ -472,7 +472,7 @@ If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
 - A `profile=verification` task completes with `verification.passed: false` / `next_action: requires_triage`, OR
 - Step 9 marked a task `blocked` with reason `no_changes_detected` or `verification_mismatch`
 
-The per-finding LLM core (FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over the failing findings) is owned by [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) and dispatched under `--phase phase-5 --role verification-feedback` with `producer=build-runner`.
+The per-finding LLM core (FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over the failing findings) is owned by [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) and dispatched under `--phase phase-5-execute --role verification-feedback` with `producer=build-runner`.
 
 #### Planned-failure exception (breaking-refactor task split)
 
@@ -528,7 +528,7 @@ Compute the target via the role resolver, then dispatch:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-5 --role verification-feedback)
+  models resolve-target --phase phase-5-execute --role verification-feedback)
 ```
 
 ```
@@ -544,7 +544,7 @@ Task: plan-marshall:{target}
     workflow: plan-marshall:plan-marshall/workflow/verification-feedback.md
 
     producer: build-runner
-    caller_phase: phase-5
+    caller_phase: phase-5-execute
 
     WORKTREE: {worktree_path}
 ```
@@ -555,7 +555,7 @@ The Scope-Deviation Escalation guard lives in [`triage.md`](../plan-marshall/wor
 
 - If `fix_tasks_created > 0` → increment `verify_iteration` in task metadata, reset the verification task to `pending`, continue the execution loop (fix tasks will execute before the re-queued verification task via `depends_on`).
 - If `fix_tasks_created == 0` AND `overflow_deferred == 0` → mark the verification task complete (all findings suppressed / accepted / `taken_into_account`), continue to Step 11b.
-- If `overflow_deferred > 0` → leave the verification task `pending`; the orchestrator re-fires the triage dispatch on the next phase-5 entry (the iteration cap is unchanged).
+- If `overflow_deferred > 0` → leave the verification task `pending`; the orchestrator re-fires the triage dispatch on the next phase-5-execute entry (the iteration cap is unchanged).
 
 ### Step 11b: Final Quality Sweep (After All Tasks)
 
@@ -572,7 +572,7 @@ After every task in the phase has completed (and Step 11 has resolved any per-ta
      resolve --command quality-gate --audit-plan-id {plan_id}
    ```
 
-2. Execute the returned `executable`. On non-zero exit, persist the failures to the Q-Gate findings store (`manage-findings qgate add --type quality-gate-failure …`) and dispatch [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) under `--phase phase-5 --role verification-feedback` with `producer=build-runner` and `finding_type=quality-gate-failure` — same shape as Step 11d above, only the finding type changes. The subagent's return drives the same fix-task / suppress / accept branch (Step 11e). After triage resolves, do **NOT** re-run the sweep — Step 11b runs at most once per phase entry.
+2. Execute the returned `executable`. On non-zero exit, persist the failures to the Q-Gate findings store (`manage-findings qgate add --type quality-gate-failure …`) and dispatch [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) under `--phase phase-5-execute --role verification-feedback` with `producer=build-runner` and `finding_type=quality-gate-failure` — same shape as Step 11d above, only the finding type changes. The subagent's return drives the same fix-task / suppress / accept branch (Step 11e). After triage resolves, do **NOT** re-run the sweep — Step 11b runs at most once per phase entry.
 
 3. Log the outcome:
 

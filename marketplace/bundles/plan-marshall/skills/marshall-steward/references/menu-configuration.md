@@ -256,7 +256,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 ```
 Assert the `set-steps` response is `status: success`. A `missing_order` or `order_collision` error means a selected step's authoritative source (frontmatter on built-in standards docs / `SKILL.md` for `project:` steps / extension `provides_*_steps()` return-dict for skill steps) is missing or duplicates an `order` value — fix the source and re-run.
 
-After `set-steps` completes for phase-6-finalize, repeat the same project-step validation and auto-fix flow described above for phase-5 — the same `detect-missing-project-step-permissions` and `apply-project-step-permissions` calls cover both phases.
+After `set-steps` completes for phase-6-finalize, repeat the same project-step validation and auto-fix flow described above for phase-5-execute — the same `detect-missing-project-step-permissions` and `apply-project-step-permissions` calls cover both phases.
 
 **PR merge strategy**: Ask user for the merge strategy used when merging PRs during branch cleanup (default: squash):
 

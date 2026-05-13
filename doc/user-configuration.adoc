@@ -6,7 +6,7 @@ How project authors tune which model runs for each LLM-judgement workflow in pla
 
 == The 6-Group Phase-Scoped Registry
 
-The role registry is phase-scoped, six groups (`phase-1` through `phase-6`). Every group is polymorphic — its value may be a plain string (single-level shorthand for every workflow under that phase) or an object whose sub-keys map to specific workflows under that phase. There are zero mandatory keys: a minimal config is `{}` and every dispatch resolves via `models.default` → `inherit`.
+The role registry is phase-scoped, six groups (`phase-1-init` through `phase-6-finalize`). Every group is polymorphic — its value may be a plain string (single-level shorthand for every workflow under that phase) or an object whose sub-keys map to specific workflows under that phase. There are zero mandatory keys: a minimal config is `{}` and every dispatch resolves via `effort` → `inherit`.
 
 Sub-key whitelist per phase:
 
@@ -14,12 +14,12 @@ Sub-key whitelist per phase:
 |===
 | Group | Recognised sub-keys
 
-| `phase-1` … `phase-4` | `default`, `research`
-| `phase-5` | `default`, `verification-feedback`, `research`
-| `phase-6` | `default`, `verification-feedback`, `post-run-review`, `research`
+| `phase-1-init` … `phase-4-plan` | `default`, `research`
+| `phase-5-execute` | `default`, `verification-feedback`, `research`
+| `phase-6-finalize` | `default`, `verification-feedback`, `post-run-review`, `research`
 |===
 
-The canonical map (which workflow doc each sub-key drives) lives in link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-roles.md[`model-roles.md`]. Retired pre-rewrite keys (`cross.*` and the five retired `phase-6.{create-pr,pre-submission-self-review,lessons-capture,retrospective,pr-doctor}`) return `status: error` with a remediation message naming the new target.
+The canonical map (which workflow doc each sub-key drives) lives in link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-roles.md[`effort-roles.md`]. Retired pre-rewrite keys (`cross.*` and the five retired `phase-6-finalize.{create-pr,pre-submission-self-review,lessons-capture,retrospective,pr-doctor}`) return `status: error` with a remediation message naming the new target.
 
 == Polymorphic JSON Shape
 
@@ -31,15 +31,15 @@ The `.plan/marshal.json` `models.roles` block accepts polymorphic values at ever
   "models": {
     "default": "medium",
     "roles": {
-      "phase-2": "high",
-      "phase-3": {
+      "phase-2-refine": "high",
+      "phase-3-outline": {
         "default": "high",
         "research": "max"
       },
-      "phase-5": {
+      "phase-5-execute": {
         "verification-feedback": "high"
       },
-      "phase-6": {
+      "phase-6-finalize": {
         "default": "medium",
         "verification-feedback": "high",
         "post-run-review": "xxhigh"
@@ -49,14 +49,14 @@ The `.plan/marshal.json` `models.roles` block accepts polymorphic values at ever
 }
 ----
 
-When a phase is a plain string (e.g. `"phase-2": "high"`), every sub-key under it resolves to that value. When a phase is an object, sub-key lookups walk to the explicit override first, then to the `default` slot, then to `models.default`.
+When a phase is a plain string (e.g. `"phase-2-refine": "high"`), every sub-key under it resolves to that value. When a phase is an object, sub-key lookups walk to the explicit override first, then to the `default` slot, then to `effort`.
 
 Resolution order, deepest first:
 
-1. The explicit sub-key (e.g. `models.roles.phase-3.research`)
-2. The phase's `default` slot (e.g. `models.roles.phase-3.default`)
-3. The phase's plain-string value (e.g. `models.roles.phase-2: "high"`)
-4. `models.default`
+1. The explicit sub-key (e.g. `plan.phase-3-outline.effort.research`)
+2. The phase's `default` slot (e.g. `plan.phase-3-outline.effort.default`)
+3. The phase's plain-string value (e.g. `plan.phase-2-refine.effort: "high"`)
+4. `effort`
 5. `inherit` (canonical no-suffix variant; inherits parent's model)
 
 == Four Accepted Lookup Forms
@@ -65,15 +65,15 @@ The resolver accepts four input forms, mapping to the same resolution:
 
 [source,bash]
 ----
-manage-config models resolve-target --phase phase-2                              # bare group
-manage-config models resolve-target --role phase-6.verification-feedback         # dotted
-manage-config models resolve-target --phase phase-6 --role verification-feedback # two-flag
-manage-config models resolve-target --default                                    # zero-role fallback
+manage-config effort resolve-target --phase phase-2-refine                              # bare group
+manage-config effort resolve-target --role phase-6-finalize.verification-feedback         # dotted
+manage-config effort resolve-target --phase phase-6-finalize --role verification-feedback # two-flag
+manage-config effort resolve-target --default                                    # zero-role fallback
 ----
 
 == Preset Shortcuts
 
-Three named presets cover most usage. Apply via `/marshall-steward` Models submenu (preset-picker) or directly:
+Three named presets cover most usage. Apply via `/marshall-steward` Effort submenu (preset-picker) or directly:
 
 [source,bash]
 ----
@@ -81,7 +81,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   models apply-preset --name {economic|balanced|high-end}
 ----
 
-Payloads live in link:../marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/model_presets.py[`model_presets.py`] (`ModelPresets.ECONOMIC`, `BALANCED`, `HIGH_END`). The wizard delegates to `apply-preset`, which completely overwrites the `models` block.
+Payloads live in link:../marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/effort_presets.py[`effort_presets.py`] (`EffortPresets.ECONOMIC`, `BALANCED`, `HIGH_END`). The wizard delegates to `apply-preset`, which completely overwrites the `models` block.
 
 == No-Restart Semantics
 
@@ -91,7 +91,7 @@ A restart IS required when target/claude/ is regenerated (e.g., variant frontmat
 
 == Worked Example
 
-A project author wants the research workflow at the absolute top tier in phase-3, Q-Gate checks on phase-3/phase-4 at Sonnet-high (their phase defaults), the verification-feedback envelopes on Sonnet-high in both phase-5 and phase-6, and everything else on the default. Their `.plan/marshal.json`:
+A project author wants the research workflow at the absolute top tier in phase-3-outline, Q-Gate checks on phase-3-outline/phase-4-plan at Sonnet-high (their phase defaults), the verification-feedback envelopes on Sonnet-high in both phase-5-execute and phase-6-finalize, and everything else on the default. Their `.plan/marshal.json`:
 
 [source,json]
 ----
@@ -99,15 +99,15 @@ A project author wants the research workflow at the absolute top tier in phase-3
   "models": {
     "default": "medium",
     "roles": {
-      "phase-3": {
+      "phase-3-outline": {
         "default": "high",
         "research": "max"
       },
-      "phase-4": "high",
-      "phase-5": {
+      "phase-4-plan": "high",
+      "phase-5-execute": {
         "verification-feedback": "high"
       },
-      "phase-6": {
+      "phase-6-finalize": {
         "default": "medium",
         "verification-feedback": "high"
       }
@@ -118,12 +118,12 @@ A project author wants the research workflow at the absolute top tier in phase-3
 
 After saving:
 
-* The next `--phase phase-3 --role research` dispatch hits `execution-context-max` (Opus, effort xhigh — Opus-4.7-only; gracefully degrades to canonical when the alias does not accept `effort: xhigh`).
-* Q-Gate dispatches from phase-3 (`--phase phase-3`, no `--role`) hit `execution-context-high` via the phase-3 `default` slot. Phase-4 Q-Gate dispatches hit `execution-context-high` via the bare-string at `phase-4`.
-* Every `--phase phase-5 --role verification-feedback` dispatch (Step 11 / Step 11b triage) hits `execution-context-high`.
-* Every `--phase phase-6 --role verification-feedback` dispatch (sonar / pr-comment / plugin-doctor / pr-state) hits `execution-context-high`.
-* Every other phase-6 dispatch (create-pr, pre-submission-self-review, post-run-review, enrich-module) hits `execution-context-medium` via the phase-6 `default` slot.
-* Every other dispatch (phase-1, phase-2, phase-5 body) hits `execution-context-medium` via the `models.default` fallback.
+* The next `--phase phase-3-outline --role research` dispatch hits `execution-context-max` (Opus, effort xhigh — Opus-4.7-only; gracefully degrades to canonical when the alias does not accept `effort: xhigh`).
+* Q-Gate dispatches from phase-3-outline (`--phase phase-3-outline`, no `--role`) hit `execution-context-high` via the phase-3-outline `default` slot. Phase-4 Q-Gate dispatches hit `execution-context-high` via the bare-string at `phase-4-plan`.
+* Every `--phase phase-5-execute --role verification-feedback` dispatch (Step 11 / Step 11b triage) hits `execution-context-high`.
+* Every `--phase phase-6-finalize --role verification-feedback` dispatch (sonar / pr-comment / plugin-doctor / pr-state) hits `execution-context-high`.
+* Every other phase-6-finalize dispatch (create-pr, pre-submission-self-review, post-run-review, enrich-module) hits `execution-context-medium` via the phase-6-finalize `default` slot.
+* Every other dispatch (phase-1-init, phase-2-refine, phase-5-execute body) hits `execution-context-medium` via the `effort` fallback.
 
 == Migration note — `xhigh` / `xxhigh` rebind
 
@@ -136,7 +136,7 @@ Plan-marshall is pre-1.0. The recent palette expansion (insert `xhigh = opus-med
 
 == Related
 
-* link:role-variants.adoc[doc/role-variants.adoc] — entry-point map
+* link:effort-variants.adoc[doc/effort-variants.adoc] — entry-point map
 * link:execution-context-overview.adoc[doc/execution-context-overview.adoc] — why one dispatcher
 * link:build-system.adoc[doc/build-system.adoc] — variant emission pipeline
-* link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/role-variants.md[`role-variants.md`] — stand-alone end-user guide (the canonical version of this content)
+* link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md[`effort-variants.md`] — stand-alone end-user guide (the canonical version of this content)

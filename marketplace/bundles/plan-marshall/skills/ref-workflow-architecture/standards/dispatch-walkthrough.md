@@ -7,7 +7,7 @@ Concrete end-to-end traces of `execution-context-{level}` dispatches at three re
 Every dispatched phase or step follows the same shape:
 
 1. **Orchestrator: pick role key + workflow doc + skills.** From a slash-command action, a manifest step, or an inline call site.
-2. **Orchestrator: resolve the level** via `python3 .plan/execute-script.py plan-marshall:manage-config:manage-config models resolve-target --role <role_key>`. Returns the variant target name (`execution-context-{level}` or canonical `execution-context` for `inherit`).
+2. **Orchestrator: resolve the level** via `python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort resolve-target --role <role_key>`. Returns the variant target name (`execution-context-{level}` or canonical `execution-context` for `inherit`).
 3. **Orchestrator: construct prompt body** — five required fields (`name`, `plan_id`, `skills[]`, exactly one of `workflow`/`instructions`, `WORKTREE`) plus any workflow-specific runtime inputs.
 4. **Orchestrator: dispatch** — `Task: plan-marshall:execution-context-{level}` with the prompt body.
 5. **Subagent: load skills + read workflow** — `dev-general-practices` first (implicit), then each `skills[]` entry in order, then `Read` the resolved workflow path.
@@ -21,28 +21,28 @@ The three examples below instantiate this sequence with realistic prompts and re
 
 ## Example A — phase-2-refine entry (single-workflow phase)
 
-The simplest case: a phase whose role key is flat (`phase-2`), one dispatched workflow, the confidence loop iterates *inside* the envelope.
+The simplest case: a phase whose role key is flat (`phase-2-refine`), one dispatched workflow, the confidence loop iterates *inside* the envelope.
 
 ### Setup
 - `{plan_id}` = `lesson-2026-05-11-foo`
-- `marshal.json`: `"models": {"default": "medium", "roles": {"phase-2": "high", ...}}`
+- `marshal.json`: `"models": {"default": "medium", "roles": {"phase-2-refine": "high", ...}}`
 
 ### Trace
 
 **Steps 1–3 (orchestrator):**
-- role_key = `phase-2`
+- role_key = `phase-2-refine`
 - workflow = `plan-marshall:phase-2-refine/SKILL.md`
 - skills = `[plan-marshall:manage-architecture, plan-marshall:manage-references, plan-marshall:manage-plan-documents]`
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role phase-2
+  models resolve-target --role phase-2-refine
 ```
 
 Returns:
 ```toon
 status: success
-role: phase-2
+role: phase-2-refine
 level: high
 target: execution-context-high
 ```
@@ -107,7 +107,7 @@ One dispatch, ~210 s wall-clock, the entire confidence loop runs inside one enve
 
 ---
 
-## Example B — phase-6 automated-review with `verification-feedback` (sub-dispatch by reference)
+## Example B — phase-6-finalize automated-review with `verification-feedback` (sub-dispatch by reference)
 
 The most complex case. The manifest step `automated-review` runs **mostly inline as scripts** (producer fetch, finding enumeration) and **dispatches `verification-feedback` once** with `producer=pr-comment` when there are findings to triage. Findings live in the per-plan findings store; the subagent queries them as its first workflow step — they are NEVER embedded in the prompt body.
 
@@ -145,7 +145,7 @@ If pending count is 0 → skip the dispatch, mark step done. If non-zero → pro
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-6 --role verification-feedback
+  models resolve-target --phase phase-6-finalize --role verification-feedback
 ```
 
 Returns `target: execution-context-high`.
@@ -160,7 +160,7 @@ skills[1]:
 workflow: plan-marshall:plan-marshall/workflow/verification-feedback.md
 producer: pr-comment
 pr_number: 142
-caller_phase: phase-6
+caller_phase: phase-6-finalize
 WORKTREE: .plan/local/worktrees/feature-jwt-auth
 ```
 
@@ -205,7 +205,7 @@ fix_task_numbers[2]:
 
 Plus one `<usage>` tag — one envelope cost, not six.
 
-**Step 8 (orchestrator):** `mark-step-done --outcome loop_back`. The phase-6 dispatcher's loop-back continuation transitions back to phase-5-execute, dispatches the fix tasks, transitions forward, re-enters the manifest. The next `automated-review` run sees 0 pending findings and short-circuits.
+**Step 8 (orchestrator):** `mark-step-done --outcome loop_back`. The phase-6-finalize dispatcher's loop-back continuation transitions back to phase-5-execute, dispatches the fix tasks, transitions forward, re-enters the manifest. The next `automated-review` run sees 0 pending findings and short-circuits.
 
 ### Key by-reference property
 
@@ -213,7 +213,7 @@ The findings list never lives in the prompt body. Passing `finding_type` plus th
 
 ---
 
-## Example C — phase-6 architecture-refresh Tier-1 fan-out (per-iteration parallel)
+## Example C — phase-6-finalize architecture-refresh Tier-1 fan-out (per-iteration parallel)
 
 The only per-iteration parallel dispatch in the contract. Phase-6 `architecture-refresh` Tier-0 runs inline scripts to discover the affected module set; Tier-1 dispatches one subagent per affected module, all in parallel. Per-iteration is the right shape because (a) modules are independent and (b) parallelism saves wall-time.
 
@@ -242,7 +242,7 @@ If `affected_modules` is empty → Tier-1 is skipped; the step marks done with `
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-6
+  models resolve-target --phase phase-6-finalize
 ```
 
 Returns `target: execution-context-medium`.
@@ -308,5 +308,5 @@ Every other per-X loop in the system runs *inside* a single envelope (one envelo
 - Granularity heuristics (why dispatch vs script vs inline) — [`../../extension-api/standards/dispatch-granularity.md`](../../extension-api/standards/dispatch-granularity.md)
 - The triage smart-grouping algorithm — [`../../plan-marshall/workflow/triage.md`](../../plan-marshall/workflow/triage.md)
 - Workflow-doc implementor contract — [`../../extension-api/standards/ext-point-execution-context-workflow.md`](../../extension-api/standards/ext-point-execution-context-workflow.md)
-- Level → primitive table — [`../../plan-marshall/standards/model-levels.md`](../../plan-marshall/standards/model-levels.md)
-- Role-key registry — [`../../plan-marshall/standards/model-roles.md`](../../plan-marshall/standards/model-roles.md)
+- Level → primitive table — [`../../plan-marshall/standards/effort-levels.md`](../../plan-marshall/standards/effort-levels.md)
+- Role-key registry — [`../../plan-marshall/standards/effort-roles.md`](../../plan-marshall/standards/effort-roles.md)

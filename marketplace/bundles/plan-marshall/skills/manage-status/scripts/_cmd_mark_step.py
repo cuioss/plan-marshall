@@ -9,7 +9,7 @@ records that the step aborted with an error (e.g., a graceful timeout
 degradation in the phase-6-finalize dispatcher); the dispatcher will retry
 the step on next phase entry rather than treating it as terminal. The
 ``loop_back`` value records that the step deliberately re-fired (loop-back
-iteration recorded; dispatcher will re-fire on next phase-6 entry) and signals
+iteration recorded; dispatcher will re-fire on next phase-6-finalize entry) and signals
 the dispatcher to treat the step as a fresh dispatch on the next phase entry
 rather than skipping it. The operation is idempotent when outcome,
 display_detail, and head_at_completion all match and returns a ``conflict``

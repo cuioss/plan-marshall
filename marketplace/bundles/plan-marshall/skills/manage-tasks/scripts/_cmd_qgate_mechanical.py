@@ -266,7 +266,7 @@ def _check_acyclic(
                 f'Tasks {", ".join(f"TASK-{n:03d}" for n in cycle_members)} '
                 f'participate in a depends_on cycle. Phase-5-execute would loop '
                 f'indefinitely; break the cycle in task definitions before '
-                f'phase-4 transitions.'
+                f'phase-4-plan transitions.'
             ),
             emit=emit,
         )

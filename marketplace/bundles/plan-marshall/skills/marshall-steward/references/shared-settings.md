@@ -150,7 +150,7 @@ AskUserQuestion:
     - label: "Finalize without asking"
       description: "Auto-continue from execution (phase 5) to finalize (phase 6) [forward direction]"
     - label: "Loop-back without asking"
-      description: "Auto-continue when a phase-6 step records outcome=loop_back: dispatch the execute pipeline inline against fix tasks and re-enter finalize, capped by phase-6-finalize.max_iterations [reverse direction; symmetric counterpart of finalize_without_asking]"
+      description: "Auto-continue when a phase-6-finalize step records outcome=loop_back: dispatch the execute pipeline inline against fix tasks and re-enter finalize, capped by phase-6-finalize.max_iterations [reverse direction; symmetric counterpart of finalize_without_asking]"
 ```
 
 Apply: for each selected gate, set to `true`. For each deselected gate, set to `false`.

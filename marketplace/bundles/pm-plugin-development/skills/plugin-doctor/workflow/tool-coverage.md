@@ -4,7 +4,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 # Tool Coverage Workflow
 
-Semantic analysis of tool declarations vs actual usage in a single marketplace component. Invoked as a sub-workflow of [`verification-feedback.md`](../../../../plan-marshall/skills/plan-marshall/workflow/verification-feedback.md) when `producer=plugin-doctor` and `scope=tool-coverage`; resolves under `--phase phase-6 --role verification-feedback`.
+Semantic analysis of tool declarations vs actual usage in a single marketplace component. Invoked as a sub-workflow of [`verification-feedback.md`](../../../../plan-marshall/skills/plan-marshall/workflow/verification-feedback.md) when `producer=plugin-doctor` and `scope=tool-coverage`; resolves under `--phase phase-6-finalize --role verification-feedback`.
 
 ## Inputs
 

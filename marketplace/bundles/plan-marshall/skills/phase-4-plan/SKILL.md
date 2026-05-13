@@ -44,7 +44,7 @@ When persisting the multi-task batch (Step 6 → 6a/6b), the following shell sho
 
 ## Dispatched workflows vs inline steps
 
-This phase dispatches under one role key: **`phase-4`** (resolves through `phase-4.default`). The bundled task-creation activity (Steps 5+6+7 — per-deliverable task creation, anchoring/breaking-refactor split, holistic verification tasks) iterates *inside* one `phase-4` envelope; the per-deliverable loop never spawns per-iteration subagents. Mechanical sub-procedures stay inline as scripts: Step 3 deliverable load, Step 4 dependency graph, Step 8 topological sort, Step 8b execution manifest composition, and Step 9 Q-Gate mechanical checks (via `manage-tasks:qgate-mechanical-checks` — coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Step 9b LLM Q-Gate dispatches under `--phase phase-4` (no `--role` — q-gate-validation tracks the phase default; the workflow is shared with phase-2 and phase-3) unconditionally after every successful phase-4-plan invocation — the validator agent runs `module-mapping-validator` and `scope-criterion-validator` against live ground truth regardless of `plan_source`. The mechanical script's `ambiguous=true` signal is informational only (it means `solution_outline.md` was missing or unparseable, in which case the LLM dispatch is the *only* authoritative pass). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2–4.
+This phase dispatches under one role key: **`phase-4-plan`** (resolves through `phase-4-plan.default`). The bundled task-creation activity (Steps 5+6+7 — per-deliverable task creation, anchoring/breaking-refactor split, holistic verification tasks) iterates *inside* one `phase-4-plan` envelope; the per-deliverable loop never spawns per-iteration subagents. Mechanical sub-procedures stay inline as scripts: Step 3 deliverable load, Step 4 dependency graph, Step 8 topological sort, Step 8b execution manifest composition, and Step 9 Q-Gate mechanical checks (via `manage-tasks:qgate-mechanical-checks` — coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Step 9b LLM Q-Gate dispatches under `--phase phase-4-plan` (no `--role` — q-gate-validation tracks the phase default; the workflow is shared with phase-2-refine and phase-3-outline) unconditionally after every successful phase-4-plan invocation — the validator agent runs `module-mapping-validator` and `scope-criterion-validator` against live ground truth regardless of `plan_source`. The mechanical script's `ambiguous=true` signal is informational only (it means `solution_outline.md` was missing or unparseable, in which case the LLM dispatch is the *only* authoritative pass). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2–4.
 
 ## cwd for `.plan/execute-script.py` calls
 
@@ -127,7 +127,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ## Phase-Entry Worktree Assertion
 
-The Phase Entry Protocol's `phase_handshake verify --phase 3-outline --strict` call (see [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md#phase-handshake-verify-phases-2-6)) asserts the worktree-resolution contract before any phase-4 work begins: when `metadata.use_worktree==true`, `metadata.worktree_path` MUST be non-empty AND filesystem-resolvable (the directory exists AND `git -C {path} rev-parse --show-toplevel` returns the same canonical path). When the assertion fails, the script returns `status: error, error: worktree_unresolved` and (under `--strict`) exits 1 — phase entry refuses to advance until the persisted metadata is repaired. Plans with `metadata.use_worktree==false` skip the assertion (main-checkout flow). The assertion fires uniformly at every phase boundary; see deliverable 8 in the originating lesson plan for the full contract.
+The Phase Entry Protocol's `phase_handshake verify --phase 3-outline --strict` call (see [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md#phase-handshake-verify-phases-2-6)) asserts the worktree-resolution contract before any phase-4-plan work begins: when `metadata.use_worktree==true`, `metadata.worktree_path` MUST be non-empty AND filesystem-resolvable (the directory exists AND `git -C {path} rev-parse --show-toplevel` returns the same canonical path). When the assertion fails, the script returns `status: error, error: worktree_unresolved` and (under `--strict`) exits 1 — phase entry refuses to advance until the persisted metadata is repaired. Plans with `metadata.use_worktree==false` skip the assertion (main-checkout flow). The assertion fires uniformly at every phase boundary; see deliverable 8 in the originating lesson plan for the full contract.
 
 ## Output
 
@@ -152,7 +152,7 @@ message: {error message if status=error}
 |----------|---------|
 | [Task Creation Flow](references/task-creation-flow.md) | Visual overview of the 1:N task creation flow and output structure |
 | [Breaking-Refactor Task Split](standards/breaking-refactor-task-split.md) | Task-split contract for `tech_debt` / `feature_breaking` deliverables that intentionally invalidate existing test contracts (allocates `implementation` + `module_testing` task pair with `depends_on` linkage); paired with the phase-5-execute planned-failure exception |
-| [Dispatch Granularity](../extension-api/standards/dispatch-granularity.md) | The 10K rule, script-over-dispatch, bundle-over-iterate, per-iteration only when models differ or parallel — explains why Steps 5+6+7 bundle into one `phase-4` dispatch and why Step 9's mechanical Q-Gate checks live in `manage-tasks:qgate-mechanical-checks` rather than a dispatch |
+| [Dispatch Granularity](../extension-api/standards/dispatch-granularity.md) | The 10K rule, script-over-dispatch, bundle-over-iterate, per-iteration only when models differ or parallel — explains why Steps 5+6+7 bundle into one `phase-4-plan` dispatch and why Step 9's mechanical Q-Gate checks live in `manage-tasks:qgate-mechanical-checks` rather than a dispatch |
 
 ## Workflow
 
@@ -647,7 +647,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   --detail "{description excerpt}; deliverable {deliverable_number} outline does not mention '{token}'"
 ```
 
-**Rigor**: this check is warn-only. Phase-4-plan MUST proceed to completion regardless of warnings — the operator reviews findings at the phase-4 gate.
+**Rigor**: this check is warn-only. Phase-4-plan MUST proceed to completion regardless of warnings — the operator reviews findings at the phase-4-plan gate.
 
 ### Step 9b: Dispatch q-gate-validation for mechanical validators
 
@@ -663,7 +663,7 @@ Compute the dispatch target via the role resolver:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-4)
+  models resolve-target --phase phase-4-plan)
 ```
 
 Dispatch:

@@ -4,7 +4,7 @@
 
 ## What This Does
 
-By default, every subagent dispatched by plan-marshall inherits the model from the parent Claude Code session (typically Opus). Some workflows benefit from higher capability (verification-feedback triage, research, retrospective analysis); most don't, costing tokens for no gain. The role-variants system lets you pick a model + effort tier per phase (and per workflow inside a phase), applied automatically at dispatch time.
+By default, every subagent dispatched by plan-marshall inherits the model from the parent Claude Code session (typically Opus). Some workflows benefit from higher capability (verification-feedback triage, retrospective analysis); most don't, costing tokens for no gain. The role-variants system lets you pick a model + effort tier per phase (and per workflow inside a phase), applied automatically at dispatch time.
 
 You configure a small JSON block in `.plan/marshal.json`. The build target emits one variant agent file per (canonical agent × level) combination. Dispatch sites read your configuration and call the right variant by name. End result: the right model runs the right role, no per-dispatch overrides, no manual flag passing.
 
@@ -22,11 +22,11 @@ Six ordinal tiers plus a sentinel:
 | `max` | Opus | xhigh | Top tier (Opus-4.7-only). Research, novel problem decomposition; build-time guard skips emission when the alias does not accept `effort: xhigh`. |
 | `inherit` | (parent) | (parent) | Sentinel: dispatch the canonical, inheriting whatever the parent session uses. |
 
-See [`model-levels.md`](model-levels.md) for the full level → `(model, effort)` primitive binding, alias rules, and the `max` build-time guard.
+See [`effort-levels.md`](effort-levels.md) for the full level → `(model, effort)` primitive binding, alias rules, and the `max` build-time guard.
 
 ## The Role Registry
 
-A **role** is a stable key naming a class of dispatch (e.g., `phase-6.verification-feedback`, `phase-3.research`). The registry is phase-scoped (six groups: `phase-1` through `phase-6`, each carrying optional sub-keys). The full registry — which sub-keys exist on which phase, which workflow doc each binds to, and the accepted lookup forms — lives in [`model-roles.md`](model-roles.md).
+A **role** is a stable key naming a class of dispatch (e.g., `phase-6-finalize.verification-feedback`, `phase-3-outline`). The registry is phase-scoped (six groups, named after the SKILL.md they identify: `phase-1-init`, `phase-2-refine`, `phase-3-outline`, `phase-4-plan`, `phase-5-execute`, `phase-6-finalize`). The full registry — which sub-keys exist on which phase, which workflow doc each binds to, and the accepted lookup forms — lives in [`effort-roles.md`](effort-roles.md).
 
 ## How to Configure
 
@@ -41,7 +41,7 @@ Run the `marshall-steward` wizard and pick the **Models** submenu:
 The wizard:
 
 - Shows the current `models` block (or "(not configured — defaults apply)").
-- Edits `models.default` via prompt — your plan-wide fallback level.
+- Edits `effort` via prompt — your plan-wide fallback level.
 - Walks each phase, letting you set the phase default or override individual workflow sub-keys.
 - Refuses invalid levels (e.g., typos) at save time.
 
@@ -54,14 +54,11 @@ The schema lives at `.plan/marshal.json` under the `models` key:
   "models": {
     "default": "medium",
     "roles": {
-      "phase-3": {
-        "default": "high",
-        "research": "max"
-      },
-      "phase-5": {
+      "phase-3-outline": "high",
+      "phase-5-execute": {
         "verification-feedback": "high"
       },
-      "phase-6": {
+      "phase-6-finalize": {
         "verification-feedback": "high",
         "post-run-review": "xhigh"
       }
@@ -72,13 +69,13 @@ The schema lives at `.plan/marshal.json` under the `models` key:
 
 Resolution order for any role:
 
-1. The deepest explicit sub-key override (e.g. `models.roles.phase-3.research`).
-2. The group's `default` slot when the sub-key is unset or unspecified (`models.roles.phase-3.default`).
-3. A plain-string value at the group (single-level shorthand applied to every workflow under that phase) — e.g. `"phase-2": "high"`.
-4. `models.default` — plan-wide default.
+1. The deepest explicit sub-key override (e.g. `plan.phase-6-finalize.effort.verification-feedback`).
+2. The group's `default` slot when the sub-key is unset or unspecified (`plan.phase-6-finalize.effort.default`).
+3. A plain-string value at the group (single-level shorthand applied to every workflow under that phase) — e.g. `"phase-3-outline": "high"`.
+4. `effort` — plan-wide default.
 5. `inherit` — implicit fallback when nothing else matches.
 
-The `models` block is **opt-in** — when absent entirely, every subagent inherits the parent session's model. The dispatcher resolves the level at dispatch time via `manage-config models resolve-target --phase <phase> --role <subkey>`, so no Claude Code restart is required after editing.
+The `models` block is **opt-in** — when absent entirely, every subagent inherits the parent session's model. The dispatcher resolves the level at dispatch time via `manage-config effort resolve-target --phase <phase> --role <subkey>`, so no Claude Code restart is required after editing.
 
 ### Recommended Starting Configuration
 
@@ -89,9 +86,9 @@ For most workflows, this gets you most of the value at modest cost:
   "models": {
     "default": "medium",
     "roles": {
-      "phase-3": { "research": "max" },
-      "phase-5": { "verification-feedback": "high" },
-      "phase-6": { "verification-feedback": "high" }
+      "phase-3-outline": "high",
+      "phase-5-execute": { "verification-feedback": "high" },
+      "phase-6-finalize": { "verification-feedback": "high" }
     }
   }
 }
@@ -100,16 +97,16 @@ For most workflows, this gets you most of the value at modest cost:
 Pre-built profiles cover the same ground:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config models apply-preset --preset balanced
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort apply-preset --preset balanced
 ```
 
-Available presets: `economic`, `balanced`, `high-end`. See [`model-roles.md`](model-roles.md) and `model_presets.py` for the per-preset role tables.
+Available presets: `economic`, `balanced`, `high-end`. See [`effort-roles.md`](effort-roles.md) and `effort_presets.py` for the per-preset role tables.
 
 ## What Happens at Dispatch Time
 
 When a dispatch site fires (e.g., phase-5-execute calling `verification-feedback` with `producer=build-runner`):
 
-1. The site calls `manage-config models resolve-target --phase phase-5 --role verification-feedback`.
+1. The site calls `manage-config effort resolve-target --phase phase-5-execute --role verification-feedback`.
 2. If the level is `inherit` (or the resolver returned `inherit` as the implicit fallback), the target is the **canonical** no-suffix variant: `Task: plan-marshall:execution-context`. The runtime inherits the parent's model.
 3. Otherwise, the target is a **variant**: `Task: plan-marshall:execution-context-{level}`. The variant has `model:` and `effort:` baked into its frontmatter, so Claude Code runs the subagent on those exact settings.
 
@@ -138,23 +135,23 @@ Configs that did not opt in to per-role levels (or that only used `low`/`medium`
 
 **Check:**
 
-1. Is the role spelled correctly per the hierarchical registry in [`model-roles.md`](model-roles.md)? Keys are kebab-case (`phase-6.verification-feedback`, not `phase_6.verification_feedback`).
+1. Is the role spelled correctly per the hierarchical registry in [`effort-roles.md`](effort-roles.md)? Keys are kebab-case and match the SKILL.md name (`phase-6-finalize.verification-feedback`, not `phase_6.verification_feedback` and not the bare `phase-6-finalize`).
 2. Is the level spelled correctly (`high`, not `High` or `hi`)?
 3. Is `target/claude/` regenerated? Run the `project:finalize-step-deploy-target` step (or `python3 marketplace/targets/generate.py --target claude --output target/claude`) to refresh emitted variants, then `/sync-plugin-cache` to push them into the plugin cache.
 
 ### Symptom: I get a "role key is retired" error
 
-You're reading a key from the pre-rewrite registry (`cross.*` or one of the retired `phase-6.*` sub-keys: `create-pr`, `pre-submission-self-review`, `lessons-capture`, `retrospective`, `pr-doctor`). The error message names the new target. Map common cases:
+You're reading a key from the pre-rewrite registry (`cross.*` or one of the retired `phase-6-finalize.*` sub-keys: `create-pr`, `pre-submission-self-review`, `lessons-capture`, `retrospective`, `pr-doctor`). The error message names the new target. Common mappings (using the post-rename suffixed keys):
 
 | Old key | New shape |
 |---------|-----------|
-| `cross.triage` | `--phase <caller-phase> --role verification-feedback` |
-| `cross.research` | `--phase <caller-phase> --role research` (or `--default` for standalone `/research`) |
-| `cross.q-gate-validation` | `--phase <caller-phase>` (no `--role` — q-gate-validation tracks the phase default) |
-| `cross.plugin-doctor` | `--phase phase-6 --role verification-feedback` (with `producer=plugin-doctor`) |
-| `phase-6.retrospective`, `phase-6.lessons-capture` | `--phase phase-6 --role post-run-review` |
-| `phase-6.pr-doctor` | `--phase phase-6 --role verification-feedback` (with `producer=pr-state`) |
-| `phase-6.create-pr`, `phase-6.pre-submission-self-review` | `--phase phase-6` (no `--role` — both track `phase-6.default`) |
+| `cross.triage` | `--phase <caller-phase-N-suffix> --role verification-feedback` |
+| `cross.research` | `--phase <caller-phase-N-suffix>` (no `--role` — research inherits the calling phase's default) or `--default` for standalone `/research` |
+| `cross.q-gate-validation` | `--phase <caller-phase-N-suffix>` (no `--role` — q-gate-validation tracks the phase default) |
+| `cross.plugin-doctor` | `--phase phase-6-finalize --role verification-feedback` (with `producer=plugin-doctor`) |
+| `phase-6-finalize.retrospective`, `phase-6-finalize.lessons-capture` | `--phase phase-6-finalize --role post-run-review` |
+| `phase-6-finalize.pr-doctor` | `--phase phase-6-finalize --role verification-feedback` (with `producer=pr-state`) |
+| `phase-6-finalize.create-pr`, `phase-6-finalize.pre-submission-self-review` | `--phase phase-6-finalize` (no `--role` — both track the phase default) |
 
 ### Symptom: A role configured as `max` is not running on Opus
 
@@ -174,17 +171,15 @@ Restart Claude Code after the unset.
 
 Valid levels are `low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`, `inherit`. There are currently no reserved-future keywords; future palette expansion may add to the reserved set with a clear error message.
 
-## Recommended `research` Setting
+## Recommended Research Setting
 
-The `research` workflow benefits from the most capable model — every other workflow stays at the user's chosen default. To set it on a per-phase basis where research most often fires (phase-2 / phase-3 / phase-4):
+The `research` workflow benefits from the most capable model — it inherits the calling phase's default level, so the simplest tuning is to bump whichever phase fires research most often:
 
 ```jsonc
 {
   "models": {
     "roles": {
-      "phase-2": { "research": "max" },
-      "phase-3": { "research": "max" },
-      "phase-4": { "research": "max" }
+      "phase-3-outline": "max"
     }
   }
 }
@@ -192,13 +187,15 @@ The `research` workflow benefits from the most capable model — every other wor
 
 (or `xxhigh` if you don't need Opus-4.7's `xhigh` effort tier — the `max` variant gracefully degrades to canonical when the alias does not accept `effort: xhigh`.)
 
+For standalone `/research` outside any plan, the dispatch resolves via `--default` (`effort` → `inherit`); bump `effort` if you want every standalone research run at a higher tier.
+
 ## Cross-References
 
 | Document | Content |
 |----------|---------|
-| [`model-levels.md`](model-levels.md) | Level → `(model, effort)` primitive binding. |
-| [`model-roles.md`](model-roles.md) | Role registry — which dispatch sites consume which roles. |
+| [`effort-levels.md`](effort-levels.md) | Level → `(model, effort)` primitive binding. |
+| [`effort-roles.md`](effort-roles.md) | Role registry — which dispatch sites consume which roles. |
 | [`ext-point-dynamic-level-executor.md`](../../extension-api/standards/ext-point-dynamic-level-executor.md) | Agent-level extension point — variant emission contract. |
-| `marshall-steward/standards/models-menu.md` | Wizard UX for the Models submenu. |
+| `marshall-steward/standards/effort-menu.md` | Wizard UX for the Effort submenu. |
 | `.claude/skills/finalize-step-deploy-target/` | Build-time variant emission step. |
 | `.claude/skills/finalize-step-sync-plugin-cache/` | Plugin cache sync (project-local). |

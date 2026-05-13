@@ -8,7 +8,7 @@ order: 7
 
 Pure executor for the `pre-submission-self-review` finalize step. Catches the class of structural defects that PR-review bots reliably surface but local quality gates systematically miss: missing initialization in symmetric save/restore pairs, regex/glob over-fit, ambiguous user-facing wording, duplicate prose sections covering the same contract, and schema/contract drift.
 
-The step combines a deterministic helper that surfaces concrete candidates from the staged diff with an LLM cognitive review applied only to those candidates. The deterministic phase runs inline in the manifest dispatcher's context; the LLM cognitive phase is dispatched under `--phase phase-6` (no `--role` — pre-submission-self-review tracks the phase-6 default) via [`../workflow/pre-submission-self-review.md`](../workflow/pre-submission-self-review.md). On any finding the LLM returns, the step hard-fails and halts the phase, mirroring the gating-step convention established by `pre-push-quality-gate`.
+The step combines a deterministic helper that surfaces concrete candidates from the staged diff with an LLM cognitive review applied only to those candidates. The deterministic phase runs inline in the manifest dispatcher's context; the LLM cognitive phase is dispatched under `--phase phase-6-finalize` (no `--role` — pre-submission-self-review tracks the phase-6-finalize default) via [`../workflow/pre-submission-self-review.md`](../workflow/pre-submission-self-review.md). On any finding the LLM returns, the step hard-fails and halts the phase, mirroring the gating-step convention established by `pre-push-quality-gate`.
 
 This document carries NO step-activation logic. Activation is controlled by the manifest composer in `manage-execution-manifest/scripts/manage-execution-manifest.py` via the `pre_submission_self_review_inactive` pre-filter (see `manage-execution-manifest/standards/decision-rules.md`). The composer drops the step when `commit_strategy == none` (transitively, via `commit_strategy_none`) OR `references.modified_files` is empty. When the dispatcher runs this step the executor always runs to completion: a clean run records `outcome=done`; a non-empty findings list records `outcome=failed` and halts the phase.
 
@@ -40,7 +40,7 @@ Compute the variant target via the role resolver:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-6)
+  models resolve-target --phase phase-6-finalize)
 ```
 
 Dispatch the LLM workflow with the candidate envelope:

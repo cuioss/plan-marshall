@@ -1,72 +1,75 @@
-"""Named model-level presets for the ``manage-config models`` write API.
+"""Named effort-level presets for the ``manage-config effort apply-preset`` write API.
 
-Defines :class:`ModelPresets` — a constant-class that bundles a ``models``
-block payload (``{"default": <level>, "roles": {<phase>: <level | dict>, ...}}``)
+Defines :class:`EffortPresets` — a constant-class that bundles a per-phase
+effort payload (``{"default": <level>, "roles": {<phase>: <level | dict>, ...}}``)
 under three named profiles:
 
 - ``ECONOMIC`` — minimum-cost configuration; reserves ``medium`` for the
   outline + plan phases and leaves everything else at ``low``.
 - ``BALANCED`` — middle-of-the-road profile; defaults to ``medium`` and
   bumps the analytical phases plus the verification-feedback workflow
-  on phase-5 and phase-6 to ``high``.
+  on phase-5-execute and phase-6-finalize to ``high``.
 - ``HIGH_END`` — maximum-quality profile; defaults to ``high`` and pushes
-  analytical phases to ``xhigh`` with ``research`` at ``max``.
+  the analytical phases to ``xhigh``.
 
 The presets sit alongside the role registry inside the
 ``plan-marshall:plan-marshall`` skill so that policy decisions about
-per-role levels stay co-located with the registry rather than leaking
-into the storage layer (``manage-config``). The constant-class shape is
-plain Python dicts — not :class:`enum.Enum`, not :func:`dataclasses.dataclass`
-— so the values round-trip through JSON unchanged when the
-``manage-config models apply-preset`` writer drops them into
-``marshal.json``.
+per-role effort levels stay co-located with the registry rather than
+leaking into the storage layer (``manage-config``). The constant-class
+shape is plain Python dicts — not :class:`enum.Enum`, not
+:func:`dataclasses.dataclass` — so the values round-trip through JSON
+unchanged when the ``manage-config effort apply-preset`` writer drops
+them into ``marshal.json``.
 
-Levels use only the values listed in ``ALLOWED_LEVELS``
+Effort levels use only the values listed in ``ALLOWED_LEVELS``
 (``low|medium|high|xhigh|xxhigh|max|inherit``). The ``RESERVED_LEVELS``
 tuple is currently empty; a self-check (:func:`_validate_preset`) runs
 at import time and raises :class:`ValueError` if any preset references
-an unknown level.
+an unknown effort level.
 
 Hierarchical shape: a preset's ``roles`` block carries a top-level entry
-per phase group (``phase-1`` … ``phase-6``). The value is either a string
-(single-level shorthand applied to every workflow under that phase) or a
-nested dict with optional sub-keys (``default``, ``research``,
-``verification-feedback``, ``post-run-review`` — see ``KNOWN_ROLES`` for
-the per-phase whitelist). The :func:`_validate_preset` self-check tolerates
-both shapes; the resolver in ``manage-config:_cmd_models`` expands a
-preset's overrides through the full ``KNOWN_ROLES`` registry at write
-time, so the on-disk ``marshal.json`` is always fully qualified.
+per phase group (``phase-1-init`` … ``phase-6-finalize``). The value is
+either a string (single-level shorthand applied to every workflow under
+that phase) or a nested dict with optional sub-keys (``default``,
+``verification-feedback``, ``post-run-review`` — see ``KNOWN_ROLES`` in
+``manage-config:_cmd_effort`` for the per-phase whitelist). The
+:func:`_validate_preset` self-check tolerates both shapes; the writer in
+``manage-config:_cmd_effort`` expands a preset's overrides through the
+full ``KNOWN_ROLES`` registry at write time and writes the result under
+``plan.<phase>.effort`` so the on-disk ``marshal.json`` is co-located
+with the rest of the per-phase config.
 """
 
 from __future__ import annotations
 
 import copy
 
-# Allowed-levels enum — kept in lock-step with
-# ``manage-config/scripts/_cmd_models.py:ALLOWED_LEVELS`` and the
-# ``model-levels.md`` standard. Duplicated here (rather than imported)
+# Allowed effort-level keywords — kept in lock-step with
+# ``manage-config/scripts/_cmd_effort.py:ALLOWED_LEVELS`` and the
+# ``effort-levels.md`` standard. Duplicated here (rather than imported)
 # so this module remains free of any import-time dependency on the
 # ``manage-config`` skill scripts; the test suite cross-checks the two
 # tuples for drift.
 ALLOWED_LEVELS: tuple[str, ...] = ('low', 'medium', 'high', 'xhigh', 'xxhigh', 'max', 'inherit')
 
-# No levels are currently reserved. ``max`` was promoted from reserved-future
-# to live (resolves to opus, xhigh — Opus-4.7-only) so presets may reference
-# it. Future palette expansion may repopulate this tuple.
+# No effort levels are currently reserved. ``max`` was promoted from
+# reserved-future to live (resolves to opus, xhigh — Opus-4.7-only) so
+# presets may reference it. Future palette expansion may repopulate this
+# tuple.
 RESERVED_LEVELS: tuple[str, ...] = ()
 
 
-class ModelPresets:
-    """Named ``models`` block presets for ``manage-config models apply-preset``.
+class EffortPresets:
+    """Named effort presets for ``manage-config effort apply-preset``.
 
-    Each class-level constant is a ready-to-write ``models`` block payload
-    shaped like the schema documented in ``model-roles.md``::
+    Each class-level constant is a ready-to-write per-phase effort payload
+    shaped like the schema documented in ``effort-roles.md``::
 
         {
             "default": "<level>",
             "roles": {
-                "<flat-group>": "<level>",
-                "<nested-group>": {
+                "<phase>": "<level>",
+                "<phase>": {
                     "<subkey>": "<level>",
                     ...
                 },
@@ -84,52 +87,50 @@ class ModelPresets:
     ECONOMIC: dict = {
         'default': 'low',
         'roles': {
-            'phase-3': {'default': 'medium', 'research': 'medium'},
-            'phase-4': {'default': 'medium'},
+            'phase-3-outline': 'medium',
+            'phase-4-plan': 'medium',
         },
     }
-    """Minimum-cost preset. Default ``low``; bumps phase-3 outline (plus its
-    research workflow) and phase-4 plan-time analysis to ``medium``. Use
-    when running large batches of routine plans where output quality is
-    acceptable at the cheapest tier."""
+    """Minimum-cost preset. Default ``low``; bumps phase-3-outline and
+    phase-4-plan to ``medium``. Use when running large batches of routine
+    plans where output quality is acceptable at the cheapest tier."""
 
     BALANCED: dict = {
         'default': 'medium',
         'roles': {
-            'phase-2': {'default': 'high', 'research': 'high'},
-            'phase-3': {'default': 'high', 'research': 'high'},
-            'phase-4': {'default': 'high', 'research': 'high'},
-            'phase-5': {'verification-feedback': 'high'},
-            'phase-6': {'verification-feedback': 'high'},
+            'phase-2-refine': 'high',
+            'phase-3-outline': 'high',
+            'phase-4-plan': 'high',
+            'phase-5-execute': {'verification-feedback': 'high'},
+            'phase-6-finalize': {'verification-feedback': 'high'},
         },
     }
     """Middle-of-the-road preset. Default ``medium``; bumps the three
-    analytical phases (phase-2 refine, phase-3 outline, phase-4 plan) and
-    their per-phase research workflows to ``high``, plus the
-    verification-feedback workflow on phase-5 (build-runner triage) and
-    phase-6 (sonar / pr-comment / plugin-doctor / pr-state triage). The
-    recommended default for non-trivial work."""
+    analytical phases (phase-2-refine, phase-3-outline, phase-4-plan) to
+    ``high``, plus the verification-feedback workflow on phase-5-execute
+    (build-runner triage) and phase-6-finalize (sonar / pr-comment /
+    plugin-doctor / pr-state triage). The recommended default for
+    non-trivial work."""
 
     HIGH_END: dict = {
         'default': 'high',
         'roles': {
-            'phase-2': {'default': 'xhigh', 'research': 'max'},
-            'phase-3': {'default': 'xhigh', 'research': 'max'},
-            'phase-4': {'default': 'xhigh', 'research': 'max'},
-            'phase-5': {'verification-feedback': 'xhigh'},
-            'phase-6': {
+            'phase-2-refine': 'xhigh',
+            'phase-3-outline': 'xhigh',
+            'phase-4-plan': 'xhigh',
+            'phase-5-execute': {'verification-feedback': 'xhigh'},
+            'phase-6-finalize': {
                 'verification-feedback': 'xhigh',
                 'post-run-review': 'xhigh',
             },
         },
     }
     """Maximum-quality preset. Default ``high``; pushes the analytical
-    phases to ``xhigh`` with their ``research`` workflows at ``max``
-    (Opus-4.7-only — falls back to canonical when the alias does not
-    accept ``effort: xhigh``). Phase-5/phase-6 verification-feedback and
-    phase-6 post-run-review (retrospective + lessons-capture) ride at
-    ``xhigh``. Use for high-stakes plans where the extra reasoning cost is
-    justified by output quality."""
+    phases to ``xhigh``. Phase-5-execute / phase-6-finalize
+    verification-feedback and phase-6-finalize post-run-review
+    (retrospective + lessons-capture) ride at ``xhigh``. Use for
+    high-stakes plans where the extra reasoning cost is justified by
+    output quality."""
 
     # ---- canonical name table -------------------------------------------
 
@@ -144,18 +145,19 @@ class ModelPresets:
 
     _DESCRIPTIONS: dict[str, str] = {
         'economic': (
-            'Minimum-cost preset — default low, with phase-3 (outline + '
-            'research) and phase-4 bumped to medium.'
+            'Minimum-cost preset — default low, with phase-3-outline and '
+            'phase-4-plan bumped to medium.'
         ),
         'balanced': (
-            'Middle-of-the-road preset — default medium, with phase-2 / '
-            'phase-3 / phase-4 (default + research) and phase-5 / phase-6 '
-            'verification-feedback bumped to high.'
+            'Middle-of-the-road preset — default medium, with '
+            'phase-2-refine / phase-3-outline / phase-4-plan and '
+            'phase-5-execute / phase-6-finalize verification-feedback '
+            'bumped to high.'
         ),
         'high-end': (
             'Maximum-quality preset — default high, analytical phases at '
-            'xhigh with research at max, phase-5/6 verification-feedback '
-            'and phase-6 post-run-review at xhigh.'
+            'xhigh, phase-5-execute / phase-6-finalize verification-feedback '
+            'and phase-6-finalize post-run-review at xhigh.'
         ),
     }
 
@@ -176,8 +178,8 @@ class ModelPresets:
                 ``economic``, ``balanced``, ``high-end``, or ``high_end``.
 
         Returns:
-            A deep copy of the preset's ``models`` block payload, ready
-            to be written to ``marshal.json``.
+            A deep copy of the preset's payload, ready to be expanded
+            into per-phase ``effort`` entries by the writer.
 
         Raises:
             ValueError: When ``name`` does not match any known preset.
@@ -205,7 +207,7 @@ class ModelPresets:
 
         The display order is cheapest ➜ most expensive: ``economic``,
         ``balanced``, ``high-end``. Used as the ``argparse choices=...``
-        list for ``manage-config models apply-preset --preset`` so
+        list for ``manage-config effort apply-preset --preset`` so
         argparse rejects unknown names before the handler runs.
         """
         return list(cls._NAME_TO_PRESET.keys())
@@ -214,7 +216,7 @@ class ModelPresets:
     def describe(cls, name: str) -> str:
         """Return a one-line human description of preset ``name``.
 
-        Used by the ``marshall-steward`` Models submenu to annotate the
+        Used by the ``marshall-steward`` Effort submenu to annotate the
         preset-selection prompt. Accepts the same case-insensitive /
         underscore-aliased input as :meth:`get`.
 
@@ -242,12 +244,12 @@ def _validate_level_keyword(level: str, where: str) -> None:
     """Raise ValueError when ``level`` is not in the allowed-levels enum."""
     if level in RESERVED_LEVELS:
         raise ValueError(
-            f"{where} level '{level}' is reserved (future-additive); "
+            f"{where} effort '{level}' is reserved (future-additive); "
             f"use 'max' for the current top tier"
         )
     if level not in ALLOWED_LEVELS:
         raise ValueError(
-            f"{where} level '{level}' is not in ALLOWED_LEVELS "
+            f"{where} effort '{level}' is not in ALLOWED_LEVELS "
             f'{list(ALLOWED_LEVELS)}'
         )
 
@@ -262,8 +264,9 @@ def _validate_preset(name: str, preset: dict) -> None:
        :data:`ALLOWED_LEVELS` (and not in :data:`RESERVED_LEVELS`).
     3. ``preset['roles']`` is a dict (may be empty).
     4. Every value in ``preset['roles']`` is either a string in
-       :data:`ALLOWED_LEVELS` (flat group) or a dict whose values are
-       strings in :data:`ALLOWED_LEVELS` (nested group).
+       :data:`ALLOWED_LEVELS` (single-level shorthand for the whole phase)
+       or a dict whose values are strings in :data:`ALLOWED_LEVELS`
+       (per-sub-key overrides).
 
     Run once per preset at import time so a typo fails fast at module
     load rather than silently shipping into ``marshal.json``.
@@ -297,7 +300,7 @@ def _validate_preset(name: str, preset: dict) -> None:
             for subkey, sub_value in group_value.items():
                 if not isinstance(sub_value, str):
                     raise ValueError(
-                        f"preset '{name}' role '{group}.{subkey}' level "
+                        f"preset '{name}' role '{group}.{subkey}' effort "
                         f'must be a string; got {type(sub_value).__name__}'
                     )
                 _validate_level_keyword(
@@ -311,6 +314,6 @@ def _validate_preset(name: str, preset: dict) -> None:
 
 
 # Run the self-check at import time so schema typos surface immediately.
-for _preset_name, _preset in ModelPresets._NAME_TO_PRESET.items():
+for _preset_name, _preset in EffortPresets._NAME_TO_PRESET.items():
     _validate_preset(_preset_name, _preset)
 del _preset_name, _preset

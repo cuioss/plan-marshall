@@ -52,7 +52,7 @@ _mem._log_bot_enforcement_guard_remediated = lambda *a, **kw: None  # type: igno
 
 
 def _phase_6_with_self_review() -> str:
-    """Return the comma-separated default phase-6 steps with pre-submission-self-review added."""
+    """Return the comma-separated default phase-6-finalize steps with pre-submission-self-review added."""
     steps = list(DEFAULT_PHASE_6_STEPS) + ['pre-submission-self-review']
     return ','.join(steps)
 

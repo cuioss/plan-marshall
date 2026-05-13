@@ -15,7 +15,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Timeout Contract
 
-This step runs as inline orchestration (producer fetch + finding enumeration in main context) plus a single `verification-feedback` Task dispatch (`plan-marshall:execution-context-{level}` resolved via `manage-config models resolve-target --phase phase-6 --role verification-feedback`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget is **triage-only**: it covers the review-bot buffer, producer-side comments-stage, per-finding triage dispatch with `producer=pr-comment`, thread replies, and thread resolution. CI wait time is bounded separately by the preceding `ci-wait` step's 1800 s budget — splitting CI-wait out keeps this triage budget bounded by comment volume rather than CI queue depth.
+This step runs as inline orchestration (producer fetch + finding enumeration in main context) plus a single `verification-feedback` Task dispatch (`plan-marshall:execution-context-{level}` resolved via `manage-config effort resolve-target --phase phase-6-finalize --role verification-feedback`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget is **triage-only**: it covers the review-bot buffer, producer-side comments-stage, per-finding triage dispatch with `producer=pr-comment`, thread replies, and thread resolution. CI wait time is bounded separately by the preceding `ci-wait` step's 1800 s budget — splitting CI-wait out keeps this triage budget bounded by comment volume rather than CI queue depth.
 
 **Graceful degradation**: When the wrapper expires:
 
@@ -108,7 +108,7 @@ Compute the target variant via the role resolver, then dispatch:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-6 --role verification-feedback)
+  models resolve-target --phase phase-6-finalize --role verification-feedback)
 ```
 
 ```
@@ -126,14 +126,14 @@ Task: plan-marshall:{target}
 
     producer: pr-comment
     pr_number: {pr_number}
-    caller_phase: phase-6
+    caller_phase: phase-6-finalize
 
     WORKTREE: {worktree_path}
 ```
 
 The subagent's return TOON carries `findings_processed`, `findings_resolved`, `fix_tasks_created`, optional `fix_task_numbers[]`, optional `overflow_deferred`. Capture those values for the "Handle findings (loop-back)" branch below.
 
-When the subagent returns `status: loop_back` it has either created fix tasks (FIX outcomes) or filed an overflow envelope — both require the manifest dispatcher to re-fire `automated-review` on next phase-6 entry.
+When the subagent returns `status: loop_back` it has either created fix tasks (FIX outcomes) or filed an overflow envelope — both require the manifest dispatcher to re-fire `automated-review` on next phase-6-finalize entry.
 
 ### Handle findings (loop-back)
 
@@ -148,7 +148,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-ph
   --plan-id {plan_id} --phase 5-execute
 ```
 
-2. Mark this finalize step as a loop-back iteration (the dispatcher will re-fire it on the next phase-6 entry):
+2. Mark this finalize step as a loop-back iteration (the dispatcher will re-fire it on the next phase-6-finalize entry):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
@@ -236,7 +236,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
   --head-at-completion {sha}
 ```
 
-**Branch C — loop-back recorded** (intermediate pass; used when a non-terminal iteration must be surfaced and the dispatcher must re-fire this step on the next phase-6 entry): `{iteration}` is the current loop-back iteration number (1..3). This branch records `--outcome loop_back` so the Step 3 dispatcher table (and the Resumability table below) re-fires the step as a fresh dispatch on next entry. The terminal pass still uses Branch A when review eventually goes clean. Never record `--outcome done` for an intermediate iteration — `done` is terminal and will cause the dispatcher to skip the step on re-entry. The `loop_back` branch does NOT need `--head-at-completion`:
+**Branch C — loop-back recorded** (intermediate pass; used when a non-terminal iteration must be surfaced and the dispatcher must re-fire this step on the next phase-6-finalize entry): `{iteration}` is the current loop-back iteration number (1..3). This branch records `--outcome loop_back` so the Step 3 dispatcher table (and the Resumability table below) re-fires the step as a fresh dispatch on next entry. The terminal pass still uses Branch A when review eventually goes clean. Never record `--outcome done` for an intermediate iteration — `done` is terminal and will cause the dispatcher to skip the step on re-entry. The `loop_back` branch does NOT need `--head-at-completion`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \

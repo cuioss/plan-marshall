@@ -619,7 +619,7 @@ def test_list_finalize_steps_includes_optional_bundle_step(tmp_path):
 
 
 def test_default_config_excludes_optional_bundle_finalize_steps():
-    """Opt-in bundle finalize steps are absent from the default phase-6 steps list.
+    """Opt-in bundle finalize steps are absent from the default phase-6-finalize steps list.
 
     The whole point of OPTIONAL_BUNDLE_FINALIZE_STEPS is that they are
     discoverable (list-finalize-steps) but not activated by default —

@@ -511,22 +511,22 @@ The caller executes the returned string directly.
 ### Workflow Integration Points
 
 ```
-INIT (phase-1)
+INIT (phase-1-init)
   marshall-steward calls: architecture.py discover
   Result: _project.json + per-module {derived,enriched}.json populated
 
-REFINE (phase-2)
+REFINE (phase-2-refine)
   (no architecture calls)
 
-SOLUTION OUTLINE (phase-3)
+SOLUTION OUTLINE (phase-3-outline)
   outline agent calls: architecture.py module --module X
   Uses: module structure, dependencies for placement decisions
 
-TASK PLAN (phase-4)
+TASK PLAN (phase-4-plan)
   task planner calls: architecture.py graph
   Uses: topological layers for task ordering
 
-TASK EXECUTE (phase-5)
+TASK EXECUTE (phase-5-execute)
   task executor calls: architecture.py resolve --command X --module Y
   Executes: returned command string
 ```

@@ -78,9 +78,9 @@ Some workflow implementors fire **further** `execution-context` dispatches from 
 The sub-dispatch must resolve the level via the **caller's phase**, not via `--default`. The mechanism is encoded in two prompt-body fields:
 
 1. **The `name:` field.** A subagent's incoming `name:` frontmatter typically encodes the caller phase implicitly:
-   - `name: phase-2-refine` → caller phase is `phase-2`
-   - `name: verification-feedback` AND `workflow: …/phase-5-execute/…` → caller phase is `phase-5`
-   - For any sub-dispatch this subagent issues, it extracts the phase prefix from its own `name:` (or from its `workflow:` notation) and passes `--phase <caller-phase>` to `manage-config models resolve-target`.
+   - `name: phase-2-refine` → caller phase is `phase-2-refine`
+   - `name: verification-feedback` AND `workflow: …/phase-5-execute/…` → caller phase is `phase-5-execute`
+   - For any sub-dispatch this subagent issues, it extracts the phase prefix from its own `name:` (or from its `workflow:` notation) and passes `--phase <caller-phase>` to `manage-config effort resolve-target`.
 
 2. **The optional `caller_phase:` field (6th-field extension of the canonical 5-field contract).** When the parent's `name:` does not naturally encode the phase (for example, a workflow that fires from multiple phases such as `verification-feedback` or `q-gate-validation`), the parent's prompt body MUST include `caller_phase: phase-N` explicitly. Subagents forward `caller_phase` verbatim to any sub-dispatch they issue.
 

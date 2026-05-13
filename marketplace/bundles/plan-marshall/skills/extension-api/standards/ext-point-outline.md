@@ -57,7 +57,7 @@ class Extension(ExtensionBase):
 ### Pre-Conditions
 
 - Plan initialized with `request.md`
-- Change type detected by `manage-status:change-type-heuristic` (deterministic keyword classifier with LLM fallback via `models.default` when ambiguous)
+- Change type detected by `manage-status:change-type-heuristic` (deterministic keyword classifier with LLM fallback via `effort` when ambiguous)
 - Domain has a registered outline skill via `provides_outline_skill()`, or falls back to generic `plan-marshall:phase-3-outline` standards
 
 ### Post-Conditions

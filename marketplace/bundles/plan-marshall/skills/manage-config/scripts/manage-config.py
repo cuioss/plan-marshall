@@ -17,9 +17,9 @@ Usage:
 import argparse
 
 from _cmd_domain_detect import cmd_domain_detect
+from _cmd_effort import cmd_effort, cmd_effort_apply_preset, cmd_effort_resolve_target
 from _cmd_ext_defaults import cmd_ext_defaults
 from _cmd_init import cmd_init
-from _cmd_models import cmd_models, cmd_models_apply_preset, cmd_models_resolve_target
 from _cmd_skill_domains import (
     cmd_list_verify_steps,
     cmd_skill_domains,
@@ -38,13 +38,13 @@ from _cmd_skill_resolution import (
 from _cmd_system_plan import cmd_plan, cmd_system
 
 # Direct imports - PYTHONPATH set by executor
+from effort_presets import EffortPresets  # type: ignore[import-not-found]
 from file_ops import output_toon, safe_main
 from input_validation import (  # type: ignore[import-not-found]
     add_domain_arg,
     add_field_arg,
     parse_args_with_toon_errors,
 )
-from model_presets import ModelPresets  # type: ignore[import-not-found]
 
 
 def _add_phase_subparser(
@@ -243,81 +243,82 @@ def main() -> int:
     p_init = subparsers.add_parser('init', help='Initialize marshal.json', allow_abbrev=False)
     p_init.add_argument('--force', action='store_true', help='Overwrite existing')
 
-    # --- models ---
-    p_models = subparsers.add_parser(
-        'models',
-        help='Manage per-role model levels (read resolver, preset writer)',
+    # --- effort ---
+    p_effort = subparsers.add_parser(
+        'effort',
+        help='Manage per-phase effort levels (read resolver, preset writer)',
         allow_abbrev=False,
     )
-    models_sub = p_models.add_subparsers(dest='verb', required=True, help='Operation')
-    models_read = models_sub.add_parser(
+    effort_sub = p_effort.add_subparsers(dest='verb', required=True, help='Operation')
+    effort_read = effort_sub.add_parser(
         'read',
-        help='Resolve the level keyword for a role (or fetch models.default)',
+        help='Resolve the effort keyword for a role (or fetch top-level effort)',
         allow_abbrev=False,
     )
     # Accepted lookup forms (validated in `_split_role`):
-    #   --role <group>             bare-group lookup (e.g. "phase-1")
-    #   --role <group>.<subkey>    dotted form (e.g. "phase-6.verification-feedback")
-    #   --phase <group> --role <s> two-flag form (e.g. "--phase phase-6 --role verification-feedback")
+    #   --role <group>             bare-group lookup (e.g. "phase-1-init")
+    #   --role <group>.<subkey>    dotted form (e.g. "phase-6-finalize.verification-feedback")
+    #   --phase <group> --role <s> two-flag form (e.g. "--phase phase-6-finalize --role verification-feedback")
     #   --phase <group>            bare-group lookup via --phase
-    #   --default                  short-circuit to models.default
+    #   --default                  short-circuit to top-level effort
     # `--default` is mutually exclusive with the role/phase forms.
-    models_read.add_argument(
+    effort_read.add_argument(
         '--role',
         help=(
-            'Role key (see model-roles.md registry). Accepted forms: bare '
-            'group "phase-1"; dotted "phase-3.research"; or use --phase '
-            'plus a bare subkey ("--phase phase-6 --role verification-feedback").'
+            'Role key (see effort-roles.md registry). Accepted forms: bare '
+            'group "phase-1-init"; dotted "phase-3-outline"; or use --phase '
+            'plus a bare subkey ("--phase phase-6-finalize --role '
+            'verification-feedback").'
         ),
     )
-    models_read.add_argument(
+    effort_read.add_argument(
         '--phase',
         help=(
-            'Role group (e.g. "phase-6"). May be used alone for a '
+            'Role group (e.g. "phase-6-finalize"). May be used alone for a '
             'bare-group lookup, or paired with a bare-subkey --role for '
             'the two-flag form; --role must not itself include a dot in '
             'the two-flag form.'
         ),
     )
-    models_read.add_argument(
+    effort_read.add_argument(
         '--default',
         action='store_true',
-        help='Return models.default directly (no role/phase lookup).',
+        help='Return top-level effort directly (no role/phase lookup).',
     )
 
-    models_resolve_target = models_sub.add_parser(
+    effort_resolve_target = effort_sub.add_parser(
         'resolve-target',
         help='Resolve a role to its execution-context-{level} variant target name',
         allow_abbrev=False,
     )
-    models_resolve_target.add_argument(
+    effort_resolve_target.add_argument(
         '--role',
         help=(
-            'Role key (same accepted forms as `models read --role`). '
+            'Role key (same accepted forms as `effort read --role`). '
             'Returns the variant target name `execution-context-{level}` '
             '(or the canonical `execution-context` when the resolved level '
             'is `inherit`).'
         ),
     )
-    models_resolve_target.add_argument(
+    effort_resolve_target.add_argument(
         '--phase',
         help='Role group; may be used alone or paired with --role.',
     )
-    models_resolve_target.add_argument(
+    effort_resolve_target.add_argument(
         '--default',
         action='store_true',
-        help='Resolve via models.default (no role/phase lookup).',
+        help='Resolve via top-level effort (no role/phase lookup).',
     )
-    models_apply_preset = models_sub.add_parser(
+    effort_apply_preset = effort_sub.add_parser(
         'apply-preset',
-        help='Completely overwrite the models block with a named preset',
+        help='Write per-phase effort attributes from a named preset',
         allow_abbrev=False,
     )
     # Validation uses ``type=`` rather than ``choices=`` so the documented
     # case-insensitive / underscore-alias behaviour (``HIGH_END``,
     # ``high_end``, ``Balanced``) works end-to-end through the CLI, not
-    # just for programmatic callers of :meth:`ModelPresets.get`. A plain
-    # ``choices=ModelPresets.all_names()`` would enforce exact,
+    # just for programmatic callers of :meth:`EffortPresets.get`. A plain
+    # ``choices=EffortPresets.all_names()`` would enforce exact,
     # case-sensitive matching of the canonical names and reject the
     # documented aliases before the handler runs. The ``type=`` callable
     # normalises and validates in one step, and unknown names raise
@@ -326,13 +327,13 @@ def main() -> int:
     # bogus presets are rejected at the argparse layer).
     def _preset_arg(value: str) -> str:
         try:
-            ModelPresets.get(value)
+            EffortPresets.get(value)
         except ValueError as exc:
             raise argparse.ArgumentTypeError(str(exc)) from exc
         return value
 
-    canonical_names = ', '.join(ModelPresets.all_names())
-    models_apply_preset.add_argument(
+    canonical_names = ', '.join(EffortPresets.all_names())
+    effort_apply_preset.add_argument(
         '--preset',
         required=True,
         type=_preset_arg,
@@ -340,7 +341,7 @@ def main() -> int:
         help=(
             f'Preset name (canonical: {canonical_names}; '
             'case-insensitive, underscore variants accepted; '
-            'see model_presets.py for per-preset values)'
+            'see effort_presets.py for per-preset values)'
         ),
     )
 
@@ -448,16 +449,16 @@ def main() -> int:
         result = cmd_ext_defaults(args)
     elif args.noun == 'init':
         result = cmd_init(args)
-    elif args.noun == 'models':
+    elif args.noun == 'effort':
         if not args.verb:
-            p_models.print_help()
+            p_effort.print_help()
             return 2
         if args.verb == 'apply-preset':
-            result = cmd_models_apply_preset(args)
+            result = cmd_effort_apply_preset(args)
         elif args.verb == 'resolve-target':
-            result = cmd_models_resolve_target(args)
+            result = cmd_effort_resolve_target(args)
         else:
-            result = cmd_models(args)
+            result = cmd_effort(args)
     elif args.noun == 'resolve-domain-skills':
         result = cmd_resolve_domain_skills(args)
     elif args.noun == 'resolve-workflow-skill-extension':

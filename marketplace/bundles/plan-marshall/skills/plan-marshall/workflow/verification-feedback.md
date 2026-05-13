@@ -6,17 +6,17 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 Thin orchestrator that unifies the five LLM-driven feedback flows under a single dispatch shape. Branches on the `producer` runtime input for the producer-side work in Step 1, then hands off to the canonical Steps 1-6 in [`triage.md`](triage.md) for the per-finding FIX / SUPPRESS / ACCEPT / AskUserQuestion loop.
 
-Dispatched under the **phase-scoped** `verification-feedback` role key — the resolver bubbles from `<caller-phase>.verification-feedback` to `<caller-phase>.default` to `models.default`. Phase-5 dispatches use `--phase phase-5 --role verification-feedback`; every phase-6 dispatch (sonar, pr-comment, plugin-doctor, pr-state) uses `--phase phase-6 --role verification-feedback`.
+Dispatched under the **phase-scoped** `verification-feedback` role key — the resolver bubbles from `<caller-phase>.verification-feedback` to `<caller-phase>.default` to `effort`. Phase-5 dispatches use `--phase phase-5-execute --role verification-feedback`; every phase-6-finalize dispatch (sonar, pr-comment, plugin-doctor, pr-state) uses `--phase phase-6-finalize --role verification-feedback`.
 
 ## Producer modes
 
 | `producer` | Replaces | Producer-side work (Step 1) | Pre-flight gate |
 |------------|----------|-----------------------------|-----------------|
-| `build-runner` | phase-5 Step 11 + Step 11b triage calls | Build-runner / quality-gate log parse → findings store. **Mechanical, pre-flight** — the orchestrator runs the build, captures findings via `manage-findings add`, dispatches this workflow only when `manage-findings query | count > 0`. Step 1 here is a store-only query. | Count > 0 |
-| `sonar` | phase-6 `sonar-roundtrip` triage call | `workflow-integration-sonar:sonar fetch-and-store`. **Mechanical, pre-flight.** Step 1 here is a store-only query. | Count > 0 |
-| `pr-comment` | phase-6 `automated-review` triage call | `workflow-integration-github:github_pr comments-stage` (or GitLab equivalent). **Mechanical, pre-flight.** Step 1 here is a store-only query. | Count > 0 |
+| `build-runner` | phase-5-execute Step 11 + Step 11b triage calls | Build-runner / quality-gate log parse → findings store. **Mechanical, pre-flight** — the orchestrator runs the build, captures findings via `manage-findings add`, dispatches this workflow only when `manage-findings query | count > 0`. Step 1 here is a store-only query. | Count > 0 |
+| `sonar` | phase-6-finalize `sonar-roundtrip` triage call | `workflow-integration-sonar:sonar fetch-and-store`. **Mechanical, pre-flight.** Step 1 here is a store-only query. | Count > 0 |
+| `pr-comment` | phase-6-finalize `automated-review` triage call | `workflow-integration-github:github_pr comments-stage` (or GitLab equivalent). **Mechanical, pre-flight.** Step 1 here is a store-only query. | Count > 0 |
 | `plugin-doctor` | `cross.plugin-doctor` + `/plugin-doctor` slash-command dispatch | Marketplace static analysis — **LLM-heavy**, runs inside this envelope as Step 1: iterate the plugin-doctor rule catalog in-context, scope-filter, emit one finding per violation to the store. | None — analysis IS the producer step. |
-| `pr-state` | `workflow-pr-doctor` + `/pr-doctor` slash-command + `phase-6.pr-doctor` role | Wait for CI checks; fetch build status, PR comments, and Sonar issues sequentially; emit each finding-type to the store. Step 1 here orchestrates the multi-source sweep, then the unified triage in Steps 3-6 processes the aggregated set. | None — the producer always runs; Steps 3-6 short-circuit on zero findings. |
+| `pr-state` | `workflow-pr-doctor` + `/pr-doctor` slash-command + `phase-6-finalize.pr-doctor` role | Wait for CI checks; fetch build status, PR comments, and Sonar issues sequentially; emit each finding-type to the store. Step 1 here orchestrates the multi-source sweep, then the unified triage in Steps 3-6 processes the aggregated set. | None — the producer always runs; Steps 3-6 short-circuit on zero findings. |
 
 ## Inputs
 

@@ -585,7 +585,7 @@ def test_qgate_mechanical_plan_dir_not_found_errors():
 
 
 def test_qgate_mechanical_emit_writes_findings():
-    """With emit=True (default), failures land in the phase-4 Q-Gate findings store."""
+    """With emit=True (default), failures land in the phase-4-plan Q-Gate findings store."""
     with PlanContext(plan_id='qgate-emit') as ctx:
         assert ctx.plan_dir is not None
         _write_outline(

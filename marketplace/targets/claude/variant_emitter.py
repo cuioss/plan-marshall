@@ -8,7 +8,7 @@ plus the canonical no-suffix file (with ``implements:`` and ``levels:``
 stripped).
 
 The level → ``(model, effort)`` primitive binding is the canonical
-table from ``plan-marshall:plan-marshall/standards/model-levels.md``.
+table from ``plan-marshall:plan-marshall/standards/effort-levels.md``.
 The ``max`` build-time guard reads
 ``marketplace/targets/opencode/mapping.json`` to decide whether the
 resolved model alias accepts ``effort: xhigh``; when it does not, the
@@ -25,7 +25,7 @@ from pathlib import Path
 
 EXTENSION_POINT = 'plan-marshall:extension-api/standards/ext-point-dynamic-level-executor'
 
-# Single source of truth: keep in lock-step with model-levels.md.
+# Single source of truth: keep in lock-step with effort-levels.md.
 LEVEL_TABLE: dict[str, dict[str, str | None]] = {
     'low': {'model': 'haiku', 'effort': None},
     'medium': {'model': 'sonnet', 'effort': 'medium'},

@@ -67,7 +67,7 @@ Both are resolved via `manage_session` (`current` + `transcript-path` subcommand
 
 ## Phase-Entry Worktree Assertion
 
-The Phase Entry Protocol's `phase_handshake verify --phase 5-execute --strict` call (see [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md#phase-handshake-verify-phases-2-6)) asserts the worktree-resolution contract before any phase-6 work begins: when `metadata.use_worktree==true`, `metadata.worktree_path` MUST be non-empty AND filesystem-resolvable (the directory exists AND `git -C {path} rev-parse --show-toplevel` returns the same canonical path). When the assertion fails, the script returns `status: error, error: worktree_unresolved` and (under `--strict`) exits 1 — phase entry refuses to advance until the persisted metadata is repaired. Plans with `metadata.use_worktree==false` skip the assertion (main-checkout flow). The assertion is particularly load-bearing here: phase-6's branch-cleanup step removes the worktree, so a stale `worktree_path` at entry would point at a directory cleanup is about to delete or has already deleted on a re-entry. The assertion fires uniformly at every phase boundary; see deliverable 8 in the originating lesson plan for the full contract.
+The Phase Entry Protocol's `phase_handshake verify --phase 5-execute --strict` call (see [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md#phase-handshake-verify-phases-2-6)) asserts the worktree-resolution contract before any phase-6-finalize work begins: when `metadata.use_worktree==true`, `metadata.worktree_path` MUST be non-empty AND filesystem-resolvable (the directory exists AND `git -C {path} rev-parse --show-toplevel` returns the same canonical path). When the assertion fails, the script returns `status: error, error: worktree_unresolved` and (under `--strict`) exits 1 — phase entry refuses to advance until the persisted metadata is repaired. Plans with `metadata.use_worktree==false` skip the assertion (main-checkout flow). The assertion is particularly load-bearing here: phase-6-finalize's branch-cleanup step removes the worktree, so a stale `worktree_path` at entry would point at a directory cleanup is about to delete or has already deleted on a re-entry. The assertion fires uniformly at every phase boundary; see deliverable 8 in the originating lesson plan for the full contract.
 
 ## Configuration Sources
 
@@ -90,7 +90,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 |-------|------|-------------|
 | `phase-6-finalize.review_bot_buffer_seconds` | integer | Max seconds to wait after CI for new review-bot comments (used as `--timeout` for `pr wait-for-comments`; ceiling, not fixed delay; default: 180) |
 | `phase-6-finalize.max_iterations` | integer | Maximum finalize-verify loops (default: 3) |
-| `phase-6-finalize.loop_back_without_asking` | bool | Symmetric counterpart to `phase-5-execute.finalize_without_asking`. When `true`, a `loop_back` outcome from any phase-6 step (FIX disposition, `pr-comment-overflow`, sonar-roundtrip FIX) auto-dispatches the execute pipeline inline and re-enters the finalize loop, capped by `max_iterations`. When `false` (default), the dispatcher halts and returns control to the user. See Step 3 § "Loop-back continuation" for the dispatch shape. |
+| `phase-6-finalize.loop_back_without_asking` | bool | Symmetric counterpart to `phase-5-execute.finalize_without_asking`. When `true`, a `loop_back` outcome from any phase-6-finalize step (FIX disposition, `pr-comment-overflow`, sonar-roundtrip FIX) auto-dispatches the execute pipeline inline and re-enters the finalize loop, capped by `max_iterations`. When `false` (default), the dispatcher halts and returns control to the user. See Step 3 § "Loop-back continuation" for the dispatch shape. |
 | `phase-5-execute.commit_strategy` | string | per_deliverable / per_plan / none |
 | `phase-5-execute.finalize_without_asking` | bool | Forward-direction auto-continuation: when `true`, after `5-execute → 6-finalize` transition the orchestrator dispatches `phase-6-finalize` inline rather than halting and prompting the user. The reverse-direction symmetric counterpart is `phase-6-finalize.loop_back_without_asking`. |
 | `phase-1-init.branch_strategy` | string | feature / direct |
@@ -101,7 +101,7 @@ A step is active if and only if it appears in `manifest.phase_6.steps`. Absent s
 
 ## Dispatched workflows vs inline steps
 
-Of the 17 default + project finalize steps, **6 dispatch** and **11 run inline**. Every dispatched step resolves under the phase-scoped registry — `manage-config models resolve-target --phase phase-6 [--role <subkey>]`. Step → resolved role: `pre-submission-self-review` → `phase-6` (no `--role`; tracks `phase-6.default`); `create-pr` → `phase-6` (no `--role`); `lessons-capture` → `phase-6 --role post-run-review`; `automated-review` + `sonar-roundtrip` → `phase-6 --role verification-feedback` (`producer=pr-comment` / `sonar` runtime input); `architecture-refresh` is hybrid (Tier 0 inline scripts; Tier 1 fans out under `phase-6` per affected module — the only per-iteration parallel dispatch in the contract); `project:finalize-step-plugin-doctor` (meta-project only) → `phase-6 --role verification-feedback` (`producer=plugin-doctor` runtime input). Two opt-in dispatched steps exist outside the default set: **retrospective** → `phase-6 --role post-run-review` (8 LLM aspects iterate inside one envelope); `/workflow-pr-doctor` (slash-command surface) → `phase-6 --role verification-feedback` (`producer=pr-state` runtime input). The 11 inline steps (`commit-push`, `ci-wait`, `branch-cleanup`, `pre-push-quality-gate`, `record-metrics`, `archive-plan`, `finalize-step-print-phase-breakdown`, `architecture-refresh` Tier 0, `project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`, `project:finalize-step-regenerate-executor`) are pure scripts or trivial orchestration that earn no envelope. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 5 (find the LLM core, not the wrapping step).
+Of the 17 default + project finalize steps, **6 dispatch** and **11 run inline**. Every dispatched step resolves under the phase-scoped registry — `manage-config effort resolve-target --phase phase-6-finalize [--role <subkey>]`. Step → resolved role: `pre-submission-self-review` → `phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`); `create-pr` → `phase-6-finalize` (no `--role`); `lessons-capture` → `phase-6-finalize --role post-run-review`; `automated-review` + `sonar-roundtrip` → `phase-6-finalize --role verification-feedback` (`producer=pr-comment` / `sonar` runtime input); `architecture-refresh` is hybrid (Tier 0 inline scripts; Tier 1 fans out under `phase-6-finalize` per affected module — the only per-iteration parallel dispatch in the contract); `project:finalize-step-plugin-doctor` (meta-project only) → `phase-6-finalize --role verification-feedback` (`producer=plugin-doctor` runtime input). Two opt-in dispatched steps exist outside the default set: **retrospective** → `phase-6-finalize --role post-run-review` (8 LLM aspects iterate inside one envelope); `/workflow-pr-doctor` (slash-command surface) → `phase-6-finalize --role verification-feedback` (`producer=pr-state` runtime input). The 11 inline steps (`commit-push`, `ci-wait`, `branch-cleanup`, `pre-push-quality-gate`, `record-metrics`, `archive-plan`, `finalize-step-print-phase-breakdown`, `architecture-refresh` Tier 0, `project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`, `project:finalize-step-regenerate-executor`) are pure scripts or trivial orchestration that earn no envelope. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 5 (find the LLM core, not the wrapping step).
 
 ## Step Types
 
@@ -405,18 +405,18 @@ For each step reference:
 
 | Step reference | Resolver lookup | Workflow doc |
 |----------------|-----------------|--------------|
-| `default:create-pr` | `--phase phase-6` (no `--role`; tracks `phase-6.default`) | `plan-marshall:phase-6-finalize/workflow/create-pr.md` |
-| `default:lessons-capture` | `--phase phase-6 --role post-run-review` | `plan-marshall:phase-6-finalize/workflow/lessons-capture.md` |
-| `default:automated-review` | `--phase phase-6 --role verification-feedback` (LLM core; outer wrapper tracks `phase-6.default`) | `plan-marshall:phase-6-finalize/workflow/automated-review.md` |
-| `default:sonar-roundtrip` | `--phase phase-6 --role verification-feedback` (LLM core; outer wrapper tracks `phase-6.default`) | `plan-marshall:phase-6-finalize/workflow/sonar-roundtrip.md` |
+| `default:create-pr` | `--phase phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`) | `plan-marshall:phase-6-finalize/workflow/create-pr.md` |
+| `default:lessons-capture` | `--phase phase-6-finalize --role post-run-review` | `plan-marshall:phase-6-finalize/workflow/lessons-capture.md` |
+| `default:automated-review` | `--phase phase-6-finalize --role verification-feedback` (LLM core; outer wrapper tracks `phase-6-finalize.default`) | `plan-marshall:phase-6-finalize/workflow/automated-review.md` |
+| `default:sonar-roundtrip` | `--phase phase-6-finalize --role verification-feedback` (LLM core; outer wrapper tracks `phase-6-finalize.default`) | `plan-marshall:phase-6-finalize/workflow/sonar-roundtrip.md` |
 
-`automated-review` and `sonar-roundtrip` are orchestrator workflows — their LLM-judgement core is a single internal `verification-feedback` dispatch (with `producer=pr-comment` / `producer=sonar` runtime input). The outer wrapper resolves under `phase-6.default` since the body is mostly script execution and one sub-dispatch.
+`automated-review` and `sonar-roundtrip` are orchestrator workflows — their LLM-judgement core is a single internal `verification-feedback` dispatch (with `producer=pr-comment` / `producer=sonar` runtime input). The outer wrapper resolves under `phase-6-finalize.default` since the body is mostly script execution and one sub-dispatch.
 
-**Dispatch pattern** — resolve the target via the role resolver. Pass `--phase phase-6` for every dispatched step; add `--role <subkey>` only when the step has its own sub-key in the table above:
+**Dispatch pattern** — resolve the target via the role resolver. Pass `--phase phase-6-finalize` for every dispatched step; add `--role <subkey>` only when the step has its own sub-key in the table above:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-6 [--role <subkey>])
+  models resolve-target --phase phase-6-finalize [--role <subkey>])
 ```
 
 Dispatch:
@@ -432,14 +432,14 @@ Task: plan-marshall:{target}
     WORKTREE: {worktree_path}
 ```
 
-The 5-field prompt-body contract (`name`, `plan_id`, `skills[]`, `workflow`, `WORKTREE`) is documented in [`plan-marshall:extension-api/standards/ext-point-execution-context-workflow`](../extension-api/standards/ext-point-execution-context-workflow.md). The variant resolution (canonical no-suffix for `inherit`/empty level; `execution-context-{level}` otherwise) lives in [`plan-marshall:plan-marshall/standards/role-variants.md`](../plan-marshall/standards/role-variants.md).
+The 5-field prompt-body contract (`name`, `plan_id`, `skills[]`, `workflow`, `WORKTREE`) is documented in [`plan-marshall:extension-api/standards/ext-point-execution-context-workflow`](../extension-api/standards/ext-point-execution-context-workflow.md). The variant resolution (canonical no-suffix for `inherit`/empty level; `execution-context-{level}` otherwise) lives in [`plan-marshall:plan-marshall/standards/effort-variants.md`](../plan-marshall/standards/effort-variants.md).
 
 **Inline-only built-in steps** (require user interaction, sequential dependency, or are bounded polling primitives that fit comfortably under the host platform's per-call Bash ceiling):
 - `commit-push` (git working directory state), `architecture-refresh` (AskUserQuestion for Tier-1 prompt mode; consumes `architecture-pre/` snapshot from phase-1-init Step 5d), `ci-wait` (bounded `ci wait` polling primitive — the `ci wait` script enforces its own `--timeout` ceiling; the dispatcher invokes it inline with a Bash timeout matching that ceiling), `branch-cleanup` (AskUserQuestion), `record-metrics` (must run immediately before `archive-plan` on the still-live plan directory), `archive-plan` (must be last, moves plan files)
 
 Per-step agent `<usage>` totals are persisted on disk by `manage-metrics accumulate-agent-usage` (called from step 5b below). The on-disk file `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` survives context compaction and is read by `default:record-metrics` at `end-phase` time. Do NOT maintain a parallel tally in model context — the on-disk file is authoritative.
 
-**Initialise the `loop_back_iteration` counter to 0 BEFORE entering the FOR loop** (i.e., here, at the start of Step 3 — outside the loop body). The counter persists across FOR-loop re-entries triggered by the loop-back continuation hook (step 7b below), so that the `max_iterations` ceiling is enforced across the entire dispatch. Initialising the counter inside the FOR loop body (e.g., on each entry into the loop) would reset it on every loop-back BREAK + RE-ENTER, defeating the ceiling. The counter is held in model context for the duration of the dispatch — it is NOT persisted to status.json; a fresh phase-6 entry (e.g., after a session restart) starts the counter back at 0.
+**Initialise the `loop_back_iteration` counter to 0 BEFORE entering the FOR loop** (i.e., here, at the start of Step 3 — outside the loop body). The counter persists across FOR-loop re-entries triggered by the loop-back continuation hook (step 7b below), so that the `max_iterations` ceiling is enforced across the entire dispatch. Initialising the counter inside the FOR loop body (e.g., on each entry into the loop) would reset it on every loop-back BREAK + RE-ENTER, defeating the ceiling. The counter is held in model context for the duration of the dispatch — it is NOT persisted to status.json; a fresh phase-6-finalize entry (e.g., after a session restart) starts the counter back at 0.
 
 ```
 loop_back_iteration = 0   # initialised once, before the FOR loop; persists across FOR-loop re-entries from the loop-back hook (step 7b)
@@ -489,16 +489,16 @@ FOR each step_id in manifest.phase_6.steps:
        (1) Resolve the level-bound target via the resolver:
            ```
            target = python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-             models resolve-target --phase phase-6 [--role <subkey>]
+             models resolve-target --phase phase-6-finalize [--role <subkey>]
            ```
            Returns `execution-context-{level}` (variant), or canonical `execution-context` for `inherit`/empty.
        (2) Dispatch via `Task(subagent_type: plan-marshall:<target>, …)` with prompt body `name`, `plan_id`, `skills[]`, `workflow: plan-marshall:phase-6-finalize/workflow/{name}.md`, `WORKTREE`.
 
        Per-step workflow docs and resolver lookups:
-         * default:create-pr        -> workflow: workflow/create-pr.md        | --phase phase-6                              (no --role)
-         * default:automated-review -> workflow: workflow/automated-review.md | --phase phase-6                              (outer wrapper; inner verification-feedback dispatch uses --role verification-feedback) | timeout: 900s
-         * default:sonar-roundtrip  -> workflow: workflow/sonar-roundtrip.md  | --phase phase-6                              (outer wrapper; inner verification-feedback dispatch uses --role verification-feedback) | timeout: 900s
-         * default:lessons-capture  -> workflow: workflow/lessons-capture.md  | --phase phase-6 --role post-run-review       | timeout: 300s
+         * default:create-pr        -> workflow: workflow/create-pr.md        | --phase phase-6-finalize                              (no --role)
+         * default:automated-review -> workflow: workflow/automated-review.md | --phase phase-6-finalize                              (outer wrapper; inner verification-feedback dispatch uses --role verification-feedback) | timeout: 900s
+         * default:sonar-roundtrip  -> workflow: workflow/sonar-roundtrip.md  | --phase phase-6-finalize                              (outer wrapper; inner verification-feedback dispatch uses --role verification-feedback) | timeout: 900s
+         * default:lessons-capture  -> workflow: workflow/lessons-capture.md  | --phase phase-6-finalize --role post-run-review       | timeout: 300s
 
        The subagent's body loads `dev-general-practices` + the prompt's `skills[]`, then `Read`s the workflow doc and executes its steps inside the dispatch envelope. Pass `--plan-id {plan_id}` and, when an `{iteration}` counter applies, `--iteration {iteration}` as workflow-specific runtime inputs in the prompt body. The Worktree Header is conveyed via the always-required `WORKTREE` prompt-body field; the subagent resolves the worktree path internally and propagates it into any further dispatches it issues.
 
@@ -588,7 +588,7 @@ FOR each step_id in manifest.phase_6.steps:
 
              Note: the BREAK + RE-ENTER above is a control-flow construct, not a per-step skip. The FOR loop re-iteration uses the same manifest list and the same per-step resumable check; the only state that changes is the `phase_steps["6-finalize"][step_id]` records (the dispatched agent will record a fresh outcome on its next run).
 
-      The `loop_back_iteration` counter is held in model context for the duration of the dispatch — it is NOT persisted to status.json. A fresh phase-6 entry (e.g., after a session restart) starts the counter back at 0; the manifest's resumable re-entry check still skips already-`done` steps, so re-entering after a restart re-runs only the steps that recorded `loop_back` or `failed` on the previous invocation.
+      The `loop_back_iteration` counter is held in model context for the duration of the dispatch — it is NOT persisted to status.json. A fresh phase-6-finalize entry (e.g., after a session restart) starts the counter back at 0; the manifest's resumable re-entry check still skips already-`done` steps, so re-entering after a restart re-runs only the steps that recorded `loop_back` or `failed` on the previous invocation.
 END FOR
 ```
 
@@ -603,7 +603,7 @@ END FOR
 | `false` (default) | any | The forward `5-execute → 6-finalize` transition halts and prompts the user. Loop-back never fires inline because finalize is not entered in the same orchestration cycle. |
 | `true` | `false` (default) | Forward auto-continuation; loop-back halts at the inline execute re-entry point and prompts the user. (This is the conservative shape: forward is automated, reverse is interactive.) |
 | `true` | `true` | Full unattended cycle. A loop_back outcome re-dispatches execute inline up to `max_iterations` times, then halts even with the flag set. |
-| `false` | `true` | Effectively `false`/`false` from the user's perspective: forward halts and prompts before phase-6 ever runs, so the loop-back hook is unreachable in the same orchestration cycle. |
+| `false` | `true` | Effectively `false`/`false` from the user's perspective: forward halts and prompts before phase-6-finalize ever runs, so the loop-back hook is unreachable in the same orchestration cycle. |
 
 The conservative default (`loop_back_without_asking=false`) ships an interactive shape so existing plans behave the same as before this knob was added. Projects that want full unattended execution must opt into both knobs.
 
@@ -692,7 +692,7 @@ Emit a one-shot `✓ pm:done:{short_description}` OSC escape to the terminal so 
 
 **If `short_description` is `None` or empty**: skip this step (log at INFO and continue to return). A plan created before the `short_description` field existed, or one whose derivation produced an empty string, cannot produce a meaningful `pm:done:` label; in that case the title stays at whatever the last hook emitted (typically `◯ claude` via Stop).
 
-**If `short_description` is set**: invoke the terminal-title script via the canonical executor notation, passing the captured label. The executor mapping resolves the deployed cache path at generation time, so future bundle-version bumps flow through automatically and the invocation matches every other phase-6 step:
+**If `short_description` is set**: invoke the terminal-title script via the canonical executor notation, passing the captured label. The executor mapping resolves the deployed cache path at generation time, so future bundle-version bumps flow through automatically and the invocation matches every other phase-6-finalize step:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-marshall:set_terminal_title done --plan-label "{short_description}"
@@ -795,7 +795,7 @@ See `standards/validation.md` for specific error scenarios and recovery actions.
 
 Step activation is determined by presence in `manifest.phase_6.steps` — absent steps are NEVER executed under any circumstance.
 
-The Step 3 dispatch loop is fully resumable across re-entries: each step's `status.metadata.phase_steps["6-finalize"][step_id].outcome` drives the per-step decision on a fresh phase-6 invocation:
+The Step 3 dispatch loop is fully resumable across re-entries: each step's `status.metadata.phase_steps["6-finalize"][step_id].outcome` drives the per-step decision on a fresh phase-6-finalize invocation:
 
 | Outcome on re-entry | Action |
 |---------------------|--------|

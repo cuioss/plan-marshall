@@ -690,7 +690,7 @@ class TestAutomatedReviewCiSignalAndOverflow:
         """The overflow handling section MUST exist in the shared triage
         workflow so the contract is reachable from every call site that
         dispatches `cross.triage` (automated-review, sonar-roundtrip,
-        phase-5 verification/quality-gate triage, pr-doctor)."""
+        phase-5-execute verification/quality-gate triage, pr-doctor)."""
         # The triage workflow numbers its steps; overflow lives at Step 5.
         assert 'Overflow' in triage_text and 'timeout' in triage_text.lower(), (
             'triage.md must document overflow / timeout handling'
@@ -722,7 +722,7 @@ class TestAutomatedReviewCiSignalAndOverflow:
     ):
         """The overflow path MUST return ``outcome: loop_back`` so the
         calling manifest step (automated-review / sonar-roundtrip /
-        phase-5 Step 11) re-fires the dispatch on the next phase entry."""
+        phase-5-execute Step 11) re-fires the dispatch on the next phase entry."""
         text = triage_text
         # Locate the overflow section (between Step 5 header and Step 6).
         if 'Step 5' in text and 'Step 6' in text:
@@ -820,7 +820,7 @@ class TestAutomatedReviewCiSignalAndOverflow:
 
 # ===========================================================================
 # Symmetric auto-continuation tests (loop_back_without_asking) — pin the
-# documented contract introduced when a phase-6 step's outcome=loop_back can
+# documented contract introduced when a phase-6-finalize step's outcome=loop_back can
 # re-dispatch the execute pipeline inline rather than halting and prompting
 # the user. The flag is the reverse-direction symmetric counterpart to the
 # forward `phase-5-execute.finalize_without_asking` knob.

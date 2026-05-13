@@ -11,7 +11,7 @@ phase-2-refine iterate-to-confidence loop consumes the result via the
 existing finding-resolution path.
 
 The LLM-judgement step (decide which upstream commits warrant scope
-adjustment) stays bundled in the existing phase-2 dispatch — this
+adjustment) stays bundled in the existing phase-2-refine dispatch — this
 script is the mechanical predicate only.
 """
 

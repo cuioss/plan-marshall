@@ -4,7 +4,7 @@
 
 ## Overview
 
-The variant emission system ([`ext-point-dynamic-level-executor`](../../extension-api/standards/ext-point-dynamic-level-executor.md)) uses a fixed six-tier ordinal scale to select model + effort combinations per role. Authors configure roles by level keyword (e.g., `models.roles.phase-3.research = "max"`); the build target translates levels into concrete `(model, effort)` primitives via the table below.
+The variant emission system ([`ext-point-dynamic-level-executor`](../../extension-api/standards/ext-point-dynamic-level-executor.md)) uses a fixed six-tier ordinal scale to select model + effort combinations per role. Authors configure roles by level keyword (e.g., `plan.phase-3-outline.effort.research = "max"`); the build target translates levels into concrete `(model, effort)` primitives via the table below.
 
 The level palette is intentionally small and ordinal — `low → medium → high → xhigh → xxhigh → max` represents increasing capability and cost. The `inherit` sentinel is the only non-ordinal value; it instructs the dispatch site to use the canonical no-suffix variant (which inherits the parent session's model).
 
@@ -44,10 +44,10 @@ Dispatch sites that resolve to a missing variant fall back to the canonical (`in
 
 ## Default Resolution Order
 
-The resolver (`manage-config models read --role <name>`) walks this order:
+The resolver (`manage-config effort read --role <name>`) walks this order:
 
 1. `models.roles.<role>` — explicit per-role override.
-2. `models.default` — plan-wide default (when set).
+2. `effort` — plan-wide default (when set).
 3. `inherit` — implicit fallback when neither is configured.
 
 The resolver returns a single level keyword. Dispatch sites compute the agent target as:
@@ -55,7 +55,7 @@ The resolver returns a single level keyword. Dispatch sites compute the agent ta
 - `inherit` or empty → canonical no-suffix variant: `Task: {bundle}:{base}`.
 - any other level → variant: `Task: {bundle}:{base}-{level}`.
 
-Use `manage-config models resolve-target --role <name>` for a single helper invocation that returns the variant target name directly.
+Use `manage-config effort resolve-target --role <name>` for a single helper invocation that returns the variant target name directly.
 
 ## Validation Rules
 
@@ -65,7 +65,7 @@ The resolver and the wizard both enforce:
 |------|--------------|
 | Configured value is one of `low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`, `inherit` | Hard error on read; refused at wizard save. |
 | `max` resolves but the resolved Opus alias lacks `effort: xhigh` support | Build-time warning + per-level skip; runtime falls back to canonical. |
-| Role key is registered in [`model-roles.md`](model-roles.md) | Warning (not error): unknown roles resolve to `models.default` / `inherit` so the registry can rename without breaking saved configs. |
+| Role key is registered in [`effort-roles.md`](effort-roles.md) | Warning (not error): unknown roles resolve to `effort` / `inherit` so the registry can rename without breaking saved configs. |
 
 ## Migration note — `xhigh` / `xxhigh` rebind, silent capability downgrade
 
@@ -84,6 +84,6 @@ Consumer `marshal.json` files that already set `xhigh` / `xxhigh` continue to re
 | Document | Content |
 |----------|---------|
 | [`ext-point-dynamic-level-executor.md`](../../extension-api/standards/ext-point-dynamic-level-executor.md) | Variant emission contract — how levels are consumed at build time. |
-| [`model-roles.md`](model-roles.md) | Role registry — which dispatch sites consume which roles. |
-| [`role-variants.md`](role-variants.md) | User-facing centralised doc — how to configure `models.roles.<name>`. |
+| [`effort-roles.md`](effort-roles.md) | Role registry — which dispatch sites consume which roles. |
+| [`effort-variants.md`](effort-variants.md) | User-facing centralised doc — how to configure `models.roles.<name>`. |
 | `marketplace/targets/opencode/mapping.json` | `model_map` — alias → ID resolution and effort-support flags. |

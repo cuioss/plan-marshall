@@ -158,7 +158,7 @@ The recipe skill handles: discovery, deliverable creation, and solution outline 
 
 ### Spawn Detection Agent
 
-Resolve the dispatch target via the resolver — no dedicated role key (the LLM path rarely fires); level is sourced from `models.default`:
+Resolve the dispatch target via the resolver — no dedicated role key (the LLM path rarely fires); level is sourced from `effort`:
 
 ```bash
 level=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -365,7 +365,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 Bypass the Simple Q-Gate when ALL of the following predicates hold:
 
 1. `scope_estimate == surgical` (read from references.json — phase-2-refine sets it in Step 13; phase-3-outline MAY refine it in Step 6 after deliverables crystalize).
-2. `change_type ∈ {bug_fix, tech_debt, verification}` (read from status.json metadata — set in Step 4 by `manage-status:change-type-heuristic`, with LLM fallback via `models.default` when the heuristic is ambiguous).
+2. `change_type ∈ {bug_fix, tech_debt, verification}` (read from status.json metadata — set in Step 4 by `manage-status:change-type-heuristic`, with LLM fallback via `effort` when the heuristic is ambiguous).
 3. `deliverable_count == 1` (exactly one deliverable was created in Step 7).
 
 When all three predicates hold, emit the bypass decision log entry and skip directly to Step 12 (do NOT execute the per-deliverable checks):
@@ -734,7 +734,7 @@ Compute the dispatch target via the role resolver:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-3)
+  models resolve-target --phase phase-3-outline)
 ```
 
 Dispatch:

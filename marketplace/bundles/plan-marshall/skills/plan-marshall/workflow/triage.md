@@ -4,7 +4,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 # Triage Workflow
 
-Canonical Steps 1-6 for the per-finding triage decision loop (FIX / SUPPRESS / ACCEPT / AskUserQuestion) shared by every producer mode of `verification-feedback`. Called by [`verification-feedback.md`](verification-feedback.md) Step 3+; the caller's phase context carries the resolved level (`phase-N.verification-feedback` → `phase-N.default` → `models.default`). The smart-grouping algorithm is documented inline below (§ Step 2: Smart grouping).
+Canonical Steps 1-6 for the per-finding triage decision loop (FIX / SUPPRESS / ACCEPT / AskUserQuestion) shared by every producer mode of `verification-feedback`. Called by [`verification-feedback.md`](verification-feedback.md) Step 3+; the caller's phase context carries the resolved level (`phase-N.verification-feedback` → `phase-N.default` → `effort`). The smart-grouping algorithm is documented inline below (§ Step 2: Smart grouping).
 
 **Findings live in the per-plan findings store** ([`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md)) — never inline in the dispatch prompt. Producer-mode work (CI wait, multi-source fetch, store-only query) is the responsibility of `verification-feedback.md` Step 1 and runs before this document's Steps 1-6 execute.
 
@@ -191,7 +191,7 @@ Triage runs under the dispatcher's 900 s per-agent wrapper. When the budget is n
      --detail "{comma-separated hash_ids}"
    ```
 
-3. Return `outcome: loop_back` with a display detail naming the deferred count. The phase-6 dispatcher's `loop_back` semantics re-fire the calling manifest step on next entry; the next dispatch's Step 1 query sees only still-pending findings.
+3. Return `outcome: loop_back` with a display detail naming the deferred count. The phase-6-finalize dispatcher's `loop_back` semantics re-fire the calling manifest step on next entry; the next dispatch's Step 1 query sees only still-pending findings.
 
 4. **Resolve the overflow envelope** in a subsequent iteration once every named `hash_id` has been individually closed:
 
@@ -219,7 +219,7 @@ Scope-deviation detection signals (the LLM checks these against the loaded plan 
 
 ## Step 7: Loop-back signalling
 
-`loop_back_needed: true` when any decision in any group resolved to FIX. The orchestrator handles the actual re-fire (the manifest dispatcher in phase-5-execute / phase-6-finalize re-enters the calling step on next phase entry; HEAD-dependent steps in phase-6 already track this via `--head-at-completion`). This workflow does NOT call `manage-status set-phase` directly — that is the calling manifest step's responsibility.
+`loop_back_needed: true` when any decision in any group resolved to FIX. The orchestrator handles the actual re-fire (the manifest dispatcher in phase-5-execute / phase-6-finalize re-enters the calling step on next phase entry; HEAD-dependent steps in phase-6-finalize already track this via `--head-at-completion`). This workflow does NOT call `manage-status set-phase` directly — that is the calling manifest step's responsibility.
 
 ## Output
 

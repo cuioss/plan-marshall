@@ -229,54 +229,54 @@ from a named preset.
 
 | Verb | Parameters | Description |
 |------|-----------|-------------|
-| `read` | `--phase` and/or `--role` (or `--default`) | Resolve the level keyword (walks `models.roles.<phase>.<subkey>` -> `models.roles.<phase>.default` -> `models.default` -> `inherit`) |
+| `read` | `--phase` and/or `--role` (or `--default`) | Resolve the level keyword (walks `models.roles.<phase>.<subkey>` -> `models.roles.<phase>.default` -> `effort` -> `inherit`) |
 | `resolve-target` | same as `read` | Resolve + compute the dispatched-variant target name (`execution-context-{level}` or canonical) |
-| `apply-preset` | `--preset` | **Completely overwrite** the `models` block with a named preset (see `model_presets.py` for per-preset values) |
+| `apply-preset` | `--preset` | **Completely overwrite** the `models` block with a named preset (see `effort_presets.py` for per-preset values) |
 
 ### Verb: read
 
 ```bash
-# Bare group (resolves to phase-2.default then models.default)
-manage-config models read --phase phase-2
+# Bare group (resolves to phase-2-refine.default then effort)
+manage-config effort read --phase phase-2-refine
 
 # Two-flag form
-manage-config models read --phase phase-6 --role verification-feedback
+manage-config effort read --phase phase-6-finalize --role verification-feedback
 
 # Dotted form
-manage-config models read --role phase-3.research
+manage-config effort read --role phase-3-outline
 
 # Zero-role fallback (standalone slash commands, LLM-fallback branches)
-manage-config models read --default
+manage-config effort read --default
 ```
 
 Walks the documented resolution order and validates the resolved value against
 `ALLOWED_LEVELS` (`low|medium|high|xhigh|xxhigh|max|inherit`). Unknown role
 groups produce a warning (not an error) so registry renames do not break
-saved configs. Retired legacy keys (`cross.*`, the five retired `phase-6.*`
+saved configs. Retired legacy keys (`cross.*`, the five retired `phase-6-finalize.*`
 sub-keys) return `status: error` with a remediation message naming the new
-target — see `model-roles.md` § "Per-phase sub-keys".
+target — see `effort-roles.md` § "Per-phase sub-keys".
 
 ### Verb: apply-preset
 
 ```bash
-manage-config models apply-preset --preset balanced
+manage-config effort apply-preset --preset balanced
 ```
 
 Arguments:
 
 - `--preset` (required) — Preset name. Canonical names are
-  `economic`, `balanced`, `high-end` (returned by `ModelPresets.all_names()`).
+  `economic`, `balanced`, `high-end` (returned by `EffortPresets.all_names()`).
   The lookup is case-insensitive and also accepts the underscore variant
   (`HIGH_END`, `high_end`, `Balanced`, ...). The argparse layer pre-validates
   `--preset` through a `type=` callable that delegates to
-  `ModelPresets.get()`, so unknown names are rejected with a usage error
+  `EffortPresets.get()`, so unknown names are rejected with a usage error
   (exit code 2) before the handler runs. `argparse choices=` is intentionally
   *not* used because it enforces exact case-sensitive matching of the
   canonical names and would reject the documented aliases.
 
 Semantic — **completely overwrites, fully expanded**: the existing `models`
 block is discarded entirely and replaced by the preset payload, and every
-sub-key listed in `KNOWN_ROLES` (in `_cmd_models.py`) is written explicitly
+sub-key listed in `KNOWN_ROLES` (in `_cmd_effort.py`) is written explicitly
 under `models.roles.<phase>` so users editing `marshal.json` by hand can
 see and tune every dispatch site without consulting the registry.
 
@@ -284,9 +284,9 @@ The expansion rule: every sub-key in every group of `KNOWN_ROLES` is
 written under `models.roles.<phase>` at the preset's `default` level
 unless the preset payload defines a per-sub-key override, in which case
 the override level is preserved. The `default` value itself is also kept
-on the top-level `models.default` key so the resolver's documented walk
+on the top-level `effort` key so the resolver's documented walk
 (`models.roles.<phase>.<subkey>` -> `models.roles.<phase>.default` ->
-`models.default` -> `inherit`) keeps working unchanged.
+`effort` -> `inherit`) keeps working unchanged.
 
 Any keys present in the previous block but absent from the role registry
 are gone after the write — only known roles survive. Merging across runs
@@ -294,8 +294,8 @@ is deliberately not supported. For per-role fine-tuning beyond the three
 presets, edit the expanded `.plan/marshal.json` directly.
 
 Per-preset values are defined in
-`marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/model_presets.py`
-(see the `ModelPresets` constant-class). The module documents each preset's
+`marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/effort_presets.py`
+(see the `EffortPresets` constant-class). The module documents each preset's
 rationale and runs an import-time self-check to guarantee every level value is
 in `ALLOWED_LEVELS`.
 
@@ -305,14 +305,14 @@ Success payload:
 status: success
 preset: balanced
 default: medium
-roles_count: 15
-overrides_count: 9
+roles_count: 9
+overrides_count: 5
 ```
 
 `roles_count` is the total number of sub-key entries written under
 `models.roles.<phase>` (sum of `len(KNOWN_ROLES[group])` for every group
-— 2+2+2+2+3+4 = 15). `overrides_count` is the number of sub-key entries
-whose written level differs from `models.default` after expansion (i.e.
+— 1+1+1+1+2+3 = 9). `overrides_count` is the number of sub-key entries
+whose written level differs from `effort` after expansion (i.e.
 the user-visible definition of "override" — a sub-key explicitly listed
 at the same level as `default` is functionally an inherit and is not
 counted).
@@ -322,13 +322,13 @@ Common errors:
 - `argument --preset: unknown preset '<name>'; valid names: ['economic', 'balanced', 'high-end']` —
   argparse usage error (exit code 2). The supplied `--preset` value did not
   normalise (lowercase + `_`→`-`) to any canonical name. Raised by the
-  argparse `type=` callable that delegates to `ModelPresets.get()`.
+  argparse `type=` callable that delegates to `EffortPresets.get()`.
 - `marshal.json not initialized; run /marshall-steward first` — the project
   has not yet run `manage-config init`.
 - `level '...' at preset.default ...` / `level '...' at preset.roles.<role> ...` —
   defense-in-depth: a preset value drifted out of `ALLOWED_LEVELS`. Should
   not occur in normal operation; indicates a desync between
-  `_cmd_models.ALLOWED_LEVELS` and the validation in `model_presets.py`.
+  `_cmd_effort.ALLOWED_LEVELS` and the validation in `effort_presets.py`.
 
 ---
 

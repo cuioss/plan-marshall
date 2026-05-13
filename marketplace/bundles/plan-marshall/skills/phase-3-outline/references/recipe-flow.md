@@ -199,7 +199,7 @@ recipe-refactor-to-profile-standards
      │    │  │   files: {from architecture data}         │
      │    │  └───────────────────────────────────────────┘
      │    │
-     │    │  No analysis step — the task executor (phase-5)
+     │    │  No analysis step — the task executor (phase-5-execute)
      │    │  loads the same profile skills and handles
      │    │  analysis + fixing in one pass per package.
      │    │

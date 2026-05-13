@@ -6,7 +6,7 @@
 
 The `ext-point-dynamic-level-executor` extension point declares that a marketplace agent participates in role-based variant emission. It is the only extension point in the `ext-point-*` family whose consumer is an **agent file** (not a skill); the implementor is the agent's frontmatter, and the producer is the build target (`marketplace/targets/claude/`).
 
-When an agent declares this extension point, the build target emits one variant agent file per ordinal level (`low`, `medium`, `high`, `xhigh`, `xxhigh`) into `target/claude/{bundle}/agents/`, each variant pinned to a specific `(model, effort)` primitive. The canonical no-suffix file is also emitted (with `implements:` and `levels:` stripped) so the `inherit` resolution case dispatches the user-configured-or-default model. Dispatch sites resolve the role's level via `manage-config models resolve-target --role <key>` (which returns the canonical name when level is `inherit`/empty, otherwise the per-level variant `execution-context-{level}`) and call the matching variant by name.
+When an agent declares this extension point, the build target emits one variant agent file per ordinal level (`low`, `medium`, `high`, `xhigh`, `xxhigh`) into `target/claude/{bundle}/agents/`, each variant pinned to a specific `(model, effort)` primitive. The canonical no-suffix file is also emitted (with `implements:` and `levels:` stripped) so the `inherit` resolution case dispatches the user-configured-or-default model. Dispatch sites resolve the role's level via `manage-config effort resolve-target --role <key>` (which returns the canonical name when level is `inherit`/empty, otherwise the per-level variant `execution-context-{level}`) and call the matching variant by name.
 
 The marketplace ships exactly one implementor — `plan-marshall:execution-context` — the single generic dispatcher that drives every plan-marshall `Task:` invocation. Arbitrary workflow bodies are dispatched through the six emitted variants via the companion workflow-doc ext-point (`ext-point-execution-context-workflow`).
 
@@ -16,7 +16,7 @@ The end-to-end trace:
 .plan/marshal.json              models.roles.<role> = "high"
         │
         ▼
-manage-config models read       resolver returns "high"
+manage-config effort read       resolver returns "high"
         │
         ▼
 dispatch site                   target = {base}-high
@@ -60,14 +60,14 @@ The plugin-doctor `hardcoded-model-on-canonical` rule (see `pm-plugin-developmen
 
 ### Level → Primitive Binding
 
-The level → `(model, effort)` mapping is documented in [`plan-marshall:plan-marshall/standards/model-levels.md`](../../plan-marshall/standards/model-levels.md). Agent authors do NOT redeclare the binding — it is read once by the build target. See that document for the canonical table and the `xxhigh` Opus-4.7-only build-time guard.
+The level → `(model, effort)` mapping is documented in [`plan-marshall:plan-marshall/standards/effort-levels.md`](../../plan-marshall/standards/effort-levels.md). Agent authors do NOT redeclare the binding — it is read once by the build target. See that document for the canonical table and the `xxhigh` Opus-4.7-only build-time guard.
 
 ### Role Registry
 
-Agents declare the extension point structurally; **roles** map dispatch sites to canonical agents. The role registry lives in [`plan-marshall:plan-marshall/standards/model-roles.md`](../../plan-marshall/standards/model-roles.md). Adding a new role-eligible agent requires both:
+Agents declare the extension point structurally; **roles** map dispatch sites to canonical agents. The role registry lives in [`plan-marshall:plan-marshall/standards/effort-roles.md`](../../plan-marshall/standards/effort-roles.md). Adding a new role-eligible agent requires both:
 
 1. The `implements:` declaration on the agent file (this contract).
-2. A row in `model-roles.md` linking a role key to the agent file.
+2. A row in `effort-roles.md` linking a role key to the agent file.
 
 ## Variant Generation Contract
 
@@ -86,7 +86,7 @@ Given a canonical agent at `marketplace/bundles/{bundle}/agents/{name}.md` with 
 
 When the canonical declares `levels: [high, xxhigh]`, only `{name}.md`, `{name}-high.md`, and `{name}-xxhigh.md` are emitted.
 
-The exact level → primitive table is the single source of truth in `model-levels.md`; this contract pins the **shape** of variant emission, not the table values.
+The exact level → primitive table is the single source of truth in `effort-levels.md`; this contract pins the **shape** of variant emission, not the table values.
 
 ### plugin.json Expansion
 
@@ -151,9 +151,9 @@ target/claude/plan-marshall/agents/
 Every dispatch site computes the target via the role resolver and dispatches the matching `execution-context` variant with the 5-field prompt body (`name`, `plan_id`, `skills[]`, `workflow`, `WORKTREE`):
 
 ```bash
-# Resolve the dispatch target for the verification-feedback workflow under phase-6
+# Resolve the dispatch target for the verification-feedback workflow under phase-6-finalize
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-6 --role verification-feedback)
+  models resolve-target --phase phase-6-finalize --role verification-feedback)
 
 # Dispatch
 Task: plan-marshall:{target}
@@ -165,7 +165,7 @@ Task: plan-marshall:{target}
     workflow: plan-marshall:plan-marshall/workflow/verification-feedback.md
     WORKTREE: {worktree_path}
     producer: pr-comment
-    caller_phase: phase-6
+    caller_phase: phase-6-finalize
 ```
 
 The `resolve-target` subcommand returns `execution-context` when the level is `inherit`/empty, and `execution-context-{level}` otherwise. The dispatched variant runs the caller-specified `workflow` doc against the resolved `(model, effort)` primitive baked into the variant's frontmatter.
@@ -174,10 +174,10 @@ The `resolve-target` subcommand returns `execution-context` when the level is `i
 
 | Document | Content |
 |----------|---------|
-| [`model-levels.md`](../../plan-marshall/standards/model-levels.md) | Level → `(model, effort)` primitive binding; alias rules; `max` guard rationale |
+| [`effort-levels.md`](../../plan-marshall/standards/effort-levels.md) | Level → `(model, effort)` primitive binding; alias rules; `max` guard rationale |
 | [`dispatch-granularity.md`](dispatch-granularity.md) | Granularity heuristics — when a step earns a dispatch envelope vs. running inline. Sibling extension-point doc. |
-| [`model-roles.md`](../../plan-marshall/standards/model-roles.md) | Role registry mapping role keys to canonical agents |
-| [`role-variants.md`](../../plan-marshall/standards/role-variants.md) | User-facing centralised doc for configuring `models.roles.<name>` |
+| [`effort-roles.md`](../../plan-marshall/standards/effort-roles.md) | Role registry mapping role keys to canonical agents |
+| [`effort-variants.md`](../../plan-marshall/standards/effort-variants.md) | User-facing centralised doc for configuring `models.roles.<name>` |
 | `marketplace/targets/claude/emitter.py` | Variant emission implementation |
 | `marketplace/targets/claude/plugin_json_gen.py` | `plugin.json` expansion for role-eligible agents |
 | `marketplace/targets/claude/equality_check.py` | Variant-aware drift detection |

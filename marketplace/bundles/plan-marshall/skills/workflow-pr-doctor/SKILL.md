@@ -15,10 +15,10 @@ The pr-doctor body (CI wait, multi-source fetch over build / PR comments / Sonar
 
 **Prohibited actions:**
 - Do not duplicate the pr-state body in this file — `verification-feedback.md` is the single source of truth.
-- Do not invoke this skill directly from manifest steps — the `phase-6` finalize loop dispatches `verification-feedback` directly.
+- Do not invoke this skill directly from manifest steps — the `phase-6-finalize` finalize loop dispatches `verification-feedback` directly.
 
 **Constraints:**
-- The slash-command surface (`/workflow-pr-doctor`) MUST resolve through `manage-config models resolve-target --phase phase-6 --role verification-feedback` and dispatch the canonical executor variant.
+- The slash-command surface (`/workflow-pr-doctor`) MUST resolve through `manage-config effort resolve-target --phase phase-6-finalize --role verification-feedback` and dispatch the canonical executor variant.
 
 ## Dispatch
 
@@ -26,7 +26,7 @@ When `/workflow-pr-doctor` is invoked, resolve the level + target via:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --phase phase-6 --role verification-feedback
+  models resolve-target --phase phase-6-finalize --role verification-feedback
 ```
 
 Then dispatch the returned `target` (`execution-context-{level}` or canonical) with this prompt body:
@@ -47,7 +47,7 @@ skills:
 WORKTREE: {worktree}
 producer: pr-state
 pr_number: {pr_number}            # required; auto-detect via `ci pr view` when absent
-caller_phase: phase-6
+caller_phase: phase-6-finalize
 ```
 
 The dispatched envelope runs `verification-feedback.md` Step 1 (`producer=pr-state` branch) inline and continues into the triage core.
@@ -69,4 +69,4 @@ fix_tasks_created: {K}
 
 - [`verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) — orchestrator body.
 - [`triage.md`](../plan-marshall/workflow/triage.md) — canonical per-finding decision + action loop.
-- [`standards/automated-review-lifecycle.md`](standards/automated-review-lifecycle.md) — phase-6 automated-review variant (now a thin sibling of `producer=pr-comment` in `verification-feedback.md`).
+- [`standards/automated-review-lifecycle.md`](standards/automated-review-lifecycle.md) — phase-6-finalize automated-review variant (now a thin sibling of `producer=pr-comment` in `verification-feedback.md`).

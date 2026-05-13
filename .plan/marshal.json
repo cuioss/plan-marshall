@@ -2,22 +2,30 @@
   "plan": {
     "phase-1-init": {
       "branch_strategy": "feature",
-      "use_worktree": true
+      "use_worktree": true,
+      "effort": "medium"
     },
     "phase-2-refine": {
       "confidence_threshold": 95,
-      "compatibility": "breaking"
+      "compatibility": "breaking",
+      "effort": "high"
     },
     "phase-3-outline": {
-      "plan_without_asking": false
+      "plan_without_asking": false,
+      "effort": "high"
     },
     "phase-4-plan": {
-      "execute_without_asking": true
+      "execute_without_asking": true,
+      "effort": "high"
     },
     "phase-5-execute": {
       "commit_strategy": "per_plan",
       "finalize_without_asking": true,
       "verification_max_iterations": 5,
+      "effort": {
+        "default": "medium",
+        "verification-feedback": "high"
+      },
       "steps": [
         "default:quality_check",
         "default:build_verify",
@@ -28,6 +36,10 @@
       "max_iterations": 3,
       "review_bot_buffer_seconds": 300,
       "pr_merge_strategy": "squash",
+      "effort": {
+        "default": "medium",
+        "verification-feedback": "high"
+      },
       "steps": [
         "default:pre-push-quality-gate",
         "project:finalize-step-pre-submission-self-review",
@@ -119,29 +131,5 @@
     "provider": "github",
     "repo_url": "https://github.com/cuioss/plan-marshall.git"
   },
-  "models": {
-    "default": "medium",
-    "roles": {
-      "q_gate_validation": "high",
-      "research": "high",
-      "pr_creation": "medium",
-      "automated_review": "high",
-      "sonar_roundtrip": "medium",
-      "lessons_capture": "medium",
-      "change_type_detection": "medium",
-      "phase_init": "medium",
-      "phase_plan": "high",
-      "component_analysis": "medium",
-      "inventory_analysis": "medium",
-      "tool_coverage_analysis": "medium",
-      "phase_refine": "medium",
-      "phase_outline": "medium",
-      "phase_execute": "medium",
-      "phase_finalize": "medium",
-      "retrospective": "medium",
-      "implementation": "medium",
-      "testing": "medium",
-      "build_runner": "medium"
-    }
-  }
+  "effort": "medium"
 }
