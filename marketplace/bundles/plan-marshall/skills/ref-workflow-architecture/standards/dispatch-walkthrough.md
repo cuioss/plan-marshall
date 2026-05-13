@@ -47,6 +47,14 @@ level: high
 target: execution-context-high
 ```
 
+**Post-resolve dispatch log** (between resolve and dispatch, per [`dispatch-logging.md`](dispatch-logging.md) § "Emission contract"):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id lesson-2026-05-11-foo --level INFO \
+  --message "[DISPATCH] (plan-marshall:plan-marshall) target=execution-context-high level=high role=phase-2-refine workflow=plan-marshall:phase-2-refine/SKILL.md plan_id=lesson-2026-05-11-foo"
+```
+
 **Step 4 (orchestrator constructs prompt body):**
 
 ```
@@ -305,6 +313,7 @@ Every other per-X loop in the system runs *inside* a single envelope (one envelo
 ## Cross-references
 
 - The dispatch contract (prompt-body fields, mandatory rules) — [`agents.md`](agents.md)
+- The standardized `[DISPATCH]` work-log emission inserted between resolve and dispatch in Example A above — [`dispatch-logging.md`](dispatch-logging.md)
 - Granularity heuristics (why dispatch vs script vs inline) — [`../../extension-api/standards/dispatch-granularity.md`](../../extension-api/standards/dispatch-granularity.md)
 - The triage smart-grouping algorithm — [`../../plan-marshall/workflow/triage.md`](../../plan-marshall/workflow/triage.md)
 - Workflow-doc implementor contract — [`../../extension-api/standards/ext-point-execution-context-workflow.md`](../../extension-api/standards/ext-point-execution-context-workflow.md)

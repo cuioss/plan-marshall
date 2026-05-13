@@ -89,6 +89,14 @@ target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-conf
   effort resolve-target --role phase-1-init)
 ```
 
+Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id none --level INFO \
+  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-1-init workflow=plan-marshall:phase-1-init/SKILL.md plan_id=none"
+```
+
 Dispatch:
 
 ```
@@ -136,11 +144,6 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capt
 The `phase-boundary` call above already recorded the start of `2-refine` — do
 not call `start-phase 2-refine` again.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:plan-marshall) Dispatching execution-context for phase-2-refine"
-```
-
 **Phase handshake (verify)**: Before entering 2-refine, verify the captured invariants for the previous phase still match the live state. Stop on `status: drift`.
 
 ```bash
@@ -156,6 +159,14 @@ target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-conf
 
 worktree_path=$(python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
   get-worktree-path --plan-id {plan_id})
+```
+
+Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract for the field semantics and placement rule:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-2-refine workflow=plan-marshall:phase-2-refine/SKILL.md plan_id={plan_id}"
 ```
 
 Dispatch:
@@ -341,6 +352,14 @@ When a specific lesson is selected, convert it to a plan via a `lesson_id` refer
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   effort resolve-target --role phase-1-init)
+```
+
+Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id none --level INFO \
+  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-1-init workflow=plan-marshall:phase-1-init/SKILL.md plan_id=none"
 ```
 
 ```

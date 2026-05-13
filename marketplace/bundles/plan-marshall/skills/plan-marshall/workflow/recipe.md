@@ -118,6 +118,14 @@ target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-conf
   effort resolve-target --role phase-1-init)
 ```
 
+Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id none --level INFO \
+  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-1-init workflow=plan-marshall:phase-1-init/SKILL.md plan_id=none"
+```
+
 Dispatch:
 
 ```

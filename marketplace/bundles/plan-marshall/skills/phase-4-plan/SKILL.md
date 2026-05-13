@@ -666,6 +666,14 @@ target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-conf
   effort resolve-target --phase phase-4-plan)
 ```
 
+Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[DISPATCH] (plan-marshall:phase-4-plan) target={target} level={level} role=phase-4-plan workflow=plan-marshall:plan-marshall/workflow/q-gate-validation.md plan_id={plan_id}"
+```
+
 Dispatch:
 
 ```
