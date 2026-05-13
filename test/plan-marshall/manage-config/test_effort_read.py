@@ -73,7 +73,8 @@ def _write_marshal_with_models(fixture_dir, models_block):
     payload (preserved for backwards-compat in test bodies) and translates
     it to the current per-phase storage shape on disk:
 
-      - ``config['effort']`` set to ``models_block['default']`` when present.
+      - ``config['plan']['effort']`` set to ``models_block['default']``
+        when present (plan-wide fallback).
       - For each phase in ``models_block['roles']``, set
         ``config['plan'][phase]['effort']`` to the value (string or dict).
       - When ``models_block`` is ``None``, leave the file at the test
@@ -88,16 +89,17 @@ def _write_marshal_with_models(fixture_dir, models_block):
     config.pop('effort', None)
     config.pop('models', None)
     plan_block = config.get('plan', {})
-    for phase_entry in plan_block.values():
-        if isinstance(phase_entry, dict):
-            phase_entry.pop('effort', None)
+    if isinstance(plan_block, dict):
+        plan_block.pop('effort', None)
+        for phase_entry in plan_block.values():
+            if isinstance(phase_entry, dict):
+                phase_entry.pop('effort', None)
     if models_block is not None:
+        plan_block = config.setdefault('plan', {})
         default = models_block.get('default')
         if default is not None:
-            config['effort'] = default
-        roles = models_block.get('roles', {})
-        plan_block = config.setdefault('plan', {})
-        for phase, value in roles.items():
+            plan_block['effort'] = default
+        for phase, value in models_block.get('roles', {}).items():
             phase_entry = plan_block.setdefault(phase, {})
             if isinstance(phase_entry, dict):
                 phase_entry['effort'] = value
@@ -140,7 +142,7 @@ def test_flat_group_unset_with_default_returns_default():
 
         assert result['status'] == 'success'
         assert result['level'] == 'medium'
-        assert result['source'] == 'effort'
+        assert result['source'] == 'plan.effort'
 
 
 def test_flat_group_unset_no_default_returns_inherit():
@@ -222,7 +224,7 @@ def test_dotted_lookup_subkey_unset_no_default_slot_falls_to_models_default():
 
         assert result['status'] == 'success'
         assert result['level'] == 'medium'
-        assert result['source'] == 'effort'
+        assert result['source'] == 'plan.effort'
 
 
 def test_dotted_unknown_subkey_errors():
@@ -276,7 +278,7 @@ def test_bare_group_lookup_with_object_no_default_falls_to_models_default():
 
         assert result['status'] == 'success'
         assert result['level'] == 'medium'
-        assert result['source'] == 'effort'
+        assert result['source'] == 'plan.effort'
 
 
 def test_bare_phase_via_two_flag_form():
@@ -361,7 +363,7 @@ def test_default_flag_returns_models_default():
 
         assert result['status'] == 'success'
         assert result['level'] == 'high'
-        assert result['source'] == 'effort'
+        assert result['source'] == 'plan.effort'
 
 
 def test_default_flag_without_default_set_returns_inherit():
@@ -457,7 +459,7 @@ def test_invalid_level_at_default_errors():
 
         assert result['status'] == 'error'
         assert 'gigaultra' in result['error']
-        assert 'effort' in result['error']
+        assert 'plan.effort' in result['error']
 
 
 def test_max_level_resolves_to_max_variant():
@@ -521,7 +523,7 @@ def test_unknown_role_emits_warning_and_falls_through():
 
         assert result['status'] == 'success'
         assert result['level'] == 'medium'
-        assert result['source'] == 'effort'
+        assert result['source'] == 'plan.effort'
         assert 'warnings' in result
         assert any('q_gate_validation' in w for w in result['warnings'])
         assert any('not registered' in w for w in result['warnings'])

@@ -56,15 +56,15 @@ def _seed_marshal(plan_dir: Path, models: dict | None) -> Path:
 
     Accepts the legacy-shape ``{"default": <level>, "roles": {<phase>: ...}}``
     payload for backwards-compat in test bodies, and translates it to the
-    current per-phase storage shape (``plan.<phase>.effort`` + top-level
-    ``effort``) on disk.
+    current storage shape (``plan.effort`` for the plan-wide fallback,
+    ``plan.<phase>.effort`` for per-phase overrides) on disk.
     """
     plan_dir.mkdir(parents=True, exist_ok=True)
     config: dict = {'plan': {}}
     if models is not None:
         default = models.get('default')
         if default is not None:
-            config['effort'] = default
+            config['plan']['effort'] = default
         for phase, value in models.get('roles', {}).items():
             config['plan'].setdefault(phase, {})['effort'] = value
     marshal_path = plan_dir / 'marshal.json'
@@ -78,14 +78,17 @@ def _read_models_block(plan_dir: Path) -> dict:
     the same shape without re-implementing the inverse transform inline.
     """
     config = json.loads((plan_dir / 'marshal.json').read_text(encoding='utf-8'))
-    result: dict = {}
-    if 'effort' in config:
-        result['default'] = config['effort']
     plan_block = config.get('plan', {})
+    result: dict = {}
+    if isinstance(plan_block, dict) and 'effort' in plan_block:
+        result['default'] = plan_block['effort']
     roles: dict = {}
-    for phase, entry in plan_block.items():
-        if isinstance(entry, dict) and 'effort' in entry:
-            roles[phase] = entry['effort']
+    if isinstance(plan_block, dict):
+        for phase, entry in plan_block.items():
+            if phase == 'effort':
+                continue
+            if isinstance(entry, dict) and 'effort' in entry:
+                roles[phase] = entry['effort']
     if roles:
         result['roles'] = roles
     return result
@@ -120,7 +123,7 @@ def test_round_trip_default_and_role_persist():
 
         assert result_other['status'] == 'success'
         assert result_other['level'] == 'medium'
-        assert result_other['source'] == 'effort'
+        assert result_other['source'] == 'plan.effort'
 
         # Re-read marshal.json — stored block matches what the wizard would have written.
         block = _read_models_block(ctx.fixture_dir)
@@ -223,13 +226,15 @@ def test_clear_effort_config_reverts_to_inherit():
         marshal_path = _seed_marshal(
             ctx.fixture_dir, {'default': 'high', 'roles': {'phase-3-outline': 'xxhigh'}}
         )
-        # Step 2: simulate "clear all" by removing the top-level effort plus
-        # every per-phase effort attribute.
+        # Step 2: simulate "clear all" by removing `plan.effort` plus every
+        # per-phase effort attribute under `plan.<phase>`.
         cleared = json.loads(marshal_path.read_text(encoding='utf-8'))
-        cleared.pop('effort', None)
-        for phase_entry in cleared.get('plan', {}).values():
-            if isinstance(phase_entry, dict):
-                phase_entry.pop('effort', None)
+        plan_block = cleared.get('plan', {})
+        if isinstance(plan_block, dict):
+            plan_block.pop('effort', None)
+            for phase_entry in plan_block.values():
+                if isinstance(phase_entry, dict):
+                    phase_entry.pop('effort', None)
         marshal_path.write_text(json.dumps(cleared, indent=2), encoding='utf-8')
 
         # Step 3: every resolver call returns inherit / implicit_default.

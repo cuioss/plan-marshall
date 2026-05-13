@@ -6,17 +6,18 @@ Handles:
     effort read --role <group>.<sub>    (dotted-key resolver for nested groups)
     effort read --phase <g> --role <s>  (two-flag form, equivalent to dotted)
     effort read --phase <g>             (bare-group lookup, polymorphic)
-    effort read --default               (raw top-level effort lookup)
+    effort read --default               (raw `plan.effort` lookup)
     effort resolve-target --role <name> (target variant name resolver)
     effort apply-preset --preset <name> (preset writer)
 
 Storage layout — per-phase effort config lives **inside the matching
-plan-phase entry** under the ``effort`` key. The top-level ``effort``
-field is the plan-wide fallback (a single string)::
+plan-phase entry** under the ``effort`` key, alongside the rest of the
+phase's knobs. The plan-wide fallback is a single string at
+``plan.effort``::
 
     plan.<phase>.effort.<subkey>  -> plan.<phase>.effort.default
                                   -> plan.<phase>.effort  (string shorthand)
-                                  -> effort                (top-level fallback)
+                                  -> plan.effort           (plan-wide fallback)
                                   -> inherit
 
 Polymorphic value normalisation:
@@ -35,8 +36,8 @@ into one helper call, returning ``execution-context-{level}`` directly.
 The write path imports :class:`EffortPresets` from the
 ``plan-marshall:plan-marshall`` skill. ``apply-preset`` surgically merges
 the per-phase ``effort`` attribute into each ``plan.<phase>`` entry and
-sets the top-level ``effort`` string — other per-phase config knobs
-(steps, max_iterations, etc.) are preserved.
+sets ``plan.effort`` — other per-phase config knobs (steps,
+max_iterations, etc.) are preserved.
 """
 
 from _config_core import (
@@ -137,7 +138,7 @@ def _validate_level(value: str, source: str) -> tuple[bool, str | None]:
         value: The level keyword to validate.
         source: Human-readable description of where the value came from
             (e.g. 'plan.phase-6-finalize.effort.verification-feedback' or
-            'effort') — included verbatim in error messages for
+            'plan.effort') — included verbatim in error messages for
             diagnosability.
 
     Returns:
@@ -164,7 +165,7 @@ def _split_role(args) -> tuple[str | None, str | None, str | None]:
         (group, subkey, error). ``group`` and ``subkey`` are None when an
         error is set. ``subkey`` is None when the caller asked for a bare
         group (legitimate for every group — bare-group resolves via the
-        group's ``default`` slot or the top-level ``effort`` fallback).
+        group's ``default`` slot or the ``plan.effort`` plan-wide fallback).
 
     Supports four input shapes:
         --role <group>             -> (group, None, None)
@@ -222,8 +223,8 @@ def _resolve_level(
            - Sub-key supplied AND present -> that value.
            - Sub-key supplied but absent  -> walk to the ``default`` slot.
            - Sub-key absent (bare group)  -> walk to the ``default`` slot.
-           - No ``default`` slot          -> fall through to top-level effort.
-        5. top-level ``effort`` -> fall through when nothing matched above.
+           - No ``default`` slot          -> fall through to ``plan.effort``.
+        5. ``plan.effort`` -> fall through when nothing matched above.
         6. ``inherit`` -> implicit final fallback.
     """
     if group not in KNOWN_ROLES:
@@ -258,14 +259,14 @@ def _resolve_level(
         default_slot = group_value.get('default')
         if isinstance(default_slot, str):
             return default_slot, f'plan.{group}.effort.default', None
-        # No ``default`` slot — fall through to top-level effort below.
+        # No ``default`` slot — fall through to `plan.effort` below.
 
     # Case 3: phase absent OR effort absent OR object missing both subkey + default
-    #         -> top-level effort.
+    #         -> plan.effort.
     if default_level is not None:
-        return default_level, 'effort', None
+        return default_level, 'plan.effort', None
 
-    # Case 4: no top-level effort set.
+    # Case 4: no plan.effort set.
     return 'inherit', 'implicit_default', None
 
 
@@ -283,9 +284,12 @@ def cmd_effort(args) -> dict:
 
     config = load_config()
     plan_block = config.get('plan', {})
-    default_level = config.get('effort')
+    # `plan.effort` is the plan-wide fallback (a single string); per-phase
+    # overrides live at `plan.<phase>.effort`. Both keys are children of
+    # the `plan` block, alongside the phase entries.
+    default_level = plan_block.get('effort') if isinstance(plan_block, dict) else None
 
-    # --default short-circuit: return top-level effort directly (no role lookup).
+    # --default short-circuit: return plan.effort directly (no role lookup).
     if getattr(args, 'default', False):
         if default_level is None:
             return success_exit(
@@ -294,13 +298,13 @@ def cmd_effort(args) -> dict:
                     'source': 'implicit_default',
                 }
             )
-        ok, err = _validate_level(default_level, 'effort')
+        ok, err = _validate_level(default_level, 'plan.effort')
         if not ok:
             return error_exit(err or 'invalid effort')
         return success_exit(
             {
                 'level': default_level,
-                'source': 'effort',
+                'source': 'plan.effort',
             }
         )
 
@@ -320,10 +324,10 @@ def cmd_effort(args) -> dict:
                 f"role key '{group}.{subkey}' is retired; {remediation}"
             )
 
-    # Validate the top-level effort value (if present) once so callers see
+    # Validate the plan-wide effort value (if present) once so callers see
     # invalid defaults via a clear message even when the role itself has a value.
     if default_level is not None:
-        ok, default_err = _validate_level(default_level, 'effort')
+        ok, default_err = _validate_level(default_level, 'plan.effort')
         if not ok:
             return error_exit(default_err or 'invalid effort')
 
@@ -343,7 +347,7 @@ def cmd_effort(args) -> dict:
         )
         if default_level is not None:
             level = default_level
-            source = 'effort'
+            source = 'plan.effort'
         else:
             level = 'inherit'
             source = 'implicit_default'
@@ -463,12 +467,13 @@ def cmd_effort_apply_preset(args) -> dict:
 
     Surgically writes the preset payload into the per-phase storage shape:
 
-        - ``config['effort']`` set to the preset's top-level default.
+        - ``config['plan']['effort']`` set to the preset's plan-wide
+          default.
         - For each phase in :data:`KNOWN_ROLES`, set
           ``config['plan'][phase]['effort']`` to the preset's value for
-          that phase (or the global default when omitted). Other per-phase
-          config knobs (``steps``, ``max_iterations``, ``branch_strategy``,
-          …) are preserved.
+          that phase (or the plan-wide default when omitted). Other
+          per-phase config knobs (``steps``, ``max_iterations``,
+          ``branch_strategy``, …) are preserved.
         - Any pre-existing top-level ``models`` block is removed
           (clean-slate cleanup of the previous storage layout).
 
@@ -545,10 +550,10 @@ def cmd_effort_apply_preset(args) -> dict:
     roles_count = _count_roles(expanded)
 
     config = load_config()
-    # Set top-level effort fallback.
-    config['effort'] = default_level
-    # Surgically write per-phase effort attributes. Preserve other phase knobs.
     plan_block = config.setdefault('plan', {})
+    # Set plan-wide effort fallback (string at plan.effort).
+    plan_block['effort'] = default_level
+    # Surgically write per-phase effort attributes. Preserve other phase knobs.
     for phase, phase_effort in expanded.items():
         phase_entry = plan_block.setdefault(phase, {})
         if not isinstance(phase_entry, dict):
@@ -557,8 +562,10 @@ def cmd_effort_apply_preset(args) -> dict:
                 f'cannot merge effort attribute'
             )
         phase_entry['effort'] = phase_effort
-    # Clean up legacy top-level `models` block from the previous layout.
+    # Clean up legacy top-level `models` block and the prior top-level
+    # `effort` field from earlier layouts.
     config.pop('models', None)
+    config.pop('effort', None)
 
     save_config(config)
 

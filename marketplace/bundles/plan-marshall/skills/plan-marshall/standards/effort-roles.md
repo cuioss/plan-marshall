@@ -6,17 +6,18 @@
 
 A **role** is a stable key that identifies a class of subagent dispatch (e.g., `phase-1-init`, `phase-6-finalize.verification-feedback`). The role key sits at the LLM-judgement-workflow layer, NOT at the manifest-step / call-site layer — multiple call sites that dispatch the same LLM-judgement workflow from the same phase share one role key.
 
-The registry is **phase-scoped**: every role key sits under a `phase-N-{suffix}` group whose name matches the SKILL.md it identifies (`phase-1-init`, `phase-2-refine`, `phase-3-outline`, `phase-4-plan`, `phase-5-execute`, `phase-6-finalize`). There is no `cross.*` group; workflows that fire from multiple phases inherit the calling phase's level via bubbling resolution (`plan.<phase>.effort.<subkey>` → `plan.<phase>.effort.default` → top-level `effort` → `inherit`). The calling phase is supplied by the dispatch site via `--phase phase-N-{suffix}`.
+The registry is **phase-scoped**: every role key sits under a `phase-N-{suffix}` group whose name matches the SKILL.md it identifies (`phase-1-init`, `phase-2-refine`, `phase-3-outline`, `phase-4-plan`, `phase-5-execute`, `phase-6-finalize`). There is no `cross.*` group; workflows that fire from multiple phases inherit the calling phase's level via bubbling resolution (`plan.<phase>.effort.<subkey>` → `plan.<phase>.effort.default` → `plan.effort` → `inherit`). The calling phase is supplied by the dispatch site via `--phase phase-N-{suffix}`.
 
 Research dispatches do NOT get their own sub-key — they inherit the calling phase's default (or use `--default` for standalone `/research` outside any plan).
 
 ## Storage layout
 
-Per-phase effort config lives **inside the matching `plan.<phase>` entry** under the `effort` key — co-located with the rest of the phase's knobs (steps, max_iterations, etc.). The top-level `effort` field is the plan-wide fallback (a single string):
+Per-phase effort config lives **inside the matching `plan.<phase>` entry** under the `effort` key — co-located with the rest of the phase's knobs (steps, max_iterations, etc.). The `plan.effort` field is the plan-wide fallback (a single string):
 
 ```jsonc
 {
   "plan": {
+    "effort": "<level>",                                                       // plan-wide fallback (single string)
     "phase-1-init":     { /* other knobs */, "effort": "<level>" },           // string OR { default? }
     "phase-2-refine":   { /* other knobs */, "effort": "<level>" },           // string OR { default? }
     "phase-3-outline":  { /* other knobs */, "effort": "<level>" },           // string OR { default? }
@@ -30,12 +31,11 @@ Per-phase effort config lives **inside the matching `plan.<phase>` entry** under
         "post-run-review":        "<level>"    // override for retrospective + lessons-capture
       }
     }
-  },
-  "effort": "<level>"                          // plan-wide fallback (single string)
+  }
 }
 ```
 
-Total: **6 top-level role groups**. Every group is polymorphic — its `effort` value may be a string (single-level shorthand for the entire phase) or an object whose sub-keys are listed below. **Zero mandatory keys**: a minimal config is `{}` and every dispatch resolves via top-level `effort` → `inherit`.
+Total: **6 top-level role groups**. Every group is polymorphic — its `effort` value may be a string (single-level shorthand for the entire phase) or an object whose sub-keys are listed below. **Zero mandatory keys**: a minimal config is `{}` and every dispatch resolves via `plan.effort` → `inherit`.
 
 ## Groups
 
@@ -71,20 +71,20 @@ Every dispatch site computes the level via `manage-config effort read --phase <c
 
 | LLM workflow | Caller phase | Resolver lookup |
 |--------------|--------------|-----------------|
-| phase-1-init body | phase-1-init | `plan.phase-1-init.effort.default` → `plan.phase-1-init.effort` (string) → top-level `effort` |
-| phase-2-refine body | phase-2-refine | `plan.phase-2-refine.effort.default` → `plan.phase-2-refine.effort` → top-level `effort` |
-| phase-3-outline body | phase-3-outline | `plan.phase-3-outline.effort.default` → `plan.phase-3-outline.effort` → top-level `effort` |
-| phase-4-plan body | phase-4-plan | `plan.phase-4-plan.effort.default` → `plan.phase-4-plan.effort` → top-level `effort` |
-| phase-5-execute task body | phase-5-execute | `plan.phase-5-execute.effort.default` → `plan.phase-5-execute.effort` → top-level `effort` |
+| phase-1-init body | phase-1-init | `plan.phase-1-init.effort.default` → `plan.phase-1-init.effort` (string) → `plan.effort` |
+| phase-2-refine body | phase-2-refine | `plan.phase-2-refine.effort.default` → `plan.phase-2-refine.effort` → `plan.effort` |
+| phase-3-outline body | phase-3-outline | `plan.phase-3-outline.effort.default` → `plan.phase-3-outline.effort` → `plan.effort` |
+| phase-4-plan body | phase-4-plan | `plan.phase-4-plan.effort.default` → `plan.phase-4-plan.effort` → `plan.effort` |
+| phase-5-execute task body | phase-5-execute | `plan.phase-5-execute.effort.default` → `plan.phase-5-execute.effort` → `plan.effort` |
 | q-gate-validation | phase-2-refine / phase-3-outline / phase-4-plan | calling phase's `default` *(no sub-key)* |
 | manage-architecture-enrich-module | phase-6-finalize | `plan.phase-6-finalize.effort.default` *(no sub-key)* |
 | create-pr | phase-6-finalize | `plan.phase-6-finalize.effort.default` *(no sub-key)* |
 | pre-submission-self-review | phase-6-finalize | `plan.phase-6-finalize.effort.default` *(no sub-key)* |
 | research (in-phase) | any phase | calling phase's `default` *(no sub-key)* |
 | research (`/research` standalone) | none | `--default` (zero-role fallback) |
-| verification-feedback (`producer=build-runner`) | phase-5-execute | `plan.phase-5-execute.effort.verification-feedback` → `plan.phase-5-execute.effort.default` → top-level `effort` |
-| verification-feedback (`producer=sonar` / `pr-comment` / `plugin-doctor` / `pr-state`) | phase-6-finalize | `plan.phase-6-finalize.effort.verification-feedback` → `plan.phase-6-finalize.effort.default` → top-level `effort` |
-| post-run-review (retrospective + lessons-capture) | phase-6-finalize | `plan.phase-6-finalize.effort.post-run-review` → `plan.phase-6-finalize.effort.default` → top-level `effort` |
+| verification-feedback (`producer=build-runner`) | phase-5-execute | `plan.phase-5-execute.effort.verification-feedback` → `plan.phase-5-execute.effort.default` → `plan.effort` |
+| verification-feedback (`producer=sonar` / `pr-comment` / `plugin-doctor` / `pr-state`) | phase-6-finalize | `plan.phase-6-finalize.effort.verification-feedback` → `plan.phase-6-finalize.effort.default` → `plan.effort` |
+| post-run-review (retrospective + lessons-capture) | phase-6-finalize | `plan.phase-6-finalize.effort.post-run-review` → `plan.phase-6-finalize.effort.default` → `plan.effort` |
 | `/workflow-pr-doctor`, `/plugin-doctor`, `/plan-retrospective` slash commands | phase-6-finalize (synthetic) | The slash command body resolves via `--phase phase-6-finalize --role <matching sub-key>` so the same phase-6-finalize configuration applies whether the workflow fires from finalize or from the slash command. |
 
 ## Resolver
@@ -92,7 +92,7 @@ Every dispatch site computes the level via `manage-config effort read --phase <c
 `manage-config effort read` accepts four lookup forms:
 
 ```bash
-# Bare group via --role (resolves through <group>.default, then top-level effort, then inherit)
+# Bare group via --role (resolves through <group>.default, then `plan.effort`, then inherit)
 manage-config effort read --role phase-2-refine
 
 # Dotted form
@@ -105,7 +105,7 @@ manage-config effort read --phase phase-6-finalize --role verification-feedback
 manage-config effort read --phase phase-6-finalize
 ```
 
-For free-standing fallback dispatches (no role key applies — typically the LLM-fallback branch of a hybrid script, or the `/research` slash command outside any plan), the `--default` flag returns the top-level `effort` directly without a role lookup:
+For free-standing fallback dispatches (no role key applies — typically the LLM-fallback branch of a hybrid script, or the `/research` slash command outside any plan), the `--default` flag returns the `plan.effort` directly without a role lookup:
 
 ```bash
 manage-config effort read --default
@@ -125,7 +125,7 @@ manage-config effort resolve-target --phase phase-6-finalize --role verification
    - **String** at the phase entry → the value is the level. Any sub-key lookup on a string-valued effort resolves to the same value (single-level shorthand).
    - **Object** at the phase entry → sub-key supplied AND present → that value. Sub-key supplied but absent → walk to the `default` slot. Sub-key absent (bare-group lookup) → walk to the `default` slot.
 3. **Top-level `effort`** → fall through when the phase is absent OR the object lacks both the sub-key and the `default` slot.
-4. **`inherit`** → implicit final fallback when neither the per-phase `effort` nor the top-level `effort` is configured.
+4. **`inherit`** → implicit final fallback when neither the per-phase `effort` nor the `plan.effort` is configured.
 
 The resolver validates the resolved value against `ALLOWED_LEVELS` from `effort-levels.md` and emits a warning (not an error) when the requested role group is not registered in this document — registry renames must not break saved configs.
 

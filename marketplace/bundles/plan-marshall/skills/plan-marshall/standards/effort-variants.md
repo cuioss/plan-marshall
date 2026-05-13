@@ -47,18 +47,18 @@ The wizard:
 
 ### Option B: Edit `marshal.json` Directly
 
-The schema lives at `.plan/marshal.json` under the `models` key:
+The schema lives at `.plan/marshal.json` under the `plan` key:
 
 ```jsonc
 {
-  "models": {
-    "default": "medium",
-    "roles": {
-      "phase-3-outline": "high",
-      "phase-5-execute": {
-        "verification-feedback": "high"
-      },
-      "phase-6-finalize": {
+  "plan": {
+    "effort": "medium",
+    "phase-3-outline": { "effort": "high" },
+    "phase-5-execute": {
+      "effort": { "verification-feedback": "high" }
+    },
+    "phase-6-finalize": {
+      "effort": {
         "verification-feedback": "high",
         "post-run-review": "xhigh"
       }
@@ -71,11 +71,11 @@ Resolution order for any role:
 
 1. The deepest explicit sub-key override (e.g. `plan.phase-6-finalize.effort.verification-feedback`).
 2. The group's `default` slot when the sub-key is unset or unspecified (`plan.phase-6-finalize.effort.default`).
-3. A plain-string value at the group (single-level shorthand applied to every workflow under that phase) — e.g. `"phase-3-outline": "high"`.
-4. `effort` — plan-wide default.
+3. A plain-string value at the phase entry (single-level shorthand applied to every workflow under that phase) — e.g. `"phase-3-outline": { "effort": "high" }`.
+4. `plan.effort` — plan-wide default.
 5. `inherit` — implicit fallback when nothing else matches.
 
-The `models` block is **opt-in** — when absent entirely, every subagent inherits the parent session's model. The dispatcher resolves the level at dispatch time via `manage-config effort resolve-target --phase <phase> --role <subkey>`, so no Claude Code restart is required after editing.
+The per-phase `effort` attributes are **opt-in** — when absent entirely, every subagent inherits the parent session's model. The dispatcher resolves the level at dispatch time via `manage-config effort resolve-target --phase <phase> --role <subkey>`, so no Claude Code restart is required after editing.
 
 ### Recommended Starting Configuration
 
@@ -83,12 +83,14 @@ For most workflows, this gets you most of the value at modest cost:
 
 ```jsonc
 {
-  "models": {
-    "default": "medium",
-    "roles": {
-      "phase-3-outline": "high",
-      "phase-5-execute": { "verification-feedback": "high" },
-      "phase-6-finalize": { "verification-feedback": "high" }
+  "plan": {
+    "effort": "medium",
+    "phase-3-outline": { "effort": "high" },
+    "phase-5-execute": {
+      "effort": { "verification-feedback": "high" }
+    },
+    "phase-6-finalize": {
+      "effort": { "verification-feedback": "high" }
     }
   }
 }
@@ -177,17 +179,15 @@ The `research` workflow benefits from the most capable model — it inherits the
 
 ```jsonc
 {
-  "models": {
-    "roles": {
-      "phase-3-outline": "max"
-    }
+  "plan": {
+    "phase-3-outline": { "effort": "max" }
   }
 }
 ```
 
 (or `xxhigh` if you don't need Opus-4.7's `xhigh` effort tier — the `max` variant gracefully degrades to canonical when the alias does not accept `effort: xhigh`.)
 
-For standalone `/research` outside any plan, the dispatch resolves via `--default` (`effort` → `inherit`); bump `effort` if you want every standalone research run at a higher tier.
+For standalone `/research` outside any plan, the dispatch resolves via `--default` (`plan.effort` → `inherit`); bump `plan.effort` if you want every standalone research run at a higher tier.
 
 ## Cross-References
 

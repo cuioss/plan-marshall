@@ -1,5 +1,6 @@
 {
   "plan": {
+    "effort": "medium",
     "phase-1-init": {
       "branch_strategy": "feature",
       "use_worktree": true,
@@ -130,6 +131,5 @@
   "ci": {
     "provider": "github",
     "repo_url": "https://github.com/cuioss/plan-marshall.git"
-  },
-  "effort": "medium"
+  }
 }

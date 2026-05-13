@@ -284,7 +284,7 @@ The expansion rule: every sub-key in every group of `KNOWN_ROLES` is
 written under `models.roles.<phase>` at the preset's `default` level
 unless the preset payload defines a per-sub-key override, in which case
 the override level is preserved. The `default` value itself is also kept
-on the top-level `effort` key so the resolver's documented walk
+on the `plan.effort` key so the resolver's documented walk
 (`models.roles.<phase>.<subkey>` -> `models.roles.<phase>.default` ->
 `effort` -> `inherit`) keeps working unchanged.
 

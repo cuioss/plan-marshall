@@ -23,23 +23,22 @@ The canonical map (which workflow doc each sub-key drives) lives in link:../mark
 
 == Polymorphic JSON Shape
 
-The `.plan/marshal.json` `models.roles` block accepts polymorphic values at every group. A string applies that level to every workflow under the phase; an object sets per-sub-key overrides plus an optional `default` slot that serves as the in-group fallback:
+The `.plan/marshal.json` per-phase `effort` attributes accept polymorphic values. A string applies that level to every workflow under the phase; an object sets per-sub-key overrides plus an optional `default` slot that serves as the in-phase fallback. The plan-wide fallback is `plan.effort` (a single string):
 
 [source,json]
 ----
 {
-  "models": {
-    "default": "medium",
-    "roles": {
-      "phase-2-refine": "high",
-      "phase-3-outline": {
-        "default": "high",
-        "research": "max"
-      },
-      "phase-5-execute": {
-        "verification-feedback": "high"
-      },
-      "phase-6-finalize": {
+  "plan": {
+    "effort": "medium",
+    "phase-2-refine": { "effort": "high" },
+    "phase-3-outline": {
+      "effort": { "default": "high" }
+    },
+    "phase-5-execute": {
+      "effort": { "verification-feedback": "high" }
+    },
+    "phase-6-finalize": {
+      "effort": {
         "default": "medium",
         "verification-feedback": "high",
         "post-run-review": "xxhigh"
@@ -49,15 +48,15 @@ The `.plan/marshal.json` `models.roles` block accepts polymorphic values at ever
 }
 ----
 
-When a phase is a plain string (e.g. `"phase-2-refine": "high"`), every sub-key under it resolves to that value. When a phase is an object, sub-key lookups walk to the explicit override first, then to the `default` slot, then to `effort`.
+When a phase's `effort` is a plain string (e.g. `"phase-2-refine": { "effort": "high" }`), every sub-key under it resolves to that value. When `effort` is an object, sub-key lookups walk to the explicit override first, then to the `default` slot, then to `plan.effort`.
 
 Resolution order, deepest first:
 
-1. The explicit sub-key (e.g. `plan.phase-3-outline.effort.research`)
-2. The phase's `default` slot (e.g. `plan.phase-3-outline.effort.default`)
-3. The phase's plain-string value (e.g. `plan.phase-2-refine.effort: "high"`)
-4. `effort`
-5. `inherit` (canonical no-suffix variant; inherits parent's model)
+1. The explicit sub-key (e.g. `plan.phase-6-finalize.effort.verification-feedback`)
+2. The phase's `default` slot (e.g. `plan.phase-6-finalize.effort.default`)
+3. The phase's plain-string `effort` value (e.g. `"phase-2-refine": { "effort": "high" }`)
+4. `plan.effort` — plan-wide default
+5. `inherit` — implicit fallback (canonical no-suffix variant; inherits parent's model)
 
 == Four Accepted Lookup Forms
 
@@ -78,14 +77,14 @@ Three named presets cover most usage. Apply via `/marshall-steward` Effort subme
 [source,bash]
 ----
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models apply-preset --name {economic|balanced|high-end}
+  effort apply-preset --preset {economic|balanced|high-end}
 ----
 
-Payloads live in link:../marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/effort_presets.py[`effort_presets.py`] (`EffortPresets.ECONOMIC`, `BALANCED`, `HIGH_END`). The wizard delegates to `apply-preset`, which completely overwrites the `models` block.
+Payloads live in link:../marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/effort_presets.py[`effort_presets.py`] (`EffortPresets.ECONOMIC`, `BALANCED`, `HIGH_END`). The wizard delegates to `apply-preset`, which writes the per-phase `effort` attributes and the plan-wide `plan.effort` fallback.
 
 == No-Restart Semantics
 
-The resolver reads `.plan/marshal.json` fresh on every dispatch. A `models` edit (manual or via the wizard) takes effect on the **next** dispatch — no Claude Code restart, no `/sync-plugin-cache`, no target regeneration required. The seven emitted `execution-context` variants (canonical + six levels) are static; only which variant the resolver selects changes.
+The resolver reads `.plan/marshal.json` fresh on every dispatch. An `effort` edit (manual or via the wizard) takes effect on the **next** dispatch — no Claude Code restart, no `/sync-plugin-cache`, no target regeneration required. The seven emitted `execution-context` variants (canonical + six levels) are static; only which variant the resolver selects changes.
 
 A restart IS required when target/claude/ is regenerated (e.g., variant frontmatter changes), but that is a developer-side meta-project flow, not a user-side configuration flow.
 
@@ -96,18 +95,17 @@ A project author wants the research workflow at the absolute top tier in phase-3
 [source,json]
 ----
 {
-  "models": {
-    "default": "medium",
-    "roles": {
-      "phase-3-outline": {
-        "default": "high",
-        "research": "max"
-      },
-      "phase-4-plan": "high",
-      "phase-5-execute": {
-        "verification-feedback": "high"
-      },
-      "phase-6-finalize": {
+  "plan": {
+    "effort": "medium",
+    "phase-3-outline": {
+      "effort": { "default": "high" }
+    },
+    "phase-4-plan": { "effort": "high" },
+    "phase-5-execute": {
+      "effort": { "verification-feedback": "high" }
+    },
+    "phase-6-finalize": {
+      "effort": {
         "default": "medium",
         "verification-feedback": "high"
       }
@@ -118,12 +116,11 @@ A project author wants the research workflow at the absolute top tier in phase-3
 
 After saving:
 
-* The next `--phase phase-3-outline --role research` dispatch hits `execution-context-max` (Opus, effort xhigh — Opus-4.7-only; gracefully degrades to canonical when the alias does not accept `effort: xhigh`).
-* Q-Gate dispatches from phase-3-outline (`--phase phase-3-outline`, no `--role`) hit `execution-context-high` via the phase-3-outline `default` slot. Phase-4 Q-Gate dispatches hit `execution-context-high` via the bare-string at `phase-4-plan`.
+* Q-Gate dispatches from phase-3-outline (`--phase phase-3-outline`, no `--role`) hit `execution-context-high` via the phase-3-outline `default` slot. Phase-4 Q-Gate dispatches hit `execution-context-high` via the bare-string at `phase-4-plan.effort`.
 * Every `--phase phase-5-execute --role verification-feedback` dispatch (Step 11 / Step 11b triage) hits `execution-context-high`.
 * Every `--phase phase-6-finalize --role verification-feedback` dispatch (sonar / pr-comment / plugin-doctor / pr-state) hits `execution-context-high`.
 * Every other phase-6-finalize dispatch (create-pr, pre-submission-self-review, post-run-review, enrich-module) hits `execution-context-medium` via the phase-6-finalize `default` slot.
-* Every other dispatch (phase-1-init, phase-2-refine, phase-5-execute body) hits `execution-context-medium` via the `effort` fallback.
+* Every other dispatch (phase-1-init, phase-2-refine, phase-5-execute body) hits `execution-context-medium` via the `plan.effort` plan-wide fallback.
 
 == Migration note — `xhigh` / `xxhigh` rebind
 

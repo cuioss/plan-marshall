@@ -108,8 +108,8 @@ def _write_marshal_with_models(fixture_dir: Path, models_block: dict | None) -> 
 
     Accepts the legacy-shape ``{"default": <level>, "roles": {<phase>: ...}}``
     payload for backwards-compat in test bodies; translates to the
-    per-phase storage shape on disk (``plan.<phase>.effort`` + top-level
-    ``effort``).
+    current storage shape on disk (``plan.effort`` for the plan-wide
+    fallback, ``plan.<phase>.effort`` for per-phase overrides).
     """
     create_marshal_json(fixture_dir)
     marshal_path = fixture_dir / 'marshal.json'
@@ -117,14 +117,16 @@ def _write_marshal_with_models(fixture_dir: Path, models_block: dict | None) -> 
     config.pop('effort', None)
     config.pop('models', None)
     plan_block = config.get('plan', {})
-    for phase_entry in plan_block.values():
-        if isinstance(phase_entry, dict):
-            phase_entry.pop('effort', None)
+    if isinstance(plan_block, dict):
+        plan_block.pop('effort', None)
+        for phase_entry in plan_block.values():
+            if isinstance(phase_entry, dict):
+                phase_entry.pop('effort', None)
     if models_block is not None:
+        plan_block = config.setdefault('plan', {})
         default = models_block.get('default')
         if default is not None:
-            config['effort'] = default
-        plan_block = config.setdefault('plan', {})
+            plan_block['effort'] = default
         for phase, value in models_block.get('roles', {}).items():
             phase_entry = plan_block.setdefault(phase, {})
             if isinstance(phase_entry, dict):
@@ -140,14 +142,17 @@ def _read_marshal_models(fixture_dir: Path) -> dict:
     """
     marshal_path = fixture_dir / 'marshal.json'
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    result: dict = {}
-    if 'effort' in config:
-        result['default'] = config['effort']
     plan_block = config.get('plan', {})
+    result: dict = {}
+    if isinstance(plan_block, dict) and 'effort' in plan_block:
+        result['default'] = plan_block['effort']
     roles: dict = {}
-    for phase, entry in plan_block.items():
-        if isinstance(entry, dict) and 'effort' in entry:
-            roles[phase] = entry['effort']
+    if isinstance(plan_block, dict):
+        for phase, entry in plan_block.items():
+            if phase == 'effort':
+                continue
+            if isinstance(entry, dict) and 'effort' in entry:
+                roles[phase] = entry['effort']
     result['roles'] = roles
     return result
 

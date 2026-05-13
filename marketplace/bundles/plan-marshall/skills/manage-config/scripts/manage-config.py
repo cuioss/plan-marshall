@@ -252,7 +252,7 @@ def main() -> int:
     effort_sub = p_effort.add_subparsers(dest='verb', required=True, help='Operation')
     effort_read = effort_sub.add_parser(
         'read',
-        help='Resolve the effort keyword for a role (or fetch top-level effort)',
+        help='Resolve the effort keyword for a role (or fetch `plan.effort`)',
         allow_abbrev=False,
     )
     # Accepted lookup forms (validated in `_split_role`):
@@ -260,7 +260,7 @@ def main() -> int:
     #   --role <group>.<subkey>    dotted form (e.g. "phase-6-finalize.verification-feedback")
     #   --phase <group> --role <s> two-flag form (e.g. "--phase phase-6-finalize --role verification-feedback")
     #   --phase <group>            bare-group lookup via --phase
-    #   --default                  short-circuit to top-level effort
+    #   --default                  short-circuit to `plan.effort`
     # `--default` is mutually exclusive with the role/phase forms.
     effort_read.add_argument(
         '--role',
@@ -283,7 +283,7 @@ def main() -> int:
     effort_read.add_argument(
         '--default',
         action='store_true',
-        help='Return top-level effort directly (no role/phase lookup).',
+        help='Return `plan.effort` directly (no role/phase lookup).',
     )
 
     effort_resolve_target = effort_sub.add_parser(
@@ -307,7 +307,7 @@ def main() -> int:
     effort_resolve_target.add_argument(
         '--default',
         action='store_true',
-        help='Resolve via top-level effort (no role/phase lookup).',
+        help='Resolve via `plan.effort` (no role/phase lookup).',
     )
     effort_apply_preset = effort_sub.add_parser(
         'apply-preset',
