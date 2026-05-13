@@ -47,7 +47,7 @@ level: high
 target: execution-context-high
 ```
 
-**Post-resolve dispatch log** (between resolve and dispatch, per [`dispatch-logging.md`](dispatch-logging.md) § "Emission Format"):
+**Post-resolve dispatch log** (between resolve and dispatch, per [`dispatch-logging.md`](dispatch-logging.md) § "Emission contract"):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
