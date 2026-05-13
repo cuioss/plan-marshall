@@ -119,7 +119,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transi
 **Metrics**: After outline completes, record the `3-outline → 4-plan` boundary
 in a single fused call (forwarding the aggregated `<usage>` data from the
 dispatches spawned during this phase — the `phase-3` outline envelope plus
-any `cross.q-gate-validation` dispatch, and any LLM fallback dispatched from
+any q-gate-validation dispatch, and any LLM fallback dispatched from
 `manage-status:change-type-heuristic` when its heuristic returned
 `ambiguous`). Sum `total_tokens`, `tool_uses`, and `duration_ms` across each
 dispatch's `<usage>` tag:

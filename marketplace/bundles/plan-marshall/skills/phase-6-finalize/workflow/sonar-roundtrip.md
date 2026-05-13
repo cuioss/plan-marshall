@@ -13,7 +13,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Timeout Contract
 
-This step runs as inline orchestration (producer fetch + finding enumeration in main context) plus a single `cross.triage` Task dispatch (`plan-marshall:execution-context-{level}` resolved via `manage-config models resolve-target --role cross.triage`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget covers the full roundtrip: producer fetch+store, the per-finding triage dispatch (one envelope, smart grouping inside — see `plan-marshall:plan-marshall/workflow/triage.md`), optional fix-task creation, and (on loop-back) the `manage-status set-phase --phase 5-execute` handoff.
+This step runs as inline orchestration (producer fetch + finding enumeration in main context) plus a single `verification-feedback` Task dispatch (`plan-marshall:execution-context-{level}` resolved via `manage-config models resolve-target --phase phase-6 --role verification-feedback`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget covers the full roundtrip: producer fetch+store, the per-finding triage dispatch with `producer=sonar` (one envelope, smart grouping inside — see `plan-marshall:plan-marshall/workflow/verification-feedback.md`), optional fix-task creation, and (on loop-back) the `manage-status set-phase --phase 5-execute` handoff.
 
 **Graceful degradation**: When the wrapper expires:
 
@@ -54,21 +54,21 @@ If the result's `findings` list is empty, the gate is clean — proceed directly
 
 ### Dispatch the per-finding triage core
 
-When the query above returns one or more pending `sonar-issue` findings, dispatch the shared triage workflow [`standards/triage.md`](triage.md) — single source of truth for the per-finding LLM-judgement core, the smart-grouping algorithm, the per-outcome action bodies (FIX / SUPPRESS / ACCEPT / AskUserQuestion), the overflow / timeout handling, and the Scope-Deviation Escalation guard.
+When the query above returns one or more pending `sonar-issue` findings, dispatch the unified feedback workflow [`verification-feedback.md`](../../plan-marshall/workflow/verification-feedback.md) with `producer=sonar`. That workflow's Step 1 (sonar branch) verifies the store-only query, then delegates the per-finding LLM-judgement core to [`triage.md`](../../plan-marshall/workflow/triage.md) Steps 1-6 — single source of truth for the smart-grouping algorithm, the per-outcome action bodies (FIX / SUPPRESS / ACCEPT / AskUserQuestion), the overflow / timeout handling, and the Scope-Deviation Escalation guard.
 
-The dispatch is **by reference** — the prompt carries `finding_type=sonar-issue` only; the triage subagent issues its own `manage-findings query` against the same store as its first workflow step.
+The dispatch is **by reference** — the prompt carries `producer=sonar` only; the subagent issues its own `manage-findings query` against the same store as its first workflow step.
 
 Compute the target variant via the role resolver, then dispatch:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role cross.triage)
+  models resolve-target --phase phase-6 --role verification-feedback)
 ```
 
 ```
 Task: plan-marshall:{target}
   prompt: |
-    name: cross.triage
+    name: verification-feedback
     plan_id: {plan_id}
     skills[5]:
     - plan-marshall:manage-findings
@@ -76,9 +76,10 @@ Task: plan-marshall:{target}
     - plan-marshall:manage-architecture
     - plan-marshall:manage-config
     - plan-marshall:workflow-integration-sonar
-    workflow: plan-marshall:plan-marshall/workflow/triage.md
+    workflow: plan-marshall:plan-marshall/workflow/verification-feedback.md
 
-    finding_type: sonar-issue
+    producer: sonar
+    caller_phase: phase-6
 
     WORKTREE: {worktree_path}
 ```
@@ -220,4 +221,4 @@ issues_suppressed: {N}
 issues_accepted: {N}
 ```
 
-Orchestrator workflow — the LLM core is delegated to `cross.triage` via the internal sub-dispatch. The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded via `mark-step-done --display-detail`. On `loop_back`, the calling step re-fires on the next phase entry per the HEAD-dependent resumability rules above.
+Orchestrator workflow — the LLM core is delegated to `verification-feedback` (`producer=sonar`) via the internal sub-dispatch. The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded via `mark-step-done --display-detail`. On `loop_back`, the calling step re-fires on the next phase entry per the HEAD-dependent resumability rules above.

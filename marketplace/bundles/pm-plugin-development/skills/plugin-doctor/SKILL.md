@@ -319,7 +319,7 @@ Loaded per workflow via Progressive Disclosure table above. Key files:
 
 ### Templates (templates/)
 
-- `tool-coverage-results.toon` - TOON template for aggregating tool-coverage analysis results (produced by the plugin-doctor tool-coverage rule, which today runs in-line inside `cross.plugin-doctor` when its scope covers tool-coverage)
+- `tool-coverage-results.toon` - TOON template for aggregating tool-coverage analysis results (produced by the plugin-doctor tool-coverage rule, which runs in-line inside the `verification-feedback` envelope when its scope covers tool-coverage)
 
 ---
 

@@ -255,31 +255,34 @@ def main() -> int:
         help='Resolve the level keyword for a role (or fetch models.default)',
         allow_abbrev=False,
     )
-    # `--role` accepts the bare-group form ("phase-1"), the dotted form
-    # ("phase-6.create-pr"), or the flat-subkey form combined with `--phase`
-    # ("--phase phase-6 --role create-pr"). `--default` is mutually exclusive
-    # with role lookup and short-circuits to models.default.
-    models_read_target = models_read.add_mutually_exclusive_group(required=True)
-    models_read_target.add_argument(
+    # Accepted lookup forms (validated in `_split_role`):
+    #   --role <group>             bare-group lookup (e.g. "phase-1")
+    #   --role <group>.<subkey>    dotted form (e.g. "phase-6.verification-feedback")
+    #   --phase <group> --role <s> two-flag form (e.g. "--phase phase-6 --role verification-feedback")
+    #   --phase <group>            bare-group lookup via --phase
+    #   --default                  short-circuit to models.default
+    # `--default` is mutually exclusive with the role/phase forms.
+    models_read.add_argument(
         '--role',
         help=(
             'Role key (see model-roles.md registry). Accepted forms: bare '
-            'group "phase-1"; dotted "phase-6.create-pr"; or use --phase '
-            'plus a bare subkey.'
+            'group "phase-1"; dotted "phase-3.research"; or use --phase '
+            'plus a bare subkey ("--phase phase-6 --role verification-feedback").'
         ),
-    )
-    models_read_target.add_argument(
-        '--default',
-        action='store_true',
-        help='Return models.default directly (no role lookup).',
     )
     models_read.add_argument(
         '--phase',
         help=(
-            'Role group (e.g. "phase-6", "cross") used with --role for the '
-            'two-flag lookup form. Mutually compatible only with bare-subkey '
-            '--role values; --role must not itself include a dot in this mode.'
+            'Role group (e.g. "phase-6"). May be used alone for a '
+            'bare-group lookup, or paired with a bare-subkey --role for '
+            'the two-flag form; --role must not itself include a dot in '
+            'the two-flag form.'
         ),
+    )
+    models_read.add_argument(
+        '--default',
+        action='store_true',
+        help='Return models.default directly (no role/phase lookup).',
     )
 
     models_resolve_target = models_sub.add_parser(
@@ -289,7 +292,6 @@ def main() -> int:
     )
     models_resolve_target.add_argument(
         '--role',
-        required=True,
         help=(
             'Role key (same accepted forms as `models read --role`). '
             'Returns the variant target name `execution-context-{level}` '
@@ -299,7 +301,12 @@ def main() -> int:
     )
     models_resolve_target.add_argument(
         '--phase',
-        help='Role group, used with --role for the two-flag form.',
+        help='Role group; may be used alone or paired with --role.',
+    )
+    models_resolve_target.add_argument(
+        '--default',
+        action='store_true',
+        help='Resolve via models.default (no role/phase lookup).',
     )
     models_apply_preset = models_sub.add_parser(
         'apply-preset',

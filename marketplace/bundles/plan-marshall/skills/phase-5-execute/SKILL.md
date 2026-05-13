@@ -109,7 +109,7 @@ Contains: Canonical `# ruff: noqa: I001, E402` + `sys.path.insert(0, ...)` prolo
 
 ## Dispatched workflows vs inline steps
 
-This phase dispatches under one role key: **`phase-5`** (flat — one per-task envelope; the pending `phase_execute`, `implementation`, `testing`, `build_runner` rows from the legacy registry collapse into this single key). Each task in the queue gets its own `phase-5` dispatch via the `execute-task` workflow with the task-declared skill list as runtime input. The built-in verification steps (`default:quality_check`, `default:build_verify`, `default:coverage_check`) stay inline as pure build invocations — no LLM judgement, no envelope. Step 9 independent change verification stays inline (three deterministic re-checks: git-diff empty-test, obfuscation-pattern grep, exit-code compare). Steps 11 and 11b verification-failure / quality-gate-failure triage dispatch **`cross.triage`** once with `finding_type=verification-failure | quality-gate-failure` — the findings live in the per-plan store and the subagent queries them by reference (no inline findings list in the prompt). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2 and § 5.1 (script over dispatch; the shared triage core).
+This phase dispatches under one role key: **`phase-5`** (resolves through `phase-5.default` — one per-task envelope). Each task in the queue gets its own `phase-5` dispatch via the `execute-task` workflow with the task-declared skill list as runtime input. The built-in verification steps (`default:quality_check`, `default:build_verify`, `default:coverage_check`) stay inline as pure build invocations — no LLM judgement, no envelope. Step 9 independent change verification stays inline (three deterministic re-checks: git-diff empty-test, obfuscation-pattern grep, exit-code compare). Steps 11 and 11b verification-failure / quality-gate-failure triage dispatch **`verification-feedback`** under `--phase phase-5 --role verification-feedback` once with `producer=build-runner` — the findings live in the per-plan store and the subagent queries them by reference (no inline findings list in the prompt). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2 and § 5.1 (script over dispatch; phase-scoped resolution + producer-mode bundling).
 
 ## Execution Loop
 
@@ -472,7 +472,7 @@ If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
 - A `profile=verification` task completes with `verification.passed: false` / `next_action: requires_triage`, OR
 - Step 9 marked a task `blocked` with reason `no_changes_detected` or `verification_mismatch`
 
-The per-finding LLM core (FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over the failing findings) is owned by [`../plan-marshall/workflow/triage.md`](../plan-marshall/workflow/triage.md) and dispatched as `cross.triage` with `finding_type=verification-failure`.
+The per-finding LLM core (FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over the failing findings) is owned by [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) and dispatched under `--phase phase-5 --role verification-feedback` with `producer=build-runner`.
 
 #### Planned-failure exception (breaking-refactor task split)
 
@@ -528,22 +528,23 @@ Compute the target via the role resolver, then dispatch:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role cross.triage)
+  models resolve-target --phase phase-5 --role verification-feedback)
 ```
 
 ```
 Task: plan-marshall:{target}
   prompt: |
-    name: cross.triage
+    name: verification-feedback
     plan_id: {plan_id}
     skills[4]:
     - plan-marshall:manage-findings
     - plan-marshall:manage-tasks
     - plan-marshall:manage-architecture
     - plan-marshall:manage-config
-    workflow: plan-marshall:plan-marshall/workflow/triage.md
+    workflow: plan-marshall:plan-marshall/workflow/verification-feedback.md
 
-    finding_type: verification-failure
+    producer: build-runner
+    caller_phase: phase-5
 
     WORKTREE: {worktree_path}
 ```
@@ -571,7 +572,7 @@ After every task in the phase has completed (and Step 11 has resolved any per-ta
      resolve --command quality-gate --audit-plan-id {plan_id}
    ```
 
-2. Execute the returned `executable`. On non-zero exit, persist the failures to the Q-Gate findings store (`manage-findings qgate add --type quality-gate-failure …`) and dispatch [`../plan-marshall/workflow/triage.md`](../plan-marshall/workflow/triage.md) as `cross.triage` with `finding_type=quality-gate-failure` — same shape as Step 11d above, only the finding type changes. The triage subagent's return drives the same fix-task / suppress / accept branch (Step 11e). After triage resolves, do **NOT** re-run the sweep — Step 11b runs at most once per phase entry.
+2. Execute the returned `executable`. On non-zero exit, persist the failures to the Q-Gate findings store (`manage-findings qgate add --type quality-gate-failure …`) and dispatch [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) under `--phase phase-5 --role verification-feedback` with `producer=build-runner` and `finding_type=quality-gate-failure` — same shape as Step 11d above, only the finding type changes. The subagent's return drives the same fix-task / suppress / accept branch (Step 11e). After triage resolves, do **NOT** re-run the sweep — Step 11b runs at most once per phase entry.
 
 3. Log the outcome:
 

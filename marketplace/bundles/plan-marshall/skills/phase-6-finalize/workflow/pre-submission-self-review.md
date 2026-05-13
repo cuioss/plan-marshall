@@ -4,7 +4,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 # Pre-Submission Self-Review Workflow
 
-LLM-judgement structural review applied to the candidates surfaced by `tools-self-review:self_review surface` — symmetric pair test coverage, regex over-fit, ambiguous user-facing wording, duplicate prose sections, and contract drift. Dispatched under the `phase-6.pre-submission-self-review` role key.
+LLM-judgement structural review applied to the candidates surfaced by `tools-self-review:self_review surface` — symmetric pair test coverage, regex over-fit, ambiguous user-facing wording, duplicate prose sections, and contract drift. Dispatched under `--phase phase-6` (no `--role` — pre-submission-self-review tracks the phase-6 default).
 
 The orchestration prose for the manifest step itself (running the deterministic helper, parsing the candidate lists, recording the step outcome) lives in [`../standards/pre-submission-self-review.md`](../standards/pre-submission-self-review.md); this workflow body covers only the LLM cognitive phase the dispatcher hands off to.
 

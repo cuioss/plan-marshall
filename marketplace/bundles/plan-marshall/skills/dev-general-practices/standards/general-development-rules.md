@@ -40,7 +40,7 @@ This applies equally to production code, test code, and documentation.
 
 ### Principle 2: Always Research Topics
 
-**Rule:** Always research topics using the `cross.research` dispatch. The goal is to find the most recent best practices for a given technology or framework.
+**Rule:** Always research topics using the phase-scoped `research` dispatch. The goal is to find the most recent best practices for a given technology or framework.
 
 **When to Research:**
 - Need current best practices for a technology/framework
@@ -53,11 +53,16 @@ This applies equally to production code, test code, and documentation.
 
 **Dispatch the research-best-practices workflow** (NOT web search tools directly).
 
-Compute the dispatch target via the role resolver (recommended levels: `high` or `xxhigh` — research benefits from the most capable model):
+Compute the dispatch target via the role resolver. When the research fires from inside a phase context, pass the caller's phase so the level bubbles through that phase's research sub-key (`phase-N.research` → `phase-N.default` → `models.default`). Outside any plan (standalone `/research`), use `--default`. Recommended levels: `xhigh`, `xxhigh`, or `max` — research benefits from the most capable model:
 
 ```bash
+# Inside a phase context (substitute the caller's phase)
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role cross.research)
+  models resolve-target --phase {caller_phase} --role research)
+
+# Standalone / no plan context
+target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models resolve-target --default)
 ```
 
 Dispatch:
@@ -65,12 +70,13 @@ Dispatch:
 ```
 Task: plan-marshall:{target}
   prompt: |
-    name: research-best-practices
-    plan_id: {plan_id}
+    name: {caller_phase}-research              # or research-best-practices when standalone
+    plan_id: {plan_id}                          # 'none' sentinel for standalone runs
     skills[1]:
     - plan-marshall:dev-general-practices
     workflow: plan-marshall:plan-marshall/workflow/research-best-practices.md
     WORKTREE: {worktree_path}
+    caller_phase: {caller_phase}                # omit for standalone
 
     topic: {specific topic}
 ```
@@ -170,7 +176,7 @@ For complete patterns including file operations, content search, and Bash safety
 **Required Approval Process:**
 
 1. **Identify need for dependency**
-2. **Research alternatives** using `cross.research` dispatch if needed
+2. **Research alternatives** using the phase-scoped research dispatch if needed
 3. **Ask user** with specific recommendation:
    ```
    I need to add {functionality}. I recommend adding {dependency-name} because:
@@ -227,7 +233,7 @@ If the architecture verb truly cannot answer (e.g., target is sub-module, target
 | Situation | Action |
 |-----------|--------|
 | Uncertain about requirements | Ask user |
-| Need current best practices | Use `cross.research` dispatch |
+| Need current best practices | Use the phase-scoped research dispatch (`--phase phase-N --role research` or `--default` when standalone) |
 | Would need to guess | Ask user |
 | File operations (find/read/search/write/edit) | See Principle 4 for complete tool selection guide |
 | Need to create document | Ask user first |

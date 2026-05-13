@@ -44,7 +44,7 @@ When persisting the multi-task batch (Step 6 → 6a/6b), the following shell sho
 
 ## Dispatched workflows vs inline steps
 
-This phase dispatches under one role key: **`phase-4`** (flat — single workflow). The bundled task-creation activity (Steps 5+6+7 — per-deliverable task creation, anchoring/breaking-refactor split, holistic verification tasks) iterates *inside* one `phase-4` envelope; the per-deliverable loop never spawns per-iteration subagents. Mechanical sub-procedures stay inline as scripts: Step 3 deliverable load, Step 4 dependency graph, Step 8 topological sort, Step 8b execution manifest composition, and Step 9 Q-Gate mechanical checks (via `manage-tasks:qgate-mechanical-checks` — coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Step 9b LLM Q-Gate dispatches under **`cross.q-gate-validation`** (shared with phase-2 and phase-3) unconditionally after every successful phase-4-plan invocation — the validator agent runs `module-mapping-validator` and `scope-criterion-validator` against live ground truth regardless of `plan_source`. The mechanical script's `ambiguous=true` signal is informational only (it means `solution_outline.md` was missing or unparseable, in which case the LLM dispatch is the *only* authoritative pass). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2–4.
+This phase dispatches under one role key: **`phase-4`** (resolves through `phase-4.default`). The bundled task-creation activity (Steps 5+6+7 — per-deliverable task creation, anchoring/breaking-refactor split, holistic verification tasks) iterates *inside* one `phase-4` envelope; the per-deliverable loop never spawns per-iteration subagents. Mechanical sub-procedures stay inline as scripts: Step 3 deliverable load, Step 4 dependency graph, Step 8 topological sort, Step 8b execution manifest composition, and Step 9 Q-Gate mechanical checks (via `manage-tasks:qgate-mechanical-checks` — coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Step 9b LLM Q-Gate dispatches under `--phase phase-4` (no `--role` — q-gate-validation tracks the phase default; the workflow is shared with phase-2 and phase-3) unconditionally after every successful phase-4-plan invocation — the validator agent runs `module-mapping-validator` and `scope-criterion-validator` against live ground truth regardless of `plan_source`. The mechanical script's `ambiguous=true` signal is informational only (it means `solution_outline.md` was missing or unparseable, in which case the LLM dispatch is the *only* authoritative pass). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2–4.
 
 ## cwd for `.plan/execute-script.py` calls
 
@@ -613,7 +613,7 @@ The six checks correspond to:
 Parse the return TOON: `total_failed` is the aggregate finding count for the
 inline checks (added to `qgate_pending_count` returned in Step 11), and
 `ambiguous` is `true` when `solution_outline.md` was missing or unparseable —
-in that case the LLM `cross.q-gate-validation` dispatch in Step 9b is the
+in that case the LLM q-gate-validation dispatch in Step 9b is the
 only authoritative pass and the orchestrator MUST still fire it.
 
 ### Log Q-Gate Result
@@ -649,7 +649,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Rigor**: this check is warn-only. Phase-4-plan MUST proceed to completion regardless of warnings — the operator reviews findings at the phase-4 gate.
 
-### Step 9b: Dispatch `cross.q-gate-validation` for mechanical validators
+### Step 9b: Dispatch q-gate-validation for mechanical validators
 
 **Purpose**: Run the `module-mapping-validator` and `scope-criterion-validator` from `plan-marshall:plan-marshall/workflow/q-gate-validation.md` (§§ 2.11, 2.12) over the just-created tasks and the parent deliverables. Both validators reconcile LLM-authored task/deliverable shape against live ground truth (architecture which-module, architecture find/marketplace grep) and emit findings that the orchestrator's existing 3-iteration auto-loop consumes.
 
@@ -663,7 +663,7 @@ Compute the dispatch target via the role resolver:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role cross.q-gate-validation)
+  models resolve-target --phase phase-4)
 ```
 
 Dispatch:
@@ -671,7 +671,7 @@ Dispatch:
 ```
 Task: plan-marshall:{target}
   prompt: |
-    name: cross.q-gate-validation
+    name: q-gate-validation
     plan_id: {plan_id}
     skills[6]:
     - plan-marshall:manage-solution-outline
@@ -703,7 +703,7 @@ Parse `filtered_count` from the output and ADD it to the `qgate_pending_count` a
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-4-plan:qgate) Dispatched cross.q-gate-validation for module-mapping + scope-criterion validators; pending findings now {qgate_pending_count}"
+  --message "(plan-marshall:phase-4-plan:qgate) Dispatched q-gate-validation for module-mapping + scope-criterion validators; pending findings now {qgate_pending_count}"
 ```
 
 This step runs AFTER the inline Q-Gate checks of Step 9 and BEFORE Step 10 (Record Issues as Lessons) / Step 11 (Transition Phase and Return Results). The placement is load-bearing: inline checks first means cheap structural findings are recorded before the more expensive cross-bundle queries; validator second ensures architecture-anchored findings can re-enter phase-4-plan alongside the inline ones.

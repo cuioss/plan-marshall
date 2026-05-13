@@ -499,7 +499,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
    - **`LLM-driven`** — the skill has no script entry point. The SKILL.md narrative is the executable definition: an LLM agent loads the skill (via `Skill: {ref}`) and follows the prose steps in-context. The skill may invoke other scripts as steps, but the orchestration logic, the decision-making, and the artifact production are all performed by the LLM.
 
-     *Examples*: `phase-3-outline` (this skill), `phase-4-plan`, `plan-marshall:plan-marshall/workflow/q-gate-validation.md` (dispatched via `cross.q-gate-validation`), `plugin-doctor`, `plan-retrospective`.
+     *Examples*: `phase-3-outline` (this skill), `phase-4-plan`, `plan-marshall:plan-marshall/workflow/q-gate-validation.md` (dispatched under `--phase phase-N` matching the caller phase), `plugin-doctor`, `plan-retrospective`.
 
    - **`hybrid`** — the skill has both a Python script and a non-trivial LLM prose body. The script handles a deterministic sub-task (file I/O, validation, dispatch); the LLM prose body handles the remaining cognitive work. Hybrid skills carry both a `scripts/` directory and substantive `Workflow` prose.
 
@@ -734,7 +734,7 @@ Compute the dispatch target via the role resolver:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role cross.q-gate-validation)
+  models resolve-target --phase phase-3)
 ```
 
 Dispatch:
@@ -742,7 +742,7 @@ Dispatch:
 ```
 Task: plan-marshall:{target}
   prompt: |
-    name: cross.q-gate-validation
+    name: q-gate-validation
     plan_id: {plan_id}
     skills[6]:
     - plan-marshall:manage-solution-outline

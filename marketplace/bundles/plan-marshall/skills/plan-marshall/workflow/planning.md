@@ -173,7 +173,7 @@ Task: plan-marshall:{target}
 
 The agent returns confidence + track + scope_estimate + qgate_pending_count in its TOON. The 12-step confidence loop (Steps 3b/3c/8/9/10/11/12) iterates *inside* this single envelope; `AskUserQuestion` in Step 11 propagates to the host UI directly from the subagent (no main-context routing required).
 
-**Metrics**: After refine completes, record the `2-refine → 3-outline` boundary in a single fused call (forwarding the aggregated `<usage>` data from every dispatch that fired inside this phase — the `phase-2` envelope itself plus any `cross.q-gate-validation` sub-dispatch at Step 13.5 for lesson-derived plans). Sum `total_tokens`, `tool_uses`, and `duration_ms` across each dispatch's `<usage>` tag:
+**Metrics**: After refine completes, record the `2-refine → 3-outline` boundary in a single fused call (forwarding the aggregated `<usage>` data from every dispatch that fired inside this phase — the `phase-2` envelope itself plus any q-gate-validation sub-dispatch at Step 13.5 for lesson-derived plans). Sum `total_tokens`, `tool_uses`, and `duration_ms` across each dispatch's `<usage>` tag:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
   --plan-id {plan_id} --prev-phase 2-refine --next-phase 3-outline \

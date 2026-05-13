@@ -531,8 +531,8 @@ def extract_issues_from_coverage_analysis(coverage: dict, file_path: str, compon
     - Backup file patterns (quality issue)
 
     Tool usage analysis (missing/unused) is NOT done here - that requires
-    semantic understanding and runs in-line inside the `cross.plugin-doctor`
-    dispatch when its scope covers tool-coverage.
+    semantic understanding and runs in-line inside the `verification-feedback`
+    dispatch (producer=plugin-doctor) when its scope covers tool-coverage.
     """
     issues = []
 

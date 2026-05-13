@@ -144,5 +144,5 @@ With the consumer sweep applied at outline time, TASK-9 would never have hit the
 - `outline-workflow-detail.md` — Step 7 (Simple Track) and Step 10 (Complex Track) call this standard before deliverable finalization.
 - `change-feature.md` and `change-tech_debt.md` — discovery sub-sections cross-reference this standard.
 - `plan-marshall:phase-3-outline/SKILL.md` — Complex Track table row for Step 10 has a one-line callout pointing here.
-- `plan-marshall:plan-marshall/workflow/q-gate-validation.md` (dispatched under role `cross.q-gate-validation`) — `consumer_sweep_completeness` check enforces the trigger and output requirements at Q-Gate time.
+- `plan-marshall:plan-marshall/workflow/q-gate-validation.md` (dispatched under `--phase phase-3` from outline or `--phase phase-4` from plan) — `consumer_sweep_completeness` check enforces the trigger and output requirements at Q-Gate time.
 - Driving lesson: `2026-04-30-23-001` (TASK-9 scope expanded silently — pm-dev-java profiles.py needed migration to per-module layout).

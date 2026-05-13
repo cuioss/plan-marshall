@@ -72,7 +72,7 @@ For codebase-wide changes requiring discovery and analysis via domain skills.
 │          → Log completion                                        │
 │                                                                  │
 │  Step 9: Q-Gate Verification                                     │
-│          → Task: plan-marshall:execution-context — cross.q-gate-validation │
+│          → Task: plan-marshall:execution-context — --phase phase-3        │
 │          → Verifies deliverables against request                 │
 │                                                                  │
 │  → Continue to Step 10                                           │

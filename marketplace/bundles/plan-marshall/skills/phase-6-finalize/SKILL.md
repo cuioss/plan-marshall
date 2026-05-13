@@ -101,7 +101,7 @@ A step is active if and only if it appears in `manifest.phase_6.steps`. Absent s
 
 ## Dispatched workflows vs inline steps
 
-Of the 17 default + project finalize steps, **6 dispatch** and **11 run inline**. Dispatched steps (and their role keys): `pre-submission-self-review` → **`phase-6.pre-submission-self-review`** (meta-project-only — see Phase 3a of [`07-rollout.md`](../../../../.plan/local/refactor-agents-reviewed/07-rollout.md)); `create-pr` → **`phase-6.create-pr`**; `lessons-capture` → **`phase-6.lessons-capture`**; `automated-review` + `sonar-roundtrip` share **`cross.triage`** by-reference (the manifest orchestration scripts run inline; the LLM core dispatches once when findings exist); `architecture-refresh` is hybrid (Tier 0 inline scripts; Tier 1 fans out **`cross.manage-architecture-enrich-module`** per affected module — the only per-iteration parallel dispatch in the contract); `project:finalize-step-plugin-doctor` (meta-project only) → **`cross.plugin-doctor`**. Two opt-in dispatched steps exist outside the default set: **`phase-6.retrospective`** (8 LLM aspects iterate inside one envelope) and **`phase-6.pr-doctor`** (diagnose + report + internal triage). The 11 inline steps (`commit-push`, `ci-wait`, `branch-cleanup`, `pre-push-quality-gate`, `record-metrics`, `archive-plan`, `finalize-step-print-phase-breakdown`, `architecture-refresh` Tier 0, `project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`, `project:finalize-step-regenerate-executor`) are pure scripts or trivial orchestration that earn no envelope. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 5 (find the LLM core, not the wrapping step).
+Of the 17 default + project finalize steps, **6 dispatch** and **11 run inline**. Every dispatched step resolves under the phase-scoped registry — `manage-config models resolve-target --phase phase-6 [--role <subkey>]`. Step → resolved role: `pre-submission-self-review` → `phase-6` (no `--role`; tracks `phase-6.default`); `create-pr` → `phase-6` (no `--role`); `lessons-capture` → `phase-6 --role post-run-review`; `automated-review` + `sonar-roundtrip` → `phase-6 --role verification-feedback` (`producer=pr-comment` / `sonar` runtime input); `architecture-refresh` is hybrid (Tier 0 inline scripts; Tier 1 fans out under `phase-6` per affected module — the only per-iteration parallel dispatch in the contract); `project:finalize-step-plugin-doctor` (meta-project only) → `phase-6 --role verification-feedback` (`producer=plugin-doctor` runtime input). Two opt-in dispatched steps exist outside the default set: **retrospective** → `phase-6 --role post-run-review` (8 LLM aspects iterate inside one envelope); `/workflow-pr-doctor` (slash-command surface) → `phase-6 --role verification-feedback` (`producer=pr-state` runtime input). The 11 inline steps (`commit-push`, `ci-wait`, `branch-cleanup`, `pre-push-quality-gate`, `record-metrics`, `archive-plan`, `finalize-step-print-phase-breakdown`, `architecture-refresh` Tier 0, `project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`, `project:finalize-step-regenerate-executor`) are pure scripts or trivial orchestration that earn no envelope. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 5 (find the LLM core, not the wrapping step).
 
 ## Step Types
 
@@ -403,31 +403,20 @@ For each step reference:
 
 **Agent-suitable built-in steps** (self-contained, no user interaction) — each dispatches to `plan-marshall:execution-context-{level}` with the role-resolved workflow doc:
 
-| Step reference | Role key | Workflow doc |
-|----------------|----------|--------------|
-| `default:create-pr` | `phase-6.create-pr` | `plan-marshall:phase-6-finalize/workflow/create-pr.md` |
-| `default:lessons-capture` | `phase-6.lessons-capture` | `plan-marshall:phase-6-finalize/workflow/lessons-capture.md` |
-| `default:automated-review` | (no key; uses `models.default`) | `plan-marshall:phase-6-finalize/workflow/automated-review.md` |
-| `default:sonar-roundtrip` | (no key; uses `models.default`) | `plan-marshall:phase-6-finalize/workflow/sonar-roundtrip.md` |
+| Step reference | Resolver lookup | Workflow doc |
+|----------------|-----------------|--------------|
+| `default:create-pr` | `--phase phase-6` (no `--role`; tracks `phase-6.default`) | `plan-marshall:phase-6-finalize/workflow/create-pr.md` |
+| `default:lessons-capture` | `--phase phase-6 --role post-run-review` | `plan-marshall:phase-6-finalize/workflow/lessons-capture.md` |
+| `default:automated-review` | `--phase phase-6 --role verification-feedback` (LLM core; outer wrapper tracks `phase-6.default`) | `plan-marshall:phase-6-finalize/workflow/automated-review.md` |
+| `default:sonar-roundtrip` | `--phase phase-6 --role verification-feedback` (LLM core; outer wrapper tracks `phase-6.default`) | `plan-marshall:phase-6-finalize/workflow/sonar-roundtrip.md` |
 
-`automated-review` and `sonar-roundtrip` are orchestrator workflows — their LLM-judgement core is a single internal `cross.triage` dispatch (which carries its own role key). The outer wrapper runs at `models.default` since the body is mostly script execution and one sub-dispatch.
+`automated-review` and `sonar-roundtrip` are orchestrator workflows — their LLM-judgement core is a single internal `verification-feedback` dispatch (with `producer=pr-comment` / `producer=sonar` runtime input). The outer wrapper resolves under `phase-6.default` since the body is mostly script execution and one sub-dispatch.
 
-**Dispatch pattern** — for rows with a role key, resolve the target via the role key:
+**Dispatch pattern** — resolve the target via the role resolver. Pass `--phase phase-6` for every dispatched step; add `--role <subkey>` only when the step has its own sub-key in the table above:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role <role-key>)
-```
-
-For the no-key rows (orchestrator workflows), resolve via `models.default`:
-
-```bash
-level=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models read --default)
-target="execution-context"
-if [ -n "$level" ] && [ "$level" != "inherit" ]; then
-  target="execution-context-$level"
-fi
+  models resolve-target --phase phase-6 [--role <subkey>])
 ```
 
 Dispatch:
@@ -500,16 +489,16 @@ FOR each step_id in manifest.phase_6.steps:
        (1) Resolve the level-bound target via the resolver:
            ```
            target = python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-             models resolve-target --role <role>
+             models resolve-target --phase phase-6 [--role <subkey>]
            ```
            Returns `execution-context-{level}` (variant), or canonical `execution-context` for `inherit`/empty.
        (2) Dispatch via `Task(subagent_type: plan-marshall:<target>, …)` with prompt body `name`, `plan_id`, `skills[]`, `workflow: plan-marshall:phase-6-finalize/workflow/{name}.md`, `WORKTREE`.
 
-       Per-step workflow docs and role keys:
-         * default:create-pr        -> workflow: workflow/create-pr.md        | role: phase-6.create-pr
-         * default:automated-review -> workflow: workflow/automated-review.md | role: cross.triage         | timeout: 900s
-         * default:sonar-roundtrip  -> workflow: workflow/sonar-roundtrip.md  | role: cross.triage         | timeout: 900s
-         * default:lessons-capture  -> workflow: workflow/lessons-capture.md  | role: phase-6.lessons-capture | timeout: 300s
+       Per-step workflow docs and resolver lookups:
+         * default:create-pr        -> workflow: workflow/create-pr.md        | --phase phase-6                              (no --role)
+         * default:automated-review -> workflow: workflow/automated-review.md | --phase phase-6                              (outer wrapper; inner verification-feedback dispatch uses --role verification-feedback) | timeout: 900s
+         * default:sonar-roundtrip  -> workflow: workflow/sonar-roundtrip.md  | --phase phase-6                              (outer wrapper; inner verification-feedback dispatch uses --role verification-feedback) | timeout: 900s
+         * default:lessons-capture  -> workflow: workflow/lessons-capture.md  | --phase phase-6 --role post-run-review       | timeout: 300s
 
        The subagent's body loads `dev-general-practices` + the prompt's `skills[]`, then `Read`s the workflow doc and executes its steps inside the dispatch envelope. Pass `--plan-id {plan_id}` and, when an `{iteration}` counter applies, `--iteration {iteration}` as workflow-specific runtime inputs in the prompt body. The Worktree Header is conveyed via the always-required `WORKTREE` prompt-body field; the subagent resolves the worktree path internally and propagates it into any further dispatches it issues.
 
