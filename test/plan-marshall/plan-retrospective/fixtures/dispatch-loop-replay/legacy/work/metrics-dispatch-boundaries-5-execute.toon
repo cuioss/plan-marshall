@@ -1,0 +1,4 @@
+plan_id: dispatch-loop-replay-legacy
+phase: 5-execute
+rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:
+2026-04-15T09:00:00Z,unknown,80000,40,90000

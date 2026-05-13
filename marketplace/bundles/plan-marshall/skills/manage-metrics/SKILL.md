@@ -215,26 +215,27 @@ Record one TOON-tabular row per phase Task dispatch termination. Designed to
 be called by the orchestrator (`plan-marshall` workflows) immediately after
 every phase Task return so the audit trail captures *why* the dispatch
 ended — voluntary checkpoint, bare `task_complete` echo, harness
-cancellation, error, or unknown — together with the dispatched agent's
-`<usage>` totals at termination time. The accumulating file is the audit
-trail that `plan-retrospective` correlates with `[OUTCOME]`-log coverage
-gaps to detect agent-initiated re-dispatch (lesson `2026-05-08-14-001`).
+cancellation, error, or clean exit on an empty queue — together with the
+dispatched agent's `<usage>` totals at termination time. The accumulating
+file is the audit trail that `plan-retrospective` correlates with
+`[OUTCOME]`-log coverage gaps to detect agent-initiated re-dispatch
+(lesson `2026-05-08-14-001`).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics record-dispatch-boundary \
   --plan-id {plan_id} --phase {phase} \
-  --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|harness_cancellation|error|unknown} \
+  --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|harness_cancellation|error|clean_exit_queue_empty} \
   [--total-tokens N] [--tool-uses N] [--duration-ms N]
 ```
 
 **Parameters:**
 - `--phase` — Phase whose dispatch terminated (must be a valid phase name; in practice this is `5-execute` for the lesson-2026-05-08-14-001 use case, but the subcommand accepts any valid phase).
-- `--termination-cause` — Why the dispatch ended. One of:
+- `--termination-cause` — Why the dispatch ended. Required — missing or unrecognised values are rejected as script errors (there is no implicit fallback). One of:
   - `voluntary_checkpoint` — the agent emitted a "Returning control to orchestrator" / "progress checkpoint" line and stopped with pending work in the queue.
   - `task_complete_returned_verbatim` — the agent returned `execute-task`'s bare `task_complete` payload without wrapping it.
   - `harness_cancellation` — the host platform cancelled the dispatch (timeout, context-window limit, etc.).
   - `error` — the dispatch raised a fatal error captured via the skill's Error Handling section.
-  - `unknown` — fallback when the orchestrator cannot classify the termination.
+  - `clean_exit_queue_empty` — canonical value for a clean exit where the loop drove to completion AND `manage-tasks loop-exit-guard` confirmed the pending queue is empty.
 - `--total-tokens`, `--tool-uses`, `--duration-ms` — Subagent `<usage>` totals at termination (each optional, default 0).
 
 **Behaviour:**

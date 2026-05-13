@@ -76,6 +76,34 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `remove-step` | `--plan-id --task-number --step` | Remove step from task |
 | `rename-path` | `--plan-id --old-path --new-path` | Record path rename and rewrite step targets |
 | `qgate-mechanical-checks` | `--plan-id [--no-emit]` | Run the six deterministic Q-Gate checks for phase-4-plan Step 9 (coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Pure regex + graph + filesystem; no LLM dispatch. Each failure becomes a Q-Gate finding under `--source qgate` so phase-4-plan's existing aggregate consumes it. Returns `total_failed`, per-check counts, and an `ambiguous` flag the caller uses to decide whether the LLM q-gate-validation dispatch still needs to fire. |
+| `loop-exit-guard` | `--plan-id` | Script-level enforcement of the phase-5-execute "pending > 0 → must continue" invariant. Emits `status: continue` (with `pending_count` and `pending_ids`) when pending tasks remain — the non-success status forces the orchestrator to re-dispatch the execution-context. Emits `status: success` with `pending_count: 0` only when the queue is genuinely empty. See "Loop-Exit Guard" below for the contract. |
+
+### Loop-Exit Guard (`loop-exit-guard`)
+
+`loop-exit-guard` is the script-level enforcement of the phase-5-execute
+dispatch loop's "pending > 0 → must continue" invariant. The orchestrator
+(`plan-marshall:plan-marshall:execution.md`) consults this verb on every
+loop-exit decision before classifying a dispatch as a clean exit; the
+phase-5-execute SKILL.md § Step 12a (Pending-tasks transition guard) is a
+thin pointer to this verb — the authoritative pending-count is here, not in
+skill prose.
+
+**Behaviour:**
+
+- `status: continue` with `pending_count > 0` and `pending_ids: [N, ...]` —
+  pending tasks remain in the queue. The orchestrator MUST re-dispatch the
+  execution-context and MUST NOT classify the return as `clean_exit_queue_empty`.
+- `status: success` with `pending_count: 0` and `pending_ids: []` — queue
+  empty, clean exit permitted. The boundary-call fence in
+  `plan-marshall/workflow/execution.md` may now record
+  `termination-cause == clean_exit_queue_empty`.
+
+**Rationale:** before this verb, the loop-exit decision was driven by the
+dispatched agent's terminal payload, which the agent could echo verbatim
+(e.g. `task_complete`) without the orchestrator distinguishing "one task
+done out of three" from "the queue is empty". Moving the decision to a
+script-level read of disk state — the same `get_all_tasks` machinery as
+`list --status pending` — closes the control-flow gap.
 
 ### Script-Level `[OUTCOME]` Emission (`finalize-step`)
 

@@ -24,6 +24,8 @@ Subcommands:
   add-step         - Add a new step to a task
   remove-step      - Remove a step from a task
   rename-path      - Record a path rename mapping
+  loop-exit-guard  - Script-level enforcement that the phase-5-execute
+                     dispatch loop MUST continue while pending tasks remain
 
 Output: TOON format for all operations.
 
@@ -71,6 +73,7 @@ from _tasks_crud import cmd_batch_add, cmd_commit_add, cmd_prepare_add, cmd_remo
 from _tasks_query import (
     cmd_exists,
     cmd_list,
+    cmd_loop_exit_guard,
     cmd_next,
     cmd_next_tasks,
     cmd_read,
@@ -323,6 +326,27 @@ def build_parser() -> argparse.ArgumentParser:
         help='Run the checks and return the result TOON without writing any findings (dry-run).',
     )
 
+    # loop-exit-guard
+    p_loop_guard = subparsers.add_parser(
+        'loop-exit-guard',
+        help='Script-level enforcement: continue dispatch loop while pending tasks remain',
+        description=(
+            'Read the pending-task count via the same machinery as '
+            '``list --status pending`` and emit a structured TOON result the '
+            'orchestrator MUST consult before exiting the phase-5-execute '
+            'dispatch loop. Emits ``status: continue`` (with ``pending_count`` '
+            'and ``pending_ids``) when pending > 0 — the non-success status '
+            'forces the orchestrator to re-dispatch. Emits ``status: success`` '
+            '(with ``pending_count: 0``) only when the queue is genuinely '
+            'empty. This is the script-level enforcement of the '
+            '"pending > 0 → must continue" invariant; the phase-5-execute '
+            'SKILL.md prose is a thin pointer to this verb.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(p_loop_guard)
+
     return parser
 
 
@@ -345,6 +369,7 @@ COMMANDS = {
     'remove-step': cmd_remove_step,
     'rename-path': cmd_rename_path,
     'qgate-mechanical-checks': cmd_qgate_mechanical,
+    'loop-exit-guard': cmd_loop_exit_guard,
 }
 
 

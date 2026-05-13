@@ -62,7 +62,7 @@ DISPATCH_TERMINATION_CAUSES = (
     'task_complete_returned_verbatim',
     'harness_cancellation',
     'error',
-    'unknown',
+    'clean_exit_queue_empty',
 )
 USAGE_TAG_RE = re.compile(r'<usage>([\s\S]*?)</usage>', re.MULTILINE)
 USAGE_FIELD_RE = re.compile(r'^\s*(total_tokens|tool_uses|duration_ms)\s*:\s*(\d+)', re.MULTILINE)
@@ -1483,11 +1483,17 @@ def main() -> int:
             'Append a TOON row to work/metrics-dispatch-boundaries-{phase}.toon '
             'capturing the termination cause of a phase Task dispatch '
             '(voluntary_checkpoint | task_complete_returned_verbatim | '
-            'harness_cancellation | error | unknown) and the dispatched '
-            "agent's <usage> totals at the time of return. The orchestrator "
-            'invokes this on every phase Task return so plan-retrospective '
-            'can correlate agent-initiated re-dispatch events with '
-            '[OUTCOME]-log coverage gaps (lesson 2026-05-08-14-001).'
+            'harness_cancellation | error | clean_exit_queue_empty) and the '
+            "dispatched agent's <usage> totals at the time of return. "
+            '``clean_exit_queue_empty`` is the canonical value the '
+            'orchestrator MUST use for a successful loop-exit (queue '
+            'genuinely empty, verified by ``manage-tasks loop-exit-guard``); '
+            'the recorder no longer accepts the legacy fallback value '
+            '``unknown`` — missing or unrecognised causes are script errors. '
+            'The orchestrator invokes this on every phase Task return so '
+            'plan-retrospective can correlate agent-initiated re-dispatch '
+            'events with [OUTCOME]-log coverage gaps (lesson '
+            '2026-05-08-14-001).'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,

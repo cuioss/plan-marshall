@@ -1,0 +1,24 @@
+{
+  "number": 1,
+  "title": "Replay fixture — already-done predecessor",
+  "deliverable": 1,
+  "status": "done",
+  "current_step": 1,
+  "domain": "plan-marshall-plugin-dev",
+  "profile": "implementation",
+  "depends_on": [],
+  "skills": [],
+  "origin": "plan",
+  "steps": [
+    {
+      "number": 1,
+      "target": "src/replay/done_predecessor.py",
+      "status": "done"
+    }
+  ],
+  "verification": {
+    "commands": [],
+    "criteria": "",
+    "manual": false
+  }
+}

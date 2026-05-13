@@ -73,6 +73,7 @@ def cmd_add(ns):
 
 cmd_read, cmd_list, cmd_next = _query.cmd_read, _query.cmd_list, _query.cmd_next
 cmd_exists = _query.cmd_exists
+cmd_loop_exit_guard = _query.cmd_loop_exit_guard
 cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile = (
     _query.cmd_next_tasks,
     _query.cmd_tasks_by_domain,
@@ -1735,3 +1736,147 @@ def test_parse_stdin_task_rejects_outer_double_quoted_verification_profile_step(
     assert 'steps' in message
     assert 'outer double-quotes' in message
     assert 'plan-marshall:phase-4-plan' in message
+
+
+# =============================================================================
+# Tests: loop-exit-guard subcommand
+#
+# Script-level enforcement of the phase-5-execute "pending > 0 → must continue"
+# invariant. Lesson 2026-05-10-15-001: the orchestrator MUST consult this verb
+# before classifying a return as `clean_exit_queue_empty`. The contract:
+#
+#   - pending > 0 → status: continue, pending_count > 0, pending_ids non-empty
+#   - pending == 0 → status: success, pending_count == 0, pending_ids == []
+#
+# Behaviour parity is checked against `cmd_list --status pending` over the
+# same fixtures (both reads target the same on-disk machinery via
+# `get_all_tasks`).
+# =============================================================================
+
+
+def _loop_exit_guard_ns(plan_id='test-plan'):
+    """Build Namespace for cmd_loop_exit_guard (single --plan-id field)."""
+    return Namespace(plan_id=plan_id)
+
+
+def test_loop_exit_guard_continue_when_pending_tasks_remain():
+    """pending > 0 yields status: continue with pending_count and pending_ids set."""
+    with PlanContext(plan_id='guard-continue'):
+        add_basic_task(
+            plan_id='guard-continue',
+            title='First',
+            deliverable=1,
+            steps=['src/main/java/File.java'],
+        )
+        add_basic_task(
+            plan_id='guard-continue',
+            title='Second',
+            deliverable=2,
+            steps=['src/main/java/File.java'],
+        )
+
+        result = cmd_loop_exit_guard(_loop_exit_guard_ns(plan_id='guard-continue'))
+
+        # Non-success status forces the orchestrator to re-dispatch.
+        assert result['status'] == 'continue'
+        assert result['plan_id'] == 'guard-continue'
+        assert result['pending_count'] == 2
+        assert sorted(result['pending_ids']) == [1, 2]
+        # Message names the contract for downstream readers.
+        assert 'pending' in result['message'].lower()
+
+
+def test_loop_exit_guard_success_when_queue_empty():
+    """pending == 0 yields status: success with pending_count: 0 and empty list."""
+    with PlanContext(plan_id='guard-empty'):
+        # No tasks at all — queue is genuinely empty.
+        result = cmd_loop_exit_guard(_loop_exit_guard_ns(plan_id='guard-empty'))
+
+        assert result['status'] == 'success'
+        assert result['plan_id'] == 'guard-empty'
+        assert result['pending_count'] == 0
+        assert result['pending_ids'] == []
+
+
+def test_loop_exit_guard_success_when_only_done_tasks_remain():
+    """All tasks done → status: success even when total > 0 (only pending is the filter)."""
+    with PlanContext(plan_id='guard-all-done'):
+        add_basic_task(
+            plan_id='guard-all-done',
+            title='Only',
+            deliverable=1,
+            steps=['src/main/java/File.java'],
+        )
+        # Finalize the single step to flip the task to `done`.
+        cmd_finalize_step(_finalize_step_ns(plan_id='guard-all-done', task=1, step=1, outcome='done'))
+
+        result = cmd_loop_exit_guard(_loop_exit_guard_ns(plan_id='guard-all-done'))
+
+        assert result['status'] == 'success'
+        assert result['pending_count'] == 0
+        assert result['pending_ids'] == []
+
+
+def test_loop_exit_guard_ignores_blocked_and_failed_status():
+    """Only `pending` status counts towards the guard — `blocked`/`failed` are not pending."""
+    with PlanContext(plan_id='guard-mixed'):
+        add_basic_task(
+            plan_id='guard-mixed',
+            title='Pending one',
+            deliverable=1,
+            steps=['src/main/java/A.java'],
+        )
+        add_basic_task(
+            plan_id='guard-mixed',
+            title='Will be failed',
+            deliverable=2,
+            steps=['src/main/java/B.java'],
+        )
+        # Fail task 2's step to flip its status to `failed` (not `pending`).
+        cmd_finalize_step(
+            _finalize_step_ns(plan_id='guard-mixed', task=2, step=1, outcome='failed', reason='intentional')
+        )
+
+        result = cmd_loop_exit_guard(_loop_exit_guard_ns(plan_id='guard-mixed'))
+
+        # Only task 1 is pending; task 2 is failed.
+        assert result['status'] == 'continue'
+        assert result['pending_count'] == 1
+        assert result['pending_ids'] == [1]
+
+
+def test_loop_exit_guard_parity_with_list_status_pending():
+    """The guard reads the same on-disk state as `list --status pending`."""
+    with PlanContext(plan_id='guard-parity'):
+        add_basic_task(plan_id='guard-parity', title='A', deliverable=1, steps=['src/A.java'])
+        add_basic_task(plan_id='guard-parity', title='B', deliverable=2, steps=['src/B.java'])
+        add_basic_task(plan_id='guard-parity', title='C', deliverable=3, steps=['src/C.java'])
+        # Finalize task 1's single step.
+        cmd_finalize_step(_finalize_step_ns(plan_id='guard-parity', task=1, step=1, outcome='done'))
+
+        guard = cmd_loop_exit_guard(_loop_exit_guard_ns(plan_id='guard-parity'))
+        listed = cmd_list(_list_ns(plan_id='guard-parity', status='pending'))
+
+        # Both reach the same conclusion via different return shapes.
+        listed_ids = sorted(row['number'] for row in listed['tasks_table'])
+        assert guard['status'] == 'continue'
+        assert guard['pending_count'] == len(listed_ids) == listed['counts']['pending']
+        assert sorted(guard['pending_ids']) == listed_ids
+
+
+def test_loop_exit_guard_cli_subcommand_registered():
+    """End-to-end subprocess invocation surfaces the guard via the CLI."""
+    with PlanContext(plan_id='guard-cli'):
+        add_basic_task(plan_id='guard-cli', title='One', deliverable=1, steps=['src/X.java'])
+
+        result = run_script(
+            SCRIPT_PATH,
+            'loop-exit-guard',
+            '--plan-id',
+            'guard-cli',
+        )
+
+        # Script exits cleanly; the TOON status field carries the verdict.
+        assert result.returncode == 0
+        assert 'status: continue' in result.stdout
+        assert 'pending_count: 1' in result.stdout

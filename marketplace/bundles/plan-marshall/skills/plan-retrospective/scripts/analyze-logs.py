@@ -403,15 +403,36 @@ def read_dispatch_boundaries(plan_dir: Path) -> dict[str, Any]:
       - rows: list of {timestamp, termination_cause, total_tokens, tool_uses, duration_ms}
             dicts; empty list when present == false.
       - unknown_count: number of rows with termination_cause == "unknown".
+            The recorder no longer accepts ``unknown`` as a valid cause —
+            rows carrying this value are legacy data from before the
+            ``clean_exit_queue_empty`` migration. The retrospective rule
+            fires a ``warning`` on ``unknown_count > 0`` so any post-merge
+            recurrence of the overloaded-fallback defect surfaces in the
+            audit trail.
+      - clean_exit_queue_empty_count: number of rows with termination_cause
+            == "clean_exit_queue_empty" — the canonical value for clean
+            exits where the loop drove to completion AND the pending queue
+            is empty. This counter is the input signal for the new
+            ``info``-severity distribution finding.
     """
     artifact = plan_dir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
     if not artifact.exists():
-        return {'present': False, 'rows': [], 'unknown_count': 0}
+        return {
+            'present': False,
+            'rows': [],
+            'unknown_count': 0,
+            'clean_exit_queue_empty_count': 0,
+        }
 
     try:
         content = artifact.read_text(encoding='utf-8')
     except OSError:
-        return {'present': False, 'rows': [], 'unknown_count': 0}
+        return {
+            'present': False,
+            'rows': [],
+            'unknown_count': 0,
+            'clean_exit_queue_empty_count': 0,
+        }
 
     rows: list[dict[str, Any]] = []
     for line in content.splitlines():
@@ -434,7 +455,15 @@ def read_dispatch_boundaries(plan_dir: Path) -> dict[str, Any]:
         rows.append(row)
 
     unknown_count = sum(1 for row in rows if row['termination_cause'] == 'unknown')
-    return {'present': True, 'rows': rows, 'unknown_count': unknown_count}
+    clean_exit_queue_empty_count = sum(
+        1 for row in rows if row['termination_cause'] == 'clean_exit_queue_empty'
+    )
+    return {
+        'present': True,
+        'rows': rows,
+        'unknown_count': unknown_count,
+        'clean_exit_queue_empty_count': clean_exit_queue_empty_count,
+    }
 
 
 def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
