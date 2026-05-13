@@ -58,7 +58,7 @@ Each `Task:` dispatch carries a fixed overhead (skill-load preamble, Worktree He
 
 * **Script-over-dispatch**: deterministic work (regex matches, structural checks, build invocations) lives in a script; the dispatch is reserved for LLM judgement.
 * **Bundle-shared-context**: a multi-step LLM workflow runs inside ONE dispatch envelope rather than N sequential dispatches.
-* **Per-iteration only when parallel-or-different-models**: spinning up N parallel dispatches is justified when each subagent runs independently — the sole such role in the marketplace is `cross.manage-architecture-enrich-module`.
+* **Per-iteration only when parallel-or-different-models**: spinning up N parallel dispatches is justified when each subagent runs independently — the sole such case in the marketplace is the `enrich-module` workflow dispatched under `--phase phase-6` from `architecture-refresh` Tier-1.
 
 == Adapter System
 

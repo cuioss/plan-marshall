@@ -1,6 +1,6 @@
 # Dispatch Walkthrough — Worked Examples
 
-Concrete end-to-end traces of `execution-context-{level}` dispatches at three representative call sites: a single-workflow phase entry, a finalize step that sub-dispatches `cross.triage` by reference, and a per-iteration parallel fan-out. For the dispatch contract itself (prompt-body fields, role-key resolution, mandatory rules), see [`agents.md`](agents.md). For the heuristics that decide *whether* a step should dispatch, see [`../../extension-api/standards/dispatch-granularity.md`](../../extension-api/standards/dispatch-granularity.md). For the holistic visual call graph covering every dispatch path (not just these three exemplars), see [`call-graph.md`](call-graph.md).
+Concrete end-to-end traces of `execution-context-{level}` dispatches at three representative call sites: a single-workflow phase entry, a finalize step that sub-dispatches `verification-feedback` (producer=pr-comment) by reference, and a per-iteration parallel fan-out. For the dispatch contract itself (prompt-body fields, role-key resolution, mandatory rules), see [`agents.md`](agents.md). For the heuristics that decide *whether* a step should dispatch, see [`../../extension-api/standards/dispatch-granularity.md`](../../extension-api/standards/dispatch-granularity.md). For the holistic visual call graph covering every dispatch path (not just these three exemplars), see [`call-graph.md`](call-graph.md).
 
 ## Generic eight-step sequence
 
@@ -107,9 +107,9 @@ One dispatch, ~210 s wall-clock, the entire confidence loop runs inside one enve
 
 ---
 
-## Example B — phase-6 automated-review with `cross.triage` (sub-dispatch by reference)
+## Example B — phase-6 automated-review with `verification-feedback` (sub-dispatch by reference)
 
-The most complex case. The manifest step `automated-review` runs **mostly inline as scripts** (producer fetch, finding enumeration) and **dispatches `cross.triage` once** when there are findings to triage. Findings live in the per-plan findings store; the subagent queries them as its first workflow step — they are NEVER embedded in the prompt body.
+The most complex case. The manifest step `automated-review` runs **mostly inline as scripts** (producer fetch, finding enumeration) and **dispatches `verification-feedback` once** with `producer=pr-comment` when there are findings to triage. Findings live in the per-plan findings store; the subagent queries them as its first workflow step — they are NEVER embedded in the prompt body.
 
 ### Setup
 - `{plan_id}` = `feature-jwt-auth`
@@ -139,13 +139,13 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 If pending count is 0 → skip the dispatch, mark step done. If non-zero → proceed to dispatch.
 
-### Orchestrator: dispatch `cross.triage` by reference
+### Orchestrator: dispatch `verification-feedback` by reference
 
 **Steps 2–3 (resolve level):**
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role cross.triage
+  models resolve-target --phase phase-6 --role verification-feedback
 ```
 
 Returns `target: execution-context-high`.
@@ -153,13 +153,14 @@ Returns `target: execution-context-high`.
 **Step 4 (prompt body — no findings list inline):**
 
 ```
-name: automated-review-triage
+name: verification-feedback
 plan_id: feature-jwt-auth
 skills[1]:
 - plan-marshall:manage-findings
-workflow: plan-marshall:plan-marshall/workflow/triage.md
-finding_type: pr-comment
+workflow: plan-marshall:plan-marshall/workflow/verification-feedback.md
+producer: pr-comment
 pr_number: 142
+caller_phase: phase-6
 WORKTREE: .plan/local/worktrees/feature-jwt-auth
 ```
 
@@ -193,7 +194,7 @@ WORKTREE: .plan/local/worktrees/feature-jwt-auth
 ```toon
 status: loop_back
 display_detail: 6 comments triaged, 2 fix tasks created
-finding_type: pr-comment
+producer: pr-comment
 findings_processed: 6
 findings_resolved: 6
 fix_tasks_created: 2
@@ -241,7 +242,7 @@ If `affected_modules` is empty → Tier-1 is skipped; the step marks done with `
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role cross.manage-architecture-enrich-module
+  models resolve-target --phase phase-6
 ```
 
 Returns `target: execution-context-medium`.

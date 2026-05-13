@@ -4,7 +4,7 @@
 
 ## Overview
 
-The variant emission system ([`ext-point-dynamic-level-executor`](../../extension-api/standards/ext-point-dynamic-level-executor.md)) uses a fixed six-tier ordinal scale to select model + effort combinations per role. Authors configure roles by level keyword (e.g., `models.roles.cross.q-gate-validation = "high"`); the build target translates levels into concrete `(model, effort)` primitives via the table below.
+The variant emission system ([`ext-point-dynamic-level-executor`](../../extension-api/standards/ext-point-dynamic-level-executor.md)) uses a fixed six-tier ordinal scale to select model + effort combinations per role. Authors configure roles by level keyword (e.g., `models.roles.phase-3.research = "max"`); the build target translates levels into concrete `(model, effort)` primitives via the table below.
 
 The level palette is intentionally small and ordinal — `low → medium → high → xhigh → xxhigh → max` represents increasing capability and cost. The `inherit` sentinel is the only non-ordinal value; it instructs the dispatch site to use the canonical no-suffix variant (which inherits the parent session's model).
 

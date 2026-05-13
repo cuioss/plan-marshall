@@ -151,20 +151,21 @@ target/claude/plan-marshall/agents/
 Every dispatch site computes the target via the role resolver and dispatches the matching `execution-context` variant with the 5-field prompt body (`name`, `plan_id`, `skills[]`, `workflow`, `WORKTREE`):
 
 ```bash
-# Resolve the dispatch target for the cross.triage role
+# Resolve the dispatch target for the verification-feedback workflow under phase-6
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role cross.triage)
+  models resolve-target --phase phase-6 --role verification-feedback)
 
 # Dispatch
 Task: plan-marshall:{target}
   prompt: |
-    name: cross.triage
+    name: verification-feedback
     plan_id: {plan_id}
     skills[N]:
     - <workflow-required skills>
-    workflow: plan-marshall:plan-marshall/workflow/triage.md
+    workflow: plan-marshall:plan-marshall/workflow/verification-feedback.md
     WORKTREE: {worktree_path}
-    finding_type: pr-comment
+    producer: pr-comment
+    caller_phase: phase-6
 ```
 
 The `resolve-target` subcommand returns `execution-context` when the level is `inherit`/empty, and `execution-context-{level}` otherwise. The dispatched variant runs the caller-specified `workflow` doc against the resolved `(model, effort)` primitive baked into the variant's frontmatter.

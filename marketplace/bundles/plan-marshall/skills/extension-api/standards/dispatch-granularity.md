@@ -78,7 +78,7 @@ For loops over N items (per-deliverable, per-module, per-aspect, per-finding), t
 
 Per-iteration dispatch in a sequential loop is the **worst** shape: linear envelope cost × N with no parallelism payoff.
 
-The only per-iteration parallel case in the post-refactor scope is `cross.manage-architecture-enrich-module` (one dispatch per affected module, all parallel — see [`ref-workflow-architecture/standards/dispatch-walkthrough.md`](../../ref-workflow-architecture/standards/dispatch-walkthrough.md) for the worked trace). Everything else either dispatches once with internal iteration, or stays inline as a script.
+The only per-iteration parallel case in the post-refactor scope is `enrich-module` (one dispatch per affected module under `--phase phase-6`, all parallel — see [`ref-workflow-architecture/standards/dispatch-walkthrough.md`](../../ref-workflow-architecture/standards/dispatch-walkthrough.md) for the worked trace). Everything else either dispatches once with internal iteration, or stays inline as a script.
 
 ## 5. Find the LLM core, not the wrapping step
 
@@ -88,22 +88,24 @@ Concrete decomposition for finalize dispatches:
 
 | Manifest step | Orchestration (stays inline in the dispatcher) | LLM-judgement core (the actual dispatch) |
 |----------------|------------------------------------------------|------------------------------------------|
-| `automated-review` | Read CI completion signal from `manage-status`; `ci pr wait-for-comments`; `github_pr comments-stage`; `manage-findings query` enumerate pending; loop-back handling; `mark-step-done`. **All scripts.** | **`cross.triage`** — for each pending `pr-comment` finding: detect domain, resolve `ext-triage-{domain}`, load it, decide FIX/SUPPRESS/ACCEPT/AskUserQuestion. Iterated inside one dispatch. |
-| `sonar-roundtrip` | `sonar fetch-and-store`; `manage-findings query`; `mark-step-done`. **All scripts.** | **`cross.triage`** — same as above but with `sonar-issue` findings using `severity.md` + `suppression.md`. Iterated inside one dispatch. |
-| `pre-submission-self-review` | `tools-self-review:self_review` (deterministic candidate-surface script). | **`phase-6.pre-submission-self-review`** — LLM applies five structural-review checks against the surfaced candidates + loaded contract sources. |
-| `create-pr` | Load `tools-integration-ci`; `ci pr prepare-body` (allocate body file path); various `manage-*` reads; `ci pr create` (post). | **`phase-6.create-pr`** — LLM composes the PR body from plan context into the allocated body file. |
-| `lessons-capture` | Load `manage-lessons`; `manage-lessons add` + `set-body` (scripts; LLM-driven inputs). | **`phase-6.lessons-capture`** — LLM analyses the plan's history, decides which lessons are worth recording, composes each body. |
-| `q-gate-validation` | `manage-plan-documents` reads (deliverables / request / solution outline); `manage-architecture` queries; `manage-status` reads; `manage-findings qgate add`; `mark-step-done`. **All scripts.** | **`cross.q-gate-validation`** — LLM validates the deliverable set against request intent + loaded assessment checks. Inside a single envelope. |
+| `automated-review` | Read CI completion signal from `manage-status`; `ci pr wait-for-comments`; `github_pr comments-stage`; `manage-findings query` enumerate pending; loop-back handling; `mark-step-done`. **All scripts.** | **`verification-feedback` (`producer=pr-comment`)** under `--phase phase-6 --role verification-feedback` — for each pending `pr-comment` finding: detect domain, resolve `ext-triage-{domain}`, load it, decide FIX/SUPPRESS/ACCEPT/AskUserQuestion. Iterated inside one dispatch. |
+| `sonar-roundtrip` | `sonar fetch-and-store`; `manage-findings query`; `mark-step-done`. **All scripts.** | **`verification-feedback` (`producer=sonar`)** — same envelope, `sonar-issue` findings using `severity.md` + `suppression.md`. Iterated inside one dispatch. |
+| `pre-submission-self-review` | `tools-self-review:self_review` (deterministic candidate-surface script). | **`--phase phase-6`** (no `--role`; tracks `phase-6.default`) — LLM applies five structural-review checks against the surfaced candidates + loaded contract sources. |
+| `create-pr` | Load `tools-integration-ci`; `ci pr prepare-body` (allocate body file path); various `manage-*` reads; `ci pr create` (post). | **`--phase phase-6`** (no `--role`; tracks `phase-6.default`) — LLM composes the PR body from plan context into the allocated body file. |
+| `lessons-capture` | Load `manage-lessons`; `manage-lessons add` + `set-body` (scripts; LLM-driven inputs). | **`phase-6.post-run-review`** — LLM analyses the plan's history, decides which lessons are worth recording, composes each body. Shares level with retrospective. |
+| `q-gate-validation` | `manage-plan-documents` reads (deliverables / request / solution outline); `manage-architecture` queries; `manage-status` reads; `manage-findings qgate add`; `mark-step-done`. **All scripts.** | **`--phase phase-N`** (no `--role`; tracks the calling phase default) — LLM validates the deliverable set against request intent + loaded assessment checks. Inside a single envelope. |
 
-### 5.1 The shared triage core
+### 5.1 Phase-scoped resolution + producer-mode bundling
 
-The triage core is shared across **five call sites** in both phase-5 and phase-6 — `phase-5-execute` Step 11 (verification-failure), Step 11b (quality-gate-failure), phase-6 `automated-review`, phase-6 `sonar-roundtrip`, and phase-6 `pr-doctor`'s internal loop. That is one logical workflow with one role key (`cross.triage` — multi-phase), invoked from five sites that differ only in *what kind of finding* they triage (`verification-failure`, `quality-gate-failure`, `pr-comment`, `sonar-issue`) and *which producer* fetched them.
+When the same LLM workflow fires from multiple phases (e.g., `q-gate-validation` from phase-2/3/4, or `research` from any phase), the resolver bubbles up from the caller phase's sub-key to that phase's default to `models.default`. The workflow body lives in one doc; each caller passes `--phase phase-N` and the level resolves under whichever phase fired the dispatch. There is no `cross.*` group — the per-phase configuration is the routing mechanism.
 
-This is the **role-key-names-the-LLM-judgement-type principle** made structural: manifest steps may run several scripts and dispatch zero, one, or several LLM cores; the role-key registry lists only the cores.
+When one workflow has multiple producer sources, bundle them under one workflow with `producer` as the runtime axis. `verification-feedback` is the canonical example: five producers (`build-runner` from phase-5; `sonar` / `pr-comment` / `plugin-doctor` / `pr-state` from phase-6) share the triage core but differ only in Step 1 (the producer-side data fetch). One workflow doc, one role-key sub-key, five runtime modes.
+
+This is the **role-key-names-the-LLM-judgement-type principle** made structural: manifest steps may run several scripts and dispatch zero, one, or several LLM cores; the role-key registry lists only the cores, scoped to the phase that invokes them.
 
 ### 5.2 Smart grouping inside one dispatch
 
-Inside one `cross.triage` dispatch envelope, the legacy "process findings sequentially — never batch the per-finding decision through a single LLM call" rule is relaxed to a **smart-grouping** shape. The dispatch input carries the `finding_type` only (not the findings content); the subagent **queries the per-plan findings store** as its first workflow step.
+Inside one `verification-feedback` dispatch envelope, the legacy "process findings sequentially — never batch the per-finding decision through a single LLM call" rule is relaxed to a **smart-grouping** shape. The dispatch input carries `producer` only (not the findings content); the subagent **queries the per-plan findings store** as its first workflow step.
 
 The algorithm pre-groups findings by `(domain, rule_id)`, runs one batched LLM decision per group, and acts on each finding sequentially between groups for cross-group feedback. Findings with no `rule_id` form single-finding groups; per-finding `AskUserQuestion` UX is preserved inside batched decisions; overflow / timeout captures unprocessed groups as a `triage-overflow` finding and loops back.
 
@@ -123,7 +125,7 @@ The wrong shape — per-iteration sequential dispatch into separate envelopes �
 ## Cross-references
 
 - The execution-context dispatch contract — [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md)
-- Worked dispatch traces (phase-2 entry, finalize automated-review with `cross.triage`, architecture-refresh Tier-1 fan-out) — [`ref-workflow-architecture/standards/dispatch-walkthrough.md`](../../ref-workflow-architecture/standards/dispatch-walkthrough.md)
+- Worked dispatch traces (phase-2 entry, finalize automated-review with `verification-feedback`, architecture-refresh Tier-1 fan-out) — [`ref-workflow-architecture/standards/dispatch-walkthrough.md`](../../ref-workflow-architecture/standards/dispatch-walkthrough.md)
 - Holistic visual call graph — [`ref-workflow-architecture/standards/call-graph.md`](../../ref-workflow-architecture/standards/call-graph.md)
 - The role-key registry — [`plan-marshall/standards/model-roles.md`](../../plan-marshall/standards/model-roles.md)
 - The triage smart-grouping algorithm in full — [`plan-marshall:plan-marshall/workflow/triage.md`](../../plan-marshall/workflow/triage.md)
@@ -133,6 +135,6 @@ The wrong shape — per-iteration sequential dispatch into separate envelopes �
   - [`phase-3-outline/SKILL.md`](../../phase-3-outline/SKILL.md) § Dispatched workflows vs inline steps — per-deliverable Complex Track loop runs inside one envelope.
   - [`phase-4-plan/SKILL.md`](../../phase-4-plan/SKILL.md) § Dispatched workflows vs inline steps — Steps 5+6+7 task-creation loop runs inside one envelope.
   - [`plan-retrospective/SKILL.md`](../../plan-retrospective/SKILL.md) § Dispatch shape — 8 aspects iterate inside one envelope.
-  - [`workflow-pr-doctor/SKILL.md`](../../workflow-pr-doctor/SKILL.md) § Dispatch shape — per-finding loop iterates inside one envelope; `cross.triage` sub-dispatch is the documented exception when iteration crosses ~10 findings.
+  - [`workflow-pr-doctor/SKILL.md`](../../workflow-pr-doctor/SKILL.md) — thin redirect to `verification-feedback.md` (`producer=pr-state`); per-finding loop iterates inside one envelope. A sub-dispatch of `verification-feedback` is the documented exception when iteration crosses the wrapper budget (see verification-feedback.md § Sub-dispatch from inside this envelope).
   - [`pm-plugin-development:plugin-doctor/SKILL.md`](../../../../pm-plugin-development/skills/plugin-doctor/SKILL.md) § Dispatch shape — per-rule analyses run inside one envelope; `scope` selects the rule subset.
-  - [`plan-marshall:plan-marshall/workflow/enrich-module.md`](../../plan-marshall/workflow/enrich-module.md) — the documented per-iteration-parallel exception (`cross.manage-architecture-enrich-module`, one envelope per affected module, all parallel).
+  - [`plan-marshall:plan-marshall/workflow/enrich-module.md`](../../plan-marshall/workflow/enrich-module.md) — the documented per-iteration-parallel exception (`enrich-module` under `--phase phase-6`, one envelope per affected module, all parallel).

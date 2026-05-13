@@ -4,7 +4,7 @@
 
 Overview and entry-point map for the per-role model variant-emission system. The canonical specifications live next to the code they govern; this document is a navigational summary that points there.
 
-Authors configure `models.roles.<key>` (hierarchical kebab-case keys like `cross.research`, `phase-6.create-pr`) in `.plan/marshal.json`. The Claude target emits six `execution-context[-{level}].md` agent variants for the sole role-eligible agent. Dispatch sites resolve the target via `manage-config models resolve-target --role <key>` and call the matching variant by name. End users get the right model per role at dispatch time without any user-side build step or Claude Code restart.
+Authors configure `models.roles.<phase>[.<subkey>]` (hierarchical kebab-case keys like `phase-3.research`, `phase-6.verification-feedback`) in `.plan/marshal.json`. The Claude target emits six `execution-context[-{level}].md` agent variants for the sole role-eligible agent. Dispatch sites resolve the target via `manage-config models resolve-target --phase <phase> [--role <subkey>]` and call the matching variant by name. End users get the right model per role at dispatch time without any user-side build step or Claude Code restart.
 
 == Where things live
 
@@ -34,7 +34,7 @@ Authors configure `models.roles.<key>` (hierarchical kebab-case keys like `cross
 
 | Architecture (role registry)
 | link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-roles.md[`plan-marshall/standards/model-roles.md`]
-| Hierarchical 15-key role registry (7 groups: `phase-1` through `phase-6`, `cross`). Three accepted lookup forms (`--role phase-1`, `--role phase-6.create-pr`, `--phase phase-6 --role create-pr`). Polymorphic-value resolver rules. Lists every workflow doc each role key drives.
+| Hierarchical phase-scoped role registry (6 groups: `phase-1` through `phase-6`; every group polymorphic with optional `default`, `research`, `verification-feedback`, `post-run-review` sub-keys per phase). Four accepted lookup forms (`--phase phase-N`, `--role phase-N.<subkey>`, `--phase phase-N --role <subkey>`, `--default`). Polymorphic-value resolver rules with bubbling fallback. Lists every workflow doc each role key drives, plus the retired-key remediation table.
 
 | Build system
 | link:refactor/02-build-system/plan.md[`doc/refactor/02-build-system/plan.md`] § Variant Emission
@@ -69,8 +69,8 @@ doc/refactor/02-build-system/plan.md § Variant Emission   (build view)
 
 == Quick reference
 
-* **Configure a role** — set `plan.models.roles.<group>.<key>` in `.plan/marshal.json` to one of `low | medium | high | xhigh | xxhigh | max | inherit`. See `role-variants.md` for the polymorphic resolution rules.
-* **Resolve a role at dispatch** — `python3 .plan/execute-script.py plan-marshall:manage-config:manage-config models resolve-target --role <key>` returns the canonical or variant name directly (e.g. `execution-context` for `inherit`, `execution-context-high` otherwise). See `model-roles.md`.
+* **Configure a role** — set `plan.models.roles.<phase>[.<subkey>]` in `.plan/marshal.json` to one of `low | medium | high | xhigh | xxhigh | max | inherit` (a string value at the phase applies that level to every workflow under it; an object value sets per-sub-key overrides plus an optional `default` slot). See `role-variants.md` for the bubbling resolution rules.
+* **Resolve a role at dispatch** — `python3 .plan/execute-script.py plan-marshall:manage-config:manage-config models resolve-target --phase <phase> [--role <subkey>]` returns the canonical or variant name directly (e.g. `execution-context` for `inherit`, `execution-context-high` otherwise). See `model-roles.md`.
 * **Add a new workflow doc** — place it under `{bundle}:{skill}/workflow/{file}.md` (single-phase consumer) or `plan-marshall/skills/plan-marshall/workflow/{file}.md` (multi-phase / cross-cutting), declare `implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow` in frontmatter, and document the Output contract (`status` + `display_detail`).
 * **Inspect emitted variants** — generate the Claude target output (`python3 marketplace/targets/generate.py --target claude --output target/claude`) and look under `target/claude/plan-marshall/agents/execution-context[-{level}].md`. The canonical no-suffix file is the `inherit` target.
 
