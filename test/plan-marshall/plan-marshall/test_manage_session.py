@@ -290,3 +290,84 @@ class TestCliPlumbing:
             env={'HOME': str(tmp_path), 'PATH': '/usr/bin:/bin'},
         )
         assert result.returncode != 0
+
+
+class TestSubagentTranscripts:
+    """Direct-invocation tests for the `subagent-transcripts` resolver."""
+
+    @staticmethod
+    def _seed_subagent_dir(home: Path, cwd: str, parent_session_id: str, filenames: list[str]) -> Path:
+        slug = cwd.replace('/', '-')
+        sub_dir = home / '.claude' / 'projects' / slug / parent_session_id / 'subagents'
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        for name in filenames:
+            (sub_dir / name).write_text('{}\n', encoding='utf-8')
+        return sub_dir
+
+    def test_directory_with_two_agent_files_returns_both_paths(self, tmp_path, monkeypatch, capsys):
+        parent_sid = 'parent-session-aaa-111'
+        repo_root = str(tmp_path / 'repo')
+        (tmp_path / 'repo').mkdir()
+        sub_dir = self._seed_subagent_dir(
+            tmp_path,
+            repo_root,
+            parent_sid,
+            ['agent-001.jsonl', 'agent-002.jsonl'],
+        )
+
+        monkeypatch.setattr(manage_session, '_resolve_cwd', lambda: repo_root)
+        monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path))
+
+        rc = manage_session.cmd_subagent_transcripts(mock.Mock(parent_session_id=parent_sid))
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert 'status: success' in out
+        assert str(sub_dir / 'agent-001.jsonl') in out
+        assert str(sub_dir / 'agent-002.jsonl') in out
+
+    def test_directory_missing_returns_empty_list_success(self, tmp_path, monkeypatch, capsys):
+        parent_sid = 'parent-session-bbb-222'
+        repo_root = str(tmp_path / 'repo')
+        (tmp_path / 'repo').mkdir()
+        # No subagent directory seeded.
+
+        monkeypatch.setattr(manage_session, '_resolve_cwd', lambda: repo_root)
+        monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path))
+
+        rc = manage_session.cmd_subagent_transcripts(mock.Mock(parent_session_id=parent_sid))
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert 'status: success' in out
+        # Empty list — no jsonl paths emitted.
+        assert '.jsonl' not in out
+
+    def test_invalid_parent_session_id_rejected(self, tmp_path, monkeypatch, capsys):
+        repo_root = str(tmp_path / 'repo')
+        (tmp_path / 'repo').mkdir()
+        monkeypatch.setattr(manage_session, '_resolve_cwd', lambda: repo_root)
+        monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path))
+
+        for bad in ('../escape', 'wild*card', 'has/slash', ''):
+            rc = manage_session.cmd_subagent_transcripts(mock.Mock(parent_session_id=bad))
+            out = capsys.readouterr().out
+            assert rc == 0
+            assert 'status: error' in out
+            assert 'invalid_parent_session_id' in out
+
+    def test_path_slug_matches_transcript_path_behaviour(self, tmp_path, monkeypatch):
+        """resolve_subagent_transcripts uses the SAME cwd-slug as cmd_transcript_path."""
+        parent_sid = 'parent-session-ccc-333'
+        repo_root = str(tmp_path / 'cuirepo')
+        (tmp_path / 'cuirepo').mkdir()
+        sub_dir = self._seed_subagent_dir(
+            tmp_path, repo_root, parent_sid, ['agent-a.jsonl']
+        )
+
+        monkeypatch.setattr(manage_session, '_resolve_cwd', lambda: repo_root)
+        monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path))
+
+        paths = manage_session.resolve_subagent_transcripts(parent_sid)
+        assert paths == [sub_dir / 'agent-a.jsonl']
+        # Independently derive the expected slug via the same helper.
+        expected_slug = manage_session._cwd_to_slug(repo_root)
+        assert expected_slug in str(paths[0])

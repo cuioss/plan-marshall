@@ -20,6 +20,7 @@ from manage_metrics import (  # type: ignore[import-not-found]
     cmd_generate,
     cmd_print_phase_breakdown,
     cmd_start_phase,
+    write_metrics,
 )
 
 from conftest import PlanContext, get_script_path, run_script
@@ -166,3 +167,138 @@ class TestCliPlumbing:
             payload = parse_toon(result.stdout)
             assert payload['status'] == 'error'
             assert payload['error'] == 'metrics_md_not_found'
+
+
+def _seed_phases(plan_id: str, phases: dict) -> None:
+    """Write a metrics.toon file with the given phases dict, bypassing start/end."""
+    write_metrics(plan_id, {'phases': phases})
+
+
+def _render_breakdown(plan_id: str) -> list[str]:
+    """Call cmd_generate and return the Phase Breakdown table lines from metrics.md.
+
+    Returns the list of lines starting with the header row and ending with the
+    Total row (whitespace stripped).
+    """
+    result = cmd_generate(_ns_generate(plan_id))
+    assert result['status'] == 'success', result
+    from file_ops import get_plan_dir  # type: ignore[import-not-found]
+
+    md_path = get_plan_dir(plan_id) / 'metrics.md'
+    content = md_path.read_text(encoding='utf-8')
+    section = _extract_phase_breakdown_section(content)
+    assert section is not None
+    # Strip down to table rows.
+    table_lines = [ln for ln in section.splitlines() if ln.startswith('|')]
+    return table_lines
+
+
+class TestPhaseBreakdownRenderingRule:
+    """Tests for the symmetric per-cell + Total rendering rule (D1 / Tier 3+4b)."""
+
+    def test_all_cells_dash_total_dash(self):
+        """All per-phase cells '-' → every Total cell is '-' (never '0')."""
+        with PlanContext(plan_id='render-rule-01'):
+            _seed_phases(
+                'render-rule-01',
+                {
+                    '1-init': {},  # No numeric fields.
+                    '2-refine': {},
+                },
+            )
+            lines = _render_breakdown('render-rule-01')
+            total_line = next(ln for ln in lines if '**Total**' in ln)
+            # Every numeric cell on the Total row is '-' (no '0', no '0s').
+            cells = [c.strip() for c in total_line.split('|') if c.strip()]
+            # cells = ['**Total**', '**-**', '**-**', '**-**', '**-**', '**-**']
+            assert cells[0] == '**Total**'
+            for numeric_cell in cells[1:]:
+                assert numeric_cell == '**-**', f'expected dash, got {numeric_cell!r}'
+
+    def test_subset_present_total_marker(self):
+        """Subset present → Total cell carries the (n=k/N) marker."""
+        with PlanContext(plan_id='render-rule-02'):
+            _seed_phases(
+                'render-rule-02',
+                {
+                    '1-init': {'total_tokens': 1000},
+                    '2-refine': {},
+                    '3-outline': {'total_tokens': 2000},
+                },
+            )
+            lines = _render_breakdown('render-rule-02')
+            total_line = next(ln for ln in lines if '**Total**' in ln)
+            # Tokens subset has 2/3 phases contributing.
+            assert '3,000 (n=2/3)' in total_line, total_line
+            # Other numeric columns stay '-'.
+            cells = [c.strip() for c in total_line.split('|') if c.strip()]
+            # Duration cell.
+            assert cells[1] == '**-**'
+
+    def test_all_cells_present_plain_sum(self):
+        """All per-phase cells present → Total renders plain sum (no marker)."""
+        with PlanContext(plan_id='render-rule-03'):
+            _seed_phases(
+                'render-rule-03',
+                {
+                    '1-init': {'total_tokens': 1000, 'input_tokens': 500, 'output_tokens': 50},
+                    '2-refine': {'total_tokens': 2000, 'input_tokens': 1500, 'output_tokens': 75},
+                },
+            )
+            lines = _render_breakdown('render-rule-03')
+            total_line = next(ln for ln in lines if '**Total**' in ln)
+            # 2 contributors out of 2 breakdown rows → plain sum, no marker.
+            assert '3,000' in total_line
+            assert '2,000' in total_line  # input total
+            assert '125' in total_line  # output total
+            assert '(n=' not in total_line, total_line
+
+    def test_duration_agent_fallback_per_cell(self):
+        """1-init has only agent_duration_seconds → cell renders '{value}s (agent)'."""
+        with PlanContext(plan_id='render-rule-04'):
+            _seed_phases(
+                'render-rule-04',
+                {
+                    '1-init': {'agent_duration_seconds': 179.8},
+                },
+            )
+            lines = _render_breakdown('render-rule-04')
+            init_line = next(ln for ln in lines if '1-init' in ln)
+            assert '179.8s (agent)' in init_line, init_line
+
+    def test_duration_wall_clock_preferred_over_agent_fallback(self):
+        """1-init has duration_seconds → renders wall-clock (agent fallback NOT triggered)."""
+        with PlanContext(plan_id='render-rule-05'):
+            _seed_phases(
+                'render-rule-05',
+                {
+                    '1-init': {
+                        'duration_seconds': 42.0,
+                        'agent_duration_seconds': 179.8,
+                    },
+                },
+            )
+            lines = _render_breakdown('render-rule-05')
+            init_line = next(ln for ln in lines if '1-init' in ln)
+            # Wall-clock formatting is '42.0s', no '(agent)' marker on this cell.
+            assert '42.0s' in init_line, init_line
+            assert '(agent)' not in init_line, init_line
+
+    def test_duration_total_marker_with_agent_fallback_contribution(self):
+        """Total Duration respects the partial-Total marker when 1-init contributes an agent fallback."""
+        with PlanContext(plan_id='render-rule-06'):
+            _seed_phases(
+                'render-rule-06',
+                {
+                    '1-init': {'agent_duration_seconds': 179.8},
+                    '2-refine': {'duration_seconds': 60.0},
+                    '3-outline': {},  # No duration of any kind.
+                },
+            )
+            lines = _render_breakdown('render-rule-06')
+            total_line = next(ln for ln in lines if '**Total**' in ln)
+            # Two contributors out of three breakdown rows → marker '(n=2/3)'.
+            assert '(n=2/3)' in total_line, total_line
+            # 1-init cell renders agent fallback.
+            init_line = next(ln for ln in lines if '1-init' in ln)
+            assert '179.8s (agent)' in init_line, init_line
