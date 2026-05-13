@@ -53,11 +53,6 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake veri
   --plan-id {plan_id} --phase {prev_phase} --strict
 ```
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:plan-marshall) Dispatching execution-context for phase-3-outline"
-```
-
 Compute the dispatch target via the role resolver and resolve the active worktree path so the Worktree Header can be populated explicitly (when `metadata.use_worktree==false`, `get-worktree-path` returns the main checkout, so the same call covers both flows):
 
 ```bash
@@ -66,6 +61,14 @@ target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-conf
 
 worktree_path=$(python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
   get-worktree-path --plan-id {plan_id})
+```
+
+Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-3-outline workflow=plan-marshall:phase-3-outline/SKILL.md plan_id={plan_id}"
 ```
 
 Dispatch:
@@ -254,6 +257,14 @@ Compute the dispatch target via the role resolver:
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   effort resolve-target --role phase-4-plan)
+```
+
+Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-4-plan workflow=plan-marshall:phase-4-plan/SKILL.md plan_id={plan_id}"
 ```
 
 Dispatch:

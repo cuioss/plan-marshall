@@ -34,9 +34,9 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 Skill: plan-marshall:dev-general-practices
 ```
 
-## Dispatch shape: 8 aspects iterate inside one envelope
+## Dispatch shape: 9 aspects iterate inside one envelope
 
-This workflow dispatches under `--phase phase-6-finalize --role post-run-review` as **one** `execution-context-{level}` envelope. The `post-run-review` sub-key bundles retrospective with lessons-capture — both workflows look back at the full plan history and ride the same level. The 8 LLM analytical aspects (metrics, decision/work logs, references vs deliverables, deliverable vs lesson alignment, scope-deviation footprint, behavioural observations, chat-history aspect when `--session-id` is present, lesson-quality audit) iterate **in-context inside that single envelope** — the orchestrator never spawns N × envelope per aspect. Bundling matches granularity Heuristic 2 (steps share context): every aspect reads the same plan artefacts, runs the same skill loads, and contributes to the same final retrospective document. Per-aspect dispatch would pay 8× envelope cost with no parallelism payoff. See [`../extension-api/standards/dispatch-granularity.md`](../extension-api/standards/dispatch-granularity.md) § 3.
+This workflow dispatches under `--phase phase-6-finalize --role post-run-review` as **one** `execution-context-{level}` envelope. The `post-run-review` sub-key bundles retrospective with lessons-capture — both workflows look back at the full plan history and ride the same level. The 9 LLM analytical aspects (metrics, decision/work logs, references vs deliverables, deliverable vs lesson alignment, scope-deviation footprint, behavioural observations, execution-context dispatch audit, chat-history aspect when `--session-id` is present, lesson-quality audit) iterate **in-context inside that single envelope** — the orchestrator never spawns N × envelope per aspect. Bundling matches granularity Heuristic 2 (steps share context): every aspect reads the same plan artefacts, runs the same skill loads, and contributes to the same final retrospective document. Per-aspect dispatch would pay 9× envelope cost with no parallelism payoff. See [`../extension-api/standards/dispatch-granularity.md`](../extension-api/standards/dispatch-granularity.md) § 3.
 
 ## Input Contract
 
@@ -114,13 +114,16 @@ For each aspect below, produce a TOON fragment on disk at `work/fragment-{aspect
 | 8 | Script failure analysis | (LLM on work/script logs) | `references/script-failure-analysis.md` |
 | 9 | Permission prompt analysis | (LLM on description or session) | `references/permission-prompt-analysis.md` |
 | 10 | Direct gh/glab usage | `direct-gh-glab-usage` | `references/direct-gh-glab-usage.md` |
-| 11 | Manifest decisions (conditional) | `check-manifest-consistency` | `standards/manifest-crosscheck.md` |
-| 12 | Chat history (conditional) | (LLM on session transcript) | `references/chat-history-analysis.md` |
-| 13 | Lessons proposal | (LLM on compiled fragments) | `references/lessons-proposal.md` |
+| 11 | Execution-context dispatch audit | (LLM on logs + dispatch decisions) | `standards/execution-context-dispatch-audit.md` |
+| 12 | Manifest decisions (conditional) | `check-manifest-consistency` | `standards/manifest-crosscheck.md` |
+| 13 | Chat history (conditional) | (LLM on session transcript) | `references/chat-history-analysis.md` |
+| 14 | Lessons proposal | (LLM on compiled fragments) | `references/lessons-proposal.md` |
 
-**Aspect 11 (manifest decisions)** is skipped when `execution.toon` is absent. When present, the aspect loads the manifest via `plan-marshall:manage-execution-manifest:manage-execution-manifest read --plan-id {plan-id}` and pairs it with matching `(plan-marshall:phase-4-plan:manifest)` decision-log entries — manifest = WHAT was decided, decision.log = WHY. The cross-check engine is `plan-marshall:plan-retrospective:check-manifest-consistency` which evaluates each manifest assumption against the actual end-of-execute diff and emits one finding per violation. See `standards/manifest-crosscheck.md` for the cross-check matrix.
+The Execution-context dispatch audit (aspect 11) consumes the `[DISPATCH]` work-log lines emitted by every dispatch site per [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) — that standard is the authoritative source for the line shape, and this aspect is its enforcement consumer. Report readers tracing an audit finding back to its evidence land in `dispatch-logging.md` § "Emission Format" for the canonical log-line format.
 
-**Aspect 12** is skipped when `--session-id` is absent.
+**Aspect 12 (manifest decisions)** is skipped when `execution.toon` is absent. When present, the aspect loads the manifest via `plan-marshall:manage-execution-manifest:manage-execution-manifest read --plan-id {plan-id}` and pairs it with matching `(plan-marshall:phase-4-plan:manifest)` decision-log entries — manifest = WHAT was decided, decision.log = WHY. The cross-check engine is `plan-marshall:plan-retrospective:check-manifest-consistency` which evaluates each manifest assumption against the actual end-of-execute diff and emits one finding per violation. See `standards/manifest-crosscheck.md` for the cross-check matrix.
+
+**Aspect 13** is skipped when `--session-id` is absent.
 
 **Per-aspect capture pattern**:
 
@@ -133,14 +136,14 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
   add --plan-id {plan_id} --aspect {name} --fragment-file work/fragment-{aspect}.toon
 ```
 
-**LLM aspects (4-9 and 12)** — load the aspect reference via `Read`, produce the TOON fragment body per the reference's schema, emit it with the `Write` tool to `work/fragment-{aspect}.toon`, then register:
+**LLM aspects (4-9, 11, and 13)** — load the aspect reference via `Read`, produce the TOON fragment body per the reference's schema, emit it with the `Write` tool to `work/fragment-{aspect}.toon`, then register:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
   add --plan-id {plan_id} --aspect {name} --fragment-file work/fragment-{aspect}.toon
 ```
 
-**Aspect 11 (manifest-decisions, conditional)** — when `execution.toon` exists in the plan directory, run the deterministic script pattern with aspect name `manifest-decisions`:
+**Aspect 12 (manifest-decisions, conditional)** — when `execution.toon` exists in the plan directory, run the deterministic script pattern with aspect name `manifest-decisions`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-manifest-consistency \
@@ -151,7 +154,7 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
 
 Skip the aspect entirely when the manifest file is absent.
 
-**Aspect 12 (chat-history, conditional)** — when `--session-id` is present, first resolve the absolute transcript path via the canonical resolver, then follow the LLM pattern above (Write fragment file, then `collect-fragments add`).
+**Aspect 13 (chat-history, conditional)** — when `--session-id` is present, first resolve the absolute transcript path via the canonical resolver, then follow the LLM pattern above (Write fragment file, then `collect-fragments add`).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-marshall:manage_session \

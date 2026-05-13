@@ -15,7 +15,17 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 **Unconditional dispatch when manifested**: Whenever this step appears in the manifest, the dispatcher runs it on every Phase 6 entry. It is NOT gated on PR state, CI status, Sonar gate result, or any earlier step's outcome — reaching Phase 6 is itself the trigger. The composer in `manage-execution-manifest:compose` includes `lessons-capture` for every change-type that produces non-trivial work (the rule-1 early-terminate analysis path is the only documented exclusion).
 
-This step runs as a Task dispatch under the `post-run-review` sub-key (resolved via `manage-config effort resolve-target --phase phase-6-finalize --role post-run-review`) with a 5-minute (300 s) per-agent timeout budget enforced by the SKILL.md Step 3 dispatch loop. The `post-run-review` sub-key bundles lessons-capture with retrospective — both workflows look back at the full plan history and ride the same level. On timeout the dispatcher records `outcome=failed` with `display_detail="timed out after 300s"` and continues — lessons capture is advisory and never blocks the rest of the pipeline.
+This step runs as a Task dispatch under the `post-run-review` sub-key (resolved via `manage-config effort resolve-target --phase phase-6-finalize --role post-run-review`) with a 5-minute (300 s) per-agent timeout budget enforced by the SKILL.md Step 3 dispatch loop. The dispatcher emits the standardized `[DISPATCH]` work-log line at the call site — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) for the canonical emission contract. The `post-run-review` sub-key bundles lessons-capture with retrospective — both workflows look back at the full plan history and ride the same level. On timeout the dispatcher records `outcome=failed` with `display_detail="timed out after 300s"` and continues — lessons capture is advisory and never blocks the rest of the pipeline.
+
+### `[DISPATCH]` log line (emitted by the dispatcher)
+
+The phase-6-finalize SKILL.md dispatcher emits the line below immediately before invoking this workflow:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} level={level} role=post-run-review workflow=plan-marshall:phase-6-finalize/workflow/lessons-capture.md plan_id={plan_id}"
+```
 
 ## Execution
 

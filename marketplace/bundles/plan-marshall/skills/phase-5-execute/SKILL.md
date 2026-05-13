@@ -531,6 +531,14 @@ target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-conf
   effort resolve-target --phase phase-5-execute --role verification-feedback)
 ```
 
+Emit the standardized post-resolve dispatch log line — see [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[DISPATCH] (plan-marshall:phase-5-execute) target={target} level={level} role=verification-feedback workflow=plan-marshall:plan-marshall/workflow/verification-feedback.md plan_id={plan_id}"
+```
+
 ```
 Task: plan-marshall:{target}
   prompt: |

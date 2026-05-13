@@ -169,6 +169,14 @@ if [ -n "$level" ] && [ "$level" != "inherit" ]; then
 fi
 ```
 
+Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[DISPATCH] (plan-marshall:phase-3-outline) target={target} level={level} role=default workflow=plan-marshall:phase-3-outline/workflow/detect-change-type.md plan_id={plan_id}"
+```
+
 Dispatch:
 
 ```
@@ -735,6 +743,14 @@ Compute the dispatch target via the role resolver:
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   effort resolve-target --phase phase-3-outline)
+```
+
+Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[DISPATCH] (plan-marshall:phase-3-outline) target={target} level={level} role=phase-3-outline workflow=plan-marshall:plan-marshall/workflow/q-gate-validation.md plan_id={plan_id}"
 ```
 
 Dispatch:

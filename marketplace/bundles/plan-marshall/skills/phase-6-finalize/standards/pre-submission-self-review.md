@@ -43,6 +43,14 @@ target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-conf
   effort resolve-target --phase phase-6-finalize)
 ```
 
+Emit the standardized post-resolve dispatch log line — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} level={level} role=default workflow=plan-marshall:phase-6-finalize/workflow/pre-submission-self-review.md plan_id={plan_id}"
+```
+
 Dispatch the LLM workflow with the candidate envelope:
 
 ```
