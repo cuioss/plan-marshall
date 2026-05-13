@@ -173,6 +173,9 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │  After the envelope returns:                                                  │
 │                                                                               │
 │    Step 11 ╵┄═►  [cross.q-gate-validation]                                    │
+│             (bypassed — no dispatch — when scope_estimate=surgical AND        │
+│              change_type ∈ {bug_fix, tech_debt, verification} AND             │
+│              deliverable_count=1; see phase-3-outline/SKILL.md Step 11)       │
 │                                                                               │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -203,9 +206,9 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │    /manage-tasks qgate-mechanical-checks/        (script — Step 9)            │
 │      coverage / skill-resolution / acyclic / files-exist /                    │
 │      keyword-drift / structural-token-drift                                   │
-│      │                                                                        │
-│      │  ambiguous validators                                                  │
-│      ╵┄═►  [cross.q-gate-validation]   (Step 9b — fires only when needed)     │
+│                                                                               │
+│    ══►  [cross.q-gate-validation]   (Step 9b — unconditional;                 │
+│         module-mapping + scope-criterion validators against live ground truth)│
 │                                                                               │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -433,10 +436,10 @@ The granularity heuristics live in `../../extension-api/standards/dispatch-granu
 | phase-2 Step 13.5 Q-Gate (lesson) | `cross.q-gate-validation` | LLM judgement shared with phase-3 and phase-4. |
 | phase-3 Step 4 change-type | Script + LLM fallback | Keyword classifier resolves majority; ambiguous escalates. |
 | phase-3 Complex Track Steps 9c+10+10b | Bundle into `phase-3` | Per-deliverable loop iterates in-context. |
-| phase-3 Step 11 Q-Gate (outline-time) | `cross.q-gate-validation` | Shared core. |
+| phase-3 Step 11 Q-Gate (outline-time) | `cross.q-gate-validation` | Shared core; bypassed when `scope_estimate=surgical` AND `change_type ∈ {bug_fix, tech_debt, verification}` AND `deliverable_count=1`. |
 | phase-4 Steps 5+6+7 task creation | Bundle into `phase-4` | Per-deliverable loop iterates in-context. |
 | phase-4 Step 9 mechanical Q-Gate checks | Script | Pure regex + graph + filesystem. |
-| phase-4 Step 9b LLM Q-Gate | `cross.q-gate-validation` | Shared core (fires only when mechanical script returns ambiguous). |
+| phase-4 Step 9b LLM Q-Gate | `cross.q-gate-validation` | Shared core; unconditional after every successful phase-4-plan invocation (module-mapping + scope-criterion validators reconcile LLM-authored shape against live ground truth). |
 | phase-5 per-task execution | `phase-5` per-task dispatch | One envelope per task; the implementation+testing+build_runner pending keys collapsed into this. |
 | phase-5 Step 9 independent verification | Inline scripts | git diff + grep + exit-code; no LLM. |
 | phase-5 Step 11/11b triage | `cross.triage` | Shared core. |

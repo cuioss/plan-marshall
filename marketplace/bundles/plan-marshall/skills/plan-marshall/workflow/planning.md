@@ -131,14 +131,14 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capt
 2. If true: Stop and display plan summary
 3. If false (default): Continue through 2-refine, 3-outline, and 4-plan phases with the new plan_id
 
-**2-Refine Phase**: Load refine phase skill directly (maintains main context for user interaction)
+**2-Refine Phase**: Dispatch the refine phase under role key `phase-2` (single-workflow phase per [`call-graph.md`](../../ref-workflow-architecture/standards/call-graph.md) § 2.2 and [`dispatch-walkthrough.md`](../../ref-workflow-architecture/standards/dispatch-walkthrough.md) § Example A).
 
 The `phase-boundary` call above already recorded the start of `2-refine` — do
 not call `start-phase 2-refine` again.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:plan-marshall) Loading plan-marshall:phase-2-refine"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:plan-marshall) Dispatching execution-context for phase-2-refine"
 ```
 
 **Phase handshake (verify)**: Before entering 2-refine, verify the captured invariants for the previous phase still match the live state. Stop on `status: drift`.
@@ -148,18 +148,38 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake veri
   --plan-id {plan_id} --phase 1-init --strict
 ```
 
-```
-Skill: plan-marshall:phase-2-refine
-  Arguments: --plan-id {plan_id}
+Compute the dispatch target via the role resolver and resolve the active worktree path so the Worktree Header can be populated explicitly (when `metadata.use_worktree==false`, `get-worktree-path` returns the main checkout, so the same call covers both flows):
+
+```bash
+target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  models resolve-target --role phase-2)
+
+worktree_path=$(python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+  get-worktree-path --plan-id {plan_id})
 ```
 
-The skill runs in main conversation context so `AskUserQuestion` works directly with the user. Do NOT run this as a Task agent — the 12-step workflow requires too many tool calls for a subagent turn budget, and Step 9 (user clarification) needs direct user access.
+Dispatch:
 
-**Metrics**: After refine completes, record the `2-refine → 3-outline` boundary
-in a single fused call (no token args — refine ran in main context):
+```
+Task: plan-marshall:{target}
+  prompt: |
+    name: phase-2-refine
+    plan_id: {plan_id}
+    skills[1]:
+    - plan-marshall:phase-2-refine
+    workflow: plan-marshall:phase-2-refine/SKILL.md
+    WORKTREE: {worktree_path}
+```
+
+The agent returns confidence + track + scope_estimate + qgate_pending_count in its TOON. The 12-step confidence loop (Steps 3b/3c/8/9/10/11/12) iterates *inside* this single envelope; `AskUserQuestion` in Step 11 propagates to the host UI directly from the subagent (no main-context routing required).
+
+**Metrics**: After refine completes, record the `2-refine → 3-outline` boundary in a single fused call (forwarding the aggregated `<usage>` data from every dispatch that fired inside this phase — the `phase-2` envelope itself plus any `cross.q-gate-validation` sub-dispatch at Step 13.5 for lesson-derived plans). Sum `total_tokens`, `tool_uses`, and `duration_ms` across each dispatch's `<usage>` tag:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
-  --plan-id {plan_id} --prev-phase 2-refine --next-phase 3-outline
+  --plan-id {plan_id} --prev-phase 2-refine --next-phase 3-outline \
+  --total-tokens {sum of total_tokens from all agent <usage> tags} \
+  --tool-uses {sum of tool_uses from all agent <usage> tags} \
+  --duration-ms {sum of duration_ms from all agent <usage> tags}
 ```
 
 **Phase handshake**: Capture invariants for the just-completed phase:

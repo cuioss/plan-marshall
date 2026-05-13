@@ -184,14 +184,20 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metada
 
 ### Step 4: Continue Through Phases
 
-Continue through the standard phases:
+Continue through the standard phases — each phase is dispatched under its
+role key per the same contract documented in [`planning.md`](planning.md)
+("Action: init" → 2-Refine Phase) and [`planning-outline.md`](planning-outline.md)
+("Action: outline"). The orchestrator resolves the dispatch target via
+`models resolve-target --role phase-{N}` and dispatches
+`Task: plan-marshall:{target}` with `workflow=plan-marshall:phase-{N}-{name}/SKILL.md`.
 
-1. **2-refine**: Load `Skill: plan-marshall:phase-2-refine` with `plan_id`
-   - Recipe plans get automatic scope selection and confidence=100
-2. **3-outline**: Load `Skill: plan-marshall:phase-3-outline` with `plan_id`
-   - Recipe plans skip change-type detection and Q-Gate, load recipe skill directly
-3. **4-plan**: Load `Skill: plan-marshall:phase-4-plan` with `plan_id`
-   - Standard task creation from deliverables
+1. **2-refine** — role key `phase-2`; workflow `phase-2-refine/SKILL.md`.
+   Recipe plans get automatic scope selection and confidence=100.
+2. **3-outline** — role key `phase-3`; workflow `phase-3-outline/SKILL.md`.
+   Recipe plans skip change-type detection and Q-Gate, and load the recipe
+   skill directly inside the envelope.
+3. **4-plan** — role key `phase-4`; workflow `phase-4-plan/SKILL.md`.
+   Standard task creation from deliverables.
 
 After completing phases 1-4, check `execute_without_asking` config:
 
