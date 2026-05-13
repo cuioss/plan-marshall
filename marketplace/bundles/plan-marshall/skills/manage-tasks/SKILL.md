@@ -75,7 +75,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `add-step` | `--plan-id --task-number --target [--after]` | Add step to task |
 | `remove-step` | `--plan-id --task-number --step` | Remove step from task |
 | `rename-path` | `--plan-id --old-path --new-path` | Record path rename and rewrite step targets |
-| `qgate-mechanical-checks` | `--plan-id [--no-emit]` | Run the six deterministic Q-Gate checks for phase-4-plan Step 9 (coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Pure regex + graph + filesystem; no LLM dispatch. Each failure becomes a Q-Gate finding under `--source qgate` so phase-4-plan's existing aggregate consumes it. Returns `total_failed`, per-check counts, and an `ambiguous` flag the caller uses to decide whether the LLM `cross.q-gate-validation` dispatch still needs to fire. |
+| `qgate-mechanical-checks` | `--plan-id [--no-emit]` | Run the six deterministic Q-Gate checks for phase-4-plan Step 9 (coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Pure regex + graph + filesystem; no LLM dispatch. Each failure becomes a Q-Gate finding under `--source qgate` so phase-4-plan's existing aggregate consumes it. Returns `total_failed`, per-check counts, and an `ambiguous` flag the caller uses to decide whether the LLM q-gate-validation dispatch still needs to fire. |
 
 ### Script-Level `[OUTCOME]` Emission (`finalize-step`)
 
@@ -91,7 +91,7 @@ This emission is **unconditional and lives inside the script boundary** — it
 fires for every task completion regardless of which orchestrator dispatched
 the closing call. The motivating gap (lesson `2026-05-08-14-001`) was that the
 caller-side emission in `phase-5-execute` was lost whenever a per-task
-`phase-5` dispatch was re-fired and the original envelope's working context
+`phase-5-execute` dispatch was re-fired and the original envelope's working context
 was discarded before its `[OUTCOME]` line could be written. Moving the emission into the script
 removes the dependency on the caller's working context.
 
@@ -391,7 +391,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 
 ### With phase-4-plan dispatch
 
-The `phase-4` task-planning dispatch creates tasks during plan refinement using the three-step flow:
+The `phase-4-plan` task-planning dispatch creates tasks during plan refinement using the three-step flow:
 
 ```bash
 # Step 1

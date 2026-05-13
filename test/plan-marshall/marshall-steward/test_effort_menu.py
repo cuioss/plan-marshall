@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # ruff: noqa: I001, E402
-"""Tests for the marshall-steward Models submenu round-trip.
+"""Tests for the marshall-steward Effort submenu round-trip.
 
-The Models submenu is a markdown-driven wizard step that calls
-``manage-config models read --role`` for resolution and writes the
+The Effort submenu is a markdown-driven wizard step that calls
+``manage-config effort read --role`` for resolution and writes the
 ``models`` block of ``marshal.json``. The wizard contract lives in
-``marshall-steward/standards/models-menu.md``; this test suite pins
+``marshall-steward/standards/effort-menu.md``; this test suite pins
 the underlying read/write round-trip behaviour the wizard depends on:
 
 - Setting ``default=medium`` and ``roles.q_gate_validation=high``
@@ -46,26 +46,52 @@ def _load_module(name: str, path: Path):
 
 
 _cmd_models_mod = _load_module(
-    '_cmd_models', _MANAGE_CONFIG_SCRIPTS_DIR / '_cmd_models.py'
+    '_cmd_effort', _MANAGE_CONFIG_SCRIPTS_DIR / '_cmd_effort.py'
 )
-cmd_models = _cmd_models_mod.cmd_models
+cmd_effort = _cmd_models_mod.cmd_effort
 
 
 def _seed_marshal(plan_dir: Path, models: dict | None) -> Path:
-    """Write a minimal marshal.json with optional `models` block."""
+    """Write a minimal marshal.json with optional effort config.
+
+    Accepts the legacy-shape ``{"default": <level>, "roles": {<phase>: ...}}``
+    payload for backwards-compat in test bodies, and translates it to the
+    current storage shape (``plan.effort`` for the plan-wide fallback,
+    ``plan.<phase>.effort`` for per-phase overrides) on disk.
+    """
     plan_dir.mkdir(parents=True, exist_ok=True)
     config: dict = {'plan': {}}
     if models is not None:
-        config['models'] = models
+        default = models.get('default')
+        if default is not None:
+            config['plan']['effort'] = default
+        for phase, value in models.get('roles', {}).items():
+            config['plan'].setdefault(phase, {})['effort'] = value
     marshal_path = plan_dir / 'marshal.json'
     marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
     return marshal_path
 
 
 def _read_models_block(plan_dir: Path) -> dict:
-    return json.loads((plan_dir / 'marshal.json').read_text(encoding='utf-8')).get(
-        'models', {}
-    )
+    """Reconstruct the legacy ``{"default": …, "roles": {…}}`` view from
+    the current per-phase storage so existing test bodies keep asserting
+    the same shape without re-implementing the inverse transform inline.
+    """
+    config = json.loads((plan_dir / 'marshal.json').read_text(encoding='utf-8'))
+    plan_block = config.get('plan', {})
+    result: dict = {}
+    if isinstance(plan_block, dict) and 'effort' in plan_block:
+        result['default'] = plan_block['effort']
+    roles: dict = {}
+    if isinstance(plan_block, dict):
+        for phase, entry in plan_block.items():
+            if phase == 'effort':
+                continue
+            if isinstance(entry, dict) and 'effort' in entry:
+                roles[phase] = entry['effort']
+    if roles:
+        result['roles'] = roles
+    return result
 
 
 # =============================================================================
@@ -74,41 +100,41 @@ def _read_models_block(plan_dir: Path) -> dict:
 
 
 def test_round_trip_default_and_role_persist():
-    """Set default=medium and roles.cross.q-gate-validation=high; resolver returns saved values."""
+    """Set default=medium and roles.phase-6-finalize.verification-feedback=high; resolver returns saved values."""
     with PlanContext() as ctx:
         _seed_marshal(
             ctx.fixture_dir,
             {
                 'default': 'medium',
-                'roles': {'cross': {'q-gate-validation': 'high'}},
+                'roles': {'phase-6-finalize': {'verification-feedback': 'high'}},
             },
         )
 
-        result_role = cmd_models(
-            Namespace(role='cross.q-gate-validation', phase=None, default=False)
+        result_role = cmd_effort(
+            Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False)
         )
-        result_other = cmd_models(
-            Namespace(role='cross.research', phase=None, default=False)
+        result_other = cmd_effort(
+            Namespace(role='phase-3-outline', phase=None, default=False)
         )
 
         assert result_role['status'] == 'success'
         assert result_role['level'] == 'high'
-        assert result_role['source'] == 'models.roles.cross.q-gate-validation'
+        assert result_role['source'] == 'plan.phase-6-finalize.effort.verification-feedback'
 
         assert result_other['status'] == 'success'
         assert result_other['level'] == 'medium'
-        assert result_other['source'] == 'models.default'
+        assert result_other['source'] == 'plan.effort'
 
         # Re-read marshal.json — stored block matches what the wizard would have written.
         block = _read_models_block(ctx.fixture_dir)
         assert block == {
             'default': 'medium',
-            'roles': {'cross': {'q-gate-validation': 'high'}},
+            'roles': {'phase-6-finalize': {'verification-feedback': 'high'}},
         }
 
 
 def test_round_trip_repeated_reads_do_not_mutate():
-    """Multiple `manage-config models read` invocations leave marshal.json byte-identical."""
+    """Multiple `manage-config effort read` invocations leave marshal.json byte-identical."""
     with PlanContext() as ctx:
         marshal_path = _seed_marshal(
             ctx.fixture_dir, {'default': 'low', 'roles': {'research': 'xxhigh'}}
@@ -116,7 +142,7 @@ def test_round_trip_repeated_reads_do_not_mutate():
         before = marshal_path.read_bytes()
 
         for role in ('research', 'q_gate_validation', 'phase_init'):
-            cmd_models(Namespace(role=role))
+            cmd_effort(Namespace(role=role))
 
         after = marshal_path.read_bytes()
         assert before == after, 'wizard reads must not mutate marshal.json'
@@ -128,29 +154,29 @@ def test_round_trip_repeated_reads_do_not_mutate():
 
 
 def test_invalid_level_refused_at_read():
-    """`models.roles.cross.q-gate-validation = 'ultra'` errors out — wizard refuses save."""
+    """`plan.phase-6-finalize.effort.verification-feedback = 'ultra'` errors out — wizard refuses save."""
     with PlanContext() as ctx:
         _seed_marshal(
             ctx.fixture_dir,
-            {'roles': {'cross': {'q-gate-validation': 'ultra'}}},
+            {'roles': {'phase-6-finalize': {'verification-feedback': 'ultra'}}},
         )
 
-        result = cmd_models(
-            Namespace(role='cross.q-gate-validation', phase=None, default=False)
+        result = cmd_effort(
+            Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False)
         )
 
         assert result['status'] == 'error'
-        assert "invalid level 'ultra'" in result['error']
+        assert "invalid effort 'ultra'" in result['error']
         # The error names the source so the wizard can re-prompt with context.
-        assert 'models.roles.cross.q-gate-validation' in result['error']
+        assert 'plan.phase-6-finalize.effort.verification-feedback' in result['error']
 
 
-def test_max_level_resolves_for_research():
-    """`max` is a live level (promoted from reserved-future); resolves cleanly."""
+def test_max_level_resolves_via_top_level_effort():
+    """`max` is a live level (promoted from reserved-future); resolves cleanly via top-level effort."""
     with PlanContext() as ctx:
         _seed_marshal(ctx.fixture_dir, {'default': 'max'})
 
-        result = cmd_models(Namespace(role='cross.research'))
+        result = cmd_effort(Namespace(role='phase-3-outline'))
 
         assert result['status'] == 'success'
         assert result['level'] == 'max'
@@ -164,14 +190,14 @@ def test_max_level_resolves_for_research():
 def test_pending_role_surfaced_not_hidden():
     """Every registered role key validates and resolves — wizard surfaces them in the registry walk."""
     with PlanContext() as ctx:
-        # phase-2 in the new registry corresponds to the legacy 'phase_refine'.
-        _seed_marshal(ctx.fixture_dir, {'roles': {'phase-2': 'medium'}})
+        # phase-2-refine in the new registry corresponds to the legacy 'phase_refine'.
+        _seed_marshal(ctx.fixture_dir, {'roles': {'phase-2-refine': 'medium'}})
 
-        result = cmd_models(Namespace(role='phase-2', phase=None, default=False))
+        result = cmd_effort(Namespace(role='phase-2-refine', phase=None, default=False))
 
         assert result['status'] == 'success'
         assert result['level'] == 'medium'
-        # No "unknown role" warning — phase-2 is a known registered role.
+        # No "unknown role" warning — phase-2-refine is a known registered role.
         assert 'warnings' not in result
 
 
@@ -180,7 +206,7 @@ def test_unknown_role_warns_does_not_block_save():
     with PlanContext() as ctx:
         _seed_marshal(ctx.fixture_dir, {'default': 'high'})
 
-        result = cmd_models(Namespace(role='legacy_renamed_role'))
+        result = cmd_effort(Namespace(role='legacy_renamed_role'))
 
         assert result['status'] == 'success'
         assert result['level'] == 'high'  # falls through to default
@@ -193,21 +219,27 @@ def test_unknown_role_warns_does_not_block_save():
 # =============================================================================
 
 
-def test_clear_models_block_reverts_to_inherit():
-    """Removing the models block restores `inherit` everywhere."""
+def test_clear_effort_config_reverts_to_inherit():
+    """Removing every effort field restores `inherit` everywhere."""
     with PlanContext() as ctx:
         # Step 1: seed a configured block.
         marshal_path = _seed_marshal(
-            ctx.fixture_dir, {'default': 'high', 'roles': {'research': 'xxhigh'}}
+            ctx.fixture_dir, {'default': 'high', 'roles': {'phase-3-outline': 'xxhigh'}}
         )
-        # Step 2: simulate "clear all" by re-writing without the models block.
+        # Step 2: simulate "clear all" by removing `plan.effort` plus every
+        # per-phase effort attribute under `plan.<phase>`.
         cleared = json.loads(marshal_path.read_text(encoding='utf-8'))
-        cleared.pop('models', None)
+        plan_block = cleared.get('plan', {})
+        if isinstance(plan_block, dict):
+            plan_block.pop('effort', None)
+            for phase_entry in plan_block.values():
+                if isinstance(phase_entry, dict):
+                    phase_entry.pop('effort', None)
         marshal_path.write_text(json.dumps(cleared, indent=2), encoding='utf-8')
 
         # Step 3: every resolver call returns inherit / implicit_default.
-        for role in ('research', 'q_gate_validation', 'phase_init'):
-            result = cmd_models(Namespace(role=role))
+        for role in ('phase-2-refine', 'phase-3-outline', 'phase-6-finalize'):
+            result = cmd_effort(Namespace(role=role))
             assert result['status'] == 'success'
             assert result['level'] == 'inherit'
             assert result['source'] == 'implicit_default'

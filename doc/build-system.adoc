@@ -40,7 +40,7 @@ The middle hop (`target/claude/`) is produced by `marketplace/targets/generate.p
 The `marketplace/targets/claude/emitter.py` reader walks each bundle. For an agent declaring `implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor`, the emitter produces six files:
 
 1. The **canonical** no-suffix file (e.g. `execution-context.md`) with `implements:` and `levels:` stripped. Claude Code dispatches this when the resolver returns `inherit`. The dispatched subagent inherits the parent session's model.
-2. Five **variants** (`execution-context-{low|medium|high|xhigh|xxhigh}.md`), each with `model:` and `effort:` baked into the frontmatter from the level → primitive mapping in link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-levels.md[`model-levels.md`].
+2. Five **variants** (`execution-context-{low|medium|high|xhigh|xxhigh}.md`), each with `model:` and `effort:` baked into the frontmatter from the level → primitive mapping in link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md[`effort-levels.md`].
 
 `plugin.json` registers all six entries for the canonical so Claude Code's agent registry sees every variant.
 
@@ -58,7 +58,7 @@ Each `Task:` dispatch carries a fixed overhead (skill-load preamble, Worktree He
 
 * **Script-over-dispatch**: deterministic work (regex matches, structural checks, build invocations) lives in a script; the dispatch is reserved for LLM judgement.
 * **Bundle-shared-context**: a multi-step LLM workflow runs inside ONE dispatch envelope rather than N sequential dispatches.
-* **Per-iteration only when parallel-or-different-models**: spinning up N parallel dispatches is justified when each subagent runs independently — the sole such role in the marketplace is `cross.manage-architecture-enrich-module`.
+* **Per-iteration only when parallel-or-different-models**: spinning up N parallel dispatches is justified when each subagent runs independently — the sole such case in the marketplace is the `enrich-module` workflow dispatched under `--phase phase-6-finalize` from `architecture-refresh` Tier-1.
 
 == Adapter System
 
@@ -73,7 +73,7 @@ The OpenCode adapter produces output conforming to the OpenCode specification; o
 
 == Related
 
-* link:role-variants.adoc[doc/role-variants.adoc] — entry-point map for the per-role model system
+* link:effort-variants.adoc[doc/effort-variants.adoc] — entry-point map for the per-role model system
 * link:../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-dynamic-level-executor.md[`ext-point-dynamic-level-executor.md`] — agent-emission contract
 * link:../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-execution-context-workflow.md[`ext-point-execution-context-workflow.md`] — workflow-doc contract
-* link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-roles.md[`model-roles.md`] — 15-key hierarchical registry
+* link:../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-roles.md[`effort-roles.md`] — 15-key hierarchical registry

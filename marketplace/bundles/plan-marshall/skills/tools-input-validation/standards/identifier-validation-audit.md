@@ -53,7 +53,7 @@ Grouped by sweep wave. Each row records the script under sweep, its bundle, the 
 
 ## Excluded Scripts (47)
 
-The classification certainty `CERTAIN_EXCLUDE` was assigned during phase-3 component discovery. Each script declares no in-scope identifier flag from the canonical scope list (`--plan-id`, `--lesson-id`, `--session-id`, `--task-number`, `--task-id`, `--component`, `--hash-id`, `--phase`, `--field`, `--module`, `--package`, `--domain`, `--name`). Compact form, grouped by directory.
+The classification certainty `CERTAIN_EXCLUDE` was assigned during phase-3-outline component discovery. Each script declares no in-scope identifier flag from the canonical scope list (`--plan-id`, `--lesson-id`, `--session-id`, `--task-number`, `--task-id`, `--component`, `--hash-id`, `--phase`, `--field`, `--module`, `--package`, `--domain`, `--name`). Compact form, grouped by directory.
 
 | Directory | Scripts | Rationale |
 |-----------|---------|-----------|

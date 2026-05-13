@@ -16,7 +16,7 @@ This bundle follows the **goal-based organization** pattern where components are
 
 ### Agents (0)
 
-This bundle defines no canonical agents of its own. Plugin-development workflows dispatch through `plan-marshall:execution-context-{level}` using role keys defined in `plan-marshall/standards/model-roles.md` — notably `cross.plugin-doctor` (with `scope` as a runtime input) for diagnostics scoped to a subset of marketplace components. Workflow docs (under `ext-outline-workflow/` and `plugin-doctor/`) are loaded as `workflow` prompt-body inputs to `execution-context-{level}`.
+This bundle defines no canonical agents of its own. Plugin-development workflows dispatch through `plan-marshall:execution-context-{level}` under the phase-scoped role registry — the plugin-doctor workflows fire under `--phase phase-6-finalize --role verification-feedback` with `producer=plugin-doctor` and `scope` as runtime inputs. Workflow docs (under `ext-outline-workflow/` and `plugin-doctor/`) are loaded as `workflow` prompt-body inputs to `execution-context-{level}`.
 
 ### Skills - User-Invocable (4)
 

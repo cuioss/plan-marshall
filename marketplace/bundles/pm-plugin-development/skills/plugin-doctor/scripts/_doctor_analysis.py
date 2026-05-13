@@ -387,7 +387,7 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
             }
         )
 
-    # mark-step-done argument validation (phase-6 finalize step termination)
+    # mark-step-done argument validation (phase-6-finalize finalize step termination)
     _mark_step_done_descriptions = {
         'MARK_STEP_DONE_BAD_NOTATION': (
             'mark-step-done invocation uses hyphenated notation '
@@ -430,7 +430,7 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
             }
         )
 
-    # --display-detail ASCII contract validation (phase-6 finalize renderer)
+    # --display-detail ASCII contract validation (phase-6-finalize finalize renderer)
     _display_detail_descriptions = {
         'DISPLAY_DETAIL_NON_ASCII': '--display-detail value contains non-ASCII characters (chars > 0x7F)',
         'DISPLAY_DETAIL_TOO_LONG': '--display-detail value exceeds 80 characters',
@@ -531,8 +531,8 @@ def extract_issues_from_coverage_analysis(coverage: dict, file_path: str, compon
     - Backup file patterns (quality issue)
 
     Tool usage analysis (missing/unused) is NOT done here - that requires
-    semantic understanding and runs in-line inside the `cross.plugin-doctor`
-    dispatch when its scope covers tool-coverage.
+    semantic understanding and runs in-line inside the `verification-feedback`
+    dispatch (producer=plugin-doctor) when its scope covers tool-coverage.
     """
     issues = []
 
@@ -670,7 +670,7 @@ def analyze_subdocuments(skill_dir: Path) -> list[dict]:
                         }
                     )
 
-            # --display-detail ASCII contract validation (phase-6 finalize renderer)
+            # --display-detail ASCII contract validation (phase-6-finalize finalize renderer)
             for violation in check_display_detail_violations(content):
                 issues.append(
                     {

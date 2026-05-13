@@ -158,11 +158,11 @@ The recipe skill handles: discovery, deliverable creation, and solution outline 
 
 ### Spawn Detection Agent
 
-Resolve the dispatch target via the resolver — no dedicated role key (the LLM path rarely fires); level is sourced from `models.default`:
+Resolve the dispatch target via the resolver — no dedicated role key (the LLM path rarely fires); level is sourced from `effort`:
 
 ```bash
 level=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models read --default)
+  effort read --default)
 target="execution-context"
 if [ -n "$level" ] && [ "$level" != "inherit" ]; then
   target="execution-context-$level"
@@ -365,7 +365,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 Bypass the Simple Q-Gate when ALL of the following predicates hold:
 
 1. `scope_estimate == surgical` (read from references.json — phase-2-refine sets it in Step 13; phase-3-outline MAY refine it in Step 6 after deliverables crystalize).
-2. `change_type ∈ {bug_fix, tech_debt, verification}` (read from status.json metadata — set in Step 4 by `manage-status:change-type-heuristic`, with LLM fallback via `models.default` when the heuristic is ambiguous).
+2. `change_type ∈ {bug_fix, tech_debt, verification}` (read from status.json metadata — set in Step 4 by `manage-status:change-type-heuristic`, with LLM fallback via `effort` when the heuristic is ambiguous).
 3. `deliverable_count == 1` (exactly one deliverable was created in Step 7).
 
 When all three predicates hold, emit the bypass decision log entry and skip directly to Step 12 (do NOT execute the per-deliverable checks):
@@ -499,7 +499,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
    - **`LLM-driven`** — the skill has no script entry point. The SKILL.md narrative is the executable definition: an LLM agent loads the skill (via `Skill: {ref}`) and follows the prose steps in-context. The skill may invoke other scripts as steps, but the orchestration logic, the decision-making, and the artifact production are all performed by the LLM.
 
-     *Examples*: `phase-3-outline` (this skill), `phase-4-plan`, `plan-marshall:plan-marshall/workflow/q-gate-validation.md` (dispatched via `cross.q-gate-validation`), `plugin-doctor`, `plan-retrospective`.
+     *Examples*: `phase-3-outline` (this skill), `phase-4-plan`, `plan-marshall:plan-marshall/workflow/q-gate-validation.md` (dispatched under `--phase phase-N` matching the caller phase), `plugin-doctor`, `plan-retrospective`.
 
    - **`hybrid`** — the skill has both a Python script and a non-trivial LLM prose body. The script handles a deterministic sub-task (file I/O, validation, dispatch); the LLM prose body handles the remaining cognitive work. Hybrid skills carry both a `scripts/` directory and substantive `Workflow` prose.
 
@@ -734,7 +734,7 @@ Compute the dispatch target via the role resolver:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role cross.q-gate-validation)
+  effort resolve-target --phase phase-3-outline)
 ```
 
 Dispatch:
@@ -742,7 +742,7 @@ Dispatch:
 ```
 Task: plan-marshall:{target}
   prompt: |
-    name: cross.q-gate-validation
+    name: q-gate-validation
     plan_id: {plan_id}
     skills[6]:
     - plan-marshall:manage-solution-outline

@@ -6,7 +6,7 @@ tasks and parent deliverables. Each failure becomes a Q-Gate finding under
 ``--source qgate`` so phase-4-plan's existing aggregate loop consumes it
 without modification; the script's return TOON reports per-check counts
 and an ``ambiguous`` flag the caller uses to decide whether the LLM
-``cross.q-gate-validation`` dispatch still needs to fire.
+q-gate-validation dispatch still needs to fire.
 
 Six checks:
   1. coverage              — every deliverable has >= 1 task; tasks reference real deliverables
@@ -266,7 +266,7 @@ def _check_acyclic(
                 f'Tasks {", ".join(f"TASK-{n:03d}" for n in cycle_members)} '
                 f'participate in a depends_on cycle. Phase-5-execute would loop '
                 f'indefinitely; break the cycle in task definitions before '
-                f'phase-4 transitions.'
+                f'phase-4-plan transitions.'
             ),
             emit=emit,
         )
@@ -448,7 +448,7 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
     """Run the six mechanical Q-Gate checks for a plan.
 
     Returns a TOON-shaped dict with per-check counts and overall pass/fail
-    aggregate so the caller can decide whether the LLM ``cross.q-gate-validation``
+    aggregate so the caller can decide whether the LLM q-gate-validation
     dispatch still needs to fire (only when ``ambiguous=true`` or another
     judgement-side validator is in scope).
     """

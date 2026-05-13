@@ -4,9 +4,9 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 # Q-Gate Validation Workflow
 
-Verify solution outline deliverables against request intent and assessments — catch false positives, missing coverage, and scope drift. Dispatched under the `cross.q-gate-validation` role key.
+Verify solution outline deliverables against request intent and assessments — catch false positives, missing coverage, and scope drift. Dispatched under `--phase phase-N` (no `--role`) — q-gate-validation tracks the calling phase's default level via the bubbling resolver.
 
-Two call sites: phase-3 outline-time Q-Gate (Complex Track Step 11) and phase-4 plan-time Q-Gate (Step 9b). Each call site activates a different validator subset via runtime `activation_context` / `validators` parameters; the role key stays shared.
+Three call sites: phase-2-refine lesson-derived narrative validation (Step 13.5), phase-3-outline outline-time Q-Gate (Complex Track Step 11) and phase-4-plan plan-time Q-Gate (Step 9b). Each call site activates a different validator subset via runtime `activation_context` / `validators` parameters; the workflow body stays shared and the dispatch passes only `--phase phase-N` so the level tracks whatever the caller phase configures.
 
 ## Role boundaries
 
@@ -679,7 +679,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Positive example (generic rationale)**: A plan touches `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py` (script-deterministic) and adds a new subcommand. The `**Design notes:**` block reads "Extends the existing script-deterministic design model of plan-marshall:manage-execution-manifest — matches the existing model". Validator emits a finding: rationale is generic; the block has to name a specific extension point (e.g., "adds a new `validate-loadable` CLI subcommand alongside the existing `compose` / `read` / `validate` subcommands").
 
-**Negative example (clean extension)**: A plan adds a new validator subsection to `plan-marshall/workflow/q-gate-validation.md` (LLM-driven). The `**Design notes:**` block reads "Extends the existing LLM-driven design model of cross.q-gate-validation — adds a new validator subsection §N.NN with detection logic, finding emission template, and pass/fail criteria following the existing §2.x pattern". Validator passes silently.
+**Negative example (clean extension)**: A plan adds a new validator subsection to `plan-marshall/workflow/q-gate-validation.md` (LLM-driven). The `**Design notes:**` block reads "Extends the existing LLM-driven design model of q-gate-validation — adds a new validator subsection §N.NN with detection logic, finding emission template, and pass/fail criteria following the existing §2.x pattern". Validator passes silently.
 
 **Cross-references**:
 - Authoritative source: [`phase-3-outline/standards/outline-workflow-detail.md` § Step 9c](../../phase-3-outline/standards/outline-workflow-detail.md#step-9c-read-target-skill-design-intent) (the procedure this validator enforces)

@@ -404,7 +404,7 @@ rule's original motivation.
 
 ## Variant Emission
 
-The Claude target's emitter performs more than a verbatim copy: agents that opt into the variant-emission system have one canonical no-suffix file plus per-level variant files emitted under `target/claude/{bundle}/agents/`. This section is the contributor reference for the build-target side of the contract. The user-facing guide lives at [`marketplace/bundles/plan-marshall/skills/plan-marshall/standards/role-variants.md`](../../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/role-variants.md); the canonical extension-point definition lives at [`marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-dynamic-level-executor.md`](../../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-dynamic-level-executor.md).
+The Claude target's emitter performs more than a verbatim copy: agents that opt into the variant-emission system have one canonical no-suffix file plus per-level variant files emitted under `target/claude/{bundle}/agents/`. This section is the contributor reference for the build-target side of the contract. The user-facing guide lives at [`marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md`](../../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md); the canonical extension-point definition lives at [`marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-dynamic-level-executor.md`](../../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-dynamic-level-executor.md).
 
 ### Opt-In Declaration
 
@@ -437,7 +437,7 @@ For each canonical agent at `marketplace/bundles/{bundle}/agents/{name}.md` decl
 | `target/claude/{bundle}/agents/{name}-xhigh.md` | `name: {name}-xhigh`, `model: opus`, `effort: high`. |
 | `target/claude/{bundle}/agents/{name}-xxhigh.md` | `name: {name}-xxhigh`, `model: opus`, `effort: xhigh`. |
 
-The level → primitive table is the single source of truth in [`marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-levels.md`](../../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-levels.md). The build target reads it via the alias mapping in `marketplace/targets/opencode/mapping.json::model_map`.
+The level → primitive table is the single source of truth in [`marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md`](../../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md). The build target reads it via the alias mapping in `marketplace/targets/opencode/mapping.json::model_map`.
 
 ### `xxhigh` Model-Support Guard
 
@@ -447,7 +447,7 @@ The level → primitive table is the single source of truth in [`marketplace/bun
 2. A build warning names the canonical and the missing capability.
 3. Other variants (and the canonical) continue to emit normally.
 
-At dispatch time, sites resolving to a missing variant fall back to the canonical (`inherit`) at runtime — degraded but functional, never a runtime crash. The fallback is observable in the `manage-config models read --role` decision log line.
+At dispatch time, sites resolving to a missing variant fall back to the canonical (`inherit`) at runtime — degraded but functional, never a runtime crash. The fallback is observable in the `manage-config effort read --role` decision log line.
 
 ### Drift-Check Semantics
 
@@ -465,14 +465,14 @@ The `project:finalize-step-deploy-target` finalize step (cluster-02 step body in
 
 ### Sync-Skill Integration
 
-The `project:finalize-step-sync-plugin-cache` finalize step (cluster-02 step body in `.claude/skills/finalize-step-sync-plugin-cache/`) syncs `target/claude/` into `~/.claude/plugins/cache/plan-marshall/` via rsync with `--delete`. The deploy step runs unconditionally before sync — `target/claude/` is regenerated with the new variants and the canonical no-suffix file BEFORE sync rebuilds the plugin cache. Live Claude Code sessions need a restart to pick up the new agent files (per code.claude.com — agents loaded at session start); the wizard prints this hint after every Models-block save and `role-variants.md` documents it.
+The `project:finalize-step-sync-plugin-cache` finalize step (cluster-02 step body in `.claude/skills/finalize-step-sync-plugin-cache/`) syncs `target/claude/` into `~/.claude/plugins/cache/plan-marshall/` via rsync with `--delete`. The deploy step runs unconditionally before sync — `target/claude/` is regenerated with the new variants and the canonical no-suffix file BEFORE sync rebuilds the plugin cache. Live Claude Code sessions need a restart to pick up the new agent files (per code.claude.com — agents loaded at session start); the wizard prints this hint after every Models-block save and `effort-variants.md` documents it.
 
 ### Authoring a New Role-Eligible Agent
 
 1. Add `implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor` to the canonical's frontmatter. Optionally add `levels: [...]` to constrain emission.
 2. Remove any existing `model:` or `effort:` lines from the canonical (the plugin-doctor rule will refuse the file otherwise).
-3. Add a row to [`marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-roles.md`](../../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/model-roles.md) linking a role key to the new agent.
-4. Patch dispatch sites to resolve via `manage-config models read --role <role>` and dispatch the canonical (`inherit`) or `<base>-<level>` variant.
+3. Add a row to [`marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-roles.md`](../../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-roles.md) linking a role key to the new agent.
+4. Patch dispatch sites to resolve via `manage-config effort read --role <role>` and dispatch the canonical (`inherit`) or `<base>-<level>` variant.
 5. Run `python3 marketplace/targets/generate.py --target claude --output target/claude` and copy the regenerated `target/claude/{bundle}/.claude-plugin/plugin.json` over the committed file.
 6. Restart Claude Code so the new agent files load.
 

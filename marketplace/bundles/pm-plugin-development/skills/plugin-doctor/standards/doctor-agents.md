@@ -19,7 +19,7 @@ Follows the common workflow pattern (see SKILL.md). Reference guide: `agents-gui
 
 ### `hardcoded-model-on-canonical` rule
 
-**Rationale**: The role-variants system (see [`plan-marshall:plan-marshall/standards/role-variants.md`](../../../../plan-marshall/skills/plan-marshall/standards/role-variants.md)) routes per-role model selection through build-time variant emission. Canonical agent files in `marketplace/bundles/{bundle}/agents/` MUST NOT pin `model:` or `effort:` directly — variants are emitted by the Claude target with the right `(model, effort)` per ordinal level, and the canonical no-suffix file serves the `inherit` resolution. Pinning a model on the canonical defeats the system; declaring `implements:` AND a model line creates silent shadowing.
+**Rationale**: The role-variants system (see [`plan-marshall:plan-marshall/standards/effort-variants.md`](../../../../plan-marshall/skills/plan-marshall/standards/effort-variants.md)) routes per-role model selection through build-time variant emission. Canonical agent files in `marketplace/bundles/{bundle}/agents/` MUST NOT pin `model:` or `effort:` directly — variants are emitted by the Claude target with the right `(model, effort)` per ordinal level, and the canonical no-suffix file serves the `inherit` resolution. Pinning a model on the canonical defeats the system; declaring `implements:` AND a model line creates silent shadowing.
 
 The rule fires hard errors in two branches:
 

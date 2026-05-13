@@ -40,7 +40,7 @@ phase-4-plan
    │              │  inputs: change_type, track,               │
    │              │          scope_estimate, recipe_key,       │
    │              │          affected_files_count,             │
-   │              │          phase-5/phase-6 candidate steps   │
+   │              │          phase-5-execute/phase-6-finalize candidate steps   │
    │              │  writes: .plan/local/plans/{plan_id}/      │
    │              │            execution.toon                  │
    │              │  logs:   one decision.log entry per fired  │

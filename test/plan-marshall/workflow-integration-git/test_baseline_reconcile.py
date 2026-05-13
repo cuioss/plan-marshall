@@ -5,7 +5,7 @@ The subcommand is the mechanical predicate for phase-2-refine Step 3d:
 fetches origin/{base_branch}, lists upstream commits since the plan's
 captured worktree SHA, and runs ``git merge-tree`` to detect potential
 conflicts — without modifying the worktree. Each conflicted file becomes
-a Q-Gate finding (under --source qgate) so the existing phase-2
+a Q-Gate finding (under --source qgate) so the existing phase-2-refine
 iterate-to-confidence loop addresses the drift.
 """
 

@@ -4,7 +4,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 # Research Best-Practices Workflow
 
-Comprehensive web-based research workflow that gathers best practices, recommendations, and information about a specified topic from multiple online sources. Dispatched under the `cross.research` role key.
+Comprehensive web-based research workflow that gathers best practices, recommendations, and information about a specified topic from multiple online sources. Dispatched under the phase-scoped `research` sub-key (resolved via `--phase phase-N --role research` where N is the calling phase; outside any plan, resolved via `--default`).
 
 Use **ultrathink mode** for deep analysis and synthesis of research findings. This is a complex research task that benefits from extended thinking.
 

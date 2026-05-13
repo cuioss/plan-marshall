@@ -8,7 +8,7 @@ when no keyword fires, when two change types tie, or when the top
 score's confidence falls below ``0.7``. The caller dispatches the
 ``plan-marshall:phase-3-outline/workflow/detect-change-type.md``
 workflow via ``execution-context-{level}`` resolved from
-``models.default`` only when ``ambiguous=true``.
+``effort`` only when ``ambiguous=true``.
 
 The change-type vocabulary, keyword indicators, compound-intent guard,
 and bug-fix-vs-tech-debt object disambiguation mirror the rules in

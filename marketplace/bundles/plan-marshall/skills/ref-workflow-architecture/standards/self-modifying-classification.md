@@ -4,7 +4,7 @@ Defines when a deliverable touches the runtime infrastructure that the plan itse
 
 A plan is **self-modifying** when one or more of its deliverables edits the script/skill set that `phase-5-execute` and `execute-task` need to dispatch tasks, run verification gates, and resolve build commands. Without an explicit phasing strategy, self-modifying plans tend to ship "keep both surfaces alongside" outcomes that silently descope hard breaking-change requirements.
 
-This standard is the single source of truth for the path heuristic, the classification rule, the phasing-rationale contract, and the split-vs-single-plan decision. Three callers reference it: `phase-3-outline` (outline-time deliverable classification), `phase-4-plan` (task-split enforcement), and the `cross.q-gate-validation` workflow (q-gate validator §2.16).
+This standard is the single source of truth for the path heuristic, the classification rule, the phasing-rationale contract, and the split-vs-single-plan decision. Three callers reference it: `phase-3-outline` (outline-time deliverable classification), `phase-4-plan` (task-split enforcement), and the q-gate-validation workflow (q-gate validator §2.16, dispatched under `--phase phase-N` from each caller).
 
 ## Path Heuristic
 

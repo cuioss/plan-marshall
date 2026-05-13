@@ -272,7 +272,7 @@ class TestRegression:
 
 
 class TestPhase5LoggingGapExtractors:
-    """Pin down the four phase-5 fact extractors.
+    """Pin down the four phase-5-execute fact extractors.
 
     The extractors are pure counting/pairing — never judging. These tests
     therefore assert the shape of the returned dicts on (a) clean fixtures
@@ -319,7 +319,7 @@ class TestPhase5LoggingGapExtractors:
     # ------------------------------------------------------------------
 
     def test_cluster_dispatches_single_cluster(self):
-        """All phase-5 lines within `gap_threshold_s` form one cluster."""
+        """All phase-5-execute lines within `gap_threshold_s` form one cluster."""
         work = [
             '[2026-05-08T14:00:00Z] [INFO] [abc] '
             '[STATUS] (plan-marshall:phase-5-execute) Starting execute phase — 3 tasks pending',

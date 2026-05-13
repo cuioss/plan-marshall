@@ -240,7 +240,7 @@ When conflicts exist, the script emits ONE Q-Gate finding per conflicted file un
 
 ### Sub-step 3d.2 — LLM scope-classification (only when upstream commits landed)
 
-The script reports `upstream_commit_count` and `upstream_commits[].files`; the phase-2 dispatch consumes that data and decides whether each upstream commit overlaps the request's affected-files candidate set in a way that warrants additional re-authoring. This judgement stays bundled in the existing `phase-2` dispatch envelope — the script is the mechanical predicate only. The classification step may add further findings beyond the merge-conflict set the script already emitted, log per-commit decisions, or proceed to Step 8 when none of the upstream commits overlap the request scope.
+The script reports `upstream_commit_count` and `upstream_commits[].files`; the phase-2-refine dispatch consumes that data and decides whether each upstream commit overlaps the request's affected-files candidate set in a way that warrants additional re-authoring. This judgement stays bundled in the existing `phase-2-refine` dispatch envelope — the script is the mechanical predicate only. The classification step may add further findings beyond the merge-conflict set the script already emitted, log per-commit decisions, or proceed to Step 8 when none of the upstream commits overlap the request scope.
 
 ### Sub-step 3d.3 — Feedback Loop
 
@@ -786,7 +786,7 @@ If `qgate_pending_count > 0`, the orchestrator (planning.md) decides whether to 
 
 ---
 
-### Step 13.5: Dispatch `cross.q-gate-validation` — lesson-derived plans only
+### Step 13.5: Dispatch q-gate-validation — lesson-derived plans only
 
 **Purpose**: Run the `narrative-vs-code-validator` (plan-marshall/workflow/q-gate-validation.md § 2.14) over the source lesson narrative so concrete code claims (file paths, profile→target mappings, function names, argument shapes, behavioral assertions) are reconciled against current code state at refine time. Catches silent baseline drift between lesson capture and plan execution before the outline locks intent.
 
@@ -807,7 +807,7 @@ Compute the dispatch target via the role resolver:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role cross.q-gate-validation)
+  effort resolve-target --phase phase-2-refine)
 ```
 
 Dispatch:
@@ -815,7 +815,7 @@ Dispatch:
 ```
 Task: plan-marshall:{target}
   prompt: |
-    name: cross.q-gate-validation
+    name: q-gate-validation
     plan_id: {plan_id}
     skills[6]:
     - plan-marshall:manage-solution-outline
@@ -847,7 +847,7 @@ Parse `filtered_count` from the output and ADD it to the `qgate_pending_count` a
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-2-refine:qgate) Dispatched cross.q-gate-validation for narrative-vs-code-validator (lesson plan); pending findings now {qgate_pending_count}"
+  --message "(plan-marshall:phase-2-refine:qgate) Dispatched q-gate-validation for narrative-vs-code-validator (lesson plan); pending findings now {qgate_pending_count}"
 ```
 
 This step runs AFTER the inline lightweight Q-Gate checks (above) and BEFORE Step 14 (Transition Phase). The placement is load-bearing: inline checks first means cheap structural findings are recorded before the more expensive narrative cross-check; validator second ensures lesson-driven findings can re-enter refine alongside the inline ones.

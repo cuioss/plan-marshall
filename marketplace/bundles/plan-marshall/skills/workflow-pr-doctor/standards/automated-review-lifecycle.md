@@ -105,7 +105,7 @@ loop_back_needed: {true|false}
 `loop_back_needed` is `true` under either of two conditions:
 
 1. **FIX disposition fired** — at least one `pr-comment` finding resolved to `fixed` during this iteration's per-finding loop, allocating a fix task. When this is the trigger, phase-6-finalize creates the fix tasks and loops back to phase-5-execute.
-2. **Overflow capture fired** — the per-iteration triage budget (900 s) was nearly exhausted before all `pr-comment` findings could be processed. The Step 5 loop captures the unprocessed comment IDs as a single `pr-comment-overflow` finding (see [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) § `pr-comment-overflow`) and breaks early. The next phase-6 entry's `automated-review` invocation reads the pending `pr-comment-overflow` finding to know which comments are outstanding.
+2. **Overflow capture fired** — the per-iteration triage budget (900 s) was nearly exhausted before all `pr-comment` findings could be processed. The Step 5 loop captures the unprocessed comment IDs as a single `pr-comment-overflow` finding (see [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) § `pr-comment-overflow`) and breaks early. The next phase-6-finalize entry's `automated-review` invocation reads the pending `pr-comment-overflow` finding to know which comments are outstanding.
 
 The two paths are not mutually exclusive — a single iteration can both allocate fix tasks for some comments AND defer others to overflow. In that case, `loop_back_needed: true` covers both, and the overflow finding is filed alongside the fix-task allocations. The 3-iteration loop-back ceiling applies uniformly regardless of which trigger fired.
 

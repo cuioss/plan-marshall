@@ -332,7 +332,7 @@ class TestSkillMdManifestNarrative:
         assert 'read --plan-id {plan_id}' in skill_md_text, 'Step 2 must include the canonical manifest read invocation'
 
     def test_early_terminate_short_circuit_documented(self, skill_md_text: str):
-        """Step 2 must document the early_terminate → phase-6 short-circuit."""
+        """Step 2 must document the early_terminate → phase-6-finalize short-circuit."""
         assert 'early_terminate' in skill_md_text
         assert 'phase-6-finalize' in skill_md_text
         # The short-circuit must explicitly skip the execute loop.

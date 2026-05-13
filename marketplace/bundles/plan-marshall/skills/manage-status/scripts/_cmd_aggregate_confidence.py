@@ -6,7 +6,7 @@ computation. Inputs are the six per-dimension scores produced by the
 phase-2-refine analyzer (Correctness, Completeness, Consistency,
 Non-Duplication, Ambiguity, Module Mapping); the script returns the
 single overall confidence plus a per-dimension breakdown the caller
-can include verbatim in the phase-2 return TOON.
+can include verbatim in the phase-2-refine return TOON.
 
 The dimension weights mirror phase-2-refine SKILL.md § Step 10:
 

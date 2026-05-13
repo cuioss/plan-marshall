@@ -64,7 +64,7 @@ Arbitrary key-value pairs stored in `status.json` under the `metadata` object. C
 
 | Field | Set By | Purpose |
 |-------|--------|---------|
-| `change_type` | phase-3-outline Step 4 (`manage-status:change-type-heuristic` script; LLM fallback via `models.default` when the heuristic is ambiguous) | feature, bug_fix, tech_debt, etc. |
+| `change_type` | phase-3-outline Step 4 (`manage-status:change-type-heuristic` script; LLM fallback via `effort` when the heuristic is ambiguous) | feature, bug_fix, tech_debt, etc. |
 | `confidence` | phase-2-refine | Request clarity confidence (0-100) |
 
 Metadata fields are promoted to top-level in `get-context` output for convenience.

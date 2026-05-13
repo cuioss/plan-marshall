@@ -30,9 +30,11 @@ Comprehensive diagnostic and fix skill for marketplace components. Combines diag
 
 Provides unified doctor workflows following the pattern: **Diagnose → Auto-Fix Safe → Prompt Risky → Verify**
 
-## Dispatch shape: per-rule analyses run inside one envelope; `scope` selects the rule subset
+## Dispatch shape: invoked via `verification-feedback` with `producer=plugin-doctor`
 
-This workflow dispatches under the `cross.plugin-doctor` role key as one `execution-context-{level}` envelope. The per-rule analyses (skill structure, agent frontmatter, command compliance, tool coverage, etc.) iterate **in-context inside that envelope** — `scope` is a runtime input that selects which rule subset fires, NOT a fan-out into per-rule subagents. Bundling matches granularity Heuristic 2: every rule reads the same marketplace tree, shares the same plugin-doctor skill loads, and contributes findings to the same TOON return. Per-rule dispatch would pay ~10× envelope cost for analyses that share substantial context. See the dispatch-granularity standard under `plan-marshall:extension-api` for the heuristics behind this bundling rule.
+The plugin-doctor analyses no longer earn their own dispatch role. The marketplace rule iteration, scope filtering, and per-violation finding emission described in "Common Workflow Pattern" below run inside [`verification-feedback.md`](../../../plan-marshall/skills/plan-marshall/workflow/verification-feedback.md) § Step 1 when `producer=plugin-doctor`. The level resolves under `phase-6-finalize.verification-feedback` (since the slash command + the `project:finalize-step-plugin-doctor` wrapper both fire from phase-6-finalize).
+
+This skill stays loaded inside the verification-feedback envelope as the **rule catalog + per-rule prose holder** — every rule analysis below is executed in-context by the dispatched subagent. `scope` continues to select which rule subset fires; rules iterate in-context (no per-rule fan-out). Bundling matches granularity Heuristic 2: every rule reads the same marketplace tree, shares the same plugin-doctor skill loads, and contributes findings to the same per-plan findings store. See the dispatch-granularity standard under `plan-marshall:extension-api` § 5.1 for the phase-scoped resolution + producer-mode bundling rule.
 
 ## Workflow Decision Tree
 
@@ -317,7 +319,7 @@ Loaded per workflow via Progressive Disclosure table above. Key files:
 
 ### Templates (templates/)
 
-- `tool-coverage-results.toon` - TOON template for aggregating tool-coverage analysis results (produced by the plugin-doctor tool-coverage rule, which today runs in-line inside `cross.plugin-doctor` when its scope covers tool-coverage)
+- `tool-coverage-results.toon` - TOON template for aggregating tool-coverage analysis results (produced by the plugin-doctor tool-coverage rule, which runs in-line inside the `verification-feedback` envelope when its scope covers tool-coverage)
 
 ---
 

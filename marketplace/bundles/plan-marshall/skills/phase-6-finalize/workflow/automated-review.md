@@ -7,7 +7,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 # Automated Review
 
-Pure executor for the `automated-review` finalize step. Drives the consumer-side orchestration for `pr-comment` findings as defined in [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) — this document owns the manifest-step list (consume completed-CI signal, review-bot buffer, producer call, gate-keeping query, intra-finalize re-capture, mark-step-done). The per-finding LLM core (decision + action + overflow handling) is dispatched once as `cross.triage` against [`triage.md`](triage.md) — see "Dispatch the per-finding triage core" below. Refer to [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) for the architecture-level synthesis (producers, store schema, invariant gate, extension contract).
+Pure executor for the `automated-review` finalize step. Drives the consumer-side orchestration for `pr-comment` findings as defined in [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) — this document owns the manifest-step list (consume completed-CI signal, review-bot buffer, producer call, gate-keeping query, intra-finalize re-capture, mark-step-done). The per-finding LLM core (decision + action + overflow handling) is dispatched once as `verification-feedback` (`producer=pr-comment`) — see "Dispatch the per-finding triage core" below. Refer to [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) for the architecture-level synthesis (producers, store schema, invariant gate, extension contract).
 
 This step does NOT poll CI itself — CI completion is the responsibility of the preceding `ci-wait` step (see [`ci-wait.md`](ci-wait.md)). `automated-review` reads the completed-CI signal from `manage-status` (the `phase_steps["6-finalize"]["ci-wait"].outcome=done` record with a `final_status: success` display detail) and proceeds to comment triage when the signal is present. When the signal is absent (no `ci-wait` record) or `outcome=failed` (CI failure), `automated-review` surfaces `ci_failure` for loop-back without attempting to fetch comments.
 
@@ -15,7 +15,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Timeout Contract
 
-This step runs as inline orchestration (producer fetch + finding enumeration in main context) plus a single `cross.triage` Task dispatch (`plan-marshall:execution-context-{level}` resolved via `manage-config models resolve-target --role cross.triage`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget is **triage-only**: it covers the review-bot buffer, producer-side comments-stage, per-finding triage dispatch, thread replies, and thread resolution. CI wait time is bounded separately by the preceding `ci-wait` step's 1800 s budget — splitting CI-wait out keeps this triage budget bounded by comment volume rather than CI queue depth.
+This step runs as inline orchestration (producer fetch + finding enumeration in main context) plus a single `verification-feedback` Task dispatch (`plan-marshall:execution-context-{level}` resolved via `manage-config effort resolve-target --phase phase-6-finalize --role verification-feedback`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget is **triage-only**: it covers the review-bot buffer, producer-side comments-stage, per-finding triage dispatch with `producer=pr-comment`, thread replies, and thread resolution. CI wait time is bounded separately by the preceding `ci-wait` step's 1800 s budget — splitting CI-wait out keeps this triage budget bounded by comment volume rather than CI queue depth.
 
 **Graceful degradation**: When the wrapper expires:
 
@@ -100,21 +100,21 @@ If the result's `findings` list is empty, there is nothing to process — procee
 
 ### Dispatch the per-finding triage core
 
-When the query above returns one or more pending `pr-comment` findings, dispatch the shared triage workflow [`standards/triage.md`](triage.md) — single source of truth for the per-finding LLM-judgement core, the smart-grouping algorithm, the per-outcome action bodies (FIX / SUPPRESS / ACCEPT / AskUserQuestion), the overflow / timeout handling, and the Scope-Deviation Escalation guard.
+When the query above returns one or more pending `pr-comment` findings, dispatch the unified feedback workflow [`verification-feedback.md`](../../plan-marshall/workflow/verification-feedback.md) with `producer=pr-comment`. That workflow's Step 1 verifies the store-only query, then delegates the per-finding LLM-judgement core to [`triage.md`](../../plan-marshall/workflow/triage.md) Steps 1-6 — single source of truth for the smart-grouping algorithm, the per-outcome action bodies (FIX / SUPPRESS / ACCEPT / AskUserQuestion), the overflow / timeout handling, and the Scope-Deviation Escalation guard.
 
-The dispatch is **by reference** — the prompt carries `finding_type=pr-comment` and `pr_number={pr_number}` only; the triage subagent issues its own `manage-findings query` against the same store as its first workflow step, so the orchestrator's query above is purely a gate-keeping count (skip dispatch when empty).
+The dispatch is **by reference** — the prompt carries `producer=pr-comment` and `pr_number={pr_number}` only; the subagent issues its own `manage-findings query` against the same store as its first workflow step, so the orchestrator's query above is purely a gate-keeping count (skip dispatch when empty).
 
 Compute the target variant via the role resolver, then dispatch:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role cross.triage)
+  effort resolve-target --phase phase-6-finalize --role verification-feedback)
 ```
 
 ```
 Task: plan-marshall:{target}
   prompt: |
-    name: cross.triage
+    name: verification-feedback
     plan_id: {plan_id}
     skills[5]:
     - plan-marshall:manage-findings
@@ -122,17 +122,18 @@ Task: plan-marshall:{target}
     - plan-marshall:manage-architecture
     - plan-marshall:manage-config
     - plan-marshall:tools-integration-ci
-    workflow: plan-marshall:plan-marshall/workflow/triage.md
+    workflow: plan-marshall:plan-marshall/workflow/verification-feedback.md
 
-    finding_type: pr-comment
+    producer: pr-comment
     pr_number: {pr_number}
+    caller_phase: phase-6-finalize
 
     WORKTREE: {worktree_path}
 ```
 
 The subagent's return TOON carries `findings_processed`, `findings_resolved`, `fix_tasks_created`, optional `fix_task_numbers[]`, optional `overflow_deferred`. Capture those values for the "Handle findings (loop-back)" branch below.
 
-When the subagent returns `status: loop_back` it has either created fix tasks (FIX outcomes) or filed an overflow envelope — both require the manifest dispatcher to re-fire `automated-review` on next phase-6 entry.
+When the subagent returns `status: loop_back` it has either created fix tasks (FIX outcomes) or filed an overflow envelope — both require the manifest dispatcher to re-fire `automated-review` on next phase-6-finalize entry.
 
 ### Handle findings (loop-back)
 
@@ -147,7 +148,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-ph
   --plan-id {plan_id} --phase 5-execute
 ```
 
-2. Mark this finalize step as a loop-back iteration (the dispatcher will re-fire it on the next phase-6 entry):
+2. Mark this finalize step as a loop-back iteration (the dispatcher will re-fire it on the next phase-6-finalize entry):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
@@ -235,7 +236,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
   --head-at-completion {sha}
 ```
 
-**Branch C — loop-back recorded** (intermediate pass; used when a non-terminal iteration must be surfaced and the dispatcher must re-fire this step on the next phase-6 entry): `{iteration}` is the current loop-back iteration number (1..3). This branch records `--outcome loop_back` so the Step 3 dispatcher table (and the Resumability table below) re-fires the step as a fresh dispatch on next entry. The terminal pass still uses Branch A when review eventually goes clean. Never record `--outcome done` for an intermediate iteration — `done` is terminal and will cause the dispatcher to skip the step on re-entry. The `loop_back` branch does NOT need `--head-at-completion`:
+**Branch C — loop-back recorded** (intermediate pass; used when a non-terminal iteration must be surfaced and the dispatcher must re-fire this step on the next phase-6-finalize entry): `{iteration}` is the current loop-back iteration number (1..3). This branch records `--outcome loop_back` so the Step 3 dispatcher table (and the Resumability table below) re-fires the step as a fresh dispatch on next entry. The terminal pass still uses Branch A when review eventually goes clean. Never record `--outcome done` for an intermediate iteration — `done` is terminal and will cause the dispatcher to skip the step on re-entry. The `loop_back` branch does NOT need `--head-at-completion`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
@@ -266,4 +267,4 @@ comments_resolved: {N}
 fix_tasks_created: {N}
 ```
 
-Orchestrator workflow — the LLM core is delegated to `cross.triage` via the internal sub-dispatch. The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded via `mark-step-done --display-detail`. On `loop_back`, the calling step re-fires on the next phase entry per the HEAD-dependent resumability rules above.
+Orchestrator workflow — the LLM core is delegated to `verification-feedback` (`producer=pr-comment`) via the internal sub-dispatch. The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded via `mark-step-done --display-detail`. On `loop_back`, the calling step re-fires on the next phase entry per the HEAD-dependent resumability rules above.

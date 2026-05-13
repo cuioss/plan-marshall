@@ -22,7 +22,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 ---
 
-**Step 2**: Dispatch the outline phase under role key `phase-3` (single-workflow phase with `track={simple|complex}` runtime input — see [`call-graph.md`](../../ref-workflow-architecture/standards/call-graph.md) § 2.3).
+**Step 2**: Dispatch the outline phase under role key `phase-3-outline` (single-workflow phase with `track={simple|complex}` runtime input — see [`call-graph.md`](../../ref-workflow-architecture/standards/call-graph.md) § 2.3).
 
 **Metrics**: The start of `3-outline` was already recorded by the
 `2-refine → 3-outline` fused boundary call above (or by the
@@ -62,7 +62,7 @@ Compute the dispatch target via the role resolver and resolve the active worktre
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role phase-3)
+  effort resolve-target --role phase-3-outline)
 
 worktree_path=$(python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
   get-worktree-path --plan-id {plan_id})
@@ -118,8 +118,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transi
 
 **Metrics**: After outline completes, record the `3-outline → 4-plan` boundary
 in a single fused call (forwarding the aggregated `<usage>` data from the
-dispatches spawned during this phase — the `phase-3` outline envelope plus
-any `cross.q-gate-validation` dispatch, and any LLM fallback dispatched from
+dispatches spawned during this phase — the `phase-3-outline` outline envelope plus
+any q-gate-validation dispatch, and any LLM fallback dispatched from
 `manage-status:change-type-heuristic` when its heuristic returned
 `ambiguous`). Sum `total_tokens`, `tool_uses`, and `duration_ms` across each
 dispatch's `<usage>` tag:
@@ -253,7 +253,7 @@ Compute the dispatch target via the role resolver:
 
 ```bash
 target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  models resolve-target --role phase-4)
+  effort resolve-target --role phase-4-plan)
 ```
 
 Dispatch:

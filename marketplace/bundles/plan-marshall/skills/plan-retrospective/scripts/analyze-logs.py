@@ -308,7 +308,7 @@ def cluster_dispatches(
     script_log_lines: list[str],
     gap_threshold_s: float = 30.0,
 ) -> dict[str, Any]:
-    """Cluster phase-5 dispatches by inter-line gap to infer dispatch boundaries.
+    """Cluster phase-5-execute dispatches by inter-line gap to infer dispatch boundaries.
 
     Returns a dict with:
       - inferred_dispatches: number of dispatch clusters detected (a cluster is
@@ -318,14 +318,14 @@ def cluster_dispatches(
       - re_entering_markers: count of `[STATUS] ... Re-entering execute phase` lines.
 
     The cluster count gives the LLM rule a way to flag plans where the
-    orchestrator re-dispatched the per-task `phase-5` envelope more times
+    orchestrator re-dispatched the per-task `phase-5-execute` envelope more times
     than there are Re-entering markers (the symptom of D2's re-entry logging
     being skipped).
     """
     timestamps: list[float] = []
     for line in work_log_lines + script_log_lines:
-        # Restrict to lines that mention the phase-5 caller — non-phase-5 lines
-        # do not contribute to phase-5 dispatch counting.
+        # Restrict to lines that mention the phase-5-execute caller — non-phase-5-execute lines
+        # do not contribute to phase-5-execute dispatch counting.
         if 'plan-marshall:phase-5-execute' not in line:
             continue
         ts_match = _LINE_TIMESTAMP_RE.search(line)

@@ -444,14 +444,14 @@ status: success
 platform: claude
 invocation:
   tool: Task
-  description: "Run phase-3 outline"
+  description: "Run phase-3-outline outline"
   prompt: "...agent body with context merged..."
   subagent_type: "execution-context-high"
 ```
 
 Caller then executes:
 ```
-Task: description="Run phase-3 outline" prompt="..." subagent_type="execution-context-high"
+Task: description="Run phase-3-outline outline" prompt="..." subagent_type="execution-context-high"
 ```
 
 **Example 2: Dispatch execution-context with Task/Skill on OpenCode (all tools mapped)**
@@ -471,7 +471,7 @@ status: success
 platform: opencode
 invocation:
   tool: task
-  description: "Run phase-1 init"
+  description: "Run phase-1-init init"
   prompt: "...agent body with context merged..."
   subagent_type: "execution-context"
 ```

@@ -169,7 +169,7 @@ DEFAULT_PLAN_FINALIZE = {
     'max_iterations': 3,
     'review_bot_buffer_seconds': 180,
     'pr_merge_strategy': 'squash',
-    # When True, a loop_back outcome from any phase-6 step (FIX disposition,
+    # When True, a loop_back outcome from any phase-6-finalize step (FIX disposition,
     # pr-comment-overflow, or sonar-roundtrip FIX) re-dispatches the execute
     # pipeline inline (execute-task → mark done → transition 5-execute →
     # 6-finalize via finalize_without_asking) and re-enters the finalize loop,
