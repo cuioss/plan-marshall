@@ -138,6 +138,44 @@ IN_SCOPE_SCRIPTS: tuple[_ScriptDescriptor, ...] = (
         script_relpath='bundles/plan-marshall/skills/workflow-integration-github/scripts/github_ops.py',
         skill_dir_relpath='bundles/plan-marshall/skills/workflow-integration-github',
     ),
+    # Added to align coverage with the 14 SKILL.md files updated by D1
+    # (manage-findings is intentionally excluded — covered by its own
+    # dedicated analyzer ``_analyze_manage_findings_invocation.py``).
+    _ScriptDescriptor(
+        notation='plan-marshall:manage-architecture:architecture',
+        script_relpath='bundles/plan-marshall/skills/manage-architecture/scripts/architecture.py',
+        skill_dir_relpath='bundles/plan-marshall/skills/manage-architecture',
+    ),
+    _ScriptDescriptor(
+        notation='plan-marshall:manage-execution-manifest:manage-execution-manifest',
+        script_relpath='bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py',
+        skill_dir_relpath='bundles/plan-marshall/skills/manage-execution-manifest',
+    ),
+    _ScriptDescriptor(
+        notation='plan-marshall:manage-files:manage-files',
+        script_relpath='bundles/plan-marshall/skills/manage-files/scripts/manage-files.py',
+        skill_dir_relpath='bundles/plan-marshall/skills/manage-files',
+    ),
+    _ScriptDescriptor(
+        notation='plan-marshall:manage-lessons:manage-lessons',
+        script_relpath='bundles/plan-marshall/skills/manage-lessons/scripts/manage-lessons.py',
+        skill_dir_relpath='bundles/plan-marshall/skills/manage-lessons',
+    ),
+    _ScriptDescriptor(
+        notation='plan-marshall:manage-metrics:manage_metrics',
+        script_relpath='bundles/plan-marshall/skills/manage-metrics/scripts/manage_metrics.py',
+        skill_dir_relpath='bundles/plan-marshall/skills/manage-metrics',
+    ),
+    _ScriptDescriptor(
+        notation='plan-marshall:manage-plan-documents:manage-plan-documents',
+        script_relpath='bundles/plan-marshall/skills/manage-plan-documents/scripts/manage-plan-documents.py',
+        skill_dir_relpath='bundles/plan-marshall/skills/manage-plan-documents',
+    ),
+    _ScriptDescriptor(
+        notation='plan-marshall:manage-solution-outline:manage-solution-outline',
+        script_relpath='bundles/plan-marshall/skills/manage-solution-outline/scripts/manage-solution-outline.py',
+        skill_dir_relpath='bundles/plan-marshall/skills/manage-solution-outline',
+    ),
 )
 
 # Notation map keyed by the third segment of the notation. The analyzer
@@ -192,6 +230,12 @@ class _ScriptTree:
 
         Returns ``None`` when the pair does not resolve. ``subcommand=None``
         targets the root parser.
+
+        A second positional token under a *flat* subcommand is treated as a
+        positional argument (e.g. ``architecture path SOURCE TARGET``), not
+        as an unknown sub-verb — the leaf is returned so flag validation
+        can still run. Nested-subparser subcommands continue to require a
+        registered sub_verb.
         """
         if subcommand is None:
             return self.root
@@ -199,7 +243,7 @@ class _ScriptTree:
         if entry is None:
             return None
         if isinstance(entry, _LeafParser):
-            return entry if sub_verb is None else None
+            return entry
         # Nested mapping; sub_verb required.
         if sub_verb is None:
             return None
@@ -260,7 +304,9 @@ def build_script_tree(script_path: Path) -> _ScriptTree | None:
     is two-pass:
 
     Pass 1 — discover every ``ArgumentParser`` / ``add_subparsers`` /
-    ``add_parser`` assignment and build the parser-variable graph:
+    ``add_parser`` / ``add_mutually_exclusive_group`` /
+    ``add_argument_group`` assignment and build the parser-variable
+    graph:
 
       - ``parser_kind[var]`` is ``'root' | 'sub' | 'subsub'`` identifying
         what kind of parser ``var`` refers to.
@@ -274,10 +320,16 @@ def build_script_tree(script_path: Path) -> _ScriptTree | None:
       - ``subparsers_owner[handle]`` is the parser variable that owns the
         handle (root variable for top-level handles; subcommand parser
         variable for nested handles).
+      - ``parser_alias[var]`` resolves a group handle returned by
+        ``add_mutually_exclusive_group`` / ``add_argument_group`` to the
+        parser variable that owns it; Pass 2 dereferences receivers
+        through this map so group-level ``add_argument`` calls land on
+        the parent leaf.
 
     Pass 2 — bucket every ``add_argument`` call by its receiver. Each call
     maps to a leaf parser via ``parser_kind``/``parser_name``/
-    ``parser_owner``.
+    ``parser_owner`` after the receiver has been resolved through
+    ``parser_alias``.
     """
     try:
         source = script_path.read_text(encoding='utf-8')
@@ -294,6 +346,12 @@ def build_script_tree(script_path: Path) -> _ScriptTree | None:
 
     subparsers_kind: dict[str, str] = {}  # handle var -> 'top' | 'nested'
     subparsers_owner: dict[str, str] = {}  # handle var -> owning parser var
+
+    # Aliases produced by ``add_mutually_exclusive_group`` and
+    # ``add_argument_group``. Calls to ``alias.add_argument(...)`` are
+    # bucketed as if they targeted the underlying parser variable so the
+    # leaf inherits the group's flag declarations.
+    parser_alias: dict[str, str] = {}  # alias var -> underlying parser var
 
     root_var: str | None = None
 
@@ -352,6 +410,22 @@ def build_script_tree(script_path: Path) -> _ScriptTree | None:
                     parser_owner[var] = owner
             continue
 
+        if name in ('add_mutually_exclusive_group', 'add_argument_group'):
+            # ``group = parser.add_mutually_exclusive_group(...)`` — Pass 2
+            # treats subsequent ``group.add_argument(...)`` calls as
+            # additions to the underlying ``parser`` leaf so group-level
+            # flag declarations are not silently dropped.
+            owner = _attr_receiver_name(call)
+            if owner is None:
+                continue
+            # Resolve transitively in case groups are nested.
+            resolved = parser_alias.get(owner, owner)
+            if resolved not in parser_kind:
+                continue
+            for var in targets:
+                parser_alias[var] = resolved
+            continue
+
     # Construct the canonical tree skeleton from discovered parsers.
     script_tree = _ScriptTree()
     # Track which top-level subcommands acquired nested subparsers so we can
@@ -387,7 +461,13 @@ def build_script_tree(script_path: Path) -> _ScriptTree | None:
         if _call_func_name(node) != 'add_argument':
             continue
         receiver = _attr_receiver_name(node)
-        if receiver is None or receiver not in parser_kind:
+        if receiver is None:
+            continue
+        # Resolve mutually-exclusive / argument-group aliases to their
+        # underlying parser variable so group-level ``add_argument`` calls
+        # land on the parent leaf.
+        receiver = parser_alias.get(receiver, receiver)
+        if receiver not in parser_kind:
             continue
         flags = _extract_flag_names_from_add_argument(node)
         if not flags:
@@ -489,6 +569,74 @@ _NEXT_POSITIONAL_RE = re.compile(r'\s+(?P<tok>[A-Za-z][A-Za-z0-9_\-]*)')
 _FLAG_TOKEN_RE = re.compile(r'(?<![A-Za-z0-9])--(?P<flag>[A-Za-z][A-Za-z0-9_\-]*)\b')
 
 
+def _strip_quoted_substrings(text: str) -> str:
+    """Remove single- and double-quoted substrings from ``text``.
+
+    Shell-style quoting is honored: characters inside matched quotes are
+    replaced with spaces so the resulting string preserves column offsets
+    while suppressing any ``--flag``-like content that lives inside a
+    quoted argument value (e.g. ``--message "release: --not-a-flag"``).
+    Backslash escapes inside quotes are respected. Unterminated quotes
+    consume the remainder of the line.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch in ('"', "'"):
+            quote = ch
+            out.append(' ')  # preserve column for the opening quote
+            i += 1
+            while i < n and text[i] != quote:
+                # Honor a backslash escape so ``\"`` and ``\'`` do not
+                # prematurely close the quote.
+                if text[i] == '\\' and i + 1 < n:
+                    out.append('  ')
+                    i += 2
+                    continue
+                out.append(' ')
+                i += 1
+            if i < n:
+                out.append(' ')  # closing quote
+                i += 1
+            # Unterminated quote: loop exits naturally.
+        else:
+            out.append(ch)
+            i += 1
+    return ''.join(out)
+
+
+def _join_continuation_lines(content: str) -> list[tuple[int, str]]:
+    """Collapse backslash-continued lines into logical lines.
+
+    Returns a list of ``(start_line_no, joined_text)`` tuples preserving
+    the original 1-based line number where each logical line begins.
+    A trailing backslash (optionally followed by whitespace) at the end of
+    a physical line splices the next line onto the current logical line
+    with a single space separator. Findings emitted on a joined logical
+    line are reported against the starting line number — the line a
+    reader would scroll to first.
+    """
+    physical = content.splitlines()
+    result: list[tuple[int, str]] = []
+    i = 0
+    while i < len(physical):
+        start_line_no = i + 1
+        line = physical[i]
+        stripped = line.rstrip()
+        while stripped.endswith('\\'):
+            line = stripped[:-1]
+            i += 1
+            if i >= len(physical):
+                break
+            line = line + ' ' + physical[i].lstrip()
+            stripped = line.rstrip()
+        result.append((start_line_no, line))
+        i += 1
+    return result
+
+
 def _extract_positional_tokens(rest: str, max_positionals: int = 2) -> list[str]:
     """Extract up to ``max_positionals`` positional tokens from ``rest``.
 
@@ -509,8 +657,14 @@ def _extract_positional_tokens(rest: str, max_positionals: int = 2) -> list[str]
 
 
 def _extract_flag_tokens(rest: str) -> list[str]:
-    """Extract every long-flag token (without the ``--`` prefix) from ``rest``."""
-    return [m.group('flag') for m in _FLAG_TOKEN_RE.finditer(rest)]
+    """Extract every long-flag token (without the ``--`` prefix) from ``rest``.
+
+    Quoted substrings are stripped first so flag-like text appearing
+    inside string argument values does not produce false positives.
+    """
+    return [
+        m.group('flag') for m in _FLAG_TOKEN_RE.finditer(_strip_quoted_substrings(rest))
+    ]
 
 
 # =============================================================================
@@ -761,14 +915,17 @@ def analyze_manage_invocation_markdown(
 ) -> list[dict]:
     """Scan a markdown body and emit findings for manage-* invocation mismatches.
 
-    The scan is line-anchored; each notation occurrence is validated
-    independently against ``script_index``. Unknown notations (not in the
-    whitelist) are skipped. The function is total: an empty content body
-    or content with no invocations returns an empty list.
+    The scan operates on *logical* lines — physical lines are first joined
+    across backslash continuations so flags written on subsequent lines
+    are honored as part of the same invocation. Each notation occurrence
+    is validated independently against ``script_index``. Unknown
+    notations (not in the whitelist) are skipped. The function is total:
+    an empty content body or content with no invocations returns an
+    empty list.
     """
     findings: list[dict] = []
-    for idx, raw in enumerate(content.splitlines(), start=1):
-        match = _NOTATION_RE.search(raw)
+    for line_no, joined in _join_continuation_lines(content):
+        match = _NOTATION_RE.search(joined)
         if not match:
             continue
         bundle = match.group('bundle')
@@ -783,7 +940,7 @@ def analyze_manage_invocation_markdown(
                 notation=notation,
                 rest=rest,
                 file_path=file_path,
-                line=idx,
+                line=line_no,
                 script_index=script_index,
             )
         )

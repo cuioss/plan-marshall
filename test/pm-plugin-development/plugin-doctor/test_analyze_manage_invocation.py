@@ -262,10 +262,13 @@ class TestPositiveCanonicalInvocations:
         [desc.notation.split(':')[-1] for desc in IN_SCOPE_SCRIPTS],
     )
     def test_in_scope_notations_are_enumerated(self, notation_third_segment: str) -> None:
-        """All seven in-scope script families are represented in IN_SCOPE_SCRIPTS.
+        """The 14 in-scope script families are represented in IN_SCOPE_SCRIPTS.
 
         The parametrize matrix is the structural assertion — pytest will
-        fail if any expected family is missing or extra.
+        fail if any expected family is missing or extra. The set matches
+        the 15 SKILL.md files touched by D1 minus ``manage-findings``,
+        which is covered by its own dedicated analyzer
+        (``_analyze_manage_findings_invocation.py``).
         """
         all_third_segments = {desc.notation.split(':')[-1] for desc in IN_SCOPE_SCRIPTS}
         expected = {
@@ -276,6 +279,13 @@ class TestPositiveCanonicalInvocations:
             'manage-config',
             'git_workflow',
             'github_ops',
+            'architecture',
+            'manage-execution-manifest',
+            'manage-files',
+            'manage-lessons',
+            'manage_metrics',
+            'manage-plan-documents',
+            'manage-solution-outline',
         }
         assert all_third_segments == expected
         assert notation_third_segment in all_third_segments
@@ -466,9 +476,9 @@ class TestMissingCanonicalBlock:
         )
         findings = check_missing_canonical_blocks(marketplace_root)
 
-        # Dedup means one finding per unique skill_dir; the seven notations
-        # map to seven distinct skill dirs, so seven findings are expected.
-        assert len(findings) == 7
+        # Dedup means one finding per unique skill_dir; the 14 notations
+        # map to 14 distinct skill dirs, so 14 findings are expected.
+        assert len(findings) == len(IN_SCOPE_SCRIPTS)
         for f in findings:
             assert f['rule_id'] == RULE_MISSING_CANONICAL_BLOCK
             assert f['severity'] == 'warning'
@@ -484,7 +494,7 @@ class TestMissingCanonicalBlock:
         assert findings == []
 
     def test_mixed_state_only_missing_flagged(self, tmp_path: Path) -> None:
-        # Exactly one skill has the block — six findings expected.
+        # Exactly one skill has the block — every other in-scope skill flagged.
         first = IN_SCOPE_SCRIPTS[0].notation
         canonical_blocks = {desc.notation: False for desc in IN_SCOPE_SCRIPTS}
         canonical_blocks[first] = True
@@ -492,7 +502,7 @@ class TestMissingCanonicalBlock:
             tmp_path, canonical_blocks=canonical_blocks
         )
         findings = check_missing_canonical_blocks(marketplace_root)
-        assert len(findings) == 6
+        assert len(findings) == len(IN_SCOPE_SCRIPTS) - 1
         flagged_notations = {f['details']['notation'] for f in findings}
         assert first not in flagged_notations
 
@@ -709,3 +719,194 @@ class TestMarketplaceAggregator:
         rule_ids = {f['rule_id'] for f in findings}
         assert RULE_MANAGE_INVOCATION_INVALID in rule_ids
         assert RULE_MISSING_CANONICAL_BLOCK in rule_ids
+
+
+# ---------------------------------------------------------------------------
+# Layer F — robustness fixes for gemini review feedback (PR #372).
+# ---------------------------------------------------------------------------
+
+
+class TestMultiLineBackslashContinuation:
+    """Backslash-continued invocations are joined before flag validation."""
+
+    def test_flags_on_continuation_lines_are_recognized(self, flat_index: dict) -> None:
+        """Invocation spread across multiple lines with ``\\`` continuations.
+
+        Before the fix, ``--alpha`` on the first physical line satisfied
+        the required-flag check, but the rest of the invocation was
+        discarded. After the fix, the joined logical line is what we
+        validate against — the canonical multi-line form must produce
+        zero findings.
+        """
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo \\\n'
+            f'  --alpha v1 \\\n'
+            f'  --beta v2\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
+        assert findings == []
+
+    def test_continuation_does_not_swallow_unknown_flag(self, flat_index: dict) -> None:
+        """An unknown flag on a continuation line is still surfaced."""
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo \\\n'
+            f'  --alpha v1 \\\n'
+            f'  --nope v3\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
+        assert len(findings) == 1
+        f = findings[0]
+        assert f['details']['reason'] == 'flag_unknown'
+        assert f['details']['flag'] == 'nope'
+
+    def test_finding_line_anchored_to_logical_start(self, flat_index: dict) -> None:
+        """Findings on a continuation line report the starting line number."""
+        content = (
+            '# heading\n'  # line 1
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --alpha v \\\n'  # line 2
+            '  --nope v\n'  # line 3 (physical-only)
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
+        assert len(findings) == 1
+        assert findings[0]['line'] == 2
+        assert findings[0]['details']['reason'] == 'flag_unknown'
+
+
+class TestShellQuotingFalsePositives:
+    """Flag-like text inside quoted argument values is not parsed as a flag."""
+
+    def test_double_quoted_value_with_dashes_is_not_a_flag(self, flat_index: dict) -> None:
+        """``--message "release: --not-a-flag"`` parses one flag (--message)."""
+        # Add a known --message flag to the synthetic root parser for the
+        # purposes of this test by re-using the alpha flag of foo. The fix
+        # under test is independent of which flag is whitelisted — what
+        # matters is that ``--not-a-flag`` inside the double-quoted value
+        # does NOT produce a flag_unknown finding.
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo '
+            f'--alpha "release: --not-a-flag"\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
+        assert findings == []
+
+    def test_single_quoted_value_with_dashes_is_not_a_flag(self, flat_index: dict) -> None:
+        """``--alpha '--not-a-flag'`` (single quotes) is also handled."""
+        content = (
+            f"python3 .plan/execute-script.py {_SYN_NOTATION} foo "
+            f"--alpha '--not-a-flag'\n"
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
+        assert findings == []
+
+    def test_unquoted_flag_still_validated(self, flat_index: dict) -> None:
+        """Quoting suppresses only the quoted region — unquoted flags still parse."""
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo '
+            f'--alpha "in quotes --safe" --nope unsafe\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
+        assert len(findings) == 1
+        assert findings[0]['details']['reason'] == 'flag_unknown'
+        assert findings[0]['details']['flag'] == 'nope'
+
+
+class TestFlatSubcommandWithPositionalArgs:
+    """A flat subcommand that accepts positional args still gets flag validation."""
+
+    def test_positional_after_flat_subcommand_does_not_block_flag_check(
+        self, tmp_path: Path
+    ) -> None:
+        """Pre-fix bug: a second positional token under a flat subcommand
+        caused ``get_leaf`` to return ``None`` and skip flag validation
+        for commands like ``architecture path SOURCE TARGET --json``.
+        """
+        script = tmp_path / 'syn.py'
+        script.write_text(
+            textwrap.dedent('''
+                import argparse
+
+                def main():
+                    parser = argparse.ArgumentParser()
+                    subparsers = parser.add_subparsers(dest='command')
+                    path = subparsers.add_parser('path')
+                    path.add_argument('source')
+                    path.add_argument('target')
+                    path.add_argument('--json', action='store_true')
+                    return parser
+            ''').lstrip(),
+            encoding='utf-8',
+        )
+        tree = build_script_tree(script)
+        assert tree is not None
+
+        index = {_SYN_NOTATION: tree}
+        # Canonical invocation with positional args + known flag — clean.
+        clean = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} path src dst --json\n'
+        )
+        findings = analyze_manage_invocation_markdown(clean, '/fake/SKILL.md', index)
+        assert findings == []
+
+        # Same shape with an unknown flag — exactly one finding (proves
+        # flag validation actually runs after the positional tokens).
+        bad = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} path src dst --nope\n'
+        )
+        findings = analyze_manage_invocation_markdown(bad, '/fake/SKILL.md', index)
+        assert len(findings) == 1
+        assert findings[0]['details']['reason'] == 'flag_unknown'
+        assert findings[0]['details']['flag'] == 'nope'
+
+
+class TestMutuallyExclusiveGroupSupport:
+    """Flags declared on ``add_mutually_exclusive_group`` are honored."""
+
+    def test_group_flags_attach_to_parent_leaf(self, tmp_path: Path) -> None:
+        """``group = parser.add_mutually_exclusive_group()`` followed by
+        ``group.add_argument('--a')`` registers ``--a`` on the parent
+        parser. Pre-fix, the receiver ``group`` was not in
+        ``parser_kind`` and the flag was silently dropped.
+        """
+        script = tmp_path / 'syn.py'
+        script.write_text(
+            textwrap.dedent('''
+                import argparse
+
+                def main():
+                    parser = argparse.ArgumentParser()
+                    group = parser.add_mutually_exclusive_group(required=True)
+                    group.add_argument('--by-id')
+                    group.add_argument('--by-name')
+                    parser.add_argument('--debug', action='store_true')
+                    return parser
+            ''').lstrip(),
+            encoding='utf-8',
+        )
+        tree = build_script_tree(script)
+        assert tree is not None
+        # Root leaf carries the three flags (group + non-group).
+        assert tree.root.flags == {'by-id', 'by-name', 'debug'}
+
+    def test_argument_group_flags_attach_to_parent_leaf(self, tmp_path: Path) -> None:
+        """``parser.add_argument_group(...)`` is also aliased to the parent."""
+        script = tmp_path / 'syn.py'
+        script.write_text(
+            textwrap.dedent('''
+                import argparse
+
+                def main():
+                    parser = argparse.ArgumentParser()
+                    subparsers = parser.add_subparsers(dest='command')
+                    run = subparsers.add_parser('run')
+                    grp = run.add_argument_group('output')
+                    grp.add_argument('--json', action='store_true')
+                    grp.add_argument('--quiet', action='store_true')
+                    return parser
+            ''').lstrip(),
+            encoding='utf-8',
+        )
+        tree = build_script_tree(script)
+        assert tree is not None
+        leaf = tree.get_leaf('run', None)
+        assert leaf is not None
+        assert leaf.flags == {'json', 'quiet'}
