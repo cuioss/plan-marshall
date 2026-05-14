@@ -602,6 +602,8 @@ This step is the single source of "did the phase end clean?" — it appends the 
 
 Before invoking `manage-status transition --completed 5-execute` (see **Phase Transition** section below), refuse to transition when any pending tasks remain. `manage-tasks next` only surfaces the head of the queue — a `null` next does NOT prove the queue is empty when downstream tasks are still in `pending`. Fix tasks created by Step 11 triage commonly land here, and a premature transition silently abandons them.
 
+**Script-level enforcement**: the authoritative pending-count check is `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks loop-exit-guard --plan-id {plan_id}` — see `manage-tasks/SKILL.md` § "Loop-Exit Guard". `status: continue` (with `pending_count > 0` and `pending_ids`) forces the orchestrator to re-dispatch the execution-context; `status: success` (with `pending_count: 0`) is the precondition for `manage-metrics record-dispatch-boundary --termination-cause clean_exit_queue_empty`. The list-based check below remains documented for backwards compatibility with existing callers — both forms read the same on-disk state, but `loop-exit-guard` is the canonical surface and the verb the orchestrator MUST consult.
+
 1. Query the pending-task list:
 
    ```bash

@@ -32,7 +32,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from constants import FILE_WORK_METRICS, PHASES  # type: ignore[import-not-found]
+from constants import FILE_STATUS, FILE_WORK_METRICS, PHASES  # type: ignore[import-not-found]
 from file_ops import (  # type: ignore[import-not-found]
     atomic_write_file,
     format_duration,
@@ -62,7 +62,7 @@ DISPATCH_TERMINATION_CAUSES = (
     'task_complete_returned_verbatim',
     'harness_cancellation',
     'error',
-    'unknown',
+    'clean_exit_queue_empty',
 )
 USAGE_TAG_RE = re.compile(r'<usage>([\s\S]*?)</usage>', re.MULTILINE)
 USAGE_FIELD_RE = re.compile(r'^\s*(total_tokens|tool_uses|duration_ms)\s*:\s*(\d+)', re.MULTILINE)
@@ -320,53 +320,117 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     lines.append('| Phase | Duration | Tokens | Input | Output | Tool Uses |')
     lines.append('|-------|----------|--------|-------|--------|-----------|')
 
-    total_duration = 0.0
-    total_tokens = 0
-    total_input_tokens = 0
-    total_output_tokens = 0
-    total_tool_uses = 0
+    # Collect breakdown rows (phases that exist) preserving canonical phase order.
+    breakdown_rows = [(name, phases[name]) for name in PHASE_NAMES if name in phases]
+    breakdown_n = len(breakdown_rows)
 
-    for phase_name in PHASE_NAMES:
-        if phase_name not in phases:
-            continue
-        phase = phases[phase_name]
+    def _numeric(value: object) -> int | float | None:
+        """Return value as int/float if it's a truthy number, else None.
 
-        duration = _coerce_numeric(phase.get('duration_seconds', 0))
-        if not isinstance(duration, (int, float)):
-            duration = 0.0
-        total_duration += duration
+        Symmetric per-cell rule: a per-phase cell is "present" iff the underlying
+        raw value is a truthy numeric (zero or missing → absent → '-').
+        """
+        coerced = _coerce_numeric(value)
+        if not isinstance(coerced, (int, float)):
+            return None
+        if not coerced:
+            return None
+        return coerced
 
-        tokens = _coerce_numeric(phase.get('total_tokens', 0))
-        if not isinstance(tokens, (int, float)):
-            tokens = 0
-        total_tokens += int(tokens)
+    def _folded_int(*candidates: object) -> int | None:
+        """Fold multiple raw fields into one int, returning None when ALL are absent/zero.
 
-        input_tokens = _coerce_numeric(phase.get('input_tokens', 0))
-        if not isinstance(input_tokens, (int, float)):
-            input_tokens = 0
-        total_input_tokens += int(input_tokens)
+        Used by the Input / Output columns to produce the unified
+        main-context + subagent per-phase total.
+        """
+        total = 0
+        any_present = False
+        for raw in candidates:
+            coerced = _coerce_numeric(raw)
+            if isinstance(coerced, (int, float)) and coerced:
+                any_present = True
+                total += int(coerced)
+        return total if any_present else None
 
-        output_tokens = _coerce_numeric(phase.get('output_tokens', 0))
-        if not isinstance(output_tokens, (int, float)):
-            output_tokens = 0
-        total_output_tokens += int(output_tokens)
+    def _duration_cell(phase: dict) -> tuple[str, float | None]:
+        """Return (rendered_cell, value_for_total).
 
-        tool_uses = _coerce_numeric(phase.get('tool_uses', 0))
-        if not isinstance(tool_uses, (int, float)):
-            tool_uses = 0
-        total_tool_uses += int(tool_uses)
+        Per-cell rule: prefer phase.duration_seconds; fall back to phase.agent_duration_seconds
+        formatted as '{value}s (agent)'; render '-' when both are absent.
+        Total aggregates whatever value contributed to the per-cell render.
+        """
+        wall = _numeric(phase.get('duration_seconds'))
+        if wall is not None:
+            return format_duration(float(wall)), float(wall)
+        agent = _numeric(phase.get('agent_duration_seconds'))
+        if agent is not None:
+            return f'{agent}s (agent)', float(agent)
+        return '-', None
 
-        duration_str = format_duration(duration) if duration else '-'
-        tokens_str = f'{tokens:,}' if tokens else '-'
-        input_str = f'{input_tokens:,}' if input_tokens else '-'
-        output_str = f'{output_tokens:,}' if output_tokens else '-'
-        tool_uses_str = str(tool_uses) if tool_uses else '-'
+    # Per-column value subsets (for Total aggregation and partial-marker decisions).
+    duration_values: list[float] = []
+    tokens_values: list[int] = []
+    input_values: list[int] = []
+    output_values: list[int] = []
+    tool_uses_values: list[int] = []
+
+    for phase_name, phase in breakdown_rows:
+        duration_str, duration_val = _duration_cell(phase)
+        if duration_val is not None:
+            duration_values.append(duration_val)
+
+        tokens = _numeric(phase.get('total_tokens'))
+        tokens_str = f'{int(tokens):,}' if tokens is not None else '-'
+        if tokens is not None:
+            tokens_values.append(int(tokens))
+
+        # Input / Output cells fold main-context + subagent into one user-visible
+        # total. Either source contributing makes the cell present.
+        input_tokens = _folded_int(phase.get('input_tokens'), phase.get('subagent_input_tokens'))
+        input_str = f'{input_tokens:,}' if input_tokens is not None else '-'
+        if input_tokens is not None:
+            input_values.append(input_tokens)
+
+        output_tokens = _folded_int(phase.get('output_tokens'), phase.get('subagent_output_tokens'))
+        output_str = f'{output_tokens:,}' if output_tokens is not None else '-'
+        if output_tokens is not None:
+            output_values.append(output_tokens)
+
+        tool_uses = _numeric(phase.get('tool_uses'))
+        tool_uses_str = str(int(tool_uses)) if tool_uses is not None else '-'
+        if tool_uses is not None:
+            tool_uses_values.append(int(tool_uses))
 
         lines.append(f'| {phase_name} | {duration_str} | {tokens_str} | {input_str} | {output_str} | {tool_uses_str} |')
 
-    # Totals row
+    def _total_str(values: list, formatter, *, is_duration: bool = False) -> str:
+        """Apply the symmetric Total aggregation rule.
+
+        - Empty subset → '-'.
+        - Subset smaller than breakdown_n → '{sum_str} (n=k/N)'.
+        - Subset equal to breakdown_n → plain sum.
+        """
+        k = len(values)
+        if k == 0:
+            return '-'
+        if is_duration:
+            total = sum(values)
+            sum_str = format_duration(float(total))
+        else:
+            total = sum(int(v) for v in values)
+            sum_str = formatter(total)
+        if k < breakdown_n:
+            return f'{sum_str} (n={k}/{breakdown_n})'
+        return sum_str
+
+    total_duration_str = _total_str(duration_values, lambda n: format_duration(float(n)), is_duration=True)
+    total_tokens_str = _total_str(tokens_values, lambda n: f'{n:,}')
+    total_input_str = _total_str(input_values, lambda n: f'{n:,}')
+    total_output_str = _total_str(output_values, lambda n: f'{n:,}')
+    total_tool_uses_str = _total_str(tool_uses_values, str)
+
     lines.append(
-        f'| **Total** | **{format_duration(total_duration)}** | **{total_tokens:,}** | **{total_input_tokens:,}** | **{total_output_tokens:,}** | **{total_tool_uses}** |'
+        f'| **Total** | **{total_duration_str}** | **{total_tokens_str}** | **{total_input_str}** | **{total_output_str}** | **{total_tool_uses_str}** |'
     )
     lines.append('')
 
@@ -415,6 +479,11 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     md_content = '\n'.join(lines)
     md_path = get_plan_dir(plan_id) / METRICS_MD
     atomic_write_file(md_path, md_content)
+
+    total_duration = sum(duration_values)
+    total_tokens = sum(tokens_values)
+    total_input_tokens = sum(input_values)
+    total_output_tokens = sum(output_values)
 
     result = {
         'status': 'success',
@@ -504,6 +573,26 @@ def cmd_print_phase_breakdown(args: argparse.Namespace) -> dict:
     }
 
 
+def _read_status_created(plan_id: str) -> str | None:
+    """Return status.json.created (ISO timestamp) for the plan, or None on any failure.
+
+    Used by cmd_phase_boundary to backfill 1-init.start_time at the first phase
+    transition. Failure modes (missing status.json, malformed JSON, missing
+    'created' key, non-string value) all return None — the renderer's
+    agent-duration fallback still produces a meaningful Duration cell.
+    """
+    status_path = get_plan_dir(plan_id) / FILE_STATUS
+    if not status_path.exists():
+        return None
+    try:
+        raw = status_path.read_text(encoding='utf-8')
+        data = json.loads(raw)
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+    created = data.get('created') if isinstance(data, dict) else None
+    return created if isinstance(created, str) else None
+
+
 def cmd_phase_boundary(args: argparse.Namespace) -> dict:
     """Atomically end the previous phase, start the next phase, and regenerate
     metrics.md in a single call.
@@ -548,6 +637,16 @@ def cmd_phase_boundary(args: argparse.Namespace) -> dict:
         data['phases'][prev_phase] = {}
     prev_data = data['phases'][prev_phase]
     prev_data['end_time'] = end_now
+
+    # 1-init structural backfill: when transitioning out of 1-init for the
+    # first time the phase row never went through cmd_start_phase, so
+    # start_time is absent. Source it from status.json.created so the
+    # duration-computation path below catches the backfill and writes
+    # duration_seconds in the same call.
+    if prev_phase == '1-init' and not prev_data.get('start_time'):
+        created_ts = _read_status_created(plan_id)
+        if created_ts is not None:
+            prev_data['start_time'] = created_ts
 
     start_str = prev_data.get('start_time')
     if start_str:
@@ -1107,6 +1206,7 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
     message_count = 0
     windows = _phase_window_lookup(plan_id)
     per_phase_subagent: dict[str, dict[str, int]] = {}
+    per_phase_main: dict[str, dict[str, int]] = {}
     subagent_calls_attributed = 0
 
     try:
@@ -1123,10 +1223,32 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
                 msg = entry.get('message', {}) if isinstance(entry, dict) else {}
                 usage = msg.get('usage', {}) if isinstance(msg, dict) else {}
                 if isinstance(usage, dict) and usage:
-                    total_input += usage.get('input_tokens', 0) or 0
-                    total_output += usage.get('output_tokens', 0) or 0
+                    in_tok = usage.get('input_tokens', 0) or 0
+                    out_tok = usage.get('output_tokens', 0) or 0
+                    total_input += in_tok
+                    total_output += out_tok
                     if usage.get('input_tokens') or usage.get('output_tokens'):
                         message_count += 1
+                    # Per-phase main-context attribution. Re-use the same
+                    # latest-first window iteration as subagent attribution so
+                    # boundary timestamps attribute to the newer phase.
+                    if windows and (in_tok or out_tok):
+                        timestamp = entry.get('timestamp') if isinstance(entry, dict) else None
+                        if isinstance(timestamp, str):
+                            try:
+                                ts = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                            except (ValueError, TypeError):
+                                ts = None
+                            if ts is not None:
+                                for phase_name, start_dt, end_dt in reversed(windows):
+                                    if start_dt <= ts <= end_dt:
+                                        bucket = per_phase_main.setdefault(
+                                            phase_name,
+                                            {'input_tokens': 0, 'output_tokens': 0},
+                                        )
+                                        bucket['input_tokens'] += in_tok
+                                        bucket['output_tokens'] += out_tok
+                                        break
 
                 # Subagent <usage> attribution: walk tool_result blocks (and any
                 # other text content as a safety net) for <usage>...</usage>.
@@ -1161,6 +1283,56 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
             'message': f'Cannot read transcript: {transcript_path}',
         }
 
+    # Subagent transcript walk: per-message usage attribution from
+    # `~/.claude/projects/{cwd-slug}/{session_id}/subagents/agent-*.jsonl`.
+    # Resolver lives in manage_session — imported in-process (no subprocess).
+    per_phase_subagent_main: dict[str, dict[str, int]] = {}
+    subagent_transcripts_walked = 0
+    if windows:
+        from manage_session import resolve_subagent_transcripts  # type: ignore[import-not-found]
+
+        for sub_path in resolve_subagent_transcripts(session_id):
+            subagent_transcripts_walked += 1
+            try:
+                with open(sub_path, encoding='utf-8') as sf:
+                    for sline in sf:
+                        sline = sline.strip()
+                        if not sline:
+                            continue
+                        try:
+                            sentry = json.loads(sline)
+                        except (json.JSONDecodeError, AttributeError):
+                            continue
+                        if not isinstance(sentry, dict):
+                            continue
+                        smsg = sentry.get('message', {}) if isinstance(sentry, dict) else {}
+                        susage = smsg.get('usage', {}) if isinstance(smsg, dict) else {}
+                        if not (isinstance(susage, dict) and susage):
+                            continue
+                        sin_tok = susage.get('input_tokens', 0) or 0
+                        sout_tok = susage.get('output_tokens', 0) or 0
+                        if not (sin_tok or sout_tok):
+                            continue
+                        stamp = sentry.get('timestamp')
+                        if not isinstance(stamp, str):
+                            continue
+                        try:
+                            sts = datetime.fromisoformat(stamp.replace('Z', '+00:00'))
+                        except (ValueError, TypeError):
+                            continue
+                        for phase_name, start_dt, end_dt in reversed(windows):
+                            if start_dt <= sts <= end_dt:
+                                bucket = per_phase_subagent_main.setdefault(
+                                    phase_name,
+                                    {'input_tokens': 0, 'output_tokens': 0},
+                                )
+                                bucket['input_tokens'] += sin_tok
+                                bucket['output_tokens'] += sout_tok
+                                break
+            except OSError:
+                # Skip unreadable subagent transcripts; main-context attribution remains intact.
+                continue
+
     # Update metrics with enriched data (main-context + per-phase subagent totals)
     data = read_metrics_raw(plan_id)
     data['session_input_tokens'] = total_input
@@ -1178,6 +1350,20 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
             phase_row['subagent_duration_ms'] = totals['duration_ms']
             phase_row['subagent_samples'] = totals['samples']
 
+    if per_phase_main:
+        phases_state = data.setdefault('phases', {})
+        for phase_name, totals in per_phase_main.items():
+            phase_row = phases_state.setdefault(phase_name, {})
+            phase_row['input_tokens'] = totals['input_tokens']
+            phase_row['output_tokens'] = totals['output_tokens']
+
+    if per_phase_subagent_main:
+        phases_state = data.setdefault('phases', {})
+        for phase_name, totals in per_phase_subagent_main.items():
+            phase_row = phases_state.setdefault(phase_name, {})
+            phase_row['subagent_input_tokens'] = totals['input_tokens']
+            phase_row['subagent_output_tokens'] = totals['output_tokens']
+
     write_metrics(plan_id, data)
 
     return {
@@ -1190,6 +1376,8 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
         'message_count': message_count,
         'subagent_phases_attributed': len(per_phase_subagent),
         'subagent_calls_attributed': subagent_calls_attributed,
+        'main_phases_attributed': len(per_phase_main),
+        'subagent_transcripts_walked': subagent_transcripts_walked,
     }
 
 
@@ -1295,11 +1483,17 @@ def main() -> int:
             'Append a TOON row to work/metrics-dispatch-boundaries-{phase}.toon '
             'capturing the termination cause of a phase Task dispatch '
             '(voluntary_checkpoint | task_complete_returned_verbatim | '
-            'harness_cancellation | error | unknown) and the dispatched '
-            "agent's <usage> totals at the time of return. The orchestrator "
-            'invokes this on every phase Task return so plan-retrospective '
-            'can correlate agent-initiated re-dispatch events with '
-            '[OUTCOME]-log coverage gaps (lesson 2026-05-08-14-001).'
+            'harness_cancellation | error | clean_exit_queue_empty) and the '
+            "dispatched agent's <usage> totals at the time of return. "
+            '``clean_exit_queue_empty`` is the canonical value the '
+            'orchestrator MUST use for a successful loop-exit (queue '
+            'genuinely empty, verified by ``manage-tasks loop-exit-guard``); '
+            'the recorder no longer accepts the legacy fallback value '
+            '``unknown`` — missing or unrecognised causes are script errors. '
+            'The orchestrator invokes this on every phase Task return so '
+            'plan-retrospective can correlate agent-initiated re-dispatch '
+            'events with [OUTCOME]-log coverage gaps (lesson '
+            '2026-05-08-14-001).'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,

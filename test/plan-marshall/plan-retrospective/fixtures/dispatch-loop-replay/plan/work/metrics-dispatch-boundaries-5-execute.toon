@@ -1,0 +1,6 @@
+plan_id: dispatch-loop-replay
+phase: 5-execute
+rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:
+2026-05-10T15:00:00Z,clean_exit_queue_empty,100000,50,120000
+2026-05-10T15:01:00Z,clean_exit_queue_empty,110000,55,130000
+2026-05-10T15:02:00Z,clean_exit_queue_empty,120000,60,140000

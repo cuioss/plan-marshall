@@ -415,10 +415,21 @@ class TestPhase5LoggingGapExtractors:
         plan_dir = tmp_path / 'plans' / 'no-boundary'
         plan_dir.mkdir(parents=True)
         result = _analyze_logs.read_dispatch_boundaries(plan_dir)
-        assert result == {'present': False, 'rows': [], 'unknown_count': 0}
+        assert result == {
+            'present': False,
+            'rows': [],
+            'unknown_count': 0,
+            'clean_exit_queue_empty_count': 0,
+        }
 
     def test_read_dispatch_boundaries_present(self, tmp_path):
-        """Artifact parses into one row per data line; unknown_count counts unknowns."""
+        """Artifact parses into one row per data line; both counts are extracted.
+
+        Lesson 2026-05-10-15-001: `unknown_count` remains the legacy-row
+        detector (the recorder no longer emits `unknown`, so any row carrying
+        it is pre-migration data); `clean_exit_queue_empty_count` is the new
+        canonical clean-exit counter.
+        """
         plan_dir = tmp_path / 'plans' / 'with-boundary'
         (plan_dir / 'work').mkdir(parents=True)
         artifact = plan_dir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
@@ -428,15 +439,21 @@ class TestPhase5LoggingGapExtractors:
             'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:\n'
             '2026-05-08T14:00:00Z,voluntary_checkpoint,100,2,1000\n'
             '2026-05-08T14:01:00Z,unknown,200,4,2000\n'
-            '2026-05-08T14:02:00Z,unknown,300,6,3000\n',
+            '2026-05-08T14:02:00Z,unknown,300,6,3000\n'
+            '2026-05-08T14:03:00Z,clean_exit_queue_empty,400,8,4000\n',
             encoding='utf-8',
         )
         result = _analyze_logs.read_dispatch_boundaries(plan_dir)
         assert result['present'] is True
-        assert len(result['rows']) == 3
+        assert len(result['rows']) == 4
         assert result['rows'][0]['termination_cause'] == 'voluntary_checkpoint'
         assert result['rows'][0]['total_tokens'] == 100
+        # Legacy `unknown` rows still surface in unknown_count for the
+        # warning-severity retrospective finding.
         assert result['unknown_count'] == 2
+        # Canonical clean-exit rows surface in the new counter for the
+        # info-severity retrospective distribution finding.
+        assert result['clean_exit_queue_empty_count'] == 1
 
     # ------------------------------------------------------------------
     # Integration: cmd_run end-to-end

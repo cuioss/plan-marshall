@@ -32,6 +32,7 @@ from input_validation import (  # type: ignore[import-not-found]
     SESSION_ID_RE,
     add_session_id_arg,
     parse_args_with_toon_errors,
+    validate_session_id,
 )
 
 
@@ -133,6 +134,45 @@ def cmd_transcript_path(args: argparse.Namespace) -> int:
     return 0
 
 
+def resolve_subagent_transcripts(parent_session_id: str) -> list[Path]:
+    """Return absolute paths of subagent transcript JSONLs for the given parent session.
+
+    Subagent transcripts live under
+    ``~/.claude/projects/{cwd-slug}/{parent_session_id}/subagents/agent-*.jsonl``.
+    When the directory does not exist or contains no matches, returns an empty list
+    (main-context-only plans are valid).
+    """
+    projects = _projects_root()
+    if projects is None:
+        return []
+    cwd = _resolve_cwd()
+    cwd_slug = _cwd_to_slug(cwd)
+    subagents_dir = projects / cwd_slug / parent_session_id / 'subagents'
+    if not subagents_dir.is_dir():
+        return []
+    matches = sorted(p for p in subagents_dir.glob('agent-*.jsonl') if p.is_file())
+    return matches
+
+
+def cmd_subagent_transcripts(args: argparse.Namespace) -> int:
+    parent_session_id = args.parent_session_id
+    if not SESSION_ID_RE.match(parent_session_id):
+        output_toon_error(
+            'invalid_parent_session_id',
+            f'parent_session_id must match {SESSION_ID_RE.pattern}',
+        )
+        return 0
+
+    paths = resolve_subagent_transcripts(parent_session_id)
+    output_toon(
+        {
+            'status': 'success',
+            'transcript_paths': [str(p) for p in paths],
+        }
+    )
+    return 0
+
+
 @safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(
@@ -150,11 +190,25 @@ def main() -> int:
     )
     add_session_id_arg(transcript_parser)
 
+    subagent_parser = subparsers.add_parser(
+        'subagent-transcripts',
+        help='List subagent transcript JSONLs nested under the given parent session id',
+        allow_abbrev=False,
+    )
+    subagent_parser.add_argument(
+        '--parent-session-id',
+        required=True,
+        type=validate_session_id,
+        help='Parent Claude Code session identifier whose subagent transcripts to enumerate',
+    )
+
     args = parse_args_with_toon_errors(parser)
     if args.command == 'current':
         return cmd_current(args)
     if args.command == 'transcript-path':
         return cmd_transcript_path(args)
+    if args.command == 'subagent-transcripts':
+        return cmd_subagent_transcripts(args)
     parser.error(f'Unknown command: {args.command}')
     return 2
 

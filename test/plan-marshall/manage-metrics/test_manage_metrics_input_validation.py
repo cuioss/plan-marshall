@@ -65,3 +65,53 @@ def test_enrich_rejects_invalid_session_id(axis, bad_value):
         bad_value,
     )
     assert_invalid_field(result, 'invalid_session_id')
+
+
+# =============================================================================
+# --termination-cause (record-dispatch-boundary)
+#
+# Lesson 2026-05-10-15-001: the recorder migrated from the overloaded
+# `unknown` fallback to the canonical `clean_exit_queue_empty` success-path
+# value. The legacy literal `unknown` is now rejected schema-wide via the
+# argparse ``choices=`` list; the canonical value is accepted.
+# =============================================================================
+
+
+def test_record_dispatch_boundary_rejects_legacy_unknown_termination_cause():
+    """``--termination-cause unknown`` is rejected at argparse — no fallback."""
+    result = run_script(
+        SCRIPT_PATH,
+        'record-dispatch-boundary',
+        '--plan-id',
+        HAPPY_VALUES['plan_id'],
+        '--phase',
+        '5-execute',
+        '--termination-cause',
+        'unknown',
+    )
+    assert result.returncode != 0, 'argparse MUST reject the legacy `unknown` value'
+    # argparse error messages enumerate the accepted set on stderr.
+    combined = (result.stdout or '') + (result.stderr or '')
+    assert 'clean_exit_queue_empty' in combined
+    assert 'unknown' not in (
+        combined.split('choose from')[1] if 'choose from' in combined else ''
+    ) or 'invalid choice' in combined
+
+
+def test_record_dispatch_boundary_accepts_clean_exit_queue_empty():
+    """``--termination-cause clean_exit_queue_empty`` is accepted at argparse."""
+    result = run_script(
+        SCRIPT_PATH,
+        'record-dispatch-boundary',
+        '--plan-id',
+        HAPPY_VALUES['plan_id'],
+        '--phase',
+        '5-execute',
+        '--termination-cause',
+        'clean_exit_queue_empty',
+    )
+    # Accepted by argparse; the call may still surface a plan-not-found or
+    # similar runtime error, but the parser-level rejection MUST NOT fire.
+    combined = (result.stdout or '') + (result.stderr or '')
+    assert 'invalid choice' not in combined
+    assert "argument --termination-cause" not in combined or 'choose from' not in combined

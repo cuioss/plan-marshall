@@ -116,7 +116,9 @@ to the agent's terminal payload (text + structured TOON return):
 | `voluntary_checkpoint` | The agent emitted any of "Returning control to orchestrator", "progress checkpoint", "partial-completion handoff", or returned a non-error payload while pending tasks remain in the queue. |
 | `harness_cancellation` | The dispatch ended with a host-platform cancellation marker (timeout, context-window limit, etc.). |
 | `error` | The agent returned a structured error payload via the skill's Error Handling section (including the pending-task-drift fatal error). |
-| `unknown` | Fallback when the orchestrator cannot match any of the above; also the canonical value for clean exits where the loop drove to completion AND the queue is empty. |
+| `clean_exit_queue_empty` | Canonical value for clean exits where the loop drove to completion AND `manage-tasks loop-exit-guard` confirmed the pending queue is empty. The orchestrator MUST classify clean exits as `clean_exit_queue_empty`, NEVER fall back to a non-canonical value — missing or unrecognised causes are recorder-level script errors (the recorder no longer accepts the legacy `unknown` fallback). |
+
+**Script-level pending-count enforcement**: before classifying any return as `clean_exit_queue_empty`, the orchestrator MUST call `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks loop-exit-guard --plan-id {plan_id}` and confirm it returns `status: success` with `pending_count: 0`. `status: continue` forces re-dispatch — the orchestrator is forbidden from softening this signal. See `manage-tasks/SKILL.md` § "Loop-Exit Guard".
 
 **Bash invocation** — issue the call **before** any subsequent dispatch or
 phase-boundary action so the audit trail captures the actual termination
@@ -124,24 +126,26 @@ order:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics record-dispatch-boundary \
-  --plan-id {plan_id} --phase 5-execute --termination-cause {cause} \
+  --plan-id {plan_id} --phase 5-execute --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|harness_cancellation|error|clean_exit_queue_empty} \
   --total-tokens {n} --tool-uses {n} --duration-ms {n}
 ```
 
-Substitute `{cause}` with one of the five values from the table above and
-`{n}` with the integer parsed from the agent's `<usage>...</usage>` block
-(use `0` when the field is absent).
+Substitute the `--termination-cause` value with the canonical cause from the
+table above and `{n}` with the integer parsed from the agent's
+`<usage>...</usage>` block (use `0` when the field is absent).
 
 **Boundary-call fence** — the existing `5-execute → 6-finalize` fused
 `phase-boundary` call MUST only fire on a clean exit, defined as
-`termination-cause == unknown` AND `manage-tasks list --status pending`
-returning zero pending tasks. For every other classified cause, the
-orchestrator MUST re-dispatch the execution-context (recoverable cases) or escalate
-to the user (`error` / repeated `harness_cancellation`) — it MUST NOT
-transition to `6-finalize` while pending work remains. This fence is the
-control-flow analogue of the Step 12a "Pending-tasks transition guard" in
-`phase-5-execute` SKILL.md and is the structural complement to the
-script-level `[OUTCOME]` guard introduced in `manage-tasks finalize-step`.
+`termination-cause == clean_exit_queue_empty` AND `manage-tasks loop-exit-guard`
+returning `status: success` with `pending_count: 0`. For every other
+classified cause, the orchestrator MUST re-dispatch the execution-context
+(recoverable cases) or escalate to the user (`error` / repeated
+`harness_cancellation`) — it MUST NOT transition to `6-finalize` while
+pending work remains. This fence is the control-flow analogue of the
+Step 12a "Pending-tasks transition guard" in `phase-5-execute` SKILL.md
+(which now points to the same `loop-exit-guard` verb as its authoritative
+enforcement) and is the structural complement to the script-level `[OUTCOME]`
+guard introduced in `manage-tasks finalize-step`.
 
 ### Execute Phase Completion
 
