@@ -259,3 +259,57 @@ def test_toon_layout_parseable_by_parse_toon():
         rows = _data_rows(content)
         assert len(rows) == 1
         assert ',voluntary_checkpoint,42,2,4242' in rows[0]
+
+
+# =============================================================================
+# (g) DISPATCH_TERMINATION_CAUSES schema migration — clean_exit_queue_empty
+#     replaces the legacy `unknown` fallback. The recorder now accepts
+#     `clean_exit_queue_empty` and rejects the literal `unknown`.
+# =============================================================================
+
+
+def test_clean_exit_queue_empty_accepted_as_canonical_clean_exit_value():
+    """`clean_exit_queue_empty` is the canonical clean-exit value post-migration."""
+    plan_id = 'disp-clean-exit'
+    with PlanContext(plan_id=plan_id) as ctx:
+        result = cmd_record_dispatch_boundary(
+            _ns(
+                plan_id,
+                phase='5-execute',
+                termination_cause='clean_exit_queue_empty',
+                total_tokens=10,
+                tool_uses=5,
+                duration_ms=1234,
+            )
+        )
+        assert result['status'] == 'success'
+        assert result['termination_cause'] == 'clean_exit_queue_empty'
+
+        path = _boundary_path(ctx.plan_dir, '5-execute')
+        content = path.read_text(encoding='utf-8')
+        rows = _data_rows(content)
+        assert len(rows) == 1
+        assert ',clean_exit_queue_empty,10,5,1234' in rows[0]
+
+
+def test_legacy_unknown_termination_cause_rejected_no_file_written():
+    """The legacy `unknown` value is rejected by argparse (no implicit fallback)."""
+    with PlanContext(plan_id='disp-legacy-unknown') as ctx:
+        result = run_script(
+            SCRIPT_PATH,
+            'record-dispatch-boundary',
+            '--plan-id',
+            'disp-legacy-unknown',
+            '--phase',
+            '5-execute',
+            '--termination-cause',
+            'unknown',
+        )
+        assert result.returncode != 0, 'argparse MUST reject the legacy `unknown` value'
+        assert not _boundary_path(ctx.plan_dir, '5-execute').exists()
+
+
+def test_dispatch_termination_causes_does_not_contain_unknown():
+    """The live tuple no longer contains the legacy `unknown` fallback value."""
+    assert 'unknown' not in DISPATCH_TERMINATION_CAUSES
+    assert 'clean_exit_queue_empty' in DISPATCH_TERMINATION_CAUSES

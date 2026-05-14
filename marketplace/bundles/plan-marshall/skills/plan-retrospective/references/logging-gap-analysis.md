@@ -108,9 +108,17 @@ absent, the rule emits no finding.
   from D4). When the precondition holds, parse the file and count rows by
   `termination_cause`. Emit findings:
 
-  - One `info`-severity finding with the per-cause distribution (e.g.
-    `"4 voluntary_checkpoint, 1 task_complete_returned_verbatim,
-    0 harness_cancellation, 0 error, 1 unknown"`).
+  - One `info`-severity finding with the per-cause distribution over the
+    canonical value set (e.g. `"4 voluntary_checkpoint,
+    1 task_complete_returned_verbatim, 0 harness_cancellation, 0 error,
+    1 clean_exit_queue_empty"`).
+  - A `warning`-severity finding when `unknown_count > 0` — any row
+    carrying the literal `unknown` termination cause is legacy data from
+    before the `clean_exit_queue_empty` migration (the recorder no longer
+    accepts `unknown`), so its presence is the signal that the plan was
+    captured by an older recorder OR a recorder-call-site defect re-emerged
+    after the migration. This is the finding that catches any post-merge
+    recurrence of the overloaded-fallback defect.
   - A `warning`-severity finding when `voluntary_checkpoint`
     + `task_complete_returned_verbatim` together account for more than
     50 % of recorded dispatches — agent-initiated re-dispatch is the

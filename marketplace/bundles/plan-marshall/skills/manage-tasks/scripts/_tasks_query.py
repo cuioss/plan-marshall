@@ -2,7 +2,8 @@
 """
 Query command handlers for manage-tasks.py.
 
-Contains: list, read, next, tasks-by-domain, tasks-by-profile, next-tasks subcommands.
+Contains: list, read, next, tasks-by-domain, tasks-by-profile, next-tasks,
+loop-exit-guard subcommands.
 """
 
 from _tasks_core import (
@@ -372,6 +373,51 @@ def cmd_tasks_by_profile(args) -> dict:
             'blocked': blocked,
         },
         'tasks_table': table,
+    }
+
+
+def cmd_loop_exit_guard(args) -> dict:
+    """Handle 'loop-exit-guard' subcommand.
+
+    Script-level enforcement of the phase-5-execute "pending > 0 → must
+    continue" invariant. Returns a non-``success`` status (``continue``) when
+    pending tasks remain so the orchestrator MUST re-dispatch; returns
+    ``success`` with ``pending_count: 0`` only when the queue is genuinely
+    empty.
+
+    The pending-count logic reuses the same ``get_all_tasks`` traversal as
+    ``cmd_list``/``cmd_next_tasks``; no behaviour change to existing query
+    commands. The guard is intentionally narrow — it answers exactly one
+    question (are there pending tasks?) and never tries to classify why a
+    task is pending or whether its dependencies are satisfied. The skill
+    prose at ``phase-5-execute/SKILL.md`` § Step 12a names the contract;
+    authoritative enforcement lives here.
+    """
+    task_dir = get_tasks_dir(args.plan_id)
+    all_tasks = get_all_tasks(task_dir)
+
+    pending_ids = [t['number'] for _, t in all_tasks if t.get('status') == 'pending']
+    pending_count = len(pending_ids)
+
+    if pending_count > 0:
+        return {
+            'status': 'continue',
+            'plan_id': args.plan_id,
+            'pending_count': pending_count,
+            'pending_ids': pending_ids,
+            'message': (
+                f'{pending_count} pending task(s) remain — orchestrator MUST '
+                f're-dispatch the execution-context before transitioning out '
+                f'of phase-5-execute.'
+            ),
+        }
+
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'pending_count': 0,
+        'pending_ids': [],
+        'message': 'Pending queue empty — clean exit permitted.',
     }
 
 

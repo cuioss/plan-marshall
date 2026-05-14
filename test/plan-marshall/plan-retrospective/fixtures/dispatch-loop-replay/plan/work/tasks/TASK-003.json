@@ -1,0 +1,24 @@
+{
+  "number": 3,
+  "title": "Replay fixture — pending successor (tail)",
+  "deliverable": 1,
+  "status": "pending",
+  "current_step": 1,
+  "domain": "plan-marshall-plugin-dev",
+  "profile": "verification",
+  "depends_on": [2],
+  "skills": [],
+  "origin": "plan",
+  "steps": [
+    {
+      "number": 1,
+      "target": "test/replay/pending_tail.py",
+      "status": "pending"
+    }
+  ],
+  "verification": {
+    "commands": [],
+    "criteria": "",
+    "manual": false
+  }
+}
