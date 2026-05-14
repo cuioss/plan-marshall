@@ -126,6 +126,44 @@ The `pr`, `ci`, `issue`, and `branch` subcommand surfaces are common across prov
 
 When adding a new subcommand or argument, choose the spelling consistent with the rules above before authoring the argparse declaration. When in doubt, search this standard's table for an analogous operation and reuse the spelling.
 
+### `choices=` vs `type=` when the data layer normalizes
+
+argparse's `choices=[...]` parameter compares each incoming CLI token literally against the supplied list — the check fires **before** any per-argument `type=` callable runs, and well before the script's handler functions get a chance to normalize. When the data layer behind a flag is alias-aware (it accepts `passed`, `PASSED`, `Passed` and stores `PASS`), pairing it with `choices=` against a single literal spelling causes argparse to reject every other spelling at parse time, hiding the aliasing the data layer was designed to provide.
+
+**Failure mode**: `add_argument('--outcome', choices=['PASS', 'FAIL'])` against a handler that maps `passed -> PASS` and `failed -> FAIL`. The invocation `--outcome passed` returns argparse's `usage: ... error: argument --outcome: invalid choice: 'passed' (choose from 'PASS', 'FAIL')` with exit code 2 — argparse never reaches the handler, so the alias is silently inaccessible from the CLI even though the in-process API supports it. Symptom-by-proxy: a `manage-*` script accepts a value programmatically (via Python imports) but refuses the same value on the command line.
+
+**Corrective pattern**: replace `choices=...` with `type=callable_normalizer`, where `callable_normalizer` accepts a string, attempts alias resolution against the data layer, and raises `argparse.ArgumentTypeError(...)` on unknown tokens. The exception bubbles back through argparse with the same exit-code-2 surface, so failure semantics are preserved while accepted aliases pass through unchanged.
+
+```python
+_OUTCOME_ALIASES = {'passed': 'PASS', 'failed': 'FAIL'}
+
+def normalize_outcome(value: str) -> str:
+    folded = value.casefold()
+    if folded in _OUTCOME_ALIASES:
+        return _OUTCOME_ALIASES[folded]
+    if value in _OUTCOME_ALIASES.values():
+        return value
+    raise argparse.ArgumentTypeError(
+        f"invalid outcome: {value!r} (expected one of: PASS, FAIL, passed, failed)"
+    )
+
+parser.add_argument('--outcome', type=normalize_outcome, required=True)
+```
+
+The error message in `ArgumentTypeError` is what argparse renders in its usage line — keep it specific so users see the same alias list the data layer accepts, not a single canonical spelling.
+
+**Test-coverage requirement**: every script that adopts the `type=callable_normalizer` pattern MUST have at least one subprocess-level CLI test exercising one alias path. An in-process unit test of the normalizer callable is necessary but not sufficient — only a subprocess test pins down the full argparse pipeline (the same pipeline that misbehaved when `choices=` was in place). The canonical shape:
+
+```python
+result = subprocess.run(
+    ['python3', str(script_path), 'verb', '--outcome', 'passed', ...],
+    capture_output=True, text=True,
+)
+assert result.returncode == 0, result.stderr  # The alias path reaches the handler
+```
+
+**Scope note**: this subsection lives going forward — no audit / convert / backport pass against existing `manage-*` scripts that still use `choices=` is performed in the plan that introduces it. Existing `choices=` usages remain valid until a future task explicitly rewrites them; new argparse declarations against alias-aware data layers MUST follow this pattern.
+
 ## Enforcement
 
 The canonical forms above are enforced automatically by the `ARGUMENT_NAMING_*` rule cluster in `pm-plugin-development:plugin-doctor:doctor-marketplace` (see [`plugin-doctor/references/rule-catalog.md`](../../../../pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md) → "Argument Naming Rules"). The cluster scans `SKILL.md`, agent prose, recipes, and standards under `marketplace/bundles/*/` for `python3 .plan/execute-script.py {notation} ...` invocations and validates each token against the executor's `SCRIPTS` mapping and the target script's argparse declarations:

@@ -381,6 +381,319 @@ Script characteristics:
 
 ---
 
+## Canonical invocations
+
+The canonical argparse surface for `manage-config.py`. The D4 plugin-doctor analyzer
+(`_analyze_manage_invocation.py`) reads this section as source-of-truth for markdown
+notation occurrences across the marketplace. Consuming skills xref this section by
+name (e.g., "see `manage-config` Canonical invocations → `effort resolve-target`")
+instead of restating the command inline.
+
+### init
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config init \
+  [--force]
+```
+
+### skill-domains list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains list
+```
+
+### skill-domains get
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains get \
+  --domain DOMAIN
+```
+
+### skill-domains get-defaults
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains get-defaults \
+  --domain DOMAIN
+```
+
+### skill-domains get-optionals
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains get-optionals \
+  --domain DOMAIN
+```
+
+### skill-domains set
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains set \
+  --domain DOMAIN [--profile PROFILE] [--defaults LIST] [--optionals LIST]
+```
+
+### skill-domains get-extensions
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains get-extensions \
+  --domain DOMAIN
+```
+
+### skill-domains set-extensions
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains set-extensions \
+  --domain DOMAIN --type {outline|triage} --skill SKILL_REF
+```
+
+### skill-domains add
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains add \
+  --domain DOMAIN [--defaults LIST] [--optionals LIST]
+```
+
+### skill-domains validate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains validate \
+  --domain DOMAIN --skill SKILL_REF
+```
+
+### skill-domains detect
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains detect
+```
+
+### skill-domains get-available
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains get-available
+```
+
+### skill-domains configure
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains configure \
+  --domains LIST
+```
+
+### skill-domains discover-project
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains discover-project
+```
+
+### skill-domains attach-project
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains attach-project \
+  --domain DOMAIN --skills LIST
+```
+
+### skill-domains active-profiles set
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains active-profiles set \
+  --profiles LIST [--domain DOMAIN]
+```
+
+### skill-domains active-profiles remove
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains active-profiles remove \
+  [--domain DOMAIN]
+```
+
+### system retention get
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config system retention get
+```
+
+### system retention set
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config system retention set \
+  --field FIELD --value VALUE
+```
+
+### plan {phase} get
+
+Applies to every phase sub-noun: `phase-1-init`, `phase-2-refine`, `phase-3-outline`,
+`phase-4-plan`, `phase-5-execute`, `phase-6-finalize`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan {phase} get \
+  [--field FIELD]
+```
+
+### plan {phase} set
+
+Applies to every phase sub-noun (scalar verb).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan {phase} set \
+  --field FIELD --value VALUE
+```
+
+### plan phase-5-execute set-max-iterations / plan phase-6-finalize set-max-iterations
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan phase-5-execute set-max-iterations \
+  --value N
+```
+
+### plan phase-5-execute set-steps / plan phase-6-finalize set-steps
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan phase-5-execute set-steps \
+  --steps LIST
+```
+
+### plan phase-5-execute add-step / plan phase-6-finalize add-step
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan phase-5-execute add-step \
+  --step STEP_REF
+```
+
+### plan phase-5-execute remove-step / plan phase-6-finalize remove-step
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan phase-5-execute remove-step \
+  --step STEP_REF
+```
+
+### ext-defaults get
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ext-defaults get \
+  --key KEY
+```
+
+### ext-defaults set
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ext-defaults set \
+  --key KEY --value VALUE
+```
+
+### ext-defaults set-default
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ext-defaults set-default \
+  --key KEY --value VALUE
+```
+
+### ext-defaults list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ext-defaults list
+```
+
+### ext-defaults remove
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ext-defaults remove \
+  --key KEY
+```
+
+### effort read
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort read \
+  [--role ROLE] [--phase PHASE] [--default]
+```
+
+### effort resolve-target
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort resolve-target \
+  [--role ROLE] [--phase PHASE] [--default]
+```
+
+### effort apply-preset
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort apply-preset \
+  --preset PRESET
+```
+
+### resolve-domain-skills
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config resolve-domain-skills \
+  --domain DOMAIN --profile PROFILE
+```
+
+### resolve-workflow-skill-extension
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config resolve-workflow-skill-extension \
+  --domain DOMAIN --type {outline|triage}
+```
+
+### get-skills-by-profile
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config get-skills-by-profile \
+  --domain DOMAIN
+```
+
+### configure-execute-task-skills
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config configure-execute-task-skills
+```
+
+### resolve-execute-task-skill
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config resolve-execute-task-skill \
+  --profile PROFILE
+```
+
+### list-recipes
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-recipes
+```
+
+### resolve-recipe
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config resolve-recipe \
+  --recipe RECIPE_KEY
+```
+
+### resolve-outline-skill
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config resolve-outline-skill \
+  --domain DOMAIN
+```
+
+### list-finalize-steps
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-finalize-steps
+```
+
+### list-verify-steps
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-verify-steps
+```
+
+### domain-detect
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config domain-detect \
+  --plan-id PLAN_ID [--domain-override DOMAIN]
+```
+
+---
+
 ## Error Responses
 
 > See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.

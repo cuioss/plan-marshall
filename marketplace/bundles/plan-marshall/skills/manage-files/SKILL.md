@@ -280,6 +280,80 @@ domain: java
 
 ---
 
+## Canonical invocations
+
+The canonical argparse surface for `manage-files.py`. The D4 plugin-doctor analyzer
+(`_analyze_manage_invocation.py`) reads this section as source-of-truth for markdown
+notation occurrences across the marketplace. Consuming skills xref this section by
+name (e.g., "see `manage-files` Canonical invocations → `write`") instead of
+restating the command inline.
+
+### read
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
+  --plan-id PLAN_ID --file REL_PATH
+```
+
+### write
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
+  --plan-id PLAN_ID --file REL_PATH \
+  (--content TEXT | --content-file PATH | --stdin)
+```
+
+`--content`, `--content-file`, and `--stdin` are mutually exclusive; exactly one
+must be supplied.
+
+### remove
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files remove \
+  --plan-id PLAN_ID --file REL_PATH
+```
+
+### list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files list \
+  --plan-id PLAN_ID [--dir SUBDIR]
+```
+
+### exists
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files exists \
+  --plan-id PLAN_ID --file REL_PATH
+```
+
+### mkdir
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files mkdir \
+  --plan-id PLAN_ID --dir REL_PATH
+```
+
+### create-or-reference
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files create-or-reference \
+  --plan-id PLAN_ID
+```
+
+### discover
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+  --root ABS_ROOT --glob PATTERN [--glob PATTERN ...] \
+  [--include-files] [--include-dirs]
+```
+
+`--glob` is repeatable. Defaults to files-only when neither `--include-files`
+nor `--include-dirs` is supplied.
+
+---
+
 ## Integration
 
 ### Consumers

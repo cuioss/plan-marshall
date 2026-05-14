@@ -524,6 +524,148 @@ If a deliverable has no Verification section, the task is created without `verif
 
 ---
 
+## Canonical invocations
+
+The canonical argparse surface for `manage-tasks.py`. The D4 plugin-doctor analyzer
+(`_analyze_manage_invocation.py`) reads this section as source-of-truth for markdown
+notation occurrences across the marketplace. Consuming skills xref this section by
+name (e.g., "see `manage-tasks` Canonical invocations → `finalize-step`") instead
+of restating the command inline.
+
+### prepare-add
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks prepare-add \
+  --plan-id PLAN_ID [--slot SLOT]
+```
+
+### commit-add
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks commit-add \
+  --plan-id PLAN_ID [--slot SLOT]
+```
+
+### batch-add
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks batch-add \
+  --plan-id PLAN_ID \
+  [--tasks-json JSON | --tasks-file PATH]
+```
+
+`--tasks-json` and `--tasks-file` are mutually exclusive. When neither flag is
+supplied the array is read from stdin.
+
+### update
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
+  --plan-id PLAN_ID --task-number N \
+  [--title TEXT] [--description TEXT] [--depends-on REFS ...] \
+  [--status {pending|in_progress|done|blocked}] \
+  [--domain DOMAIN] [--profile PROFILE] [--skills CSV] [--deliverable N]
+```
+
+### remove
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks remove \
+  --plan-id PLAN_ID --task-number N
+```
+
+### list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list \
+  --plan-id PLAN_ID \
+  [--status {pending|in_progress|done|blocked|all}] \
+  [--deliverable N] [--ready]
+```
+
+### read
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read \
+  --plan-id PLAN_ID --task-number N
+```
+
+### exists
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks exists \
+  --plan-id PLAN_ID --task-number N
+```
+
+### next
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks next \
+  --plan-id PLAN_ID \
+  [--include-context] [--ignore-deps]
+```
+
+### tasks-by-domain
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks tasks-by-domain \
+  --plan-id PLAN_ID --domain DOMAIN
+```
+
+### tasks-by-profile
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks tasks-by-profile \
+  --plan-id PLAN_ID --profile PROFILE
+```
+
+### next-tasks
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks next-tasks \
+  --plan-id PLAN_ID
+```
+
+### finalize-step
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step \
+  --plan-id PLAN_ID --task-number N --step N \
+  --outcome {done|skipped|failed} \
+  [--reason TEXT] \
+  [--outcome-task-title TEXT] [--outcome-step-count N] [--outcome-caller TEXT]
+```
+
+### add-step
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add-step \
+  --plan-id PLAN_ID --task-number N --target TEXT [--after N]
+```
+
+### remove-step
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks remove-step \
+  --plan-id PLAN_ID --task-number N --step N
+```
+
+### rename-path
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks rename-path \
+  --plan-id PLAN_ID --old-path PATH --new-path PATH
+```
+
+### qgate-mechanical-checks
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks qgate-mechanical-checks \
+  --plan-id PLAN_ID [--no-emit]
+```
+
+---
+
 ## Error Responses
 
 > See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.

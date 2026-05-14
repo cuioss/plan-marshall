@@ -318,6 +318,88 @@ modified_files[3]:
 | `add-list` | `--plan-id --field --values` | Add multiple values to a list field |
 | `set-list` | `--plan-id --field --values` | Set a list field (replaces existing) |
 | `get-context` | `--plan-id [--include-files]` | Get all references context |
+| `diff-files` | `--plan-id --worktree-path [--base-ref]` | Intersect modified_files ledger with live git diff |
+
+---
+
+## Canonical invocations
+
+The canonical argparse surface for `manage-references.py`. The D4 plugin-doctor
+analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for
+markdown notation occurrences across the marketplace. Consuming skills xref this
+section by name (e.g., "see `manage-references` Canonical invocations → `add-list`")
+instead of restating the command inline.
+
+### create
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references create \
+  --plan-id PLAN_ID --branch BRANCH \
+  [--issue-url URL] [--build-system {maven|gradle|npm}] [--domains LIST]
+```
+
+### read
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references read \
+  --plan-id PLAN_ID
+```
+
+### get
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
+  --plan-id PLAN_ID --field FIELD
+```
+
+### set
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \
+  --plan-id PLAN_ID --field FIELD --value VALUE
+```
+
+### add-file
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references add-file \
+  --plan-id PLAN_ID --file PATH
+```
+
+### remove-file
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references remove-file \
+  --plan-id PLAN_ID --file PATH
+```
+
+### add-list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references add-list \
+  --plan-id PLAN_ID --field FIELD --values CSV
+```
+
+### set-list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set-list \
+  --plan-id PLAN_ID --field FIELD --values CSV
+```
+
+### get-context
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get-context \
+  --plan-id PLAN_ID [--include-files]
+```
+
+### diff-files
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references diff-files \
+  --plan-id PLAN_ID --worktree-path ABS_PATH [--base-ref REF]
+```
 
 ---
 

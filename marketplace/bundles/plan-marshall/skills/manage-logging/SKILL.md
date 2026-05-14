@@ -168,6 +168,56 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ---
 
+## Canonical invocations
+
+The canonical argparse surface for `manage-logging.py`. The D4 plugin-doctor analyzer
+(`_analyze_manage_invocation.py`) reads this section as source-of-truth for markdown
+notation occurrences across the marketplace. Consuming skills xref this section by
+name (e.g., "see `manage-logging` Canonical invocations → `work`") instead of
+restating the command inline.
+
+### work
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging work \
+  --plan-id PLAN_ID --level {INFO|WARNING|ERROR} --message TEXT
+```
+
+### decision
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging decision \
+  --plan-id PLAN_ID --level {INFO|WARNING|ERROR} --message TEXT
+```
+
+### script
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging script \
+  --plan-id PLAN_ID --level {INFO|WARNING|ERROR} --message TEXT
+```
+
+### separator
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging separator \
+  --plan-id PLAN_ID [--type {work|decision|script}]
+```
+
+Default `--type` is `work`.
+
+### read
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read \
+  --plan-id PLAN_ID --type {work|decision|script} \
+  [--limit N] [--phase PHASE]
+```
+
+`--phase` filters only `work` and `decision` log reads.
+
+---
+
 ## Log Format
 
 ### Standard Entry Structure

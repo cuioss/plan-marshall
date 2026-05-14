@@ -246,6 +246,117 @@ At `6-finalize`:
 - Promoting an already-promoted finding returns `status: error, error: already_promoted`
 - If the target skill call fails, the finding is NOT marked as promoted (promote is the last step)
 
+## Canonical invocations
+
+The canonical argparse surface for `manage-findings.py`. The D4 plugin-doctor analyzer
+(`_analyze_manage_invocation.py`) reads this section as source-of-truth for markdown
+notation occurrences across the marketplace. Consuming skills xref this section by
+name (e.g., "see `manage-findings` Canonical invocations → `qgate add`") instead of
+restating the command inline.
+
+### add
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings add \
+  --plan-id PLAN_ID --type TYPE --title TEXT --detail TEXT \
+  [--file-path PATH] [--line N] [--component COMPONENT] [--module MODULE] \
+  [--rule RULE] [--severity SEVERITY]
+```
+
+### query
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query \
+  --plan-id PLAN_ID \
+  [--type TYPE_CSV] [--resolution RESOLUTION] [--promoted {true|false}] \
+  [--file-pattern PATTERN]
+```
+
+### get
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings get \
+  --plan-id PLAN_ID --hash-id HASH_ID
+```
+
+### resolve
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
+  --plan-id PLAN_ID --hash-id HASH_ID --resolution RESOLUTION \
+  [--detail TEXT]
+```
+
+### promote
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings promote \
+  --plan-id PLAN_ID --hash-id HASH_ID --promoted-to TARGET
+```
+
+### qgate add
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add \
+  --plan-id PLAN_ID --phase PHASE --source SOURCE --type TYPE \
+  --title TEXT --detail TEXT \
+  [--file-path PATH] [--component COMPONENT] [--severity SEVERITY] [--iteration N]
+```
+
+### qgate query
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate query \
+  --plan-id PLAN_ID --phase PHASE \
+  [--resolution RESOLUTION] [--source SOURCE] [--iteration N]
+```
+
+### qgate resolve
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate resolve \
+  --plan-id PLAN_ID --hash-id HASH_ID --resolution RESOLUTION --phase PHASE \
+  [--detail TEXT]
+```
+
+### qgate clear
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate clear \
+  --plan-id PLAN_ID --phase PHASE
+```
+
+### assessment add
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment add \
+  --plan-id PLAN_ID --file-path PATH --certainty CERTAINTY --confidence N \
+  [--agent AGENT] [--detail TEXT] [--evidence TEXT]
+```
+
+### assessment query
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment query \
+  --plan-id PLAN_ID \
+  [--certainty CERTAINTY] [--min-confidence N] [--max-confidence N] \
+  [--file-pattern PATTERN]
+```
+
+### assessment get
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment get \
+  --plan-id PLAN_ID --hash-id HASH_ID
+```
+
+### assessment clear
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment clear \
+  --plan-id PLAN_ID [--agent AGENT]
+```
+
 ## Error Responses
 
 > See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.

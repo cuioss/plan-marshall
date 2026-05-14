@@ -322,6 +322,239 @@ Next steps:
 
 ---
 
+## Canonical invocations
+
+The canonical argparse surface for `architecture.py`. The D4 plugin-doctor analyzer
+(`_analyze_manage_invocation.py`) reads this section as source-of-truth for markdown
+notation occurrences across the marketplace. Consuming skills xref this section by
+name (e.g., "see `manage-architecture` Canonical invocations → `files`") instead of
+restating the command inline.
+
+All subcommands accept the mutually-exclusive routing pair `--project-dir DIR` (default
+`.`) and `--plan-id PLAN_ID`; see [`plan-marshall:tools-script-executor/standards/cwd-policy.md`](../tools-script-executor/standards/cwd-policy.md)
+for the Bucket A/B two-state contract.
+
+### discover
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover \
+  [--force]
+```
+
+### init
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture init \
+  [--check] [--force]
+```
+
+### derived
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture derived
+```
+
+### derived-module
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture derived-module \
+  --module MODULE
+```
+
+### info
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture info
+```
+
+### modules
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture modules \
+  [--command FILTER_COMMAND]
+```
+
+### module
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture module \
+  [--module MODULE] [--full] [--budget LINES]
+```
+
+### overview
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture overview \
+  [--budget LINES]
+```
+
+### commands
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture commands \
+  [--module MODULE]
+```
+
+### resolve
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve \
+  --command COMMAND [--module MODULE]
+```
+
+### graph
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture graph \
+  [--full]
+```
+
+### path
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture path \
+  SOURCE TARGET
+```
+
+### neighbors
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture neighbors \
+  --module MODULE [--depth N]
+```
+
+### impact
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture impact \
+  --module MODULE
+```
+
+### siblings
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture siblings \
+  --module MODULE
+```
+
+### suggest-domains
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture suggest-domains \
+  --module MODULE
+```
+
+### profiles
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture profiles \
+  [--modules MODULE_LIST]
+```
+
+### files
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture files \
+  --module MODULE [--category CATEGORY]
+```
+
+### which-module
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture which-module \
+  --path PATH
+```
+
+### find
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture find \
+  --pattern PATTERN [--category CATEGORY]
+```
+
+### diff-modules
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture diff-modules \
+  --pre PRE_SNAPSHOT_DIR
+```
+
+### enrich project
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture enrich project \
+  --description TEXT [--reasoning TEXT]
+```
+
+### enrich module
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture enrich module \
+  --name MODULE --responsibility TEXT \
+  [--purpose VALUE] [--reasoning TEXT] \
+  [--responsibility-reasoning TEXT] [--purpose-reasoning TEXT]
+```
+
+### enrich package
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture enrich package \
+  --module MODULE --package PACKAGE --description TEXT \
+  [--components LIST]
+```
+
+### enrich skills-by-profile
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture enrich skills-by-profile \
+  --module MODULE --skills-json JSON [--reasoning TEXT]
+```
+
+### enrich dependencies
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture enrich dependencies \
+  --module MODULE [--key LIST] [--internal LIST] [--reasoning TEXT]
+```
+
+### enrich tip
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture enrich tip \
+  --module MODULE --tip TEXT
+```
+
+### enrich insight
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture enrich insight \
+  --module MODULE --insight TEXT
+```
+
+### enrich best-practice
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture enrich best-practice \
+  --module MODULE --practice TEXT
+```
+
+### enrich add-domain
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture enrich add-domain \
+  --module MODULE --domain DOMAIN \
+  [--include-optionals] [--reasoning TEXT] [--profiles PROFILE_LIST]
+```
+
+### enrich all
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture enrich all \
+  [--include-optionals] [--reasoning TEXT]
+```
+
+---
+
 ## Error Handling
 
 | Error | Resolution |

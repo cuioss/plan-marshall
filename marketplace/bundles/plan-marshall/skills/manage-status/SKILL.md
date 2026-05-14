@@ -613,6 +613,150 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 
 ---
 
+## Canonical invocations
+
+The canonical argparse surface for `manage_status.py`. The D4 plugin-doctor analyzer
+(`_analyze_manage_invocation.py`) reads this section as source-of-truth for markdown
+notation occurrences across the marketplace. Consuming skills xref this section by
+name (e.g., "see `manage-status` Canonical invocations → `transition`") instead of
+restating the command inline.
+
+### create
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status create \
+  --plan-id PLAN_ID --title TEXT --phases CSV \
+  [--force] \
+  [--use-worktree --worktree-path ABS_PATH --worktree-branch BRANCH]
+```
+
+### read
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+  --plan-id PLAN_ID
+```
+
+### set-phase
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-phase \
+  --plan-id PLAN_ID --phase PHASE
+```
+
+### update-phase
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status update-phase \
+  --plan-id PLAN_ID --phase PHASE --status {pending|in_progress|done}
+```
+
+### progress
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status progress \
+  --plan-id PLAN_ID
+```
+
+### metadata
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+  --plan-id PLAN_ID --field FIELD \
+  (--get | --set --value VALUE)
+```
+
+### get-context
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-context \
+  --plan-id PLAN_ID
+```
+
+### get-worktree-path
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-worktree-path \
+  --plan-id PLAN_ID
+```
+
+### list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status list \
+  [--filter PHASES_CSV]
+```
+
+### transition
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
+  --plan-id PLAN_ID --completed PHASE
+```
+
+### archive
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status archive \
+  --plan-id PLAN_ID [--dry-run]
+```
+
+### route
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status route \
+  --phase PHASE
+```
+
+### get-routing-context
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-routing-context \
+  --plan-id PLAN_ID
+```
+
+### delete-plan
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status delete-plan \
+  --plan-id PLAN_ID
+```
+
+### mark-step-done
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id PLAN_ID --phase PHASE --step STEP_ID \
+  --outcome {done|skipped|loop_back|failed} \
+  [--force] [--display-detail TEXT] [--head-at-completion SHA]
+```
+
+### change-type-heuristic
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status change-type-heuristic \
+  --plan-id PLAN_ID [--persist]
+```
+
+### aggregate-confidence
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status aggregate-confidence \
+  --plan-id PLAN_ID \
+  [--scores-file PATH] \
+  [--correctness N] [--completeness N] [--consistency N] \
+  [--non-duplication N] [--ambiguity N] [--module-mapping N] \
+  [--persist]
+```
+
+### self-test
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status self-test
+```
+
+---
+
 ## Error Responses
 
 > See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.

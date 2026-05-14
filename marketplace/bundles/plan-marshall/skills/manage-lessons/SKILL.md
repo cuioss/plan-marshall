@@ -457,6 +457,115 @@ The classification logic for the read-side corpus operations lives under `refere
 
 ---
 
+## Canonical invocations
+
+The canonical argparse surface for `manage-lessons.py`. The D4 plugin-doctor analyzer
+(`_analyze_manage_invocation.py`) reads this section as source-of-truth for markdown
+notation occurrences across the marketplace. Consuming skills xref this section by
+name (e.g., "see `manage-lessons` Canonical invocations → `add`") instead of
+restating the command inline.
+
+### add
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
+  --component COMPONENT --category {bug|improvement|anti-pattern} --title TEXT \
+  [--bundle BUNDLE]
+```
+
+### update
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons update \
+  --lesson-id LESSON_ID \
+  [--component COMPONENT] [--category {bug|improvement|anti-pattern}]
+```
+
+### get
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons get \
+  --lesson-id LESSON_ID
+```
+
+### list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list \
+  [--component COMPONENT] [--category {bug|improvement|anti-pattern}] \
+  [--status {active|superseded|removed|all}] [--full]
+```
+
+### convert-to-plan
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons convert-to-plan \
+  --lesson-id LESSON_ID --plan-id PLAN_ID
+```
+
+### set-body
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons set-body \
+  --lesson-id LESSON_ID (--file PATH | --content TEXT)
+```
+
+`--file` and `--content` are mutually exclusive; exactly one is required.
+
+### set-title
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons set-title \
+  --lesson-id LESSON_ID --title TEXT
+```
+
+### aggregate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons aggregate \
+  [--top-n N]
+```
+
+### from-error
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons from-error \
+  --context JSON
+```
+
+### remove
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remove \
+  --lesson-id LESSON_ID --reason TEXT \
+  [--force]
+```
+
+### supersede
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons supersede \
+  --lesson-id LESSON_ID --by CANONICAL_LESSON_ID --reason TEXT
+```
+
+### cleanup-superseded
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons cleanup-superseded \
+  [--lesson-id LESSON_ID ...] [--retention-days N] [--dry-run]
+```
+
+`--lesson-id` (repeatable) and `--retention-days` are mutually exclusive.
+
+### auto-suggest
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons auto-suggest \
+  --plan-id PLAN_ID [--max-suggestions N] [--no-emit]
+```
+
+---
+
 ## Integration
 
 ### Producers

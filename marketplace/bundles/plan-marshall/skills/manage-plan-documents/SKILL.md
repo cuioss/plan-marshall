@@ -303,6 +303,73 @@ types:
 
 ---
 
+## Canonical invocations
+
+The canonical argparse surface for `manage-plan-documents.py`. The D4 plugin-doctor
+analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for
+markdown notation occurrences across the marketplace. Consuming skills xref this
+section by name (e.g., "see `manage-plan-documents` Canonical invocations →
+`request create`") instead of restating the command inline.
+
+The script registers a sub-parser per document type discovered from `documents/*.toon`.
+The current registered document type is `request`. Each document type exposes six verbs:
+`create`, `read`, `path`, `exists`, `remove`, `mark-clarified`.
+
+### list-types
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents list-types
+```
+
+### request create
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request create \
+  --plan-id PLAN_ID --title TEXT --source {description|lesson|issue|recipe} \
+  [--source-id ID] [--body-file PATH] [--force]
+```
+
+`--title` and `--source` are required. `--source-id` and `--body-file` are optional;
+omitting `--body-file` returns a metadata-only stub whose returned `path` is filled
+in via the Write tool.
+
+### request read
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \
+  --plan-id PLAN_ID [--raw] [--section SECTION]
+```
+
+### request path
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request path \
+  --plan-id PLAN_ID
+```
+
+### request exists
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request exists \
+  --plan-id PLAN_ID
+```
+
+### request remove
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request remove \
+  --plan-id PLAN_ID
+```
+
+### request mark-clarified
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request mark-clarified \
+  --plan-id PLAN_ID
+```
+
+---
+
 ## Error Responses
 
 > See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.

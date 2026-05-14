@@ -380,6 +380,84 @@ The `generate` command produces a markdown report with:
 - Totals row with aggregate values
 - Enrichment section (if `enrich` was called)
 
+## Canonical invocations
+
+The canonical argparse surface for `manage_metrics.py`. The D4 plugin-doctor analyzer
+(`_analyze_manage_invocation.py`) reads this section as source-of-truth for markdown
+notation occurrences across the marketplace. Consuming skills xref this section by
+name (e.g., "see `manage-metrics` Canonical invocations → `phase-boundary`") instead
+of restating the command inline.
+
+### start-phase
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics start-phase \
+  --plan-id PLAN_ID --phase PHASE
+```
+
+### end-phase
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
+  --plan-id PLAN_ID --phase PHASE \
+  [--total-tokens N] [--input-tokens N] [--output-tokens N] \
+  [--duration-ms N] [--tool-uses N]
+```
+
+### generate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
+  --plan-id PLAN_ID
+```
+
+### print-phase-breakdown
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics print-phase-breakdown \
+  --plan-id PLAN_ID
+```
+
+### phase-boundary
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+  --plan-id PLAN_ID --prev-phase PHASE --next-phase PHASE \
+  [--total-tokens N] [--duration-ms N] [--tool-uses N]
+```
+
+### accumulate-agent-usage
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics accumulate-agent-usage \
+  --plan-id PLAN_ID --phase PHASE \
+  [--total-tokens N] [--tool-uses N] [--duration-ms N]
+```
+
+### record-dispatch-boundary
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics record-dispatch-boundary \
+  --plan-id PLAN_ID --phase PHASE \
+  --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|harness_cancellation|error|unknown} \
+  [--total-tokens N] [--tool-uses N] [--duration-ms N]
+```
+
+### enrich
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics enrich \
+  --plan-id PLAN_ID --session-id SESSION_ID
+```
+
+### compare-anchor
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics compare-anchor \
+  --plan-id PLAN_ID --anchor-plan ANCHOR_PLAN_ID \
+  [--anchor-file PATH] [--threshold-percent N]
+```
+
 ## Expected Workflow
 
 1. **Phase start**: Call `start-phase` when entering a phase (called by plan-marshall orchestrator)

@@ -132,6 +132,86 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 ---
 
+## Canonical invocations
+
+The canonical argparse surface for `manage-solution-outline.py`. The D4 plugin-doctor
+analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for
+markdown notation occurrences across the marketplace. Consuming skills xref this
+section by name (e.g., "see `manage-solution-outline` Canonical invocations →
+`resolve-path`") instead of restating the command inline.
+
+### validate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline validate \
+  --plan-id PLAN_ID
+```
+
+### list-deliverables
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline list-deliverables \
+  --plan-id PLAN_ID
+```
+
+### read
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline read \
+  --plan-id PLAN_ID [--raw] \
+  [--deliverable-number N | --section SECTION]
+```
+
+`--deliverable-number` and `--section` are mutually exclusive.
+
+### exists
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline exists \
+  --plan-id PLAN_ID
+```
+
+### get-field
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline get-field \
+  --plan-id PLAN_ID --field FIELD
+```
+
+Supported `--field` values: `scope_estimate`.
+
+### resolve-path
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline resolve-path \
+  --plan-id PLAN_ID
+```
+
+### write
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline write \
+  --plan-id PLAN_ID [--force]
+```
+
+### update
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline update \
+  --plan-id PLAN_ID
+```
+
+### get-module-context
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline get-module-context \
+  [--project-dir DIR | --plan-id PLAN_ID]
+```
+
+`--project-dir` (default `.`) and `--plan-id` are mutually exclusive routing flags.
+
+---
+
 ## Error Responses
 
 > See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
