@@ -274,14 +274,14 @@ detail: "<short context>"
 
 #### Configuration
 
-The verb is gated by the boolean config key `plan.open_in_ide.enabled` in `.plan/marshal.json` (nested under the existing `plan` namespace). Resolution rules:
+The verb is gated by the boolean config key `plan.open_in_ide` in `.plan/marshal.json` (a flat boolean under the existing `plan` namespace). Resolution rules:
 
 - Key present and truthy → proceed with detection (current always-attempt-to-open behaviour).
 - Key present and falsy → short-circuit with `status: success, action: skipped, reason: disabled_by_config`. Detection and launcher invocation are NEVER triggered.
-- Key absent, `plan.open_in_ide` sub-namespace absent, `plan` namespace absent, or marshal.json file absent → treated as `true` (the documented default).
+- Key absent, `plan` namespace absent, or marshal.json file absent → treated as `true` (the documented default).
 - A malformed `marshal.json` raises (consistent with the rest of the config surface).
 
-`manage-config init` seeds fresh marshal.json files with `plan.open_in_ide.enabled: true` (marshall-steward seed contract).
+`manage-config init` seeds fresh marshal.json files with `plan.open_in_ide: true` (marshall-steward seed contract).
 
 ### create-or-reference
 
