@@ -2,20 +2,21 @@
 name: default:automated-review
 description: CI automated review
 order: 30
+requires: [ci-complete]
 implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
 # Automated Review
 
-Pure executor for the `automated-review` finalize step. Drives the consumer-side orchestration for `pr-comment` findings as defined in [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) — this document owns the manifest-step list (consume completed-CI signal, review-bot buffer, producer call, gate-keeping query, intra-finalize re-capture, mark-step-done). The per-finding LLM core (decision + action + overflow handling) is dispatched once as `verification-feedback` (`producer=pr-comment`) — see "Dispatch the per-finding triage core" below. Refer to [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) for the architecture-level synthesis (producers, store schema, invariant gate, extension contract).
+Pure executor for the `automated-review` finalize step. Drives the consumer-side orchestration for `pr-comment` findings as defined in [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) — this document owns the manifest-step list (review-bot buffer, producer call, gate-keeping query, intra-finalize re-capture, mark-step-done). The per-finding LLM core (decision + action + overflow handling) is dispatched once as `verification-feedback` (`producer=pr-comment`) — see "Dispatch the per-finding triage core" below. Refer to [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) for the architecture-level synthesis (producers, store schema, invariant gate, extension contract).
 
-This step does NOT poll CI itself — CI completion is the responsibility of the preceding `ci-wait` step (see [`ci-wait.md`](ci-wait.md)). `automated-review` reads the completed-CI signal from `manage-status` (the `phase_steps["6-finalize"]["ci-wait"].outcome=done` record with a `final_status: success` display detail) and proceeds to comment triage when the signal is present. When the signal is absent (no `ci-wait` record) or `outcome=failed` (CI failure), `automated-review` surfaces `ci_failure` for loop-back without attempting to fetch comments.
+CI completion is a dispatcher-resolved precondition declared via the frontmatter `requires: [ci-complete]` field — the phase-6-finalize dispatcher invokes its precondition resolver (see [`../SKILL.md`](../SKILL.md) Step 3 § "Precondition resolution") before this body executes and guarantees CI is green. On `wait_failed`, the dispatcher skips this body entirely and marks the step `failed` with `display_detail "ci_failure (precondition)"`. This body therefore never observes a CI-not-ready condition and never needs to poll CI itself.
 
 This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `automated-review` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
 
 ## Timeout Contract
 
-This step runs as inline orchestration (producer fetch + finding enumeration in main context) plus a single `verification-feedback` Task dispatch (`plan-marshall:execution-context-{level}` resolved via `manage-config effort resolve-target --phase phase-6-finalize --role verification-feedback`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget is **triage-only**: it covers the review-bot buffer, producer-side comments-stage, per-finding triage dispatch with `producer=pr-comment`, thread replies, and thread resolution. CI wait time is bounded separately by the preceding `ci-wait` step's 1800 s budget — splitting CI-wait out keeps this triage budget bounded by comment volume rather than CI queue depth.
+This step runs as inline orchestration (producer fetch + finding enumeration in main context) plus a single `verification-feedback` Task dispatch (`plan-marshall:execution-context-{level}` resolved via `manage-config effort resolve-target --phase phase-6-finalize --role verification-feedback`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget is **triage-only**: it covers the review-bot buffer, producer-side comments-stage, per-finding triage dispatch with `producer=pr-comment`, thread replies, and thread resolution. CI wait time is bounded separately by the dispatcher's `ci-complete` precondition resolver (600 s ceiling) — splitting the wait out keeps this triage budget bounded by comment volume rather than CI queue depth.
 
 **Graceful degradation**: When the wrapper expires:
 
@@ -42,24 +43,6 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 ```
 
 Read `pr_number` from the TOON output. If `ci pr view` returns `status: error` (no PR exists for the branch), this step has nothing to process — record `done` with a `display_detail` of `no PR available` (Branch B in "Mark Step Complete" below) and return.
-
-### Read completed-CI signal
-
-CI completion was already verified by the preceding `ci-wait` step. Read its terminal record from `manage-status` to confirm CI is green before proceeding to comment triage:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
-  --plan-id {plan_id}
-```
-
-Locate the `phase_steps["6-finalize"]["ci-wait"]` record in the returned TOON and read its `outcome` and `display_detail` fields.
-
-| Signal State | Action |
-|--------------|--------|
-| `outcome: done` with display detail starting `CI success` | CI is green — proceed to "Wait for review-bot comments" |
-| `outcome: done` with display detail `no PR available` | No PR exists — record `done` with display detail `no PR available` (Branch B in "Mark Step Complete" below) and return |
-| `outcome: failed` (CI failure or `ci-wait` wrapper timeout) | Treat as a CI failure — surface `ci_failure` to the caller for loop-back; this step does NOT proceed to comment processing |
-| record absent (no `ci-wait` step in manifest, or earlier dispatcher skip) | Treat as a CI-not-ready condition — surface `ci_failure` to the caller for loop-back |
 
 ### Wait for review-bot comments
 
@@ -210,7 +193,7 @@ The capture is the structural enforcer of "no unresolved pr-comment findings at 
 
 Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. Mark done only on the terminal pass that returns clean (or on a skip); loop-back iterations do not terminate the step.
 
-`automated-review` is one of the four HEAD-dependent steps (alongside `pre-push-quality-gate`, `ci-wait`, `sonar-roundtrip`) — see [`phase-6-finalize/SKILL.md`](../SKILL.md) Step 3 "Special case — HEAD-dependent steps". Every `--outcome done` branch below MUST capture the worktree HEAD SHA immediately before the `mark-step-done` call and forward it via `--head-at-completion {sha}`, so the dispatcher's HEAD-dependent resumability check can detect a stale `done` record after a future loop-back commit advances HEAD. The `loop_back` branch does NOT need to persist the SHA — the dispatcher's general resumability handling for `loop_back` treats it as no-record on re-entry regardless of HEAD.
+`automated-review` is one of the three HEAD-dependent steps (alongside `pre-push-quality-gate` and `sonar-roundtrip`) — see [`phase-6-finalize/SKILL.md`](../SKILL.md) Step 3 "Special case — HEAD-dependent steps". Every `--outcome done` branch below MUST capture the worktree HEAD SHA immediately before the `mark-step-done` call and forward it via `--head-at-completion {sha}`, so the dispatcher's HEAD-dependent resumability check can detect a stale `done` record after a future loop-back commit advances HEAD. The `loop_back` branch does NOT need to persist the SHA — the dispatcher's general resumability handling for `loop_back` treats it as no-record on re-entry regardless of HEAD.
 
 Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the review outcome. The payload differs by branch:
 
@@ -254,7 +237,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 
 ## Resumability
 
-`automated-review` is one of the four HEAD-dependent steps in `HEAD_DEPENDENT_STEPS` (`pre-push-quality-gate`, `ci-wait`, `automated-review`, `sonar-roundtrip`) — see [`phase-6-finalize/SKILL.md`](../SKILL.md) Step 3 "Special case — HEAD-dependent steps". The HEAD comparison guards against false-clean re-entry after a downstream loop-back commit (typically produced by `sonar-roundtrip` opening a fix task that produces a new commit, or by an earlier `automated-review` iteration's own FIX dispositions) advances HEAD past the validated tree:
+`automated-review` is one of the three HEAD-dependent steps in `HEAD_DEPENDENT_STEPS` (`pre-push-quality-gate`, `automated-review`, `sonar-roundtrip`) — see [`phase-6-finalize/SKILL.md`](../SKILL.md) Step 3 "Special case — HEAD-dependent steps". The HEAD comparison guards against false-clean re-entry after a downstream loop-back commit (typically produced by `sonar-roundtrip` opening a fix task that produces a new commit, or by an earlier `automated-review` iteration's own FIX dispositions) advances HEAD past the validated tree:
 
 | Persisted state | Live worktree HEAD | Action |
 |-----------------|--------------------|--------|

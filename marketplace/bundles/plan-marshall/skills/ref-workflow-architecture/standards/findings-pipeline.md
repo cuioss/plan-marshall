@@ -62,32 +62,25 @@ The plan-marshall findings pipeline routes every quality signal — PR review co
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The diagram shows the per-finding dispatch path. A separate **completed-CI signal** lane upstream of the `automated-review` consumer is documented below — `ci-wait` does not produce a `manage-findings` record; it writes a `phase_steps["6-finalize"]["ci-wait"].outcome` record on `manage-status` that `automated-review` reads before invoking the producer-stage. Splitting CI-wait out of `automated-review` keeps the consumer's per-iteration triage budget bounded by comment volume rather than CI queue depth:
+The diagram shows the per-finding dispatch path. CI completion is resolved as a **dispatcher-side precondition** before the `automated-review` consumer's body runs — consumer steps declare `requires: [ci-complete]` in their YAML frontmatter, and the phase-6-finalize dispatcher invokes `_ci_complete_precondition.resolve(plan_id, worktree_path, pr_number)` inline ahead of dispatch. The resolver caches success outcomes per HEAD SHA so subsequent same-HEAD lookups short-circuit. On `wait_failed`, the dispatcher skips the consumer body entirely and records `ci_failure (precondition)` as the consumer step's outcome. The precondition isolates CI wait time from the triage budget without introducing a sibling step:
 
 ```
-   ci-wait step                                     automated-review step
-   (phase-6-finalize)                               (phase-6-finalize)
-   ┌─────────────────┐                              ┌─────────────────────┐
-   │  ci wait        │── outcome=done ─────────────▶│ read manage-status  │
-   │  (1800 s budget)│   (manage-status, NOT a     │ ci-wait record:     │
-   │                 │    findings record)          │ proceed when green, │
-   │  on success:    │                              │ surface ci_failure  │
-   │  mark-step-done │                              │ when failed/absent  │
-   │  ci-wait done   │                              └──────────┬──────────┘
-   │  with display:  │                                         │
-   │  CI success     │                                         ▼
-   └─────────────────┘                              ┌─────────────────────┐
-                                                    │ comments-stage      │
-                                                    │ (producer)          │
-                                                    │       ▼             │
-                                                    │ per-finding         │
-                                                    │ dispatch (consumer) │
-                                                    │ — overflow path:    │
-                                                    │   pr-comment-       │
-                                                    │   overflow finding  │
-                                                    │   + outcome=        │
-                                                    │   loop_back         │
-                                                    └─────────────────────┘
+                                                    automated-review step
+                                                    (phase-6-finalize, requires: [ci-complete])
+   ┌─────────────────────────────┐                  ┌─────────────────────┐
+   │ dispatcher Step 3:          │── satisfied ────▶│ comments-stage      │
+   │ _ci_complete_precondition   │   or             │ (producer)          │
+   │ .resolve(plan_id,           │   wait_succeeded │       ▼             │
+   │   worktree_path,            │                  │ per-finding         │
+   │   pr_number,                │                  │ dispatch (consumer) │
+   │   timeout_seconds=600)      │                  │ — overflow path:    │
+   │                             │                  │   pr-comment-       │
+   │ per-HEAD cache              │── wait_failed ──▶│   overflow finding  │
+   │ (head_sha-keyed)            │   (skip body;    │   + outcome=        │
+   │                             │    record        │   loop_back         │
+   │ on success: cache populated │    ci_failure    └─────────────────────┘
+   │                             │    (precondition)│
+   └─────────────────────────────┘   on consumer)
 ```
 
 The **`pr-comment-overflow` finding** files when the consumer's 900 s triage budget is nearly exhausted before all `pr-comment` findings are processed. Unlike `pr-comment` (a `findings` record produced by `comments-stage`), `pr-comment-overflow` is filed by the consumer itself — it carries the unprocessed `pr-comment` `hash_id`s in `detail` so the next iteration can prioritise them. The type is non-blocking; the deferred work is handled by `loop_back` re-entry, not by gating the boundary. See [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) § `pr-comment-overflow` for the type's full contract.

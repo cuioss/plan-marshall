@@ -138,9 +138,20 @@ def test_early_terminate_analysis_with_empty_files():
         assert result['phase_6']['steps_count'] == 2
 
 
-def test_recipe_path_drops_heavy_review_steps():
-    """Row 2 — recipe_key present → drop automated-review/sonar-roundtrip."""
+def test_recipe_path_retains_review_gates_drops_only_legacy_ci_wait():
+    """Row 2 — recipe_key present → ONLY defensively drop legacy 'ci-wait'.
+
+    Review gates (automated-review, sonar-roundtrip) are NEVER silently
+    suppressed by the planner — the recipe label is exactly the case
+    where the bots' job is to catch what humans miss. CI completion is
+    now a dispatcher-resolved precondition declared via requires:
+    [ci-complete] on consumer step frontmatters, not a sibling step.
+    """
     with PlanContext(plan_id='matrix-recipe'):
+        # Inject the legacy ci-wait into the candidate list to assert the
+        # defensive narrowing still drops it. The default candidate set no
+        # longer contains it.
+        candidates_with_legacy = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
         result = cmd_compose(
             _compose_ns(
                 plan_id='matrix-recipe',
@@ -148,19 +159,31 @@ def test_recipe_path_drops_heavy_review_steps():
                 scope_estimate='surgical',
                 recipe_key='lesson_cleanup',
                 affected_files_count=2,
+                phase_6_steps=','.join(candidates_with_legacy),
             )
         )
         assert result is not None and result['rule_fired'] == 'recipe'
         manifest = read_manifest('matrix-recipe')
         assert manifest is not None
-        assert 'automated-review' not in manifest['phase_6']['steps']
-        assert 'sonar-roundtrip' not in manifest['phase_6']['steps']
+        # Review gates RETAINED — never silently suppressed.
+        assert 'automated-review' in manifest['phase_6']['steps']
+        assert 'sonar-roundtrip' in manifest['phase_6']['steps']
+        # Legacy ci-wait still defensively narrowed out.
+        assert 'ci-wait' not in manifest['phase_6']['steps']
         assert 'commit-push' in manifest['phase_6']['steps']
 
 
-def test_docs_only_skips_phase_5_verification():
-    """Row 3 — docs-only signal: no module-tests/coverage in candidates → empty Phase 5 list."""
+def test_docs_only_skips_phase_5_verification_retains_review_gates():
+    """Row 3 — docs-only signal: no module-tests/coverage in candidates → empty Phase 5 list.
+
+    Review gates (automated-review, sonar-roundtrip) are RETAINED — a
+    docs-only label is exactly the case where the bots' job is to catch
+    what humans miss. Only the legacy 'ci-wait' step ID is defensively
+    narrowed out (against project marshal.json files that still list it).
+    """
     with PlanContext(plan_id='matrix-docs'):
+        # Inject legacy ci-wait into candidates to assert defensive narrowing.
+        candidates_with_legacy = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
         result = cmd_compose(
             _compose_ns(
                 plan_id='matrix-docs',
@@ -169,15 +192,18 @@ def test_docs_only_skips_phase_5_verification():
                 affected_files_count=3,
                 # docs-only candidate set: only quality-gate, no module-tests/coverage.
                 phase_5_steps='quality-gate',
-                phase_6_steps=','.join(DEFAULT_PHASE_6_STEPS),
+                phase_6_steps=','.join(candidates_with_legacy),
             )
         )
         assert result is not None and result['rule_fired'] == 'docs_only'
         assert result['phase_5']['verification_steps_count'] == 0
         manifest = read_manifest('matrix-docs')
         assert manifest is not None
-        assert 'automated-review' not in manifest['phase_6']['steps']
-        assert 'sonar-roundtrip' not in manifest['phase_6']['steps']
+        # Review gates RETAINED.
+        assert 'automated-review' in manifest['phase_6']['steps']
+        assert 'sonar-roundtrip' in manifest['phase_6']['steps']
+        # Legacy ci-wait still defensively narrowed out.
+        assert 'ci-wait' not in manifest['phase_6']['steps']
 
 
 def test_tests_only_runs_module_tests_and_full_phase_6():
@@ -199,28 +225,44 @@ def test_tests_only_runs_module_tests_and_full_phase_6():
         assert manifest['phase_6']['steps'] == list(DEFAULT_PHASE_6_STEPS)
 
 
-def test_surgical_bug_fix_trims_heavy_review_steps():
-    """Row 5 — surgical+bug_fix: trim Phase 6 review steps."""
+def test_surgical_bug_fix_retains_review_gates():
+    """Row 5 — surgical+bug_fix: review gates RETAINED, legacy ci-wait dropped defensively.
+
+    Review gates are NEVER silently suppressed — surgical bug_fix is
+    exactly the case where the bots' job is to catch what humans miss
+    on a one-line fix. Only the legacy 'ci-wait' step ID is defensively
+    narrowed out.
+    """
     with PlanContext(plan_id='matrix-bug'):
+        candidates_with_legacy = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
         result = cmd_compose(
             _compose_ns(
                 plan_id='matrix-bug',
                 change_type='bug_fix',
                 scope_estimate='surgical',
                 affected_files_count=1,
+                phase_6_steps=','.join(candidates_with_legacy),
             )
         )
         assert result is not None and result['rule_fired'] == 'surgical_bug_fix'
         manifest = read_manifest('matrix-bug')
         assert manifest is not None
-        for stripped in ('automated-review', 'sonar-roundtrip'):
-            assert stripped not in manifest['phase_6']['steps']
+        # Review gates RETAINED.
+        for retained in ('automated-review', 'sonar-roundtrip'):
+            assert retained in manifest['phase_6']['steps']
+        # Legacy ci-wait dropped defensively.
+        assert 'ci-wait' not in manifest['phase_6']['steps']
         assert 'lessons-capture' in manifest['phase_6']['steps']
 
 
-def test_surgical_tech_debt_trims_heavy_review_steps():
-    """Row 5 — surgical+tech_debt: same trim, distinct rule key."""
+def test_surgical_tech_debt_retains_review_gates():
+    """Row 5 — surgical+tech_debt: review gates RETAINED, legacy ci-wait dropped defensively.
+
+    Mirror of surgical_bug_fix — same retention contract, distinct rule
+    key. Review gates are never silently suppressed.
+    """
     with PlanContext(plan_id='matrix-tech'):
+        candidates_with_legacy = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
         result = cmd_compose(
             _compose_ns(
                 plan_id='matrix-tech',
@@ -230,14 +272,18 @@ def test_surgical_tech_debt_trims_heavy_review_steps():
                 # Need code-shaped candidate set (module-tests present) so we
                 # don't fall into the docs_only row first.
                 phase_5_steps='quality-gate,module-tests',
+                phase_6_steps=','.join(candidates_with_legacy),
             )
         )
         assert result is not None and result['rule_fired'] == 'surgical_tech_debt'
         manifest = read_manifest('matrix-tech')
         assert manifest is not None
         assert 'commit-push' in manifest['phase_6']['steps']
-        for stripped in ('automated-review', 'sonar-roundtrip'):
-            assert stripped not in manifest['phase_6']['steps']
+        # Review gates RETAINED.
+        for retained in ('automated-review', 'sonar-roundtrip'):
+            assert retained in manifest['phase_6']['steps']
+        # Legacy ci-wait dropped defensively.
+        assert 'ci-wait' not in manifest['phase_6']['steps']
 
 
 # =============================================================================
@@ -298,8 +344,11 @@ def test_rule_1_early_terminate_analysis_with_prefixed_candidates():
 
 
 def test_rule_2_recipe_with_prefixed_candidates():
-    """Rule 2 (recipe) — prefixed candidates: drop automated-review/sonar-roundtrip (bare output)."""
-    prefixed_with_sonar = _PREFIXED_PHASE_6 + ('default:sonar-roundtrip',)
+    """Rule 2 (recipe) — prefixed candidates: review gates RETAINED, legacy ci-wait dropped (bare output)."""
+    prefixed_with_review_and_legacy = _PREFIXED_PHASE_6 + (
+        'default:sonar-roundtrip',
+        'default:ci-wait',
+    )
     with PlanContext(plan_id='prefix-rule-2'):
         result = cmd_compose(
             _compose_ns(
@@ -308,7 +357,7 @@ def test_rule_2_recipe_with_prefixed_candidates():
                 scope_estimate='surgical',
                 recipe_key='lesson_cleanup',
                 affected_files_count=2,
-                phase_6_steps=','.join(prefixed_with_sonar),
+                phase_6_steps=','.join(prefixed_with_review_and_legacy),
             )
         )
         assert result is not None and result['rule_fired'] == 'recipe'
@@ -317,9 +366,11 @@ def test_rule_2_recipe_with_prefixed_candidates():
         steps = manifest['phase_6']['steps']
         # No `default:` prefix in output — boundary-normalized at intake.
         assert not any(s.startswith('default:') for s in steps)
-        # Heavy review steps are dropped.
-        for dropped in ('automated-review', 'sonar-roundtrip'):
-            assert dropped not in steps
+        # Review gates RETAINED — never silently suppressed.
+        for retained in ('automated-review', 'sonar-roundtrip'):
+            assert retained in steps
+        # Legacy ci-wait dropped defensively.
+        assert 'ci-wait' not in steps
         # Non-heavy steps survive (bare).
         assert 'commit-push' in steps
         assert 'create-pr' in steps
@@ -327,8 +378,11 @@ def test_rule_2_recipe_with_prefixed_candidates():
 
 
 def test_rule_3_docs_only_with_prefixed_candidates():
-    """Rule 3 (docs_only) — prefixed candidates: drop sonar-roundtrip/automated-review (bare output)."""
-    prefixed_with_sonar = _PREFIXED_PHASE_6 + ('default:sonar-roundtrip',)
+    """Rule 3 (docs_only) — prefixed candidates: review gates RETAINED, legacy ci-wait dropped (bare output)."""
+    prefixed_with_review_and_legacy = _PREFIXED_PHASE_6 + (
+        'default:sonar-roundtrip',
+        'default:ci-wait',
+    )
     with PlanContext(plan_id='prefix-rule-3'):
         result = cmd_compose(
             _compose_ns(
@@ -338,7 +392,7 @@ def test_rule_3_docs_only_with_prefixed_candidates():
                 affected_files_count=3,
                 # docs-only candidate set: only quality-gate, no module-tests/coverage.
                 phase_5_steps='quality-gate',
-                phase_6_steps=','.join(prefixed_with_sonar),
+                phase_6_steps=','.join(prefixed_with_review_and_legacy),
             )
         )
         assert result is not None and result['rule_fired'] == 'docs_only'
@@ -346,17 +400,22 @@ def test_rule_3_docs_only_with_prefixed_candidates():
         assert manifest is not None
         steps = manifest['phase_6']['steps']
         assert not any(s.startswith('default:') for s in steps)
-        # Review steps dropped.
-        for dropped in ('sonar-roundtrip', 'automated-review'):
-            assert dropped not in steps
+        # Review gates RETAINED.
+        for retained in ('sonar-roundtrip', 'automated-review'):
+            assert retained in steps
+        # Legacy ci-wait dropped defensively.
+        assert 'ci-wait' not in steps
         # Non-review steps survive (bare).
         assert 'commit-push' in steps
         assert 'lessons-capture' in steps
 
 
 def test_rule_5_surgical_bug_fix_with_prefixed_candidates():
-    """Rule 5 (surgical_bug_fix) — prefixed candidates: drop automated-review/sonar-roundtrip (bare output)."""
-    prefixed_with_sonar = _PREFIXED_PHASE_6 + ('default:sonar-roundtrip',)
+    """Rule 5 (surgical_bug_fix) — prefixed candidates: review gates RETAINED, legacy ci-wait dropped (bare output)."""
+    prefixed_with_review_and_legacy = _PREFIXED_PHASE_6 + (
+        'default:sonar-roundtrip',
+        'default:ci-wait',
+    )
     with PlanContext(plan_id='prefix-rule-5-bug'):
         result = cmd_compose(
             _compose_ns(
@@ -364,7 +423,7 @@ def test_rule_5_surgical_bug_fix_with_prefixed_candidates():
                 change_type='bug_fix',
                 scope_estimate='surgical',
                 affected_files_count=1,
-                phase_6_steps=','.join(prefixed_with_sonar),
+                phase_6_steps=','.join(prefixed_with_review_and_legacy),
             )
         )
         assert result is not None and result['rule_fired'] == 'surgical_bug_fix'
@@ -372,15 +431,21 @@ def test_rule_5_surgical_bug_fix_with_prefixed_candidates():
         assert manifest is not None
         steps = manifest['phase_6']['steps']
         assert not any(s.startswith('default:') for s in steps)
-        for dropped in ('automated-review', 'sonar-roundtrip'):
-            assert dropped not in steps
+        # Review gates RETAINED.
+        for retained in ('automated-review', 'sonar-roundtrip'):
+            assert retained in steps
+        # Legacy ci-wait dropped defensively.
+        assert 'ci-wait' not in steps
         assert 'lessons-capture' in steps
         assert 'commit-push' in steps
 
 
 def test_rule_5_surgical_tech_debt_with_prefixed_candidates():
-    """Rule 5 (surgical_tech_debt) — prefixed candidates: same drop as bug_fix (bare output)."""
-    prefixed_with_sonar = _PREFIXED_PHASE_6 + ('default:sonar-roundtrip',)
+    """Rule 5 (surgical_tech_debt) — prefixed candidates: same retention as bug_fix (bare output)."""
+    prefixed_with_review_and_legacy = _PREFIXED_PHASE_6 + (
+        'default:sonar-roundtrip',
+        'default:ci-wait',
+    )
     with PlanContext(plan_id='prefix-rule-5-tech'):
         result = cmd_compose(
             _compose_ns(
@@ -390,7 +455,7 @@ def test_rule_5_surgical_tech_debt_with_prefixed_candidates():
                 affected_files_count=2,
                 # Code-shaped candidate set so we don't fall into docs_only first.
                 phase_5_steps='quality-gate,module-tests',
-                phase_6_steps=','.join(prefixed_with_sonar),
+                phase_6_steps=','.join(prefixed_with_review_and_legacy),
             )
         )
         assert result is not None and result['rule_fired'] == 'surgical_tech_debt'
@@ -398,8 +463,11 @@ def test_rule_5_surgical_tech_debt_with_prefixed_candidates():
         assert manifest is not None
         steps = manifest['phase_6']['steps']
         assert not any(s.startswith('default:') for s in steps)
-        for dropped in ('automated-review', 'sonar-roundtrip'):
-            assert dropped not in steps
+        # Review gates RETAINED.
+        for retained in ('automated-review', 'sonar-roundtrip'):
+            assert retained in steps
+        # Legacy ci-wait dropped defensively.
+        assert 'ci-wait' not in steps
         assert 'commit-push' in steps
 
 
@@ -433,12 +501,16 @@ def test_prefix_normalization_no_op_for_bare_candidates():
     to the prefixed path. Rule 5 with bare candidates pins the bare-name shape
     end-to-end — boundary stripping at ``cmd_compose`` intake leaves bare names
     unchanged, so the cascade-rule layer sees and emits the same bare strings.
+
+    Review gates are retained under Rule 5; only the legacy 'ci-wait' step ID
+    is defensively narrowed out when present in the candidate list.
     """
     bare = (
         'commit-push',
         'create-pr',
         'automated-review',
         'sonar-roundtrip',
+        'ci-wait',  # legacy; should be defensively narrowed out.
         'lessons-capture',
         'branch-cleanup',
         'archive-plan',
@@ -457,9 +529,11 @@ def test_prefix_normalization_no_op_for_bare_candidates():
         manifest = read_manifest('prefix-noop-bare')
         assert manifest is not None
         steps = manifest['phase_6']['steps']
-        # Bare names: heavy review steps still dropped; helper is a no-op.
-        for dropped in ('automated-review', 'sonar-roundtrip'):
-            assert dropped not in steps
+        # Review gates RETAINED.
+        for retained in ('automated-review', 'sonar-roundtrip'):
+            assert retained in steps
+        # Legacy ci-wait dropped defensively.
+        assert 'ci-wait' not in steps
         assert 'commit-push' in steps
         assert 'lessons-capture' in steps
 
@@ -1939,23 +2013,33 @@ class TestBotEnforcementGuardRemediation:
             assert manifest is not None
             steps = manifest['phase_6']['steps']
 
-            # (b) automated-review is back in phase_6.steps after remediation.
-            #     Guard appends `default:automated-review`; tests assert via
-            #     prefix-aware membership so both candidate shapes pass.
+            # (b) automated-review is in phase_6.steps. Under the new
+            #     precondition-resolver model (lesson 2026-05-15-14-002),
+            #     Row 5 no longer drops review gates — so automated-review
+            #     is present whether or not the remediation guard fired.
+            #     The guard's membership check ('automated-review' in steps)
+            #     therefore short-circuits as a no-op on Row 5; remediation
+            #     becomes a backstop against future drift rather than the
+            #     primary mechanism.
             bare_step_names = {s[len('default:') :] if s.startswith('default:') else s for s in steps}
             assert 'automated-review' in bare_step_names
 
-            # (c) Row 5's other subtractions are still dropped — only
-            #     automated-review is remediated.
-            assert 'sonar-roundtrip' not in bare_step_names
+            # (c) sonar-roundtrip is also retained — review gates are never
+            #     silently suppressed by the planner under the new contract.
+            assert 'sonar-roundtrip' in bare_step_names
 
-            # (d) Decision-log records the remediation exactly once.
+            # (d) Under the new precondition-resolver model the guard is a
+            #     no-op on Row 5 (automated-review is already present), so
+            #     the remediation decision log is NOT written. The guard
+            #     remains in place as defense-in-depth against future rule
+            #     drift, but on the current rule matrix it never fires.
             remediations = self._remediation_messages(captured, provider)
-            assert len(remediations) == 1, (
-                f'expected exactly one remediation log entry for {provider}, '
-                f'got {len(remediations)}: {[m for _, m in captured]!r}'
+            assert len(remediations) == 0, (
+                f'expected NO remediation log entries for {provider} under '
+                f'the new contract (guard is a no-op when automated-review '
+                f'is already retained); got {len(remediations)}: '
+                f'{[m for _, m in captured]!r}'
             )
-            assert remediations[0][0] == plan_id
 
     # --- Row 5 surgical_bug_fix variants ---
 

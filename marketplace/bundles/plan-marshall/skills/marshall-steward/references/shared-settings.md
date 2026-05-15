@@ -244,10 +244,8 @@ AskUserQuestion:
       description: "Commit and push changes"
     - label: "create_pr"
       description: "Create pull request"
-    - label: "ci_wait"
-      description: "Poll CI to completion (1800 s budget); writes completed-CI signal automated-review consumes"
     - label: "automated_review"
-      description: "CI automated review (consumes ci-wait signal; triage-only 900 s budget)"
+      description: "CI automated review (CI completion is a dispatcher-resolved precondition declared via requires: [ci-complete] on this step; triage-only 900 s budget)"
     - label: "sonar_roundtrip"
       description: "Sonar analysis roundtrip"
     # Page 2 (if paging needed):

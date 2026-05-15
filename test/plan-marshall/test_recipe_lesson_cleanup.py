@@ -408,16 +408,23 @@ class TestRecipePathEndToEnd:
         ],
     )
     def test_recipe_path_emits_slim_manifest(self, lesson_kind, change_type, plan_id):
-        """End-to-end: recipe inputs → manifest with the documented slim shape.
+        """End-to-end: recipe inputs → manifest with the documented shape.
 
-        Asserts the success criterion from solution-outline deliverable 7:
-        the manifest excludes automated-review and sonar-roundtrip (per
-        surgical/recipe rules) for each lesson kind.
+        Under the new precondition-resolver contract (lesson 2026-05-15-14-002),
+        Row 2 (recipe) RETAINS review gates — ``automated-review`` and
+        ``sonar-roundtrip`` are present in the composed manifest. Only the
+        legacy ``ci-wait`` step ID is defensively narrowed out when present
+        in the candidate list. The recipe contract still produces a slim
+        Phase 5 (bounded to quality-gate + module-tests) and retains the
+        must-run bookkeeping steps (commit-push, lessons-capture).
         """
         # Sanity: derive_change_type produces the expected change_type.
         assert derive_change_type(lesson_kind) == change_type
 
         with PlanContext(plan_id=plan_id):
+            # Inject legacy ci-wait into the candidate list to assert the
+            # defensive narrowing still drops it.
+            candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
             ns = Namespace(
                 plan_id=plan_id,
                 change_type=change_type,
@@ -426,7 +433,7 @@ class TestRecipePathEndToEnd:
                 recipe_key='lesson_cleanup',
                 affected_files_count=2,
                 phase_5_steps='quality-gate,module-tests',
-                phase_6_steps=','.join(DEFAULT_PHASE_6_STEPS),
+                phase_6_steps=','.join(candidates),
                 commit_strategy=None,
             )
             result = cmd_compose(ns)
@@ -443,12 +450,17 @@ class TestRecipePathEndToEnd:
             for step in manifest['phase_5']['verification_steps']:
                 assert step in {'quality-gate', 'module-tests'}, f'unexpected Phase 5 step {step!r} for {lesson_kind}'
 
-            # Phase 6 drops the heavy review steps per the recipe contract.
+            # Phase 6 RETAINS review gates under the new contract.
             phase_6 = manifest['phase_6']['steps']
-            for stripped in ('automated-review', 'sonar-roundtrip'):
-                assert stripped not in phase_6, (
-                    f'recipe path must drop {stripped!r} from Phase 6 (lesson_kind={lesson_kind})'
+            for retained in ('automated-review', 'sonar-roundtrip'):
+                assert retained in phase_6, (
+                    f'recipe path MUST retain {retained!r} under the new contract '
+                    f'(lesson_kind={lesson_kind})'
                 )
+            # Legacy ci-wait still defensively narrowed out.
+            assert 'ci-wait' not in phase_6, (
+                f'recipe path MUST defensively drop legacy ci-wait (lesson_kind={lesson_kind})'
+            )
             # And keeps the must-run steps from the recipe contract.
             for required in ('commit-push', 'lessons-capture'):
                 assert required in phase_6, f'recipe path must keep {required!r} in Phase 6 (lesson_kind={lesson_kind})'
@@ -479,14 +491,17 @@ class TestRecipePathEndToEnd:
             )
 
     def test_surgical_scope_without_recipe_still_trims_for_bug_fix(self):
-        """Sanity check: even without recipe_key, surgical+bug_fix trims Phase 6.
+        """Sanity check: even without recipe_key, surgical+bug_fix defensively
+        drops the legacy ``ci-wait`` step ID from Phase 6.
 
-        Documents the failsafe: if the recipe somehow fails to set recipe_key
-        but does set scope_estimate=surgical and a derived change_type of
-        bug_fix or tech_debt, the surgical rule still produces a comparable
-        slim manifest. This is why the recipe forces scope_estimate=surgical.
+        Under the new precondition-resolver contract (lesson 2026-05-15-14-002),
+        Row 5 (surgical_bug_fix / surgical_tech_debt) RETAINS the review
+        gates — only the legacy ``ci-wait`` step ID is defensively narrowed
+        out. The failsafe ensures that a recipe that forgets to set
+        ``recipe_key`` still gets the legacy-ID cleanup via Row 5.
         """
         with PlanContext(plan_id='recipe-surgical-failsafe'):
+            candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
             ns = Namespace(
                 plan_id='recipe-surgical-failsafe',
                 change_type='bug_fix',
@@ -495,7 +510,7 @@ class TestRecipePathEndToEnd:
                 recipe_key=None,  # recipe key intentionally missing
                 affected_files_count=1,
                 phase_5_steps='quality-gate,module-tests',
-                phase_6_steps=','.join(DEFAULT_PHASE_6_STEPS),
+                phase_6_steps=','.join(candidates),
                 commit_strategy=None,
             )
             result = cmd_compose(ns)
@@ -503,12 +518,19 @@ class TestRecipePathEndToEnd:
             assert result['rule_fired'] == 'surgical_bug_fix'
             manifest = read_manifest('recipe-surgical-failsafe')
             assert manifest is not None
-            for stripped in ('automated-review', 'sonar-roundtrip'):
-                assert stripped not in manifest['phase_6']['steps']
+            # Review gates RETAINED under the new contract.
+            for retained in ('automated-review', 'sonar-roundtrip'):
+                assert retained in manifest['phase_6']['steps']
+            # Legacy ci-wait defensively dropped.
+            assert 'ci-wait' not in manifest['phase_6']['steps']
 
     def test_surgical_scope_without_recipe_still_trims_for_tech_debt(self):
-        """Companion to the bug_fix failsafe: surgical+tech_debt also trims."""
+        """Companion to the bug_fix failsafe: surgical+tech_debt also
+        defensively drops the legacy ``ci-wait`` step ID while retaining
+        the review gates.
+        """
         with PlanContext(plan_id='recipe-surgical-failsafe-td'):
+            candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
             ns = Namespace(
                 plan_id='recipe-surgical-failsafe-td',
                 change_type='tech_debt',
@@ -517,7 +539,7 @@ class TestRecipePathEndToEnd:
                 recipe_key=None,
                 affected_files_count=2,
                 phase_5_steps='quality-gate,module-tests',
-                phase_6_steps=','.join(DEFAULT_PHASE_6_STEPS),
+                phase_6_steps=','.join(candidates),
                 commit_strategy=None,
             )
             result = cmd_compose(ns)
@@ -525,5 +547,8 @@ class TestRecipePathEndToEnd:
             assert result['rule_fired'] == 'surgical_tech_debt'
             manifest = read_manifest('recipe-surgical-failsafe-td')
             assert manifest is not None
-            for stripped in ('automated-review', 'sonar-roundtrip'):
-                assert stripped not in manifest['phase_6']['steps']
+            # Review gates RETAINED under the new contract.
+            for retained in ('automated-review', 'sonar-roundtrip'):
+                assert retained in manifest['phase_6']['steps']
+            # Legacy ci-wait defensively dropped.
+            assert 'ci-wait' not in manifest['phase_6']['steps']
