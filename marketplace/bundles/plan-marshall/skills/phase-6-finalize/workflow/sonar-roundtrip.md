@@ -2,6 +2,7 @@
 name: default:sonar-roundtrip
 description: Sonar analysis roundtrip
 order: 40
+requires: [ci-complete]
 implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
@@ -154,7 +155,7 @@ The capture is the structural enforcer of "no unresolved sonar-issue findings at
 
 Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. Mark done only on the terminal pass that returns clean (or on a skip); loop-back iterations do not terminate the step.
 
-`sonar-roundtrip` is one of the four HEAD-dependent steps (alongside `pre-push-quality-gate`, `ci-wait`, `automated-review`) — see [`phase-6-finalize/SKILL.md`](../SKILL.md) Step 3 "Special case — HEAD-dependent steps". Every `--outcome done` branch below MUST capture the worktree HEAD SHA immediately before the `mark-step-done` call and forward it via `--head-at-completion {sha}`, so the dispatcher's HEAD-dependent resumability check can detect a stale `done` record after a future loop-back commit advances HEAD. Loop-back iterations (recorded via `--outcome loop_back` from the "Handle findings (loop-back)" block above) do NOT need to persist the SHA — the dispatcher's general resumability handling for `loop_back` treats it as no-record on re-entry regardless of HEAD.
+`sonar-roundtrip` is one of the three HEAD-dependent steps (alongside `pre-push-quality-gate` and `automated-review`) — see [`phase-6-finalize/SKILL.md`](../SKILL.md) Step 3 "Special case — HEAD-dependent steps". Every `--outcome done` branch below MUST capture the worktree HEAD SHA immediately before the `mark-step-done` call and forward it via `--head-at-completion {sha}`, so the dispatcher's HEAD-dependent resumability check can detect a stale `done` record after a future loop-back commit advances HEAD. Loop-back iterations (recorded via `--outcome loop_back` from the "Handle findings (loop-back)" block above) do NOT need to persist the SHA — the dispatcher's general resumability handling for `loop_back` treats it as no-record on re-entry regardless of HEAD.
 
 Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the Sonar quality gate result. The payload differs by branch:
 
@@ -207,7 +208,7 @@ Note: there is no "config disabled" branch — when the manifest excludes `sonar
 
 ## Resumability
 
-`sonar-roundtrip` is one of the four HEAD-dependent steps in `HEAD_DEPENDENT_STEPS` (`pre-push-quality-gate`, `ci-wait`, `automated-review`, `sonar-roundtrip`) — see [`phase-6-finalize/SKILL.md`](../SKILL.md) Step 3 "Special case — HEAD-dependent steps". The HEAD comparison guards against false-clean re-entry after a downstream loop-back commit (typically produced by `automated-review` opening a fix task that produces a new commit, or by an earlier `sonar-roundtrip` iteration's own FIX dispositions) advances HEAD past the validated tree:
+`sonar-roundtrip` is one of the three HEAD-dependent steps in `HEAD_DEPENDENT_STEPS` (`pre-push-quality-gate`, `automated-review`, `sonar-roundtrip`) — see [`phase-6-finalize/SKILL.md`](../SKILL.md) Step 3 "Special case — HEAD-dependent steps". The HEAD comparison guards against false-clean re-entry after a downstream loop-back commit (typically produced by `automated-review` opening a fix task that produces a new commit, or by an earlier `sonar-roundtrip` iteration's own FIX dispositions) advances HEAD past the validated tree:
 
 | Persisted state | Live worktree HEAD | Action |
 |-----------------|--------------------|--------|

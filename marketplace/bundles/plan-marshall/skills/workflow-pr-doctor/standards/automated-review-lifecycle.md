@@ -2,7 +2,7 @@
 
 Detailed reference for the Automated Review Lifecycle mode used by phase-6-finalize when `decisions.automated_review: true`.
 
-> **Architectural context**: This document owns the lifecycle step list (consume completed-CI signal, review-bot buffer, producer call, consumer dispatch, thread replies, overflow handling). CI completion is owned by the preceding `ci-wait` step (see [`phase-6-finalize/standards/ci-wait.md`](../../phase-6-finalize/standards/ci-wait.md)) — `automated-review` reads its terminal record via `manage-status` and proceeds only when CI is green. For the architecture-level synthesis (producer→store→consumer→gate), see [`ref-workflow-architecture/standards/findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md). The pipeline narrative is not restated here.
+> **Architectural context**: This document owns the lifecycle step list (review-bot buffer, producer call, consumer dispatch, thread replies, overflow handling). CI completion is a dispatcher-resolved precondition declared via the `requires: [ci-complete]` frontmatter field on the consumer step — the phase-6-finalize dispatcher invokes its precondition resolver (see [`phase-6-finalize/SKILL.md`](../../phase-6-finalize/SKILL.md) Step 3 § "Precondition resolution") before this lifecycle executes and guarantees CI is green. On `wait_failed`, the dispatcher skips this lifecycle entirely and marks the consumer step `failed` with `display_detail "ci_failure (precondition)"`. For the architecture-level synthesis (producer→store→consumer→gate), see [`ref-workflow-architecture/standards/findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md). The pipeline narrative is not restated here.
 
 ## Input Parameters
 
@@ -12,25 +12,9 @@ Detailed reference for the Automated Review Lifecycle mode used by phase-6-final
 
 ## Step-by-Step Reference
 
-### Step 1: Read completed-CI signal
+CI completion is guaranteed by the dispatcher's precondition resolver before this lifecycle runs (see the architectural-context note above). The body therefore starts at the review-bot wait — there is no inline CI-readiness probe and no `ci-wait` outcome record to consult.
 
-CI completion was already verified by the preceding `ci-wait` step. Read its terminal record from `manage-status`:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
-  --plan-id {plan_id}
-```
-
-Locate the `phase_steps["6-finalize"]["ci-wait"]` record and read its `outcome` and `display_detail`.
-
-| Signal State | Action |
-|--------------|--------|
-| `outcome: done` with display detail starting `CI success` | CI is green — proceed to step 2 |
-| `outcome: done` with display detail `no PR available` | No PR exists — return success with `comments_total: 0` and `loop_back_needed: false` |
-| `outcome: failed` (CI failure or `ci-wait` wrapper timeout) | Return `{status: ci_failure, details: ...}` for loop-back |
-| record absent (no `ci-wait` step in manifest, or earlier dispatcher skip) | Return `{status: ci_failure, details: "no ci-wait record"}` for loop-back |
-
-### Step 2: Wait for Review Bot Comments
+### Step 1: Wait for Review Bot Comments
 
 Poll for new review-bot comments using the dedicated CI subcommand. This replaces a previous bash `sleep` (blocked by the host platform's harness for long leading durations) and exits as soon as a new comment arrives instead of always sleeping the full window.
 
@@ -41,11 +25,11 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-fo
 
 | Script Output | Action |
 |--------------|--------|
-| `status: success`, `timed_out: false` | New comment(s) detected — proceed to Step 3 |
-| `status: success`, `timed_out: true` | No new comment within timeout — proceed to Step 3 anyway (the producer at Step 3 surfaces whatever is on the PR; if nothing, the lifecycle returns `comments_total: 0`) |
-| `status: error` | Treat as warning, log, proceed to Step 3 best-effort |
+| `status: success`, `timed_out: false` | New comment(s) detected — proceed to Step 2 |
+| `status: success`, `timed_out: true` | No new comment within timeout — proceed to Step 2 anyway (the producer at Step 2 surfaces whatever is on the PR; if nothing, the lifecycle returns `comments_total: 0`) |
+| `status: error` | Treat as warning, log, proceed to Step 2 best-effort |
 
-### Step 3: Producer-stage PR comments as findings
+### Step 2: Producer-stage PR comments as findings
 
 Call the producer-side comments-stage subcommand once. It fetches PR review comments, applies pre-filters (resolved threads, plan author's own replies, etc.), and writes one `pr-comment` finding per surviving comment into the per-plan findings store. The producer is the ONLY surface that fetches and stores `pr-comment` findings — this lifecycle does NOT classify or decide on comments inline.
 
@@ -56,7 +40,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 
 For GitLab projects use `plan-marshall:workflow-integration-gitlab:gitlab_pr comments-stage` instead. Provider selection follows `manage-providers` for the plan's host.
 
-### Step 4: Enumerate pending pr-comment findings
+### Step 3: Enumerate pending pr-comment findings
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query \
@@ -65,7 +49,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qu
 
 If the result's `findings` list is empty, return success with `comments_total: 0` and `loop_back_needed: false`.
 
-### Step 5: Per-finding dispatch through ext-triage-{domain}
+### Step 4: Per-finding dispatch through ext-triage-{domain}
 
 For each pending finding, perform the following sequence sequentially. The classifier-as-decision-authority pattern (a single keyword classifier deciding `code_change` / `explain` / `ignore` for a whole batch) is RETIRED — every per-finding decision now goes through the loaded `ext-triage-{domain}` skill's standards.
 
@@ -85,7 +69,7 @@ For each pending finding, perform the following sequence sequentially. The class
 
 The PR thread reply / resolve calls use `plan-marshall:tools-integration-ci:ci pr prepare-comment` → `pr thread-reply` → `pr resolve-thread` (see the canonical phase-6-finalize `automated-review.md` standard for the exact command sequences).
 
-### Step 6: Return Summary
+### Step 5: Return Summary
 
 ```toon
 status: success
@@ -113,7 +97,8 @@ The two paths are not mutually exclusive — a single iteration can both allocat
 
 | Failure | Action |
 |---------|--------|
-| CI wait returns failure | Return error with details; do not proceed to producer-stage |
-| `comments-stage` returns empty | Report "No unresolved comments" via the Step 4 query (which will also return empty) and return success |
+| `comments-stage` returns empty | Report "No unresolved comments" via the Step 3 query (which will also return empty) and return success |
 | `manage-findings query` fails | Log error, return error to caller |
 | Per-finding triage step (resolve, reply, thread-resolve) fails | Log warning, continue with the next finding — best-effort processing; the failed finding remains `pending` and is retried on the next finalize entry |
+
+CI-readiness failures are handled by the dispatcher's `ci-complete` precondition resolver before this lifecycle runs — see the architectural-context note at the top of this document.

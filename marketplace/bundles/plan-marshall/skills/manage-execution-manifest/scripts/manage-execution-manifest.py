@@ -75,7 +75,6 @@ DEFAULT_PHASE_5_STEPS = ('quality-gate', 'module-tests')
 DEFAULT_PHASE_6_STEPS = (
     'commit-push',
     'create-pr',
-    'ci-wait',
     'automated-review',
     'sonar-roundtrip',
     'lessons-capture',
@@ -158,9 +157,13 @@ def _decide(
     # Rule 2: recipe path — recipe-driven plans get a slim manifest. The
     # recipe-lesson-cleanup recipe (deliverable 7) sets scope_estimate=surgical
     # so the surgical-style cascades still apply downstream; here we only need
-    # to drop heavy steps.
+    # to drop the legacy ``ci-wait`` step ID (defensively, against project
+    # marshal.json files that still list it as a candidate). Review gates a
+    # project opted into (``automated-review`` / ``sonar-roundtrip``) are
+    # NEVER silently suppressed by the planner — the recipe label is exactly
+    # the case where the bots' job is to catch what humans miss.
     if recipe_key:
-        phase_6_steps = [s for s in phase_6_candidates if s not in {'ci-wait', 'automated-review', 'sonar-roundtrip'}]
+        phase_6_steps = [s for s in phase_6_candidates if s not in {'ci-wait'}]
         body = {
             'phase_5': {
                 'early_terminate': False,
@@ -172,6 +175,9 @@ def _decide(
 
     # Rule 3: docs-only — surgical scope plus no test/code expectations. Skip
     # build verification entirely; keep capture + commit + PR + branch cleanup.
+    # Only the legacy ``ci-wait`` step ID is subtracted (defensively, against
+    # project marshal.json files that still list it). Review gates a project
+    # opted into are NEVER silently suppressed by the planner.
     if (
         scope_estimate in ('surgical', 'single_module')
         and change_type in ('tech_debt', 'enhancement')
@@ -184,7 +190,7 @@ def _decide(
                 'verification_steps': [],
             },
             'phase_6': {
-                'steps': [s for s in phase_6_candidates if s not in {'ci-wait', 'sonar-roundtrip', 'automated-review'}],
+                'steps': [s for s in phase_6_candidates if s not in {'ci-wait'}],
             },
         }
         return body, 'docs_only'
@@ -202,11 +208,14 @@ def _decide(
         return body, 'tests_only'
 
     # Rule 5: surgical + bug_fix / tech_debt — Q-Gate bypass already applies
-    # at outline time (deliverable 4). Here we trim the manifest: no
-    # automated-review, no sonar-roundtrip (small, focused changes). Keep
-    # lessons-capture + commit/PR/cleanup.
+    # at outline time (deliverable 4). Here the only subtraction is the
+    # legacy ``ci-wait`` step ID (defensively, against project marshal.json
+    # files that still list it). Review gates a project opted into
+    # (``automated-review`` / ``sonar-roundtrip``) are NEVER silently
+    # suppressed by the planner — surgical bug_fix / tech_debt is exactly
+    # the case where the bots' job is to catch what humans miss.
     if scope_estimate == 'surgical' and change_type in ('bug_fix', 'tech_debt'):
-        phase_6_steps = [s for s in phase_6_candidates if s not in {'ci-wait', 'automated-review', 'sonar-roundtrip'}]
+        phase_6_steps = [s for s in phase_6_candidates if s not in {'ci-wait'}]
         body = {
             'phase_5': {
                 'early_terminate': False,

@@ -121,26 +121,24 @@ The most complex case. The manifest step `automated-review` runs **mostly inline
 
 ### Setup
 - `{plan_id}` = `feature-jwt-auth`
-- `manifest.phase_6.steps` includes `automated-review` (after `ci-wait`, before `sonar-roundtrip`)
-- CI just completed; the orchestrator just finished `ci-wait` inline
+- `manifest.phase_6.steps` includes `automated-review` (declares `requires: [ci-complete]` in its frontmatter, ordered before `sonar-roundtrip`)
+- The phase-6-finalize dispatcher just resolved the `ci-complete` precondition for the current HEAD via `_ci_complete_precondition.resolve` — the cache now records `success` for this SHA.
 
 ### Orchestrator: inline orchestration prologue
 
 ```bash
-# 1. Read CI completion signal
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
-  read --plan-id feature-jwt-auth
-
-# 2. Wait for review-bot comments
+# 1. Wait for review-bot comments (CI completion already guaranteed by
+#    the dispatcher's precondition resolver — no manage-status signal
+#    lookup is required inside this body).
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
   --plan-id feature-jwt-auth pr wait-for-comments \
   --pr-number 142 --timeout 180
 
-# 3. Producer: stage PR comments as findings into the store
+# 2. Producer: stage PR comments as findings into the store
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
   --plan-id feature-jwt-auth comments-stage --pr-number 142
 
-# 4. Gate-check: count pending findings (NOT content)
+# 3. Gate-check: count pending findings (NOT content)
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   query --plan-id feature-jwt-auth --type pr-comment --resolution pending
 ```
