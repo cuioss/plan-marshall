@@ -5,7 +5,7 @@ Asserts the runtime contract returned by ``get_default_config()`` (the
 authoritative bootstrap shape consumed by ``marshall-steward`` and the
 ``manage-config init`` wizard). Complementary to the text-level assertions
 in ``test_phase_6_manifest_executor.py`` — those scan the source for the
-literal ``'loop_back_without_asking': True`` token, this one asserts the
+literal ``'loop_back_without_asking': False`` token, this one asserts the
 dict returned by the function actually exposes the value.
 """
 
@@ -38,19 +38,22 @@ _config_defaults = _load_module('_config_defaults', '_config_defaults.py')
 
 class TestLoopBackWithoutAskingDefault:
     """``loop_back_without_asking`` is the reverse-direction symmetric
-    counterpart of ``finalize_without_asking``. Default ``True`` produces
-    the full unattended cycle (subject to ``max_iterations`` cap)."""
+    counterpart of ``finalize_without_asking``. The defaults are
+    intentionally asymmetric: forward auto-continue is the common case and
+    defaults to ``True``; reverse loop-back surfaces a control return to
+    the user and defaults to ``False`` so unattended runs cannot silently
+    re-enter execute on a finalize-side fix."""
 
-    def test_default_is_true(self) -> None:
+    def test_default_is_false(self) -> None:
         """``get_default_config()`` MUST expose
-        ``plan.phase-6-finalize.loop_back_without_asking == True``."""
+        ``plan.phase-6-finalize.loop_back_without_asking == False``."""
         cfg = _config_defaults.get_default_config()
         assert (
             cfg['plan']['phase-6-finalize']['loop_back_without_asking']
-            is True
+            is False
         ), (
             'get_default_config()["plan"]["phase-6-finalize"]'
-            '["loop_back_without_asking"] must default to True'
+            '["loop_back_without_asking"] must default to False'
         )
 
     def test_finalize_block_default_matches(self) -> None:
@@ -59,19 +62,40 @@ class TestLoopBackWithoutAskingDefault:
         physical default and must never drift."""
         assert (
             _config_defaults.DEFAULT_PLAN_FINALIZE['loop_back_without_asking']
-            is True
+            is False
         )
 
-    def test_symmetric_with_finalize_without_asking(self) -> None:
-        """Both auto-continuation knobs default to ``True`` — full unattended
-        cycle in both forward and reverse directions. If either drifts to
-        ``False``, the symmetric contract documented in
-        ``manage-config/SKILL.md`` § Symmetric auto-continuation knobs is
+    def test_asymmetric_with_finalize_without_asking(self) -> None:
+        """The two auto-continuation knobs default asymmetrically —
+        ``finalize_without_asking=True`` (forward auto) and
+        ``loop_back_without_asking=False`` (reverse halt). If they drift
+        to a symmetric pair, the contract documented in
+        ``marshall-steward/references/wizard-flow.md`` § Step 7c is
         broken."""
         cfg = _config_defaults.get_default_config()
         forward = cfg['plan']['phase-5-execute']['finalize_without_asking']
         reverse = cfg['plan']['phase-6-finalize']['loop_back_without_asking']
-        assert forward is True and reverse is True, (
-            'Both finalize_without_asking and loop_back_without_asking must '
-            'default to True (symmetric auto-continuation pair)'
+        assert forward is True and reverse is False, (
+            'finalize_without_asking must default to True and '
+            'loop_back_without_asking must default to False '
+            '(asymmetric auto-continuation pair)'
+        )
+
+    def test_fresh_project_fallback_seeds_key(self) -> None:
+        """A fresh project bootstrap (calling ``get_default_config()``
+        without any prior marshal.json) MUST seed
+        ``loop_back_without_asking`` explicitly — the key being absent
+        would force every downstream consumer to apply its own fallback,
+        and the silent-default surface area is exactly the bug pattern
+        this test guards against."""
+        cfg = _config_defaults.get_default_config()
+        finalize = cfg['plan']['phase-6-finalize']
+        assert 'loop_back_without_asking' in finalize, (
+            'Fresh-project bootstrap must seed loop_back_without_asking '
+            'explicitly in plan.phase-6-finalize'
+        )
+        # Sanity: the fresh-project value matches the module-level constant
+        assert (
+            finalize['loop_back_without_asking']
+            == _config_defaults.DEFAULT_PLAN_FINALIZE['loop_back_without_asking']
         )

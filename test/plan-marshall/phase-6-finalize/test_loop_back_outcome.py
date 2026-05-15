@@ -94,6 +94,7 @@ def _args(
     force: bool = False,
     display_detail: str | None = None,
     head_at_completion: str | None = None,
+    loop_back_target: str | None = None,
 ) -> Namespace:
     return Namespace(
         plan_id=plan_id,
@@ -103,6 +104,7 @@ def _args(
         force=force,
         display_detail=display_detail,
         head_at_completion=head_at_completion,
+        loop_back_target=loop_back_target,
     )
 
 
@@ -131,23 +133,32 @@ def test_iteration_1_fix_records_loop_back_outcome():
                 '6-finalize',
                 'automated-review',
                 'loop_back',
-                display_detail='loop-back iteration 1',
+                display_detail='loop-back iteration 1 (target=5-execute)',
+                loop_back_target='5-execute',
             )
         )
 
         assert result['status'] == 'success'
         assert result['changed'] is True
         assert result['outcome'] == 'loop_back'
-        assert result['display_detail'] == 'loop-back iteration 1'
+        assert result['display_detail'] == 'loop-back iteration 1 (target=5-execute)'
+        # The hybrid-loopback contract: every loop_back outcome carries an
+        # explicit granularity target. FIX dispositions allocate fix tasks and
+        # roll back to phase-5-execute.
+        assert result['loop_back_target'] == '5-execute'
 
         persisted = read_status(plan_id)
         entry = persisted['metadata']['phase_steps']['6-finalize']['automated-review']
-        # On-disk contract: outcome is loop_back, NOT done.
+        # On-disk contract: outcome is loop_back, NOT done; loop_back_target is
+        # persisted alongside outcome and display_detail.
         assert entry['outcome'] == 'loop_back', (
             f"FIX disposition must record outcome=loop_back; got {entry['outcome']!r}"
         )
         assert entry['outcome'] != 'done'
-        assert entry['display_detail'] == 'loop-back iteration 1'
+        assert entry['display_detail'] == 'loop-back iteration 1 (target=5-execute)'
+        assert entry['loop_back_target'] == '5-execute', (
+            'FIX disposition must persist loop_back_target=5-execute alongside outcome'
+        )
 
 
 # =============================================================================
@@ -181,13 +192,15 @@ def test_dispatcher_re_fires_on_loop_back():
                 '6-finalize',
                 'automated-review',
                 'loop_back',
-                display_detail='loop-back iteration 2',
+                display_detail='loop-back iteration 2 (target=5-execute)',
+                loop_back_target='5-execute',
             )
         )
 
         persisted = read_status(plan_id)
         entry = persisted['metadata']['phase_steps']['6-finalize']['automated-review']
         assert entry['outcome'] == 'loop_back'
+        assert entry['loop_back_target'] == '5-execute'
 
     # SKILL.md Resumability table must contain a row mapping loop_back to a
     # re-fire action. We assert against the exact wording used in the file so

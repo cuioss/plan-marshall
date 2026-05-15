@@ -233,6 +233,22 @@ def main() -> int:
             'has advanced.'
         ),
     )
+    mark_step_parser.add_argument(
+        '--loop-back-target',
+        default=None,
+        choices=['5-execute', '6-finalize'],
+        help=(
+            'Loop-back target phase. REQUIRED when --outcome=loop_back, must be one of '
+            '5-execute (full phase rollback for fix-task-required dispositions: FIX with '
+            'fix_tasks_created > 0, overflow_deferred > 0) or 6-finalize (inline replay '
+            'for inline-fixable dispositions: SUPPRESS, narrow-rationale ACCEPT, single-'
+            'annotation FIX). Persisted in the step outcome record alongside display_detail '
+            'and head_at_completion. The phase-6-finalize loop-back continuation hook reads '
+            'this field to decide between full-phase rollback (re-dispatch phase-5-execute) '
+            'and inline replay (re-fire the loop-back-marked step from the resumable '
+            're-entry check). Forbidden when --outcome != loop_back.'
+        ),
+    )
     mark_step_parser.set_defaults(func=cmd_mark_step_done)
 
     # change-type-heuristic

@@ -228,7 +228,7 @@ Configure whether phase transitions pause for user review or auto-continue. Defa
 Ask user which transitions should auto-continue (multi-select):
 - "Plan without asking" → outline (phase 3) to planning (phase 4)
 - "Execute without asking" → planning (phase 4) to execution (phase 5)
-- "Auto-continue plan lifecycle (both directions)" → the symmetric `finalize_without_asking` + `loop_back_without_asking` pair. Forward direction: execution (phase 5) to finalize (phase 6). Reverse direction: finalize (phase 6) `loop_back` outcome → execute (phase 5) inline. Both defaults are `true` (full unattended cycle subject to `phase-6-finalize.max_iterations` cap); the "accept defaults" branch persists both knobs as `true`. Treat them as a paired gate — opting out of one without the other produces the asymmetric "forward auto, reverse halt" (or vice versa) shape and should only be chosen deliberately.
+- "Auto-continue plan lifecycle (both directions)" → the symmetric `finalize_without_asking` + `loop_back_without_asking` pair. Forward direction: execution (phase 5) to finalize (phase 6). Reverse direction: finalize (phase 6) `loop_back` outcome → execute (phase 5) inline. Defaults differ deliberately: `finalize_without_asking` defaults to `true` (forward auto-continue is the common case), but `loop_back_without_asking` defaults to `false` (reverse loop-back surfaces a control return to the user so unattended runs cannot silently re-enter execute on a finalize-side fix). The "accept defaults" branch persists `finalize_without_asking=true` and `loop_back_without_asking=false`. Treat them as a paired gate — opting into both ("full unattended cycle") is supported and bounded by `phase-6-finalize.max_iterations`, but it is an explicit user choice, not the default.
 
 Apply each selection via manage-config:
 ```bash
@@ -248,7 +248,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize set --field loop_back_without_asking --value {true|false}
 ```
 
-The `loop_back_without_asking` knob is the structural counterpart to `finalize_without_asking`: forward gates the `5-execute → 6-finalize` transition, reverse gates the `6-finalize → 5-execute` inline re-dispatch when a phase-6-finalize step records `outcome: loop_back` (FIX disposition, `pr-comment-overflow`, sonar-roundtrip FIX). Both default to `true` for full unattended execution; opt out of one or both for the conservative interactive shape. Reverse loop-back is also bounded by `phase-6-finalize.max_iterations` (default 3) — the dispatcher halts and prompts the user when the cap is reached even with the flag set.
+The `loop_back_without_asking` knob is the structural counterpart to `finalize_without_asking`: forward gates the `5-execute → 6-finalize` transition, reverse gates the `6-finalize → 5-execute` inline re-dispatch when a phase-6-finalize step records `outcome: loop_back` (FIX disposition, `pr-comment-overflow`, sonar-roundtrip FIX). Defaults are intentionally asymmetric — `finalize_without_asking=true` (forward auto-continue) and `loop_back_without_asking=false` (reverse halt-and-prompt). Opt into `loop_back_without_asking=true` for the full unattended cycle in both directions. Reverse loop-back is also bounded by `phase-6-finalize.max_iterations` (default 3) — the dispatcher halts and prompts the user when the cap is reached even with the flag set.
 
 ---
 

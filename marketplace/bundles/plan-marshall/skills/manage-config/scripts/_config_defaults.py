@@ -173,15 +173,14 @@ DEFAULT_PLAN_FINALIZE = {
     'review_bot_buffer_seconds': 180,
     'pr_merge_strategy': 'squash',
     # Symmetric counterpart to phase-5-execute's `finalize_without_asking=True`
-    # default. When True (default), a loop_back outcome from any phase-6-finalize
-    # step (FIX disposition, pr-comment-overflow, or sonar-roundtrip FIX)
-    # re-dispatches the execute pipeline inline (execute-task → mark done →
-    # transition 5-execute → 6-finalize via finalize_without_asking) and
-    # re-enters the finalize loop, capped by max_iterations — full unattended
-    # cycle in both forward and reverse directions. Set to False to opt into
-    # the conservative interactive shape where the dispatcher halts at every
-    # loop_back outcome and returns control to the user.
-    'loop_back_without_asking': True,
+    # default. When False (default), the dispatcher halts at every loop_back
+    # outcome from a phase-6-finalize step (FIX disposition, pr-comment-overflow,
+    # or sonar-roundtrip FIX) and returns control to the user — the conservative
+    # interactive shape. Set to True to opt into the full unattended cycle where
+    # a loop_back outcome re-dispatches the execute pipeline inline (execute-task
+    # → mark done → transition 5-execute → 6-finalize via finalize_without_asking)
+    # and re-enters the finalize loop, capped by max_iterations.
+    'loop_back_without_asking': False,
     'steps': list(BUILT_IN_FINALIZE_STEPS),
 }
 

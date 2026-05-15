@@ -99,19 +99,24 @@ When the subagent returns `status: loop_back` it has created fix tasks (FIX outc
 
 ### Handle findings (loop-back)
 
-**On `loop_back` return from the triage dispatch** (one or more `sonar-issue` findings closed with `--resolution fixed` and a fix-task reference, OR an overflow envelope was filed), `loop_back_needed = true`:
+**On `loop_back` return from the triage dispatch** (one or more `sonar-issue` findings closed with `--resolution fixed` and a fix-task reference, an overflow envelope was filed, OR all findings were inline-fixable but the calling step needs replay), `loop_back_needed = true`. Read `loop_back_target` from the triage dispatch's return TOON (REQUIRED on every `status: loop_back` return per [`triage.md`](../../plan-marshall/workflow/triage.md) § Step 7):
 
 1. The triage dispatch already allocated the fix tasks (see [`triage.md`](triage.md) § Step 3c FIX action). No further task allocation here.
-2. Loop back to phase-5-execute via:
 
-   **Loopback target invariant**: this MUST be `--phase 5-execute` — see [SKILL.md § Loop-back Target Contract](../SKILL.md#loop-back-target-contract).
+2. **Conditional `set-phase`** — only call `manage-status set-phase --phase 5-execute` when `loop_back_target == "5-execute"` (full-phase rollback for fix-task-required dispositions). When `loop_back_target == "6-finalize"` (inline replay for inline-fixable dispositions), the persisted `current_phase` stays at `6-finalize` and NO `set-phase` call is issued.
+
+   **Loopback target invariant**: the `set-phase` call below fires ONLY for `loop_back_target == "5-execute"`; the `6-finalize` target leaves `current_phase` untouched. See [SKILL.md § Loop-back Target Contract](../SKILL.md#loop-back-target-contract) for the granularity invariant.
 
    ```bash
+   # IF loop_back_target == "5-execute":
    python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-phase \
      --plan-id {plan_id} --phase 5-execute
+   # IF loop_back_target == "6-finalize": skip the set-phase call entirely.
    ```
 
-3. Continue until clean or max iterations (3).
+3. The intermediate-iteration `mark-step-done --outcome loop_back` call (Branch D in the "Mark Step Complete" section below) MUST forward the same `loop_back_target` value via `--loop-back-target {value}` — this is REQUIRED per the manage-status validation contract (omitting it returns `error: missing_loop_back_target`).
+
+4. Continue until clean or max iterations (3). The dispatcher's Step 3 § 7b loop-back continuation hook reads the persisted `loop_back_target` and routes between full-phase rollback (`5-execute`) and inline replay (`6-finalize`) deterministically.
 
 When the triage dispatch returns `status: success` (every finding closed as SUPPRESS / ACCEPT / `taken_into_account`, or the query returned empty), `loop_back_needed = false` — proceed directly to "Phase Boundary Re-Capture" below.
 
@@ -204,6 +209,15 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
   --plan-id {plan_id} --phase 6-finalize --step sonar-roundtrip --outcome done \
   --display-detail "Sonar not configured" \
   --head-at-completion {sha}
+```
+
+**Branch D — loop-back recorded** (intermediate pass; used when `loop_back_needed = true` after the "Handle findings (loop-back)" block above). `{iteration}` is the current loop-back iteration number (1..3); `{loop_back_target}` is the granularity classification from the triage dispatch's return TOON (`5-execute` for fix-task-required dispositions, `6-finalize` for inline-fixable). This branch records `--outcome loop_back --loop-back-target {value}` so the Step 3 dispatcher table re-fires the step as a fresh dispatch on next entry AND the continuation hook (§ 7b) routes deterministically. Never record `--outcome done` for an intermediate iteration — `done` is terminal and will cause the dispatcher to skip the step on re-entry. The `loop_back` branch does NOT need `--head-at-completion` but DOES require `--loop-back-target` (per the manage-status validation contract — omitting it returns `error: missing_loop_back_target`):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step sonar-roundtrip --outcome loop_back \
+  --loop-back-target {5-execute|6-finalize} \
+  --display-detail "loop-back iteration {iteration} (target={5-execute|6-finalize})"
 ```
 
 Note: there is no "config disabled" branch — when the manifest excludes `sonar-roundtrip`, the dispatcher does not run this document at all, so no step record is written.

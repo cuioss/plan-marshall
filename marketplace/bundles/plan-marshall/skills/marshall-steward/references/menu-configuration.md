@@ -150,7 +150,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 Display current gate values, then ask user which transitions should auto-continue (multi-select):
 - "Plan without asking" → outline to planning
 - "Execute without asking" → planning to execution
-- "Auto-continue plan lifecycle (both directions)" → the symmetric `finalize_without_asking` + `loop_back_without_asking` pair. Forward: execution to finalize. Reverse: finalize `loop_back` → execute inline (bounded by `phase-6-finalize.max_iterations`). Both defaults are `true`; the "apply defaults" branch persists both knobs as `true` in a single pass. Treat them as a paired gate — opting out of one without the other produces an asymmetric "forward auto, reverse halt" (or vice versa) shape and should be a deliberate choice.
+- "Auto-continue plan lifecycle (both directions)" → the symmetric `finalize_without_asking` + `loop_back_without_asking` pair. Forward: execution to finalize. Reverse: finalize `loop_back` → execute inline (bounded by `phase-6-finalize.max_iterations`). Defaults are asymmetric — `finalize_without_asking` defaults to `true` (forward auto-continue) and `loop_back_without_asking` defaults to `false` (reverse halt so unattended runs cannot silently re-enter execute). The "apply defaults" branch persists this asymmetric pair in a single pass; opting into reverse auto-continuation is an explicit user choice.
 
 Apply each selection via manage-config:
 ```bash
