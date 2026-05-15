@@ -19,7 +19,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 ## Constraints
 
 - **Single-branch-only**: Only the plan's own feature branch (`{head_branch}` from references) may be deleted. Never delete any other local branches, regardless of their state or name.
-- **No broad cleanup**: Never run bulk branch deletion commands such as `git -C {main_checkout} branch | grep -v {base_branch} | xargs git branch -d`, `git fetch --prune`, `git remote prune`, or similar patterns that affect multiple branches.
+- **No broad cleanup**: Never run operations that may affect refs not owned by the current plan, such as `git -C {main_checkout} branch | grep -v {base_branch} | xargs git branch -d`, `git fetch --prune`, `git remote prune`, or any similar pattern whose ref set is determined by external state rather than this plan. Targeted single-ref deletion of the plan's own remote-tracking ref (`refs/remotes/origin/{head_branch}`) is permitted and is prescribed in the PR-mode local cleanup section below — it deletes exactly the one ref this finalize run made stale by deleting the corresponding remote branch, and is provably scoped to the current plan.
 - **No improvisation**: Do not add git cleanup steps beyond what is explicitly documented in the execution sections below.
 - **Worktree removal is non-force**: Never pass `--force` to `git worktree remove`. Only clean worktrees may be removed. If the worktree has uncommitted changes, abort cleanup and surface the error — the user may still want to salvage the work.
 - **Failure leaves worktree in place**: On any plan abort or failure path, do NOT auto-remove the worktree. Worktree removal happens only during successful branch-cleanup.
@@ -280,10 +280,36 @@ git -C {main_checkout} pull
 git -C {main_checkout} branch -d {head_branch}
 ```
 
+After the local feature branch is deleted, delete the plan's own remote-tracking ref. This is the targeted single-ref deletion permitted by the "No broad cleanup" constraint — it removes exactly the one ref this finalize run made stale (by deleting the corresponding remote branch via `pr merge --delete-branch`). The deletion is guarded by a `show-ref` existence check so the `state == merged` re-entry path (where the ref may have been pruned externally) is a graceful no-op.
+
+```bash
+git -C {main_checkout} show-ref --quiet refs/remotes/origin/{head_branch}
+```
+
+```bash
+git -C {main_checkout} update-ref -d refs/remotes/origin/{head_branch}
+```
+
+`update-ref -d` operates directly on the ref database with no implicit prune, no fetch, and no rev-walk — it is the cheapest operation that achieves the goal. `git branch -dr origin/{head_branch}` is not used here because its additional upstream-merged safety checks are unnecessary: the workflow already verified at `pr merge --delete-branch` time that the remote branch is gone.
+
+If `show-ref` returns non-zero (ref already absent — e.g. `state == merged` re-entry, external prune, or a prior finalize run already deleted it), skip the `update-ref` call and log the no-op:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: remote-tracking ref refs/remotes/origin/{head_branch} already absent, skipping update-ref"
+```
+
+If `update-ref -d` itself fails (rare — typically a ref-db lock contention) → log a warning and continue. The cleanup gap is detection-friendly (the next finalize run or an invariant check surfaces it), not a hard blocker that should fail the finalize step:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: update-ref -d refs/remotes/origin/{head_branch} failed - {error} (continuing; ref left stale)"
+```
+
 Notes on the two entry paths:
 
-- **`state == open`** (we just merged this run with `--delete-branch`): the remote branch is already gone. The sequence above performs the local-only cleanup.
-- **`state == merged`** (PR was already merged on a prior run, possibly without `--delete-branch`): the remote branch may still exist. The local cleanup sequence is identical; any leftover remote branch is left as-is and can be cleaned up by a separate workflow if desired.
+- **`state == open`** (we just merged this run with `--delete-branch`): the remote branch is already gone. The sequence above performs the local-only cleanup AND prunes the now-stale remote-tracking ref.
+- **`state == merged`** (PR was already merged on a prior run, possibly without `--delete-branch`): the remote branch may still exist. The local cleanup sequence is identical; any leftover remote branch is left as-is and can be cleaned up by a separate workflow if desired. The `show-ref --quiet` guard makes the targeted ref deletion a graceful no-op when the tracking ref is already absent on this re-entry path.
 
 If `git branch -d` fails → log warning (branch may not exist locally, e.g. another process already deleted it):
 ```bash
