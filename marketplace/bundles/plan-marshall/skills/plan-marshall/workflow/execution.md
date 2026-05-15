@@ -218,12 +218,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capt
   --plan-id {plan_id} --phase {prev_phase}
 ```
 
-**Phase handshake (verify)**: Before dispatching `phase-6-finalize`, verify the captured invariants for the previous phase still match the live state. Stop on `status: drift`. Use `5-execute` when entering after the execute workflow, otherwise the same `{prev_phase}` value used in the fused boundary call above.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake verify \
-  --plan-id {plan_id} --phase {prev_phase} --strict
-```
+The preceding `manage-status transition --completed 5-execute` call refuses to advance and returns the drift TOON when the captured `5-execute` invariants diverge from live state — no separate verify step is required at this boundary. (The transition verb inlines `phase_handshake verify --phase 5-execute --strict` whenever the next phase is in `_BLOCKING_BOUNDARIES`. The standalone `phase_handshake verify` script remains available for retrospective / diagnostic use.)
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
