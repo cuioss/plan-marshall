@@ -264,7 +264,7 @@ Resolve the persisted worktree path for a plan via `manage-status get-worktree-p
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-path \
-  --plan-id my-plan
+  --plan-id EXAMPLE-PLAN
 ```
 
 **Parameters**:
@@ -273,8 +273,8 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workf
 **Output** (TOON):
 ```toon
 status: success
-plan_id: my-plan
-worktree_path: /repo/.plan/local/worktrees/my-plan
+plan_id: EXAMPLE-PLAN
+worktree_path: /repo/.plan/local/worktrees/EXAMPLE-PLAN
 exists: true
 ```
 
@@ -284,7 +284,7 @@ Run `git worktree add <resolved-path> <branch>` against the main checkout, set u
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-create \
-  --plan-id my-plan --branch feature/my-plan [--base main]
+  --plan-id EXAMPLE-PLAN --branch feature/EXAMPLE-PLAN [--base main]
 ```
 
 **Parameters**:
@@ -295,10 +295,10 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workf
 **Output** (TOON):
 ```toon
 status: success
-plan_id: my-plan
-worktree_path: /repo/.plan/local/worktrees/my-plan
-branch: feature/my-plan
-plan_symlink: /repo/.plan/local/worktrees/my-plan/.plan
+plan_id: EXAMPLE-PLAN
+worktree_path: /repo/.plan/local/worktrees/EXAMPLE-PLAN
+branch: feature/EXAMPLE-PLAN
+plan_symlink: /repo/.plan/local/worktrees/EXAMPLE-PLAN/.plan
 bootstrap: ok
 ```
 
@@ -308,7 +308,7 @@ Remove the worktree (`git worktree remove`) first, then delete the branch ref re
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-remove \
-  --plan-id my-plan [--force]
+  --plan-id EXAMPLE-PLAN [--force]
 ```
 
 **Parameters**:
@@ -318,10 +318,10 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workf
 **Output** (TOON, success):
 ```toon
 status: success
-plan_id: my-plan
-worktree_path: /repo/.plan/local/worktrees/my-plan
+plan_id: EXAMPLE-PLAN
+worktree_path: /repo/.plan/local/worktrees/EXAMPLE-PLAN
 action: removed
-branch: feature/my-plan
+branch: feature/EXAMPLE-PLAN
 ```
 
 ### worktree-list
@@ -340,7 +340,7 @@ status: success
 worktrees_root: /repo/.plan/local/worktrees
 count: 2
 worktrees[2]{plan_id,path,branch}:
-  my-plan,/repo/.plan/local/worktrees/my-plan,feature/my-plan
+  EXAMPLE-PLAN,/repo/.plan/local/worktrees/EXAMPLE-PLAN,feature/EXAMPLE-PLAN
   other,/repo/.plan/local/worktrees/other,feature/other
 ```
 

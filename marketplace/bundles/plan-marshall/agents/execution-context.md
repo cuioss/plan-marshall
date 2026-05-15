@@ -4,7 +4,7 @@ description: |
   Generic dispatcher for every plan-marshall Task: invocation. Loads plan-marshall:dev-general-practices and any caller-specified skills, then reads and executes the workflow doc (or inline instructions) named in the prompt body. Required prompt-body fields: name, plan_id, skills[], exactly one of workflow/instructions, WORKTREE. Model and effort pinned by which execution-context-{level} variant is dispatched.
 
   Examples:
-  - Input: name=commit-push, plan_id=my-plan, skills=[workflow-integration-git], workflow=plan-marshall:phase-6-finalize/standards/commit-push.md, WORKTREE=.plan/local/worktrees/my-plan
+  - Input: name=commit-push, plan_id=EXAMPLE-PLAN, skills=[workflow-integration-git], workflow=plan-marshall:phase-6-finalize/standards/commit-push.md, WORKTREE=.plan/local/worktrees/EXAMPLE-PLAN
   - Output: TOON with status, display_detail, plus workflow-specific return fields
 tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill
 implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor

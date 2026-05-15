@@ -175,12 +175,12 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add 
 # → returns id=2025-12-02-001
 
 # Step 2: stage body via Write tool (no shell quoting concerns)
-Write("/abs/path/to/.plan/local/plans/my-plan/work/lesson-body-2025-12-02-001.md", body_markdown)
+Write("/abs/path/to/.plan/local/plans/EXAMPLE-PLAN/work/lesson-body-2025-12-02-001.md", body_markdown)
 
 # Step 3: apply
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons set-body \
   --lesson-id 2025-12-02-001 \
-  --file /abs/path/to/.plan/local/plans/my-plan/work/lesson-body-2025-12-02-001.md
+  --file /abs/path/to/.plan/local/plans/EXAMPLE-PLAN/work/lesson-body-2025-12-02-001.md
 ```
 
 The inline `--content STRING` form is the secondary path — reserve it for tiny single-line payloads (e.g., a one-sentence note) where staging a file would be overhead. For anything multi-line, code-bearing, or containing shell-significant characters, always use the path-allocate flow above.
@@ -269,7 +269,7 @@ Move a lesson out of the global lessons-learned directory and into a plan direct
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons convert-to-plan \
   --lesson-id 2025-12-02-001 \
-  --plan-id my-plan
+  --plan-id EXAMPLE-PLAN
 ```
 
 **Parameters**:
@@ -280,9 +280,9 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons conv
 ```toon
 status: success
 lesson_id: 2025-12-02-001
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 source: .plan/local/lessons-learned/2025-12-02-001.md
-destination: .plan/local/plans/my-plan/lesson-2025-12-02-001.md
+destination: .plan/local/plans/EXAMPLE-PLAN/lesson-2025-12-02-001.md
 ```
 
 ### cleanup-superseded

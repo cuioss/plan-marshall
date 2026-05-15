@@ -94,7 +94,7 @@ from plan_logging import log_entry  # type: ignore[import-not-found]
 log_entry('script', 'global', 'INFO', '[MY-COMPONENT] Processing started')
 
 # Log to plan-specific work log
-log_entry('work', 'my-plan-id', 'INFO', '[ARTIFACT] Created deliverable')
+log_entry('work', 'EXAMPLE-PLAN-id', 'INFO', '[ARTIFACT] Created deliverable')
 
 # Log errors
 log_entry('script', 'global', 'ERROR', '[MY-COMPONENT] Failed to process')
@@ -137,7 +137,7 @@ Use `file_ops` for atomic file writes and base path resolution.
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
 
 # Get path relative to .plan directory
-plan_dir = base_path('plans', 'my-plan')
+plan_dir = base_path('plans', 'EXAMPLE-PLAN')
 
 # Write file atomically (prevents partial writes)
 atomic_write_file(plan_dir / 'config.toon', content)

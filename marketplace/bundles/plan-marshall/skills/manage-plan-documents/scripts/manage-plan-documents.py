@@ -8,15 +8,15 @@ Delegates file I/O to manage-files.
 
 Usage:
     # Create a metadata-only stub and write the body via Write(path)
-    python3 manage-plan-document.py request create --plan-id my-plan --title "..." --source description
+    python3 manage-plan-document.py request create --plan-id EXAMPLE-PLAN --title "..." --source description
     # (then the main context calls Write(path) using the returned `path` field)
 
     # Create with a pre-written body file as a shortcut
-    python3 manage-plan-document.py request create --plan-id my-plan --title "..." --source description --body-file /tmp/body.md
+    python3 manage-plan-document.py request create --plan-id EXAMPLE-PLAN --title "..." --source description --body-file /tmp/body.md
 
-    python3 manage-plan-document.py request read --plan-id my-plan
-    python3 manage-plan-document.py request path --plan-id my-plan
-    python3 manage-plan-document.py request mark-clarified --plan-id my-plan
+    python3 manage-plan-document.py request read --plan-id EXAMPLE-PLAN
+    python3 manage-plan-document.py request path --plan-id EXAMPLE-PLAN
+    python3 manage-plan-document.py request mark-clarified --plan-id EXAMPLE-PLAN
 
 Body handling (path-allocate convention): `request create` never accepts inline
 multi-line body/context/clarification arguments. The two supported flows are:

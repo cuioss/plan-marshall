@@ -279,8 +279,8 @@ def main():
         description='Sonar workflow operations',
         epilog="""
 Examples:
-  sonar.py fetch-and-store --plan-id my-plan --project com.example:project
-  sonar.py fetch-and-store --plan-id my-plan --project com.example:project --pr 123 --severities BLOCKER,CRITICAL
+  sonar.py fetch-and-store --plan-id EXAMPLE-PLAN --project com.example:project
+  sonar.py fetch-and-store --plan-id EXAMPLE-PLAN --project com.example:project --pr 123 --severities BLOCKER,CRITICAL
 """,
         subcommands=[
             {

@@ -51,10 +51,10 @@ workflow-integration-sonar (Sonar issue workflow)
 ```bash
 # Producer-side: fetch + pre-filter + store one sonar-issue finding per surviving issue
 python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar fetch-and-store \
-  --plan-id my-plan --project com.example:project --pr 123 --severities BLOCKER,CRITICAL
+  --plan-id EXAMPLE-PLAN --project com.example:project --pr 123 --severities BLOCKER,CRITICAL
 
 # LLM consumer reads stored findings via manage-findings
-python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query --plan-id my-plan --type sonar-issue
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query --plan-id EXAMPLE-PLAN --type sonar-issue
 ```
 
 ## Workflows

@@ -17,7 +17,7 @@ Checks performed:
 - ``metrics_generated`` — ``metrics.md`` exists.
 
 Usage:
-    python3 check-artifact-consistency.py run --plan-id my-plan --mode live
+    python3 check-artifact-consistency.py run --plan-id EXAMPLE-PLAN --mode live
     python3 check-artifact-consistency.py run --archived-plan-path /abs --mode archived
 """
 

@@ -8,20 +8,20 @@ Storage: JSON format (.plan/plans/{plan_id}/status.json)
 Output: TOON format for API responses
 
 Usage:
-    python3 manage_status.py create --plan-id my-plan --title "Title" --phases 1-init,2-refine,3-outline
-    python3 manage_status.py read --plan-id my-plan
-    python3 manage_status.py set-phase --plan-id my-plan --phase 2-refine
-    python3 manage_status.py update-phase --plan-id my-plan --phase 1-init --status done
-    python3 manage_status.py progress --plan-id my-plan
-    python3 manage_status.py metadata --plan-id my-plan --set --field change_type --value feature
-    python3 manage_status.py metadata --plan-id my-plan --get --field change_type
-    python3 manage_status.py get-context --plan-id my-plan
+    python3 manage_status.py create --plan-id EXAMPLE-PLAN --title "Title" --phases 1-init,2-refine,3-outline
+    python3 manage_status.py read --plan-id EXAMPLE-PLAN
+    python3 manage_status.py set-phase --plan-id EXAMPLE-PLAN --phase 2-refine
+    python3 manage_status.py update-phase --plan-id EXAMPLE-PLAN --phase 1-init --status done
+    python3 manage_status.py progress --plan-id EXAMPLE-PLAN
+    python3 manage_status.py metadata --plan-id EXAMPLE-PLAN --set --field change_type --value feature
+    python3 manage_status.py metadata --plan-id EXAMPLE-PLAN --get --field change_type
+    python3 manage_status.py get-context --plan-id EXAMPLE-PLAN
     python3 manage_status.py list
-    python3 manage_status.py transition --plan-id my-plan --completed 1-init
-    python3 manage_status.py archive --plan-id my-plan
+    python3 manage_status.py transition --plan-id EXAMPLE-PLAN --completed 1-init
+    python3 manage_status.py archive --plan-id EXAMPLE-PLAN
     python3 manage_status.py route --phase 1-init
-    python3 manage_status.py get-routing-context --plan-id my-plan
-    python3 manage_status.py mark-step-done --plan-id my-plan --phase 5-execute --step discovery --outcome done
+    python3 manage_status.py get-routing-context --plan-id EXAMPLE-PLAN
+    python3 manage_status.py mark-step-done --plan-id EXAMPLE-PLAN --phase 5-execute --step discovery --outcome done
 """
 
 import argparse
@@ -35,6 +35,7 @@ from _status_query import (
     cmd_get_context,
     cmd_get_worktree_path,
     cmd_list,
+    cmd_list_orphans,
     cmd_metadata,
     cmd_progress,
     cmd_read,
@@ -146,6 +147,17 @@ def main() -> int:
     list_parser = subparsers.add_parser('list', help='Discover all plans', allow_abbrev=False)
     list_parser.add_argument('--filter', help='Filter by phases (comma-separated)')
     list_parser.set_defaults(func=cmd_list)
+
+    # list-orphans
+    list_orphans_parser = subparsers.add_parser(
+        'list-orphans',
+        help=(
+            'Discover orphan plan directories — entries under .plan/plans/ with no readable '
+            'status.json. Inverse of `list`; the archived-plans directory is excluded.'
+        ),
+        allow_abbrev=False,
+    )
+    list_orphans_parser.set_defaults(func=cmd_list_orphans)
 
     # transition
     transition_parser = subparsers.add_parser('transition', help='Transition to next phase', allow_abbrev=False)

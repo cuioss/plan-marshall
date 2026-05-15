@@ -10,7 +10,7 @@ Storage: stateless — reads the worktree diff and the plan's references.modifie
 Output: TOON to stdout.
 
 Usage:
-    python3 self_review.py surface --plan-id my-plan --project-dir /path/to/worktree
+    python3 self_review.py surface --plan-id EXAMPLE-PLAN --project-dir /path/to/worktree
 """
 
 import argparse

@@ -29,15 +29,15 @@ Arguments (read):
 
 Examples:
     # Write operations
-    python3 manage-log.py script --plan-id my-plan --level INFO --message "plan-marshall:manage-tasks:manage-tasks commit-add (0.15s)"
-    python3 manage-log.py work --plan-id my-plan --level INFO --message "[ARTIFACT] Created deliverable: auth module"
-    python3 manage-log.py decision --plan-id my-plan --level INFO --message "(skill-name) Detected domain: java"
+    python3 manage-log.py script --plan-id EXAMPLE-PLAN --level INFO --message "plan-marshall:manage-tasks:manage-tasks commit-add (0.15s)"
+    python3 manage-log.py work --plan-id EXAMPLE-PLAN --level INFO --message "[ARTIFACT] Created deliverable: auth module"
+    python3 manage-log.py decision --plan-id EXAMPLE-PLAN --level INFO --message "(skill-name) Detected domain: java"
 
     # Read operations
-    python3 manage-log.py read --plan-id my-plan --type work
-    python3 manage-log.py read --plan-id my-plan --type decision
-    python3 manage-log.py read --plan-id my-plan --type work --limit 5
-    python3 manage-log.py read --plan-id my-plan --type decision --phase 1-init
+    python3 manage-log.py read --plan-id EXAMPLE-PLAN --type work
+    python3 manage-log.py read --plan-id EXAMPLE-PLAN --type decision
+    python3 manage-log.py read --plan-id EXAMPLE-PLAN --type work --limit 5
+    python3 manage-log.py read --plan-id EXAMPLE-PLAN --type decision --phase 1-init
 """
 
 import argparse

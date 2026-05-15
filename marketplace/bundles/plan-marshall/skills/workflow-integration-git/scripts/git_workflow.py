@@ -35,11 +35,11 @@ Examples:
     git_workflow.py detect-artifacts --root /path/to/repo
 
     # Worktree CRUD verbs
-    git_workflow.py worktree-path --plan-id my-plan
-    git_workflow.py worktree-create --plan-id my-plan --branch feature/my-plan
-    git_workflow.py worktree-remove --plan-id my-plan
+    git_workflow.py worktree-path --plan-id EXAMPLE-PLAN
+    git_workflow.py worktree-create --plan-id EXAMPLE-PLAN --branch feature/EXAMPLE-PLAN
+    git_workflow.py worktree-remove --plan-id EXAMPLE-PLAN
     git_workflow.py worktree-list
-    git_workflow.py worktree-rebase-to --plan-id my-plan --base main
+    git_workflow.py worktree-rebase-to --plan-id EXAMPLE-PLAN --base main
 """
 
 import fnmatch
@@ -1299,11 +1299,11 @@ Examples:
   git_workflow.py format-commit --type feat --scope auth --subject "add login"
   git_workflow.py analyze-diff --worktree-path /path/to/worktree [--cached]
   git_workflow.py detect-artifacts --root /path/to/repo
-  git_workflow.py worktree-path --plan-id my-plan
-  git_workflow.py worktree-create --plan-id my-plan --branch feature/my-plan
-  git_workflow.py worktree-remove --plan-id my-plan [--force]
+  git_workflow.py worktree-path --plan-id EXAMPLE-PLAN
+  git_workflow.py worktree-create --plan-id EXAMPLE-PLAN --branch feature/EXAMPLE-PLAN
+  git_workflow.py worktree-remove --plan-id EXAMPLE-PLAN [--force]
   git_workflow.py worktree-list
-  git_workflow.py worktree-rebase-to --plan-id my-plan --base main
+  git_workflow.py worktree-rebase-to --plan-id EXAMPLE-PLAN --base main
 """,
         subcommands=[
             {

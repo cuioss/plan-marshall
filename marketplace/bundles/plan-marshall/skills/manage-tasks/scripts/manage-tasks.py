@@ -31,7 +31,7 @@ Output: TOON format for all operations.
 
 Add flow (path-allocate pattern — no content crosses the shell boundary):
 
-  1. python3 manage-tasks.py prepare-add --plan-id my-plan [--slot my-slot]
+  1. python3 manage-tasks.py prepare-add --plan-id EXAMPLE-PLAN [--slot my-slot]
      → returns {path: /abs/.../work/pending-tasks/default.toon}
 
   2. Write the TOON task definition to the returned path using your native
@@ -44,7 +44,7 @@ Add flow (path-allocate pattern — no content crosses the shell boundary):
           - src/main/java/File.java
         depends_on: none
 
-  3. python3 manage-tasks.py commit-add --plan-id my-plan [--slot my-slot]
+  3. python3 manage-tasks.py commit-add --plan-id EXAMPLE-PLAN [--slot my-slot]
      → reads the file, validates it, creates TASK-NNN.json, deletes the scratch
 
 Validation: Lesson-ID References (commit-add and batch-add)
