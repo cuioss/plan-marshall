@@ -87,5 +87,5 @@ The split moves substantive reconciliation back to where the loop already exists
 ## Cross-References
 
 - [`phase-2-refine/standards/refine-workflow-detail.md` § Step 3d](../../phase-2-refine/standards/refine-workflow-detail.md#step-3d-baseline-reconciliation) — authoritative substantive reconciliation procedure
-- [`phase-6-finalize/standards/pre-push-quality-gate.md`](../../phase-6-finalize/standards/pre-push-quality-gate.md) and finalize's `pr update-branch` — second-line safety net for long-running execute runs
+- [`phase-6-finalize/standards/branch-cleanup.md` § Rebase Branch onto Base](../../phase-6-finalize/standards/branch-cleanup.md#rebase-branch-onto-base) — unconditional pre-merge rebase onto `origin/{base_branch}`; the authoritative actor for the rebase that this fast-path gate refuses to perform
 - Driving lesson: aggregate `2026-05-04-20-002` Sub-task I (move pre-execute baseline reconciliation into phase-2-refine)

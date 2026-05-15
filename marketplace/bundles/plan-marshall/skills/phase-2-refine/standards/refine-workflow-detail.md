@@ -248,7 +248,7 @@ Findings emitted by the script and by Sub-step 3d.2's classification step flow i
 
 ### Conflict Handling
 
-The fetch/compare path above is read-only — it never touches the worktree's working tree. When the loop iteration concludes that the request must be re-authored against the new baseline, the user (or the orchestrator under `plan_without_asking == true`) explicitly drives the rebase/merge in `phase-5-execute` Step 3 (now downgraded to a fast-path; see [phase-5-execute/standards/sync-with-main.md](../../phase-5-execute/standards/sync-with-main.md)). Phase-2-refine does NOT modify the worktree's working tree.
+The fetch/compare path above is read-only — it never touches the working tree. Under the deferred-materialization contract (worktree+branch are materialized in `phase-5-execute` Step 2.5), phase-2-refine runs on the main checkout and has no worktree branch ref to advance during phases 1-4 by construction. The actual `git rebase` against the new baseline happens later, in `phase-6-finalize` branch-cleanup's [Rebase Branch onto Base](../../phase-6-finalize/standards/branch-cleanup.md#rebase-branch-onto-base) sub-step, which unconditionally rebases the feature branch onto `origin/{base_branch}` before merging the PR. Phase-5-execute Step 3 is strictly a "still clean?" verification gate — it aborts on drift and does NOT merge/rebase; see [phase-5-execute/standards/sync-with-main.md](../../phase-5-execute/standards/sync-with-main.md).
 
 ### Skip Conditions Summary
 
