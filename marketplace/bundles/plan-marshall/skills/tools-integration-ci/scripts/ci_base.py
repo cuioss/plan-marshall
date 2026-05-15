@@ -295,7 +295,9 @@ def extract_project_dir(argv: list[str]) -> tuple[str | None, list[str]]:
     return project_dir, out
 
 
-_SUBCOMMAND_TOKENS: frozenset[str] = frozenset({'pr', 'ci', 'issue', 'branch'})
+_SUBCOMMAND_TOKENS: frozenset[str] = frozenset(
+    {'pr', 'ci', 'issue', 'branch', 'fetch-comments', 'comments-stage'}
+)
 
 
 def extract_routing_args(argv: list[str]) -> tuple[str | None, list[str]]:
