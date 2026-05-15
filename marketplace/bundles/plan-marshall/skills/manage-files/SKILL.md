@@ -210,6 +210,79 @@ message: At least one --glob pattern is required
 
 Driven by lesson `2026-04-27-18-005`: consumer skills should call `manage-files discover` rather than instructing the LLM to use the `Glob` tool. Routing discovery through this subcommand makes path resolution **deterministic** (the script always returns the same set for a given root + patterns), **auditable** (the call is logged via the executor), and **decoupled** from a particular harness's tool surface. The `Glob` tool is appropriate for ad-hoc exploration during a conversation; `discover` is appropriate for skill workflows that depend on a stable, reproducible set of paths.
 
+### open-in-ide
+
+Open a file in the active IDE. Detection is environment-based — `__CFBundleIdentifier` and `TERM_PROGRAM` on macOS, `TERM_PROGRAM` plus PATH probing on Linux — and the launcher is selected from a named per-platform table. On unknown IDE the verb refuses to fall through to `open <path>` / `xdg-open <path>` and exits non-zero with `reason: ide_not_detected`.
+
+Two input modes:
+
+- **Mode A** — direct path:
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-files:manage-files open-in-ide \
+    --path /abs/path/to/file.md
+  ```
+
+- **Mode B** — plan-resolved document:
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-files:manage-files open-in-ide \
+    --plan-id {plan_id} --document {request|solution_outline}
+  ```
+
+`--path` and `--plan-id` are mutually exclusive (argparse enforces). `--document` is required only in Mode B and is constrained by `choices=(request, solution_outline)`.
+
+**Supported IDE matrix:**
+
+| Platform | Signal | Launcher |
+|----------|--------|----------|
+| macOS | `__CFBundleIdentifier=com.jetbrains.intellij[.ce|-EAP]` | `open -a "IntelliJ IDEA"` |
+| macOS | `__CFBundleIdentifier=com.jetbrains.pycharm` | `open -a "PyCharm"` |
+| macOS | `__CFBundleIdentifier=com.jetbrains.WebStorm` | `open -a "WebStorm"` |
+| macOS | `__CFBundleIdentifier=com.jetbrains.goland` | `open -a "GoLand"` |
+| macOS | `__CFBundleIdentifier=com.jetbrains.rider` | `open -a "Rider"` |
+| macOS | `__CFBundleIdentifier=com.google.android.studio` | `open -a "Android Studio"` |
+| macOS | `TERM_PROGRAM=vscode` | `open -a "Visual Studio Code"` |
+| macOS | `TERM_PROGRAM=cursor` | `open -a "Cursor"` |
+| Linux | `TERM_PROGRAM=vscode` AND `code` on PATH | `code` |
+| Linux | `TERM_PROGRAM=cursor` AND `cursor` on PATH | `cursor` |
+| Linux | PATH probe: `idea` → `pycharm` → `webstorm` → `goland` → `rider` → `studio` | first match wins |
+
+**TOON return shapes:**
+
+Success (launch fired):
+```toon
+status: success
+ide: "IntelliJ IDEA"
+command: "open -a IntelliJ IDEA /abs/path"
+path: /abs/path
+```
+
+Success but disabled by config (no detection, no launcher invocation):
+```toon
+status: success
+action: skipped
+reason: disabled_by_config
+```
+
+Error:
+```toon
+status: error
+reason: ide_not_detected | launcher_missing | document_resolution_failed | invalid_arguments
+detail: "<short context>"
+```
+
+**No-tempfile invariant:** The script call graph imports neither `tempfile` nor `mkstemp` / `NamedTemporaryFile` / `mkdtemp`. Absolute paths are passed verbatim to the launcher. A static AST guard in `test_manage_files_open_in_ide.py` enforces this.
+
+#### Configuration
+
+The verb is gated by the boolean config key `plan.open_in_ide.enabled` in `.plan/marshal.json` (nested under the existing `plan` namespace). Resolution rules:
+
+- Key present and truthy → proceed with detection (current always-attempt-to-open behaviour).
+- Key present and falsy → short-circuit with `status: success, action: skipped, reason: disabled_by_config`. Detection and launcher invocation are NEVER triggered.
+- Key absent, `plan.open_in_ide` sub-namespace absent, `plan` namespace absent, or marshal.json file absent → treated as `true` (the documented default).
+- A malformed `marshal.json` raises (consistent with the rest of the config surface).
+
+`manage-config init` seeds fresh marshal.json files with `plan.open_in_ide.enabled: true` (marshall-steward seed contract).
+
 ### create-or-reference
 
 Create a plan directory if it doesn't exist, or reference an existing one. This is an atomic operation that replaces the two-step pattern of listing plans and checking for conflicts.
@@ -277,6 +350,10 @@ domain: java
 | `content_file_not_found` | `--content-file` path is missing or not a regular file |
 | `invalid_path` | Path contains `..` or absolute path components |
 | `permission_error` | File system permission denied |
+| `ide_not_detected` | open-in-ide: no supported IDE matched env + platform |
+| `launcher_missing` | open-in-ide: launcher binary missing or returned non-zero |
+| `document_resolution_failed` | open-in-ide: Mode B resolver returned error |
+| `invalid_arguments` | open-in-ide: Mode B invoked without --document |
 
 ---
 
@@ -351,6 +428,15 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover
 
 `--glob` is repeatable. Defaults to files-only when neither `--include-files`
 nor `--include-dirs` is supplied.
+
+### open-in-ide
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files open-in-ide \
+  (--path ABS_PATH | --plan-id PLAN_ID --document {request|solution_outline})
+```
+
+`--path` and `--plan-id` are mutually exclusive (Mode A vs Mode B). `--document` is required in Mode B and constrained to the enum above.
 
 ---
 
