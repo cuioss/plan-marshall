@@ -92,9 +92,13 @@ is always set after this call.
 ### 2. Invoke the generator
 
 ```bash
-python3 {worktree_path}/marketplace/targets/generate.py \
-  --target claude --output {worktree_path}/target/claude
+python3 "{worktree_path}/marketplace/targets/generate.py" \
+  --target claude --output "{worktree_path}/target/claude"
 ```
+
+Quote both placeholders so the invocation survives a `{worktree_path}`
+that contains spaces (rare on CI runners, common in developer-machine
+checkouts under `Documents/` or similar).
 
 The script returns a TOON document on stdout describing the run.
 Capture exit code and stdout.

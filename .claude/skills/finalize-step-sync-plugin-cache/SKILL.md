@@ -76,9 +76,13 @@ is always set after this call.
 ### 2. Invoke the consolidated sync engine
 
 ```bash
-python3 {worktree_path}/.claude/skills/sync-plugin-cache/scripts/sync.py \
-  --from-worktree {worktree_path}
+python3 "{worktree_path}/.claude/skills/sync-plugin-cache/scripts/sync.py" \
+  --from-worktree "{worktree_path}"
 ```
+
+Quote both placeholders so the invocation survives a `{worktree_path}`
+that contains spaces (rare on CI runners, common in developer-machine
+checkouts under `Documents/` or similar).
 
 `--from-worktree` overrides the cwd-based source resolver and binds
 the sync to the worktree's `target/claude/` tree.
