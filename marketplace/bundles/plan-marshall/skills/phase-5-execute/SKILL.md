@@ -42,6 +42,8 @@ See `workflow-integration-git/standards/worktree-handling.md` for the worktree-s
 
 The Phase Entry Protocol's `phase_handshake verify --phase {previous_phase_key} --strict` call (see [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md#phase-handshake-verify-phases-2-6)) asserts the worktree-resolution contract before any phase-5-execute work begins: when `metadata.use_worktree==true`, `metadata.worktree_path` MUST be non-empty AND filesystem-resolvable (the directory exists AND `git -C {path} rev-parse --show-toplevel` returns the same canonical path). When the assertion fails, the script returns `status: error, error: worktree_unresolved` and (under `--strict`) exits 1 — phase entry refuses to advance until the persisted metadata is repaired. Plans with `metadata.use_worktree==false` skip the assertion (main-checkout flow). The assertion fires uniformly at every phase boundary; see deliverable 8 in the originating lesson plan for the full contract.
 
+**Phase 5 is the materialization phase.** Phases 1–4 only *declare* the worktree intent (`metadata.use_worktree` and `metadata.worktree_branch` written by `phase-1-init`); Step 2.5 below is the single point where the worktree directory and feature branch are actually created on disk. Re-entry semantics: when phase-4-plan's capture ran without a populated `metadata.worktree_path` (because Step 2.5 had not yet executed), the `phase_handshake verify --phase 4-plan --strict` call MUST tolerate the still-empty value at phase-5 entry, then Step 2.5 populates `worktree_path` in both `references.json` and `status.metadata` before any task dispatch. On every subsequent phase-5 re-entry (orchestrator re-dispatch), Step 2.5's idempotence guard observes the populated `worktree_path` and short-circuits — no re-creation, no duplicate `git checkout -b`.
+
 ## Dispatch Protocol (Worktree Header)
 
 **REQUIREMENT**: When the plan runs in an isolated worktree (see the `[STATUS] Active worktree` work-log line from Step 4), every subagent dispatch prompt — including `Task:`, `Skill:` invocations that accept free-form prompts, and `execution-context` delegations — MUST begin with the canonical path-free Worktree Header:
@@ -231,6 +233,83 @@ src/Bar.java,10,Missing null check,error
 - `status: failed` without `findings[]` → treated as single unstructured failure, triaged as one finding
 
 ---
+
+### Step 2.5: Materialize Worktree and Feature Branch (Once per phase, idempotent)
+
+Phase 5 is the materialization phase for the worktree. Earlier phases only persisted the *intent* (`metadata.use_worktree`, `metadata.worktree_branch` written by `phase-1-init`); this step creates the worktree directory and feature branch on disk and propagates the resolved path to both `references.json` and `status.metadata.worktree_path` BEFORE Step 3 reads them.
+
+**Idempotence guard (must run first)**: read `metadata.worktree_path` and short-circuit when it is already populated — Step 2.5 has already executed on a prior phase-5 entry, the directory exists on disk, and no re-creation is needed.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+  --plan-id {plan_id}
+```
+
+Extract `metadata.use_worktree`, `metadata.worktree_branch`, `metadata.worktree_path`, and the plan's `base_branch` (from `references.json` via `manage-references get`). If `worktree_path` is non-empty, log the short-circuit and proceed to Step 3:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[STATUS] (plan-marshall:phase-5-execute) Step 2.5 short-circuit: worktree_path already populated ({worktree_path}) — skipping materialization"
+```
+
+**Materialization branch (when `worktree_path` is empty)**: branch on `metadata.use_worktree`.
+
+**Case A — `use_worktree == true`**: create an isolated worktree at the canonical path under `.plan/local/worktrees/{plan_id}` and check out the feature branch from `origin/{base_branch}`:
+
+```
+Skill: plan-marshall:workflow-integration-git
+  Arguments: worktree create --plan-id {plan_id} --branch {worktree_branch} --base {base_branch}
+```
+
+Capture the returned `worktree_path` from the skill's TOON output.
+
+**Case B — `use_worktree == false`**: the plan runs against the main checkout. Create the feature branch in place via `git -C .`:
+
+```bash
+git -C . checkout -b {worktree_branch}
+```
+
+Set `worktree_path` to the empty string (the main-checkout flow uses `.` everywhere `worktree_path` would otherwise apply; see Step 3's `worktree_path` absent → substitute `.` rule).
+
+**Fatal-error contract**: if either branch fails, abort the phase fail-loud and do NOT silently proceed to the task loop. Emit the canonical `[ERROR]` line per the Error Handling section and return the structured error TOON; the orchestrator surfaces the failure for human repair. The failure driver differs by case:
+
+- **Case A failure** (worktree create exits non-zero, `git worktree add` fails, branch already exists with divergent history at the worktree destination): phase-1's expectation has already committed downstream consumers to the worktree path. Do NOT silently fall back to the main checkout — that would orphan every subsequent `--plan-id`-resolved Bucket B call.
+- **Case B failure** (`git checkout -b {worktree_branch}` exits non-zero, branch already exists with divergent history on the main checkout): the plan is already bound to the main checkout; the failure is the inability to create the feature branch in place. Do NOT silently fall back to `main` or `--no-branch` — phase-1 committed downstream consumers to a dedicated feature branch.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level ERROR \
+  --message "[ERROR] (plan-marshall:phase-5-execute) Worktree materialization failed for branch {worktree_branch} on base {base_branch}: {error_context}"
+```
+
+**Persist `worktree_path` to both stores** on success (skip when empty in Case B — the absence already signals the main-checkout flow):
+
+1. Write to `references.json` via the manage-references typed setter:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \
+     --plan-id {plan_id} --field worktree_path --value {worktree_path}
+   ```
+
+2. Write to `status.metadata.worktree_path` via the metadata setter:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+     --plan-id {plan_id} --set worktree_path={worktree_path}
+   ```
+
+Both writes are required: `references.json` is the canonical artifact Step 3 reads to resolve `worktree_path`; `status.metadata.worktree_path` is the value the `phase_handshake verify` assertion checks on every subsequent phase boundary, and the value the idempotence guard above reads on phase-5 re-entry.
+
+Log the materialization outcome:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[STATUS] (plan-marshall:phase-5-execute) Step 2.5 materialized worktree at {worktree_path} on branch {worktree_branch}"
+```
+
+Proceed to Step 3.
 
 ### Step 3: Baseline Fast-Path Check (Once per phase)
 

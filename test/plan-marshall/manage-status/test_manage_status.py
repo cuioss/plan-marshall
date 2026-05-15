@@ -918,11 +918,14 @@ def test_create_rejects_partial_worktree_args_branch_only():
 # Test: cmd_get_worktree_path verb
 # =============================================================================
 #
-# TASK-1 added cmd_get_worktree_path which resolves status.metadata into the
-# canonical worktree path (or empty / error). The verb's contract:
-# - use_worktree==true and worktree_path set → worktree_path: <abs>
-# - use_worktree==false (or metadata absent) → worktree_path: '' (empty)
-# - use_worktree==true but worktree_path missing → error: worktree_unresolved
+# cmd_get_worktree_path resolves status.metadata into a tri-state response
+# discriminated by `worktree_state`:
+# - use_worktree==false (or metadata absent) →
+#   worktree_state: disabled, worktree_path: ''
+# - use_worktree==true and worktree_path set →
+#   worktree_state: materialized, worktree_path: <abs>
+# - use_worktree==true and worktree_path missing/empty →
+#   worktree_state: pending, worktree_path: '', not_yet_materialized: true
 #
 # These three tests pin all three branches so the contract cannot regress.
 
@@ -947,6 +950,10 @@ def test_get_worktree_path_resolved_when_use_worktree_true():
         result = cmd_get_worktree_path(Namespace(plan_id=plan_id))
         assert result['status'] == 'success'
         assert result['use_worktree'] is True
+        assert result['worktree_state'] == 'materialized', (
+            f'Expected worktree_state=materialized, got '
+            f'{result.get("worktree_state")!r}.'
+        )
         assert result['worktree_path'] == abs_path, (
             f'Expected resolved worktree_path={abs_path!r}, got '
             f'{result.get("worktree_path")!r}. The verb must read '
@@ -978,6 +985,10 @@ def test_get_worktree_path_empty_when_use_worktree_false():
         result = cmd_get_worktree_path(Namespace(plan_id=plan_id))
         assert result['status'] == 'success'
         assert result['use_worktree'] is False
+        assert result['worktree_state'] == 'disabled', (
+            f'Expected worktree_state=disabled, got '
+            f'{result.get("worktree_state")!r}.'
+        )
         assert result['worktree_path'] == '', (
             f"Expected empty worktree_path '', got "
             f'{result.get("worktree_path")!r}. use_worktree=false MUST yield '
@@ -985,23 +996,23 @@ def test_get_worktree_path_empty_when_use_worktree_false():
         )
 
 
-def test_get_worktree_path_error_when_partial_seed():
-    """Manually seeded use_worktree=true without worktree_path → worktree_unresolved.
+def test_get_worktree_path_pending_when_not_yet_materialized():
+    """use_worktree=true but worktree_path empty → worktree_state: pending.
 
-    cmd_create rejects partial input at write-time, but a status.json could
-    still arrive in a partial state via direct file edits or pre-TASK-1
-    history. The verb must surface that as a structured error rather than
-    returning silently-empty data.
+    A plan can opt into worktree mode before the worktree directory has been
+    materialized — between init and the worktree-creation step. In that
+    pre-materialization window the verb returns the `pending` tri-state
+    branch so callers can fall back to the main checkout cwd instead of
+    erroring out.
     """
-    plan_id = 'wt-resolve-partial'
+    plan_id = 'wt-resolve-pending'
     with PlanContext(plan_id=plan_id) as ctx:
-        # Seed via cmd_create (false), then manually corrupt the metadata to
-        # the partial state we want to test. This avoids depending on
-        # cmd_create's validation order.
+        # Seed via cmd_create (false), then manually shape the metadata to
+        # the pre-materialization state: use_worktree=true with no path yet.
         cmd_create(
             Namespace(
                 plan_id=plan_id,
-                title='Resolve Partial',
+                title='Resolve Pending',
                 phases='1-init,2-refine',
                 force=False,
                 use_worktree=False,
@@ -1011,17 +1022,22 @@ def test_get_worktree_path_error_when_partial_seed():
         )
         status_path = ctx.plan_dir / 'status.json'
         status = json.loads(status_path.read_text(encoding='utf-8'))
-        # Force the partial-seed shape: use_worktree=true but no path/branch.
+        # Pre-materialization shape: use_worktree=true but no path/branch.
         status['metadata'] = {'use_worktree': True}
         status_path.write_text(json.dumps(status), encoding='utf-8')
 
         result = cmd_get_worktree_path(Namespace(plan_id=plan_id))
-        assert result['status'] == 'error', (
-            f'Partial seed must error, got {result!r}. The verb must surface '
-            f'use_worktree=true + missing worktree_path as worktree_unresolved '
-            f'rather than returning empty silently.'
+        assert result['status'] == 'success', (
+            f'Pre-materialization must succeed (tri-state contract), got '
+            f'{result!r}.'
         )
-        assert result['error'] == 'worktree_unresolved'
+        assert result['use_worktree'] is True
+        assert result['worktree_state'] == 'pending', (
+            f'Expected worktree_state=pending, got '
+            f'{result.get("worktree_state")!r}.'
+        )
+        assert result['worktree_path'] == ''
+        assert result['not_yet_materialized'] is True
 
 
 # =============================================================================
@@ -1074,6 +1090,175 @@ def test_cli_get_worktree_path_help():
             f'get-worktree-path --help failed: {result.stderr!r}. '
             f'Subparser is missing from manage_status.py.'
         )
+
+
+# =============================================================================
+# Test: cmd_get_worktree_path pre-materialization tri-state (extended coverage)
+# =============================================================================
+#
+# The three head-line cases (materialized / disabled / pending) are pinned
+# above. This class adds extended coverage of the pre-materialization
+# (``not_yet_materialized``) branch: missing-path variants, explicit empty
+# string, totally-absent metadata block, and the contract that callers can
+# branch on either ``worktree_state == 'pending'`` OR
+# ``not_yet_materialized is True`` without parsing the full envelope.
+
+
+class TestGetWorktreePathPreMaterialization:
+    """Pin pre-materialization tri-state edge cases for cmd_get_worktree_path.
+
+    Covers the deferred-pending branch of the tri-state contract across the
+    three on-disk shapes a plan can take between init and worktree
+    materialization:
+
+    - ``metadata = {use_worktree: True}`` (no path key at all)
+    - ``metadata = {use_worktree: True, worktree_path: ''}`` (explicit empty)
+    - ``metadata = {use_worktree: True, worktree_path: None}`` (null)
+    """
+
+    @staticmethod
+    def _seed_pre_materialization(ctx, plan_id: str, metadata: dict) -> None:
+        """Create the plan via cmd_create then overwrite metadata directly.
+
+        cmd_create rejects partial worktree args, so we cannot seed the
+        pre-materialization shape through the normal API. Direct file
+        write is the canonical pattern (see also
+        test_get_worktree_path_pending_when_not_yet_materialized).
+        """
+        cmd_create(
+            Namespace(
+                plan_id=plan_id,
+                title='Pre-Materialization Edge Case',
+                phases='1-init,2-refine',
+                force=False,
+                use_worktree=False,
+                worktree_path=None,
+                worktree_branch=None,
+            )
+        )
+        status_path = ctx.plan_dir / 'status.json'
+        status = json.loads(status_path.read_text(encoding='utf-8'))
+        status['metadata'] = metadata
+        status_path.write_text(json.dumps(status), encoding='utf-8')
+
+    def test_pending_when_use_worktree_true_and_path_key_absent(self):
+        """use_worktree=true with NO worktree_path key → pending."""
+        plan_id = 'wt-pre-mat-missing-key'
+        with PlanContext(plan_id=plan_id) as ctx:
+            self._seed_pre_materialization(ctx, plan_id, {'use_worktree': True})
+            result = cmd_get_worktree_path(Namespace(plan_id=plan_id))
+            assert result['status'] == 'success'
+            assert result['worktree_state'] == 'pending'
+            assert result['worktree_path'] == ''
+            assert result['not_yet_materialized'] is True, (
+                f'Expected not_yet_materialized=True for shape '
+                f'{{use_worktree: True}} (no path key), got '
+                f'{result.get("not_yet_materialized")!r}.'
+            )
+
+    def test_pending_when_worktree_path_is_explicit_empty_string(self):
+        """use_worktree=true with worktree_path='' → pending."""
+        plan_id = 'wt-pre-mat-empty-string'
+        with PlanContext(plan_id=plan_id) as ctx:
+            self._seed_pre_materialization(
+                ctx, plan_id, {'use_worktree': True, 'worktree_path': ''}
+            )
+            result = cmd_get_worktree_path(Namespace(plan_id=plan_id))
+            assert result['status'] == 'success'
+            assert result['worktree_state'] == 'pending'
+            assert result['worktree_path'] == ''
+            assert result['not_yet_materialized'] is True
+
+    def test_pending_when_worktree_path_is_null(self):
+        """use_worktree=true with worktree_path=None → pending.
+
+        The JSON null shape is a real possibility — manage-status writers
+        could leave ``worktree_path: null`` between phases. The tri-state
+        verb must treat null the same as missing/empty.
+        """
+        plan_id = 'wt-pre-mat-null'
+        with PlanContext(plan_id=plan_id) as ctx:
+            self._seed_pre_materialization(
+                ctx, plan_id, {'use_worktree': True, 'worktree_path': None}
+            )
+            result = cmd_get_worktree_path(Namespace(plan_id=plan_id))
+            assert result['status'] == 'success'
+            assert result['worktree_state'] == 'pending'
+            assert result['worktree_path'] == ''
+            assert result['not_yet_materialized'] is True
+
+    def test_pending_omits_worktree_branch_when_unset(self):
+        """Pending state must NOT carry a worktree_branch field when unset.
+
+        The symmetric contract: just as ``disabled`` omits path/branch,
+        ``pending`` must omit branch when the metadata has none yet. The
+        materialized state is the only one that carries a branch.
+        """
+        plan_id = 'wt-pre-mat-no-branch'
+        with PlanContext(plan_id=plan_id) as ctx:
+            self._seed_pre_materialization(ctx, plan_id, {'use_worktree': True})
+            result = cmd_get_worktree_path(Namespace(plan_id=plan_id))
+            assert result['worktree_state'] == 'pending'
+            # Branch absence must be explicit, not a leaked empty key.
+            assert result.get('worktree_branch', '') == '', (
+                f'Pending state leaked a worktree_branch={result.get("worktree_branch")!r}; '
+                f'pre-materialization shapes have no branch yet.'
+            )
+
+    def test_pending_includes_worktree_branch_when_metadata_has_branch(self):
+        """Pending state surfaces worktree_branch when persisted at init time.
+
+        Phase-1-init records the branch intent in metadata before the
+        worktree is materialized. The tri-state response for the pending
+        case MUST include that branch so downstream consumers (e.g. PR
+        review output that reports branch context pre-materialization)
+        can read it from the same envelope as the materialized case.
+
+        Symmetric counterpart to
+        test_pending_omits_worktree_branch_when_unset: when the metadata
+        carries a branch, the pending envelope MUST carry it through.
+        """
+        plan_id = 'wt-pre-mat-with-branch'
+        branch = 'feature/pre-mat-branch'
+        with PlanContext(plan_id=plan_id) as ctx:
+            self._seed_pre_materialization(
+                ctx,
+                plan_id,
+                {
+                    'use_worktree': True,
+                    'worktree_path': '',
+                    'worktree_branch': branch,
+                },
+            )
+            result = cmd_get_worktree_path(Namespace(plan_id=plan_id))
+            assert result['worktree_state'] == 'pending'
+            assert result['not_yet_materialized'] is True
+            assert result.get('worktree_branch') == branch, (
+                f'Pending state dropped worktree_branch from metadata; '
+                f'expected {branch!r}, got {result.get("worktree_branch")!r}.'
+            )
+
+    def test_pending_contract_callers_can_branch_on_either_signal(self):
+        """Tri-state contract: worktree_state and not_yet_materialized agree.
+
+        Callers downstream may branch on EITHER signal — the contract
+        guarantees they never disagree. A regression that ships the
+        ``pending`` worktree_state without the ``not_yet_materialized``
+        flag (or vice versa) would silently break consumers that picked
+        the other signal.
+        """
+        plan_id = 'wt-pre-mat-symmetric-signals'
+        with PlanContext(plan_id=plan_id) as ctx:
+            self._seed_pre_materialization(ctx, plan_id, {'use_worktree': True})
+            result = cmd_get_worktree_path(Namespace(plan_id=plan_id))
+
+            is_pending_state = result.get('worktree_state') == 'pending'
+            is_not_yet_materialized = result.get('not_yet_materialized') is True
+            assert is_pending_state == is_not_yet_materialized, (
+                f'Tri-state signals disagree: worktree_state={result.get("worktree_state")!r}, '
+                f'not_yet_materialized={result.get("not_yet_materialized")!r}. The two '
+                f'signals MUST agree so callers can branch on either one.'
+            )
 
 
 def test_transition_last_phase_sets_complete():

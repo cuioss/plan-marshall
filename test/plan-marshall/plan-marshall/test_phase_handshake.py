@@ -1519,3 +1519,247 @@ def test_blocking_type_silent_zero_tripwire_all_types_have_dispatch(
         f'(one per registered type), got {queried_total}. '
         f'A type without a dispatch entry contributed 0 instead of 1.'
     )
+
+
+# =============================================================================
+# Tri-state worktree assertion (metadata→disk direction) — full phase matrix
+# =============================================================================
+#
+# ``_resolve_worktree_assertion`` implements the tri-state phase-entry contract
+# documented in workflow-integration-git/standards/worktree-handling.md:
+#
+# - use_worktree==true AND worktree_path empty AND phase in
+#   {1-init, 2-refine, 3-outline, 4-plan} → deferred-pending (return None).
+# - use_worktree==true AND worktree_path empty AND phase in
+#   {5-execute, 6-finalize} → worktree_unresolved error.
+#
+# These tests parametrize across every (phase, metadata-state) cell so neither
+# half of the tri-state can regress silently — a future refactor that flips
+# 4-plan into the post-materialization set, or weakens the empty-path error
+# for 5-execute, immediately trips a red bar.
+
+
+_PRE_MATERIALIZATION_PHASES_FOR_TEST = ('1-init', '2-refine', '3-outline', '4-plan')
+_POST_MATERIALIZATION_PHASES_FOR_TEST = ('5-execute', '6-finalize')
+_ALL_PHASES_FOR_TEST = _PRE_MATERIALIZATION_PHASES_FOR_TEST + _POST_MATERIALIZATION_PHASES_FOR_TEST
+
+
+class TestTriStateWorktreeAssertion:
+    """Pin the full tri-state contract of ``_resolve_worktree_assertion``.
+
+    Covers the 6 phase × 2 metadata-state matrix:
+
+    - 6 phases: 1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-finalize
+    - 2 empty-path metadata states: ``use_worktree=true`` with
+      ``worktree_path=''`` (deferred-pending vs error split by phase) and
+      ``use_worktree=false`` (assertion always passes regardless of phase).
+    """
+
+    @pytest.mark.parametrize('phase', _PRE_MATERIALIZATION_PHASES_FOR_TEST)
+    def test_deferred_pending_returns_none_for_pre_materialization_phases(
+        self, phase: str
+    ) -> None:
+        """use_worktree=true + worktree_path='' + pre-materialization phase → None.
+
+        The orchestrator may opt the plan into worktree mode before the
+        on-disk directory has been created. During 1-init through 4-plan
+        the worktree has not yet been materialized, so the assertion must
+        let the boundary advance (deferred-pending). The empty
+        ``worktree_path`` is the legitimate transitional shape, not an
+        error.
+        """
+        metadata = {'use_worktree': True, 'worktree_path': ''}
+        result = cmds._resolve_worktree_assertion(metadata, phase)
+        assert result is None, (
+            f'Tri-state regressed for phase {phase!r}: expected None '
+            f'(deferred-pending pass-through) for use_worktree=true with '
+            f"empty worktree_path, got {result!r}. The tri-state contract "
+            f'must let pre-materialization phases advance with an empty path.'
+        )
+
+    @pytest.mark.parametrize('phase', _POST_MATERIALIZATION_PHASES_FOR_TEST)
+    def test_worktree_unresolved_error_for_post_materialization_phases(
+        self, phase: str
+    ) -> None:
+        """use_worktree=true + worktree_path='' + post-materialization phase → error.
+
+        By the time phase-5-execute or phase-6-finalize runs, the worktree
+        directory must exist. An empty ``worktree_path`` post-materialization
+        is a real writer-chain failure (phase-5-execute did not create the
+        worktree, or status.metadata was stomped between phases). The
+        assertion fails loud with ``worktree_unresolved`` so the boundary
+        refuses to advance until metadata is repaired.
+        """
+        metadata = {'use_worktree': True, 'worktree_path': ''}
+        result = cmds._resolve_worktree_assertion(metadata, phase)
+        assert result is not None, (
+            f'Tri-state regressed for phase {phase!r}: expected '
+            f'worktree_unresolved error for use_worktree=true with empty '
+            f'worktree_path, got None. Post-materialization phases must '
+            f'NEVER pass with an empty path — the deferred-pending window '
+            f'closes at the 5-execute boundary.'
+        )
+        assert result['status'] == 'error'
+        assert result['error'] == 'worktree_unresolved'
+        assert result['reason'] == 'worktree_path_missing'
+
+    @pytest.mark.parametrize('phase', _ALL_PHASES_FOR_TEST)
+    def test_use_worktree_false_passes_for_every_phase(self, phase: str) -> None:
+        """use_worktree=false → None for every phase (main-checkout pass-through).
+
+        Plans routed against the main checkout never trip the assertion,
+        regardless of phase. This is the symmetric guard against a future
+        refactor that accidentally requires a worktree for some subset of
+        phases — main-checkout plans must run end-to-end.
+        """
+        metadata = {'use_worktree': False, 'worktree_path': ''}
+        result = cmds._resolve_worktree_assertion(metadata, phase)
+        assert result is None, (
+            f'Main-checkout regression for phase {phase!r}: expected None '
+            f'when use_worktree=false, got {result!r}. The assertion must '
+            f'not fire for plans that never opted into a worktree.'
+        )
+
+    def test_legacy_single_arg_caller_preserves_strict_empty_path_failure(self) -> None:
+        """phase=None (legacy callers) → strict pre-tri-state behaviour.
+
+        Callers that haven't been migrated to pass the phase argument get
+        the conservative strict behaviour: empty ``worktree_path`` always
+        fails, no deferred-pending window. This preserves backward
+        compatibility for any consumer still on the legacy single-arg API.
+        """
+        metadata = {'use_worktree': True, 'worktree_path': ''}
+        result = cmds._resolve_worktree_assertion(metadata, None)
+        assert result is not None
+        assert result['error'] == 'worktree_unresolved'
+        assert result['reason'] == 'worktree_path_missing'
+
+
+# =============================================================================
+# Inverse-direction orphan invariant — canonical-path bypass for pre-mat phases
+# =============================================================================
+#
+# ``_capture_worktree_orphan`` is the inverse direction of the worktree
+# assertion: it fires when a worktree directory exists on disk under
+# ``.plan/local/worktrees/{plan_id}`` but metadata reports use_worktree!=true
+# (writer-chain drift). The tri-state contract has one bypass: when
+# use_worktree==true AND the canonical orphan path is present, the capture
+# returns None for ALL phases — that's the materialized-just-not-yet-persisted
+# window OR the legitimate post-materialization steady state.
+#
+# These tests pin both halves of the inverse direction.
+
+
+class TestOrphanCanonicalBypass:
+    """Pin the inverse-direction (disk→metadata) tri-state contract.
+
+    Covers two complementary scenarios:
+
+    - ``use_worktree==true`` (in any shape — bool, 'true', 1) AND canonical
+      orphan dir present → capture returns None (no drift, the orphan dir
+      is the legitimate worktree).
+    - ``use_worktree`` not truthy AND orphan dir present → raises
+      :class:`WorktreeMetadataDrift` for every phase, because the orphan
+      shape signals a writer-chain bug.
+    """
+
+    @pytest.fixture
+    def isolated_repo(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        """Point ``_repo_root`` at an isolated tmp_path with a worktrees dir.
+
+        The capture uses ``_repo_root()`` to derive the canonical orphan
+        path. Patching the helper directly avoids depending on
+        ``PLAN_BASE_DIR`` semantics (which would only work if the fixture
+        directory layout exactly matched ``.plan/local``).
+        """
+        monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
+        return tmp_path
+
+    @staticmethod
+    def _create_canonical_orphan(repo_root: Path, plan_id: str) -> Path:
+        """Create the canonical worktree dir for ``plan_id`` under ``repo_root``."""
+        orphan = repo_root / '.plan' / 'local' / 'worktrees' / plan_id
+        orphan.mkdir(parents=True, exist_ok=True)
+        return orphan
+
+    @pytest.mark.parametrize('phase', _ALL_PHASES_FOR_TEST)
+    def test_bypass_when_use_worktree_true_and_canonical_path_present(
+        self, isolated_repo: Path, phase: str
+    ) -> None:
+        """use_worktree=true + canonical orphan path → None (no drift) for any phase.
+
+        The metadata→disk direction (worktree exists, path missing in
+        metadata) is owned by ``_resolve_worktree_assertion``. The inverse
+        capture must NOT raise here — it would double-report the same drift
+        condition and refuse to advance even when the metadata→disk
+        direction is being repaired.
+        """
+        plan_id = 'orphan-bypass-true'
+        self._create_canonical_orphan(isolated_repo, plan_id)
+        metadata = {'use_worktree': True}
+        result = inv._capture_worktree_orphan(plan_id, metadata, phase)
+        assert result is None, (
+            f'Inverse-direction tri-state regressed for phase {phase!r}: '
+            f'expected None (bypass) when use_worktree=true and canonical '
+            f'orphan path is present, got {result!r}. The inverse capture '
+            f'must yield to _resolve_worktree_assertion in the metadata→'
+            f'disk direction.'
+        )
+
+    @pytest.mark.parametrize('phase', _ALL_PHASES_FOR_TEST)
+    def test_raises_writer_chain_drift_when_use_worktree_false(
+        self, isolated_repo: Path, phase: str
+    ) -> None:
+        """use_worktree=false + canonical orphan path → WorktreeMetadataDrift.
+
+        The orphan-dir-exists-but-metadata-denies-it shape is the writer-
+        chain drift surfaced by lesson 2026-05-08-14-001. It must raise for
+        every phase — including 5-execute and 6-finalize — so the boundary
+        refuses to persist a row that would silently absorb the drift.
+        """
+        plan_id = 'orphan-drift-false'
+        orphan = self._create_canonical_orphan(isolated_repo, plan_id)
+        metadata = {'use_worktree': False}
+        with pytest.raises(inv.WorktreeMetadataDrift) as exc_info:
+            inv._capture_worktree_orphan(plan_id, metadata, phase)
+        assert exc_info.value.plan_id == plan_id
+        assert exc_info.value.worktree_dir == str(orphan)
+        assert exc_info.value.use_worktree is False
+
+    @pytest.mark.parametrize('phase', _ALL_PHASES_FOR_TEST)
+    def test_raises_writer_chain_drift_when_use_worktree_missing(
+        self, isolated_repo: Path, phase: str
+    ) -> None:
+        """No use_worktree key + canonical orphan path → WorktreeMetadataDrift.
+
+        Absence of the ``use_worktree`` key is treated as the falsy case
+        per ``_is_truthy_metadata``. An orphan dir without a positive
+        metadata claim is writer-chain drift for every phase.
+        """
+        plan_id = 'orphan-drift-missing'
+        self._create_canonical_orphan(isolated_repo, plan_id)
+        metadata: dict[str, object] = {}
+        with pytest.raises(inv.WorktreeMetadataDrift):
+            inv._capture_worktree_orphan(plan_id, metadata, phase)
+
+    @pytest.mark.parametrize('phase', _ALL_PHASES_FOR_TEST)
+    def test_returns_none_when_orphan_directory_absent(
+        self, isolated_repo: Path, phase: str
+    ) -> None:
+        """No orphan dir → None for every (phase, metadata-state) combination.
+
+        The capture's first gate is the orphan-directory existence check.
+        When the directory is absent, neither truthy nor falsy
+        ``use_worktree`` can produce a drift signal — there is nothing on
+        disk to drift against.
+        """
+        plan_id = 'orphan-absent'
+        # Note: no _create_canonical_orphan call — directory deliberately absent.
+        for use_worktree_value in (True, False, None):
+            metadata = {'use_worktree': use_worktree_value} if use_worktree_value is not None else {}
+            result = inv._capture_worktree_orphan(plan_id, metadata, phase)
+            assert result is None, (
+                f'Capture returned {result!r} for phase {phase!r} with '
+                f'use_worktree={use_worktree_value!r} and no orphan dir; '
+                f'the orphan-absent gate must return None unconditionally.'
+            )

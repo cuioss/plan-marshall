@@ -83,21 +83,47 @@ def _is_truthy_metadata(value: Any) -> bool:
     return False
 
 
-def _resolve_worktree_assertion(metadata: dict[str, Any]) -> dict[str, Any] | None:
+# Phases whose entry boundary precedes worktree materialization. During
+# these phases, ``use_worktree==true`` with an empty ``worktree_path`` is
+# the legitimate deferred-pending state (the orchestrator has decided to
+# route the plan through a worktree, but ``phase-5-execute`` has not yet
+# created the on-disk directory). The tri-state contract treats this as
+# pass-through, not as ``worktree_unresolved``.
+_PRE_MATERIALIZATION_PHASES: frozenset[str] = frozenset({
+    '1-init',
+    '2-refine',
+    '3-outline',
+    '4-plan',
+})
+
+
+def _resolve_worktree_assertion(
+    metadata: dict[str, Any],
+    phase: str | None = None,
+) -> dict[str, Any] | None:
     """Worktree-resolution phase-entry assertion (metadata→disk direction).
 
-    Asserts that when ``metadata.use_worktree`` is true, the
-    ``metadata.worktree_path`` field is non-empty AND filesystem-resolvable
-    (the directory exists AND ``git -C {path} rev-parse --show-toplevel``
-    returns the same canonical path).
+    Implements a tri-state contract:
 
-    Returns ``None`` when the assertion passes (use_worktree is false or
-    the worktree resolves cleanly). Returns a structured TOON-shaped error
-    dict when the assertion fails — callers (``cmd_capture`` / ``cmd_verify``)
-    surface it verbatim and refuse to enter the phase.
+    1. ``use_worktree`` is not truthy → assertion passes (return ``None``).
+       Plans routed against the main checkout never trip this assertion.
+    2. ``use_worktree==true`` AND ``worktree_path`` is non-empty AND
+       filesystem-resolvable (directory exists, is a git worktree, and
+       ``git rev-parse --show-toplevel`` returns the same canonical
+       path) → assertion passes (return ``None``).
+    3. ``use_worktree==true`` AND ``worktree_path`` is empty/missing →
+       deferred-pending. When ``phase`` is one of the pre-materialization
+       phases (``1-init`` / ``2-refine`` / ``3-outline`` / ``4-plan``)
+       the assertion passes (return ``None``); the worktree has not been
+       materialized yet and the empty path is the legitimate transitional
+       state. For phases ``5-execute`` / ``6-finalize`` the assertion
+       fails with ``worktree_unresolved`` because the worktree should
+       already exist post-materialization. When ``phase`` is ``None``
+       (legacy single-arg callers) the strict pre-tri-state behaviour
+       is preserved — empty path always fails.
 
-    Failure cases:
-        - ``use_worktree==true`` and ``worktree_path`` is missing/empty
+    Failure cases that ignore the tri-state phase gate (always surface
+    as ``worktree_unresolved`` regardless of phase):
         - ``worktree_path`` is set but the directory does not exist
         - ``worktree_path`` exists but is not a git worktree
         - ``worktree_path`` exists, is a git worktree, but ``rev-parse
@@ -122,6 +148,12 @@ def _resolve_worktree_assertion(metadata: dict[str, Any]) -> dict[str, Any] | No
     raw = metadata.get('worktree_path')
     path_str = str(raw).strip() if raw is not None else ''
     if not path_str:
+        # Tri-state: in pre-materialization phases, an empty path while
+        # use_worktree==true is the deferred-pending state. The worktree
+        # has not been created yet and the assertion lets the boundary
+        # advance. Post-materialization phases still fail loud.
+        if phase in _PRE_MATERIALIZATION_PHASES:
+            return None
         return {
             'status': 'error',
             'error': 'worktree_unresolved',
@@ -341,7 +373,7 @@ def cmd_capture(args: Any) -> dict[str, Any]:
     plan_id = args.plan_id
     phase = args.phase
     metadata = _load_status_metadata(plan_id)
-    worktree_error = _resolve_worktree_assertion(metadata)
+    worktree_error = _resolve_worktree_assertion(metadata, phase)
     if worktree_error is not None:
         payload = dict(worktree_error)
         payload['plan_id'] = plan_id
@@ -445,7 +477,7 @@ def cmd_verify(args: Any) -> dict[str, Any]:
         }
 
     metadata = _load_status_metadata(plan_id)
-    worktree_error = _resolve_worktree_assertion(metadata)
+    worktree_error = _resolve_worktree_assertion(metadata, phase)
     if worktree_error is not None:
         payload = dict(worktree_error)
         payload['plan_id'] = plan_id

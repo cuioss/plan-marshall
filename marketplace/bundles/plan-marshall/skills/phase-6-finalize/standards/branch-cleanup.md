@@ -137,26 +137,36 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 Extract `value` as `{pr_merge_strategy}` (default: `squash`). Valid values: `squash`, `merge`, `rebase`.
 
-### Update Branch (if behind)
+### Rebase Branch onto Base
 
-This step is a second-line safety net. The primary drift-sync now runs at the start of phase-5-execute when `rebase_on_execute_start=true` (the default), so by the time finalize runs the branch is typically already up to date with the base branch and this section is a no-op. When `rebase_on_execute_start=false`, `pr update-branch` remains the only sync point and this section is the sole mechanism that keeps a stale branch mergeable. The `pr update-branch` logic itself is unchanged.
+**Only if `state == open`**: Rebase the feature branch onto the latest base branch before merging so the merge lands as a linear-history append. This step is unconditional — it runs every time the PR is still open, regardless of whether the branch was already up to date. A uniform rebase guarantees the merged history is linear and that CI runs against the exact commits that will land on the base branch.
 
-**Only if `state == open`**: Before merging, check whether the PR branch is behind the base branch. The `merge_state` field from the earlier `pr view` output contains GitHub's `mergeStateStatus`. If the value is `behind`, the branch must be updated before a merge attempt — otherwise `pr merge` fails with 'head branch not up to date' and the auto-merge fallback stalls because GitHub will not auto-update the branch without explicit intervention.
-
-**If `merge_state == behind`**:
+Fetch the base branch, rebase the worktree branch onto it, and force-push the result:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr update-branch \
-    --pr-number {pr_number}
+git -C {worktree_path} fetch origin {base_branch}
 ```
 
-If `update-branch` fails → log error and abort:
+```bash
+git -C {worktree_path} rebase origin/{base_branch}
+```
+
+If `git rebase` exits with a non-zero status → ABORT cleanup with a fatal error. Conflicts must be resolved manually; the rebase is too destructive to recover automatically:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: pr update-branch failed - {error}"
+  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: rebase onto origin/{base_branch} failed — resolve conflicts in {worktree_path} manually and re-run finalize"
 ```
 
-After a successful branch update, wait for CI to complete on the updated branch before proceeding to merge:
+Then return — do NOT proceed with force-push or merge.
+
+On a successful rebase, push the rewritten history to the remote with a lease guard:
+
+```bash
+git -C {worktree_path} push origin {worktree_branch} --force-with-lease
+```
+
+After the force-push, wait for CI to complete on the rebased branch before proceeding to merge:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} ci wait \
@@ -165,28 +175,16 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 
 **Bash tool timeout**: 1800000ms (30-minute safety net).
 
-If CI fails after the branch update → log warning but continue to the merge attempt (the merge itself may still succeed if branch protection allows it):
+If CI fails after the rebase → log warning but continue to the merge attempt (the merge itself may still succeed if branch protection allows it):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: CI failed after branch update — continuing with merge attempt"
+  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: CI failed after rebase — continuing with merge attempt"
 ```
 
-Log the update:
+Log the rebase:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: updated PR branch with base branch changes, CI passed"
-```
-
-**If `merge_state != behind`**: The branch is already up to date with the base branch — no update is required. Continue to the next sub-step ("Merge PR"). If this is the only branch-update outcome reached on this run (i.e. the run terminates here without performing a merge), record the no-op via **Mark Step Complete** with:
-
-```
---outcome done --display-detail "branch not behind, already in sync"
-```
-
-Log the decision:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: branch already in sync with base, no update required"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: rebased onto origin/{base_branch}, force-pushed with lease, CI passed"
 ```
 
 ### Merge PR (if not yet merged)
@@ -429,12 +427,12 @@ Before returning control to the finalize pipeline, record that this step ran on 
 
 Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the cleanup outcome. The payload differs by branch and must match the branch actually executed above:
 
-**Branch A — PR mode (merge + cleanup)** (PR was merged, base branch pulled, feature branch deleted locally and on remote, worktree removed):
+**Branch A — PR mode (rebase + merge + cleanup)** (PR was rebased onto base, merged, base branch pulled, feature branch deleted locally and on remote, worktree removed):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
-  --display-detail "main pulled, branch deleted (local+remote), worktree removed"
+  --display-detail "rebased onto base, merged, cleanup complete"
 ```
 
 **Branch B — local-only mode** (no PR was created; only local switch-to-base-branch was performed):
@@ -459,12 +457,4 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
   --display-detail "no PR, nothing to clean up"
-```
-
-**Branch E — branch already in sync** (PR mode, `merge_state != behind` was the terminal outcome — the branch is up to date with the base branch and no update was required; the run terminates here without merging):
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
-  --display-detail "branch not behind, already in sync"
 ```

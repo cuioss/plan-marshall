@@ -482,33 +482,57 @@ def _worktree_orphan_dir(plan_id: str) -> Path | None:
     return candidate if candidate.is_dir() else None
 
 
-def _capture_worktree_orphan(plan_id: str, metadata: dict[str, Any], _phase: str) -> Any:
+# Phases whose entry boundary precedes worktree materialization. Mirrors
+# the constant in ``_handshake_commands._PRE_MATERIALIZATION_PHASES``;
+# kept inline so this module stays self-contained and avoids a cross-module
+# import cycle.
+_PRE_MATERIALIZATION_PHASES: frozenset[str] = frozenset({
+    '1-init',
+    '2-refine',
+    '3-outline',
+    '4-plan',
+})
+
+
+def _capture_worktree_orphan(plan_id: str, metadata: dict[str, Any], phase: str) -> Any:
     """Inverse-direction worktree invariant: orphan dir + metadata says no worktree.
 
-    Detects the failure mode where the on-disk worktree directory at
-    ``.plan/local/worktrees/{plan_id}`` exists, but ``status.metadata``
-    reports ``use_worktree != true`` (the field is false, missing, or
-    empty). This is the writer-chain drift scenario surfaced by lesson
-    ``2026-05-08-14-001``.
+    Tri-state contract aligned with
+    :func:`_handshake_commands._resolve_worktree_assertion`:
 
-    Returns ``None`` (capture not applicable) when the orphan directory
-    is absent OR when ``use_worktree`` is truthy (the existing
-    ``worktree_unresolved`` invariant covers the metadata-says-true /
-    disk-says-false case from the other direction).
+    - ``use_worktree==true`` AND orphan directory is the canonical
+      ``<repo>/.plan/local/worktrees/{plan_id}`` path AND ``phase`` is
+      in the pre-materialization set (``1-init``/``2-refine``/``3-outline``/
+      ``4-plan``) → deferred-but-not-yet-materialized window; capture
+      returns ``None``. The orchestrator routed the plan through a
+      worktree but ``phase-5-execute`` has not yet created the on-disk
+      directory, so the orphan-looking shape is the legitimate
+      transitional state.
+    - ``use_worktree==true`` for any other shape (post-materialization
+      phase or non-canonical orphan path) → return ``None`` because the
+      metadata→disk direction is owned by
+      ``_resolve_worktree_assertion`` (which already refuses to advance
+      post-materialization when the path is missing/stale).
+    - ``use_worktree`` not truthy AND orphan directory exists → writer-
+      chain drift. Raises :class:`WorktreeMetadataDrift` so
+      ``cmd_capture`` surfaces ``error: worktree_metadata_drift`` and
+      refuses to persist the handshake row. Under ``--strict`` the
+      verify path turns this into a non-zero exit.
 
-    On detection raises :class:`WorktreeMetadataDrift` so ``cmd_capture``
-    surfaces a structured TOON error payload (``error:
-    worktree_metadata_drift``) and refuses to persist the handshake row.
-    Under ``--strict`` the verify path turns this into a non-zero exit.
+    Returns ``None`` when the orphan directory is absent (no drift to
+    detect regardless of metadata state).
     """
-    use_worktree = metadata.get('use_worktree')
-    if _is_truthy_metadata(use_worktree):
-        # Metadata claims a worktree is in use — the existing
-        # worktree_unresolved invariant in _handshake_commands handles
-        # this direction. Nothing to detect here.
-        return None
     orphan = _worktree_orphan_dir(plan_id)
     if orphan is None:
+        return None
+    use_worktree = metadata.get('use_worktree')
+    if _is_truthy_metadata(use_worktree):
+        # Metadata-says-true direction is the full responsibility of
+        # ``_resolve_worktree_assertion`` — both pre- and
+        # post-materialization phases pass here. ``phase`` is unused in
+        # this branch by design; the parameter is kept on the function
+        # signature for symmetry with the disk-says-true direction below.
+        del phase  # explicit acknowledgement that the truthy branch is phase-agnostic
         return None
     raise WorktreeMetadataDrift(
         plan_id=plan_id,
