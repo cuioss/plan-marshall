@@ -5,9 +5,10 @@ Handles: discover, init, derived, derived-module
 
 Persistence model: per-module on-disk layout under
 ``.plan/project-architecture/`` consisting of a top-level ``_project.json``
-plus per-module ``derived.json``/``enriched.json`` files.
-``api_discover()`` writes via the tmp+swap protocol so an interrupted
-discover run never leaves a half-written tree behind.
+plus per-module ``enriched.json`` files. ``derived.json`` is ephemeral —
+computed on demand by ``crawl_module_derived``; ``api_discover`` no longer
+writes it to disk. ``api_discover()`` still writes via the tmp+swap protocol
+so an interrupted discover run never leaves a half-written tree behind.
 """
 
 import re
@@ -18,25 +19,22 @@ from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundInProjectError,
     _write_json,
+    crawl_all_modules,
     error_result_module_not_found,
     get_data_dir,
-    get_module_derived_path,
     get_module_enriched_path,
     get_project_meta_path,
     get_tmp_data_dir,
     iter_modules,
-    load_module_derived,
     load_module_enriched,
     load_module_enriched_or_empty,
     load_project_meta,
     require_project_meta_result,
-    save_module_derived,
     save_module_enriched,
     save_project_meta,
     swap_data_dir,
 )
 from constants import (  # type: ignore[import-not-found]
-    DIR_PER_MODULE_DERIVED,
     DIR_PER_MODULE_ENRICHED,
     FILE_PROJECT_META,
 )
@@ -458,15 +456,20 @@ def _empty_module_enrichment() -> dict:
 
 
 def api_discover(project_dir: str = '.', force: bool = False) -> dict:
-    """Run extension API discovery and persist results per-module.
+    """Run extension API discovery and persist non-derived results per-module.
 
-    Writes the entire layout into ``.plan/project-architecture.tmp/`` first,
-    then atomically replaces ``.plan/project-architecture/`` with it via
-    ``os.replace``. This is the single point of fan-out for the per-module
-    layout. ``_project.json`` is the single source of truth for "which modules
-    exist"; per-module ``derived.json`` holds the discovery output and
+    Writes ``_project.json`` plus per-module ``enriched.json`` stubs into
+    ``.plan/project-architecture.tmp/`` first, then atomically replaces the
+    real ``.plan/project-architecture/`` directory via ``os.replace``.
+    ``derived.json`` is NOT written — derived data is ephemeral and computed
+    on demand by ``crawl_module_derived`` against the live worktree filesystem.
     ``enriched.json`` is seeded as an empty stub so downstream readers can
     treat it as present-by-default.
+
+    The discovery + crawl pass still runs in-memory to populate
+    ``_project.json``'s ``modules`` index; ``--force`` continues to regenerate
+    that index (the index is the public on-disk record of "which modules
+    were observed at the last discover invocation").
 
     Args:
         project_dir: Project directory path
@@ -486,30 +489,29 @@ def api_discover(project_dir: str = '.', force: bool = False) -> dict:
             'message': 'Use --force to overwrite',
         }
 
-    # Import extension API for discovery (PYTHONPATH set by executor)
+    # Crawl the live worktree filesystem to enumerate modules. A single
+    # discover_project_modules call gives us both the module data and
+    # extensions_used, avoiding the redundant second discovery pass that
+    # crawl_all_modules + a follow-up discover_project_modules would cause.
     from extension_discovery import discover_project_modules  # type: ignore[import-not-found]
 
     project_path = Path(project_dir).resolve()
-    result = discover_project_modules(project_path)
-    modules: dict[str, dict] = result.get('modules', {}) or {}
+    discovery_result = discover_project_modules(project_path)
+    modules: dict[str, dict] = discovery_result.get('modules', {}) or {}
+    _post_process_files(modules, project_dir)
+    extensions_used = discovery_result.get('extensions_used', [])
 
     # Build the project-meta document. The ``modules`` index here is the
-    # canonical list — clients iterate this, not the per-module directory
-    # listing on disk.
+    # canonical record of "which modules existed at last discover".
     project_meta = {
         'name': project_path.name,
         'description': '',
         'description_reasoning': '',
-        'extensions_used': result.get('extensions_used', []),
+        'extensions_used': extensions_used,
         'modules': {name: {} for name in sorted(modules.keys())},
     }
 
-    # Populate the per-module ``files`` inventory in-place. The walk happens
-    # against the live working tree under ``project_path``, never against the
-    # tmp-staged layout — the tree being inventoried is the user's checkout.
-    _post_process_files(modules, project_dir)
-
-    # Stage the entire new layout under .tmp/ so the swap is atomic.
+    # Stage the new layout under .tmp/ so the swap is atomic.
     tmp_dir = get_tmp_data_dir(project_dir)
     if tmp_dir.exists():
         shutil.rmtree(tmp_dir)
@@ -520,13 +522,11 @@ def api_discover(project_dir: str = '.', force: bool = False) -> dict:
     project_meta_tmp = tmp_dir / FILE_PROJECT_META
     _write_json(project_meta_tmp, project_meta)
 
-    # Write per-module derived.json + empty enriched.json stubs via the shared
-    # helper so all on-disk JSON in the architecture layout flows through one
-    # writer (encoding, indent, key-sort).
-    for module_name, module_data in modules.items():
+    # Write per-module enriched.json stubs only — derived.json is ephemeral
+    # under the on-demand crawl model.
+    for module_name in modules.keys():
         module_tmp = tmp_dir / module_name
         module_tmp.mkdir(parents=True, exist_ok=True)
-        _write_json(module_tmp / DIR_PER_MODULE_DERIVED, module_data)
         # Preserve any prior enrichment so re-discovery never loses LLM-authored
         # content; fall back to an empty stub on first-run discovery (driving
         # lesson 2026-05-01-21-001).
@@ -603,18 +603,13 @@ def api_get_derived(project_dir: str = '.') -> dict:
     """Get raw discovered data assembled across all modules.
 
     Re-assembles the legacy ``{project, modules, extensions_used}`` shape from
-    the per-module layout so downstream callers (CLI ``derived`` command,
-    legacy tooling) continue to receive the dict shape they expect.
+    the on-demand crawl. ``_project.json`` is still consulted for the
+    ``project`` and ``extensions_used`` fields (they record the project's
+    historical metadata), but the ``modules`` payload comes from the live
+    filesystem crawl — no derived.json files are read from disk.
     """
     meta = load_project_meta(project_dir)
-    modules: dict[str, dict] = {}
-    for module_name in iter_modules(project_dir):
-        try:
-            modules[module_name] = load_module_derived(module_name, project_dir)
-        except DataNotFoundError:
-            # _project.json lists a module but its derived.json is missing —
-            # treat as empty so callers get a stable shape.
-            modules[module_name] = {}
+    modules = crawl_all_modules(project_dir)
     return {
         'project': {
             'name': meta.get('name', ''),
@@ -627,21 +622,16 @@ def api_get_derived(project_dir: str = '.') -> dict:
 
 
 def api_get_derived_module(module_name: str, project_dir: str = '.') -> dict:
-    """Get raw discovered data for a single module.
+    """Get raw discovered data for a single module from the live crawl.
 
     Raises:
-        ModuleNotFoundInProjectError: If module not in ``_project.json``
-        DataNotFoundError: If ``_project.json`` itself is missing
+        ModuleNotFoundInProjectError: If the module is absent from the live
+            filesystem crawl.
     """
-    available = iter_modules(project_dir)
-    if module_name not in available:
-        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', available)
-    try:
-        return load_module_derived(module_name, project_dir)
-    except DataNotFoundError:
-        # Module is in the index but its derived.json is gone — surface as
-        # missing data, not "module not found".
-        raise
+    modules = crawl_all_modules(project_dir)
+    if module_name not in modules:
+        raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', sorted(modules.keys()))
+    return modules[module_name]
 
 
 def list_modules(project_dir: str = '.') -> list:
@@ -719,9 +709,7 @@ __all__ = [
 # downstream tests can ``from _cmd_manage import ...`` them without bouncing
 # through ``_architecture_core``.
 _ = (
-    get_module_derived_path,
     load_module_enriched,
     load_module_enriched_or_empty,
     save_project_meta,
-    save_module_derived,
 )

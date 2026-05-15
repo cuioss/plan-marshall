@@ -675,10 +675,11 @@ results[3]{module,category,path}:
 
 ### diff-modules
 
-Diff per-module `derived.json` files against a pre-snapshot directory and
-classify every module into one of four buckets. Used by callers that
-need to know which modules' derived structure shifted between two points
-in time (for example, before/after a refactor or between two branches).
+Compare pre-snapshot `derived.json` shas against the live on-demand crawl
+of the current project's modules and classify every module into one of
+four buckets. Used by callers that need to know which modules' derived
+structure shifted between two points in time (for example, before/after
+a refactor or between two branches).
 
 ```bash
 architecture.py diff-modules --pre PATH
@@ -690,23 +691,25 @@ architecture.py diff-modules --pre PATH
 |--------|----------|---------|-------------|
 | `--pre` | Yes | — | Path to the pre-snapshot. Either a snapshot root containing `_project.json` directly, or a project root whose `.plan/project-architecture/` subtree holds the snapshot. The first shape that points at an existing `_project.json` wins. |
 
-**Comparison surface**: only the sha256 of each module's `derived.json`
-is compared. Differences confined to `enriched.json` (LLM-curated
-fields) never produce a `changed` classification — enrichment drift is
-expected and is not a structural change. See
-[architecture-persistence.md](architecture-persistence.md) for the
-per-module file layout.
+**Comparison surface**: the snapshot side reads `derived.json` shas from
+disk (the snapshot is a captured artifact). The current side hashes the
+canonical JSON of a fresh `crawl_module_derived` call against the live
+worktree filesystem — nothing reads `derived.json` from the current
+project's `project-architecture/` directory. Differences confined to
+`enriched.json` (LLM-curated fields) never produce a `changed`
+classification — enrichment drift is expected and is not a structural
+change. See [architecture-persistence.md](architecture-persistence.md)
+for the per-module file layout.
 
 **Classification rules**:
 
 - `added` — module exists in the current project but not in the snapshot
 - `removed` — module exists in the snapshot but not in the current project
-- `changed` — module exists in both, but the `derived.json` shas differ.
-  A pair is also classified as `changed` when either side's
-  `derived.json` is missing on disk while the index lists the module —
-  the sha surface cannot certify equality, so the safe default is
-  `changed`.
-- `unchanged` — module exists in both and the `derived.json` shas match
+- `changed` — module exists in both, but the shas differ. A pair is also
+  classified as `changed` when the snapshot `derived.json` is missing on
+  disk, or when the live crawl no longer surfaces the module — the sha
+  surface cannot certify equality, so the safe default is `changed`.
+- `unchanged` — module exists in both and the shas match
 
 The four buckets are disjoint and their union equals the union of the
 snapshot and current module name sets. Each bucket is sorted

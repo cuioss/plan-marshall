@@ -44,6 +44,11 @@ target/
 # Planning system (managed by /marshall-steward)
 !.plan/project-architecture/
 
+# derived.json is now ephemeral — computed on demand by manage-architecture's
+# on-demand crawl. Do not track per-module derived files even though their
+# parent directory is exempted above.
+.plan/project-architecture/**/derived.json
+
 # Pyprojectx (tool installations, downloaded on demand)
 .pyprojectx/
 

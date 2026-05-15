@@ -6,7 +6,7 @@ order: 25
 
 # Architecture Refresh
 
-Pure executor for the `architecture-refresh` finalize step. Detects whether the plan changed any module's structural surface and, when it did, refreshes the project's `.plan/project-architecture/` descriptor and (optionally) re-enriches the affected modules with an LLM pass.
+Pure executor for the `architecture-refresh` finalize step. Under the on-demand crawl model, `derived.json` is ephemeral — there is no pre-snapshot to diff against — so this step reduces to a deterministic no-op for every plan, optionally followed by an LLM re-enrichment pass when the user invokes it manually.
 
 This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `architecture-refresh` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer beyond the documented Tier-0 / Tier-1 knob reads.
 
@@ -19,7 +19,6 @@ This step is **inline** (executed directly inside the finalize main context, not
 | `{plan_id}` | dispatcher | Forwarded from `phase-6-finalize` Step 3. |
 | `{worktree_path}` | dispatcher | Resolved by `phase-6-finalize` Step 0 — the active git worktree (or main checkout when no worktree is in use). All `git -C` calls use this path. Build/CI/architecture script calls accept either `--plan-id {plan_id}` (preferred — auto-resolves through `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (escape hatch); the two flags are mutually exclusive — see `tools-script-executor/standards/cwd-policy.md` § "Bucket B" for the canonical two-state contract. The literal `--project-dir {worktree_path}` examples below are the explicit-override form; callers may substitute `--plan-id {plan_id}` to use auto-resolution. |
 | `{main_checkout}` | dispatcher | Resolved by `phase-6-finalize` Step 0 — used post-worktree-removal only; this step ALWAYS runs against `{worktree_path}`. |
-| `architecture-pre/` snapshot | phase-1-init Step 5d | Pre-plan snapshot at `.plan/local/plans/{plan_id}/architecture-pre/`. Greenfield plans skipped the snapshot — see "Greenfield handling" below. |
 | `architecture_refresh.tier_0` | manage-run-config | `enabled` (default) | `disabled`. Read once at the top of Tier-0. |
 | `architecture_refresh.tier_1` | manage-run-config | `prompt` (default) | `auto` | `disabled`. Read once at the top of Tier-1. |
 | `change_type` | status metadata | Plan-level change type (`feature`, `bug_fix`, `verification`, `refactor`, …). Read once for the Tier-1 short-circuit. |
@@ -29,10 +28,10 @@ This step is **inline** (executed directly inside the finalize main context, not
 The step flow is:
 
 1. Read inputs (run-config knobs + change_type).
-2. Greenfield handling — if no `architecture-pre/` snapshot exists, mark step done and exit.
-3. Tier 0 — deterministic discover + diff + commit.
-4. Tier 1 — LLM re-enrichment (skipped for `bug_fix` / `verification` change types).
-5. Mark step complete with `--display-detail` summarising the outcome.
+2. Ephemeral-derived no-op — under the on-demand crawl model no `architecture-pre/` snapshot exists, so this step short-circuits with the documented skip detail.
+3. Tier 0 — `discover --force` is preserved as a useful idempotent refresh of `_project.json` and `enriched.json` stubs, but the diff/commit branches (3c–3e) are unreachable from Step 2's no-op outcome and remain documented only as historical reference.
+4. Tier 1 — LLM re-enrichment remains available, but the auto-consumption of a diff is gone; invocation is manual via `/marshall-steward` Step 13.
+5. Mark step complete with `--display-detail` summarising the outcome (Branch A: "skipped — derived.json is ephemeral, no pre-snapshot exists" applies to every plan).
 
 ## Step 1: Read Inputs
 
@@ -57,31 +56,24 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
 
 When `change_type` is absent, treat it as `unknown` and proceed (no Tier-1 short-circuit applies; the Tier-1 knob alone governs).
 
-## Step 2: Greenfield Handling
+## Step 2: Ephemeral-derived No-Op Branch (Default Path For Every Plan)
 
-If `.plan/local/plans/{plan_id}/architecture-pre/_project.json` does not exist, the plan was initialised on a greenfield project (no architecture descriptor at init time). There is nothing to diff against — the deterministic discover would have nothing to compare to and the LLM re-enrichment has no baseline. Mark the step done with the greenfield outcome and exit:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-files:manage-files \
-  exists --plan-id {plan_id} --file architecture-pre/_project.json
-```
-
-If `exists: false`:
+Under the on-demand crawl model `derived.json` is ephemeral — phase-1-init never captures an `architecture-pre/` snapshot, so `.plan/local/plans/{plan_id}/architecture-pre/_project.json` will not exist for any plan. This step's diff/commit machinery has nothing to compare against; mark the step done with the ephemeral-skip outcome and exit:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
-  --message "[STATUS] (plan-marshall:phase-6-finalize:architecture-refresh) Skipped — no architecture-pre snapshot (greenfield plan)"
+  --message "[STATUS] (plan-marshall:phase-6-finalize:architecture-refresh) Skipped — derived.json is ephemeral, no pre-snapshot exists"
 ```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
   mark-step-done --plan-id {plan_id} --phase 6-finalize \
   --step architecture-refresh --outcome done \
-  --display-detail "skipped (greenfield — no pre-snapshot)"
+  --display-detail "skipped — derived.json is ephemeral, no pre-snapshot exists"
 ```
 
-Return — do not execute Tier-0 or Tier-1.
+Return — do not execute Tier-0 or Tier-1. Steps 3c–3e (diff and commit) below are unreachable from this branch and remain documented only for the manual / future-tooling case where a pre-snapshot is supplied out-of-band. Tier-1 LLM re-enrichment remains available via `/marshall-steward` Step 13 for callers who want to refresh `enriched.json` on demand; it no longer auto-consumes a diff.
 
 ## Step 3: Tier 0 — Deterministic Refresh
 
@@ -106,7 +98,9 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   discover --force --project-dir {worktree_path}
 ```
 
-The `--force` flag instructs `manage-architecture` to bypass any cache freshness checks and rewrite every per-module `derived.json` plus the `_project.json` index. This is the only call in the step that mutates the live architecture descriptor — Tier 1 (re-enrichment) only touches `enriched.json`, never `derived.json`.
+The `--force` flag instructs `manage-architecture` to bypass any freshness checks and rewrite `_project.json` plus the per-module `enriched.json` stubs. Under the on-demand crawl model `derived.json` is no longer persisted, so `--force` no longer rewrites per-module derived files; the call is still useful as an idempotent refresh of the module index and as a re-seed of empty enrichment stubs for newly-discovered modules.
+
+Note that Steps 3c–3e below describe the diff/commit machinery from the legacy snapshot model; under the on-demand crawl model Step 2's ephemeral-derived branch short-circuits before this step runs, so 3c–3e are unreachable on every plan. They remain documented only as historical reference for callers that supply a pre-snapshot out-of-band.
 
 ### 3c. Diff against the pre-snapshot
 
@@ -467,7 +461,7 @@ switch tier_1:
 
 ## Cross-References
 
-- `phase-1-init/SKILL.md` Step 5d — produces the `architecture-pre/` snapshot consumed in Step 2 / Step 3c.
+- `phase-1-init/SKILL.md` — phase-1-init no longer captures an `architecture-pre/` snapshot under the on-demand crawl model; Step 2 of this document short-circuits accordingly.
 - `manage-run-config/SKILL.md` `architecture-refresh` subcommand group — the source of truth for tier-0 / tier-1 knob semantics.
 - `manage-architecture/standards/client-api.md` `discover` and `diff-modules` — the deterministic backbone of Tier 0.
 - `manage-architecture` `enrich` verb — the LLM re-enrichment surface used by Tier 1 `auto` and `prompt`-accepted paths.
