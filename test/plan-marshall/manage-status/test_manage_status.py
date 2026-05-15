@@ -1385,7 +1385,17 @@ def test_list_orphans_empty_status_json_not_flagged(monkeypatch):
 # pin the guarded-boundary behaviour; the 4-plan test pins that non-guarded
 # transitions skip the verify path entirely (preserves today's semantics).
 
-_PLAN_HANDSHAKE_DIR = (
+# Use STANDARD imports (not importlib.spec_from_file_location) so the
+# monkeypatch in the fixtures below hits the same module instance that
+# ``_cmd_lifecycle.cmd_verify`` (imported above via _load_module) reads at
+# runtime. The path-loading shape used elsewhere in this file creates a
+# *new* module object that is not in sys.modules under the canonical name,
+# so patching its INVARIANTS has no effect on the cmd_verify code path
+# (which resolves INVARIANTS via the sys.modules['_invariants'] copy).
+# See test_phase_handshake.py for the prior art on this fixture pattern.
+import sys as _sys  # noqa: E402
+
+_PLAN_HANDSHAKE_SCRIPTS_DIR = str(
     Path(__file__).parent.parent.parent.parent
     / 'marketplace'
     / 'bundles'
@@ -1394,17 +1404,11 @@ _PLAN_HANDSHAKE_DIR = (
     / 'plan-marshall'
     / 'scripts'
 )
+if _PLAN_HANDSHAKE_SCRIPTS_DIR not in _sys.path:
+    _sys.path.insert(0, _PLAN_HANDSHAKE_SCRIPTS_DIR)
 
-
-def _load_handshake_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _PLAN_HANDSHAKE_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_inv = _load_handshake_module('_test_invariants', '_invariants.py')
-_cmds = _load_handshake_module('_test_handshake_commands', '_handshake_commands.py')
+import _handshake_commands as _cmds  # type: ignore[import-not-found]  # noqa: E402
+import _invariants as _inv  # type: ignore[import-not-found]  # noqa: E402
 
 
 @pytest.fixture
