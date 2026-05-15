@@ -23,7 +23,7 @@ Examples:
     github_pr.py fetch-comments --pr 123
 
     # Producer-side stage (fetch, filter, store findings)
-    github_pr.py comments-stage --pr-number 123 --plan-id my-plan
+    github_pr.py comments-stage --pr-number 123 --plan-id EXAMPLE-PLAN
 """
 
 import re
@@ -296,7 +296,7 @@ def main():
         epilog="""
 Examples:
   github_pr.py fetch-comments --pr 123
-  github_pr.py comments-stage --pr-number 123 --plan-id my-plan
+  github_pr.py comments-stage --pr-number 123 --plan-id EXAMPLE-PLAN
 """,
         subcommands=[
             {

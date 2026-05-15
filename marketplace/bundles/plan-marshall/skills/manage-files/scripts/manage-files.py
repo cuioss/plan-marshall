@@ -9,20 +9,40 @@ NOTE: For typed documents (request.md, solution_outline.md), prefer using
 manage-plan-documents skill which provides validation and templating.
 
 Usage:
-    python3 manage-files.py read --plan-id my-plan --file notes.md
-    python3 manage-files.py write --plan-id my-plan --file notes.md --content "..."
-    python3 manage-files.py list --plan-id my-plan
-    python3 manage-files.py exists --plan-id my-plan --file config.toon
-    python3 manage-files.py remove --plan-id my-plan --file old-file.md
-    python3 manage-files.py mkdir --plan-id my-plan --dir goals
+    python3 manage-files.py read --plan-id EXAMPLE-PLAN --file notes.md
+    python3 manage-files.py write --plan-id EXAMPLE-PLAN --file notes.md --content "..."
+    python3 manage-files.py list --plan-id EXAMPLE-PLAN
+    python3 manage-files.py exists --plan-id EXAMPLE-PLAN --file config.toon
+    python3 manage-files.py remove --plan-id EXAMPLE-PLAN --file old-file.md
+    python3 manage-files.py mkdir --plan-id EXAMPLE-PLAN --dir goals
     python3 manage-files.py discover --root /abs/path --glob "**/*.py" --include-files
+    python3 manage-files.py open-in-ide --plan-id my-plan --document solution_outline
+    python3 manage-files.py open-in-ide --path /abs/path/to/file.md
+
+HARD INVARIANT: This module MUST NOT import `tempfile` and MUST NOT call
+`mkstemp`, `NamedTemporaryFile`, or `mkdtemp`. The `open-in-ide` verb passes
+absolute paths verbatim to the launcher without staging them through a
+temporary file. A static AST guard in test_manage_files_open_in_ide.py
+enforces this.
 """
 
 import argparse
+import json
+import os
+import shutil
+import subprocess
 import sys
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
-from file_ops import atomic_write_file, get_plan_dir, output_toon, safe_main  # type: ignore[import-not-found]
+from file_ops import (  # type: ignore[import-not-found]
+    atomic_write_file,
+    get_marshal_path,
+    get_plan_dir,
+    output_toon,
+    safe_main,
+)
 from input_validation import (  # type: ignore[import-not-found]
     add_plan_id_arg,
     is_valid_relative_path,
@@ -32,6 +52,271 @@ from input_validation import (  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
 # get_plan_dir imported from file_ops
+
+# =============================================================================
+# open-in-ide: module-level constants
+# =============================================================================
+
+# Document-type enum for --document. Constrained via argparse `choices=`.
+DOCUMENT_REQUEST = 'request'
+DOCUMENT_SOLUTION_OUTLINE = 'solution_outline'
+
+# Mapping document-type -> (executor notation, subcommand-arg tuple). The
+# helper appends `--plan-id {plan_id}` at call time. Each resolver script
+# returns TOON with a `path:` field that the handler parses.
+DOCUMENT_RESOLVERS: dict[str, tuple[str, tuple[str, ...]]] = {
+    DOCUMENT_REQUEST: (
+        'plan-marshall:manage-plan-documents:manage-plan-documents',
+        ('request', 'path'),
+    ),
+    DOCUMENT_SOLUTION_OUTLINE: (
+        'plan-marshall:manage-solution-outline:manage-solution-outline',
+        ('resolve-path',),
+    ),
+}
+
+# JetBrains macOS bundle-id -> macOS app name (used as `open -a "<App>"`).
+# Exhaustive — no wildcard fall-through. `__CFBundleIdentifier` is the
+# platform-supplied env var that survives terminal-spawned subprocesses.
+MACOS_JETBRAINS_BUNDLE_IDS: dict[str, str] = {
+    'com.jetbrains.intellij': 'IntelliJ IDEA',
+    'com.jetbrains.intellij.ce': 'IntelliJ IDEA',
+    'com.jetbrains.intellij-EAP': 'IntelliJ IDEA',
+    'com.jetbrains.pycharm': 'PyCharm',
+    'com.jetbrains.WebStorm': 'WebStorm',
+    'com.jetbrains.goland': 'GoLand',
+    'com.jetbrains.rider': 'Rider',
+    'com.google.android.studio': 'Android Studio',
+}
+
+# Linux JetBrains launcher names probed via `shutil.which` in priority order
+# only after env-var detection failed.
+LINUX_LAUNCHER_PRIORITY: tuple[str, ...] = (
+    'idea',
+    'pycharm',
+    'webstorm',
+    'goland',
+    'rider',
+    'studio',
+)
+
+# TERM_PROGRAM values used for VS Code / Cursor detection (cross-platform).
+TERM_PROGRAM_VSCODE = 'vscode'
+TERM_PROGRAM_CURSOR = 'cursor'
+
+
+@dataclass(frozen=True)
+class IdeRecord:
+    """Resolved IDE identity + how to launch it.
+
+    `name` is a stable identifier suitable for TOON return; `launcher_argv`
+    is the argv prefix that gets `path` appended at launch time.
+    """
+
+    name: str
+    launcher_argv: tuple[str, ...]
+
+
+# =============================================================================
+# open-in-ide: pure helpers (testable in isolation, no I/O)
+# =============================================================================
+
+
+def detect_ide(env: Mapping[str, str], platform: str) -> IdeRecord | None:
+    """Detect the active IDE from the environment and host platform.
+
+    Pure function: consumes the env mapping and platform string only. Returns
+    `None` when no signal matches. `shutil.which` is consulted only for the
+    Linux launcher-priority probe (last-resort path).
+    """
+    cf_bundle = env.get('__CFBundleIdentifier', '')
+    term_program = env.get('TERM_PROGRAM', '').lower()
+
+    if platform == 'darwin':
+        # macOS: JetBrains family via __CFBundleIdentifier.
+        app = MACOS_JETBRAINS_BUNDLE_IDS.get(cf_bundle)
+        if app is not None:
+            return IdeRecord(name=app, launcher_argv=('open', '-a', app))
+        # macOS: VS Code / Cursor via TERM_PROGRAM. Cursor is NEVER silently
+        # substituted with VS Code.
+        if term_program == TERM_PROGRAM_VSCODE:
+            return IdeRecord(name='Visual Studio Code', launcher_argv=('open', '-a', 'Visual Studio Code'))
+        if term_program == TERM_PROGRAM_CURSOR:
+            return IdeRecord(name='Cursor', launcher_argv=('open', '-a', 'Cursor'))
+        return None
+
+    if platform == 'linux':
+        # Linux: TERM_PROGRAM short-circuits to a named launcher if present on PATH.
+        if term_program == TERM_PROGRAM_VSCODE and shutil.which('code') is not None:
+            return IdeRecord(name='Visual Studio Code', launcher_argv=('code',))
+        if term_program == TERM_PROGRAM_CURSOR and shutil.which('cursor') is not None:
+            return IdeRecord(name='Cursor', launcher_argv=('cursor',))
+        # Linux JetBrains: priority probe on PATH.
+        for launcher in LINUX_LAUNCHER_PRIORITY:
+            if shutil.which(launcher) is not None:
+                return IdeRecord(name=launcher, launcher_argv=(launcher,))
+        return None
+
+    # Unknown host platform — no detection.
+    return None
+
+
+def build_launch_command(ide: IdeRecord, path: Path) -> list[str]:
+    """Build the argv for launching `ide` with `path` appended verbatim."""
+    return [*ide.launcher_argv, str(path)]
+
+
+def is_open_in_ide_enabled() -> bool:
+    """Return whether `open-in-ide` is enabled in marshal.json.
+
+    Lenient resolution: a missing file, a missing `plan` namespace, or a
+    missing `plan.open_in_ide` field all resolve to the documented default
+    `True`. A malformed JSON file or a `plan.open_in_ide` value that is
+    not exactly a boolean raises `ValueError` — silent coercion of dicts
+    / strings / numbers via `bool(...)` would misclassify obviously-broken
+    configs (e.g. `bool({"enabled": False})` is `True`).
+    """
+    marshal_path = get_marshal_path()
+    if not marshal_path.is_file():
+        return True
+    data = json.loads(marshal_path.read_text(encoding='utf-8'))
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"{marshal_path}: expected a JSON object at the top level, "
+            f"got {type(data).__name__}"
+        )
+    plan_ns = data.get('plan')
+    if not isinstance(plan_ns, dict):
+        return True
+    open_in_ide = plan_ns.get('open_in_ide')
+    if open_in_ide is None:
+        return True
+    if not isinstance(open_in_ide, bool):
+        raise ValueError(
+            f"{marshal_path}: expected a boolean at plan.open_in_ide, "
+            f"got {type(open_in_ide).__name__}"
+        )
+    return open_in_ide
+
+
+def _resolve_document_path(plan_id: str, document: str) -> tuple[Path | None, str | None]:
+    """Resolve the on-disk path for `document` via the manage-* resolver.
+
+    Returns `(path, None)` on success, `(None, detail)` on resolver failure.
+    Uses subprocess to invoke the resolver script via the executor (matches
+    the manage-files convention of delegating to sibling manage-* scripts).
+    """
+    notation, sub_args = DOCUMENT_RESOLVERS[document]
+    executor = Path(__file__).resolve().parents[4].parent / '.plan' / 'execute-script.py'
+    # When invoked through the executor, `.plan/execute-script.py` lives at
+    # the worktree/repo root. Fall back to the canonical PATH-based lookup
+    # if the relative resolution path is unavailable (defensive — should not
+    # trigger in normal operation since the executor is always staged at the
+    # repo root by manage-architecture).
+    cmd = [
+        sys.executable,
+        str(executor) if executor.exists() else '.plan/execute-script.py',
+        notation,
+        *sub_args,
+        '--plan-id',
+        plan_id,
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or '').strip()
+        return None, detail or f'resolver {notation} exited {proc.returncode}'
+
+    # The TOON resolvers print `path: <abs>` somewhere in their output. Walk
+    # the lines and pull the first `path: …` value.
+    for line in proc.stdout.splitlines():
+        stripped = line.strip()
+        if stripped.startswith('path:'):
+            value = stripped[len('path:'):].strip().strip('"')
+            if value:
+                return Path(value), None
+    return None, 'resolver did not emit a path field'
+
+
+def cmd_open_in_ide(args: argparse.Namespace) -> dict:
+    """Open a file or plan-resolved document in the active IDE.
+
+    Ordering (do not reorder — the config gate MUST run before detection so
+    the disabled-by-config short-circuit performs neither detection nor
+    launcher invocation):
+      1. is_open_in_ide_enabled() — if false: skip everything, return success.
+      2. Resolve the target path: Mode A (`--path`) verbatim, Mode B
+         (`--plan-id + --document`) via the manage-* resolver.
+      3. detect_ide(env, platform) — None → ide_not_detected error.
+      4. subprocess.run(build_launch_command(ide, path)) — non-zero exit →
+         launcher_missing error.
+      5. Return success TOON.
+    """
+    # 1) Config gate.
+    if not is_open_in_ide_enabled():
+        return {
+            'status': 'success',
+            'action': 'skipped',
+            'reason': 'disabled_by_config',
+        }
+
+    # 2) Resolve the target path.
+    if args.path is not None:
+        target_path = Path(args.path)
+    else:
+        # Mode B requires --plan-id + --document. argparse already enforces
+        # the mutex group; here we just check --document is present.
+        if args.plan_id is None or args.document is None:
+            return {
+                'status': 'error',
+                'reason': 'invalid_arguments',
+                'detail': 'Mode B requires both --plan-id and --document',
+            }
+        require_valid_plan_id(args)
+        resolved, detail = _resolve_document_path(args.plan_id, args.document)
+        if resolved is None:
+            return {
+                'status': 'error',
+                'reason': 'document_resolution_failed',
+                'detail': detail or 'unknown resolver error',
+            }
+        target_path = resolved
+
+    # 3) Detect the IDE. Uses module-level os.environ + sys.platform so
+    # tests can patch via `mock.patch.object(_mod, 'sys', ...)`.
+    raw_platform = sys.platform
+    platform = 'darwin' if raw_platform == 'darwin' else ('linux' if raw_platform.startswith('linux') else raw_platform)
+    ide = detect_ide(os.environ, platform)
+    if ide is None:
+        return {
+            'status': 'error',
+            'reason': 'ide_not_detected',
+            'detail': f'No supported IDE detected on platform={platform}',
+        }
+
+    # 4) Launch. Fire-and-forget contract: every supported launcher returns
+    # immediately on its own.
+    argv = build_launch_command(ide, target_path)
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True, check=False)
+    except FileNotFoundError as exc:
+        return {
+            'status': 'error',
+            'reason': 'launcher_missing',
+            'detail': f'{argv[0]}: {exc}',
+        }
+    if proc.returncode != 0:
+        return {
+            'status': 'error',
+            'reason': 'launcher_missing',
+            'detail': (proc.stderr or proc.stdout or f'{argv[0]} exited {proc.returncode}').strip(),
+        }
+
+    return {
+        'status': 'success',
+        'ide': ide.name,
+        'command': ' '.join(argv),
+        'path': str(target_path),
+    }
 
 
 def cmd_read(args: argparse.Namespace) -> dict | None:
@@ -366,6 +651,31 @@ def main() -> int:
         help='Include directories in results',
     )
     discover_parser.set_defaults(func=cmd_discover)
+
+    # open-in-ide
+    open_parser = subparsers.add_parser(
+        'open-in-ide',
+        help='Open a file in the active IDE (detected from env + host platform)',
+        allow_abbrev=False,
+    )
+    # Mutually exclusive input mode: either a direct absolute path (Mode A)
+    # or plan-id + document type (Mode B). Both modes must be in the SAME
+    # mutex group so argparse rejects combinations like `--path X --plan-id Y`.
+    open_mutex = open_parser.add_mutually_exclusive_group(required=True)
+    open_mutex.add_argument(
+        '--path',
+        help='Absolute path to the file to open (Mode A)',
+    )
+    open_mutex.add_argument(
+        '--plan-id',
+        help='Plan identifier; requires --document (Mode B)',
+    )
+    open_parser.add_argument(
+        '--document',
+        choices=(DOCUMENT_REQUEST, DOCUMENT_SOLUTION_OUTLINE),
+        help='Document type to resolve via manage-* (Mode B only)',
+    )
+    open_parser.set_defaults(func=cmd_open_in_ide)
 
     args = parse_args_with_toon_errors(parser)
     result = args.func(args)

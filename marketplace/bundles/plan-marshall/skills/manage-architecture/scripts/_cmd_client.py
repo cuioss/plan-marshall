@@ -5,10 +5,13 @@ Handles: info, modules, graph, path, neighbors, impact, module, overview,
 commands, resolve, profiles, siblings, files, which-module, find,
 diff-modules.
 
-Persistence model: per-module on-disk layout under
-``.plan/project-architecture/``. Readers iterate ``_project.json``'s
-``modules`` index and lazy-load per-module ``derived.json`` /
-``enriched.json`` on demand via the core helpers.
+Persistence model: ``_project.json`` and per-module ``enriched.json`` live on
+disk under ``.plan/project-architecture/``; per-module ``derived.json`` is
+ephemeral — every reader call resolves derived data via
+``_architecture_core.load_module_derived`` which crawls the live worktree
+filesystem rooted at ``args.project_dir`` / ``project_dir``. Every public
+reader in this module threads ``project_dir`` through to the core helpers;
+nothing falls back to ``Path.cwd()`` or ``git rev-parse``.
 """
 
 import fnmatch
@@ -22,6 +25,7 @@ from _architecture_core import (
     DATA_DIR,
     DataNotFoundError,
     ModuleNotFoundInProjectError,
+    crawl_all_modules,
     error_result_command_not_found,
     error_result_module_not_found,
     get_root_module,
@@ -1321,6 +1325,20 @@ def _sha256_file(path: Path) -> str | None:
     return h.hexdigest()
 
 
+def _sha256_payload(payload: dict | None) -> str | None:
+    """Return the sha256 hexdigest of a module's derived payload.
+
+    Computed over the canonical JSON serialisation (``json.dumps(payload,
+    sort_keys=True)``) so the digest is byte-identical to what
+    ``_write_json`` would have written under the legacy on-disk model. Returns
+    ``None`` when the payload is missing.
+    """
+    if payload is None:
+        return None
+    canonical = json.dumps(payload, indent=2, sort_keys=True).encode('utf-8')
+    return hashlib.sha256(canonical).hexdigest()
+
+
 def _resolve_snapshot_dir(pre: str) -> Path:
     """Resolve a ``--pre`` argument to a snapshot directory.
 
@@ -1344,10 +1362,17 @@ def _resolve_snapshot_dir(pre: str) -> Path:
 def cmd_diff_modules(args) -> dict:
     """CLI handler for the ``diff-modules`` reader.
 
-    Compares per-module ``derived.json`` shas between a snapshot directory
-    (``--pre``) and the current project's ``project-architecture/`` tree, and
-    classifies every module from the union of both module sets into one of
-    four buckets: ``added``, ``removed``, ``changed``, ``unchanged``.
+    Compares pre-snapshot per-module ``derived.json`` shas (read from the
+    on-disk snapshot under ``--pre``) against the sha of the live on-demand
+    crawl of the current project's modules, and classifies every module from
+    the union of both module sets into one of four buckets: ``added``,
+    ``removed``, ``changed``, ``unchanged``.
+
+    The snapshot side keeps its file-based read because the snapshot is an
+    on-disk artifact captured at some earlier point. The current side
+    computes a fresh crawl-based sha; nothing reads
+    ``{module}/derived.json`` from the current project's
+    ``project-architecture/`` directory.
 
     Comparison surface is intentionally narrow — only ``derived.json`` shas
     matter. Differences confined to ``enriched.json`` (LLM-curated fields)
@@ -1379,24 +1404,26 @@ def cmd_diff_modules(args) -> dict:
 
     snapshot_modules = set((snapshot_meta.get('modules') or {}).keys())
 
-    try:
-        current_modules = set(iter_modules(args.project_dir))
-    except DataNotFoundError:
+    current_modules_data = crawl_all_modules(args.project_dir)
+    current_modules = set(current_modules_data.keys())
+    if not current_modules:
         return require_project_meta_result(args.project_dir)
 
     added = sorted(current_modules - snapshot_modules)
     removed = sorted(snapshot_modules - current_modules)
 
-    current_data_dir = Path(args.project_dir) / DATA_DIR
-
     changed: list[str] = []
     unchanged: list[str] = []
     for name in sorted(snapshot_modules & current_modules):
         snap_sha = _sha256_file(snapshot_dir / name / DIR_PER_MODULE_DERIVED)
-        cur_sha = _sha256_file(current_data_dir / name / DIR_PER_MODULE_DERIVED)
-        # When a per-module derived.json is missing on either side, treat the
-        # pair as changed — the index lists the module but the sha surface
-        # cannot certify equality.
+        # Use the pre-crawled data to avoid O(N^2) project walks: the
+        # full crawl happened once above; each iteration just serialises
+        # the already-computed payload dict.
+        cur_sha = _sha256_payload(current_modules_data.get(name))
+        # When the snapshot derived.json is missing on disk, or the live
+        # crawl no longer surfaces the module, treat the pair as changed —
+        # the index lists the module on both sides but the sha surface cannot
+        # certify equality.
         if snap_sha is None or cur_sha is None or snap_sha != cur_sha:
             changed.append(name)
         else:

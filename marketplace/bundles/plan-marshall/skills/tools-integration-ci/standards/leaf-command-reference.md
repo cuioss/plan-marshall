@@ -38,9 +38,9 @@ resolve to `main`. Examples:
 ```bash
 # Create PR from worktree branch while running from main checkout.
 # Step 1: allocate scratch path, Step 2: Write body, Step 3: create.
-ci pr prepare-body --plan-id my-plan
+ci pr prepare-body --plan-id EXAMPLE-PLAN
 # (Write the PR body to the returned path via the Write tool)
-ci pr create --title "T" --plan-id my-plan --base main --head plan/jwt-auth
+ci pr create --title "T" --plan-id EXAMPLE-PLAN --base main --head plan/jwt-auth
 
 # Inspect that PR by branch (no PR number needed)
 ci pr view --head plan/jwt-auth

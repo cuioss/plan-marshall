@@ -174,7 +174,7 @@ def cmd_get(args):
 
 **Good Examples**:
 ```python
-{"error": "Plan not found: my-plan"}
+{"error": "Plan not found: EXAMPLE-PLAN"}
 {"error": "Invalid key format. Expected: lowercase with underscores, got: MyKey"}
 {"error": "Config file parsing failed at line 42: unexpected character"}
 ```

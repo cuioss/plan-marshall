@@ -13,7 +13,7 @@ Usage:
     python3 manage-lesson.py remove --lesson-id 2025-12-02-001 --reason "duplicate"
     python3 manage-lesson.py supersede --lesson-id 2025-12-02-001 \\
         --by 2025-12-03-001 --reason "merged into canonical"
-    python3 manage-lesson.py convert-to-plan --lesson-id 2025-12-02-001 --plan-id my-plan
+    python3 manage-lesson.py convert-to-plan --lesson-id 2025-12-02-001 --plan-id EXAMPLE-PLAN
 
 The `add` subcommand allocates a fresh lesson file (metadata header + title, empty
 body) and returns its absolute path. Callers write the body directly to that path

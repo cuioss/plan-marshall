@@ -277,31 +277,34 @@ def test_iter_modules_empty_when_no_modules():
         assert iter_modules(tmpdir) == []
 
 
-def test_iter_modules_missing_meta_raises():
-    """iter_modules raises DataNotFoundError when ``_project.json`` is missing."""
+def test_iter_modules_missing_meta_returns_empty():
+    """iter_modules returns an empty list when no modules exist (no crawl hits).
+
+    Under the on-demand crawl model iter_modules calls crawl_all_modules
+    against the live filesystem. When the project tree has no recognisable
+    modules and no on-disk derived.json fallback, the result is the empty
+    list (not a raised DataNotFoundError as in the legacy index-based model).
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
-        try:
-            iter_modules(tmpdir)
-            assert False, 'Should have raised DataNotFoundError'
-        except DataNotFoundError:
-            pass
+        assert iter_modules(tmpdir) == []
 
 
-def test_iter_modules_ignores_orphan_directory():
-    """iter_modules ignores per-module dirs not present in ``_project.json``.
+def test_iter_modules_surfaces_modules_via_disk_fallback():
+    """iter_modules returns every module whose derived.json the disk fallback finds.
 
-    A half-written discover run could leave a stray module directory on disk;
-    the index is the canonical answer to "which modules exist", so iter_modules
-    must NOT surface it.
+    Under the on-demand crawl model the crawl returns whichever modules the
+    live filesystem reveals. For tmp project trees the synthetic fallback
+    reads on-disk derived.json files seeded by tests, so 'orphan' modules
+    seeded outside _project.json's index are now visible — the index is no
+    longer the gatekeeper.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_project(tmpdir, {'a': {}})
-        # Write a stray module not referenced by _project.json.
         save_module_derived('orphan', {'name': 'orphan'}, tmpdir)
 
         names = iter_modules(tmpdir)
-        assert names == ['a']
-        assert 'orphan' not in names
+        assert 'a' in names
+        assert 'orphan' in names
 
 
 # =============================================================================

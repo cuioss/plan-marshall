@@ -83,7 +83,7 @@ import sys
 # Example: item not found, validation failed, requires --force
 print("status: error")
 print("error: Task not found: TASK-999")
-print("plan_id: my-plan")
+print("plan_id: EXAMPLE-PLAN")
 sys.exit(0)  # Exit 0 - status is in output
 ```
 
@@ -130,7 +130,7 @@ context: Additional context if helpful
 
 **Good Examples**:
 ```
-error: Plan not found: my-plan
+error: Plan not found: EXAMPLE-PLAN
 error: Invalid key format. Expected: lowercase with underscores, got: MyKey
 error: Config file parsing failed at line 42: unexpected character
 ```
@@ -180,7 +180,7 @@ created: 2025-01-15
 ```toon
 status: success
 created: TASK-004
-path: .plan/plans/my-plan/tasks/TASK-004.toon
+path: .plan/plans/EXAMPLE-PLAN/tasks/TASK-004.toon
 ```
 
 ### Example: Error Response
@@ -188,7 +188,7 @@ path: .plan/plans/my-plan/tasks/TASK-004.toon
 ```toon
 status: error
 error: Task not found: TASK-999
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 ```
 
 ## Script Chaining

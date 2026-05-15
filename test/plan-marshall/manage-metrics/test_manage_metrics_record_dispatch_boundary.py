@@ -55,6 +55,18 @@ def _boundary_path(plan_dir: Path, phase: str = '5-execute') -> Path:
     return plan_dir / 'work' / f'metrics-dispatch-boundaries-{phase}.toon'
 
 
+def _seed_status_json(plan_dir: Path) -> None:
+    """Seed status.json so cmd_record_dispatch_boundary's require_plan_exists guard accepts the plan.
+
+    The `PlanContext` helper creates the plan directory but does NOT write
+    status.json — the per-plan sentinel that `require_plan_exists` checks for
+    (lesson 2026-05-15-X: script-side guard against orphan-plan-dir creation).
+    Tests that exercise the happy path of `cmd_record_dispatch_boundary` must
+    call this helper after entering the context.
+    """
+    (plan_dir / 'status.json').write_text('{}', encoding='utf-8')
+
+
 def _data_rows(content: str) -> list[str]:
     """Return only the data rows (skipping the TOON header lines)."""
     rows = []
@@ -75,6 +87,7 @@ def _data_rows(content: str) -> list[str]:
 def test_first_invocation_creates_file_with_one_row():
     """The first record-dispatch-boundary call writes the header and exactly one data row."""
     with PlanContext(plan_id='disp-first') as ctx:
+        _seed_status_json(ctx.plan_dir)
         result = cmd_record_dispatch_boundary(
             _ns(
                 'disp-first',
@@ -118,6 +131,7 @@ def test_first_invocation_creates_file_with_one_row():
 def test_subsequent_invocations_append_rows_in_order_with_monotonic_timestamps():
     """Successive invocations append rows in chronological order, header preserved."""
     with PlanContext(plan_id='disp-append') as ctx:
+        _seed_status_json(ctx.plan_dir)
         cmd_record_dispatch_boundary(
             _ns('disp-append', termination_cause='voluntary_checkpoint', total_tokens=100)
         )
@@ -162,6 +176,7 @@ def test_all_five_termination_causes_accepted(cause):
     # plan_id slugs use kebab-case; map underscores → hyphens for the slug.
     plan_id = f'disp-cause-{cause.replace("_", "-")}'
     with PlanContext(plan_id=plan_id) as ctx:
+        _seed_status_json(ctx.plan_dir)
         result = cmd_record_dispatch_boundary(
             _ns(
                 plan_id,
@@ -234,6 +249,7 @@ def test_missing_required_flag_rejected_subprocess_no_file_written():
 def test_toon_layout_parseable_by_parse_toon():
     """The header section parses cleanly via the canonical parse_toon helper."""
     with PlanContext(plan_id='disp-parse') as ctx:
+        _seed_status_json(ctx.plan_dir)
         cmd_record_dispatch_boundary(
             _ns(
                 'disp-parse',
@@ -272,6 +288,7 @@ def test_clean_exit_queue_empty_accepted_as_canonical_clean_exit_value():
     """`clean_exit_queue_empty` is the canonical clean-exit value post-migration."""
     plan_id = 'disp-clean-exit'
     with PlanContext(plan_id=plan_id) as ctx:
+        _seed_status_json(ctx.plan_dir)
         result = cmd_record_dispatch_boundary(
             _ns(
                 plan_id,
@@ -313,3 +330,97 @@ def test_dispatch_termination_causes_does_not_contain_unknown():
     """The live tuple no longer contains the legacy `unknown` fallback value."""
     assert 'unknown' not in DISPATCH_TERMINATION_CAUSES
     assert 'clean_exit_queue_empty' in DISPATCH_TERMINATION_CAUSES
+
+
+# =============================================================================
+# (h) Script-side require_plan_exists guard
+#
+# cmd_record_dispatch_boundary MUST refuse to write a dispatch-boundary row
+# under a plan directory that does not exist (or exists but lacks
+# status.json). The guard returns the canonical TOON envelope and MUST NOT
+# mkdir the plan tree as a side-effect.
+# =============================================================================
+
+
+def test_record_dispatch_boundary_rejects_unknown_plan_id_no_mkdir(tmp_path, monkeypatch):
+    """Unknown plan_id: returns plan_not_found error, no plan dir created."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    plans_dir = tmp_path / 'plans'
+    # Pre-condition: plans/ tree absent.
+    assert not plans_dir.exists()
+
+    result = cmd_record_dispatch_boundary(
+        _ns(
+            'never-initialized',
+            phase='5-execute',
+            termination_cause='voluntary_checkpoint',
+            total_tokens=1,
+            tool_uses=1,
+            duration_ms=1,
+        )
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'plan_not_found'
+    assert result['plan_id'] == 'never-initialized'
+    assert 'never-initialized' in result['plan_dir']
+    # Side-effect invariant: the guard MUST NOT have mkdir'd the plan tree.
+    assert not plans_dir.exists()
+
+
+def test_record_dispatch_boundary_rejects_plan_dir_missing_status_json_no_mkdir(
+    tmp_path, monkeypatch
+):
+    """Plan dir exists but no status.json: returns plan_not_found error."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    half_dir = tmp_path / 'plans' / 'half-initialized'
+    half_dir.mkdir(parents=True)
+    assert not (half_dir / 'status.json').exists()
+
+    result = cmd_record_dispatch_boundary(
+        _ns(
+            'half-initialized',
+            phase='5-execute',
+            termination_cause='voluntary_checkpoint',
+            total_tokens=1,
+            tool_uses=1,
+            duration_ms=1,
+        )
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'plan_not_found'
+    assert result['plan_id'] == 'half-initialized'
+    # The pre-existing directory remains, status.json is NOT auto-created,
+    # and the work/ subtree (where the boundaries file would live) was NOT
+    # materialised by the guard rejection.
+    assert half_dir.is_dir()
+    assert not (half_dir / 'status.json').exists()
+    assert not (half_dir / 'work').exists()
+
+
+def test_record_dispatch_boundary_with_initialized_plan_id_continues_to_work():
+    """Happy path: initialized plan_id (status.json present) → success.
+
+    Pins that the require_plan_exists guard does not regress the existing
+    cmd_record_dispatch_boundary contract for in-progress plans.
+    """
+    with PlanContext(plan_id='disp-happy') as ctx:
+        _seed_status_json(ctx.plan_dir)
+        result = cmd_record_dispatch_boundary(
+            _ns(
+                'disp-happy',
+                phase='5-execute',
+                termination_cause='voluntary_checkpoint',
+                total_tokens=99,
+                tool_uses=3,
+                duration_ms=500,
+            )
+        )
+
+        assert result['status'] == 'success'
+        assert result['plan_id'] == 'disp-happy'
+        assert result['rows_recorded'] == 1
+        # The boundaries file was written to the expected path.
+        path = _boundary_path(ctx.plan_dir, '5-execute')
+        assert path.exists()

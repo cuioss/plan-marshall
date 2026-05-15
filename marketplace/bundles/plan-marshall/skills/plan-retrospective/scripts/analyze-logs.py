@@ -16,7 +16,7 @@ that ``manage-logging`` performs. Live mode produces the same values as
 ``manage-logging read`` would, keyed by the same file layout.
 
 Usage:
-    python3 analyze-logs.py run --plan-id my-plan --mode live
+    python3 analyze-logs.py run --plan-id EXAMPLE-PLAN --mode live
     python3 analyze-logs.py run --archived-plan-path /abs/path --mode archived
 """
 

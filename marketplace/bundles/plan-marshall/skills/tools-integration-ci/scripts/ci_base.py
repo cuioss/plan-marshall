@@ -53,7 +53,13 @@ def _ensure_sibling_skill_paths() -> None:
 
 _ensure_sibling_skill_paths()
 
-from file_ops import get_plan_dir, output_toon, safe_main  # type: ignore[import-not-found]  # noqa: E402, F401
+from file_ops import (  # type: ignore[import-not-found]  # noqa: E402, F401
+    PlanNotFoundError,
+    get_plan_dir,
+    output_toon,
+    require_plan_exists,
+    safe_main,
+)
 from input_validation import (  # type: ignore[import-not-found]  # noqa: E402, F401
     add_plan_id_arg,
     parse_args_with_toon_errors,
@@ -119,6 +125,21 @@ def prepare_body(plan_id: str, kind: str, slot: str | None = None) -> dict[str, 
         resolved_slot = _resolve_body_slot(slot)
     except ValueError as e:
         return {'status': 'error', 'error': 'invalid_slot', 'message': str(e)}
+
+    # Guard at script side: refuse to materialise a body path under a plan
+    # directory that doesn't exist (and was never initialised by phase-1).
+    # Without this guard the `path.parent.mkdir(parents=True, ...)` below
+    # silently creates an orphan plan tree just to hold a scratch body file.
+    try:
+        require_plan_exists(plan_id)
+    except PlanNotFoundError as exc:
+        return {
+            'status': 'error',
+            'error': 'plan_not_found',
+            'message': str(exc),
+            'plan_id': plan_id,
+            'plan_dir': str(exc.plan_dir),
+        }
 
     path = get_body_path(plan_id, kind, resolved_slot)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -295,7 +316,9 @@ def extract_project_dir(argv: list[str]) -> tuple[str | None, list[str]]:
     return project_dir, out
 
 
-_SUBCOMMAND_TOKENS: frozenset[str] = frozenset({'pr', 'ci', 'issue', 'branch'})
+_SUBCOMMAND_TOKENS: frozenset[str] = frozenset(
+    {'pr', 'ci', 'issue', 'branch', 'fetch-comments', 'comments-stage'}
+)
 
 
 def extract_routing_args(argv: list[str]) -> tuple[str | None, list[str]]:

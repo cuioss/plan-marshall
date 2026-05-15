@@ -448,8 +448,8 @@ Context manager for tests needing `PLAN_BASE_DIR`.
 
 **Example**:
 ```python
-with PlanTestContext(plan_id='my-plan') as ctx:
-    result = run_script(SCRIPT_PATH, '--plan-id', 'my-plan')
+with PlanTestContext(plan_id='EXAMPLE-PLAN') as ctx:
+    result = run_script(SCRIPT_PATH, '--plan-id', 'EXAMPLE-PLAN')
     assert result.success
 ```
 

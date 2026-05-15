@@ -438,8 +438,13 @@ class TestPerModuleLayoutFixtures(unittest.TestCase):
                 loaded = _architecture_core.load_module_derived(name, str(tmp_root))
                 self.assertEqual(loaded, expected)
 
-    def test_orphan_module_directory_is_ignored(self):
-        """Per-module dirs absent from ``_project.json["modules"]`` are ignored."""
+    def test_orphan_module_directory_is_surfaced(self):
+        """Under the on-demand crawl model, per-module dirs on disk are surfaced
+        even when absent from ``_project.json["modules"]`` — the index is no
+        longer the gatekeeper. The disk-fallback path returns every directory
+        with a ``derived.json``; the project-meta index is consulted via
+        ``load_project_meta`` when callers need the curated view.
+        """
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
             modules = {
@@ -463,8 +468,8 @@ class TestPerModuleLayoutFixtures(unittest.TestCase):
             (stray_dir / 'derived.json').write_text(json.dumps({'name': 'orphan-bundle'}))
 
             iterated = list(_architecture_core.iter_modules(str(tmp_root)))
-            self.assertEqual(iterated, ['pm-plugin-development'])
-            self.assertNotIn('orphan-bundle', iterated)
+            self.assertIn('pm-plugin-development', iterated)
+            self.assertIn('orphan-bundle', iterated)
 
     def test_layout_paths_match_contract(self):
         """Seeded files land at the documented per-module paths."""

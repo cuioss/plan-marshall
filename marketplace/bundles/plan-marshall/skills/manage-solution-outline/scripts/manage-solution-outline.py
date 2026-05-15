@@ -7,16 +7,16 @@ Content is written externally via Write tool, then validated by this script.
 
 Usage:
     # Get target path for direct file write
-    python3 manage-solution-outline.py resolve-path --plan-id my-plan
+    python3 manage-solution-outline.py resolve-path --plan-id EXAMPLE-PLAN
 
     # Validate existing file on disk
-    python3 manage-solution-outline.py write --plan-id my-plan [--force]
-    python3 manage-solution-outline.py update --plan-id my-plan
+    python3 manage-solution-outline.py write --plan-id EXAMPLE-PLAN [--force]
+    python3 manage-solution-outline.py update --plan-id EXAMPLE-PLAN
 
-    python3 manage-solution-outline.py validate --plan-id my-plan
-    python3 manage-solution-outline.py list-deliverables --plan-id my-plan
-    python3 manage-solution-outline.py read --plan-id my-plan [--raw | --section summary | --deliverable-number N]
-    python3 manage-solution-outline.py exists --plan-id my-plan
+    python3 manage-solution-outline.py validate --plan-id EXAMPLE-PLAN
+    python3 manage-solution-outline.py list-deliverables --plan-id EXAMPLE-PLAN
+    python3 manage-solution-outline.py read --plan-id EXAMPLE-PLAN [--raw | --section summary | --deliverable-number N]
+    python3 manage-solution-outline.py exists --plan-id EXAMPLE-PLAN
     python3 manage-solution-outline.py get-module-context
 """
 

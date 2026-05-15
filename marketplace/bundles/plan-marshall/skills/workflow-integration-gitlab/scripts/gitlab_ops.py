@@ -25,27 +25,27 @@ Subcommands:
     branch delete   Delete a remote branch via REST API
 
 Usage (bodies supplied via path-allocate pattern: prepare-body → write file → consume):
-    python3 gitlab.py pr prepare-body --plan-id my-plan [--for create|edit] [--slot name]
-    python3 gitlab.py pr prepare-comment --plan-id my-plan [--for reply|thread-reply] [--slot name]
-    python3 gitlab.py issue prepare-body --plan-id my-plan [--slot name]
-    python3 gitlab.py pr create --title "Title" --plan-id my-plan [--base main] [--draft]
+    python3 gitlab.py pr prepare-body --plan-id EXAMPLE-PLAN [--for create|edit] [--slot name]
+    python3 gitlab.py pr prepare-comment --plan-id EXAMPLE-PLAN [--for reply|thread-reply] [--slot name]
+    python3 gitlab.py issue prepare-body --plan-id EXAMPLE-PLAN [--slot name]
+    python3 gitlab.py pr create --title "Title" --plan-id EXAMPLE-PLAN [--base main] [--draft]
     python3 gitlab.py pr view
     python3 gitlab.py pr list [--head feature/branch] [--state open|closed|all]
     python3 gitlab.py pr reviews --pr-number 123
     python3 gitlab.py pr comments --pr-number 123 [--unresolved-only]
-    python3 gitlab.py pr reply --pr-number 123 --plan-id my-plan
+    python3 gitlab.py pr reply --pr-number 123 --plan-id EXAMPLE-PLAN
     python3 gitlab.py pr resolve-thread --pr-number 123 --thread-id abc123
-    python3 gitlab.py pr thread-reply --pr-number 123 --thread-id abc123 --plan-id my-plan
+    python3 gitlab.py pr thread-reply --pr-number 123 --thread-id abc123 --plan-id EXAMPLE-PLAN
     python3 gitlab.py pr merge --pr-number 123 [--strategy squash] [--delete-branch]
     python3 gitlab.py pr auto-merge --pr-number 123 [--strategy squash]
     python3 gitlab.py pr close --pr-number 123
     python3 gitlab.py pr ready --pr-number 123
-    python3 gitlab.py pr edit --pr-number 123 --plan-id my-plan [--title "New Title"]
+    python3 gitlab.py pr edit --pr-number 123 --plan-id EXAMPLE-PLAN [--title "New Title"]
     python3 gitlab.py ci status --pr-number 123
     python3 gitlab.py ci wait --pr-number 123 [--timeout 300] [--interval 30]
     python3 gitlab.py ci rerun --run-id 12345
     python3 gitlab.py ci logs --run-id 12345
-    python3 gitlab.py issue create --title "Title" --plan-id my-plan [--labels "bug,priority::high"]
+    python3 gitlab.py issue create --title "Title" --plan-id EXAMPLE-PLAN [--labels "bug,priority::high"]
     python3 gitlab.py issue view --issue 123
     python3 gitlab.py issue close --issue 123
 

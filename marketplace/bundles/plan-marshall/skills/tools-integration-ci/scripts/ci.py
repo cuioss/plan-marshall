@@ -6,10 +6,10 @@ category=ci and deriving the provider key from skill_name. Delegates to the
 matching provider script ({provider}_ops.py). All arguments are passed through.
 
 Usage:
-    python3 ci.py [--project-dir PATH] pr create --title "Title" --plan-id my-plan
+    python3 ci.py [--project-dir PATH] pr create --title "Title" --plan-id EXAMPLE-PLAN
     python3 ci.py [--project-dir PATH] pr view
     python3 ci.py [--project-dir PATH] ci status --pr-number 123
-    python3 ci.py [--project-dir PATH] issue create --title "Bug" --plan-id my-plan
+    python3 ci.py [--project-dir PATH] issue create --title "Bug" --plan-id EXAMPLE-PLAN
 
 Top-level flags (consumed by the router before provider dispatch):
     --project-dir PATH   Run every gh/glab subprocess with ``cwd=PATH``. Required

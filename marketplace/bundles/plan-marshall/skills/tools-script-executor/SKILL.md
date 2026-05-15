@@ -50,18 +50,18 @@ Script execution notation: `{bundle}:{skill}:{script}`
 # Document operations (typed documents) — path-allocate pattern:
 # `request create` emits a metadata-only stub and returns the absolute `path`;
 # the caller writes body content directly via its native Write tool.
-python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request create --plan-id my-plan --title "My Task" --source description
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request create --plan-id EXAMPLE-PLAN --title "My Task" --source description
 # → parse `path` from the TOON output, then: Write(path, "Task details")
-python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read --plan-id my-plan
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read --plan-id EXAMPLE-PLAN
 
 # File operations (generic files)
-python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write --plan-id my-plan --file notes.md --content "..."
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write --plan-id EXAMPLE-PLAN --file notes.md --content "..."
 
 # Build operations
 python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets clean,verify
 
 # References operations
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set --plan-id my-plan --key foo --value bar
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set --plan-id EXAMPLE-PLAN --key foo --value bar
 ```
 
 ## Error Handling
@@ -93,13 +93,13 @@ When a plan ID is provided, logs to:
 **Example with --plan-id** (script uses it):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add \
-  --plan-id my-plan --file task.md
+  --plan-id EXAMPLE-PLAN --file task.md
 ```
 
 **Example with --audit-plan-id** (audit logging only, stripped):
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
-  --audit-plan-id my-plan --include-descriptions
+  --audit-plan-id EXAMPLE-PLAN --include-descriptions
 ```
 
 The `--audit-plan-id` parameter is audit-only — it is removed before the script executes, so the script never sees it and its behavior is unaffected. The flag exists purely to route the executor's own log entry to the plan-specific audit log for scripts that don't have their own `--plan-id` parameter.
@@ -130,7 +130,7 @@ Fallback when no plan context:
 ```
 [2025-12-08T10:31:00Z] [ERROR] [SCRIPT] plan-marshall:manage-files:manage-files add (0.23s)
   exit_code: 1
-  args: --plan-id my-plan --file missing.md
+  args: --plan-id EXAMPLE-PLAN --file missing.md
   stderr: FileNotFoundError: missing.md not found
 ```
 

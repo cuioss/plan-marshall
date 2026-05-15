@@ -213,14 +213,14 @@ invent one and no multi-line content crosses the shell boundary:
 
 ```
 # Step 1: script allocates a scratch path bound to --plan-id
-Bash(command="python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body --plan-id my-plan")
+Bash(command="python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body --plan-id EXAMPLE-PLAN")
 # → returns {path: /abs/.../work/ci-bodies/pr-create-default.md}
 
 # Step 2: Write tool writes the body directly to the returned path
 Write(file_path="<path from prepare-body>", content="## Summary\n...")
 
 # Step 3: consumer reads the prepared file and deletes it on success
-Bash(command="python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --title 'T' --plan-id my-plan --base main")
+Bash(command="python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --title 'T' --plan-id EXAMPLE-PLAN --base main")
 ```
 
 ### No sleep for external waits

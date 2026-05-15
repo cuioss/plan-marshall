@@ -282,3 +282,57 @@ def cmd_list(args: argparse.Namespace) -> dict:
             continue
 
     return {'status': 'success', 'total': len(plans), 'plans': plans}
+
+
+def cmd_list_orphans(args: argparse.Namespace) -> dict:  # noqa: ARG001
+    """Discover orphan plan directories (directories without a readable status.json).
+
+    Inverse of ``cmd_list``: walks ``plans_dir.iterdir()`` and collects directory
+    entries that do NOT have a readable ``status.json`` file. Plans with a
+    readable status.json are skipped. The ``archived-plans`` directory (if
+    present as a sibling) is excluded — orphan scanning operates only on the
+    active plans directory returned by ``get_plans_dir()``.
+
+    Output contract:
+        status: success
+        total: N
+        orphans: [{id, path, contents}]
+
+    Each orphan entry includes:
+        - ``id``: directory name
+        - ``path``: absolute filesystem path
+        - ``contents``: sorted list of top-level entry names inside the orphan
+          directory (files and subdirectories). Empty list when the directory
+          has no entries.
+    """
+    plans_dir = get_plans_dir()
+    # Use is_dir() rather than exists() so a stray file at the plans_dir path
+    # returns total=0 cleanly instead of raising NotADirectoryError from iterdir().
+    if not plans_dir.is_dir():
+        return {'status': 'success', 'total': 0, 'orphans': []}
+
+    orphans = []
+    for plan_dir in sorted(plans_dir.iterdir()):
+        if not plan_dir.is_dir():
+            continue
+
+        # Skip plans whose status.json FILE is present — matches the
+        # require_plan_exists guard in tools-file-ops/file_ops.py. An empty
+        # ``{}`` status.json is a valid plan file and must NOT be flagged as
+        # orphan; only directories with no status.json file at all are orphans.
+        if (plan_dir / 'status.json').is_file():
+            continue
+
+        # Collect top-level contents for caller-side decision making. On
+        # OSError (e.g., permission denied) emit a single '<unreadable>'
+        # sentinel rather than an empty list — an empty list would trigger
+        # silent deletion under planning.md Step 3b. The sentinel forces a
+        # user prompt instead.
+        try:
+            contents = sorted(entry.name for entry in plan_dir.iterdir())
+        except OSError:
+            contents = ['<unreadable>']
+
+        orphans.append({'id': plan_dir.name, 'path': str(plan_dir), 'contents': contents})
+
+    return {'status': 'success', 'total': len(orphans), 'orphans': orphans}

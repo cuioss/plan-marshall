@@ -311,6 +311,77 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ---
 
+### Step 3: Orphan-dir cleanup
+
+Prune orphan plan directories — entries under `.plan/plans/` that have no readable `status.json`. These typically result from interrupted plan creation, aborted `phase-1-init` dispatches, or stale worktree-only artifacts. The archived-plans directory is excluded by `manage-status list-orphans`.
+
+**3a — Enumerate orphan directories:**
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status list-orphans
+```
+
+Parse `orphans[]` from the TOON output. Each entry exposes `id`, `path`, and `contents` (top-level entries inside the orphan directory). If the list is empty, log and finish the cleanup action:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id global --level INFO \
+  --message "(plan-marshall:plan-marshall:cleanup) No orphan plan directories to prune — skipping orphan-dir cleanup pass"
+```
+
+**3b — Per-orphan triage (mirrors Step 1 / Step 2 empty-vs-non-empty split):**
+
+For each orphan entry:
+
+- **Empty (`contents` is `[]`)**: Log the silent removal decision and delete without prompting (mirrors Step 1's empty-log-and-skip shape — no user-visible noise for clearly disposable directories):
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id global --level INFO \
+    --message "(plan-marshall:plan-marshall:cleanup) Removing empty orphan directory {id} ({path})"
+  ```
+
+  Then remove the directory:
+
+  ```bash
+  rm -rf {path}
+  ```
+
+- **Non-empty**: Defer the deletion decision to the user. Collect all non-empty orphans, then present a single multi-select `AskUserQuestion` so the user can pick which directories to delete in one pass:
+
+  ```
+  AskUserQuestion:
+    question: "Select orphan plan directories to delete. Each lists the top-level entries it contains so you can decide whether the contents are recoverable."
+    header: "Orphans"
+    options:
+      # For each non-empty orphan:
+      - label: "{id}"
+        description: "{path} — contains: {comma-separated contents}"
+    multiSelect: true
+  ```
+
+  For each confirmed orphan, log the decision and remove the directory:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id global --level INFO \
+    --message "(plan-marshall:plan-marshall:cleanup) Removed non-empty orphan directory {id} ({path}) at user confirmation — contents: {contents}"
+  ```
+
+  ```bash
+  rm -rf {path}
+  ```
+
+  For each non-empty orphan the user declined, log the decline:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id global --level INFO \
+    --message "(plan-marshall:plan-marshall:cleanup) Orphan directory {id} ({path}) left in place by user — contents: {contents}"
+  ```
+
+---
+
 ## Action: lessons
 
 List lessons learned with options to convert to plan or analyze all.
@@ -453,6 +524,7 @@ Script: `plan-marshall:manage-status:manage_status`
 | `update-phase` | `--plan-id --phase --status` | Update phase status |
 | `progress` | `--plan-id` | Calculate plan progress |
 | `list` | `[--filter]` | Discover all plans |
+| `list-orphans` | _(none)_ | Discover orphan plan directories (no readable status.json); archived-plans excluded |
 | `transition` | `--plan-id --completed` | Transition to next phase |
 | `archive` | `--plan-id [--dry-run]` | Archive completed plan |
 | `route` | `--phase` | Get skill for phase |
