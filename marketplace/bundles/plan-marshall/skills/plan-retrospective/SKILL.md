@@ -62,6 +62,15 @@ Validate mutual exclusion of `--plan-id` and `--archived-plan-path`. Resolve:
 - Live modes: `plan_dir = .plan/local/plans/{plan-id}/`
 - Archived mode: `plan_dir = --archived-plan-path` (verify directory exists).
 
+**Canonical plan-status read** — when this workflow needs to read plan status (current phase, metadata, worktree binding) it MUST use the `manage-status` script's `read` subcommand. The supported invocation is:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+  --plan-id {plan_id}
+```
+
+Do not extrapolate `status get`, `manage_status get`, or `manage-status:status` — none of those exist. The canonical script notation is the 3-part form `plan-marshall:manage-status:manage_status` (the third segment matches the on-disk script filename `manage_status.py`), and the only read verb is `read`. The full canonical-forms entry for `manage-status` (covering `read`, `metadata --get --field`, `transition`, `get-worktree-path`, `change-type-heuristic`, and friends) lives in [`dev-general-practices/standards/argument-naming.md`](../dev-general-practices/standards/argument-naming.md#manage--scripts) — that table is the regression guard against the invented-verb drift that motivated this entry (see lesson `2026-05-14-00-001`). Future maintainers editing this workflow MUST cross-check any new `manage-status` call against that table before committing.
+
 Log start:
 
 ```bash
