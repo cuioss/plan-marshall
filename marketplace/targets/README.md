@@ -8,14 +8,19 @@ platform-specific artifacts.
 
 ```
 marketplace/targets/
-├── __init__.py           # TARGET_REGISTRY + register_target()
-├── base.py               # TargetBase ABC
-├── generate.py           # CLI entry point
-├── claude/               # Verbatim mirror + always-generate plugin.json
-│   └── target.py         # ClaudeTarget(TargetBase)
-└── opencode/             # OpenCode singular-layout emitter
-    ├── target.py         # OpenCodeTarget(TargetBase)
-    ├── mapping.json      # Tool/model maps
+├── __init__.py                   # TARGET_REGISTRY + register_target()
+├── base.py                       # TargetBase ABC
+├── generate.py                   # CLI entry point
+├── claude/                       # Verbatim mirror + plugin.json + marketplace.json
+│   ├── target.py                 # ClaudeTarget(TargetBase)
+│   ├── emitter.py                # Verbatim bundle copy
+│   ├── plugin_json_gen.py        # Per-bundle plugin.json regen
+│   ├── marketplace_json_gen.py   # Top-level marketplace.json regen
+│   ├── variant_emitter.py        # Per-level agent variant emission
+│   └── equality_check.py         # Source ↔ target drift detection
+└── opencode/                     # OpenCode singular-layout emitter
+    ├── target.py                 # OpenCodeTarget(TargetBase)
+    ├── mapping.json              # Tool/model maps
     └── frontmatter-rules.json
 ```
 
@@ -104,3 +109,28 @@ artifacts, not committed sources. The `project:finalize-step-deploy-target` fina
 step emits `target/claude/` during the finalize phase; the
 `/sync-plugin-cache` skill consumes that directory when syncing the
 Claude plugin cache.
+
+## Claude target — emitted artifacts
+
+In addition to the per-bundle verbatim mirror, the Claude target emits two
+regenerated JSON manifests:
+
+* `target/claude/{bundle}/.claude-plugin/plugin.json` — per-bundle manifest
+  produced by `plugin_json_gen.py`. The `agents` array expands role-eligible
+  agents into per-level variants; the `commands` array reflects the bundle's
+  on-disk command files; `skills` is intentionally emitted as `[]` because
+  the Claude Code runtime's default `skills/` folder scan owns skill
+  discovery, and declaring a `skills:` array ADDS to that scan rather than
+  replacing it (declaring would double-load every skill).
+* `target/claude/.claude-plugin/marketplace.json` — top-level manifest
+  produced by `marketplace_json_gen.py`. Mirrors the source marketplace
+  manifest verbatim except that each plugin's `source` is rewritten from
+  the source `./bundles/{name}` layout to the flat target `./{name}` layout
+  so `target/claude/` can be registered as a Claude Code marketplace.
+
+The registered Claude Code marketplace MUST point at `target/claude/`, not
+at the source `marketplace/` directory. The source only declares canonical
+agent files; registering it skips the variant expansion and breaks every
+dispatch site that resolves to `execution-context-{level}`. See the
+"Registered Marketplace Path" section in the top-level `CLAUDE.md` for
+the migration steps.

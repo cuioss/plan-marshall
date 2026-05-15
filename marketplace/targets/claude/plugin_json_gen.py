@@ -1,12 +1,21 @@
 """Deterministic ``plugin.json`` generator for the Claude target.
 
-Reads a bundle directory, scans ``agents/*.md``, ``commands/*.md``, and
-``skills/*/SKILL.md`` for component frontmatter, then produces a fully
-populated ``plugin.json`` document. Top-level fields (``name``,
-``version``, ``description``, ``author``, ``license``, ``homepage``,
-``repository``, ``keywords``) pass through unchanged from the existing
-committed ``plugin.json``; only the ``agents``, ``commands``, and
-``skills`` arrays come from the frontmatter scan.
+Reads a bundle directory, scans ``agents/*.md`` and ``commands/*.md``
+for component frontmatter, then produces a fully populated
+``plugin.json`` document. Top-level fields (``name``, ``version``,
+``description``, ``author``, ``license``, ``homepage``, ``repository``,
+``keywords``) pass through unchanged from the existing committed
+``plugin.json``; the ``agents`` and ``commands`` arrays come from the
+filesystem scan.
+
+The emitted ``skills`` array is always empty. Per the Claude Code plugin
+spec, declaring a ``skills`` array ADDS to the default ``skills/`` folder
+scan rather than replacing it; bundles whose skills live entirely in the
+default location would therefore double-load every skill if it were
+explicitly declared. Emitting ``skills: []`` lets the runtime perform the
+default folder scan once and produce the correct, non-doubled inventory.
+``agents`` and ``commands`` follow the opposite rule (the explicit list
+REPLACES the default scan), so they are still emitted with full entries.
 
 Agents declaring ``implements:
 plan-marshall:extension-api/standards/ext-point-dynamic-level-executor``
@@ -102,33 +111,22 @@ def _expanded_agent_entries(agents_dir: Path, mapping_path: Path = _OPENCODE_MAP
     return sorted(entries)
 
 
-def _list_skill_dirs(skills_dir: Path) -> list[str]:
-    """Return skill subdirectory names (those with a SKILL.md)."""
-    if not skills_dir.exists():
-        return []
-    found: list[str] = []
-    for child in sorted(skills_dir.iterdir()):
-        if not child.is_dir():
-            continue
-        if (child / 'SKILL.md').exists():
-            found.append(child.name)
-    return found
-
-
 def discover_components(bundle_dir: Path) -> dict[str, list[str]]:
-    """Discover the agents, commands, and skills entries for ``bundle_dir``.
+    """Discover the agents and commands entries for ``bundle_dir``.
 
-    Returns a dict with ``agents``, ``commands``, and ``skills`` keys, each
-    mapped to a sorted list of paths relative to the bundle root (matching
-    the schema used by the existing committed ``plugin.json`` files).
+    Returns a dict with ``agents``, ``commands``, and ``skills`` keys.
+    ``agents`` and ``commands`` are sorted lists of paths relative to the
+    bundle root. ``skills`` is always an empty list — the runtime scans the
+    default ``skills/`` folder and adding to that scan via plugin.json
+    causes every skill to load twice. See the module docstring for the
+    spec citation.
     """
     agents = _expanded_agent_entries(bundle_dir / 'agents')
     commands = [f'./commands/{name}' for name in _list_md_files(bundle_dir / 'commands')]
-    skills = [f'./skills/{name}' for name in _list_skill_dirs(bundle_dir / 'skills')]
     return {
         'agents': sorted(agents),
         'commands': sorted(commands),
-        'skills': sorted(skills),
+        'skills': [],
     }
 
 

@@ -288,16 +288,26 @@ def _regenerate_hint() -> str:
     )
 
 
+def _is_bundle_dir(path: Path) -> bool:
+    """A directory is a bundle iff it carries its own ``.claude-plugin/plugin.json``.
+
+    Filters out non-bundle directories that may live alongside bundle
+    folders in the target tree — notably the top-level ``.claude-plugin/``
+    directory that holds the marketplace.json registration manifest.
+    """
+    return path.is_dir() and (path / '.claude-plugin' / 'plugin.json').is_file()
+
+
 def _staleness_guard(source_root: Path, marketplace_root: Path) -> str | None:
     """Return a human-readable reason when source is missing/stale, else None."""
     if not source_root.is_dir():
         return f'source root not found: {source_root}. {_regenerate_hint()}'
-    bundles_in_source = sorted(p.name for p in source_root.iterdir() if p.is_dir())
+    bundles_in_source = sorted(p.name for p in source_root.iterdir() if _is_bundle_dir(p))
     if not bundles_in_source:
         return f'source root contains no bundles: {source_root}. {_regenerate_hint()}'
 
     if marketplace_root.is_dir():
-        bundles_in_market = sorted(p.name for p in marketplace_root.iterdir() if p.is_dir())
+        bundles_in_market = sorted(p.name for p in marketplace_root.iterdir() if _is_bundle_dir(p))
         missing = [b for b in bundles_in_market if b not in bundles_in_source]
         if missing:
             return (
@@ -354,7 +364,7 @@ def _rsync_bundle(*, bundle: str, source_dir: Path, dest_dir: Path) -> tuple[str
 def _select_bundles(source_root: Path, only: str | None) -> list[Path]:
     if not source_root.is_dir():
         return []
-    bundles = sorted(p for p in source_root.iterdir() if p.is_dir())
+    bundles = sorted(p for p in source_root.iterdir() if _is_bundle_dir(p))
     if only is not None:
         bundles = [b for b in bundles if b.name == only]
     return bundles

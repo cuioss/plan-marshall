@@ -29,6 +29,7 @@ from pathlib import Path
 from marketplace.targets.base import TargetBase
 from marketplace.targets.claude.emitter import emit_bundle_verbatim, iter_bundle_dirs
 from marketplace.targets.claude.equality_check import run_equality_check
+from marketplace.targets.claude.marketplace_json_gen import generate_marketplace_json
 from marketplace.targets.claude.plugin_json_gen import generate_plugin_json
 
 # Default ``target/claude/`` location used by validate mode when no
@@ -92,6 +93,17 @@ class ClaudeTarget(TargetBase):
             target_plugin_json.parent.mkdir(parents=True, exist_ok=True)
             target_plugin_json.write_text(generated, encoding='utf-8')
             emitted.append(target_plugin_json)
+
+        # Top-level marketplace.json so target/claude/ is registerable as a
+        # Claude Code marketplace. plugins[].source paths are rewritten from
+        # the source ./bundles/{name} layout to the flat ./{name} target layout.
+        marketplace_src = marketplace_dir.parent
+        target_marketplace_json = output_dir / '.claude-plugin' / 'marketplace.json'
+        target_marketplace_json.parent.mkdir(parents=True, exist_ok=True)
+        target_marketplace_json.write_text(
+            generate_marketplace_json(marketplace_src), encoding='utf-8'
+        )
+        emitted.append(target_marketplace_json)
 
         # Run equality check after emit so emit_count reflects bytes written
         # AND so the equality engine has fresh artifacts to compare against.

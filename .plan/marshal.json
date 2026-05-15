@@ -1,10 +1,10 @@
 {
   "plan": {
-    "effort": "medium",
+    "effort": "high",
     "phase-1-init": {
       "branch_strategy": "feature",
       "use_worktree": true,
-      "effort": "medium"
+      "effort": "high"
     },
     "phase-2-refine": {
       "confidence_threshold": 95,
@@ -13,7 +13,7 @@
     },
     "phase-3-outline": {
       "plan_without_asking": false,
-      "effort": "high"
+      "effort": "xhigh"
     },
     "phase-4-plan": {
       "execute_without_asking": true,
@@ -24,7 +24,7 @@
       "finalize_without_asking": true,
       "verification_max_iterations": 5,
       "effort": {
-        "default": "medium",
+        "default": "xhigh",
         "verification-feedback": "high"
       },
       "steps": [
@@ -38,8 +38,9 @@
       "review_bot_buffer_seconds": 300,
       "pr_merge_strategy": "squash",
       "effort": {
-        "default": "medium",
-        "verification-feedback": "high"
+        "default": "high",
+        "verification-feedback": "high",
+        "post-run-review": "xhigh"
       },
       "steps": [
         "default:pre-push-quality-gate",
