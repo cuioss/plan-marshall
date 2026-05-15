@@ -227,7 +227,7 @@ Parse `depends` field for each deliverable:
 
 For each deliverable, create one task per profile in its `profiles` list:
 
-**Verification-Only Guard**: Before iterating profiles, check if the deliverable is verification-only (`change_type: verification` or empty `affected_files`). If so, override `D.profiles` to `[verification]` regardless of what the outline specified. Log a warning if the original profiles differed:
+**Verification-Only Guard**: Before iterating profiles, check if the deliverable is verification-only (`change_type: verification` or empty `affected_files`). If so, override `D.profiles` to `[verification]` — **except** when `D.profiles` explicitly contains `implementation`. The explicit `Profiles` list declared on the deliverable is authoritative over `change_type`: if the outline says the deliverable involves `implementation`, the guard is a no-op and the declared profile set flows through unchanged. Log a warning when the override fires and the original profiles differed:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -236,10 +236,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ```
 For each deliverable D:
-  IF D.change_type == verification OR D.affected_files is empty:
+  IF (D.change_type == verification OR D.affected_files is empty) AND "implementation" NOT IN D.profiles:
     IF D.profiles != [verification]:
       Log warning (see above)
     D.profiles = [verification]
+  # else: explicit Profiles list wins — guard is a no-op
   1. Query architecture: module --module {D.module}
   For each profile P in D.profiles:
     IF P = verification:
