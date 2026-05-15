@@ -109,14 +109,18 @@ def _decide_architecture_refresh(
       * ``display_detail``: the ``--display-detail`` payload that the
         ``mark-step-done`` call MUST carry on this branch.
     """
-    # -- Step 2: Greenfield handling ----------------------------------------
+    # -- Step 2: Ephemeral-derived no-op (every plan) ------------------------
+    # Under the on-demand crawl model, phase-1-init never captures an
+    # architecture-pre/ snapshot, so `snapshot_present` is False for every
+    # plan. The historical "greenfield" branch label is preserved as Branch A
+    # but the display detail now reflects the ephemeral-derived contract.
     if not snapshot_present:
         return {
             'branch': 'A',
             'tier_0_committed': False,
             'tier_1_action': 'skipped',
             'affected_modules': (),
-            'display_detail': 'skipped (greenfield — no pre-snapshot)',
+            'display_detail': 'skipped — derived.json is ephemeral, no pre-snapshot exists',
         }
 
     # -- Step 3: Tier 0 -----------------------------------------------------
@@ -244,7 +248,7 @@ class TestGreenfieldHandling:
                 )
                 assert result['tier_0_committed'] is False
                 assert result['tier_1_action'] == 'skipped'
-                assert 'greenfield' in result['display_detail']
+                assert 'ephemeral' in result['display_detail']
 
     def test_no_snapshot_short_circuits_for_change_type_shortcut(self):
         """Greenfield wins over the change_type shortcut — Step 2 runs first."""
@@ -255,7 +259,7 @@ class TestGreenfieldHandling:
             change_type='bug_fix',
         )
         assert result['branch'] == 'A'
-        assert 'greenfield' in result['display_detail']
+        assert 'ephemeral' in result['display_detail']
 
 
 # ===========================================================================
@@ -581,14 +585,17 @@ class TestNarrativeContract:
         self,
         standard_text: str,
     ):
-        assert 'architecture-pre' in standard_text
-        assert 'phase-1-init' in standard_text, 'Standard must cite the phase-1-init Step 5d snapshot producer'
+        # Under the on-demand crawl model phase-1-init no longer produces an
+        # architecture-pre/ snapshot — the standard still cites the historical
+        # context for unreachable Steps 3c-3e, so checking for 'architecture-pre'
+        # is informational only.
+        assert 'phase-1-init' in standard_text, 'Standard must cite phase-1-init context'
 
-    # ----- Step 2: greenfield ----------------------------------------------
+    # ----- Step 2: ephemeral-derived no-op ---------------------------------
 
-    def test_documents_greenfield_branch(self, standard_text: str):
-        assert 'Greenfield' in standard_text
-        assert 'skipped (greenfield' in standard_text
+    def test_documents_ephemeral_derived_branch(self, standard_text: str):
+        assert 'ephemeral' in standard_text.lower()
+        assert 'skipped — derived.json is ephemeral' in standard_text
 
     # ----- Step 3: Tier 0 ---------------------------------------------------
 
@@ -673,7 +680,7 @@ class TestNarrativeContract:
     @pytest.mark.parametrize(
         'template',
         [
-            'skipped (greenfield — no pre-snapshot)',
+            'skipped — derived.json is ephemeral, no pre-snapshot exists',
             'tier-0 disabled; tier-1 skipped',
             'no module structure changed',
             'refreshed derived data ({affected_module_count} modules)',
@@ -793,12 +800,17 @@ class TestCrossReferences:
         # The doc carries `order: 25` — pin it to detect accidental edits.
         assert 'order: 25' in standard_text
 
-    def test_phase_1_init_produces_architecture_pre_snapshot(
+    def test_phase_1_init_does_not_produce_architecture_pre_snapshot(
         self,
         phase_1_text: str,
     ):
-        """phase-1-init Step 5d must populate the input we consume."""
-        assert 'architecture-pre' in phase_1_text
+        """Under the on-demand crawl model phase-1-init MUST NOT snapshot architecture-pre/.
+
+        The legacy Step 5d snapshot is removed; architecture-refresh's Step 2
+        short-circuits on the absent snapshot for every plan.
+        """
+        # No 'architecture-pre' copy-tree step should remain in phase-1-init.
+        assert 'architecture-pre' not in phase_1_text or 'copy-tree' not in phase_1_text
 
     def test_standard_cross_references_run_config_knobs(
         self,
@@ -823,9 +835,9 @@ class TestCrossReferences:
 # (snapshot_present, tier_0, tier_1, change_type, drift, expected_branch,
 #  expected_display_detail_substring, user_response)
 _MATRIX_CASES = [
-    # snapshot absent — greenfield short-circuit.
-    (False, 'enabled', 'prompt', 'feature', False, 'A', 'greenfield', None),
-    (False, 'disabled', 'auto', 'bug_fix', True, 'A', 'greenfield', None),
+    # snapshot absent — ephemeral-derived no-op short-circuit (every plan).
+    (False, 'enabled', 'prompt', 'feature', False, 'A', 'ephemeral', None),
+    (False, 'disabled', 'auto', 'bug_fix', True, 'A', 'ephemeral', None),
     # tier-0 disabled — Branch B for any tier-1 setting.
     (True, 'disabled', 'prompt', 'feature', True, 'B', 'tier-0 disabled', None),
     (True, 'disabled', 'auto', 'feature', False, 'B', 'tier-0 disabled', None),
