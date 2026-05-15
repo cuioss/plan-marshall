@@ -189,7 +189,7 @@ def cmd_get_context(args: argparse.Namespace) -> dict | None:
 
 
 def cmd_get_worktree_path(args: argparse.Namespace) -> dict | None:
-    """Return the persisted worktree path for a plan.
+    """Return the persisted worktree path for a plan as a tri-state response.
 
     Reads ``status.metadata.use_worktree`` and ``status.metadata.worktree_path``
     and returns the path so that callers (build wrappers, git_workflow,
@@ -197,10 +197,19 @@ def cmd_get_worktree_path(args: argparse.Namespace) -> dict | None:
     plan-id alone — no ``--project-dir``, no filesystem layout
     re-derivation.
 
-    Output contract:
-    - ``use_worktree == true`` and ``worktree_path`` set → ``worktree_path: <abs>``
-    - ``use_worktree == false`` (or metadata absent) → ``worktree_path: ''`` (empty)
-    - ``use_worktree == true`` but ``worktree_path`` missing → ``error: worktree_unresolved``
+    Output contract (tri-state, discriminated by ``worktree_state``):
+
+    - ``use_worktree == false`` (or metadata absent) →
+      ``worktree_state: disabled``, ``worktree_path: ''``. The plan runs
+      against the main checkout.
+    - ``use_worktree == true`` and ``worktree_path`` is empty/missing →
+      ``worktree_state: pending``, ``worktree_path: ''``,
+      ``not_yet_materialized: true``. The plan opted into a worktree but
+      it has not been materialized yet (pre-materialization). Callers
+      MUST fall back to the main checkout cwd.
+    - ``use_worktree == true`` and ``worktree_path`` is set →
+      ``worktree_state: materialized``, ``worktree_path: <abs>``. The
+      worktree is materialized and the path is authoritative.
     """
     status = require_status(args)
     if status is None:
@@ -214,25 +223,26 @@ def cmd_get_worktree_path(args: argparse.Namespace) -> dict | None:
             'status': 'success',
             'plan_id': args.plan_id,
             'use_worktree': False,
+            'worktree_state': 'disabled',
             'worktree_path': '',
         }
 
     worktree_path = metadata.get('worktree_path')
     if not worktree_path:
         return {
-            'status': 'error',
+            'status': 'success',
             'plan_id': args.plan_id,
-            'error': 'worktree_unresolved',
-            'message': (
-                "metadata.use_worktree is true but metadata.worktree_path is missing — "
-                'plan was created without seeding the worktree path.'
-            ),
+            'use_worktree': True,
+            'worktree_state': 'pending',
+            'worktree_path': '',
+            'not_yet_materialized': True,
         }
 
     result: dict[str, Any] = {
         'status': 'success',
         'plan_id': args.plan_id,
         'use_worktree': True,
+        'worktree_state': 'materialized',
         'worktree_path': worktree_path,
     }
     worktree_branch = metadata.get('worktree_branch')

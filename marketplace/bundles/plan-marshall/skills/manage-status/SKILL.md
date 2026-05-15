@@ -406,34 +406,40 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-wo
 **Parameters**:
 - `--plan-id` (required): Plan identifier
 
-**Behavior**:
-- When `metadata.use_worktree == true` and `metadata.worktree_path` is set → returns the absolute path.
-- When `metadata.use_worktree == false` (or metadata is absent) → returns `worktree_path: ''` (empty string). Callers interpret this as "plan runs against the main checkout".
-- When `metadata.use_worktree == true` but `metadata.worktree_path` is missing → returns `error: worktree_unresolved` (data integrity failure: the seed at create time is missing).
+**Behavior** (tri-state, discriminated by `worktree_state`):
+- When `metadata.use_worktree == false` (or metadata is absent) → `worktree_state: disabled`, `worktree_path: ''`. Callers interpret this as "plan runs against the main checkout".
+- When `metadata.use_worktree == true` and `metadata.worktree_path` is set → `worktree_state: materialized`, `worktree_path: <abs>`. The worktree directory has been created.
+- When `metadata.use_worktree == true` and `metadata.worktree_path` is missing/empty → `worktree_state: pending`, `worktree_path: ''`, `not_yet_materialized: true`. The plan opted into worktree mode but the directory has not been materialized yet (pre-materialization). Callers MUST fall back to the main checkout cwd.
 
-**Output — worktree resolved** (TOON):
-```toon
-status: success
-plan_id: my-feature
-use_worktree: true
-worktree_path: /abs/path/.plan/local/worktrees/my-feature
-worktree_branch: feature/my-feature
-```
+The `worktree_unresolved` error path is owned by `phase_handshake verify`, which validates filesystem-resolvability of a non-empty `worktree_path`. This subcommand never returns that error; it returns `pending` for the pre-materialization state instead.
 
-**Output — main checkout** (TOON):
+**Output — disabled (main checkout)** (TOON):
 ```toon
 status: success
 plan_id: my-feature
 use_worktree: false
+worktree_state: disabled
 worktree_path: ""
 ```
 
-**Output — unresolved** (TOON):
+**Output — materialized** (TOON):
 ```toon
-status: error
+status: success
 plan_id: my-feature
-error: worktree_unresolved
-message: metadata.use_worktree is true but metadata.worktree_path is missing — plan was created without seeding the worktree path.
+use_worktree: true
+worktree_state: materialized
+worktree_path: /abs/path/.plan/local/worktrees/my-feature
+worktree_branch: feature/my-feature
+```
+
+**Output — pending (pre-materialization)** (TOON):
+```toon
+status: success
+plan_id: my-feature
+use_worktree: true
+worktree_state: pending
+worktree_path: ""
+not_yet_materialized: true
 ```
 
 ### list
@@ -777,7 +783,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status self-t
 | `invalid_outcome` | 1 | `mark-step-done`: outcome not in `done`/`skipped` |
 | `invalid_argument` | 1 | `mark-step-done`: empty `--phase` or `--step` |
 | `invalid_worktree_args` | 1 | `create`: `--use-worktree` set without both `--worktree-path` and `--worktree-branch` |
-| `worktree_unresolved` | 1 | `get-worktree-path`: `metadata.use_worktree==true` but `metadata.worktree_path` is missing (data integrity failure from a partial seed at create time) |
+| `worktree_unresolved` | 1 | `phase_handshake verify`: `metadata.use_worktree==true` and `metadata.worktree_path` is non-empty but does not resolve on the filesystem. `get-worktree-path` does not emit this error — it returns `worktree_state: pending` for the pre-materialization state. |
 
 ---
 

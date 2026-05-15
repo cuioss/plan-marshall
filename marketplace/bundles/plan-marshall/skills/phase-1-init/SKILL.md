@@ -48,7 +48,7 @@ Activate when:
 
 ## Phase-Entry Worktree Assertion
 
-Phase 1-init has no preceding phase, so the Phase Entry Protocol's `phase_handshake verify` step is skipped (per [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md#q-gate-check-phases-2-6) Q-Gate / handshake checks are scoped to phases 2-6). However, the worktree-resolution contract enforced uniformly at every phase boundary by `phase_handshake` (see deliverable 8 in the originating lesson plan) is THIS phase's responsibility to satisfy: Step 6's worktree-allocation flow MUST persist `metadata.use_worktree`, `metadata.worktree_path`, and `metadata.worktree_branch` to `status.json` so that `phase_handshake capture --phase 1-init` (issued at phase completion) and every subsequent phase's verify can resolve the worktree cleanly. When `git_workflow worktree create` succeeds, those fields MUST be set; when it fails and the phase falls back to the main checkout, the phase MUST persist `metadata.use_worktree==false` so downstream assertions short-circuit. A future `phase_handshake verify --phase 1-init --strict` call against a plan with `use_worktree==true` and a missing/stale `worktree_path` returns `status: error, error: worktree_unresolved` and (under `--strict`) exits 1, refusing to enter the next phase.
+Phase 1-init has no preceding phase, so the Phase Entry Protocol's `phase_handshake verify` step is skipped (per [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md#q-gate-check-phases-2-6) Q-Gate / handshake checks are scoped to phases 2-6). The worktree-materialization contract is deferred: phase-1-init persists only the *intent* — `metadata.use_worktree` and `metadata.worktree_branch` — into `status.json`. It does NOT create the worktree directory and does NOT write `metadata.worktree_path` (that field stays absent until phase-5-execute materializes the worktree on first task execution; see phase-5-execute Step 2.5). The writer-chain contract for this phase is therefore narrower: Step 6 holds `use_worktree` and `worktree_branch` in orchestrator context, Step 8's `manage_status create` writes that pair atomically, and `worktree_path` is written later by phase-5-execute. Downstream phase-handshake assertions tolerate the absent `worktree_path` until phase-5 materialization.
 
 ---
 
@@ -451,21 +451,11 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 Extract `branch_strategy` (default: `feature`) and `use_worktree` (default: `true`).
 
-**IF `branch_strategy == "feature"` AND `use_worktree == true`** (default):
+**IF `branch_strategy == "feature"`** (default — covers both `use_worktree == true` and `use_worktree == false`):
 
-Create an isolated git worktree with the feature branch. The worktree lives under `<project_root>/.plan/local/worktrees/{plan-id}/` — the canonical plan-marshall worktree location inside the main git checkout — and gets its own executor shim so all subsequent phases can run inside it without touching the main checkout. Anchoring worktrees here ensures project-level permission allow-lists and IDE indexing apply without per-host customization.
+Phase-1-init persists only the *intent* to use a worktree / feature branch. It does NOT materialize either: the feature branch is not checked out, the worktree directory is not created, and `references.worktree_path` is not set. Materialization is deferred to phase-5-execute (see phase-5-execute Step 2.5), which performs the actual `git worktree add` + branch checkout on first task execution. Deferred materialization in effect — no on-disk side effects in this phase beyond `status.json` and `references.json` writes.
 
-1. Create the worktree + feature branch + shim in one operation:
-```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree create \
-  --plan-id {plan_id} \
-  --branch feature/{plan_id} \
-  --base {branch_name}
-```
-
-Parse the TOON output. Extract `worktree_path` — this is the absolute path of the new worktree.
-
-2. Update references.json with the new branch, base branch, and worktree path:
+1. Update references.json with the intended feature branch name and base branch:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \
   --plan-id {plan_id} \
@@ -480,68 +470,21 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --value {branch_name}
 ```
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \
-  --plan-id {plan_id} \
-  --field worktree_path \
-  --value {worktree_path}
-```
+2. **Carry `use_worktree` and `worktree_branch` forward to Step 8**: hold the `use_worktree` flag (from marshal.json — `true` or `false`) and the literal feature branch name `feature/{plan_id}` in the orchestrator's local context and pass them as `--use-worktree` / `--no-use-worktree` and `--worktree-branch` flags into Step 8's `manage_status create` invocation. Do NOT pass `--worktree-path` — the path is unknown at this phase and is written by phase-5-execute when it materializes the worktree. Step 8 is the sole writer of `metadata.use_worktree` and `metadata.worktree_branch` in phase-1-init.
 
-3. **Carry the worktree trio forward to Step 8**: do NOT call `manage_status metadata --set` here — `status.json` is not created until Step 8, and an early `metadata --set` call would either fail (no status.json yet) or be clobbered by Step 8's `manage_status create` call which writes a fresh `metadata` block. Instead, keep `{worktree_path}`, the literal feature branch name `feature/{plan_id}`, and the `use_worktree=true` flag in the orchestrator's local context and pass them as `--use-worktree --worktree-path --worktree-branch` flags into Step 8's `manage_status create` invocation. That single write seeds the worktree metadata atomically and is the only writer of `status.metadata` for use_worktree/worktree_path/worktree_branch in this phase. (Lesson `2026-05-08-14-001` documented the prior writer-chain drift this rule eliminates.)
-
-4. Log the decision:
+3. Log the decision:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-1-init) Created feature branch and worktree: feature/{plan_id} at {worktree_path} (base: {branch_name})"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-1-init) Recorded feature branch intent: feature/{plan_id} (base: {branch_name}, use_worktree={use_worktree}) — materialization deferred to phase-5-execute Step 2.5"
 ```
 
-5. **CRITICAL cwd directive for subsequent phases**: Emit the following Bucket A/B-aware instruction verbatim in the phase completion output (see Step 12). It tells the orchestrating LLM exactly how to honor the worktree without reaching for `env -C`:
+4. **Current-checkout cwd directive for subsequent phases**: Emit the following Bucket A/B-aware instruction verbatim in the phase completion output (see Step 12). It reflects that materialization is deferred, so phases 2-4 run on the current branch / main checkout:
 
-   > _"This plan runs in an isolated git worktree at `{worktree_path}`. For `.plan/execute-script.py` calls, follow `plan-marshall:tools-script-executor/standards/cwd-policy.md`: `manage-*` scripts (Bucket A) are cwd-agnostic — call them from any cwd with NO routing flags and never `env -C`. Build / CI / Sonar scripts (Bucket B) MUST identify the worktree via either `--plan-id {plan_id}` (preferred — auto-resolves through `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (explicit override / escape hatch); the two flags are mutually exclusive. For raw `git`, `mvn`, `npm`, and Edit/Write/Read operations on source files, target paths under `{worktree_path}` — do not modify files in the original checkout."_
-
-6. **Fail-loud on worktree creation errors**: If `git_workflow worktree create` returns `status=error` — including `error=plan_symlink_failed`, `error=worktree_add_failed`, or any other worktree-creation failure — the phase MUST NOT silently fall back to running in the main checkout. Silent fallback destroys isolation without warning the user and is prohibited. Instead:
-
-   a. Roll back any partial worktree state (`git_workflow worktree remove --plan-id {plan_id} --force` if the worktree directory was created).
-
-   b. Create and switch to `feature/{plan_id}` in the main checkout (same steps as the `use_worktree == false` branch below), so the plan can still proceed on a feature branch.
-
-   c. **Surface the original error via the phase return output**: add a top-level `warnings[]` entry (see Step 12) with the verbatim error message from `git_workflow worktree create`, plus a note that worktree isolation was lost and all subsequent phases will modify the main checkout directly. The warning text is not optional and is not buried in logs — it MUST appear in the phase return TOON so the calling workflow and the user see it immediately.
-
-   d. Log the failure to decision.log:
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-     decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-1-init) Worktree creation failed: {original_error}. Plan running on feature/{plan_id} in main checkout without isolation."
-   ```
-
-**IF `branch_strategy == "feature"` AND `use_worktree == false`** (opt-out):
-
-1. Create and switch to a feature branch in the main checkout:
-```bash
-git checkout -b feature/{plan_id}
-```
-2. Update references.json with the new branch:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \
-  --plan-id {plan_id} \
-  --field branch \
-  --value feature/{plan_id}
-```
-3. Store the original branch as base_branch:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \
-  --plan-id {plan_id} \
-  --field base_branch \
-  --value {branch_name}
-```
-4. Log the decision:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-1-init) Created feature branch: feature/{plan_id} (base: {branch_name}, worktree disabled)"
-```
+   > _"This plan currently runs on the main checkout / current branch. Worktree + feature-branch materialization is deferred to phase-5-execute Step 2.5; phases 2-4 operate against the current working tree. For `.plan/execute-script.py` calls, follow `plan-marshall:tools-script-executor/standards/cwd-policy.md`: `manage-*` scripts (Bucket A) are cwd-agnostic. Build / CI / Sonar scripts (Bucket B) identify the worktree via `--plan-id {plan_id}` (auto-resolves through `manage-status get-worktree-path` — returns the current checkout while `worktree_path` is unset, and switches to the materialized worktree once phase-5 creates it). Edit/Write/Read operations target the current working tree until phase-5-execute materializes the worktree."_
 
 **IF `branch_strategy == "direct"`**: Keep current branch — no action needed. `use_worktree` is ignored in direct mode.
 
-**Note — no drift-sync at init time**: Worktree and feature branch are created here against `{branch_name}` as-is. Drift-sync against `origin/{base_branch}` runs later at the start of phase-5-execute (see its Step 3 "Sync Worktree With Main") when `rebase_on_execute_start=true` (default). No additional fetch/rebase is needed at phase-1-init time — the plan may sit in refine/outline/plan for arbitrarily long, so syncing now would give a stale base by the time execution starts.
+**Note — no drift-sync at init time**: Materialization is deferred, so no branch checkout, fetch, or rebase happens here. When phase-5-execute Step 2.5 materializes the worktree and feature branch, it handles drift-sync against `origin/{base_branch}` per the `rebase_on_execute_start` config (default `true`).
 
 ### Step 7: Detect Domain
 
@@ -568,7 +511,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 8: Create Status
 
-Create status.json with phases (6-phase model). When Step 6 allocated an isolated worktree (the `branch_strategy == "feature" AND use_worktree == true` branch succeeded), pass the worktree trio as flags so the metadata is seeded atomically in this single create call — no follow-up `metadata --set` is needed and the writer-chain bug from lesson `2026-05-08-14-001` cannot recur:
+Create status.json with phases (6-phase model). When Step 6 recorded worktree intent (the `branch_strategy == "feature" AND use_worktree == true` branch ran), pass the intent pair as flags so `metadata.use_worktree` and `metadata.worktree_branch` are seeded atomically. `--worktree-path` is omitted — the path is unknown until phase-5-execute Step 2.5 materializes the worktree.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status create \
@@ -576,11 +519,10 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status create
   --title "{title_from_task_md}" \
   --phases 1-init,2-refine,3-outline,4-plan,5-execute,6-finalize \
   --use-worktree \
-  --worktree-path {worktree_path} \
   --worktree-branch feature/{plan_id}
 ```
 
-When Step 6 did NOT allocate a worktree (the `use_worktree == false` opt-out branch, or the `branch_strategy == "direct"` branch, or the worktree-creation fail-loud fallback ran), omit the three worktree flags so `manage_status create` writes the explicit `metadata.use_worktree=false` marker:
+When Step 6 did NOT record worktree intent (the `use_worktree == false` opt-out branch, or the `branch_strategy == "direct"` branch), omit the worktree flags so `manage_status create` writes the explicit `metadata.use_worktree=false` marker:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status create \
@@ -591,7 +533,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status create
 
 **Note**: Domain information is stored in `references.json` (as a `domains` list), not in `status.json`. All plans use the standard 6-phase model (verification is integrated into phase-5-execute).
 
-**Writer-chain contract**: `manage_status create` is the **only** writer of `metadata.use_worktree`, `metadata.worktree_path`, and `metadata.worktree_branch` in phase-1-init. Earlier drafts of this skill issued separate `manage_status metadata --set` calls in Step 6 before status.json existed, which silently failed and let `create`'s default `{'use_worktree': False}` else-branch overwrite the trio. The new contract is: Step 6 holds the worktree trio in orchestrator context, Step 8 passes it as create flags, and the inverse-direction `_worktree_orphan` invariant in `_invariants.py` (registered in `INVARIANTS`) catches any future drift between the on-disk worktree directory and the persisted metadata. See `workflow-integration-git/standards/worktree-handling.md` for the canonical worktree contract.
+**Writer-chain contract**: `manage_status create` is the sole writer of `metadata.use_worktree` and `metadata.worktree_branch` in phase-1-init; `metadata.worktree_path` is never written by this phase. Phase-5-execute Step 2.5 is the sole writer of `metadata.worktree_path` (it materializes the worktree on first task execution and persists the resolved absolute path then). The inverse-direction `_worktree_orphan` invariant in `_invariants.py` (registered in `INVARIANTS`) tolerates an absent `worktree_path` until phase-5 materialization. See `workflow-integration-git/standards/worktree-handling.md` for the canonical worktree contract.
 
 ### Step 9: Store Domains in References
 
@@ -648,7 +590,8 @@ status: success
 plan_id: {plan_id}
 domain: {domain}
 next_phase: 2-refine
-worktree_path: {worktree_path|null}
+use_worktree: {true|false}
+worktree_branch: {feature/{plan_id}|null}
 
 source:
   type: {description|lesson|issue}
@@ -658,14 +601,9 @@ artifacts:
   request_md: request.md
   status: status.json
   references: references.json
-
-warnings[N]:
-  - "{one entry per non-fatal warning from Step 6, verbatim; empty list if none}"
 ```
 
-**If `worktree_path` is set**, append the Bucket A/B-aware cwd directive from Step 6 point 5 verbatim after the TOON output. The orchestrating LLM uses it to decide, per call, whether a `.plan/execute-script.py` invocation is Bucket A (no cwd pinning, no routing flags, no `env -C`) or Bucket B (pass `--plan-id {plan_id}` or `--project-dir {worktree_path}` — mutually exclusive), and to target editor writes at `{worktree_path}` rather than the main checkout.
-
-**`warnings[]` field**: Top-level list surfacing non-fatal issues that the caller and user must see. Step 6 populates this when worktree creation fails and the phase falls back to the main checkout — each warning is the verbatim error detail from `git_workflow worktree create` plus a note that isolation was lost. The list is empty when no warnings apply. This is the contract Step 6d depends on: worktree failures must appear here, never silently in logs.
+**Always append the current-checkout cwd directive from Step 6 point 4 verbatim after the TOON output.** Phases 2-4 run on the current working tree because worktree materialization is deferred to phase-5-execute Step 2.5. The orchestrating LLM uses the directive to decide, per call, whether a `.plan/execute-script.py` invocation is Bucket A (cwd-agnostic, no routing flags) or Bucket B (pass `--plan-id {plan_id}`, which auto-resolves the current working tree now and the materialized worktree once phase-5 creates it).
 
 ---
 
@@ -680,7 +618,7 @@ display_detail: "<plan {plan_id} created, domain {domain}>"
 
 `display_detail` shape on success: `"plan {plan_id} created, domain {domain}"` (e.g. `"plan 2026-05-11-15-007 created, domain plan-marshall"`); ≤80 chars, ASCII, no trailing period. On error, `display_detail` carries the short error label (see § Error Handling for the structured envelope).
 
-All other fields (`plan_id`, `domain`, `next_phase`, `worktree_path`, `source`, `artifacts`, `warnings[]`) are documented in Step 12 above and form the rest of the return payload.
+All other fields (`plan_id`, `domain`, `next_phase`, `use_worktree`, `worktree_branch`, `source`, `artifacts`) are documented in Step 12 above and form the rest of the return payload.
 
 ---
 
