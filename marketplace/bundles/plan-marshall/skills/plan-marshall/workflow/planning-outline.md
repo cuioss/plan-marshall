@@ -146,27 +146,12 @@ call `start-phase 4-plan` again.
 
 **Step 2d**: Auto-open solution outline in IDE for user review:
 
-Resolve the solution outline path:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
-  resolve-path --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files open-in-ide \
+  --plan-id {plan_id} --document solution_outline
 ```
 
-Extract `{resolved_path}` from the `path` field in the command output.
-
-Read `TERM_PROGRAM` using the globally allow-listed pattern installed by the marshall-steward wizard:
-
-```bash
-echo "TERM_PROGRAM=$TERM_PROGRAM"
-```
-
-Parse the output. Pick the opener by `TERM_PROGRAM` value and host platform:
-- If `TERM_PROGRAM=vscode` on macOS: `open -a "Visual Studio Code" {resolved_path}` — uses macOS Launch Services so the call does not depend on the `code` CLI being on `PATH` (VS Code's shell integration is often not installed in Claude Code's non-login bash environment, in which case `code` exits 127 and the agent silently falls back to `open`, opening the file in whatever app owns the `.md` association rather than in VS Code).
-- If `TERM_PROGRAM=vscode` on Linux: `code {resolved_path}` (the `code` CLI is on `PATH` on standard Linux installs).
-- Otherwise on macOS: `open {resolved_path}`
-- Otherwise on Linux: `xdg-open {resolved_path}`
-
-Do NOT use `printenv`, `env | grep`, or command substitution such as `$(printenv TERM_PROGRAM)` — `echo "TERM_PROGRAM=$TERM_PROGRAM"` is the only pattern installed by the marshall-steward wizard and guaranteed not to trigger a permission prompt.
+The verb resolves the solution outline path internally, detects the active IDE from `__CFBundleIdentifier` / `TERM_PROGRAM` + host platform, and dispatches the appropriate launcher (no `TERM_PROGRAM` parsing in this workflow, no per-platform forks, no `open` / `xdg-open` fallback). On unknown IDE the verb exits non-zero with `reason: ide_not_detected` rather than silently routing through the OS file-association handler. The verb is gated by `plan.open_in_ide.enabled` in `.plan/marshal.json` (default `true`); when disabled it returns `status: success, action: skipped` and does nothing. See the `plan-marshall:manage-files` skill (Operations → open-in-ide) for the supported IDE matrix and TOON return shapes.
 
 ---
 
