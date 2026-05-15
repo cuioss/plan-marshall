@@ -169,13 +169,15 @@ def build_launch_command(ide: IdeRecord, path: Path) -> list[str]:
 def is_open_in_ide_enabled() -> bool:
     """Return whether `open-in-ide` is enabled in marshal.json.
 
-    Lenient resolution: a missing file, a missing `plan` namespace, a missing
-    `plan.open_in_ide` sub-namespace, or a missing `enabled` field all
-    resolve to the documented default `True`. Only a malformed JSON file
-    raises (consistent with the rest of the config surface).
+    Lenient resolution: a missing file, a missing `plan` namespace, or a
+    missing `plan.open_in_ide` field all resolve to the documented default
+    `True`. A malformed JSON file or a `plan.open_in_ide` value that is
+    not exactly a boolean raises `ValueError` — silent coercion of dicts
+    / strings / numbers via `bool(...)` would misclassify obviously-broken
+    configs (e.g. `bool({"enabled": False})` is `True`).
     """
     marshal_path = get_marshal_path()
-    if not marshal_path.exists():
+    if not marshal_path.is_file():
         return True
     data = json.loads(marshal_path.read_text(encoding='utf-8'))
     if not isinstance(data, dict):
@@ -187,12 +189,14 @@ def is_open_in_ide_enabled() -> bool:
     if not isinstance(plan_ns, dict):
         return True
     open_in_ide = plan_ns.get('open_in_ide')
-    if not isinstance(open_in_ide, dict):
+    if open_in_ide is None:
         return True
-    enabled = open_in_ide.get('enabled')
-    if enabled is None:
-        return True
-    return bool(enabled)
+    if not isinstance(open_in_ide, bool):
+        raise ValueError(
+            f"{marshal_path}: expected a boolean at plan.open_in_ide, "
+            f"got {type(open_in_ide).__name__}"
+        )
+    return open_in_ide
 
 
 def _resolve_document_path(plan_id: str, document: str) -> tuple[Path | None, str | None]:

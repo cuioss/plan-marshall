@@ -61,12 +61,10 @@ DEFAULT_SYSTEM_RETENTION = {
     'temp_on_maintenance': True,
 }
 
-# open-in-ide gate default (nested under `plan.open_in_ide` in marshal.json).
+# open-in-ide gate default (`plan.open_in_ide` in marshal.json — flat bool).
 # Default `true` preserves the current always-attempt-to-open behaviour.
 # A missing key is also treated as `true` by `manage-files open-in-ide`.
-DEFAULT_OPEN_IN_IDE = {
-    'enabled': True,
-}
+DEFAULT_OPEN_IN_IDE = True
 
 # Phase-specific plan defaults
 DEFAULT_PLAN_INIT = {
@@ -216,7 +214,7 @@ def get_default_config() -> dict:
         'skill_domains': {'system': system_domain},
         'system': {'retention': copy.deepcopy(DEFAULT_SYSTEM_RETENTION)},
         'plan': {
-            'open_in_ide': copy.deepcopy(DEFAULT_OPEN_IN_IDE),
+            'open_in_ide': DEFAULT_OPEN_IN_IDE,
             'phase-1-init': copy.deepcopy(DEFAULT_PLAN_INIT),
             'phase-2-refine': copy.deepcopy(DEFAULT_PLAN_REFINE),
             'phase-3-outline': copy.deepcopy(DEFAULT_PLAN_OUTLINE),
