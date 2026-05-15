@@ -252,14 +252,16 @@ def test_get_module_context_uses_default_path_when_module_lacks_paths(tmp_path):
     assert root['path'] == '.'
 
 
-def test_get_module_context_treats_missing_module_derived_as_empty(tmp_path):
-    """``_project.json`` lists a module whose ``derived.json`` is missing.
+def test_get_module_context_omits_modules_absent_from_live_crawl(tmp_path):
+    """A module listed in _project.json but absent from the live crawl is omitted.
 
-    The reader catches ``DataNotFoundError`` per-module, treats the derived
-    shape as empty, and still emits a stable entry for that module so callers
-    don't see a partial response.
+    Under the on-demand crawl model the reader iterates the live crawl
+    result, not _project.json's index. A module that has neither a real
+    filesystem presence nor an on-disk derived.json fallback simply does
+    not appear in the response — there is no half-written shape to surface.
     """
-    # Arrange — index lists 'orphan' but no derived.json is written for it.
+    # Arrange — index lists 'orphan' but no derived.json is written for it,
+    # and no real module exists at that path.
     save_project_meta(
         {
             'name': 'half-written-project',
@@ -279,14 +281,9 @@ def test_get_module_context_treats_missing_module_derived_as_empty(tmp_path):
     # Act
     result = cmd_get_module_context(_ns(str(tmp_path)))
 
-    # Assert
+    # Assert — 'orphan' is absent because the live crawl doesn't see it.
     assert result['status'] == 'success'
-    assert result['module_count'] == 1
-    orphan = result['modules'][0]
-    assert orphan['name'] == 'orphan'
-    assert orphan['path'] == '.'  # default when derived has no paths
-    assert orphan['purpose'] == 'Late arrival'
-    assert orphan['responsibility'] == 'Pending discovery'
+    assert result['module_count'] == 0
 
 
 # =============================================================================

@@ -331,17 +331,22 @@ def test_enrich_all_extension_exception_captured(monkeypatch):
         assert result['pairs_applied'] == 0
 
 
-def test_enrich_all_missing_project_meta():
-    """CLI wrapper returns data_not_found when ``_project.json`` is missing."""
+def test_enrich_all_empty_project_returns_success_with_no_modules():
+    """CLI wrapper returns success with empty modules when the crawl finds nothing.
+
+    Under the on-demand crawl model iter_modules returns [] instead of
+    raising DataNotFoundError when there are no modules. enrich_all
+    therefore completes cleanly with an empty modules_enriched list.
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
         # Do NOT call setup_test_project — tmpdir is empty.
         args = SimpleNamespace(project_dir=tmpdir, include_optionals=False, reasoning=None)
 
         result = cmd_enrich_all(args)
 
-        assert result['status'] == 'error'
-        assert result['error'] == 'data_not_found'
-        assert 'expected_file' in result
+        assert result['status'] == 'success'
+        assert result['modules_enriched'] == []
+        assert result['pairs_applied'] == 0
 
 
 def test_enrich_all_empty_extension_list(monkeypatch):

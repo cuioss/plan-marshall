@@ -342,14 +342,16 @@ def test_api_get_derived_missing_meta_raises():
             pass
 
 
-def test_api_get_derived_module_missing_derived_returns_empty_dict():
-    """An indexed module with no ``derived.json`` surfaces as ``{}``.
+def test_api_get_derived_module_missing_derived_returns_empty_modules():
+    """An indexed module with no live filesystem presence does NOT surface.
 
-    The index is the canonical truth; if a per-module file vanishes we return
-    a stable empty dict rather than crashing or skipping the module.
+    Under the on-demand crawl model api_get_derived computes the modules
+    dict from the live filesystem crawl — _project.json's index is no
+    longer the source of truth. A module listed in the index but absent
+    from the live crawl simply does not appear in the result.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
-        # _project.json lists 'gone' but no derived.json exists for it.
+        # _project.json lists 'gone' but no derived.json or real module exists.
         save_project_meta(
             {'name': 'p', 'description': '', 'modules': {'gone': {}}, 'extensions_used': []},
             tmpdir,
@@ -357,8 +359,9 @@ def test_api_get_derived_module_missing_derived_returns_empty_dict():
 
         result = api_get_derived(tmpdir)
 
-        assert 'gone' in result['modules']
-        assert result['modules']['gone'] == {}
+        # Under the on-demand crawl the index is no longer consulted; 'gone'
+        # is absent from the modules dict.
+        assert result['modules'] == {}
 
 
 # =============================================================================
@@ -390,11 +393,13 @@ def test_api_get_derived_module_unknown_module_raises():
             pass
 
 
-def test_api_get_derived_module_missing_derived_raises():
-    """api_get_derived_module raises DataNotFoundError when derived.json is gone.
+def test_api_get_derived_module_missing_from_crawl_raises_module_not_found():
+    """api_get_derived_module raises when the module is absent from the live crawl.
 
-    Distinct from "module not found in index": the module IS in the index but
-    its per-module file has been removed (e.g. half-cleanup state).
+    Under the on-demand crawl model the index is no longer consulted —
+    a module listed in _project.json but absent from the live filesystem
+    surfaces as ModuleNotFoundInProjectError (the "module not found in
+    crawl" case), not as DataNotFoundError.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         save_project_meta(
@@ -404,8 +409,8 @@ def test_api_get_derived_module_missing_derived_raises():
 
         try:
             api_get_derived_module('gone', tmpdir)
-            assert False, 'Should have raised DataNotFoundError'
-        except DataNotFoundError:
+            assert False, 'Should have raised ModuleNotFoundInProjectError'
+        except ModuleNotFoundInProjectError:
             pass
 
 
@@ -424,14 +429,16 @@ def test_list_modules_returns_index_keys():
         assert sorted(result) == ['module-a', 'module-b']
 
 
-def test_list_modules_missing_meta_raises():
-    """list_modules raises DataNotFoundError when ``_project.json`` is missing."""
+def test_list_modules_missing_meta_returns_empty():
+    """list_modules returns an empty list when the crawl finds no modules.
+
+    Under the on-demand crawl model list_modules calls iter_modules which
+    crawls the live filesystem. A tmpdir with no real modules and no
+    on-disk derived.json fallback yields the empty list (the legacy
+    DataNotFoundError-on-missing-meta contract is replaced).
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
-        try:
-            list_modules(tmpdir)
-            assert False, 'Should have raised DataNotFoundError'
-        except DataNotFoundError:
-            pass
+        assert list_modules(tmpdir) == []
 
 
 # =============================================================================

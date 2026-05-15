@@ -3,9 +3,22 @@
 
 Pins the four-bucket classification contract (added/removed/changed/unchanged)
 of ``cmd_diff_modules`` plus its ``snapshot_not_found`` error contract and
-the argparse wiring on ``architecture.py``. The comparison surface is
-intentionally narrow — only ``derived.json`` shas matter; differences in
-``enriched.json`` never produce a ``changed`` classification.
+the argparse wiring on ``architecture.py``.
+
+Under the on-demand crawl model the snapshot side still reads
+``derived.json`` files from disk (snapshots remain file-based per
+deliverable 4 of plan ``architecture-files-on-demand``) while the current
+side hashes the canonical JSON of a fresh ``crawl_module_derived`` call.
+For test fixtures, ``save_module_derived`` is used to seed the on-disk
+fallback that ``crawl_all_modules`` consults when the extension discovery
+pipeline returns no modules (typical for tmp project trees with no real
+build files). The fixtures intentionally write under the project tree so
+both the snapshot copy and the current-side fallback see the same
+payload before any mutation.
+
+The comparison surface is intentionally narrow — only derived shas
+matter; differences in ``enriched.json`` never produce a ``changed``
+classification.
 """
 
 import importlib.util

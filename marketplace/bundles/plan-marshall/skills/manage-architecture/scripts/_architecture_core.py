@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
 """Shared utilities for architecture scripts.
 
-Persists project architecture data using a per-module on-disk layout under
-``.plan/project-architecture/``:
+Project architecture data lives under ``.plan/project-architecture/`` and is
+split into two kinds of file:
 
 - ``_project.json`` — top-level project metadata; the ``modules`` field is the
-  single source of truth for "which modules exist". Per-module directory
-  presence on disk is NOT a substitute for the index — half-written
-  directories must be ignored.
-- ``{module}/derived.json`` — deterministic discovery output for one module
-  (paths, packages, dependencies).
-- ``{module}/enriched.json`` — LLM-augmented fields for one module
-  (responsibility, purpose, key_packages, skills_by_profile, …).
+  index of "which modules exist". Persisted on disk by ``discover``.
+- ``{module}/enriched.json`` — LLM-curated fields for one module
+  (responsibility, purpose, key_packages, skills_by_profile, …). Persisted on
+  disk; expensive to regenerate.
 
-Atomic writes use a tmp-then-swap pattern: callers build the new layout under
-``project-architecture.tmp/`` and call ``swap_data_dir(tmp_dir)`` which
-``os.replace``s it onto the real path. A forced interruption mid-write leaves
-either the old layout or the new layout intact, never half-written state.
+``derived.json`` (paths, packages, dependencies, file inventories) is
+ephemeral — computed on demand by crawling the live worktree filesystem on
+every read. It is NOT persisted to disk; ``load_module_derived`` always calls
+``crawl_module_derived`` internally.
+
+``_project.json`` and ``enriched.json`` are still written via the tmp-then-swap
+pattern: callers build the new layout under ``project-architecture.tmp/`` and
+call ``swap_data_dir(tmp_dir)`` which ``os.replace``s it onto the real path. A
+forced interruption mid-write leaves either the old layout or the new layout
+intact, never half-written state.
 """
 
 import json
@@ -159,22 +162,148 @@ def save_project_meta(meta: dict[str, Any], project_dir: str = '.') -> Path:
     return path
 
 
+def crawl_all_modules(project_dir: str = '.') -> dict[str, dict[str, Any]]:
+    """Compute per-module derived data for every module by crawling the worktree.
+
+    Runs the extension discovery pipeline against ``project_dir`` and applies
+    the in-memory ``_post_process_files`` pass that populates each module's
+    ``files`` inventory. The result is the same shape ``derived.json`` would
+    have on disk — a dict keyed by module name, each value being one module's
+    derived payload.
+
+    The crawl is rooted at ``Path(project_dir)``; it never falls back to
+    ``Path.cwd()`` or ``git rev-parse --show-toplevel``. This is what gives
+    ``--project-dir <worktree>`` callers worktree-correct results.
+
+    The import of ``_post_process_files`` from ``_cmd_manage`` is deferred to
+    call time to avoid the circular-import cycle (``_cmd_manage`` already
+    imports from ``_architecture_core`` at module top).
+
+    Synthetic-project fallback: when ``discover_project_modules`` yields no
+    modules (e.g. unit-test fixtures that build a fake project tree under a
+    tmp directory and seed ``.plan/project-architecture/<module>/derived.json``
+    directly), fall back to reading any per-module ``derived.json`` files
+    that already exist under ``project_dir``. This lets fixture-driven tests
+    continue to seed module data via ``save_module_derived`` without having
+    to also stage the build files an extension discoverer would look for.
+    Production worktrees (which always have at least one real module) never
+    hit this path.
+    """
+    # Local imports — deliberately deferred to function-call time.
+    #
+    # ``_post_process_files`` lives in ``_cmd_manage`` because it depends on
+    # several file-classification helpers and constants co-located there. Moving
+    # those ~300 lines to _architecture_core would invert the layering in the
+    # opposite direction. The deferred import is the accepted Python idiom for
+    # breaking circular-import cycles: ``_cmd_manage`` imports from
+    # ``_architecture_core`` at module level, so a top-level import here would
+    # create a true import-time cycle. Deferring to call time avoids the cycle
+    # without relocating the file-processing logic.
+    #
+    # ``extension_discovery`` is kept local for the same reason — it is an
+    # extension-API module that should not become a module-level dependency of
+    # this low-level utility module.
+    from _cmd_manage import _post_process_files  # type: ignore[import-not-found]
+    from extension_discovery import discover_project_modules  # type: ignore[import-not-found]
+
+    project_path = Path(project_dir).resolve()
+    result = discover_project_modules(project_path)
+    modules: dict[str, dict[str, Any]] = result.get('modules', {}) or {}
+    if not modules:
+        # Synthetic-project fallback (test-fixture seam — see docstring).
+        # On-disk derived.json already contains the post-processed shape, so
+        # do NOT run ``_post_process_files`` again over it — that would
+        # overwrite the seeded payload with an empty filesystem walk.
+        return _read_disk_derived(project_dir)
+    _post_process_files(modules, project_dir)
+    return modules
+
+
+def _read_disk_derived(project_dir: str) -> dict[str, dict[str, Any]]:
+    """Read any per-module ``derived.json`` files already on disk.
+
+    Synthetic-project fallback used by ``crawl_all_modules`` when the
+    extension discovery pipeline returns no modules — typically a unit-test
+    fixture that seeded ``derived.json`` files but did not include real
+    build files the discoverer would pick up. Production worktrees never
+    hit this path because they always have at least one real module.
+
+    Under the on-demand crawl model ``_project.json["modules"]`` is no
+    longer the gatekeeper for what ``iter_modules`` surfaces: every
+    per-module directory containing a ``derived.json`` is returned. This
+    matches the live-crawl semantic — what is on disk is what exists.
+    Callers that need the curated project-meta view should read
+    ``_project.json`` directly via ``load_project_meta``.
+    """
+    data_dir = get_data_dir(project_dir)
+    if not data_dir.exists() or not data_dir.is_dir():
+        return {}
+
+    out: dict[str, dict[str, Any]] = {}
+    for entry in sorted(data_dir.iterdir()):
+        if not entry.is_dir():
+            continue
+        derived_path = entry / 'derived.json'
+        if derived_path.is_file():
+            try:
+                out[entry.name] = _read_json(derived_path)
+            except (OSError, ValueError):
+                continue
+    return out
+
+
+def crawl_module_derived(module_name: str, project_dir: str = '.') -> dict[str, Any]:
+    """Compute one module's derived payload by crawling the worktree on demand.
+
+    Convenience wrapper around ``crawl_all_modules`` that returns a single
+    module's entry. Raises ``ModuleNotFoundInProjectError`` when the requested
+    module is absent from the live crawl — callers that want a stable "empty
+    dict" shape should consult ``crawl_all_modules`` directly.
+    """
+    modules = crawl_all_modules(project_dir)
+    if module_name not in modules:
+        raise ModuleNotFoundInProjectError(f'Module not found in live crawl: {module_name}')
+    return modules[module_name]
+
+
 def load_module_derived(module_name: str, project_dir: str = '.') -> dict[str, Any]:
-    """Load one module's ``derived.json``.
+    """Return one module's derived payload by crawling the worktree.
+
+    Backwards-compatible alias for ``crawl_module_derived``: kept so existing
+    callers ("load derived for module X") continue to work without churn.
 
     Raises:
-        DataNotFoundError: If the file does not exist.
+        DataNotFoundError: If the module is absent from the live crawl. The
+            caller can disambiguate "module unknown" vs "module present but
+            has no derived fields" by consulting ``iter_modules``.
     """
-    path = get_module_derived_path(module_name, project_dir)
-    if not path.exists():
+    try:
+        return crawl_module_derived(module_name, project_dir)
+    except ModuleNotFoundInProjectError as err:
+        # Surface as DataNotFoundError to preserve the legacy contract that
+        # callers can ``except DataNotFoundError`` after a discover-not-yet-run
+        # condition. The discriminator is still useful because the legacy
+        # ``derived.json missing`` failure mode collapses into the same shape.
         raise DataNotFoundError(
-            f"Derived data not found for module '{module_name}'. Run 'architecture.py discover' first. Expected: {path}"
-        )
-    return _read_json(path)
+            f"Module '{module_name}' not present in live filesystem crawl of '{project_dir}'. "
+            "Run 'architecture.py discover' to refresh the module index, or verify the module exists."
+        ) from err
 
 
 def save_module_derived(module_name: str, data: dict[str, Any], project_dir: str = '.') -> Path:
-    """Save one module's ``derived.json``."""
+    """Write a ``derived.json`` file to disk — snapshot-fixture writer only.
+
+    Under the on-demand crawl model production reads never load
+    ``{module}/derived.json`` from disk; ``crawl_module_derived`` computes
+    it in-memory on every request. This writer is retained for the single
+    legitimate use case: building file-based snapshot fixtures consumed by
+    ``cmd_diff_modules`` (which still reads the snapshot side from disk
+    per deliverable 4 of plan ``architecture-files-on-demand``). Tests and
+    snapshot tooling are the only callers.
+
+    Production code MUST NOT use this writer to refresh the current-project
+    derived data — derived data is ephemeral.
+    """
     path = get_module_derived_path(module_name, project_dir)
     _write_json(path, data)
     return path
@@ -214,22 +343,17 @@ def save_module_enriched(module_name: str, data: dict[str, Any], project_dir: st
 
 
 def iter_modules(project_dir: str = '.') -> list[str]:
-    """Iterate module names from ``_project.json``'s ``modules`` index.
+    """Iterate module names by crawling the live worktree filesystem.
 
-    The index is the canonical answer to "which modules exist"; per-module
-    directory presence on disk is not consulted because half-written
-    directories from interrupted writes must be ignored.
+    The crawl is the canonical answer to "which modules exist" — it walks the
+    extension discovery pipeline against ``project_dir`` so callers always
+    see the modules that currently exist on disk, never a stale snapshot.
 
     Returns:
-        Sorted list of module names. Empty list when the project has no
-        modules defined yet.
-
-    Raises:
-        DataNotFoundError: If ``_project.json`` does not exist.
+        Sorted list of module names. Empty list when the crawl yields no
+        modules (e.g. a freshly-initialised greenfield project).
     """
-    meta = load_project_meta(project_dir)
-    modules = meta.get('modules', {}) or {}
-    return sorted(modules.keys())
+    return sorted(crawl_all_modules(project_dir).keys())
 
 
 def swap_data_dir(tmp_dir: Path, project_dir: str = '.') -> Path:
