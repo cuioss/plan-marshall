@@ -59,7 +59,7 @@ The `statusLine` entry the wizard writes into `./.claude/settings.local.json` is
 === Optional workarounds
 
 * **Rename the tab manually.** Right-click the Terminal tool window tab → `Rename Session…` and type the plan id. The name is static (won't update across phases) but at least disambiguates multiple plans open in parallel.
-* **Run `claude` in an external terminal.** Disable `Settings → Tools → Terminal → Run commands using IDE` (or simply alt-tab to iTerm2 / Ghostty / Kitty / Terminal.app) and start `claude` there. The OSC-driven tab title works out of the box in those terminals.
+* **Run `claude` in an external terminal.** Use a standalone terminal emulator (iTerm2, Ghostty, Kitty, Terminal.app, etc.) and start `claude` there. The OSC-driven tab title works out of the box in those terminals.
 * **Watch the statusline.** For most workflows the in-pane statusline is sufficient and you don't need the tab title at all.
 
 === Troubleshooting
