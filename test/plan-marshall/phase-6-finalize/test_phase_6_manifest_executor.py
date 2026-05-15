@@ -1010,15 +1010,15 @@ class TestLoopBackWithoutAskingContract:
 
     # ---- Defaults surface ------------------------------------------------
 
-    def test_loop_back_without_asking_default_is_false(
+    def test_loop_back_without_asking_default_is_true(
         self, config_defaults_text: str
     ):
-        """``loop_back_without_asking`` MUST default to ``False`` — the
-        conservative interactive shape. Existing plans MUST continue to halt
-        and prompt on every loop-back outcome unless the user explicitly
-        opts in."""
+        """``loop_back_without_asking`` MUST default to ``True`` — the
+        symmetric counterpart of ``finalize_without_asking=True``. Full
+        unattended loop-back execution is the default; the conservative
+        interactive shape (halt + prompt) is now opt-out."""
         # Locate the DEFAULT_PLAN_FINALIZE block and confirm the field is set
-        # to False.
+        # to True.
         assert "DEFAULT_PLAN_FINALIZE = {" in config_defaults_text, (
             'DEFAULT_PLAN_FINALIZE block must exist in _config_defaults.py'
         )
@@ -1026,9 +1026,9 @@ class TestLoopBackWithoutAskingContract:
         # Find the closing brace of the dict literal.
         block_end = config_defaults_text.index("\n}\n", block_start)
         block = config_defaults_text[block_start : block_end + 3]
-        # The field MUST be present and default to False.
-        assert "'loop_back_without_asking': False" in block, (
-            'DEFAULT_PLAN_FINALIZE must declare loop_back_without_asking with default False'
+        # The field MUST be present and default to True.
+        assert "'loop_back_without_asking': True" in block, (
+            'DEFAULT_PLAN_FINALIZE must declare loop_back_without_asking with default True'
         )
 
     def test_loop_back_field_runs_through_phase_setter(

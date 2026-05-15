@@ -134,6 +134,8 @@ The triage subagent above allocated fix tasks and posted reviewer-facing thread 
 
 1. Set the plan back to phase-5-execute so the orchestrator picks the freshly-allocated fix tasks up on the next iteration:
 
+**Loopback target invariant**: this MUST be `--phase 5-execute` — see [SKILL.md § Loop-back Target Contract](../SKILL.md#loop-back-target-contract).
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-phase \
   --plan-id {plan_id} --phase 5-execute

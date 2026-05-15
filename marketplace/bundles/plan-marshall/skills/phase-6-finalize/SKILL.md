@@ -569,6 +569,16 @@ FOR each step_id in manifest.phase_6.steps:
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
        work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}"
 
+  ### Loop-back Target Contract
+
+  Two invariants govern every loop-back outcome emitted by a phase-6-finalize step. Both are structural: a violation is a contract bug, not a degraded run.
+
+  - **Target phase invariant**: every loop-back-emitting finalize step MUST persist `current_phase: 5-execute` via `manage-status set-phase --phase 5-execute` BEFORE its terminal `mark-step-done --outcome loop_back` call. Targeting any other phase (notably `2-refine`, `3-outline`, or `4-plan`) is a contract violation; the loop-back continuation hook (§ 7b below) always re-dispatches `phase-5-execute` and will silently bypass the freshly-allocated fix tasks if the persisted current_phase points elsewhere. Authoritative call sites: `workflow/automated-review.md` and `workflow/sonar-roundtrip.md` — each carries an inline "Loopback target invariant" marker above its `set-phase` block as the structural guard against silent drift.
+
+  - **Full-phase-rollback invariant**: loopback is NEVER an inline / in-place fix within the current phase-6-finalize step body. Every loop-back iteration is a complete phase rollback — the loop-back-emitting step persists `current_phase: 5-execute`, the continuation hook (§ 7b) re-enters `phase-5-execute` from the top of its `manage-tasks next` loop, the execute pipeline drives the freshly-allocated fix tasks to done, then transitions `5-execute → 6-finalize` via the standard `phase-5-execute.finalize_without_asking` gate. There is no "patch the failing finding and continue" path — fix tasks are first-class work items that flow through the normal execute pipeline. This is the answer to the canonical user question "are all loopback-triggered changes done as full phase changes, or are inline changes done as well?" — they are always full phase rollbacks.
+
+  Cross-references: `workflow/automated-review.md` (line carrying the invariant marker above the `set-phase --phase 5-execute` call) and `workflow/sonar-roundtrip.md` (same shape). The four-corner truth table for the `finalize_without_asking` × `loop_back_without_asking` flag combinations is documented in § 7b below.
+
   7b. Loop-back continuation hook (consult the just-recorded outcome):
       Read the step's recorded outcome from `status.metadata.phase_steps["6-finalize"][step_id]` (the dispatched agent's `mark-step-done` call wrote it). When `outcome == "loop_back"`, consult the symmetric auto-continuation knob to decide whether to halt or re-enter inline:
 

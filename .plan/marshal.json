@@ -38,6 +38,7 @@
       "max_iterations": 3,
       "review_bot_buffer_seconds": 300,
       "pr_merge_strategy": "squash",
+      "loop_back_without_asking": true,
       "effort": {
         "default": "high",
         "verification-feedback": "high",

@@ -104,6 +104,8 @@ When the subagent returns `status: loop_back` it has created fix tasks (FIX outc
 1. The triage dispatch already allocated the fix tasks (see [`triage.md`](triage.md) § Step 3c FIX action). No further task allocation here.
 2. Loop back to phase-5-execute via:
 
+   **Loopback target invariant**: this MUST be `--phase 5-execute` — see [SKILL.md § Loop-back Target Contract](../SKILL.md#loop-back-target-contract).
+
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-phase \
      --plan-id {plan_id} --phase 5-execute
