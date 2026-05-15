@@ -28,7 +28,13 @@ import argparse
 
 from _cmd_aggregate_confidence import cmd_aggregate_confidence
 from _cmd_change_type_heuristic import cmd_change_type_heuristic
-from _cmd_lifecycle import cmd_archive, cmd_create, cmd_delete_plan, cmd_transition
+from _cmd_lifecycle import (
+    cmd_archive,
+    cmd_create,
+    cmd_delete_plan,
+    cmd_transition,
+    verify_blocks_transition,
+)
 from _cmd_mark_step import cmd_mark_step_done
 from _cmd_routing import cmd_get_routing_context, cmd_route, cmd_self_test
 from _status_query import (
@@ -310,6 +316,17 @@ def main() -> int:
     result = args.func(args)
     if result is not None:
         output_toon(result)
+    # Strict-drift exit-code contract for ``transition``: the inline guard
+    # in ``cmd_transition`` returns the verify result dict unchanged when
+    # the boundary is guarded and verify reports drift (or one of the
+    # worktree/main-checkout boundary refusals). Mirror the
+    # ``phase_handshake verify --strict`` CLI semantics so callers that
+    # used to gate on the standalone verify's exit code keep working.
+    # The refusal classification is shared with ``cmd_transition``'s
+    # in-process guard via ``verify_blocks_transition`` so the two contracts
+    # cannot drift apart.
+    if args.command == 'transition' and isinstance(result, dict) and verify_blocks_transition(result):
+        return 1
     return 0
 
 
