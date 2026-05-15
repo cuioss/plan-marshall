@@ -1171,5 +1171,61 @@ def test_extract_routing_args_subcommand_plan_id_left_in_place(monkeypatch):
     assert called == [], 'extract_routing_args must not invoke manage-status for subcommand --plan-id'
 
 
+def test_extract_routing_args_comments_stage_plan_id_left_in_place(monkeypatch):
+    """``--plan-id`` AFTER the ``comments-stage`` token MUST NOT be consumed by routing.
+
+    Regression for the bug where ``comments-stage`` was missing from
+    ``_SUBCOMMAND_TOKENS``, causing ``_split_at_subcommand`` to treat the entire
+    argv as router-level prefix and silently strip the subcommand's own
+    ``--plan-id``.
+    """
+    import resolve_project_dir as _routing
+    from ci_base import extract_routing_args
+
+    called: list[bool] = []
+
+    def fake_query(_pid):
+        called.append(True)
+        return (True, '/tmp/should-not-resolve')
+
+    monkeypatch.setattr(_routing, '_query_worktree_path', fake_query)
+    resolved, remaining = extract_routing_args(
+        ['comments-stage', '--pr-number', '123', '--plan-id', 'my-plan'],
+    )
+    # No router-level routing → resolved is None, subcommand --plan-id preserved.
+    assert resolved is None
+    assert '--plan-id' in remaining
+    assert 'my-plan' in remaining
+    assert called == [], 'extract_routing_args must not invoke manage-status for subcommand --plan-id'
+
+
+def test_extract_routing_args_fetch_comments_plan_id_left_in_place(monkeypatch):
+    """``--plan-id`` AFTER the ``fetch-comments`` token MUST NOT be consumed by routing.
+
+    Regression for the bug where ``fetch-comments`` was missing from
+    ``_SUBCOMMAND_TOKENS``, causing ``_split_at_subcommand`` to treat the entire
+    argv as router-level prefix and silently strip the subcommand's own
+    ``--plan-id``.
+    """
+    import resolve_project_dir as _routing
+    from ci_base import extract_routing_args
+
+    called: list[bool] = []
+
+    def fake_query(_pid):
+        called.append(True)
+        return (True, '/tmp/should-not-resolve')
+
+    monkeypatch.setattr(_routing, '_query_worktree_path', fake_query)
+    resolved, remaining = extract_routing_args(
+        ['fetch-comments', '--pr', '5', '--plan-id', 'my-plan'],
+    )
+    # No router-level routing → resolved is None, subcommand --plan-id preserved.
+    assert resolved is None
+    assert '--plan-id' in remaining
+    assert 'my-plan' in remaining
+    assert called == [], 'extract_routing_args must not invoke manage-status for subcommand --plan-id'
+
+
 # Silence unused-import warnings caused by the fixtures above.
 _ = (os, tempfile, subprocess)
