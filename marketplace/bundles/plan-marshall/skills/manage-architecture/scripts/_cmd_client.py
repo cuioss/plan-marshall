@@ -8,11 +8,10 @@ diff-modules.
 Persistence model: ``_project.json`` and per-module ``enriched.json`` live on
 disk under ``.plan/project-architecture/``; per-module ``derived.json`` is
 ephemeral — every reader call resolves derived data via
-``_architecture_core.crawl_module_derived`` (alias ``load_module_derived``)
-which crawls the live worktree filesystem rooted at ``args.project_dir`` /
-``project_dir``. Every public reader in this module threads ``project_dir``
-through to the core helpers; nothing falls back to ``Path.cwd()`` or
-``git rev-parse``.
+``_architecture_core.load_module_derived`` which crawls the live worktree
+filesystem rooted at ``args.project_dir`` / ``project_dir``. Every public
+reader in this module threads ``project_dir`` through to the core helpers;
+nothing falls back to ``Path.cwd()`` or ``git rev-parse``.
 """
 
 import fnmatch
@@ -27,7 +26,6 @@ from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundInProjectError,
     crawl_all_modules,
-    crawl_module_derived,
     error_result_command_not_found,
     error_result_module_not_found,
     get_root_module,
