@@ -2,7 +2,7 @@
 
 Configure dynamic terminal titles + statusline for Claude Code sessions. Writes hook entries, a `statusLine` command, and the `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` env key into `./.claude/settings.local.json` (project-local, per-developer, gitignored by Claude Code convention) so each terminal tab reflects the active plan-marshall phase and live status (`running`, `waiting`, `idle`, `done`).
 
-The hooks invoke `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/set_terminal_title.py` by absolute path — no executor or plugin cache dependency at runtime.
+The hooks invoke `set_terminal_title.py` by absolute path resolved from `${PLUGIN_ROOT}` (the plugin-cache install location — see Step 2). The wired path points at `{PLUGIN_ROOT}/plan-marshall/<version>/skills/plan-marshall/scripts/set_terminal_title.py`, so each hook invocation depends on the plugin cache being present and current.
 
 ---
 

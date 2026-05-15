@@ -276,21 +276,70 @@ class TestEmitOsc(ScriptTestCase):
 
         self.assertEqual(written, ['\x1b]0;hello\x07'])
 
-    def test_falls_back_to_stdout_when_tty_unavailable(self):
+    def test_emits_nothing_to_stdout_when_tty_unavailable(self):
         """When /dev/tty cannot be opened (TTY-less hook subprocess under
-        VS Code), _emit_osc must emit the OSC escape to sys.stdout so the
-        controlling terminal still sees the title update."""
+        Claude Code's captured-stdio model), _emit_osc must exit silently
+        without writing any OSC bytes to sys.stdout.
+
+        Claude Code's hook parser consumes sys.stdout; writing OSC bytes
+        there surfaces as visible escape-sequence text in the user's
+        session (or is silently dropped). The legitimate stdout-emitting
+        path is --statusline in ``main`` — _emit_osc is reached only on
+        non-statusline (hook) invocations.
+        """
         fake_stdout = io.StringIO()
         with (
             mock.patch('builtins.open', side_effect=OSError('no tty')),
             mock.patch.object(set_terminal_title.sys, 'stdout', fake_stdout),
         ):
+            # Must not raise and must not write to stdout.
             set_terminal_title._emit_osc('hello')
 
         captured = fake_stdout.getvalue()
-        self.assertIn('\033]0;', captured)
-        self.assertIn('\007', captured)
-        self.assertIn('hello', captured)
+        self.assertEqual(captured, '')
+        # Defensive: no ESC]0;…BEL substring anywhere on stdout.
+        self.assertNotIn('\033]0;', captured)
+        self.assertNotIn('\x07', captured)
+
+    def test_hook_path_emits_no_osc_to_stdout_when_tty_unavailable_running(self):
+        """End-to-end via main(): a hook invocation with running status and
+        /dev/tty unavailable must produce zero OSC bytes on sys.stdout and
+        exit cleanly. Mirrors the captured-stdio shape under Claude Code's
+        hook subprocess where stdout is consumed by the hook parser."""
+        fake_stdout = io.StringIO()
+        env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
+        with (
+            mock.patch('builtins.open', side_effect=OSError('no tty')),
+            mock.patch.object(set_terminal_title.sys, 'stdout', fake_stdout),
+            mock.patch.object(set_terminal_title.sys, 'stdin', io.StringIO('')),
+            mock.patch.dict(os.environ, env, clear=True),
+        ):
+            exit_code = set_terminal_title.main(['running'])
+
+        self.assertEqual(exit_code, 0)
+        captured = fake_stdout.getvalue()
+        self.assertEqual(captured, '')
+        self.assertNotIn('\033]0;', captured)
+        self.assertNotIn('\x07', captured)
+
+    def test_hook_path_emits_no_osc_to_stdout_when_tty_unavailable_idle(self):
+        """Same captured-stdio shape, but with idle status — the Notification/
+        Stop hooks fire this path and likewise must leak nothing to stdout."""
+        fake_stdout = io.StringIO()
+        env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
+        with (
+            mock.patch('builtins.open', side_effect=OSError('no tty')),
+            mock.patch.object(set_terminal_title.sys, 'stdout', fake_stdout),
+            mock.patch.object(set_terminal_title.sys, 'stdin', io.StringIO('')),
+            mock.patch.dict(os.environ, env, clear=True),
+        ):
+            exit_code = set_terminal_title.main(['idle'])
+
+        self.assertEqual(exit_code, 0)
+        captured = fake_stdout.getvalue()
+        self.assertEqual(captured, '')
+        self.assertNotIn('\033]0;', captured)
+        self.assertNotIn('\x07', captured)
 
 
 class TestCliIntegration(ScriptTestCase):
