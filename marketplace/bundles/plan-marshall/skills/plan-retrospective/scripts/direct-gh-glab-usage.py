@@ -21,7 +21,7 @@ matches the convention in ``analyze-logs.py`` and
 fragments regardless of whether individual aspects found issues.
 
 Usage:
-    python3 direct-gh-glab-usage.py run --plan-id my-plan --mode live
+    python3 direct-gh-glab-usage.py run --plan-id EXAMPLE-PLAN --mode live
     python3 direct-gh-glab-usage.py run --archived-plan-path /abs --mode archived
 """
 

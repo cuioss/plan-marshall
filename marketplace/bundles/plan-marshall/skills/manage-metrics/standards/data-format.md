@@ -135,7 +135,7 @@ modelled as instantaneous handoffs.
 
 ```toon
 status: success
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 prev_phase: 1-init
 next_phase: 2-refine
 end_time: 2026-03-27T10:03:00+00:00
@@ -167,7 +167,7 @@ Written by `accumulate-agent-usage`, read as fallback by `end-phase` and `phase-
 ### Format
 
 ```toon
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 phase: 6-finalize
 total_tokens: 84211
 tool_uses: 38

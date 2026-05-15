@@ -213,10 +213,10 @@ When `/plan-marshall` runs phases 5-7, verify after each task: task started → 
 
 ## Common Violations
 
-1. **Direct status read** — `Read .plan/plans/my-plan/status.toon`. Use `manage-status:manage_status read --plan-id my-plan`. Direct reads bypass the managed parser, may see partial data during atomic writes, and skip script validation.
+1. **Direct status read** — `Read .plan/plans/EXAMPLE-PLAN/status.toon`. Use `manage-status:manage_status read --plan-id EXAMPLE-PLAN`. Direct reads bypass the managed parser, may see partial data during atomic writes, and skip script validation.
 2. **Missing work-log entry** — an artifact is created but no work-log entry exists. Breaks the audit trail and blocks debugging/progress tracking.
 3. **Stale status after transition** — all tasks are done but `current_phase` is still the old phase. Phase routing will execute the wrong phase and the plan lifecycle breaks.
-4. **Direct file creation** — `Write .plan/plans/my-plan/tasks/TASK-003.toon`. Use `manage-tasks add` (singular script name `manage-task`, full notation `plan-marshall:manage-tasks:manage-tasks`) with the task definition passed via stdin heredoc to avoid shell metacharacter issues. Bypassing this skips numbering, validation, and work-log entries.
+4. **Direct file creation** — `Write .plan/plans/EXAMPLE-PLAN/tasks/TASK-003.toon`. Use `manage-tasks add` (singular script name `manage-task`, full notation `plan-marshall:manage-tasks:manage-tasks`) with the task definition passed via stdin heredoc to avoid shell metacharacter issues. Bypassing this skips numbering, validation, and work-log entries.
 
 ## Exception Handling
 

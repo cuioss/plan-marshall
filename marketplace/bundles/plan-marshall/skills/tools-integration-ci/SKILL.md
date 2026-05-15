@@ -134,13 +134,13 @@ The router implements the canonical two-state contract:
 ```bash
 # Preferred: bind the call to a plan's worktree by id.
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
-  --plan-id my-plan \
-  pr view --head my-plan-branch
+  --plan-id EXAMPLE-PLAN \
+  pr view --head EXAMPLE-PLAN-branch
 
 # Escape hatch: bind to an explicit path (test fixtures, ad-hoc).
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
   --project-dir <worktree_path> \
-  pr view --head my-plan-branch
+  pr view --head EXAMPLE-PLAN-branch
 ```
 
 Both flags are consumed by the `ci.py` router before the provider

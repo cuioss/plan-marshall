@@ -41,7 +41,7 @@ Scan TASK-*.json files for one plan or for every plan under `.plan/local/plans/`
 ```bash
 # Single plan
 python3 .plan/execute-script.py plan-marshall:plan-doctor:plan_doctor scan \
-  --plan-id my-plan
+  --plan-id EXAMPLE-PLAN
 
 # Every plan in the inventory
 python3 .plan/execute-script.py plan-marshall:plan-doctor:plan_doctor scan --all
@@ -65,7 +65,7 @@ Scan a single explicit TASK-*.json file. Useful for ad-hoc validation when a pla
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-doctor:plan_doctor scan-task-file \
-  --plan-id my-plan \
+  --plan-id EXAMPLE-PLAN \
   --task-file /absolute/path/to/TASK-001.json
 ```
 
@@ -87,8 +87,8 @@ status: success
 checked_files: 12
 findings_count: 2
 findings[2]{plan_id,task_file,line,token,reason}:
-  my-plan,TASK-003.json,1,2099-01-01-00-001,phantom_lesson_id
-  my-plan,TASK-007.json,1,2099-12-31-23-999,phantom_lesson_id
+  EXAMPLE-PLAN,TASK-003.json,1,2099-01-01-00-001,phantom_lesson_id
+  EXAMPLE-PLAN,TASK-007.json,1,2099-12-31-23-999,phantom_lesson_id
 summary:
   plans_scanned: 1
   emit_to_qgate: true

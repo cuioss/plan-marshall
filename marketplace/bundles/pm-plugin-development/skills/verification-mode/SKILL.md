@@ -385,11 +385,11 @@ Verification mode is working correctly when:
 ## Example Session
 
 ```
-User: Run the init phase for my-plan
+User: Run the init phase for EXAMPLE-PLAN
 
 Claude: Verification Mode Active - All operations will stop on failures, resolution issues, or workarounds for analysis.
 
-Executing plan-init for my-plan...
+Executing plan-init for EXAMPLE-PLAN...
 
 ## SCRIPT FAILURE Analysis Required
 

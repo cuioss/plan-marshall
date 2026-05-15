@@ -547,8 +547,23 @@ def test_consumers_require_plan_id():
 
 @pytest.fixture
 def plan_base_env(tmp_path, monkeypatch):
-    """Point PLAN_BASE_DIR at a temporary directory so get_plan_dir is sandboxed."""
+    """Point PLAN_BASE_DIR at a temporary directory so get_plan_dir is sandboxed.
+
+    Also seeds an initialized plan directory for the conventional ``my-plan``
+    plan_id used by the body-store happy-path tests. The
+    ``ci_base.prepare_body`` script-side guard (lesson 2026-05-15-X) now
+    requires the plan dir to contain a ``status.json`` sentinel before any
+    scratch path is materialised; without this seed every existing
+    prepare-body test would fail.
+
+    Tests that exercise the guard's rejection path (unknown plan_id, plan
+    dir missing status.json) deliberately use a DIFFERENT plan_id so the
+    seed below does not satisfy the guard for them.
+    """
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    plan_dir = tmp_path / 'plans' / 'my-plan'
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'status.json').write_text('{}', encoding='utf-8')
     return tmp_path
 
 
@@ -599,6 +614,70 @@ def test_prepare_body_rejects_invalid_slot(plan_base_env):
     result = prepare_body('my-plan', BODY_KIND_PR_CREATE, slot='BAD SLOT')
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_slot'
+
+
+# ---------------------------------------------------------------------------
+# Script-side require_plan_exists guard
+#
+# prepare_body MUST refuse to materialise a body scratch path under a plan
+# directory that does not exist (or exists but lacks status.json). The guard
+# returns the canonical TOON envelope and MUST NOT mkdir the plan tree as a
+# side-effect.
+# ---------------------------------------------------------------------------
+
+
+def test_prepare_body_rejects_unknown_plan_id_no_mkdir(plan_base_env):
+    """Unknown plan_id: prepare_body returns plan_not_found, no plan dir created."""
+    unknown_plan_dir = plan_base_env / 'plans' / 'never-initialized'
+    assert not unknown_plan_dir.exists(), 'pre-condition: plan dir must not exist'
+
+    result = prepare_body('never-initialized', BODY_KIND_PR_CREATE)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'plan_not_found'
+    assert result['plan_id'] == 'never-initialized'
+    assert 'never-initialized' in result['plan_dir']
+    # Side-effect invariant: the guard MUST NOT have created the plan dir
+    # (the orphan-mkdir failure mode this guard exists to prevent).
+    assert not unknown_plan_dir.exists()
+    # And no scratch ci-bodies dir is left behind either.
+    assert not (unknown_plan_dir / 'work' / 'ci-bodies').exists()
+
+
+def test_prepare_body_rejects_plan_dir_missing_status_json_no_mkdir(plan_base_env):
+    """Plan dir exists but no status.json: prepare_body returns plan_not_found."""
+    half_dir = plan_base_env / 'plans' / 'half-initialized'
+    half_dir.mkdir(parents=True)
+    assert not (half_dir / 'status.json').exists()
+
+    result = prepare_body('half-initialized', BODY_KIND_PR_REPLY)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'plan_not_found'
+    assert result['plan_id'] == 'half-initialized'
+    # The pre-existing directory was left untouched — the guard does not
+    # remove it, and it certainly does not auto-create status.json.
+    assert half_dir.is_dir()
+    assert not (half_dir / 'status.json').exists()
+    # The scratch tree was NOT materialised.
+    assert not (half_dir / 'work' / 'ci-bodies').exists()
+
+
+def test_prepare_body_with_initialized_plan_id_continues_to_work(plan_base_env):
+    """Happy path: initialized plan_id (status.json present) → success.
+
+    The `plan_base_env` fixture seeds `my-plan/status.json`. This test pins
+    that the guard does not regress the existing prepare-body contract for
+    in-progress plans.
+    """
+    result = prepare_body('my-plan', BODY_KIND_PR_CREATE)
+
+    assert result['status'] == 'success'
+    assert result['kind'] == BODY_KIND_PR_CREATE
+    assert result['slot'] == 'default'
+    from pathlib import Path as _P
+
+    assert _P(result['path']).parent.exists()
 
 
 def test_read_and_consume_body_returns_content(plan_base_env):

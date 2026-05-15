@@ -17,7 +17,7 @@ The manifest is consumed by ``check-artifact-consistency.py`` and the
 retrospective orchestrator.
 
 Usage:
-    python3 collect-plan-artifacts.py run --plan-id my-plan --mode live
+    python3 collect-plan-artifacts.py run --plan-id EXAMPLE-PLAN --mode live
     python3 collect-plan-artifacts.py run --archived-plan-path /abs/path --mode archived
 """
 

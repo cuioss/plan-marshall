@@ -20,17 +20,20 @@ from pathlib import Path
 import file_ops
 import pytest
 from file_ops import (
+    PlanNotFoundError,
     atomic_write_file,
     base_path,
     ensure_directory,
     generate_markdown_metadata,
     get_base_dir,
     get_metadata_content_split,
+    get_plan_dir,
     get_temp_dir,
     get_worktree_root,
     output_error,
     output_success,
     parse_markdown_metadata,
+    require_plan_exists,
     set_base_dir,
     update_markdown_metadata,
 )
@@ -460,3 +463,86 @@ def test_get_worktree_root_without_git_repo_raises(monkeypatch):
     monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: None)
     with pytest.raises(RuntimeError, match='git repository'):
         get_worktree_root()
+
+
+# =============================================================================
+# require_plan_exists tests
+#
+# The guard rejects (a) plan_id whose plan directory does not exist, and
+# (b) plan_id whose directory exists but is missing the status.json sentinel.
+# On the happy path the resolved Path is returned. Test (a) and (b) also
+# pin the no-side-effect invariant: a guard rejection MUST NOT create any
+# directory on the filesystem.
+
+
+def test_require_plan_exists_unknown_plan_id_raises_plan_not_found(tmp_path, monkeypatch):
+    """Unknown plan_id: directory does not exist → PlanNotFoundError, no mkdir."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    plans_dir = tmp_path / 'plans'
+    # Pre-condition: the plans/ tree does not exist yet.
+    assert not plans_dir.exists()
+
+    with pytest.raises(PlanNotFoundError) as excinfo:
+        require_plan_exists('does-not-exist')
+
+    err = excinfo.value
+    assert err.plan_id == 'does-not-exist'
+    assert err.plan_dir == get_plan_dir('does-not-exist')
+    assert 'does not exist' in err.reason
+    # Side-effect invariant: guard rejection MUST NOT have created the plan dir
+    # (nor the parent plans/ tree).
+    assert not plans_dir.exists()
+    assert not err.plan_dir.exists()
+
+
+def test_require_plan_exists_dir_without_status_json_raises_plan_not_found(
+    tmp_path, monkeypatch
+):
+    """Plan dir exists but lacks status.json → PlanNotFoundError, no mkdir."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    plan_dir = tmp_path / 'plans' / 'half-initialized'
+    plan_dir.mkdir(parents=True)
+    # Sanity: directory exists but no status.json yet.
+    assert plan_dir.is_dir()
+    assert not (plan_dir / 'status.json').exists()
+
+    with pytest.raises(PlanNotFoundError) as excinfo:
+        require_plan_exists('half-initialized')
+
+    err = excinfo.value
+    assert err.plan_id == 'half-initialized'
+    assert err.plan_dir == plan_dir
+    assert 'status.json' in err.reason
+    # The pre-existing (stray) directory is left untouched — the guard MUST
+    # NOT remove it, but it also MUST NOT create a status.json to satisfy
+    # itself.
+    assert plan_dir.is_dir()
+    assert not (plan_dir / 'status.json').exists()
+
+
+def test_require_plan_exists_with_status_json_returns_resolved_path(tmp_path, monkeypatch):
+    """Plan dir with status.json → returns resolved Path (happy path)."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    plan_dir = tmp_path / 'plans' / 'initialized-plan'
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'status.json').write_text('{}', encoding='utf-8')
+
+    result = require_plan_exists('initialized-plan')
+
+    assert result == plan_dir
+    assert result.is_dir()
+    assert (result / 'status.json').is_file()
+
+
+def test_plan_not_found_error_carries_plan_id_plan_dir_reason(tmp_path, monkeypatch):
+    """PlanNotFoundError surfaces structured attributes for TOON envelopes."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+    with pytest.raises(PlanNotFoundError) as excinfo:
+        require_plan_exists('absent')
+
+    err = excinfo.value
+    # Exception message includes plan_id, reason, and the expected plan_dir.
+    assert 'absent' in str(err)
+    assert str(err.plan_dir) in str(err)
+    assert err.reason

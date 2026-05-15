@@ -35,7 +35,7 @@ The check is intentionally narrow — it does not validate plan IDs, hash IDs, c
 A finding shaped like:
 
 ```toon
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 task_file: TASK-007.json
 line: 1
 token: 2026-05-03-21-002

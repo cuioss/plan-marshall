@@ -10,10 +10,10 @@ Storage: TOON format at .plan/local/plans/{plan_id}/execution.toon
 Output: TOON format for API responses
 
 Usage:
-    python3 manage-execution-manifest.py compose --plan-id my-plan \\
+    python3 manage-execution-manifest.py compose --plan-id EXAMPLE-PLAN \\
         --change-type bug_fix --track simple --scope-estimate surgical
-    python3 manage-execution-manifest.py read --plan-id my-plan
-    python3 manage-execution-manifest.py validate --plan-id my-plan
+    python3 manage-execution-manifest.py read --plan-id EXAMPLE-PLAN
+    python3 manage-execution-manifest.py validate --plan-id EXAMPLE-PLAN
 """
 
 import argparse

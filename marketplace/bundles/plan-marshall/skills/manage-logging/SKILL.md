@@ -108,7 +108,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ```toon
 status: success
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 log_type: work
 total_entries: 5
 showing: 3
@@ -130,40 +130,40 @@ entries:
 ```bash
 # Write: Script execution logging
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  script --plan-id my-plan --level INFO --message "plan-marshall:manage-task:manage-task add (0.15s)"
+  script --plan-id EXAMPLE-PLAN --level INFO --message "plan-marshall:manage-task:manage-task add (0.15s)"
 
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  script --plan-id my-plan --level ERROR --message "plan-marshall:manage-task:manage-task add failed (exit 1)"
+  script --plan-id EXAMPLE-PLAN --level ERROR --message "plan-marshall:manage-task:manage-task add failed (exit 1)"
 
 # Write: Work logging (include [CATEGORY] (caller) prefix)
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id my-plan --level INFO --message "[ARTIFACT] (plan-marshall:phase-1-init) Created deliverable: auth module"
+  work --plan-id EXAMPLE-PLAN --level INFO --message "[ARTIFACT] (plan-marshall:phase-1-init) Created deliverable: auth module"
 
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id my-plan --level WARNING --message "[STATUS] (plan-marshall:phase-5-execute) Skipped validation step"
+  work --plan-id EXAMPLE-PLAN --level WARNING --message "[STATUS] (plan-marshall:phase-5-execute) Skipped validation step"
 
 # Write: Decision logging (NO [DECISION] prefix - file is the category)
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id my-plan --level INFO --message "(plan-marshall:phase-1-init) Detected domain: java - pom.xml found"
+  decision --plan-id EXAMPLE-PLAN --level INFO --message "(plan-marshall:phase-1-init) Detected domain: java - pom.xml found"
 
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id my-plan --level INFO --message "(pm-plugin-development:ext-outline-workflow) Scope: bundles=all"
+  decision --plan-id EXAMPLE-PLAN --level INFO --message "(pm-plugin-development:ext-outline-workflow) Scope: bundles=all"
 
 # Read: All work log entries
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  read --plan-id my-plan --type work
+  read --plan-id EXAMPLE-PLAN --type work
 
 # Read: All decision log entries
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  read --plan-id my-plan --type decision
+  read --plan-id EXAMPLE-PLAN --type decision
 
 # Read: Last 5 work log entries
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  read --plan-id my-plan --type work --limit 5
+  read --plan-id EXAMPLE-PLAN --type work --limit 5
 
 # Read: Work log entries for 1-init phase only
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  read --plan-id my-plan --type work --phase 1-init
+  read --plan-id EXAMPLE-PLAN --type work --phase 1-init
 ```
 
 ---
@@ -282,7 +282,7 @@ from plan_logging import log_entry
 log_entry('script', 'global', 'INFO', '[MY-COMPONENT] Processing started')
 
 # Log to plan-specific log
-log_entry('work', 'my-plan', 'INFO', '[ARTIFACT] Created deliverable')
+log_entry('work', 'EXAMPLE-PLAN', 'INFO', '[ARTIFACT] Created deliverable')
 ```
 
 **Note**: IDE warnings about unresolved imports are expected - PYTHONPATH is set at runtime by the executor.

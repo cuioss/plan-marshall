@@ -7,13 +7,13 @@ Storage: JSON format (.plan/plans/{plan_id}/references.json)
 Output: TOON format for API responses
 
 Usage:
-    python3 manage-references.py create --plan-id my-plan --branch feature/x
-    python3 manage-references.py read --plan-id my-plan
-    python3 manage-references.py get --plan-id my-plan --field branch
-    python3 manage-references.py set --plan-id my-plan --field branch --value feature/x
-    python3 manage-references.py add-file --plan-id my-plan --file src/Main.java
-    python3 manage-references.py add-list --plan-id my-plan --field affected_files --values file1.md,file2.md
-    python3 manage-references.py set-list --plan-id my-plan --field affected_files --values file1.md,file2.md
+    python3 manage-references.py create --plan-id EXAMPLE-PLAN --branch feature/x
+    python3 manage-references.py read --plan-id EXAMPLE-PLAN
+    python3 manage-references.py get --plan-id EXAMPLE-PLAN --field branch
+    python3 manage-references.py set --plan-id EXAMPLE-PLAN --field branch --value feature/x
+    python3 manage-references.py add-file --plan-id EXAMPLE-PLAN --file src/Main.java
+    python3 manage-references.py add-list --plan-id EXAMPLE-PLAN --field affected_files --values file1.md,file2.md
+    python3 manage-references.py set-list --plan-id EXAMPLE-PLAN --field affected_files --values file1.md,file2.md
 """
 
 import argparse

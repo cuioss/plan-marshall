@@ -571,7 +571,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Fail criteria**: At least one unsuppressed match exists across patterns WL-A, WL-B, or WL-C — emit one finding per unsuppressed match.
 
-**Positive example (WL-A)**: Outline deliverable modifies `marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md` and the diff introduces `cd /Users/foo/.claude/worktrees/my-plan && git status`. WL-A grep matches; line is not under an "Anti-pattern" marker; finding emitted citing `worktree-handling.md`.
+**Positive example (WL-A)**: Outline deliverable modifies `marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md` and the diff introduces `cd /Users/foo/.claude/worktrees/EXAMPLE-PLAN && git status`. WL-A grep matches; line is not under an "Anti-pattern" marker; finding emitted citing `worktree-handling.md`.
 
 **Positive example (WL-B)**: Outline deliverable modifies an agent file that contains `worktree_path: /Users/oliver/git/plan-marshall/.claude/worktrees/foo`. WL-B grep matches; finding emitted citing the TASK-4 migration.
 
