@@ -98,11 +98,18 @@ def test_sync_engine_writes_into_versioned_cache_subdirs(tmp_path: Path):
 
 
 @pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
-def test_sync_engine_handles_unknown_version(tmp_path: Path):
+def test_sync_engine_skips_directories_without_plugin_json(tmp_path: Path):
+    # Directories under target/claude/ that lack ``.claude-plugin/plugin.json``
+    # are NOT bundles and must NOT be rsynced into the cache. Specifically,
+    # the top-level ``.claude-plugin/`` directory holds the marketplace.json
+    # registration manifest, not bundle content; and stray non-bundle dirs
+    # may exist on a developer machine. Both are skipped.
     target = tmp_path / 'target' / 'claude'
     cache = tmp_path / 'cache'
-    # Bundle with no plugin.json → version resolves to 'unknown'
-    _write(target / 'demo' / 'README.md', '# demo\n')
+    _write(target / 'noplugin' / 'README.md', '# no plugin\n')
+    _write(target / '.claude-plugin' / 'marketplace.json', '{}\n')
+    _write(target / 'real-bundle' / '.claude-plugin' / 'plugin.json', '{"version": "1.0.0"}\n')
+    _write(target / 'real-bundle' / 'agents' / 'demo.md', '---\nname: demo\n---\n')
 
     result = _run(
         '--source-root', str(target),
@@ -110,7 +117,9 @@ def test_sync_engine_handles_unknown_version(tmp_path: Path):
         '--skip-staleness-guard',
     )
     assert result.returncode == 0
-    assert (cache / 'demo' / 'unknown' / 'README.md').is_file()
+    assert not (cache / 'noplugin').exists()
+    assert not (cache / '.claude-plugin').exists()
+    assert (cache / 'real-bundle' / '1.0.0' / '.claude-plugin' / 'plugin.json').is_file()
 
 
 # ---------------------------------------------------------------------------

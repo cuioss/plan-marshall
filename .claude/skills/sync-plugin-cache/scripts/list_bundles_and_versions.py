@@ -32,6 +32,16 @@ def _read_version(manifest: Path) -> str:
     return version if isinstance(version, str) and version else 'unknown'
 
 
+def _is_bundle_dir(path: Path) -> bool:
+    """A directory is a bundle iff it carries its own ``.claude-plugin/plugin.json``.
+
+    Filters out non-bundle directories under ``target/claude/`` —
+    specifically the top-level ``.claude-plugin/`` directory that holds
+    the marketplace.json registration manifest.
+    """
+    return path.is_dir() and (path / '.claude-plugin' / 'plugin.json').is_file()
+
+
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description='List bundles and their versions in TOON format.',
@@ -57,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
 
     pairs: list[tuple[str, str]] = []
     if base.is_dir():
-        for bundle_dir in sorted(p for p in base.iterdir() if p.is_dir()):
+        for bundle_dir in sorted(p for p in base.iterdir() if _is_bundle_dir(p)):
             manifest = bundle_dir / '.claude-plugin' / 'plugin.json'
             pairs.append((bundle_dir.name, _read_version(manifest)))
 

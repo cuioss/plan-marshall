@@ -41,6 +41,20 @@ def fake_marketplace(tmp_path: Path) -> tuple[Path, Path]:
     }
     _write(bundle / '.claude-plugin' / 'plugin.json', json.dumps(plugin_doc, indent=2) + '\n')
     _write(bundle / 'skills' / 'alpha' / 'SKILL.md', '---\nname: alpha\ndescription: a\n---\n')
+
+    # The Claude target's emit step also generates a top-level marketplace.json
+    # from the source marketplace manifest; provide a minimal one so emit mode
+    # succeeds.
+    marketplace_manifest = {
+        'name': 'fake-marketplace',
+        'plugins': [
+            {'name': 'demo', 'description': 'demo', 'source': './bundles/demo'},
+        ],
+    }
+    _write(
+        tmp_path / '.claude-plugin' / 'marketplace.json',
+        json.dumps(marketplace_manifest, indent=2) + '\n',
+    )
     return marketplace, target
 
 

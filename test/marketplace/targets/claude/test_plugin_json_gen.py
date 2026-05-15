@@ -47,8 +47,10 @@ def test_discover_components_sorts_arrays(bundle_dir: Path):
     discovered = discover_components(bundle_dir)
     assert discovered['agents'] == ['./agents/zeta-agent.md']
     assert discovered['commands'] == []
-    # Sorted alphabetically — alpha before zeta.
-    assert discovered['skills'] == ['./skills/alpha-skill', './skills/zeta-skill']
+    # ``skills`` is emitted empty so the runtime's default ``skills/`` scan
+    # owns skill discovery (avoids the double-load failure mode documented
+    # in the module docstring).
+    assert discovered['skills'] == []
 
 
 def test_build_plugin_json_passes_top_level_fields(bundle_dir: Path):
@@ -64,8 +66,9 @@ def test_build_plugin_json_passes_top_level_fields(bundle_dir: Path):
 
 def test_build_plugin_json_replaces_component_arrays(bundle_dir: Path):
     output = build_plugin_json(bundle_dir)
-    # Sorted regardless of committed order.
-    assert output['skills'] == ['./skills/alpha-skill', './skills/zeta-skill']
+    # ``skills`` is intentionally empty so the runtime's default skills/
+    # folder scan handles skill discovery without doubling.
+    assert output['skills'] == []
     assert output['commands'] == []
 
 
@@ -78,23 +81,21 @@ def test_generate_plugin_json_is_deterministic(bundle_dir: Path):
     assert parsed['name'] == 'demo'
 
 
-def test_orphan_source_file_appears_in_generated_output(bundle_dir: Path):
-    # Add a new skill on disk that the committed plugin.json does NOT list.
+def test_skill_changes_do_not_alter_plugin_json_skills(bundle_dir: Path):
+    # Adding or removing skill directories on disk must NOT change the
+    # emitted ``skills`` array — the runtime owns skill discovery via its
+    # default ``skills/`` folder scan.
     _write(bundle_dir / 'skills' / 'new-skill' / 'SKILL.md', '---\nname: new-skill\ndescription: n\n---\n')
-    output = build_plugin_json(bundle_dir)
-    assert './skills/new-skill' in output['skills']
+    output_after_add = build_plugin_json(bundle_dir)
+    assert output_after_add['skills'] == []
 
-
-def test_missing_source_file_absent_from_generated_output(bundle_dir: Path):
-    # Remove a skill from disk; the regenerator should drop it even if the
-    # committed plugin.json still mentions it.
     skill_dir = bundle_dir / 'skills' / 'zeta-skill'
     for child in skill_dir.rglob('*'):
         if child.is_file():
             child.unlink()
     skill_dir.rmdir()
-    output = build_plugin_json(bundle_dir)
-    assert './skills/zeta-skill' not in output['skills']
+    output_after_remove = build_plugin_json(bundle_dir)
+    assert output_after_remove['skills'] == []
 
 
 def test_missing_committed_plugin_json_raises(tmp_path: Path):
