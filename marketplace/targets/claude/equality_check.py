@@ -93,6 +93,8 @@ def _check_marketplace_json(target_dir: Path, marketplace_src: Path) -> tuple[bo
         committed = json.loads(emitted.read_text(encoding='utf-8'))
     except json.JSONDecodeError as exc:
         return True, f'target/claude/.claude-plugin/marketplace.json is not valid JSON: {exc}'
+    if not isinstance(committed, dict):
+        return True, 'target/claude/.claude-plugin/marketplace.json is not a JSON object'
     generated = build_marketplace_json(marketplace_src)
     if committed == generated:
         return False, None

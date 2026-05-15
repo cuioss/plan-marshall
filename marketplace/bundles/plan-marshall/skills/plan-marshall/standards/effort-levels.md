@@ -1,4 +1,4 @@
-I only # Model Levels — Level → Primitive Binding
+# Model Levels — Level → Primitive Binding
 
 > Single source of truth for the ordinal level → `(model, effort)` primitive binding consumed by the variant generator and by anyone reading the schema.
 

@@ -30,7 +30,10 @@ def _read_source_marketplace(marketplace_src: Path) -> dict:
     manifest = marketplace_src / '.claude-plugin' / 'marketplace.json'
     if not manifest.exists():
         raise FileNotFoundError(f'Source marketplace manifest not found: {manifest}')
-    return json.loads(manifest.read_text(encoding='utf-8'))
+    data = json.loads(manifest.read_text(encoding='utf-8'))
+    if not isinstance(data, dict):
+        raise ValueError(f'Marketplace manifest must be a JSON object: {manifest}')
+    return data
 
 
 def _rewrite_plugin_source(source_value: str, plugin_name: str) -> str:
