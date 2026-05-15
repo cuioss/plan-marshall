@@ -22,12 +22,19 @@ canonical adds the ``implements:`` declaration but the emitted
 ``plugin.json`` still lists only the no-suffix entry. Marketplace-json
 drift surfaces when (d) a new plugin is added to or removed from the
 source marketplace manifest without re-emitting, or (e) a plugin's
-``source`` path or description changes. The fix in every case is the
-documented one: re-run the Claude target's emit mode so ``target/claude/``
-is regenerated from the current sources. Source ``plugin.json`` files
-under ``marketplace/bundles/{bundle}/.claude-plugin/`` are canonical-only
-and MUST NOT be edited to satisfy the gate — only the build artifact
-under ``target/claude/`` is consulted.
+``source`` path or description changes. Orphan-file drift surfaces
+when (f) an ``agents/`` or ``commands/`` file physically present in
+``target/claude/{bundle}/`` is not declared in the emitted
+``plugin.json`` — for instance, when a source canonical was deleted but
+its previously-emitted variant files lingered in the target tree. The
+fix in every case is the documented one: re-run the Claude target's
+emit mode so ``target/claude/`` is regenerated from the current
+sources (the emitter wipes each bundle's destination directory before
+copying, so orphans are eliminated by a fresh emit). Source
+``plugin.json`` files under
+``marketplace/bundles/{bundle}/.claude-plugin/`` are canonical-only and
+MUST NOT be edited to satisfy the gate — only the build artifact under
+``target/claude/`` is consulted.
 """
 
 from __future__ import annotations
@@ -119,6 +126,21 @@ def _diff_array(bundle: str, field_name: str, committed: list[str], generated: l
     )
 
 
+def _on_disk_entries(target_bundle_dir: Path, subdir: str) -> list[str]:
+    """Return ``./{subdir}/{name}`` entries for every .md file present in
+    ``target_bundle_dir/{subdir}/``. Used to detect orphan files left over
+    from prior emits whose source canonical no longer exists.
+    """
+    folder = target_bundle_dir / subdir
+    if not folder.is_dir():
+        return []
+    return sorted(
+        f'./{subdir}/{p.name}'
+        for p in folder.iterdir()
+        if p.is_file() and p.suffix == '.md' and not p.name.startswith('.')
+    )
+
+
 def check_bundle(bundle_dir: Path, target_dir: Path) -> list[BundleDiff]:
     """Compare the regenerated ``plugin.json`` against the emitted artifact.
 
@@ -127,9 +149,25 @@ def check_bundle(bundle_dir: Path, target_dir: Path) -> list[BundleDiff]:
     are responsible for ensuring the emitted file exists; missing files
     are surfaced by ``run_equality_check`` as a structured diagnostic
     rather than being raised here.
+
+    The check has two layers:
+
+    1. Manifest drift: the emitted ``plugin.json`` arrays (``agents``,
+       ``commands``, ``skills``) must equal the regenerated arrays.
+    2. Orphan files: every ``agents/*.md`` and ``commands/*.md`` file
+       physically present under ``target_dir/{bundle}/`` must appear in
+       the emitted ``plugin.json``'s declared list for its respective
+       field. Files on disk that are not declared (e.g. variants for a
+       source canonical that has since been deleted) surface as drift
+       entries with ``only_in_committed`` populated. This catches the
+       "stale leftover from a previous emit" failure mode that the
+       manifest-only check cannot see — the manifest correctly lists
+       only what source contains, but the on-disk artifact set has
+       drifted past it.
     """
     committed = _read_emitted_plugin_json(bundle_dir, target_dir)
     generated = build_plugin_json(bundle_dir)
+    target_bundle_dir = target_dir / bundle_dir.name
     diffs: list[BundleDiff] = []
     for field_name in ('agents', 'commands', 'skills'):
         committed_arr = list(committed.get(field_name, []) or [])
@@ -137,6 +175,24 @@ def check_bundle(bundle_dir: Path, target_dir: Path) -> list[BundleDiff]:
         diff = _diff_array(bundle_dir.name, field_name, committed_arr, generated_arr)
         if diff is not None:
             diffs.append(diff)
+
+    for subdir in ('agents', 'commands'):
+        declared = set(committed.get(subdir, []) or [])
+        on_disk = set(_on_disk_entries(target_bundle_dir, subdir))
+        orphans = sorted(on_disk - declared)
+        if not orphans:
+            continue
+        diffs.append(
+            BundleDiff(
+                bundle=bundle_dir.name,
+                field=f'{subdir}-orphans',
+                committed=sorted(on_disk),
+                generated=sorted(declared),
+                only_in_committed=orphans,
+                only_in_generated=[],
+            )
+        )
+
     return diffs
 
 

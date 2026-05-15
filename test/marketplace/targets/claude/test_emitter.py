@@ -115,3 +115,64 @@ def test_emit_bundle_verbatim_directory_structure(fixture_marketplace: Path, tmp
         if p.is_file() and '__pycache__' not in str(p)
     }
     assert expected_files.issubset(actual), actual - expected_files
+
+
+def test_emit_bundle_verbatim_wipes_stale_artifacts(fixture_marketplace: Path, tmp_path: Path):
+    """Pre-emit cleanup: the destination bundle dir is wiped before copying so
+    stale artifacts from a prior emit (e.g. variant files for a source canonical
+    that has since been removed) do NOT linger in the target tree.
+    """
+    bundle_dir = fixture_marketplace / 'demo'
+    out_dir = tmp_path / 'out'
+
+    # Simulate leftovers from a prior emit run: a canonical and its variants
+    # that no longer exist in source, plus a stale skill standards file.
+    stale_canonical = out_dir / 'demo' / 'agents' / 'removed-agent.md'
+    stale_variant = out_dir / 'demo' / 'agents' / 'removed-agent-high.md'
+    stale_skill_file = out_dir / 'demo' / 'skills' / 'deleted-skill' / 'SKILL.md'
+    for stale in (stale_canonical, stale_variant, stale_skill_file):
+        stale.parent.mkdir(parents=True, exist_ok=True)
+        stale.write_text('---\nname: stale\n---\nstale body', encoding='utf-8')
+
+    emit_bundle_verbatim(bundle_dir, out_dir)
+
+    assert not stale_canonical.exists()
+    assert not stale_variant.exists()
+    assert not stale_skill_file.exists()
+    # Fresh source content was emitted in their place.
+    assert (out_dir / 'demo' / 'agents' / 'demo-agent.md').is_file()
+
+
+def test_emit_bundle_verbatim_does_not_touch_sibling_bundles(tmp_path: Path):
+    """The wipe is scoped to the emitting bundle's destination directory —
+    sibling bundles and the top-level ``.claude-plugin/`` (which holds the
+    marketplace.json registration manifest) must NOT be affected.
+    """
+    marketplace = tmp_path / 'bundles'
+    out_dir = tmp_path / 'out'
+    plugin_doc = json.dumps(
+        {'name': 'a', 'version': '0.0.1', 'description': 'a'}, indent=2
+    ) + '\n'
+    _write_bundle(
+        marketplace,
+        'a',
+        {
+            '.claude-plugin/plugin.json': plugin_doc,
+            'agents/a-agent.md': '---\nname: a-agent\n---\nbody',
+        },
+    )
+
+    # Pre-populate the output with a sibling bundle AND a top-level
+    # .claude-plugin/marketplace.json.
+    sibling_file = out_dir / 'b' / 'agents' / 'b-agent.md'
+    sibling_file.parent.mkdir(parents=True, exist_ok=True)
+    sibling_file.write_text('---\nname: b-agent\n---\nbody', encoding='utf-8')
+    top_marketplace = out_dir / '.claude-plugin' / 'marketplace.json'
+    top_marketplace.parent.mkdir(parents=True, exist_ok=True)
+    top_marketplace.write_text('{"name": "marketplace"}\n', encoding='utf-8')
+
+    emit_bundle_verbatim(marketplace / 'a', out_dir)
+
+    assert sibling_file.is_file()
+    assert top_marketplace.is_file()
+    assert (out_dir / 'a' / 'agents' / 'a-agent.md').is_file()

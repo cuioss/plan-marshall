@@ -177,6 +177,54 @@ def test_missing_top_level_marketplace_json_surfaces(clean_marketplace: tuple[Pa
     assert 'marketplace.json' in result.summary
 
 
+def test_orphan_agent_file_in_target_surfaces_drift(clean_marketplace: tuple[Path, Path]):
+    """An ``agents/*.md`` file physically present in target/claude/{bundle}/
+    that is NOT declared in the emitted plugin.json must surface as drift.
+    This catches stale leftovers from a previous emit run (e.g. variants for
+    a source canonical that has since been deleted) which the manifest-only
+    check cannot see.
+    """
+    marketplace, target = clean_marketplace
+    orphan = target / 'demo' / 'agents' / 'ghost-agent.md'
+    orphan.parent.mkdir(parents=True, exist_ok=True)
+    orphan.write_text('---\nname: ghost-agent\n---\nstale body\n', encoding='utf-8')
+
+    diffs = check_bundle(marketplace / 'demo', target)
+    orphan_diff = next((d for d in diffs if d.field == 'agents-orphans'), None)
+    assert orphan_diff is not None
+    assert orphan_diff.only_in_committed == ['./agents/ghost-agent.md']
+
+
+def test_orphan_command_file_in_target_surfaces_drift(clean_marketplace: tuple[Path, Path]):
+    """Same invariant for the ``commands/`` directory: a file on disk that
+    is not declared in the emitted plugin.json surfaces as drift.
+    """
+    marketplace, target = clean_marketplace
+    orphan = target / 'demo' / 'commands' / 'ghost-command.md'
+    orphan.parent.mkdir(parents=True, exist_ok=True)
+    orphan.write_text('---\nname: ghost-command\n---\nstale\n', encoding='utf-8')
+
+    diffs = check_bundle(marketplace / 'demo', target)
+    orphan_diff = next((d for d in diffs if d.field == 'commands-orphans'), None)
+    assert orphan_diff is not None
+    assert orphan_diff.only_in_committed == ['./commands/ghost-command.md']
+
+
+def test_clean_target_has_no_orphan_drift(clean_marketplace: tuple[Path, Path]):
+    """Sanity check: when every on-disk agent/command file IS declared in
+    the emitted plugin.json, no orphan drift is reported.
+    """
+    marketplace, target = clean_marketplace
+    # The fixture emits exactly the declared agent file (./agents/demo-agent.md)
+    # — write it on disk so the orphan check has something to match against.
+    declared_agent = target / 'demo' / 'agents' / 'demo-agent.md'
+    declared_agent.parent.mkdir(parents=True, exist_ok=True)
+    declared_agent.write_text('---\nname: demo-agent\n---\nbody\n', encoding='utf-8')
+
+    diffs = check_bundle(marketplace / 'demo', target)
+    assert not any(d.field.endswith('-orphans') for d in diffs)
+
+
 def test_run_equality_check_summary_mentions_bundles(clean_marketplace: tuple[Path, Path]):
     marketplace, target = clean_marketplace
     new_agent = marketplace / 'demo' / 'agents' / 'second-agent.md'
