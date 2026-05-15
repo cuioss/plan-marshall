@@ -272,7 +272,10 @@ git -C . checkout -b {worktree_branch}
 
 Set `worktree_path` to the empty string (the main-checkout flow uses `.` everywhere `worktree_path` would otherwise apply; see Step 3's `worktree_path` absent → substitute `.` rule).
 
-**Fatal-error contract**: if either branch fails (worktree create exits non-zero, `git checkout -b` exits non-zero, branch already exists with divergent history, etc.), abort the phase fail-loud. Do NOT silently fall back to the main checkout — phase-1's expectation has already committed downstream consumers to the worktree path. Emit the canonical `[ERROR]` line per the Error Handling section and return the structured error TOON; the orchestrator surfaces the failure for human repair.
+**Fatal-error contract**: if either branch fails, abort the phase fail-loud and do NOT silently proceed to the task loop. Emit the canonical `[ERROR]` line per the Error Handling section and return the structured error TOON; the orchestrator surfaces the failure for human repair. The failure driver differs by case:
+
+- **Case A failure** (worktree create exits non-zero, `git worktree add` fails, branch already exists with divergent history at the worktree destination): phase-1's expectation has already committed downstream consumers to the worktree path. Do NOT silently fall back to the main checkout — that would orphan every subsequent `--plan-id`-resolved Bucket B call.
+- **Case B failure** (`git checkout -b {worktree_branch}` exits non-zero, branch already exists with divergent history on the main checkout): the plan is already bound to the main checkout; the failure is the inability to create the feature branch in place. Do NOT silently fall back to `main` or `--no-branch` — phase-1 committed downstream consumers to a dedicated feature branch.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

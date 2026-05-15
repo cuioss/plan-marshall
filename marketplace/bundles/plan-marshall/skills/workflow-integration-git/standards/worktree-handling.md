@@ -64,7 +64,7 @@ Every script and skill that consumes `worktree_path` MUST treat it as a **tri-st
 | `use_worktree == true` AND `worktree_path` empty | states 1-2 — intent recorded but worktree not yet materialized | bind to main checkout for this call; do NOT treat empty path as an error; do NOT auto-create the worktree from outside Step 2.5 |
 | `use_worktree == true` AND `worktree_path` non-empty | state 4 — worktree exists on disk | bind to `worktree_path`; all rules below apply |
 
-The middle row is the load-bearing case. `manage-status get-worktree-path --plan-id X` returns an empty string in states 1-2; callers MUST treat that as "main checkout" rather than as a fail-loud condition. The `--plan-id` two-state contract documented below handles this automatically — Bucket B scripts invoked with `--plan-id` resolve internally and fall back to the main checkout when the path is empty.
+The middle row is the load-bearing case. `manage-status get-worktree-path --plan-id X` returns an empty string in states 1-2; callers MUST treat that as "main checkout" rather than as a fail-loud condition. The `--plan-id` three-state contract documented below handles this automatically — Bucket B scripts invoked with `--plan-id` resolve internally and fall back to the main checkout when the path is empty.
 
 ### Pre-Materialization Bypass
 

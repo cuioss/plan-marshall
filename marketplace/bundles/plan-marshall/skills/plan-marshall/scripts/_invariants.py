@@ -527,13 +527,12 @@ def _capture_worktree_orphan(plan_id: str, metadata: dict[str, Any], phase: str)
         return None
     use_worktree = metadata.get('use_worktree')
     if _is_truthy_metadata(use_worktree):
-        # Metadata-says-true direction is the responsibility of
-        # ``_resolve_worktree_assertion``. The pre-materialization
-        # deferred-pending window is explicit here so retrospective
-        # readers can see the tri-state contract at the invariant level
-        # rather than only at the assertion level.
-        if phase in _PRE_MATERIALIZATION_PHASES:
-            return None
+        # Metadata-says-true direction is the full responsibility of
+        # ``_resolve_worktree_assertion`` — both pre- and
+        # post-materialization phases pass here. ``phase`` is unused in
+        # this branch by design; the parameter is kept on the function
+        # signature for symmetry with the disk-says-true direction below.
+        del phase  # explicit acknowledgement that the truthy branch is phase-agnostic
         return None
     raise WorktreeMetadataDrift(
         plan_id=plan_id,
