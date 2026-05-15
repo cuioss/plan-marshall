@@ -1205,6 +1205,39 @@ class TestGetWorktreePathPreMaterialization:
                 f'pre-materialization shapes have no branch yet.'
             )
 
+    def test_pending_includes_worktree_branch_when_metadata_has_branch(self):
+        """Pending state surfaces worktree_branch when persisted at init time.
+
+        Phase-1-init records the branch intent in metadata before the
+        worktree is materialized. The tri-state response for the pending
+        case MUST include that branch so downstream consumers (e.g. PR
+        review output that reports branch context pre-materialization)
+        can read it from the same envelope as the materialized case.
+
+        Symmetric counterpart to
+        test_pending_omits_worktree_branch_when_unset: when the metadata
+        carries a branch, the pending envelope MUST carry it through.
+        """
+        plan_id = 'wt-pre-mat-with-branch'
+        branch = 'feature/pre-mat-branch'
+        with PlanContext(plan_id=plan_id) as ctx:
+            self._seed_pre_materialization(
+                ctx,
+                plan_id,
+                {
+                    'use_worktree': True,
+                    'worktree_path': '',
+                    'worktree_branch': branch,
+                },
+            )
+            result = cmd_get_worktree_path(Namespace(plan_id=plan_id))
+            assert result['worktree_state'] == 'pending'
+            assert result['not_yet_materialized'] is True
+            assert result.get('worktree_branch') == branch, (
+                f'Pending state dropped worktree_branch from metadata; '
+                f'expected {branch!r}, got {result.get("worktree_branch")!r}.'
+            )
+
     def test_pending_contract_callers_can_branch_on_either_signal(self):
         """Tri-state contract: worktree_state and not_yet_materialized agree.
 

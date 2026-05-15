@@ -229,7 +229,7 @@ def cmd_get_worktree_path(args: argparse.Namespace) -> dict | None:
 
     worktree_path = metadata.get('worktree_path')
     if not worktree_path:
-        return {
+        pending: dict[str, Any] = {
             'status': 'success',
             'plan_id': args.plan_id,
             'use_worktree': True,
@@ -237,6 +237,10 @@ def cmd_get_worktree_path(args: argparse.Namespace) -> dict | None:
             'worktree_path': '',
             'not_yet_materialized': True,
         }
+        worktree_branch = metadata.get('worktree_branch')
+        if worktree_branch:
+            pending['worktree_branch'] = worktree_branch
+        return pending
 
     result: dict[str, Any] = {
         'status': 'success',

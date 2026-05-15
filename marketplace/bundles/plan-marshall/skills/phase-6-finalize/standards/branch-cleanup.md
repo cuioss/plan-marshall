@@ -163,7 +163,7 @@ Then return — do NOT proceed with force-push or merge.
 On a successful rebase, push the rewritten history to the remote with a lease guard:
 
 ```bash
-git -C {worktree_path} push --force-with-lease
+git -C {worktree_path} push origin {worktree_branch} --force-with-lease
 ```
 
 After the force-push, wait for CI to complete on the rebased branch before proceeding to merge:
