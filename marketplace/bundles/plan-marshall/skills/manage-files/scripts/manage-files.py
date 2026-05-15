@@ -9,12 +9,12 @@ NOTE: For typed documents (request.md, solution_outline.md), prefer using
 manage-plan-documents skill which provides validation and templating.
 
 Usage:
-    python3 manage-files.py read --plan-id my-plan --file notes.md
-    python3 manage-files.py write --plan-id my-plan --file notes.md --content "..."
-    python3 manage-files.py list --plan-id my-plan
-    python3 manage-files.py exists --plan-id my-plan --file config.toon
-    python3 manage-files.py remove --plan-id my-plan --file old-file.md
-    python3 manage-files.py mkdir --plan-id my-plan --dir goals
+    python3 manage-files.py read --plan-id EXAMPLE-PLAN --file notes.md
+    python3 manage-files.py write --plan-id EXAMPLE-PLAN --file notes.md --content "..."
+    python3 manage-files.py list --plan-id EXAMPLE-PLAN
+    python3 manage-files.py exists --plan-id EXAMPLE-PLAN --file config.toon
+    python3 manage-files.py remove --plan-id EXAMPLE-PLAN --file old-file.md
+    python3 manage-files.py mkdir --plan-id EXAMPLE-PLAN --dir goals
     python3 manage-files.py discover --root /abs/path --glob "**/*.py" --include-files
 """
 

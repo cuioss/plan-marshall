@@ -272,3 +272,49 @@ def cmd_list(args: argparse.Namespace) -> dict:
             continue
 
     return {'status': 'success', 'total': len(plans), 'plans': plans}
+
+
+def cmd_list_orphans(args: argparse.Namespace) -> dict:  # noqa: ARG001
+    """Discover orphan plan directories (directories without a readable status.json).
+
+    Inverse of ``cmd_list``: walks ``plans_dir.iterdir()`` and collects directory
+    entries that do NOT have a readable ``status.json`` file. Plans with a
+    readable status.json are skipped. The ``archived-plans`` directory (if
+    present as a sibling) is excluded — orphan scanning operates only on the
+    active plans directory returned by ``get_plans_dir()``.
+
+    Output contract:
+        status: success
+        total: N
+        orphans: [{id, path, contents}]
+
+    Each orphan entry includes:
+        - ``id``: directory name
+        - ``path``: absolute filesystem path
+        - ``contents``: sorted list of top-level entry names inside the orphan
+          directory (files and subdirectories). Empty list when the directory
+          has no entries.
+    """
+    plans_dir = get_plans_dir()
+    if not plans_dir.exists():
+        return {'status': 'success', 'total': 0, 'orphans': []}
+
+    orphans = []
+    for plan_dir in sorted(plans_dir.iterdir()):
+        if not plan_dir.is_dir():
+            continue
+
+        # Skip plans WITH a readable status.json — they are valid plans.
+        status = _try_read_status_json(plan_dir)
+        if status:
+            continue
+
+        # Collect top-level contents for caller-side decision making.
+        try:
+            contents = sorted(entry.name for entry in plan_dir.iterdir())
+        except OSError:
+            contents = []
+
+        orphans.append({'id': plan_dir.name, 'path': str(plan_dir), 'contents': contents})
+
+    return {'status': 'success', 'total': len(orphans), 'orphans': orphans}

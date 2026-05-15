@@ -192,7 +192,7 @@ type: bug
 **Query response**:
 ```toon
 status: success
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 total_count: 30
 filtered_count: 15
 

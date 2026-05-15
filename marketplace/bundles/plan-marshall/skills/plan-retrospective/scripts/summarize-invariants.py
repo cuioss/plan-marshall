@@ -15,7 +15,7 @@ Output is a deterministic TOON fragment consumed by the orchestrator and
 interpreted by ``references/invariant-check-summary.md``.
 
 Usage:
-    python3 summarize-invariants.py run --plan-id my-plan --mode live
+    python3 summarize-invariants.py run --plan-id EXAMPLE-PLAN --mode live
     python3 summarize-invariants.py run --archived-plan-path /abs --mode archived
 """
 

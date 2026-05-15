@@ -35,7 +35,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics star
 **Output:**
 ```toon
 status: success
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 phase: 1-init
 start_time: 2026-03-27T10:00:00+00:00
 ```
@@ -66,7 +66,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-
 **Output:**
 ```toon
 status: success
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 phase: 1-init
 end_time: 2026-03-27T10:03:00+00:00
 duration_seconds: 180.0
@@ -85,7 +85,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics gene
 **Output:**
 ```toon
 status: success
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 file: metrics.md
 phases_recorded: 4
 total_duration_seconds: 572.5
@@ -113,14 +113,14 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics prin
 ```toon
 status: error
 error: metrics_md_not_found
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 message: metrics.md not found at {path}
 ```
 or
 ```toon
 status: error
 error: phase_breakdown_section_not_found
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 message: ## Phase Breakdown heading not found in metrics.md
 ```
 
@@ -151,7 +151,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phas
 **Output:**
 ```toon
 status: success
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 prev_phase: 1-init
 next_phase: 2-refine
 end_time: 2026-03-27T10:03:00+00:00
@@ -198,7 +198,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics accu
 **Output:**
 ```toon
 status: success
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 phase: 6-finalize
 total_tokens: 84211
 tool_uses: 38
@@ -247,7 +247,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics reco
 **Output:**
 ```toon
 status: success
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 phase: 5-execute
 termination_cause: voluntary_checkpoint
 total_tokens: 84211
@@ -284,7 +284,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics comp
 
 ```toon
 status: success
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 anchor_plan: 2026-05-08-cluster-02-build-system-deploy-target
 anchor_file: .plan/temp/refactor-execution-context-anchor/anchors.toon
 threshold_percent: 20.0
@@ -324,7 +324,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics enri
 **Output:**
 ```toon
 status: success
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 enriched: true
 input_tokens: 450000
 output_tokens: 35000

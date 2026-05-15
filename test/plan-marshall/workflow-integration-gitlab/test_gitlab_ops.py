@@ -242,6 +242,13 @@ def test_main_project_dir_sets_default_cwd(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     monkeypatch.setattr(ci_base, '_DEFAULT_CWD', None, raising=False)
 
+    # Seed the plan dir so ci_base.prepare_body's require_plan_exists guard
+    # (lesson 2026-05-15-X) accepts the plan and lets prepare-body emit its
+    # success envelope.
+    plan_dir = tmp_path / 'plans' / 'test-plan'
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'status.json').write_text('{}', encoding='utf-8')
+
     worktree = str(tmp_path / 'worktree')
     monkeypatch.setattr(
         sys,
@@ -273,6 +280,11 @@ def test_main_project_dir_equals_form(tmp_path, monkeypatch, capsys):
 
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     monkeypatch.setattr(ci_base, '_DEFAULT_CWD', None, raising=False)
+
+    # Seed status.json so the require_plan_exists guard accepts eq-plan.
+    plan_dir = tmp_path / 'plans' / 'eq-plan'
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'status.json').write_text('{}', encoding='utf-8')
 
     worktree = str(tmp_path / 'wt2')
     monkeypatch.setattr(

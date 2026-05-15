@@ -45,13 +45,13 @@ This skill is the GitLab provider in the CI provider model. The central dispatch
 
 ```bash
 # Producer-side: fetch + pre-filter + store one pr-comment finding per surviving comment
-python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab_pr comments-stage --pr-number 123 --plan-id my-plan
+python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab_pr comments-stage --pr-number 123 --plan-id EXAMPLE-PLAN
 
 # Raw fetch (no filtering, no storage) — for ad-hoc inspection
 python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab_pr fetch-comments --pr 123
 
 # LLM consumer reads stored findings via manage-findings
-python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query --plan-id my-plan --type pr-comment
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query --plan-id EXAMPLE-PLAN --type pr-comment
 ```
 
 ## Scripts

@@ -14,9 +14,9 @@ deterministic TOON fragments that the retrospective orchestrator pipes into
 Cross-check matrix is documented in ``standards/manifest-crosscheck.md``.
 
 Usage:
-    python3 check-manifest-consistency.py run --plan-id my-plan --mode live
+    python3 check-manifest-consistency.py run --plan-id EXAMPLE-PLAN --mode live
     python3 check-manifest-consistency.py run --archived-plan-path /abs --mode archived
-    python3 check-manifest-consistency.py run --plan-id my-plan --mode live \\
+    python3 check-manifest-consistency.py run --plan-id EXAMPLE-PLAN --mode live \\
         --diff-file /abs/path/to/diff.txt   # for tests / offline runs
 """
 

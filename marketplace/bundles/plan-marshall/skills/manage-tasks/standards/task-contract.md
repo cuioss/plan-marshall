@@ -472,7 +472,7 @@ TOON task definition consumed by `commit-add`. Field types:
 
 ```toon
 status: success
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 tasks_created: 3
 starting_task_number: 4
 total_tasks: 6

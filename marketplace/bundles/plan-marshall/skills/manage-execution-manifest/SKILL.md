@@ -100,7 +100,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 **Output** (TOON):
 ```toon
 status: success
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 file: execution.toon
 created: true
 manifest_version: 1
@@ -142,7 +142,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 **Output** (TOON):
 ```toon
 status: success
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 valid: true
 phase_5_unknown_steps_count: 0
 phase_6_unknown_steps_count: 0
@@ -174,7 +174,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 **Output (single-step form)**:
 ```toon
 status: success
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 step_id: commit-push
 standards_path: marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/commit-push.md
 loadable: true
@@ -183,7 +183,7 @@ loadable: true
 When the standards file is missing or unreadable, `loadable: false` and a `message` field carries the canonical actionable phrasing:
 ```toon
 status: success
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 step_id: missing-step
 standards_path: marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/missing-step.md
 loadable: false
@@ -193,7 +193,7 @@ message: "step `missing-step` referenced by `marshal.json` is missing standards 
 **Output (bulk form)**: a `results[N]` table with one row per manifest step plus an `unloadable_count` summary, e.g.:
 ```toon
 status: success
-plan_id: my-plan
+plan_id: EXAMPLE-PLAN
 unloadable_count: 1
 results[3]{step_id,standards_path,loadable,message}:
   commit-push,marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/commit-push.md,true,

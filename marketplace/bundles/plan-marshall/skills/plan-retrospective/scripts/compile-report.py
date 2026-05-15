@@ -11,7 +11,7 @@ Filename rules (documented in ``references/report-structure.md``):
 - Archived mode: ``<archived_plan_path>/quality-verification-report-audit-{YYYYMMDDTHHMMSSZ}.md`` — never overwrites.
 
 Usage:
-    python3 compile-report.py run --plan-id my-plan --mode live \
+    python3 compile-report.py run --plan-id EXAMPLE-PLAN --mode live \
         --fragments-file /abs/path/to/fragments.toon
 
     python3 compile-report.py run --archived-plan-path /abs --mode archived \

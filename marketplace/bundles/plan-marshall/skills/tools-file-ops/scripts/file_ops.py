@@ -299,6 +299,59 @@ def get_plan_dir(plan_id: str) -> Path:
     return base_path('plans', plan_id)
 
 
+class PlanNotFoundError(Exception):
+    """Raised by :func:`require_plan_exists` when the plan directory or its
+    ``status.json`` sentinel is missing.
+
+    Carries the resolved ``plan_dir`` so call sites can surface it in their
+    structured error envelopes (TOON ``error: plan_not_found``).
+    """
+
+    def __init__(self, plan_id: str, plan_dir: Path, reason: str) -> None:
+        self.plan_id = plan_id
+        self.plan_dir = plan_dir
+        self.reason = reason
+        super().__init__(
+            f"plan '{plan_id}' not found: {reason} (expected at {plan_dir})"
+        )
+
+
+def require_plan_exists(plan_id: str) -> Path:
+    """Assert a plan directory exists and looks initialized; return its path.
+
+    A plan is considered initialized when its directory exists AND contains a
+    ``status.json`` sentinel — the marker that ``phase-1-init`` writes once
+    the plan has been formally created. Bare directory existence is NOT
+    sufficient (a stray ``mkdir`` from an earlier orphan-creating call site
+    must not satisfy the guard).
+
+    Call this BEFORE any ``parent.mkdir(...)`` whose parent is a
+    ``{base_dir}/plans/{plan_id}/...`` path, to prevent silent orphan-plan
+    creation by scripts that hold a ``plan_id`` but were never gated on
+    plan existence.
+
+    Args:
+        plan_id: Plan identifier.
+
+    Returns:
+        Resolved path to the plan directory.
+
+    Raises:
+        PlanNotFoundError: when the plan directory does not exist OR when it
+            exists but is missing the ``status.json`` sentinel. The exception
+            exposes ``plan_id``, ``plan_dir``, and a human-readable ``reason``
+            string suitable for TOON ``message`` fields.
+    """
+    plan_dir = get_plan_dir(plan_id)
+    if not plan_dir.is_dir():
+        raise PlanNotFoundError(plan_id, plan_dir, 'plan directory does not exist')
+    if not (plan_dir / 'status.json').is_file():
+        raise PlanNotFoundError(
+            plan_id, plan_dir, 'plan directory exists but is missing status.json'
+        )
+    return plan_dir
+
+
 def get_tracked_config_dir() -> Path:
     """Get the repo-local tracked configuration directory.
 

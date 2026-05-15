@@ -2,6 +2,7 @@
 """Tests for manage-status.py script."""
 
 import json
+import shutil
 import subprocess
 from argparse import Namespace
 from pathlib import Path
@@ -42,6 +43,7 @@ cmd_transition = _lifecycle.cmd_transition
 cmd_archive = _lifecycle.cmd_archive
 cmd_get_context = _query.cmd_get_context
 cmd_get_worktree_path = _query.cmd_get_worktree_path
+cmd_list_orphans = _query.cmd_list_orphans
 cmd_metadata = _query.cmd_metadata
 cmd_progress = _query.cmd_progress
 cmd_read = _query.cmd_read
@@ -1106,3 +1108,155 @@ def test_transition_last_phase_sets_complete():
             f"Expected phases[-1].status='done', got "
             f'{live_status["phases"][-1]["status"]!r}.'
         )
+
+
+# =============================================================================
+# Tests: cmd_list_orphans (orphan-dir cleanup pass)
+# =============================================================================
+#
+# Pins the inverse-of-cmd_list contract: directories in plans_dir WITHOUT a
+# readable status.json are reported as orphans; directories WITH a readable
+# status.json are skipped. Covers empty-dir, with-status-skip, without-status-
+# but-with-subdirs, multiple-sorted, and a CLI-resolvability check against a
+# mixed 8-orphans + 2-legitimate-plans fixture.
+
+
+def _seed_legitimate_plan(plan_id: str) -> None:
+    """cmd_create a plan with a status.json so cmd_list_orphans skips it."""
+    cmd_create(
+        Namespace(
+            plan_id=plan_id,
+            title=f'Legitimate {plan_id}',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+
+
+def test_list_orphans_empty_plans_dir():
+    """(a) Empty plans_dir returns total: 0 and orphans: []."""
+    with PlanContext(plan_id='orphans-empty') as ctx:
+        # PlanContext auto-creates the plan_dir; remove it so plans_dir is
+        # empty for this assertion.
+        shutil.rmtree(ctx.plan_dir)
+
+        result = cmd_list_orphans(Namespace())
+
+        assert result['status'] == 'success'
+        assert result['total'] == 0
+        assert result['orphans'] == []
+
+
+def test_list_orphans_skips_dir_with_status_json():
+    """(b) Directory present with status.json is NOT listed as an orphan."""
+    with PlanContext(plan_id='orphans-skip-valid') as ctx:
+        # Drop the auto-created empty plan_dir; seed a legitimate plan in its
+        # place via cmd_create so status.json is present.
+        shutil.rmtree(ctx.plan_dir)
+        _seed_legitimate_plan('legit-plan')
+
+        result = cmd_list_orphans(Namespace())
+
+        assert result['status'] == 'success'
+        assert result['total'] == 0, (
+            f"Legitimate plan with status.json must NOT be reported as orphan, got: {result['orphans']}"
+        )
+        assert result['orphans'] == []
+
+
+def test_list_orphans_includes_dir_without_status_json_with_subdirs():
+    """(c) Directory without status.json but with logs/ or work/ subdirs IS listed."""
+    with PlanContext(plan_id='orphans-with-subdirs') as ctx:
+        # Drop the auto-created plan_dir.
+        shutil.rmtree(ctx.plan_dir)
+
+        # Construct an orphan dir with logs/ and work/ subdirs (no status.json).
+        orphan_dir = ctx.fixture_dir / 'plans' / 'orphan-with-subdirs'
+        orphan_dir.mkdir(parents=True)
+        (orphan_dir / 'logs').mkdir()
+        (orphan_dir / 'work').mkdir()
+
+        result = cmd_list_orphans(Namespace())
+
+        assert result['status'] == 'success'
+        assert result['total'] == 1
+        assert len(result['orphans']) == 1
+        entry = result['orphans'][0]
+        assert entry['id'] == 'orphan-with-subdirs'
+        assert entry['path'] == str(orphan_dir)
+        # contents is sorted; 'logs' precedes 'work' lexicographically.
+        assert entry['contents'] == ['logs', 'work']
+
+
+def test_list_orphans_returns_multiple_sorted():
+    """(d) Multiple orphans are all returned, sorted by id."""
+    with PlanContext(plan_id='orphans-many') as ctx:
+        shutil.rmtree(ctx.plan_dir)
+
+        plans_dir = ctx.fixture_dir / 'plans'
+        # Create dirs in non-alphabetical order to exercise sort.
+        for name in ('zeta-orphan', 'alpha-orphan', 'mid-orphan'):
+            d = plans_dir / name
+            d.mkdir(parents=True)
+            # Give each orphan a stray file so its contents list is non-empty.
+            (d / 'stray.txt').write_text('x')
+
+        result = cmd_list_orphans(Namespace())
+
+        assert result['status'] == 'success'
+        assert result['total'] == 3
+        ids = [o['id'] for o in result['orphans']]
+        assert ids == ['alpha-orphan', 'mid-orphan', 'zeta-orphan'], (
+            f'orphans must be returned in sorted id order, got {ids}'
+        )
+        for orphan in result['orphans']:
+            assert orphan['contents'] == ['stray.txt']
+
+
+def test_list_orphans_mixed_eight_orphans_plus_two_legitimate_plans():
+    """CLI resolvability + filter contract: 8 orphans + 2 legitimate plans → ONLY the 8 orphans returned.
+
+    Mirrors the production fixture cited in the task description (the 8 existing
+    orphan dirs that motivated this work) and pins the cmd_list_orphans filter
+    against the legitimate plans alongside them.
+    """
+    with PlanContext(plan_id='orphans-mixed') as ctx:
+        shutil.rmtree(ctx.plan_dir)
+
+        plans_dir = ctx.fixture_dir / 'plans'
+        orphan_names = [f'orphan-{i:02d}' for i in range(8)]
+        for name in orphan_names:
+            (plans_dir / name).mkdir(parents=True)
+
+        # Two legitimate (lesson-*) plans with status.json via cmd_create.
+        _seed_legitimate_plan('lesson-alpha')
+        _seed_legitimate_plan('lesson-beta')
+
+        # --- Direct cmd invocation (Tier 2): exact filter shape. ---
+        result = cmd_list_orphans(Namespace())
+        assert result['status'] == 'success'
+        assert result['total'] == 8, (
+            f"Expected exactly 8 orphans (legitimate lesson-* plans must be filtered out), "
+            f"got total={result['total']} ids={[o['id'] for o in result['orphans']]}"
+        )
+        returned_ids = [o['id'] for o in result['orphans']]
+        assert returned_ids == sorted(orphan_names), (
+            f'Expected sorted orphan ids {sorted(orphan_names)}, got {returned_ids}'
+        )
+        # Legitimate plans must NOT appear.
+        assert 'lesson-alpha' not in returned_ids
+        assert 'lesson-beta' not in returned_ids
+
+        # --- CLI resolvability (Tier 3): list-orphans subcommand reachable via the script. ---
+        cli_result = run_script(SCRIPT_PATH, 'list-orphans')
+        assert cli_result.success, (
+            f'list-orphans subcommand must be resolvable via the script entry point. '
+            f'stderr: {cli_result.stderr}'
+        )
+        assert 'status: success' in cli_result.stdout
+        # Spot-check that every orphan id surfaces in the TOON output and the
+        # legitimate plans do not.
+        for name in orphan_names:
+            assert name in cli_result.stdout, f'orphan {name} missing from CLI output'
+        assert 'lesson-alpha' not in cli_result.stdout
+        assert 'lesson-beta' not in cli_result.stdout

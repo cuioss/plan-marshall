@@ -34,12 +34,14 @@ from pathlib import Path
 
 from constants import FILE_STATUS, FILE_WORK_METRICS, PHASES  # type: ignore[import-not-found]
 from file_ops import (  # type: ignore[import-not-found]
+    PlanNotFoundError,
     atomic_write_file,
     format_duration,
     format_tokens_short,
     get_plan_dir,
     now_utc_iso,
     output_toon,
+    require_plan_exists,
     safe_main,
 )
 from input_validation import (  # type: ignore[import-not-found]
@@ -807,6 +809,21 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
     total_tokens = args.total_tokens if args.total_tokens is not None else 0
     tool_uses = args.tool_uses if args.tool_uses is not None else 0
     duration_ms = args.duration_ms if args.duration_ms is not None else 0
+
+    # Guard at script side: refuse to record a dispatch boundary when the
+    # plan directory does not exist (and was never initialised by phase-1).
+    # Without this guard the `path.parent.mkdir(parents=True, ...)` below
+    # silently creates an orphan plan tree just to hold the boundaries file.
+    try:
+        require_plan_exists(plan_id)
+    except PlanNotFoundError as exc:
+        return {
+            'status': 'error',
+            'error': 'plan_not_found',
+            'message': str(exc),
+            'plan_id': plan_id,
+            'plan_dir': str(exc.plan_dir),
+        }
 
     path = _dispatch_boundary_path(plan_id, phase)
     path.parent.mkdir(parents=True, exist_ok=True)
