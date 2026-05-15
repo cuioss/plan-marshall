@@ -90,6 +90,11 @@ exclude_lines = [
 target-version = "py312"
 line-length = 120
 src = ["marketplace/bundles", "test", ".claude"]
+# Parallel worktrees under ``.claude/worktrees/`` are isolated working copies
+# of other in-flight branches. They contribute neither to this branch's tree
+# nor to its lint scope; mirror the mypy exclude here so ruff doesn't flag
+# unrelated work-in-progress code as drift against this branch.
+extend-exclude = [".claude/worktrees/"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "C4", "UP"]

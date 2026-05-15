@@ -82,9 +82,18 @@ def emit_bundle_verbatim(bundle_dir: Path, output_dir: Path) -> list[Path]:
     Returns the list of paths written under the destination directory.
     Skips entries listed in ``EXCLUDED_DIR_NAMES`` and
     ``EXCLUDED_RELATIVE_FILES``.
+
+    The destination bundle directory is wiped before writing so stale
+    artifacts from prior emits (e.g. variant files for source canonicals
+    that have since been removed) do not linger. Target/claude/ is a pure
+    build output (gitignored, regenerable), so the wipe is safe; the
+    top-level ``target/claude/.claude-plugin/`` directory holding the
+    marketplace.json sits outside any per-bundle dir and is untouched.
     """
     bundle_name = bundle_dir.name
     dest_root = output_dir / bundle_name
+    if dest_root.exists():
+        shutil.rmtree(dest_root)
     dest_root.mkdir(parents=True, exist_ok=True)
 
     written: list[Path] = []

@@ -28,6 +28,27 @@ plan-marshall via Claude Code's plugin system have nothing to publish
 to a host cache and therefore do not need (and would be confused by) a
 `/sync-plugin-cache` slash command.
 
+## Bundle vs marketplace artifacts
+
+The generator emits two kinds of artifact under `target/claude/`:
+
+* **Per-bundle directories** — `target/claude/{bundle}/` carry their own
+  `.claude-plugin/plugin.json` and are what this skill rsyncs into the
+  host cache as `~/.claude/plugins/cache/plan-marshall/{bundle}/{version}/`.
+* **Top-level marketplace manifest** — `target/claude/.claude-plugin/marketplace.json`
+  is the manifest Claude Code reads when registering `target/claude/`
+  as a marketplace. It is NOT a bundle and is NOT synced into the host
+  cache. The bundle-vs-non-bundle distinction is enforced by the
+  `_is_bundle_dir` predicate in `sync.py` and
+  `list_bundles_and_versions.py`: only directories whose own
+  `.claude-plugin/plugin.json` exists are treated as bundles.
+
+This is also why the registered Claude Code marketplace path must point
+at `target/claude/` rather than `marketplace/`: the source layout has no
+expanded variant agents and no flat-bundle marketplace.json. See the
+"Registered Marketplace Path" section in the top-level `CLAUDE.md` for
+the migration steps.
+
 ## Parameters
 
 | Parameter | Required | Description |

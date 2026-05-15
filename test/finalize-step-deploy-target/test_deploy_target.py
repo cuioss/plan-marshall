@@ -147,6 +147,19 @@ def fixture_marketplace(tmp_path: Path) -> Path:
         bundle / 'skills' / 'demo-skill' / 'SKILL.md',
         '---\nname: demo-skill\ndescription: demo desc\n---\n# Body\n',
     )
+    # The Claude target's emit step regenerates a top-level marketplace.json
+    # from the source manifest; provide a minimal one so emit mode succeeds.
+    _write(
+        tmp_path / '.claude-plugin' / 'marketplace.json',
+        json.dumps(
+            {
+                'name': 'fixture-marketplace',
+                'plugins': [{'name': 'demo', 'description': 'demo', 'source': './bundles/demo'}],
+            },
+            indent=2,
+        )
+        + '\n',
+    )
     return marketplace
 
 
