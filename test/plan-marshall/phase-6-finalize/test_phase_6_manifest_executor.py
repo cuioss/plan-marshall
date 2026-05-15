@@ -175,37 +175,61 @@ class TestExecutorDispatchScenarios:
             )
 
     def test_unlisted_steps_never_fire(self):
-        """A step absent from the manifest list MUST NOT appear in dispatch."""
+        """A step absent from the manifest list MUST NOT appear in dispatch.
+
+        Under the new precondition-resolver model (lesson 2026-05-15-14-002),
+        Row 5 surgical_bug_fix RETAINS the review gates — the legacy
+        ``ci-wait`` step is dropped defensively, but ``automated-review``
+        and ``sonar-roundtrip`` are kept. ``knowledge-capture`` is unrelated
+        to this lesson's contract; it stays out of the candidate list here.
+        """
         with PlanContext(plan_id='p6-pruned'):
-            # Surgical bug_fix prunes automated-review, sonar-roundtrip,
-            # knowledge-capture from the candidate set.
+            # Inject legacy ci-wait (not in default set after the lesson)
+            # to test that the defensive narrowing drops it from dispatch.
+            candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
             cmd_compose(
                 _compose_ns(
                     'p6-pruned',
                     change_type='bug_fix',
                     scope_estimate='surgical',
                     affected_files_count=2,
+                    phase_6_steps=','.join(candidates),
                 )
             )
             manifest = read_manifest('p6-pruned')
             assert manifest is not None
             steps = manifest['phase_6']['steps']
-            assert 'automated-review' not in steps, 'surgical bug_fix must prune automated-review from the manifest'
-            assert 'sonar-roundtrip' not in steps
-            assert 'knowledge-capture' not in steps
+            # Row 5 retains the review gates under the new contract.
+            assert 'automated-review' in steps, (
+                'surgical bug_fix MUST retain automated-review under the new '
+                'precondition-resolver contract'
+            )
+            assert 'sonar-roundtrip' in steps, (
+                'surgical bug_fix MUST retain sonar-roundtrip under the new '
+                'precondition-resolver contract'
+            )
+            # ci-wait is defensively narrowed out.
+            assert 'ci-wait' not in steps
 
             dispatched = _derive_executor_dispatch(manifest)
-            # Pruned steps must NOT appear in dispatch.
-            assert 'automated-review' not in dispatched
-            assert 'sonar-roundtrip' not in dispatched
-            assert 'knowledge-capture' not in dispatched
-            # Listed steps DO appear.
+            # Pruned step must NOT appear in dispatch.
+            assert 'ci-wait' not in dispatched
+            # Retained steps DO appear.
             assert 'commit-push' in dispatched
             assert 'lessons-capture' in dispatched
+            assert 'automated-review' in dispatched
+            assert 'sonar-roundtrip' in dispatched
 
     def test_recipe_path_dispatches_only_recipe_steps(self):
-        """Recipe-driven manifest must yield a slim dispatch list."""
+        """Recipe-driven manifest must yield a slim dispatch list.
+
+        Under the new precondition-resolver contract (lesson 2026-05-15-14-002)
+        Row 2 (recipe) RETAINS review gates — ``automated-review`` and
+        ``sonar-roundtrip`` survive. Only the legacy ``ci-wait`` step ID is
+        defensively narrowed out when present in the candidate list.
+        """
         with PlanContext(plan_id='p6-recipe'):
+            candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
             cmd_compose(
                 _compose_ns(
                     'p6-recipe',
@@ -213,15 +237,21 @@ class TestExecutorDispatchScenarios:
                     scope_estimate='surgical',
                     affected_files_count=4,
                     recipe_key='lesson_cleanup',
+                    phase_6_steps=','.join(candidates),
                 )
             )
             manifest = read_manifest('p6-recipe')
             assert manifest is not None
             steps = manifest['phase_6']['steps']
-            # Recipe path drops the heavy steps.
-            assert 'automated-review' not in steps
-            assert 'sonar-roundtrip' not in steps
-            assert 'knowledge-capture' not in steps
+            # Review gates RETAINED under the new contract.
+            assert 'automated-review' in steps, (
+                'recipe row MUST retain automated-review under the new contract'
+            )
+            assert 'sonar-roundtrip' in steps, (
+                'recipe row MUST retain sonar-roundtrip under the new contract'
+            )
+            # Legacy ci-wait defensively dropped.
+            assert 'ci-wait' not in steps
 
             dispatched = _derive_executor_dispatch(manifest)
             assert dispatched == steps
@@ -403,160 +433,224 @@ class TestSkillMdManifestNarrative:
 
 
 # ===========================================================================
-# CI-wait sequencing tests — pin the ci-wait → automated-review producer/
-# consumer contract introduced when CI-wait was decoupled from automated-
-# review's triage budget. These tests assert (1) ci-wait appears immediately
-# before automated-review in the default manifest, (2) the dispatcher fires
-# ci-wait before automated-review on the same Phase 6 entry, and (3) the
-# decision-rules pruning continues to drop both producer and consumer
-# together when automated-review is dropped.
+# CI-precondition contract tests — replace the obsolete sibling-step model.
+# CI completion is now a dispatcher-resolved precondition declared via
+# requires: [ci-complete] on consumer step frontmatters (automated-review,
+# sonar-roundtrip). These tests assert (1) ci-wait is absent from the
+# default candidate list, (2) automated-review and sonar-roundtrip carry
+# the requires: [ci-complete] declaration in frontmatter, (3) the composer
+# does not emit ci-wait before automated-review, (4) Rules 2/3/5 retain
+# both review gates rather than silently dropping them with ci-wait.
 # ===========================================================================
 
 
-class TestCiWaitSequencing:
-    """Producer/consumer ordering and pruning guarantees for ci-wait."""
+_AUTOMATED_REVIEW_FRONTMATTER = (
+    MARKETPLACE_ROOT
+    / 'plan-marshall'
+    / 'skills'
+    / 'phase-6-finalize'
+    / 'workflow'
+    / 'automated-review.md'
+)
+_SONAR_ROUNDTRIP_FRONTMATTER = (
+    MARKETPLACE_ROOT
+    / 'plan-marshall'
+    / 'skills'
+    / 'phase-6-finalize'
+    / 'workflow'
+    / 'sonar-roundtrip.md'
+)
 
-    def test_ci_wait_in_default_phase_6_steps(self):
-        """The composer's default Phase 6 candidate list MUST include
-        ``ci-wait``; otherwise consumer ``automated-review`` would have no
-        completed-CI signal to consume on a default plan."""
-        assert 'ci-wait' in DEFAULT_PHASE_6_STEPS, (
-            'ci-wait must be a default Phase 6 candidate so it is dispatched alongside automated-review'
+
+class TestCIPreconditionContract:
+    """Dispatcher-resolved precondition replaces the sibling ci-wait step."""
+
+    def test_ci_wait_absent_from_default_phase_6_steps(self):
+        """The default candidate list MUST NOT contain ``ci-wait`` — CI
+        completion is now a dispatcher-resolved precondition, not a step.
+        """
+        assert 'ci-wait' not in DEFAULT_PHASE_6_STEPS, (
+            'ci-wait must not appear in DEFAULT_PHASE_6_STEPS — CI completion '
+            'is resolved via requires: [ci-complete] on consumer steps'
         )
 
-    def test_ci_wait_immediately_precedes_automated_review_in_default(self):
-        """On a default-row plan, ``ci-wait`` MUST appear immediately before
-        ``automated-review`` so the dispatcher fires the producer on the same
-        Phase 6 entry as the consumer, with no intermediate plan-mutating
-        steps that would prevent the consumer from observing the signal."""
-        with PlanContext(plan_id='p6-ci-wait-default-order'):
+    def test_automated_review_declares_requires_ci_complete(self):
+        """``automated-review.md`` frontmatter MUST declare
+        ``requires: [ci-complete]`` so the dispatcher resolves the
+        precondition before invoking the consumer body.
+        """
+        text = _AUTOMATED_REVIEW_FRONTMATTER.read_text(encoding='utf-8')
+        # Limit the scan to the YAML frontmatter block (the leading --- ... ---).
+        head, sep, _rest = text.partition('\n---\n')
+        # head is "---\nname: ..."; the second --- is the closing fence we
+        # captured via sep. Inspect head for the requires: line.
+        assert sep == '\n---\n', (
+            'automated-review.md must start with a YAML frontmatter block'
+        )
+        assert 'requires: [ci-complete]' in head, (
+            'automated-review.md frontmatter MUST declare requires: '
+            '[ci-complete]; got head=\n' + head
+        )
+
+    def test_sonar_roundtrip_declares_requires_ci_complete(self):
+        """``sonar-roundtrip.md`` frontmatter MUST declare
+        ``requires: [ci-complete]`` so the dispatcher resolves the
+        precondition before invoking the consumer body.
+        """
+        text = _SONAR_ROUNDTRIP_FRONTMATTER.read_text(encoding='utf-8')
+        head, sep, _rest = text.partition('\n---\n')
+        assert sep == '\n---\n', (
+            'sonar-roundtrip.md must start with a YAML frontmatter block'
+        )
+        assert 'requires: [ci-complete]' in head, (
+            'sonar-roundtrip.md frontmatter MUST declare requires: '
+            '[ci-complete]; got head=\n' + head
+        )
+
+    def test_composer_does_not_emit_ci_wait_before_automated_review(self):
+        """On a default-row plan, the composed manifest MUST NOT carry
+        ``ci-wait`` anywhere — the legacy sibling-step ordering is gone.
+        """
+        with PlanContext(plan_id='p6-precond-default'):
             cmd_compose(
                 _compose_ns(
-                    'p6-ci-wait-default-order',
+                    'p6-precond-default',
                     change_type='feature',
                     scope_estimate='multi_module',
                     affected_files_count=8,
                 )
             )
-            manifest = read_manifest('p6-ci-wait-default-order')
+            manifest = read_manifest('p6-precond-default')
             assert manifest is not None
             steps = manifest['phase_6']['steps']
-            assert 'ci-wait' in steps, 'default-row composer must include ci-wait in the manifest'
-            assert 'automated-review' in steps, 'default-row composer must include automated-review in the manifest'
-            ci_wait_idx = steps.index('ci-wait')
-            review_idx = steps.index('automated-review')
-            assert ci_wait_idx < review_idx, (
-                f'ci-wait at index {ci_wait_idx} MUST precede automated-review at {review_idx} '
-                f'so the consumer observes the completed-CI signal — got steps {steps}'
+            assert 'ci-wait' not in steps, (
+                f'default-row composer MUST NOT emit ci-wait; got steps {steps}'
             )
-            assert review_idx == ci_wait_idx + 1, (
-                f'ci-wait at index {ci_wait_idx} MUST be immediately followed by automated-review '
-                f'at index {ci_wait_idx + 1}, but automated-review sits at index {review_idx}. '
-                f'A step between them would risk plan-mutating side effects before the consumer fires.'
+            assert 'automated-review' in steps, (
+                'default-row composer must still include automated-review'
             )
 
-    def test_dispatcher_fires_ci_wait_before_automated_review(self):
-        """The executor dispatch order — derived from manifest.phase_6.steps —
-        MUST fire ``ci-wait`` strictly before ``automated-review`` on a fresh
-        Phase 6 entry, so the consumer reads a non-stale signal."""
-        with PlanContext(plan_id='p6-ci-wait-dispatch-order'):
+    def test_recipe_path_retains_review_gates(self):
+        """Row 2 (recipe) — review gates RETAINED. The legacy ``ci-wait``
+        step ID is defensively narrowed out when present in the candidate
+        list, but ``automated-review`` and ``sonar-roundtrip`` are never
+        silently suppressed by the planner.
+        """
+        with PlanContext(plan_id='p6-precond-recipe'):
+            # Inject legacy ci-wait to test defensive narrowing.
+            candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
             cmd_compose(
                 _compose_ns(
-                    'p6-ci-wait-dispatch-order',
-                    change_type='feature',
-                    scope_estimate='multi_module',
-                    affected_files_count=8,
-                )
-            )
-            manifest = read_manifest('p6-ci-wait-dispatch-order')
-            assert manifest is not None
-            dispatched = _derive_executor_dispatch(manifest)
-            assert 'ci-wait' in dispatched, 'fresh Phase 6 entry must dispatch ci-wait'
-            assert 'automated-review' in dispatched, 'fresh Phase 6 entry must dispatch automated-review'
-            assert dispatched.index('ci-wait') < dispatched.index('automated-review'), (
-                'dispatcher MUST fire ci-wait before automated-review so the consumer observes the signal'
-            )
-
-    def test_ci_wait_skipped_when_done_on_reentry(self):
-        """A re-entry where ``ci-wait`` recorded ``outcome=done`` MUST skip
-        ci-wait but still re-dispatch ``automated-review`` if the consumer
-        recorded a non-terminal outcome (e.g., a loop_back from a FIX
-        disposition). This pins the contract that ``automated-review`` reads
-        the prior ``done`` record as the completed-CI signal rather than
-        re-polling CI itself."""
-        with PlanContext(plan_id='p6-ci-wait-resumable'):
-            cmd_compose(_compose_ns('p6-ci-wait-resumable'))
-            manifest = read_manifest('p6-ci-wait-resumable')
-            assert manifest is not None
-            state = {
-                'commit-push': {'outcome': 'done', 'display_detail': '-> abc1234'},
-                'create-pr': {'outcome': 'done', 'display_detail': '#42'},
-                'ci-wait': {'outcome': 'done', 'display_detail': 'CI success for PR #42'},
-                'automated-review': {'outcome': 'loop_back', 'display_detail': 'loop-back iteration 1'},
-            }
-            dispatched = _derive_executor_dispatch(manifest, state)
-            assert 'ci-wait' not in dispatched, (
-                'ci-wait recorded outcome=done MUST be skipped on re-entry; the prior record IS the completed-CI signal'
-            )
-            assert 'automated-review' in dispatched, (
-                'automated-review recorded outcome=loop_back MUST re-fire — it consumes ci-wait\'s prior done record as signal'
-            )
-
-    def test_recipe_path_drops_ci_wait_alongside_automated_review(self):
-        """Row 2 (recipe) drops ``automated-review``; ``ci-wait`` MUST follow
-        it out of the manifest because its only consumer is dropped. Leaving
-        ci-wait in would burn a 1800 s budget polling CI for a step that
-        will never read the signal."""
-        with PlanContext(plan_id='p6-ci-wait-recipe-drop'):
-            cmd_compose(
-                _compose_ns(
-                    'p6-ci-wait-recipe-drop',
+                    'p6-precond-recipe',
                     change_type='tech_debt',
                     scope_estimate='surgical',
                     affected_files_count=4,
                     recipe_key='lesson_cleanup',
+                    phase_6_steps=','.join(candidates),
                 )
             )
-            manifest = read_manifest('p6-ci-wait-recipe-drop')
+            manifest = read_manifest('p6-precond-recipe')
             assert manifest is not None
             steps = manifest['phase_6']['steps']
-            assert 'automated-review' not in steps, 'recipe row must drop automated-review'
+            assert 'automated-review' in steps, (
+                'recipe row MUST retain automated-review — review gates are '
+                'never silently suppressed'
+            )
+            assert 'sonar-roundtrip' in steps, (
+                'recipe row MUST retain sonar-roundtrip — review gates are '
+                'never silently suppressed'
+            )
             assert 'ci-wait' not in steps, (
-                'recipe row must drop ci-wait alongside automated-review — leaving the producer without its consumer wastes the 1800 s budget'
+                'recipe row MUST defensively drop legacy ci-wait step ID'
             )
 
-    def test_surgical_bug_fix_drops_ci_wait_alongside_automated_review(self):
-        """Row 5 (surgical_bug_fix / surgical_tech_debt) drops
-        ``automated-review`` for one-line fixes; ``ci-wait`` MUST follow it
-        out of the manifest for the same producer/consumer reason as the
-        recipe row above."""
-        with PlanContext(plan_id='p6-ci-wait-surgical-drop'):
+    def test_docs_only_retains_review_gates(self):
+        """Row 3 (docs_only) — review gates RETAINED. Same retention contract
+        as Rules 2 and 5: review bots run even on docs-only plans.
+        """
+        with PlanContext(plan_id='p6-precond-docs'):
+            candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
             cmd_compose(
                 _compose_ns(
-                    'p6-ci-wait-surgical-drop',
+                    'p6-precond-docs',
+                    change_type='tech_debt',
+                    scope_estimate='surgical',
+                    affected_files_count=3,
+                    phase_5_steps='quality-gate',
+                    phase_6_steps=','.join(candidates),
+                )
+            )
+            manifest = read_manifest('p6-precond-docs')
+            assert manifest is not None
+            steps = manifest['phase_6']['steps']
+            assert 'automated-review' in steps, (
+                'docs_only row MUST retain automated-review'
+            )
+            assert 'sonar-roundtrip' in steps, (
+                'docs_only row MUST retain sonar-roundtrip'
+            )
+            assert 'ci-wait' not in steps, (
+                'docs_only row MUST defensively drop legacy ci-wait step ID'
+            )
+
+    def test_surgical_bug_fix_retains_review_gates(self):
+        """Row 5 (surgical_bug_fix / surgical_tech_debt) — review gates
+        RETAINED. The bots' job is to catch what humans miss on one-line
+        fixes; silently dropping the review gates would defeat that.
+        """
+        with PlanContext(plan_id='p6-precond-surgical-bug'):
+            candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
+            cmd_compose(
+                _compose_ns(
+                    'p6-precond-surgical-bug',
                     change_type='bug_fix',
                     scope_estimate='surgical',
                     affected_files_count=2,
+                    phase_6_steps=','.join(candidates),
                 )
             )
-            manifest = read_manifest('p6-ci-wait-surgical-drop')
+            manifest = read_manifest('p6-precond-surgical-bug')
             assert manifest is not None
             steps = manifest['phase_6']['steps']
-            assert 'automated-review' not in steps, 'surgical bug_fix row must drop automated-review'
-            assert 'ci-wait' not in steps, (
-                'surgical bug_fix row must drop ci-wait alongside automated-review — leaving the producer without its consumer wastes the 1800 s budget'
+            assert 'automated-review' in steps, (
+                'surgical_bug_fix row MUST retain automated-review'
             )
+            assert 'sonar-roundtrip' in steps, (
+                'surgical_bug_fix row MUST retain sonar-roundtrip'
+            )
+            assert 'ci-wait' not in steps, (
+                'surgical_bug_fix row MUST defensively drop legacy ci-wait step ID'
+            )
+
+    def test_automated_review_md_does_not_read_ci_wait_outcome(self):
+        """The ``automated-review.md`` body MUST NOT include the legacy
+        sibling-step prose that read the ``phase_steps["6-finalize"]["ci-wait"].outcome``
+        signal from ``manage-status``. CI completion is now a precondition
+        guaranteed by the dispatcher before the body executes.
+        """
+        text = _AUTOMATED_REVIEW_FRONTMATTER.read_text(encoding='utf-8')
+        # The "Read completed-CI signal" section header must be gone.
+        assert '### Read completed-CI signal' not in text, (
+            'automated-review.md MUST NOT carry a "Read completed-CI signal" '
+            'section — that contract is now owned by the dispatcher precondition'
+        )
+        # The specific phase_steps signal lookup string must be gone.
+        assert 'phase_steps["6-finalize"]["ci-wait"]' not in text, (
+            'automated-review.md MUST NOT read phase_steps["6-finalize"]["ci-wait"] '
+            'outcome record — that signal model has been retired'
+        )
 
 
 # ===========================================================================
-# Automated-review CI-signal consumption + overflow handling tests — pin the
-# documented contract introduced when CI-wait was decoupled from automated-
-# review's triage budget. ``automated-review`` no longer polls CI itself; it
-# reads the ``ci-wait`` terminal record from manage-status as the completed-CI
-# signal. When per-iteration budget would be exhausted before all pr-comment
-# findings can be triaged, the step files a single ``pr-comment-overflow``
-# finding carrying the unprocessed pr-comment hash_ids and records
-# ``--outcome loop_back`` rather than ``done``.
+# Automated-review precondition declaration + overflow handling tests —
+# pin the documented contract: ``automated-review`` declares
+# ``requires: [ci-complete]`` in its YAML frontmatter so the phase-6-finalize
+# dispatcher resolves the precondition before the body runs (no inline CI
+# poll, no manage-status signal hand-off). When per-iteration budget would
+# be exhausted before all pr-comment findings can be triaged, the triage
+# workflow files a single ``pr-comment-overflow`` finding carrying the
+# unprocessed pr-comment hash_ids and records ``--outcome loop_back`` rather
+# than ``done``.
 # ===========================================================================
 
 
@@ -587,16 +681,18 @@ _TRIAGE_MD = (
 
 
 class TestAutomatedReviewCiSignalAndOverflow:
-    """Pin the documented contract: ``automated-review`` consumes the
-    ``ci-wait`` signal via manage-status (does NOT poll CI itself), and on
-    near-budget exhaustion files a ``pr-comment-overflow`` finding while
-    recording ``--outcome loop_back``.
+    """Pin the documented contract: ``automated-review`` declares
+    ``requires: [ci-complete]`` in its frontmatter so the dispatcher resolves
+    the precondition before the body runs (no inline CI poll, no
+    manage-status signal hand-off). On near-budget exhaustion the triage
+    workflow files a ``pr-comment-overflow`` finding while recording
+    ``--outcome loop_back``.
 
     These are narrative-pinning tests on the standards docs because the
     automated-review step body is markdown-driven (no Python entry point); the
     contract is enforced at agent dispatch time, and the standards doc IS the
     source of truth. If a future edit removes any of these contract markers,
-    the documented overflow + signal-consumption contract has been silently
+    the documented overflow + precondition contract has been silently
     broken.
     """
 
@@ -612,74 +708,71 @@ class TestAutomatedReviewCiSignalAndOverflow:
     def triage_text(self) -> str:
         return _TRIAGE_MD.read_text(encoding='utf-8')
 
-    # ---- CI signal consumption (no inline CI poll) -----------------------
+    # ---- Precondition declaration ---------------------------------------
 
-    def test_automated_review_consumes_ci_signal_via_manage_status(
+    def test_automated_review_declares_requires_ci_complete_in_frontmatter(
         self, automated_review_text: str
     ):
-        """``automated-review.md`` MUST document reading the completed-CI
-        signal from ``manage-status`` (the ``ci-wait`` terminal record) rather
-        than polling CI inline."""
-        text_lower = automated_review_text.lower()
-        assert 'completed-ci signal' in text_lower, (
-            'automated-review.md must document the completed-CI signal it consumes from ci-wait'
+        """``automated-review.md`` MUST declare ``requires: [ci-complete]``
+        in its YAML frontmatter so the dispatcher invokes the precondition
+        resolver before the body runs.
+        """
+        head, sep, _rest = automated_review_text.partition('\n---\n')
+        assert sep == '\n---\n', (
+            'automated-review.md must start with a YAML frontmatter block'
         )
-        assert 'manage-status' in text_lower, (
-            'automated-review.md must read the ci-wait record via manage-status (not poll CI itself)'
-        )
-        assert 'ci-wait' in text_lower, (
-            'automated-review.md must reference the ci-wait step as the signal source'
+        assert 'requires: [ci-complete]' in head, (
+            'automated-review.md frontmatter MUST declare requires: [ci-complete]'
         )
 
-    def test_automated_review_no_longer_runs_inline_ci_wait(
+    def test_automated_review_does_not_poll_ci_inline(
         self, automated_review_text: str
     ):
         """The legacy ``ci wait --pr-number`` polling primitive MUST NOT
-        appear in the automated-review step body — that responsibility is now
-        owned by the preceding ``ci-wait`` step. A reappearance would mean
-        the consumer is double-polling CI and burning the triage budget on
-        queue depth."""
-        # The exact bash command shape used by the previous inline poll.
+        appear in the automated-review step body — that responsibility is
+        owned by the dispatcher's precondition resolver. A reappearance
+        would mean the consumer is double-polling CI.
+        """
         assert 'ci wait \\\n  --pr-number' not in automated_review_text, (
-            'automated-review.md must not invoke `ci wait --pr-number` inline; ci-wait owns that primitive'
+            'automated-review.md must not invoke `ci wait --pr-number` inline; '
+            'the precondition resolver owns that primitive'
         )
-        # The documented section heading was renamed away from "Wait for CI".
+        # The legacy section headings MUST be gone.
         assert '### Wait for CI' not in automated_review_text, (
-            'automated-review.md must not have a "Wait for CI" subsection — replaced by "Read completed-CI signal"'
+            'automated-review.md must not have a "Wait for CI" subsection'
         )
-        assert '### Read completed-CI signal' in automated_review_text, (
-            'automated-review.md must have a "Read completed-CI signal" subsection that consumes ci-wait\'s record'
-        )
-
-    def test_automated_review_surfaces_ci_failure_when_signal_missing(
-        self, automated_review_text: str
-    ):
-        """When the ci-wait record is absent or marks the step ``failed``,
-        ``automated-review`` MUST surface ``ci_failure`` for loop-back rather
-        than silently proceeding to the producer-stage."""
-        text = automated_review_text
-        assert 'ci_failure' in text, (
-            'automated-review.md must surface ci_failure when the ci-wait record indicates CI is not green'
-        )
-        # The branch table must enumerate the failed/absent paths.
-        assert 'outcome: failed' in text and 'absent' in text, (
-            'automated-review.md must enumerate both `outcome: failed` and `record absent` as ci_failure paths'
+        assert '### Read completed-CI signal' not in automated_review_text, (
+            'automated-review.md must not have a "Read completed-CI signal" '
+            'subsection — CI completion is now a dispatcher-resolved precondition'
         )
 
-    def test_timeout_contract_is_triage_only_after_decoupling(
+    def test_automated_review_does_not_read_ci_wait_outcome_record(
         self, automated_review_text: str
     ):
-        """The 900 s budget is now ``triage-only``; CI-wait wall-clock is
-        bounded by the preceding step's 1800 s budget. The contract MUST say
-        so explicitly so a future edit doesn't restore the combined-budget
-        shape."""
+        """``automated-review.md`` MUST NOT read the legacy
+        ``phase_steps["6-finalize"]["ci-wait"]`` outcome record. The
+        precondition resolver runs ahead of the body and surfaces
+        ``wait_failed`` to the dispatcher, not to the body.
+        """
+        assert 'phase_steps["6-finalize"]["ci-wait"]' not in automated_review_text, (
+            'automated-review.md must not read the legacy ci-wait outcome record'
+        )
+
+    def test_timeout_contract_describes_precondition_split(
+        self, automated_review_text: str
+    ):
+        """The 900 s budget remains ``triage-only``; CI wait wall-clock is
+        now bounded by the dispatcher's ``ci-complete`` precondition
+        resolver (600 s ceiling). The contract MUST say so explicitly so a
+        future edit doesn't restore the combined-budget shape.
+        """
         text_lower = automated_review_text.lower()
         assert 'triage-only' in text_lower, (
-            'Timeout Contract must declare the 900 s budget as triage-only after the ci-wait split'
+            'Timeout Contract must declare the 900 s budget as triage-only'
         )
-        # And the per-step partition must be visible.
-        assert '900' in automated_review_text and '1800' in automated_review_text, (
-            'Timeout Contract must reference both the 900 s triage budget and the 1800 s ci-wait budget'
+        assert 'precondition' in text_lower, (
+            'Timeout Contract must reference the ci-complete precondition '
+            'resolver as the CI wait-time owner'
         )
 
     # ---- Overflow handling -----------------------------------------------

@@ -142,9 +142,9 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 **Outcome**:
 - `phase_5.early_terminate = false`
 - `phase_5.verification_steps = phase_5_candidates ∩ {quality-gate, module-tests}`
-- `phase_6.steps = phase_6_candidates − {ci-wait, automated-review, sonar-roundtrip}`
+- `phase_6.steps = phase_6_candidates − {ci-wait}`
 
-**Why**: Recipe-driven plans (currently `recipe-refactor-to-profile-standards` and the upcoming `recipe-lesson-cleanup` from deliverable 7) follow deterministic, surgical-style patterns. Drop the heavy review steps that target broad code changes; `ci-wait` follows them out of the manifest because its only consumer is `automated-review`. Keep the build/test gate and the bookkeeping/PR steps.
+**Why**: Recipe-driven plans (currently `recipe-refactor-to-profile-standards` and the upcoming `recipe-lesson-cleanup` from deliverable 7) follow deterministic, surgical-style patterns. The only subtraction here is the legacy `ci-wait` step ID — kept as a defensive narrowing against project marshal.json files that still list it as a candidate. Review gates a project opted into (`automated-review`, `sonar-roundtrip`) are NEVER silently suppressed by the planner: the recipe label is exactly the case where the bots' job is to catch what humans miss. CI completion is now a dispatcher-resolved precondition (declared via `requires: [ci-complete]` on consumer step frontmatters), not a sibling step.
 
 ### Row 3 — `docs_only`
 
@@ -153,9 +153,9 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 **Outcome**:
 - `phase_5.early_terminate = false`
 - `phase_5.verification_steps = []`
-- `phase_6.steps = phase_6_candidates − {ci-wait, automated-review, sonar-roundtrip}`
+- `phase_6.steps = phase_6_candidates − {ci-wait}`
 
-**Why**: A docs-shaped plan never needs to run tests or coverage. The candidate set already reflects this (no `module-tests`/`coverage`), so the manifest empties Phase 5's verification list and skips the heavy review steps. `ci-wait` is also dropped because its only consumer is `automated-review`. We keep `commit-push`, `create-pr`, `lessons-capture`, `branch-cleanup`, and `archive-plan` so the doc change is committed, surfaced, and recorded.
+**Why**: A docs-shaped plan never needs to run tests or coverage. The candidate set already reflects this (no `module-tests`/`coverage`), so the manifest empties Phase 5's verification list. The only subtraction here is the legacy `ci-wait` step ID — kept as a defensive narrowing against project marshal.json files that still list it as a candidate. Review gates a project opted into (`automated-review`, `sonar-roundtrip`) are NEVER silently suppressed by the planner: a docs-only label is exactly the case where the bots' job is to catch what humans miss. We keep `commit-push`, `create-pr`, `lessons-capture`, `branch-cleanup`, `archive-plan`, AND the review gates so the doc change is reviewed, committed, surfaced, and recorded.
 
 ### Row 4 — `tests_only`
 
@@ -175,9 +175,9 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 **Outcome**:
 - `phase_5.early_terminate = false`
 - `phase_5.verification_steps = phase_5_candidates ∩ {quality-gate, module-tests}`
-- `phase_6.steps = phase_6_candidates − {ci-wait, automated-review, sonar-roundtrip}`
+- `phase_6.steps = phase_6_candidates − {ci-wait}`
 
-**Why**: Surgical bug fixes and tech-debt nudges have already passed the Q-Gate bypass at outline time (deliverable 4). The full review army (`automated-review` + `sonar-roundtrip`) adds latency without commensurate signal on a one-line fix; `ci-wait` follows them out of the manifest because its only consumer is `automated-review`. We keep `lessons-capture` so any lesson observed during execution is still captured.
+**Why**: Surgical bug fixes and tech-debt nudges have already passed the Q-Gate bypass at outline time (deliverable 4). The only subtraction here is the legacy `ci-wait` step ID — kept as a defensive narrowing against project marshal.json files that still list it as a candidate. Review gates a project opted into (`automated-review`, `sonar-roundtrip`) are NEVER silently suppressed by the planner: surgical bug_fix / tech_debt is exactly the case where the bots' job is to catch what humans miss on a one-line fix. We keep `lessons-capture` so any lesson observed during execution is still captured. CI completion is now a dispatcher-resolved precondition (declared via `requires: [ci-complete]` on consumer step frontmatters), not a sibling step.
 
 ### Row 6 — `verification_no_files`
 

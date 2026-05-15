@@ -1558,3 +1558,235 @@ def test_list_orphans_empty_status_json_not_flagged(monkeypatch):
             f'instead of `(plan_dir / "status.json").is_file()`.'
         )
         assert result['orphans'] == []
+
+
+# =============================================================================
+# Regression Tests: cmd_transition inline strict-verify guard for guarded
+# boundaries (folded from the standalone phase_handshake verify --strict step
+# that orchestrator workflow docs used to issue separately at 5-execute -> 6-finalize).
+# =============================================================================
+# Each test seeds a captured handshake row, drifts one tracked invariant, then
+# calls cmd_transition and asserts the documented contract. The 5-execute tests
+# pin the guarded-boundary behaviour; the 4-plan test pins that non-guarded
+# transitions skip the verify path entirely (preserves today's semantics).
+
+# Use STANDARD imports (not importlib.spec_from_file_location) so the
+# monkeypatch in the fixtures below hits the same module instance that
+# ``_cmd_lifecycle.cmd_verify`` (imported above via _load_module) reads at
+# runtime. The path-loading shape used elsewhere in this file creates a
+# *new* module object that is not in sys.modules under the canonical name,
+# so patching its INVARIANTS has no effect on the cmd_verify code path
+# (which resolves INVARIANTS via the sys.modules['_invariants'] copy).
+# See test_phase_handshake.py for the prior art on this fixture pattern.
+import sys as _sys  # noqa: E402
+
+_PLAN_HANDSHAKE_SCRIPTS_DIR = str(
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'plan-marshall'
+    / 'scripts'
+)
+if _PLAN_HANDSHAKE_SCRIPTS_DIR not in _sys.path:
+    _sys.path.insert(0, _PLAN_HANDSHAKE_SCRIPTS_DIR)
+
+import _handshake_commands as _cmds  # type: ignore[import-not-found]  # noqa: E402
+import _invariants as _inv  # type: ignore[import-not-found]  # noqa: E402
+
+
+@pytest.fixture
+def _stubbed_invariants(monkeypatch):
+    """Deterministic invariant registry shared across cmd_capture / cmd_verify.
+
+    Mirrors the fixture in ``test_phase_handshake.py`` so the cmd_transition
+    inline guard sees a predictable observed state. The fixture also patches
+    the binding that ``cmd_verify`` in ``_cmd_lifecycle`` imports — without
+    that second patch the lifecycle module would still see the real registry
+    and the test would compute real git state instead of the stub.
+    """
+    state = {
+        'main_sha': 'abc123',
+        'main_dirty': 0,
+        'main_dirty_files': [],
+        'worktree_sha': None,
+        'worktree_dirty': None,
+        'worktree_orphan': None,
+        'task_state_hash': 'hash-tasks',
+        'qgate_open_count': 0,
+        'config_hash': 'hash-cfg',
+        'pending_tasks_count': 2,
+        'phase_steps_complete': None,
+        'pending_findings_by_type': '',
+        'pending_findings_blocking_count': 0,
+    }
+
+    def always(_pid, _md):
+        return True
+
+    def make_capture(name):
+        def _cap(_pid, _md, _phase):
+            return state[name]
+
+        return _cap
+
+    stubbed = [
+        ('main_sha', always, make_capture('main_sha')),
+        ('main_dirty', always, make_capture('main_dirty')),
+        ('main_dirty_files', always, make_capture('main_dirty_files')),
+        ('task_state_hash', always, make_capture('task_state_hash')),
+        ('qgate_open_count', always, make_capture('qgate_open_count')),
+        ('config_hash', always, make_capture('config_hash')),
+        ('pending_tasks_count', always, make_capture('pending_tasks_count')),
+        ('pending_findings_by_type', always, make_capture('pending_findings_by_type')),
+        ('pending_findings_blocking_count', always, make_capture('pending_findings_blocking_count')),
+    ]
+    monkeypatch.setattr(_inv, 'INVARIANTS', stubbed)
+    monkeypatch.setattr(_cmds, 'INVARIANTS', stubbed)
+    return state
+
+
+@pytest.fixture
+def _stub_metadata(monkeypatch):
+    """Replace _load_status_metadata so cmd_verify sees a metadata dict free
+    of worktree fields (avoids the worktree-resolution assertion).
+    """
+    md: dict = {}
+    monkeypatch.setattr(_cmds, '_load_status_metadata', lambda _pid: md)
+    return md
+
+
+def _seed_plan_with_5_execute_capture(plan_id):
+    """Create a plan, advance to 5-execute, capture the handshake row.
+
+    Returns nothing; the captured row lives in handshake.toon under the
+    fixture plan directory and is consumed by the next cmd_verify call.
+    """
+    cmd_create(
+        Namespace(
+            plan_id=plan_id,
+            title='Transition Guard Test',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+    for phase in ('1-init', '2-refine', '3-outline', '4-plan'):
+        cmd_update_phase(Namespace(plan_id=plan_id, phase=phase, status='done'))
+    cmd_set_phase(Namespace(plan_id=plan_id, phase='5-execute'))
+    _cmds.cmd_capture(
+        Namespace(plan_id=plan_id, phase='5-execute', override=False, reason=None, strict=False)
+    )
+
+
+def _seed_plan_with_4_plan_capture(plan_id):
+    """Create a plan, advance to 4-plan, capture the handshake row, then
+    cmd_set_phase to 4-plan so cmd_transition --completed 4-plan is valid.
+    """
+    cmd_create(
+        Namespace(
+            plan_id=plan_id,
+            title='Transition Guard Test',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+    for phase in ('1-init', '2-refine', '3-outline'):
+        cmd_update_phase(Namespace(plan_id=plan_id, phase=phase, status='done'))
+    cmd_set_phase(Namespace(plan_id=plan_id, phase='4-plan'))
+    _cmds.cmd_capture(
+        Namespace(plan_id=plan_id, phase='4-plan', override=False, reason=None, strict=False)
+    )
+
+
+def test_transition_5_execute_refuses_on_handshake_drift(_stubbed_invariants, _stub_metadata):
+    """cmd_transition refuses to advance when the captured 5-execute row drifts.
+
+    Pins the inline strict-verify guard contract: 5-execute -> 6-finalize is in
+    _BLOCKING_BOUNDARIES, so cmd_transition MUST re-run cmd_verify and return
+    its drift dict unchanged. status.json stays unchanged.
+    """
+    plan_id = 'transition-drift-5exec'
+    with PlanContext(plan_id=plan_id) as ctx:
+        _seed_plan_with_5_execute_capture(plan_id)
+
+        _stubbed_invariants['main_sha'] = 'drifted-sha-xyz'
+        status_before = json.loads((ctx.plan_dir / 'status.json').read_text(encoding='utf-8'))
+
+        result = cmd_transition(Namespace(plan_id=plan_id, completed='5-execute'))
+
+        assert result is not None
+        assert result['status'] == 'drift', (
+            f'Expected status: drift on guarded-boundary transition with drifted '
+            f'capture, got {result!r}. The inline guard in cmd_transition is not '
+            f'firing for 5-execute -> 6-finalize.'
+        )
+        assert result['phase'] == '5-execute'
+        diff_names = {d['invariant'] for d in result['diffs']}
+        assert 'main_sha' in diff_names
+
+        status_after = json.loads((ctx.plan_dir / 'status.json').read_text(encoding='utf-8'))
+        assert status_after['current_phase'] == status_before['current_phase'] == '5-execute', (
+            'cmd_transition wrote status despite drift — the guard is not '
+            'short-circuiting before write_status.'
+        )
+        assert status_after['phases'] == status_before['phases'], (
+            'Phase status list mutated despite drift refusal — write_status fired.'
+        )
+
+
+def test_transition_5_execute_drift_toon_byte_equivalent(_stubbed_invariants, _stub_metadata):
+    """The dict returned by cmd_transition on drift must equal cmd_verify's dict.
+
+    Pins that the inline guard returns the verify result UNCHANGED — same
+    keys, same values, same ordering — so downstream consumers (workflow
+    doc surfacing, retrospective parsing) require no adjustment.
+    """
+    plan_id = 'transition-drift-equiv'
+    with PlanContext(plan_id=plan_id):
+        _seed_plan_with_5_execute_capture(plan_id)
+        _stubbed_invariants['main_sha'] = 'drifted-sha-equiv'
+
+        transition_result = cmd_transition(Namespace(plan_id=plan_id, completed='5-execute'))
+        verify_result = _cmds.cmd_verify(
+            Namespace(plan_id=plan_id, phase='5-execute', strict=True)
+        )
+
+        assert transition_result == verify_result, (
+            'cmd_transition drift dict diverges from cmd_verify dict. '
+            f'transition={transition_result!r} verify={verify_result!r}. '
+            'The inline guard MUST return the verify result unchanged.'
+        )
+
+
+def test_transition_4_plan_skips_handshake_verify_on_drift(_stubbed_invariants, _stub_metadata):
+    """cmd_transition --completed 4-plan ignores handshake drift.
+
+    4-plan -> 5-execute is NOT in _BLOCKING_BOUNDARIES, so the inline
+    verify path MUST NOT fire even when the captured row would drift.
+    This pins today's non-guarded-transition semantics so future
+    boundary-set expansions surface as test failures rather than silent
+    contract drift.
+    """
+    plan_id = 'transition-4plan-skip'
+    with PlanContext(plan_id=plan_id) as ctx:
+        _seed_plan_with_4_plan_capture(plan_id)
+
+        _stubbed_invariants['main_sha'] = 'drifted-sha-4plan'
+
+        result = cmd_transition(Namespace(plan_id=plan_id, completed='4-plan'))
+
+        assert result is not None
+        assert result['status'] == 'success', (
+            f'cmd_transition refused a non-guarded transition (4-plan -> '
+            f'5-execute) despite drift, got {result!r}. The boundary set '
+            f"_BLOCKING_BOUNDARIES MUST gate the verify call — non-guarded "
+            f'transitions stay drift-blind.'
+        )
+        assert result['next_phase'] == '5-execute'
+
+        status_after = json.loads((ctx.plan_dir / 'status.json').read_text(encoding='utf-8'))
+        assert status_after['current_phase'] == '5-execute', (
+            'Non-guarded transition failed to advance current_phase despite '
+            'returning success — write_status did not fire.'
+        )

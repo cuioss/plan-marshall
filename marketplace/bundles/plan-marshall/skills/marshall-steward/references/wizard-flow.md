@@ -197,7 +197,7 @@ The two `rebase_*` fields control the sync-with-main step at the start of phase-
 
 ## Step 7: Quality Pipeline Configuration (Optional)
 
-Ask the user to accept defaults (all generic verify steps + 7 finalize steps, default iterations) or configure individually. The 7 default finalize steps are `commit-push`, `create-pr`, `ci-wait`, `automated-review`, `sonar-roundtrip` (or `lessons-capture` substitute), `lessons-capture`, `branch-cleanup`, and `archive-plan` — `ci-wait` is ordered immediately before `automated-review` so the latter consumes the completed-CI signal rather than polling CI itself. If configuring, discover available steps and apply:
+Ask the user to accept defaults (all generic verify steps + 6 finalize steps, default iterations) or configure individually. The 6 default finalize steps are `commit-push`, `create-pr`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `branch-cleanup`, and `archive-plan` — CI completion is a dispatcher-resolved precondition (`requires: [ci-complete]` declared on `automated-review` and `sonar-roundtrip` frontmatters), not a sibling step. If configuring, discover available steps and apply:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-verify-steps

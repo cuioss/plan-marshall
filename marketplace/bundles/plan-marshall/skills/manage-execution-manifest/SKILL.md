@@ -46,7 +46,6 @@ phase_6:
   steps[M]:
     - commit-push
     - create-pr
-    - ci-wait
     - automated-review
     - sonar-roundtrip
     - lessons-capture
@@ -62,7 +61,7 @@ phase_6:
 | `plan_id` | string | Plan identifier (echo) |
 | `phase_5.early_terminate` | bool | If `true`, Phase 5 transitions directly to Phase 6 without running tasks (analysis-only plans with empty affected_files) |
 | `phase_5.verification_steps` | list[string] | Ordered list of Phase 5 verification step IDs (e.g., `quality-gate`, `module-tests`, `coverage`). Empty list means no verification needed (e.g., docs-only plans) |
-| `phase_6.steps` | list[string] | Ordered list of Phase 6 finalize step IDs to dispatch. Subset of the canonical step set: `commit-push`, `create-pr`, `ci-wait`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `branch-cleanup`, `archive-plan`, `record-metrics`, `lessons-integration`. `ci-wait` is ordered immediately before `automated-review` so the latter consumes the completed-CI signal rather than polling CI itself. |
+| `phase_6.steps` | list[string] | Ordered list of Phase 6 finalize step IDs to dispatch. Subset of the canonical step set: `commit-push`, `create-pr`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `branch-cleanup`, `archive-plan`, `record-metrics`, `lessons-integration`. CI completion is a dispatcher-resolved precondition declared via `requires: [ci-complete]` on consumer step frontmatters (see `phase-6-finalize/SKILL.md` Step 3 § "Precondition resolution") — it is not itself a step in the canonical set. |
 
 ---
 

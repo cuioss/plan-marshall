@@ -8,6 +8,8 @@ import shutil
 import subprocess
 from typing import Any
 
+from _handshake_commands import cmd_verify  # type: ignore[import-not-found]
+from _invariants import _BLOCKING_BOUNDARIES  # type: ignore[import-not-found]
 from _references_core import read_references, write_references  # type: ignore[import-not-found]
 from _short_description import derive_short_description  # type: ignore[import-not-found]
 from _status_core import (
@@ -25,6 +27,30 @@ from constants import (  # type: ignore[import-not-found]
     PHASE_STATUS_PENDING,
 )
 from file_ops import get_plan_dir  # type: ignore[import-not-found]
+
+# Result-status values that indicate the strict-verify gate refuses to advance.
+# Mirrors the ``--strict`` exit-1 conditions in ``phase_handshake.py`` main()
+# so the inline guard in ``cmd_transition`` and the CLI exit-code wrapper in
+# ``manage_status.py`` main() treat the same situations as boundary refusals.
+# Single source of truth — both consumers import this name; do not duplicate
+# the literal set.
+VERIFY_REFUSAL_ERRORS = frozenset({
+    'worktree_unresolved',
+    'worktree_metadata_drift',
+    'main_checkout_dirtied_during_plan',
+})
+
+
+def verify_blocks_transition(verify_result: dict) -> bool:
+    """Return True when a cmd_verify result MUST block the transition.
+
+    Consumed by both ``cmd_transition`` (refuse to mutate state) and
+    ``manage_status.py`` main() (exit 1) so the in-process refusal and the
+    CLI exit-code contract stay in lockstep.
+    """
+    if verify_result.get('status') == 'drift':
+        return True
+    return verify_result.get('error') in VERIFY_REFUSAL_ERRORS
 
 
 def cmd_create(args: argparse.Namespace) -> dict:
@@ -191,6 +217,36 @@ def cmd_transition(args: argparse.Namespace) -> dict | None:
 
     completed_idx = phase_names.index(args.completed)
 
+    # Determine next phase early so the guard below can inspect it before any
+    # state mutation. The standalone ``cmd_transition`` later computes the same
+    # value after marking the completed phase done, but the inline guard MUST
+    # see ``next_phase`` first to decide whether the strict-verify gate fires.
+    if completed_idx + 1 < len(phase_names):
+        next_phase: str | None = phase_names[completed_idx + 1]
+    else:
+        next_phase = None
+
+    # Inline strict-verify guard for guarded boundaries — folds the
+    # ``phase_handshake verify --phase {completed} --strict`` step that
+    # workflow docs used to issue separately into the transition itself.
+    # When ``next_phase`` is in ``_BLOCKING_BOUNDARIES`` (currently
+    # ``{'6-finalize'}``), re-run the verify code path against the captured
+    # baseline for the completed phase. On drift (or any of the three
+    # worktree-/main-checkout boundary refusals listed in
+    # ``VERIFY_REFUSAL_ERRORS``) return the verify result unchanged and
+    # SKIP ``write_status`` so ``current_phase`` stays on the completed
+    # phase. Non-guarded transitions are unaffected — they keep today's
+    # behaviour with no verify invoked.
+    if next_phase in _BLOCKING_BOUNDARIES:
+        verify_args = argparse.Namespace(
+            plan_id=args.plan_id,
+            phase=args.completed,
+            strict=True,
+        )
+        verify_result = cmd_verify(verify_args)
+        if verify_blocks_transition(verify_result):
+            return verify_result
+
     # Mark completed phase as done
     phases[completed_idx]['status'] = PHASE_STATUS_DONE
 
@@ -214,9 +270,10 @@ def cmd_transition(args: argparse.Namespace) -> dict | None:
                     refs['modified_files'] = modified
                     write_references(args.plan_id, refs)
 
-    # Determine next phase
-    if completed_idx + 1 < len(phases):
-        next_phase = phase_names[completed_idx + 1]
+    # Apply the next-phase mutation. ``next_phase`` was resolved earlier so
+    # the inline strict-verify guard could decide whether to fire — here we
+    # only need to perform the state changes that follow from it.
+    if next_phase is not None:
         phases[completed_idx + 1]['status'] = PHASE_STATUS_IN_PROGRESS
         status['current_phase'] = next_phase
     else:
@@ -225,7 +282,6 @@ def cmd_transition(args: argparse.Namespace) -> dict | None:
         # check, planning.md cleanup --filter complete) start matching.
         # Mirrors cmd_archive's atomic-archive behavior so the two verbs
         # produce the same end-state.
-        next_phase = None
         status['current_phase'] = 'complete'
 
     write_status(args.plan_id, status)

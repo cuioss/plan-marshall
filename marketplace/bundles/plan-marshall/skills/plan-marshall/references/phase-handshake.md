@@ -187,7 +187,7 @@ message: "pending_findings_blocking_count failed for phase '6-finalize': ..."
 
 | Boundary | Where the strict-verify check fires |
 |---|---|
-| `5-execute → 6-finalize` | `phase_handshake capture --phase 6-finalize` issued by the Phase Entry Protocol for `6-finalize` |
+| `5-execute → 6-finalize` | `manage-status transition --completed 5-execute` inlines `phase_handshake verify --phase 5-execute --strict`. On drift the transition returns the drift TOON, refuses to advance state, and exits 1 — mirroring the standalone strict-verify exit semantics. |
 | `automated-review → branch-cleanup` (intra-finalize) | the `phase-6-finalize` orchestrator re-issues `phase_handshake capture --phase 6-finalize` between the two finalize sub-steps |
 | `sonar-roundtrip → next` (intra-finalize) | same — the orchestrator re-issues capture between sub-steps |
 
@@ -218,7 +218,7 @@ No changes are required in `_handshake_commands.py`, `phase_handshake.py`, or an
 
 ## Integration with phase lifecycle
 
-The actual call sites for `capture` and `verify` are the orchestrator workflow files [`plan-marshall:plan-marshall:workflow/planning.md`](../workflow/planning.md) (phases 1-init through 4-plan boundaries) and [`plan-marshall:plan-marshall:workflow/execution.md`](../workflow/execution.md) (4-plan→5-execute fallback and 5-execute→6-finalize boundaries). Each `manage-metrics phase-boundary` invocation in those workflows is followed by a `phase_handshake capture --phase {prev_phase}` call, and each next-phase entry runs `phase_handshake verify --phase {prev_phase} --strict` before any phase-specific work begins.
+The actual call sites for `capture` and `verify` are the orchestrator workflow files [`plan-marshall:plan-marshall:workflow/planning.md`](../workflow/planning.md) (phases 1-init through 4-plan boundaries) and [`plan-marshall:plan-marshall:workflow/execution.md`](../workflow/execution.md) (4-plan→5-execute fallback and 5-execute→6-finalize boundaries). Each `manage-metrics phase-boundary` invocation in those workflows is followed by a `phase_handshake capture --phase {prev_phase}` call. For non-guarded next-phase entries, the workflow runs a standalone `phase_handshake verify --phase {prev_phase} --strict` before any phase-specific work begins. For guarded boundaries (next phase in `_BLOCKING_BOUNDARIES`, currently `{'6-finalize'}`), the strict-verify step is inlined into `manage-status transition --completed {prev_phase}` so the workflow issues a single atomic call instead of a verify+transition pair — the transition refuses to advance state and exits 1 on drift, mirroring the standalone verify --strict contract.
 
 The abstract contract is documented in [`../../ref-workflow-architecture/standards/phase-lifecycle.md`](../../ref-workflow-architecture/standards/phase-lifecycle.md): the Phase Completion Protocol calls `capture` as its final step; the Phase Entry Protocol calls `verify --strict` immediately after the Q-Gate check. The orchestrator workflows are the canonical implementation of that contract — they wire capture/verify alongside the existing `manage-metrics phase-boundary` calls so a single workflow edit covers all six phases without touching any phase skill individually.
 
