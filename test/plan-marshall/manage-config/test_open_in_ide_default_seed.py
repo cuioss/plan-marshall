@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Test that `manage-config init` seeds plan.open_in_ide.enabled=true.
+"""Test that `manage-config init` seeds plan.open_in_ide=true.
 
 Guards the marshall-steward seed contract: a fresh marshal.json produced by
 `manage-config init` (the wizard entry point) carries the open-in-ide flag
-under the nested key path `plan.open_in_ide.enabled` and NOT as a top-level
-peer of `system` / `plan` / `skill_domains`.
+as a flat boolean at `plan.open_in_ide` and NOT as a top-level peer of
+`system` / `plan` / `skill_domains`.
 """
 
 import importlib.util
@@ -38,8 +38,8 @@ _cmd_init_mod = _load_module('_cmd_init_seed_test', '_cmd_init.py')
 cmd_init = _cmd_init_mod.cmd_init
 
 
-def test_init_seeds_open_in_ide_enabled_true_under_plan_namespace():
-    """Fresh marshal.json must contain plan.open_in_ide.enabled = True."""
+def test_init_seeds_open_in_ide_true_under_plan_namespace():
+    """Fresh marshal.json must contain plan.open_in_ide = True (flat bool)."""
     # Arrange
     with PlanContext(plan_id='seed-open-in-ide') as ctx:
         # Act
@@ -52,7 +52,7 @@ def test_init_seeds_open_in_ide_enabled_true_under_plan_namespace():
 
         config = json.loads(marshal_path.read_text(encoding='utf-8'))
 
-        # The nested key path is what is asserted; not a top-level alias.
+        # Flat boolean under `plan`; not a top-level alias, not a sub-dict.
         assert 'open_in_ide' not in config, (
             "open_in_ide must NOT be a top-level key — it lives under `plan`."
         )
@@ -60,5 +60,4 @@ def test_init_seeds_open_in_ide_enabled_true_under_plan_namespace():
         assert 'open_in_ide' in config['plan'], (
             'plan.open_in_ide must be seeded by manage-config init'
         )
-        assert 'enabled' in config['plan']['open_in_ide']
-        assert config['plan']['open_in_ide']['enabled'] is True
+        assert config['plan']['open_in_ide'] is True

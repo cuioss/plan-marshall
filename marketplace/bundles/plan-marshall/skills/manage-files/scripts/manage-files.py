@@ -169,10 +169,10 @@ def build_launch_command(ide: IdeRecord, path: Path) -> list[str]:
 def is_open_in_ide_enabled() -> bool:
     """Return whether `open-in-ide` is enabled in marshal.json.
 
-    Lenient resolution: a missing file, a missing `plan` namespace, a missing
-    `plan.open_in_ide` sub-namespace, or a missing `enabled` field all
-    resolve to the documented default `True`. Only a malformed JSON file
-    raises (consistent with the rest of the config surface).
+    Lenient resolution: a missing file, a missing `plan` namespace, or a
+    missing `plan.open_in_ide` field all resolve to the documented default
+    `True`. Only a malformed JSON file raises (consistent with the rest of
+    the config surface).
     """
     marshal_path = get_marshal_path()
     if not marshal_path.exists():
@@ -187,12 +187,9 @@ def is_open_in_ide_enabled() -> bool:
     if not isinstance(plan_ns, dict):
         return True
     open_in_ide = plan_ns.get('open_in_ide')
-    if not isinstance(open_in_ide, dict):
+    if open_in_ide is None:
         return True
-    enabled = open_in_ide.get('enabled')
-    if enabled is None:
-        return True
-    return bool(enabled)
+    return bool(open_in_ide)
 
 
 def _resolve_document_path(plan_id: str, document: str) -> tuple[Path | None, str | None]:

@@ -7,8 +7,8 @@ Covers:
     branches on both platforms.
   * `build_launch_command`: each IdeRecord -> correct argv.
   * `is_open_in_ide_enabled`: explicit true, explicit false, missing key
-    variants (no enabled field; no open_in_ide sub-namespace; no plan
-    namespace; no marshal.json file at all).
+    variants (no open_in_ide key; no plan namespace; no marshal.json file
+    at all); non-dict top-level JSON raises ValueError.
   * End-to-end `cmd_open_in_ide`: Mode A success, disabled-by-config
     short-circuit (asserts detect/launcher NEVER called), unknown-IDE
     `ide_not_detected` error, launcher_missing error, Mode B
@@ -275,7 +275,7 @@ def test_is_open_in_ide_enabled_explicit_true():
     # Arrange
     with PlanContext(plan_id='cfg-true') as ctx:
         (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'plan': {'open_in_ide': {'enabled': True}}}), encoding='utf-8'
+            json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
         )
 
         # Act
@@ -289,7 +289,7 @@ def test_is_open_in_ide_enabled_explicit_false():
     # Arrange
     with PlanContext(plan_id='cfg-false') as ctx:
         (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'plan': {'open_in_ide': {'enabled': False}}}), encoding='utf-8'
+            json.dumps({'plan': {'open_in_ide': False}}), encoding='utf-8'
         )
 
         # Act
@@ -299,22 +299,7 @@ def test_is_open_in_ide_enabled_explicit_false():
         assert result is False
 
 
-def test_is_open_in_ide_enabled_missing_enabled_field_defaults_true():
-    """plan.open_in_ide exists but has no `enabled` key → default True."""
-    # Arrange
-    with PlanContext(plan_id='cfg-no-enabled') as ctx:
-        (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'plan': {'open_in_ide': {}}}), encoding='utf-8'
-        )
-
-        # Act
-        result = is_open_in_ide_enabled()
-
-        # Assert
-        assert result is True
-
-
-def test_is_open_in_ide_enabled_missing_open_in_ide_subnamespace_defaults_true():
+def test_is_open_in_ide_enabled_missing_open_in_ide_key_defaults_true():
     """plan namespace present but no `open_in_ide` key → default True."""
     # Arrange
     with PlanContext(plan_id='cfg-no-subns') as ctx:
@@ -389,7 +374,7 @@ def test_cmd_open_in_ide_mode_a_macos_vscode_success():
     # Arrange
     with PlanContext(plan_id='e2e-mode-a') as ctx:
         (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'plan': {'open_in_ide': {'enabled': True}}}), encoding='utf-8'
+            json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
         )
         args = Namespace(path='/abs/path/file.md', plan_id=None, document=None)
 
@@ -418,7 +403,7 @@ def test_cmd_open_in_ide_disabled_by_config_short_circuits():
     # Arrange
     with PlanContext(plan_id='e2e-disabled') as ctx:
         (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'plan': {'open_in_ide': {'enabled': False}}}), encoding='utf-8'
+            json.dumps({'plan': {'open_in_ide': False}}), encoding='utf-8'
         )
         args = Namespace(path='/abs/path/file.md', plan_id=None, document=None)
 
@@ -466,7 +451,7 @@ def test_cmd_open_in_ide_unknown_ide_returns_ide_not_detected():
     # Arrange
     with PlanContext(plan_id='e2e-unknown-ide') as ctx:
         (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'plan': {'open_in_ide': {'enabled': True}}}), encoding='utf-8'
+            json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
         )
         args = Namespace(path='/abs/path/file.md', plan_id=None, document=None)
 
@@ -486,7 +471,7 @@ def test_cmd_open_in_ide_launcher_missing_returns_launcher_missing():
     # Arrange
     with PlanContext(plan_id='e2e-launcher-missing') as ctx:
         (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'plan': {'open_in_ide': {'enabled': True}}}), encoding='utf-8'
+            json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
         )
         args = Namespace(path='/abs/path/file.md', plan_id=None, document=None)
 
@@ -510,7 +495,7 @@ def test_cmd_open_in_ide_mode_b_without_document_returns_invalid_arguments():
     # (e.g., direct function call rather than CLI invocation).
     with PlanContext(plan_id='e2e-mode-b-no-doc') as ctx:
         (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'plan': {'open_in_ide': {'enabled': True}}}), encoding='utf-8'
+            json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
         )
         args = Namespace(path=None, plan_id='some-plan', document=None)
 
@@ -526,7 +511,7 @@ def test_cmd_open_in_ide_mode_b_document_resolution_failure():
     # Arrange
     with PlanContext(plan_id='e2e-mode-b-resolver-fail') as ctx:
         (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'plan': {'open_in_ide': {'enabled': True}}}), encoding='utf-8'
+            json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
         )
         args = Namespace(path=None, plan_id='e2e-mode-b-resolver-fail', document='solution_outline')
 
