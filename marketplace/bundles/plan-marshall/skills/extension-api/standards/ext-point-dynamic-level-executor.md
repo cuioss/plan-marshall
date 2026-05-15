@@ -156,9 +156,13 @@ Every dispatch site computes the target via the role resolver and dispatches the
 
 ```bash
 # Resolve the dispatch target for the verification-feedback workflow under phase-6-finalize
-target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase phase-6-finalize --role verification-feedback)
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort resolve-target --phase phase-6-finalize --role verification-feedback
+```
 
+Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch below.
+
+```
 # Dispatch
 Task: plan-marshall:{target}
   prompt: |

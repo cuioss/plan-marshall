@@ -32,6 +32,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from _analyze_argument_naming import analyze_argument_naming
+from _analyze_shell_substitution_in_skills import analyze_shell_substitution_in_skills
 from _analyze_test_conventions import (
     analyze_subprocess_pythonpath,
     analyze_unique_fixture_basenames,
@@ -336,6 +337,13 @@ def cmd_analyze(args) -> dict:
     all_issues.extend(argparse_issues)
     total_issues += len(argparse_issues)
 
+    # Marketplace-wide shell-substitution-in-skills rule. Unconditionally
+    # active (not gated by --rules) because it enforces a hard rule from
+    # dev-general-practices and the analyzer is cheap (regex over markdown).
+    shell_substitution_issues = analyze_shell_substitution_in_skills(marketplace_root)
+    all_issues.extend(shell_substitution_issues)
+    total_issues += len(shell_substitution_issues)
+
     # Marketplace-wide argument-naming rule cluster (notation/subcommand/
     # flag/Canonical-Forms cross-check). Gated OFF by default; opt in via
     # ``--rules argument_naming`` or the ``--enable-argument-naming`` alias.
@@ -435,6 +443,11 @@ def cmd_quality_gate(args) -> dict:
                                     ``2026-04-29-23-002``; ``--rules``
                                     opt-in only applies to the ``analyze``
                                     subcommand)
+      - analyze_shell_substitution_in_skills (forbidden ``$(`` patterns in
+                                    plan-marshall skill markdown — enforces
+                                    the dev-general-practices "no shell
+                                    constructs" hard rule per lesson
+                                    ``2026-05-15-13-001``)
     """
     marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
     if not marketplace_root:
@@ -467,6 +480,12 @@ def cmd_quality_gate(args) -> dict:
     naming_findings = analyze_argument_naming(marketplace_root)
     all_issues.extend(naming_findings)
     rule_summaries.append({'rule': 'analyze_argument_naming', 'findings': len(naming_findings)})
+
+    shell_substitution_findings = analyze_shell_substitution_in_skills(marketplace_root)
+    all_issues.extend(shell_substitution_findings)
+    rule_summaries.append(
+        {'rule': 'analyze_shell_substitution_in_skills', 'findings': len(shell_substitution_findings)}
+    )
 
     return {
         'status': 'fail' if all_issues else 'pass',

@@ -10,11 +10,10 @@ Sequential structured setup for new projects. Execute steps in order.
 
 Configure `.gitignore` for `.plan/` directory with tracked file exceptions.
 
-**BOOTSTRAP**: Use DIRECT Python call (no executor yet):
+**BOOTSTRAP**: Use a DIRECT Python call (no executor yet). Resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/gitignore_setup.py` and capture the first match as `{GITIGNORE_SETUP}`. Then invoke it directly:
 
 ```bash
-GITIGNORE_SETUP=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/gitignore_setup.py | head -n 1)
-python3 "$GITIGNORE_SETUP"
+python3 "{GITIGNORE_SETUP}"
 ```
 
 **Output (TOON)**:
@@ -55,11 +54,10 @@ human readers.
 
 ## Step 2: Update Project Documentation (BOOTSTRAP)
 
-**BOOTSTRAP**: Use DIRECT Python call (executor not yet available):
+**BOOTSTRAP**: Use a DIRECT Python call (executor not yet available). Resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine_mode.py` and capture the first match as `{DETERMINE_MODE}`. Then invoke it directly:
 
 ```bash
-DETERMINE_MODE=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine_mode.py | head -n 1)
-python3 "$DETERMINE_MODE" fix-docs
+python3 "{DETERMINE_MODE}" fix-docs
 ```
 
 Interpret the output:
@@ -72,11 +70,10 @@ Interpret the output:
 
 Add the executor permission to project-local settings so script execution doesn't prompt:
 
-**BOOTSTRAP**: Use DIRECT Python call (no executor yet):
+**BOOTSTRAP**: Use a DIRECT Python call (no executor yet). Resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/tools-permission-fix/scripts/permission_fix.py` and capture the first match as `{PERMISSION_FIX}`. Then invoke it directly:
 
 ```bash
-PERMISSION_FIX=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-permission-fix/scripts/permission_fix.py | head -n 1)
-python3 "$PERMISSION_FIX" ensure \
+python3 "{PERMISSION_FIX}" ensure \
   --permissions "Bash(python3 .plan/execute-script.py *)" \
   --target project
 ```
@@ -114,16 +111,16 @@ This ensures script execution works without prompting, independent of global set
 
 When the wizard is running inside a worktree, pass the worktree absolute path to `generate_executor.py` via `--marketplace-root <REPO_ROOT>` so the generated executor's script mappings resolve against the worktree's `marketplace/bundles/` rather than the main checkout (or the plugin cache). When running against the main checkout, omit the flag and let the script auto-detect the plugin cache.
 
-**Inside a worktree** (path under `.plan/local/worktrees/`):
+**Inside a worktree** (path under `.plan/local/worktrees/`): resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/tools-script-executor/scripts/generate_executor.py` and capture the first match as `{GENERATE_EXECUTOR}`. Then invoke it directly with the worktree root captured above as `{REPO_ROOT}`:
+
 ```bash
-GENERATE_EXECUTOR=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-script-executor/scripts/generate_executor.py | head -n 1)
-python3 "$GENERATE_EXECUTOR" generate --marketplace-root "$REPO_ROOT"
+python3 "{GENERATE_EXECUTOR}" generate --marketplace-root "{REPO_ROOT}"
 ```
 
-**Outside a worktree** (main checkout, default path):
+**Outside a worktree** (main checkout, default path): resolve `{GENERATE_EXECUTOR}` the same way (Glob against the pattern above, take the first match), then invoke it without the marketplace-root flag:
+
 ```bash
-GENERATE_EXECUTOR=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-script-executor/scripts/generate_executor.py | head -n 1)
-python3 "$GENERATE_EXECUTOR" generate
+python3 "{GENERATE_EXECUTOR}" generate
 ```
 
 **Output (TOON)**:

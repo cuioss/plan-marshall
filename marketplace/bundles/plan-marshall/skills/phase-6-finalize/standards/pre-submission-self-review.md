@@ -39,9 +39,11 @@ Capture the helper's TOON output as `{candidates_toon}` for forwarding to the co
 Compute the variant target via the role resolver:
 
 ```bash
-target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase phase-6-finalize)
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort resolve-target --phase phase-6-finalize
 ```
+
+Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
 
 Emit the standardized post-resolve dispatch log line — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
 

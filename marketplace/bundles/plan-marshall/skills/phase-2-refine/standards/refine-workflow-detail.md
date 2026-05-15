@@ -806,9 +806,11 @@ If `status: not_found` or `value != lesson`, skip Step 13.5 — log nothing and 
 Compute the dispatch target via the role resolver:
 
 ```bash
-target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase phase-2-refine)
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort resolve-target --phase phase-2-refine
 ```
+
+Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
 
 Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
 

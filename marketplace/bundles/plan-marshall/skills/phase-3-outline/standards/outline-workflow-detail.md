@@ -161,13 +161,11 @@ The recipe skill handles: discovery, deliverable creation, and solution outline 
 Resolve the dispatch target via the resolver — no dedicated role key (the LLM path rarely fires); level is sourced from `effort`:
 
 ```bash
-level=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort read --default)
-target="execution-context"
-if [ -n "$level" ] && [ "$level" != "inherit" ]; then
-  target="execution-context-$level"
-fi
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort resolve-target --default
 ```
+
+Extract the `level` and `target` fields from the TOON output. Use those values as `{level}` and `{target}` in the dispatch and the post-resolve log line below. The resolver returns `target: execution-context` when `level` is `inherit` or empty, and `target: execution-context-{level}` otherwise — the mapping is centralized in the resolver, callers do not branch on level.
 
 Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
 
@@ -741,9 +739,11 @@ If the bypass rule above did NOT fire, spawn the Q-Gate validation agent.
 Compute the dispatch target via the role resolver:
 
 ```bash
-target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase phase-3-outline)
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort resolve-target --phase phase-3-outline
 ```
+
+Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
 
 Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
 
