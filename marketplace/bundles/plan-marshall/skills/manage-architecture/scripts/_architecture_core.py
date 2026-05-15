@@ -189,9 +189,20 @@ def crawl_all_modules(project_dir: str = '.') -> dict[str, dict[str, Any]]:
     Production worktrees (which always have at least one real module) never
     hit this path.
     """
-    # Local imports — kept inside the function so loading _architecture_core
-    # alone (e.g. for path helpers) does not require the extension API to be
-    # importable.
+    # Local imports — deliberately deferred to function-call time.
+    #
+    # ``_post_process_files`` lives in ``_cmd_manage`` because it depends on
+    # several file-classification helpers and constants co-located there. Moving
+    # those ~300 lines to _architecture_core would invert the layering in the
+    # opposite direction. The deferred import is the accepted Python idiom for
+    # breaking circular-import cycles: ``_cmd_manage`` imports from
+    # ``_architecture_core`` at module level, so a top-level import here would
+    # create a true import-time cycle. Deferring to call time avoids the cycle
+    # without relocating the file-processing logic.
+    #
+    # ``extension_discovery`` is kept local for the same reason — it is an
+    # extension-API module that should not become a module-level dependency of
+    # this low-level utility module.
     from _cmd_manage import _post_process_files  # type: ignore[import-not-found]
     from extension_discovery import discover_project_modules  # type: ignore[import-not-found]
 

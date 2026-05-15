@@ -26,6 +26,7 @@ from _architecture_core import (
     DATA_DIR,
     DataNotFoundError,
     ModuleNotFoundInProjectError,
+    crawl_all_modules,
     crawl_module_derived,
     error_result_command_not_found,
     error_result_module_not_found,
@@ -1326,17 +1327,15 @@ def _sha256_file(path: Path) -> str | None:
     return h.hexdigest()
 
 
-def _sha256_crawled_derived(module_name: str, project_dir: str) -> str | None:
-    """Return the sha256 hexdigest of a freshly-crawled module's derived payload.
+def _sha256_payload(payload: dict | None) -> str | None:
+    """Return the sha256 hexdigest of a module's derived payload.
 
     Computed over the canonical JSON serialisation (``json.dumps(payload,
     sort_keys=True)``) so the digest is byte-identical to what
     ``_write_json`` would have written under the legacy on-disk model. Returns
-    ``None`` when the module is absent from the live crawl.
+    ``None`` when the payload is missing.
     """
-    try:
-        payload = crawl_module_derived(module_name, project_dir)
-    except ModuleNotFoundInProjectError:
+    if payload is None:
         return None
     canonical = json.dumps(payload, indent=2, sort_keys=True).encode('utf-8')
     return hashlib.sha256(canonical).hexdigest()
@@ -1407,9 +1406,9 @@ def cmd_diff_modules(args) -> dict:
 
     snapshot_modules = set((snapshot_meta.get('modules') or {}).keys())
 
-    try:
-        current_modules = set(iter_modules(args.project_dir))
-    except DataNotFoundError:
+    current_modules_data = crawl_all_modules(args.project_dir)
+    current_modules = set(current_modules_data.keys())
+    if not current_modules:
         return require_project_meta_result(args.project_dir)
 
     added = sorted(current_modules - snapshot_modules)
@@ -1419,7 +1418,10 @@ def cmd_diff_modules(args) -> dict:
     unchanged: list[str] = []
     for name in sorted(snapshot_modules & current_modules):
         snap_sha = _sha256_file(snapshot_dir / name / DIR_PER_MODULE_DERIVED)
-        cur_sha = _sha256_crawled_derived(name, args.project_dir)
+        # Use the pre-crawled data to avoid O(N^2) project walks: the
+        # full crawl happened once above; each iteration just serialises
+        # the already-computed payload dict.
+        cur_sha = _sha256_payload(current_modules_data.get(name))
         # When the snapshot derived.json is missing on disk, or the live
         # crawl no longer surfaces the module, treat the pair as changed —
         # the index lists the module on both sides but the sha surface cannot

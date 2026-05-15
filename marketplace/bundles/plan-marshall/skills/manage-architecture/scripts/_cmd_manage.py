@@ -489,19 +489,17 @@ def api_discover(project_dir: str = '.', force: bool = False) -> dict:
             'message': 'Use --force to overwrite',
         }
 
-    # Crawl the live worktree filesystem to enumerate modules. The crawl
-    # always reflects the current on-disk layout; nothing about the discovery
-    # answer is persisted to disk in derived.json form.
-    modules: dict[str, dict] = crawl_all_modules(project_dir)
-    project_path = Path(project_dir).resolve()
-
-    # Recover ``extensions_used`` so the on-disk meta keeps the historical
-    # field. ``crawl_all_modules`` discards it because the crawl interface
-    # returns module-level payloads only; one more discovery call gives us
-    # the extension list cheaply (no file walk).
+    # Crawl the live worktree filesystem to enumerate modules. A single
+    # discover_project_modules call gives us both the module data and
+    # extensions_used, avoiding the redundant second discovery pass that
+    # crawl_all_modules + a follow-up discover_project_modules would cause.
     from extension_discovery import discover_project_modules  # type: ignore[import-not-found]
 
-    extensions_used = discover_project_modules(project_path).get('extensions_used', [])
+    project_path = Path(project_dir).resolve()
+    discovery_result = discover_project_modules(project_path)
+    modules: dict[str, dict] = discovery_result.get('modules', {}) or {}
+    _post_process_files(modules, project_dir)
+    extensions_used = discovery_result.get('extensions_used', [])
 
     # Build the project-meta document. The ``modules`` index here is the
     # canonical record of "which modules existed at last discover".
