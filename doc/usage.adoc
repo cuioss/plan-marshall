@@ -43,3 +43,26 @@ If you have Settings Sync enabled, the change propagates across all your VS Code
 * **Tab still shows the process name** — the user-settings edit didn't stick. Verify the key is present in `~/Library/Application Support/Code/User/settings.json` and no workspace override is masking it (`Cmd+Shift+P` → "Preferences: Open Workspace Settings (JSON)").
 * **Tab shows `2.1.114` intermittently** — `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE` is missing or set to a non-`"1"` value in `./.claude/settings.local.json`. Re-run `/marshall-steward` → Configuration → Terminal title, or add the key manually under the `env` block.
 * **Tab label is blank inside Claude Code** — the hook subprocess couldn't open `/dev/tty` and fell back to stdout; check `~/.claude/plugins/cache/plan-marshall/plan-marshall/<version>/skills/plan-marshall/scripts/set_terminal_title.py` is on disk and executable by your Python 3.
+
+== Terminal title in IntelliJ IDEA
+
+IntelliJ IDEA (and the rest of the JetBrains IDE family — PyCharm, GoLand, WebStorm, RustRover, Rider, etc.) ships a built-in terminal tool window backed by JediTerm. Unlike VS Code, **there is no setting, registry flag, or shell hook that makes the IntelliJ terminal tab title reflect OSC 0/2 title escape sequences.** The `/marshall-steward` wizard configures everything correctly, the script emits the OSC bytes correctly, JediTerm parses them correctly — and then the IDE discards them for tab-title purposes.
+
+=== Why it cannot be fixed from our side
+
+JediTerm consumes the `\033]0;...\007` sequence and stores the title on the internal `Terminal` session object. The visible tab name in the Terminal tool window, however, is owned by the IDE: the classic terminal renders it as `<shell>` / `<cwd>`, and the Reworked Terminal (default since 2024.3) renders it as the most recent command. Neither code path reads JediTerm's stored OSC title. The long-standing JetBrains tickets https://youtrack.jetbrains.com/issue/IDEA-156492[IDEA-156492] and https://youtrack.jetbrains.com/issue/IJPL-92196[IJPL-92196] track this limitation; until JetBrains resolves them, no client-side workaround can change tab titles in the JetBrains terminal.
+
+=== What still works
+
+The `statusLine` entry the wizard writes into `./.claude/settings.local.json` is the supported source of truth inside JetBrains IDEs. Claude Code renders the statusline as plain text in its TUI footer, so the same `<icon> pm:<phase>:<short>` label that drives the tab title elsewhere shows up at the bottom of the Claude pane regardless of terminal emulator. Look there for the live status when running `claude` inside the IntelliJ terminal.
+
+=== Optional workarounds
+
+* **Rename the tab manually.** Right-click the Terminal tool window tab → `Rename Session…` and type the plan id. The name is static (won't update across phases) but at least disambiguates multiple plans open in parallel.
+* **Run `claude` in an external terminal.** Use a standalone terminal emulator (iTerm2, Ghostty, Kitty, Terminal.app, etc.) and start `claude` there. The OSC-driven tab title works out of the box in those terminals.
+* **Watch the statusline.** For most workflows the in-pane statusline is sufficient and you don't need the tab title at all.
+
+=== Troubleshooting
+
+* **Statusline missing inside Claude Code** — confirm `settings["statusLine"]` exists in `./.claude/settings.local.json` and points at the script with the `--statusline` flag. Re-run `/marshall-steward` → Configuration → Terminal title if absent.
+* **OSC bytes leak as visible text in the terminal** (e.g. `]0;◯ claude` appearing as output) — the script ran fine; what failed is the `/dev/tty` write. The script then falls back to stdout, Claude Code captures that stdout as hook output, and IntelliJ renders the bytes literally because they never reached JediTerm as an in-band escape sequence. This is cosmetic and harmless — the tab title couldn't update anyway (see "Why it cannot be fixed from our side" above). If you want to silence the leak, run `claude` from a tty session where the hook subprocess can open `/dev/tty` directly, e.g. an external terminal.
