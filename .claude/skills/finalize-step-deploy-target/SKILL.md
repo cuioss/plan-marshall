@@ -15,6 +15,16 @@ this step has **no skip detector**: it always runs, the generator
 always returns a status, and this executor records the outcome from
 that status.
 
+The emitted tree contains both per-bundle artifacts
+(`target/claude/{bundle}/`, including each bundle's regenerated
+`.claude-plugin/plugin.json` with variant-aware `agents:` entries and
+an empty `skills:` array so the runtime's default folder scan owns
+skill discovery without double-loading) and a top-level
+`target/claude/.claude-plugin/marketplace.json` that lets Claude Code
+register `target/claude/` itself as a marketplace. The Claude target's
+equality engine validates both before returning success, so a successful
+finalize step proves the full deliverable is consistent.
+
 This step is **project-local** (under `.claude/skills/`) rather than a
 `default:` built-in because the generator pipeline only makes sense for
 this repo (the plan-marshall meta-project): consumer projects that

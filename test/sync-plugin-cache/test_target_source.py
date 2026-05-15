@@ -86,16 +86,24 @@ def test_explicit_source_root_overrides_default(tmp_path: Path):
     assert bundles[0]['version'] == '1.2.3'
 
 
-def test_missing_plugin_json_yields_unknown(tmp_path: Path):
+def test_directory_without_plugin_json_is_not_treated_as_bundle(tmp_path: Path):
+    # A directory under target/claude/ without ``.claude-plugin/plugin.json``
+    # is NOT a bundle — most notably the top-level ``.claude-plugin/``
+    # directory that holds the marketplace.json registration manifest, plus
+    # any stray non-bundle directory that may accumulate on the filesystem.
     target = tmp_path / 'target' / 'claude'
-    # Bundle without plugin.json
     _write(target / 'noplugin' / 'README.md', '# no plugin\n')
+    _write(target / '.claude-plugin' / 'marketplace.json', '{}\n')
+    _write(target / 'real-bundle' / '.claude-plugin' / 'plugin.json', '{"version": "1.0.0"}\n')
 
     result = _run('--source-root', str(target))
     assert result.returncode == 0
     data = parse_toon(result.stdout)
     bundles = data.get('bundles', [])
-    assert any(b['name'] == 'noplugin' and b['version'] == 'unknown' for b in bundles)
+    names = [b['name'] for b in bundles]
+    assert 'noplugin' not in names
+    assert '.claude-plugin' not in names
+    assert 'real-bundle' in names
 
 
 def test_malformed_plugin_json_yields_unknown(tmp_path: Path):
