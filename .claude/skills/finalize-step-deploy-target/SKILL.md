@@ -54,37 +54,64 @@ that downstream steps pick up).
 
 ## Inputs
 
-- `{worktree_path}` — resolved at finalize entry. The generator MUST
-  be invoked from `{worktree_path}` so output lands under
-  `{worktree_path}/target/claude/`.
-- `{plan_id}` — for logging.
+- `{plan_id}` — required. Used to resolve the worktree path and for logging.
+
+## cwd contract — why this step takes explicit absolute paths
+
+The Claude Code Bash sandbox does NOT `cd` into the worktree before
+invoking finalize steps. Every Bash call runs from the main checkout's
+cwd. Relying on `Path.cwd()` inside the generator (or any cwd-relative
+path in this SKILL) would therefore generate into the main checkout's
+`target/claude/`, not the worktree's — silently leaving the worktree
+unchanged and propagating stale content to the downstream
+`finalize-step-sync-plugin-cache` step.
+
+To avoid that failure mode, this step resolves `{worktree_path}`
+explicitly and passes absolute paths to both the script and its
+`--output` flag. Do NOT shorten the invocation to the cwd-relative form
+`python3 marketplace/targets/generate.py --target claude --output target/claude`
+— that variant only works when the caller cd's into the worktree first,
+which finalize steps do not.
 
 ## Execution
 
 Inline-only — this step does NOT delegate to a Task agent. The
 generator is a fast, deterministic Python script.
 
-### 1. Invoke the generator
+### 1. Resolve worktree path
 
 ```bash
-python3 marketplace/targets/generate.py --target claude --output target/claude
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+  get-worktree-path --plan-id {plan_id}
+```
+
+Parse `worktree_path` from the TOON output. When `metadata.use_worktree==false`
+the script returns the main checkout absolute path, so `{worktree_path}`
+is always set after this call.
+
+### 2. Invoke the generator
+
+```bash
+python3 {worktree_path}/marketplace/targets/generate.py \
+  --target claude --output {worktree_path}/target/claude
 ```
 
 The script returns a TOON document on stdout describing the run.
 Capture exit code and stdout.
 
-### 2. Parse the result
+### 3. Parse the result
 
 | Field | Meaning |
 |-------|---------|
 | `status: success` | Generation completed; record `outcome=done` and use `emitted_count` for the display detail |
 | `status: error` | Generation failed; record `outcome=failed` and surface the `error` field in `display_detail` |
 
-### 3. Mark step complete
+### 4. Mark step complete
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
-  finalize-step --plan-id {plan_id} --step project:finalize-step-deploy-target \
+  mark-step-done --plan-id {plan_id} --phase 6-finalize \
+  --step project:finalize-step-deploy-target \
   --outcome {done|failed} --display-detail "{N} files emitted to target/claude/"
 ```
 

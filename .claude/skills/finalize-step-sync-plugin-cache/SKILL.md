@@ -36,28 +36,58 @@ agent-dispatched steps run).
 
 ## Inputs
 
-- `{plan_id}` — for logging.
-- `{worktree_path}` — resolved at finalize entry. The sync engine
-  resolves the source root from cwd by default; the executor invokes
-  it from `{worktree_path}` so it reads the worktree's
-  `target/claude/`.
+- `{plan_id}` — required. Used to resolve the worktree path and for logging.
+
+## cwd contract — why this step takes `--from-worktree` explicitly
+
+The Claude Code Bash sandbox does NOT `cd` into the worktree before
+invoking finalize steps. `sync.py`'s default source-root resolver
+falls back to `Path.cwd() / 'target' / 'claude'` (see `sync.py`
+`_resolve_source_root`), so without an explicit override it reads the
+**main checkout's** `target/claude/` — which the preceding
+`finalize-step-deploy-target` step did NOT write to (deploy-target
+writes to the worktree's `target/claude/`). The staleness guard does
+not catch the mismatch either: it compares cwd-derived source and
+cwd-derived marketplace roots, so a consistent-but-stale main checkout
+passes the guard cleanly.
+
+The net effect of omitting the override is a `status: success` /
+`synced_count: 10` return with the cache reflecting the previous
+contents of main, not the in-flight worktree changes. This step
+therefore resolves `{worktree_path}` explicitly and forwards it via
+`--from-worktree`.
 
 ## Execution
 
 Inline-only — this step does NOT delegate to a Task agent. The sync
 engine is a fast Python script with deterministic output.
 
-### 1. Invoke the consolidated sync engine
+### 1. Resolve worktree path
 
 ```bash
-python3 .claude/skills/sync-plugin-cache/scripts/sync.py
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+  get-worktree-path --plan-id {plan_id}
 ```
+
+Parse `worktree_path` from the TOON output. When `metadata.use_worktree==false`
+the script returns the main checkout absolute path, so `{worktree_path}`
+is always set after this call.
+
+### 2. Invoke the consolidated sync engine
+
+```bash
+python3 {worktree_path}/.claude/skills/sync-plugin-cache/scripts/sync.py \
+  --from-worktree {worktree_path}
+```
+
+`--from-worktree` overrides the cwd-based source resolver and binds
+the sync to the worktree's `target/claude/` tree.
 
 The script returns a TOON document with `status` (`success` |
 `partial` | `error`), `synced_count`, `failed_count`,
 `summary_message`, and a `synced[N]{bundle,version,status}` table.
 
-### 2. Parse the result
+### 3. Parse the result
 
 | Field | Meaning |
 |-------|---------|
@@ -65,11 +95,12 @@ The script returns a TOON document with `status` (`success` |
 | `status: partial` | Some bundles failed; record `outcome=failed` and surface `summary_message` in `display_detail` |
 | `status: error` | Hard failure (no bundles synced); record `outcome=failed` and surface `summary_message` |
 
-### 3. Mark step complete
+### 4. Mark step complete
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
-  finalize-step --plan-id {plan_id} --step project:finalize-step-sync-plugin-cache \
+  mark-step-done --plan-id {plan_id} --phase 6-finalize \
+  --step project:finalize-step-sync-plugin-cache \
   --outcome {done|failed} --display-detail "{display_detail}"
 ```
 
