@@ -355,6 +355,31 @@ def test_is_open_in_ide_enabled_no_marshal_file_defaults_true():
         assert result is True
 
 
+@pytest.mark.parametrize(
+    'top_level_value',
+    ['[]', '"a string"', '42', 'true', 'null'],
+)
+def test_is_open_in_ide_enabled_non_dict_top_level_raises_value_error(top_level_value):
+    """Non-dict top-level JSON in marshal.json raises ValueError naming the file.
+
+    Regression guard for PR #380 gemini-code-assist finding 8be141: the previous
+    implementation called `data.get('plan')` directly, which raises AttributeError
+    when `data` is a list/scalar. The guard turns that into a clear ValueError.
+    """
+    # Arrange
+    with PlanContext(plan_id=f'cfg-nondict-{abs(hash(top_level_value))}') as ctx:
+        marshal_path = ctx.fixture_dir / 'marshal.json'
+        marshal_path.write_text(top_level_value, encoding='utf-8')
+
+        # Act / Assert
+        with pytest.raises(ValueError) as exc_info:
+            is_open_in_ide_enabled()
+
+        # The file path must appear in the message so the user can diagnose.
+        assert str(marshal_path) in str(exc_info.value)
+        assert 'JSON object' in str(exc_info.value)
+
+
 # =============================================================================
 # cmd_open_in_ide — end-to-end
 # =============================================================================

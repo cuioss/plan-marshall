@@ -178,6 +178,11 @@ def is_open_in_ide_enabled() -> bool:
     if not marshal_path.exists():
         return True
     data = json.loads(marshal_path.read_text(encoding='utf-8'))
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"{marshal_path}: expected a JSON object at the top level, "
+            f"got {type(data).__name__}"
+        )
     plan_ns = data.get('plan')
     if not isinstance(plan_ns, dict):
         return True
