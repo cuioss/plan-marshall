@@ -296,7 +296,9 @@ def cmd_list_orphans(args: argparse.Namespace) -> dict:  # noqa: ARG001
           has no entries.
     """
     plans_dir = get_plans_dir()
-    if not plans_dir.exists():
+    # Use is_dir() rather than exists() so a stray file at the plans_dir path
+    # returns total=0 cleanly instead of raising NotADirectoryError from iterdir().
+    if not plans_dir.is_dir():
         return {'status': 'success', 'total': 0, 'orphans': []}
 
     orphans = []
@@ -304,16 +306,22 @@ def cmd_list_orphans(args: argparse.Namespace) -> dict:  # noqa: ARG001
         if not plan_dir.is_dir():
             continue
 
-        # Skip plans WITH a readable status.json — they are valid plans.
-        status = _try_read_status_json(plan_dir)
-        if status:
+        # Skip plans whose status.json FILE is present — matches the
+        # require_plan_exists guard in tools-file-ops/file_ops.py. An empty
+        # ``{}`` status.json is a valid plan file and must NOT be flagged as
+        # orphan; only directories with no status.json file at all are orphans.
+        if (plan_dir / 'status.json').is_file():
             continue
 
-        # Collect top-level contents for caller-side decision making.
+        # Collect top-level contents for caller-side decision making. On
+        # OSError (e.g., permission denied) emit a single '<unreadable>'
+        # sentinel rather than an empty list — an empty list would trigger
+        # silent deletion under planning.md Step 3b. The sentinel forces a
+        # user prompt instead.
         try:
             contents = sorted(entry.name for entry in plan_dir.iterdir())
         except OSError:
-            contents = []
+            contents = ['<unreadable>']
 
         orphans.append({'id': plan_dir.name, 'path': str(plan_dir), 'contents': contents})
 

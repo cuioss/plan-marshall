@@ -1260,3 +1260,116 @@ def test_list_orphans_mixed_eight_orphans_plus_two_legitimate_plans():
             assert name in cli_result.stdout, f'orphan {name} missing from CLI output'
         assert 'lesson-alpha' not in cli_result.stdout
         assert 'lesson-beta' not in cli_result.stdout
+
+
+# =============================================================================
+# Tests: cmd_list_orphans — PR #379 gemini-code-assist review hardening
+# =============================================================================
+#
+# Pins the three review fixes:
+# (1) HIGH — unreadable orphan dir surfaces a '<unreadable>' sentinel rather
+#     than an empty contents list (which would trigger silent deletion under
+#     planning.md Step 3b).
+# (2) MEDIUM — a stray FILE at the plans_dir path returns total=0 cleanly
+#     instead of raising NotADirectoryError from iterdir().
+# (3) MEDIUM — an empty ``{}`` status.json is NOT flagged as orphan; the
+#     orphan filter matches the require_plan_exists guard in
+#     tools-file-ops/file_ops.py (file-presence, not parsed-truthy).
+
+
+def test_list_orphans_unreadable_dir_emits_sentinel(monkeypatch):
+    """(1) OSError on iterdir → contents=['<unreadable>'] sentinel.
+
+    Returning an empty list here would silently trigger the cleanup
+    deletion path in planning.md Step 3b. The '<unreadable>' sentinel
+    forces a user prompt instead so a permission-denied directory is
+    never auto-removed.
+    """
+    with PlanContext(plan_id='orphans-unreadable') as ctx:
+        shutil.rmtree(ctx.plan_dir)
+
+        # Create an orphan dir with no status.json. We don't actually need
+        # the real filesystem to refuse iterdir() — we monkeypatch
+        # Path.iterdir on this specific dir to raise OSError so the test is
+        # portable across CI environments (macOS root, Linux containers,
+        # etc. all behave differently around chmod 000).
+        orphan_dir = ctx.fixture_dir / 'plans' / 'unreadable-orphan'
+        orphan_dir.mkdir(parents=True)
+
+        from pathlib import Path as _Path
+
+        original_iterdir = _Path.iterdir
+
+        def patched_iterdir(self):
+            # Only raise for our target orphan; let plans_dir.iterdir() work.
+            if self == orphan_dir:
+                raise PermissionError('simulated unreadable dir')
+            return original_iterdir(self)
+
+        monkeypatch.setattr(_Path, 'iterdir', patched_iterdir)
+
+        result = cmd_list_orphans(Namespace())
+
+        assert result['status'] == 'success'
+        assert result['total'] == 1
+        entry = result['orphans'][0]
+        assert entry['id'] == 'unreadable-orphan'
+        assert entry['contents'] == ['<unreadable>'], (
+            f'Unreadable orphan must surface ["<unreadable>"] sentinel, got '
+            f'{entry["contents"]!r}. An empty list would trigger silent '
+            f'deletion under planning.md Step 3b.'
+        )
+
+
+def test_list_orphans_file_at_plans_dir_returns_zero(monkeypatch, tmp_path):
+    """(2) Stray FILE at plans_dir path → total=0 cleanly, no exception.
+
+    Replaces ``plans_dir.exists()`` (which is true for files too) with
+    ``plans_dir.is_dir()`` so iterdir() is never called on a non-directory.
+    Pre-fix this would raise NotADirectoryError.
+    """
+    # Point get_plans_dir() at a path that is a FILE rather than a directory.
+    stray_file = tmp_path / 'plans'
+    stray_file.write_text('this is a file, not a directory\n')
+
+    monkeypatch.setattr(_query, 'get_plans_dir', lambda: stray_file)
+
+    result = cmd_list_orphans(Namespace())
+
+    assert result['status'] == 'success', (
+        f'Stray file at plans_dir must yield clean success, got {result!r}. '
+        f'Regression: plans_dir.exists() returned True for the file and '
+        f'iterdir() raised NotADirectoryError.'
+    )
+    assert result['total'] == 0
+    assert result['orphans'] == []
+
+
+def test_list_orphans_empty_status_json_not_flagged(monkeypatch):
+    """(3) Empty ``{}`` status.json must NOT be reported as orphan.
+
+    Matches the require_plan_exists guard in tools-file-ops/file_ops.py
+    which checks file PRESENCE, not parsed-truthy. Pre-fix the orphan
+    filter used ``if status:`` so an empty ``{}`` parsed to a falsy dict
+    and the directory was mis-classified as an orphan.
+    """
+    with PlanContext(plan_id='orphans-empty-status') as ctx:
+        shutil.rmtree(ctx.plan_dir)
+
+        plans_dir = ctx.fixture_dir / 'plans'
+        plan_dir = plans_dir / 'empty-status-plan'
+        plan_dir.mkdir(parents=True)
+        # Write an empty JSON object — parses to {} which is falsy in Python.
+        (plan_dir / 'status.json').write_text('{}', encoding='utf-8')
+
+        result = cmd_list_orphans(Namespace())
+
+        assert result['status'] == 'success'
+        assert result['total'] == 0, (
+            f'Empty {{}} status.json must NOT be flagged as orphan (matches '
+            f'require_plan_exists file-presence guard), got '
+            f'total={result["total"]} orphans={result["orphans"]!r}. '
+            f'Regression: the filter is using parsed-truthy `if status:` '
+            f'instead of `(plan_dir / "status.json").is_file()`.'
+        )
+        assert result['orphans'] == []
