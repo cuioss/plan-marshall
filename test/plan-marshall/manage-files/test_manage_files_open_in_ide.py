@@ -365,6 +365,44 @@ def test_is_open_in_ide_enabled_non_dict_top_level_raises_value_error(top_level_
         assert 'JSON object' in str(exc_info.value)
 
 
+@pytest.mark.parametrize(
+    'open_in_ide_value',
+    [
+        ('legacy_dict_true', {'enabled': True}),
+        ('legacy_dict_false', {'enabled': False}),
+        ('empty_dict', {}),
+        ('string_true', 'true'),
+        ('string_false', 'false'),
+        ('integer_one', 1),
+        ('integer_zero', 0),
+        ('list', []),
+    ],
+)
+def test_is_open_in_ide_enabled_non_bool_value_raises_value_error(open_in_ide_value):
+    """Non-bool value at plan.open_in_ide raises ValueError naming the file.
+
+    Regression guard for PR #384 gemini-code-assist finding: silent coercion
+    via `bool(...)` would misclassify the legacy wrapped shape
+    (`{"enabled": False}` -> `True` because non-empty dicts are truthy) and
+    string values (`bool("false")` -> `True`). The strict isinstance check
+    fails loudly instead.
+    """
+    label, value = open_in_ide_value
+    # Arrange
+    with PlanContext(plan_id=f'cfg-nonbool-{label}') as ctx:
+        marshal_path = ctx.fixture_dir / 'marshal.json'
+        marshal_path.write_text(
+            json.dumps({'plan': {'open_in_ide': value}}), encoding='utf-8'
+        )
+
+        # Act / Assert
+        with pytest.raises(ValueError) as exc_info:
+            is_open_in_ide_enabled()
+
+        assert str(marshal_path) in str(exc_info.value)
+        assert 'plan.open_in_ide' in str(exc_info.value)
+
+
 # =============================================================================
 # cmd_open_in_ide — end-to-end
 # =============================================================================
