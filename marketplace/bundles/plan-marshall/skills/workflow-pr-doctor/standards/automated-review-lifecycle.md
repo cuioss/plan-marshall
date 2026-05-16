@@ -35,7 +35,7 @@ Call the producer-side comments-stage subcommand once. It fetches PR review comm
 
 Pre-filters applied by `comments-stage` (in order):
 
-1. **Already-resolved threads** — comments on threads where `isResolved=true` are dropped silently. The thread owner already addressed them; storing them as findings would produce spurious ACCEPT work.
+1. **Already-resolved threads** — comments on threads where `isResolved=true` are dropped silently. The thread owner already addressed them; storing them as findings would produce spurious `ACCEPT` work.
 2. **Obvious text noise** — automated/acknowledgment patterns (e.g., "lgtm", bot signatures) matched via the `comment-patterns.json` ignore list.
 
 ```bash
@@ -70,13 +70,13 @@ For each pending finding, perform the following sequence sequentially. The class
    | **ACCEPT** | Reply on the thread with rationale; resolve the thread. See **Affirmative acceptance policy** below. |
    | **AskUserQuestion** | Ask the user (one question per finding, never batched) when the loaded standards leave the call genuinely ambiguous |
 
-   **Affirmative acceptance policy.** ACCEPT is a first-class disposition — not a fallback for comments that cannot be classified. It applies when the reviewer's comment reflects a valid perspective but the current implementation is already correct and intentional. Three conditions must all hold before issuing ACCEPT:
+   **Affirmative acceptance policy.** `ACCEPT` is a first-class disposition — not a fallback for comments that cannot be classified. It applies when the reviewer's comment reflects a valid perspective but the current implementation is already correct and intentional. Three conditions must all hold before issuing `ACCEPT`:
 
    1. **Substantive engagement**: the reply must explain the design decision or trade-off that makes the current code correct, not merely acknowledge the comment.
    2. **No suppression annotation needed**: the concern is not a false-positive warning that needs to be silenced at the tool level — it is a deliberate choice that warrants explanation.
-   3. **Unambiguous call**: if there is genuine uncertainty about whether the code is correct as-is, escalate via `AskUserQuestion` rather than assuming ACCEPT.
+   3. **Unambiguous call**: if there is genuine uncertainty about whether the code is correct as-is, escalate via `AskUserQuestion` rather than assuming `ACCEPT`.
 
-   When all three hold, reply on the thread with the rationale, then resolve the thread. ACCEPT resolves the finding with `resolution: accepted`.
+   When all three hold, reply on the thread with the rationale, then resolve the thread. `ACCEPT` resolves the finding with `resolution: accepted`.
 
 5. **Resolve the finding** via `manage-findings resolve --hash-id {hash_id} --resolution {fixed|suppressed|accepted|taken_into_account} --detail "{rationale}"`.
 
