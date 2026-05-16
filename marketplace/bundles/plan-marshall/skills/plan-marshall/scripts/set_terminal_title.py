@@ -292,17 +292,24 @@ def _read_hook_payload() -> dict[str, str | None]:
 
 
 def _emit_osc(title: str) -> None:
+    """Write the OSC title sequence to the controlling terminal.
+
+    The hook subprocess runs under Claude Code's captured-stdio model where
+    ``sys.stdout`` is consumed by Claude Code's hook-output parser rather than
+    forwarded to the terminal. Writing OSC bytes to stdout in the fallback
+    branch surfaces as visible escape-sequence text (or is silently dropped),
+    so when ``/dev/tty`` is unavailable we exit cleanly without emitting
+    anything. The ``--statusline`` path uses ``sys.stdout`` directly via
+    ``main`` — that is the legitimate Claude Code statusLine contract and is
+    unaffected by this function.
+    """
     escape = f'\033]0;{title}\007'
     try:
         with open('/dev/tty', 'w', encoding='utf-8') as tty:
             tty.write(escape)
             tty.flush()
     except OSError:
-        try:
-            sys.stdout.write(escape)
-            sys.stdout.flush()
-        except OSError:
-            return
+        return
 
 
 def build_title(
