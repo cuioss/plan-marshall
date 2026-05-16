@@ -118,7 +118,7 @@ def _build_fence_map(lines: list[str]) -> dict[int, str]:
 
 
 def _inline_code_spans(line: str) -> list[tuple[int, int]]:
-    """Return (start, end) byte offsets of inline-code spans on ``line``."""
+    """Return (start, end) character offsets of inline-code spans on ``line``."""
     return [(m.start(), m.end()) for m in _INLINE_CODE_RE.finditer(line)]
 
 
@@ -136,8 +136,20 @@ def _scan_file(path: Path) -> list[dict]:
     """Scan a single markdown file and return all findings."""
     try:
         text = path.read_text(encoding='utf-8')
-    except (OSError, UnicodeDecodeError):
-        return []
+    except (OSError, UnicodeDecodeError) as exc:
+        return [
+            {
+                'rule_id': RULE_ID,
+                'type': 'file_read_error',
+                'rule': RULE_NAME,
+                'file': str(path),
+                'line': 0,
+                'severity': 'error',
+                'fixable': False,
+                'snippet': '',
+                'description': f'Could not read file: {exc}',
+            }
+        ]
 
     lines = text.splitlines()
     fence_map = _build_fence_map(lines)
@@ -167,7 +179,9 @@ def _scan_file(path: Path) -> list[dict]:
             if not in_fence and _offset_in_inline_code(offset, spans):
                 continue
 
-            snippet = line.strip()[:80]
+            start = max(0, offset - 30)
+            end = min(len(line), offset + 50)
+            snippet = line[start:end]
             findings.append(
                 {
                     'rule_id': RULE_ID,
