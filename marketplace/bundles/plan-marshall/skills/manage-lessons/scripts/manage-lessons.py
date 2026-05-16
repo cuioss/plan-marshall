@@ -586,15 +586,19 @@ def cmd_convert_to_plan(args: argparse.Namespace) -> dict:
 
 
 def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
-    """Move a lesson file from a plan directory back to the global lessons directory.
+    """Move all lesson files from a plan directory back to the global lessons directory.
 
-    Inverse of ``cmd_convert_to_plan``. Scans the plan directory for a single
-    ``lesson-*.md`` file, derives the original ``lesson_id`` from the filename,
+    Inverse of ``cmd_convert_to_plan``. Scans the plan directory for every
+    ``lesson-*.md`` file, derives the original ``lesson_id`` from each filename,
     and moves the file back to ``.plan/local/lessons-learned/{lesson_id}.md``.
+    Plans that consolidate several lessons may carry more than one
+    ``lesson-*.md`` file at the plan-dir root; every match is restored.
 
     Idempotent on missing lesson file — returns ``status: success`` with
     ``action: no_lesson_file`` when nothing to restore so callers don't need to
-    pre-check. Refuses to clobber a pre-existing destination file.
+    pre-check. Refuses to clobber a pre-existing destination file (fail-fast on
+    the first collision; any lessons restored before the collision remain in
+    ``lessons-learned/``).
     """
     if any(sep in args.plan_id for sep in ('/', '\\', '..')):
         return {
@@ -629,46 +633,53 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
             'action': 'no_lesson_file',
         }
 
-    source = matches[0].resolve()
-    # Derive lesson id by stripping the ``lesson-`` prefix and ``.md`` suffix.
-    lesson_id = source.stem[len('lesson-'):]
-
-    # Defensive: ensure the derived id has no traversal sequences and resolves
-    # back inside the plan dir.
-    if any(sep in lesson_id for sep in ('/', '\\', '..')) or source.parent != plan_dir:
-        return {
-            'status': 'error',
-            'error': 'path_traversal',
-            'message': 'Resolved path escapes intended parent directory',
-        }
-
     lessons_dir.mkdir(parents=True, exist_ok=True)
-    destination = (lessons_dir / f'{lesson_id}.md').resolve()
+    restored_lessons: list[dict] = []
 
-    if destination.parent != lessons_dir:
-        return {
-            'status': 'error',
-            'error': 'path_traversal',
-            'message': 'Resolved path escapes intended parent directory',
-        }
+    for match in matches:
+        source = match.resolve()
+        # Derive lesson id by stripping the ``lesson-`` prefix and ``.md`` suffix.
+        lesson_id = source.stem[len('lesson-'):]
 
-    if destination.exists():
-        return {
-            'status': 'error',
-            'plan_id': args.plan_id,
+        # Defensive: ensure the derived id has no traversal sequences and resolves
+        # back inside the plan dir.
+        if any(sep in lesson_id for sep in ('/', '\\', '..')) or source.parent != plan_dir:
+            return {
+                'status': 'error',
+                'error': 'path_traversal',
+                'message': 'Resolved path escapes intended parent directory',
+            }
+
+        destination = (lessons_dir / f'{lesson_id}.md').resolve()
+
+        if destination.parent != lessons_dir:
+            return {
+                'status': 'error',
+                'error': 'path_traversal',
+                'message': 'Resolved path escapes intended parent directory',
+            }
+
+        if destination.exists():
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'lesson_id': lesson_id,
+                'error': 'destination_exists',
+                'message': f'Destination {destination} already exists; refusing to clobber',
+            }
+
+        shutil.move(source, destination)
+        restored_lessons.append({
             'lesson_id': lesson_id,
-            'error': 'destination_exists',
-            'message': f'Destination {destination} already exists; refusing to clobber',
-        }
-
-    shutil.move(source, destination)
+            'source': str(source),
+            'destination': str(destination),
+        })
 
     return {
         'status': 'success',
         'plan_id': args.plan_id,
-        'lesson_id': lesson_id,
-        'source': str(source),
-        'destination': str(destination),
+        'restored_count': len(restored_lessons),
+        'restored_lessons': restored_lessons,
     }
 
 

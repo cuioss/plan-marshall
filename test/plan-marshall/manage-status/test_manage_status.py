@@ -450,7 +450,7 @@ def test_delete_plan_auto_restores_lesson():
         assert result['status'] == 'success'
         assert result['action'] == 'deleted'
         assert result['lesson_restored'] is True
-        assert result['restored_lesson_id'] == '2025-01-01-001'
+        assert result['restored_lesson_ids'] == ['2025-01-01-001']
 
         # Plan dir was deleted
         assert not ctx.plan_dir.exists()
@@ -470,7 +470,7 @@ def test_delete_plan_no_lesson_file_unchanged_behaviour():
         assert result['status'] == 'success'
         assert result['action'] == 'deleted'
         assert result['lesson_restored'] is False
-        assert 'restored_lesson_id' not in result
+        assert 'restored_lesson_ids' not in result
         assert not ctx.plan_dir.exists()
 
 
@@ -489,6 +489,31 @@ def test_delete_plan_no_restore_lessons_flag_skips_restoration():
         # The lesson file was discarded along with the plan dir
         assert not ctx.plan_dir.exists()
         assert not (ctx.fixture_dir / 'lessons-learned' / '2025-01-01-002.md').exists()
+
+
+def test_delete_plan_restores_all_lesson_files():
+    """delete-plan restores every lesson-*.md file in the plan dir (multi-lesson plans)."""
+    with PlanContext(plan_id='consolidate-multi') as ctx:
+        (ctx.plan_dir / 'request.md').write_text('# Request')
+        (ctx.plan_dir / 'lesson-2025-02-01-001.md').write_text(
+            'id=2025-02-01-001\ncomponent=foo\ncategory=bug\ncreated=2025-02-01\n\n# One\n'
+        )
+        (ctx.plan_dir / 'lesson-2025-02-01-002.md').write_text(
+            'id=2025-02-01-002\ncomponent=bar\ncategory=bug\ncreated=2025-02-01\n\n# Two\n'
+        )
+
+        result = cmd_delete_plan(Namespace(plan_id='consolidate-multi', no_restore_lessons=False))
+
+        assert result['status'] == 'success'
+        assert result['action'] == 'deleted'
+        assert result['lesson_restored'] is True
+        assert result['restored_lesson_ids'] == ['2025-02-01-001', '2025-02-01-002']
+
+        # Both lesson files exist in lessons-learned/
+        lessons_dir = ctx.fixture_dir / 'lessons-learned'
+        assert (lessons_dir / '2025-02-01-001.md').exists()
+        assert (lessons_dir / '2025-02-01-002.md').exists()
+        assert not ctx.plan_dir.exists()
 
 
 # =============================================================================

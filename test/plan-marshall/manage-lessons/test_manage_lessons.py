@@ -814,7 +814,9 @@ Body content here.
 
         assert restore['status'] == 'success'
         assert restore['plan_id'] == 'my-plan'
-        assert restore['lesson_id'] == '2025-01-01-001'
+        assert restore['restored_count'] == 1
+        assert len(restore['restored_lessons']) == 1
+        assert restore['restored_lessons'][0]['lesson_id'] == '2025-01-01-001'
 
         # Round-trip: source path holds the original content again
         assert source.exists()
@@ -822,6 +824,34 @@ Body content here.
 
         # Plan dir no longer holds the lesson file
         assert not (tmp_path / 'plans' / 'my-plan' / 'lesson-2025-01-01-001.md').exists()
+
+    def test_restore_from_plan_restores_all_lesson_files(self, tmp_path):
+        """When the plan dir contains multiple lesson-*.md files, all are restored."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        plan_dir = tmp_path / 'plans' / 'multi-plan'
+        plan_dir.mkdir(parents=True)
+
+        ids = ('2025-02-01-001', '2025-02-01-002', '2025-02-01-003')
+        for lesson_id in ids:
+            (plan_dir / f'lesson-{lesson_id}.md').write_text(
+                f'id={lesson_id}\ncomponent=test\ncategory=bug\ncreated=2025-02-01\n\n'
+                f'# Lesson {lesson_id}\n\nBody.\n'
+            )
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_restore_from_plan(Namespace(plan_id='multi-plan'))
+
+        assert result['status'] == 'success'
+        assert result['plan_id'] == 'multi-plan'
+        assert result['restored_count'] == 3
+        restored_ids = sorted(item['lesson_id'] for item in result['restored_lessons'])
+        assert restored_ids == list(ids)
+
+        # All files moved to lessons-learned/
+        for lesson_id in ids:
+            assert (lessons_dir / f'{lesson_id}.md').exists()
+            assert not (plan_dir / f'lesson-{lesson_id}.md').exists()
 
     def test_restore_from_plan_no_lesson_file(self, tmp_path):
         """Should return idempotent no-op when plan dir has no lesson-*.md."""
