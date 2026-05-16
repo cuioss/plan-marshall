@@ -72,8 +72,89 @@ class TestPlanIdResolution(ScriptTestCase):
 
     def test_no_plan_when_neither_present(self):
         env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
-        with mock.patch.dict(os.environ, env, clear=True):
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch.object(set_terminal_title, '_scan_active_plan', return_value=None),
+        ):
             self.assertIsNone(set_terminal_title._resolve_plan_id('/tmp/nowhere'))
+
+
+class TestScanActivePlan(ScriptTestCase):
+    """_scan_active_plan: main-checkout fallback that scans
+    ``.plan/local/plans/*/status.json`` for in-progress plans and returns
+    the most-recently-modified plan_id."""
+
+    bundle = 'plan-marshall'
+    skill = 'plan-marshall'
+    script = 'set_terminal_title.py'
+
+    def _make_plans_root(self) -> Path:
+        plans_root = self.temp_dir / '.plan' / 'local' / 'plans'
+        plans_root.mkdir(parents=True, exist_ok=True)
+        return plans_root
+
+    def test_single_in_progress_plan_returns_its_id(self):
+        """Case (a): one in-progress plan with cwd at the mocked repo
+        root — the script returns that plan_id."""
+        plans_root = self._make_plans_root()
+        _write_status(plans_root / 'only-plan', '5-execute')
+        with (
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+        ):
+            result = set_terminal_title._scan_active_plan(str(self.temp_dir))
+        self.assertEqual(result, 'only-plan')
+
+    def test_multiple_in_progress_most_recent_wins(self):
+        """Case (b): two in-progress plans with differing mtimes — the
+        most-recently-modified status.json wins."""
+        plans_root = self._make_plans_root()
+        older = _write_status(plans_root / 'older-plan', '3-outline')
+        newer = _write_status(plans_root / 'newer-plan', '4-plan')
+        # Force older mtime to be 100 seconds before newer.
+        newer_mtime = newer.stat().st_mtime
+        os.utime(older, (newer_mtime - 100, newer_mtime - 100))
+        os.utime(newer, (newer_mtime, newer_mtime))
+        with (
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+        ):
+            result = set_terminal_title._scan_active_plan(str(self.temp_dir))
+        self.assertEqual(result, 'newer-plan')
+
+    def test_only_archived_or_complete_returns_none(self):
+        """Case (c): only plans with non-in-progress phases — returns
+        None so the title falls back to active-command or claude."""
+        plans_root = self._make_plans_root()
+        # current_phase values outside the in-progress set MUST be skipped.
+        _write_status(plans_root / 'archived-plan', 'archived')
+        _write_status(plans_root / 'complete-plan', 'complete')
+        with (
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+        ):
+            result = set_terminal_title._scan_active_plan(str(self.temp_dir))
+        self.assertIsNone(result)
+
+    def test_empty_plans_root_returns_none(self):
+        """No plan directories at all — returns None cleanly."""
+        self._make_plans_root()
+        with (
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+        ):
+            result = set_terminal_title._scan_active_plan(str(self.temp_dir))
+        self.assertIsNone(result)
+
+    def test_resolve_plan_id_falls_through_to_scan(self):
+        """Integration: ``_resolve_plan_id`` falls through worktree-regex
+        and PLAN_ID env to ``_scan_active_plan`` and returns its result."""
+        plans_root = self._make_plans_root()
+        _write_status(plans_root / 'fallthrough-plan', '6-finalize')
+        env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+        ):
+            # cwd is the temp dir root (no worktree regex match), no PLAN_ID env.
+            result = set_terminal_title._resolve_plan_id(str(self.temp_dir))
+        self.assertEqual(result, 'fallthrough-plan')
 
 
 class TestBuildTitle(ScriptTestCase):
@@ -243,103 +324,73 @@ class TestBuildTitleEndToEnd(ScriptTestCase):
         self.assertEqual(title, '▶ claude')
 
 
-class TestEmitOsc(ScriptTestCase):
-    """_emit_osc writes escape to /dev/tty and swallows OSError."""
+class TestEmitTerminalSequence(ScriptTestCase):
+    """_emit_terminal_sequence writes ``{"terminalSequence": "<OSC>"}``
+    JSON to sys.stdout per the Claude Code 2.1.141+ hook output contract.
+    """
 
     bundle = 'plan-marshall'
     skill = 'plan-marshall'
     script = 'set_terminal_title.py'
 
-    def test_oserror_is_swallowed(self):
-        with mock.patch('builtins.open', side_effect=OSError('no tty')):
-            # Must not raise.
-            set_terminal_title._emit_osc('anything')
-
-    def test_writes_escape_sequence_to_tty(self):
-        written = []
-
-        class FakeTTY:
-            def __enter__(self_):
-                return self_
-
-            def __exit__(self_, *args):
-                return False
-
-            def write(self_, s):
-                written.append(s)
-
-            def flush(self_):
-                pass
-
-        with mock.patch('builtins.open', return_value=FakeTTY()):
-            set_terminal_title._emit_osc('hello')
-
-        self.assertEqual(written, ['\x1b]0;hello\x07'])
-
-    def test_emits_nothing_to_stdout_when_tty_unavailable(self):
-        """When /dev/tty cannot be opened (TTY-less hook subprocess under
-        Claude Code's captured-stdio model), _emit_osc must exit silently
-        without writing any OSC bytes to sys.stdout.
-
-        Claude Code's hook parser consumes sys.stdout; writing OSC bytes
-        there surfaces as visible escape-sequence text in the user's
-        session (or is silently dropped). The legitimate stdout-emitting
-        path is --statusline in ``main`` — _emit_osc is reached only on
-        non-statusline (hook) invocations.
-        """
+    def test_writes_json_payload_to_stdout(self):
         fake_stdout = io.StringIO()
-        with (
-            mock.patch('builtins.open', side_effect=OSError('no tty')),
-            mock.patch.object(set_terminal_title.sys, 'stdout', fake_stdout),
-        ):
-            # Must not raise and must not write to stdout.
-            set_terminal_title._emit_osc('hello')
+        with mock.patch.object(set_terminal_title.sys, 'stdout', fake_stdout):
+            set_terminal_title._emit_terminal_sequence('hello')
 
-        captured = fake_stdout.getvalue()
-        self.assertEqual(captured, '')
-        # Defensive: no ESC]0;…BEL substring anywhere on stdout.
-        self.assertNotIn('\033]0;', captured)
-        self.assertNotIn('\x07', captured)
+        payload = json.loads(fake_stdout.getvalue())
+        self.assertEqual(payload, {'terminalSequence': '\x1b]0;hello\x07'})
 
-    def test_hook_path_emits_no_osc_to_stdout_when_tty_unavailable_running(self):
-        """End-to-end via main(): a hook invocation with running status and
-        /dev/tty unavailable must produce zero OSC bytes on sys.stdout and
-        exit cleanly. Mirrors the captured-stdio shape under Claude Code's
-        hook subprocess where stdout is consumed by the hook parser."""
+    def test_oserror_is_swallowed(self):
+        """When stdout write fails, _emit_terminal_sequence must not raise."""
+
+        class _RaisingStdout:
+            def write(self, _s):
+                raise OSError('broken pipe')
+
+            def flush(self):
+                raise OSError('broken pipe')
+
+        with mock.patch.object(set_terminal_title.sys, 'stdout', _RaisingStdout()):
+            # Must not raise.
+            set_terminal_title._emit_terminal_sequence('anything')
+
+    def test_hook_path_emits_terminal_sequence_json_running(self):
+        """End-to-end via main(): a hook invocation with running status
+        produces ``{"terminalSequence": ...}`` JSON on stdout and exits 0.
+        """
         fake_stdout = io.StringIO()
         env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
         with (
-            mock.patch('builtins.open', side_effect=OSError('no tty')),
             mock.patch.object(set_terminal_title.sys, 'stdout', fake_stdout),
             mock.patch.object(set_terminal_title.sys, 'stdin', io.StringIO('')),
             mock.patch.dict(os.environ, env, clear=True),
+            mock.patch.object(set_terminal_title, '_resolve_plan_id', return_value=None),
         ):
             exit_code = set_terminal_title.main(['running'])
 
         self.assertEqual(exit_code, 0)
-        captured = fake_stdout.getvalue()
-        self.assertEqual(captured, '')
-        self.assertNotIn('\033]0;', captured)
-        self.assertNotIn('\x07', captured)
+        payload = json.loads(fake_stdout.getvalue())
+        self.assertIn('terminalSequence', payload)
+        self.assertEqual(payload['terminalSequence'], '\x1b]0;▶ claude\x07')
 
-    def test_hook_path_emits_no_osc_to_stdout_when_tty_unavailable_idle(self):
-        """Same captured-stdio shape, but with idle status — the Notification/
-        Stop hooks fire this path and likewise must leak nothing to stdout."""
+    def test_hook_path_emits_terminal_sequence_json_idle(self):
+        """Same shape with idle status — the Notification/Stop hooks fire
+        this path and produce JSON on stdout."""
         fake_stdout = io.StringIO()
         env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
         with (
-            mock.patch('builtins.open', side_effect=OSError('no tty')),
             mock.patch.object(set_terminal_title.sys, 'stdout', fake_stdout),
             mock.patch.object(set_terminal_title.sys, 'stdin', io.StringIO('')),
             mock.patch.dict(os.environ, env, clear=True),
+            mock.patch.object(set_terminal_title, '_resolve_plan_id', return_value=None),
         ):
             exit_code = set_terminal_title.main(['idle'])
 
         self.assertEqual(exit_code, 0)
-        captured = fake_stdout.getvalue()
-        self.assertEqual(captured, '')
-        self.assertNotIn('\033]0;', captured)
-        self.assertNotIn('\x07', captured)
+        payload = json.loads(fake_stdout.getvalue())
+        self.assertIn('terminalSequence', payload)
+        self.assertEqual(payload['terminalSequence'], '\x1b]0;◯ claude\x07')
 
 
 class TestCliIntegration(ScriptTestCase):
