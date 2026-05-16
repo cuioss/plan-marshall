@@ -18,6 +18,7 @@ Usage:
     python3 manage-files.py discover --root /abs/path --glob "**/*.py" --include-files
     python3 manage-files.py open-in-ide --plan-id my-plan --document solution_outline
     python3 manage-files.py open-in-ide --path /abs/path/to/file.md
+    python3 manage-files.py detect-ide
 
 HARD INVARIANT: This module MUST NOT import `tempfile` and MUST NOT call
 `mkstemp`, `NamedTemporaryFile`, or `mkdtemp`. The `open-in-ide` verb passes
@@ -317,6 +318,65 @@ def cmd_open_in_ide(args: argparse.Namespace) -> dict:
         'command': ' '.join(argv),
         'path': str(target_path),
     }
+
+
+def _derive_detection_signal(env: Mapping[str, str], platform: str) -> str | None:
+    """Re-run the detection priority and name the branch that fired.
+
+    Returns one of: `cf_bundle_identifier`, `term_program`, `path_probe`, or
+    `None` when no branch matches. Mirrors the priority order inside
+    `detect_ide` exactly — keep in sync if `detect_ide` is ever reordered.
+    """
+    cf_bundle = env.get('__CFBundleIdentifier', '')
+    term_program = env.get('TERM_PROGRAM', '').lower()
+
+    if platform == 'darwin':
+        if cf_bundle in MACOS_JETBRAINS_BUNDLE_IDS:
+            return 'cf_bundle_identifier'
+        if term_program in (TERM_PROGRAM_VSCODE, TERM_PROGRAM_CURSOR):
+            return 'term_program'
+        return None
+
+    if platform == 'linux':
+        if term_program == TERM_PROGRAM_VSCODE and shutil.which('code') is not None:
+            return 'term_program'
+        if term_program == TERM_PROGRAM_CURSOR and shutil.which('cursor') is not None:
+            return 'term_program'
+        for launcher in LINUX_LAUNCHER_PRIORITY:
+            if shutil.which(launcher) is not None:
+                return 'path_probe'
+        return None
+
+    return None
+
+
+def cmd_detect_ide(args: argparse.Namespace) -> dict:
+    """Detect the active IDE/terminal from the environment.
+
+    Pure environment query — no `--plan-id`, no `marshal.json` gate, no
+    launcher invocation. Wraps `detect_ide(os.environ, sys.platform)` and
+    serializes the resulting `IdeRecord` (or absence thereof) to TOON.
+    """
+    raw_platform = sys.platform
+    platform = 'darwin' if raw_platform == 'darwin' else ('linux' if raw_platform.startswith('linux') else raw_platform)
+    ide = detect_ide(os.environ, platform)
+    if ide is None:
+        return {
+            'status': 'success',
+            'detected': False,
+            'platform': platform,
+        }
+    signal = _derive_detection_signal(os.environ, platform)
+    result: dict = {
+        'status': 'success',
+        'detected': True,
+        'name': ide.name,
+        'launcher_argv': list(ide.launcher_argv),
+        'platform': platform,
+    }
+    if signal is not None:
+        result['signal'] = signal
+    return result
 
 
 def cmd_read(args: argparse.Namespace) -> dict | None:
@@ -676,6 +736,14 @@ def main() -> int:
         help='Document type to resolve via manage-* (Mode B only)',
     )
     open_parser.set_defaults(func=cmd_open_in_ide)
+
+    # detect-ide
+    detect_ide_parser = subparsers.add_parser(
+        'detect-ide',
+        help='Detect active IDE/terminal from environment',
+        allow_abbrev=False,
+    )
+    detect_ide_parser.set_defaults(func=cmd_detect_ide)
 
     args = parse_args_with_toon_errors(parser)
     result = args.func(args)
