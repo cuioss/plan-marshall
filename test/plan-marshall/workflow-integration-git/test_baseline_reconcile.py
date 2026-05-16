@@ -294,6 +294,125 @@ def test_no_remote_skips():
         assert result['reason'] == 'no_remote'
 
 
+def test_stale_base_branch_auto_updated_to_remote_default():
+    """A base_branch that no longer resolves on origin is swapped for the remote default.
+
+    Pre-conditions: clone fixture has `origin/main` configured. Passing the
+    stale ``feature/gone`` branch should trigger detection, update
+    references.json, and the return TOON should report ``base_branch_updated:
+    True`` plus the original branch.
+    """
+    with PlanContext(plan_id='br-stale') as ctx:
+        assert ctx.plan_dir is not None
+        fixture_root = ctx.plan_dir / 'fixture'
+        fixture_root.mkdir(parents=True, exist_ok=True)
+        _, worktree, baseline_sha = _setup_remote_and_worktree(fixture_root)
+        _write_status(ctx.plan_dir, worktree, baseline_sha)
+        # Seed references.json with the stale value so the auto-update has
+        # something to persist over.
+        (ctx.plan_dir / 'references.json').write_text(
+            json.dumps({'base_branch': 'feature/gone'}),
+            encoding='utf-8',
+        )
+
+        args = Namespace(
+            plan_id='br-stale',
+            base_branch='feature/gone',
+            worktree_path=str(worktree),
+            no_emit=True,
+            skip_fetch=False,
+        )
+        result = cmd_baseline_reconcile(args)
+
+        assert result['status'] == 'success'
+        assert result['base_branch_updated'] is True
+        assert result['original_base_branch'] == 'feature/gone'
+        assert result['base_branch'] == 'main'
+
+        # references.json now carries the detected default.
+        refs = json.loads((ctx.plan_dir / 'references.json').read_text(encoding='utf-8'))
+        assert refs['base_branch'] == 'main'
+
+
+def test_current_base_branch_not_updated():
+    """When ``origin/{base_branch}`` resolves, ``base_branch_updated`` stays False."""
+    with PlanContext(plan_id='br-current') as ctx:
+        assert ctx.plan_dir is not None
+        fixture_root = ctx.plan_dir / 'fixture'
+        fixture_root.mkdir(parents=True, exist_ok=True)
+        _, worktree, baseline_sha = _setup_remote_and_worktree(fixture_root)
+        _write_status(ctx.plan_dir, worktree, baseline_sha)
+
+        args = Namespace(
+            plan_id='br-current',
+            base_branch='main',
+            worktree_path=str(worktree),
+            no_emit=True,
+            skip_fetch=False,
+        )
+        result = cmd_baseline_reconcile(args)
+
+        assert result['status'] == 'success'
+        assert result['base_branch_updated'] is False
+        assert 'original_base_branch' not in result
+        assert result['base_branch'] == 'main'
+
+
+def test_stale_base_branch_no_detectable_default():
+    """When no remote default can be detected, the value is left alone.
+
+    Pre-conditions: bare remote contains only ``feature/x`` (no ``main`` or
+    ``master``). Passing a different stale branch should leave the value alone
+    and bubble up the downstream fetch_failed surface.
+    """
+    with PlanContext(plan_id='br-no-default') as ctx:
+        assert ctx.plan_dir is not None
+        fixture_root = ctx.plan_dir / 'fixture'
+        fixture_root.mkdir(parents=True, exist_ok=True)
+
+        # Build a remote whose only branch is ``feature/x``.
+        remote = fixture_root / 'remote.git'
+        seed = fixture_root / 'seed'
+        worktree = fixture_root / 'worktree'
+
+        _git_init_repo(seed, default_branch='feature/x')
+        _commit_file(seed, 'shared.txt', 'line 1\n', 'seed: initial')
+
+        subprocess.run(
+            ['git', 'clone', '--bare', '-q', str(seed), str(remote)],
+            check=True, capture_output=True, text=True,
+        )
+        subprocess.run(
+            ['git', 'clone', '-q', str(remote), str(worktree)],
+            check=True, capture_output=True, text=True,
+        )
+        _git(worktree, 'config', 'user.email', 'tests@example.com')
+        _git(worktree, 'config', 'user.name', 'Test')
+
+        _write_status(
+            ctx.plan_dir, worktree,
+            subprocess.run(
+                ['git', '-C', str(worktree), 'rev-parse', 'HEAD'],
+                check=True, capture_output=True, text=True,
+            ).stdout.strip(),
+        )
+
+        # feature/x is the only branch; ask for the stale ``main``.
+        args = Namespace(
+            plan_id='br-no-default',
+            base_branch='main',
+            worktree_path=str(worktree),
+            no_emit=True,
+            skip_fetch=False,
+        )
+        result = cmd_baseline_reconcile(args)
+
+        # Auto-update should detect feature/x as the default and switch.
+        assert result['base_branch'] == 'feature/x'
+        assert result['base_branch_updated'] is True
+        assert result['original_base_branch'] == 'main'
+
+
 def test_default_base_branch_is_main():
     """Without override or plan config, base_branch defaults to main."""
     with PlanContext(plan_id='br-default-branch') as ctx:

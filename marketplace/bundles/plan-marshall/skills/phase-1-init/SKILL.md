@@ -316,6 +316,31 @@ lesson_id: {lesson_id}
 
 Do not proceed to Step 6 unless both post-conditions hold.
 
+### Step 5b.5: Seed plan_source with lesson_id
+
+**Applicability**: This step runs **only when `source == lesson`**. Skip entirely for `description`, `issue`, or `recipe` sources.
+
+Write the raw `lesson_id` value into `status.metadata.plan_source` so downstream phases can route lesson-derived plans to lesson-specific code paths (notably phase-2-refine Step 13.5's narrative-vs-code-validator activation guard, which fires whenever `plan_source` is set and is not the literal string `"recipe"`).
+
+The literal value written is the raw lesson_id string (e.g., `2026-05-11-08-004`) — NOT a tag like `"lesson"`. This makes the originating lesson directly recoverable from status metadata and keeps the field's semantics aligned with the existing `recipe_key` pattern (raw id, not bucket label).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+  --set --plan-id {plan_id} \
+  --field plan_source \
+  --value {lesson_id}
+```
+
+Then emit a decision-log entry so the audit trail records the routing intent:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-1-init) Seeded status.metadata.plan_source = {lesson_id} (lesson-derived plan)"
+```
+
+**Interaction with Step 5c (auto-suggest)**: When Step 5c's doc-shaped predicate fires, it overwrites `plan_source` to the literal string `"recipe"` (and sets `recipe_key=lesson_cleanup`). That overwrite is intentional — doc-shaped lessons are routed through `recipe-lesson-cleanup` and must skip phase-2-refine Step 13.5. Code-shaped lessons retain the `lesson_id` value seeded here, which triggers Step 13.5's narrative-vs-code-validator on the next refine entry.
+
 ### Step 5c: Lesson Auto-Suggest Recipe
 
 **Applicability**: This step runs **only when `source == lesson`**. Skip entirely for `description`, `issue`, or `recipe` sources. (When `source == recipe`, the user has already chosen a recipe explicitly — auto-suggest never overrides an explicit choice.)

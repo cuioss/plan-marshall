@@ -348,6 +348,56 @@ def cmd_archive(args: argparse.Namespace) -> dict | None:
     return {'status': 'success', 'plan_id': args.plan_id, 'archived_to': str(archive_path)}
 
 
+def _restore_lesson_from_plan_dir(plan_id: str, plan_dir: Any) -> tuple[bool, list[str]]:
+    """Scan ``plan_dir`` for lesson-{id}.md files and move each one back to the
+    global lessons-learned directory.
+
+    Returns ``(restored_any, lesson_ids)`` — ``restored_any=False, lesson_ids=[]``
+    when nothing was restored (no lesson files, plan dir missing). When the plan
+    directory contains multiple ``lesson-*.md`` files (e.g., a plan derived from
+    consolidating several lessons), every file is restored; per-file skips
+    (destination collision, path-traversal id) are silently dropped from the
+    returned list so the caller sees only the ids that successfully landed back
+    in ``lessons-learned/``. ``restored_any`` is ``True`` iff at least one file
+    was restored.
+    """
+    from file_ops import base_path  # type: ignore[import-not-found]
+
+    if not plan_dir.exists():
+        return False, []
+
+    matches = sorted(plan_dir.glob('lesson-*.md'))
+    if not matches:
+        return False, []
+
+    lessons_dir = base_path('lessons-learned').resolve()
+    lessons_dir.mkdir(parents=True, exist_ok=True)
+
+    restored_ids: list[str] = []
+    for match in matches:
+        source = match.resolve()
+        lesson_id = source.stem[len('lesson-'):]
+        if any(sep in lesson_id for sep in ('/', '\\', '..')):
+            continue
+
+        destination = (lessons_dir / f'{lesson_id}.md').resolve()
+        if destination.parent != lessons_dir or destination.exists():
+            continue
+
+        shutil.move(str(source), str(destination))
+        log_entry(
+            'work',
+            plan_id,
+            'INFO',
+            f'[RESTORE] (plan-marshall:manage-status:delete-plan) Restored lesson file '
+            f'lesson-{lesson_id}.md to .plan/local/lessons-learned/{lesson_id}.md before '
+            'plan-dir deletion',
+        )
+        restored_ids.append(lesson_id)
+
+    return bool(restored_ids), restored_ids
+
+
 def cmd_delete_plan(args: argparse.Namespace) -> dict:
     """Delete an entire plan directory."""
     require_valid_plan_id(args)
@@ -362,19 +412,31 @@ def cmd_delete_plan(args: argparse.Namespace) -> dict:
             'message': f'Plan directory does not exist: {plan_dir}',
         }
 
+    # Auto-restore moved lesson files (default behaviour; opt-out via
+    # ``--no-restore-lessons``). Plans derived from multiple lessons can
+    # carry more than one ``lesson-*.md`` file; restore them all.
+    lesson_restored = False
+    restored_lesson_ids: list[str] = []
+    if not getattr(args, 'no_restore_lessons', False):
+        lesson_restored, restored_lesson_ids = _restore_lesson_from_plan_dir(args.plan_id, plan_dir)
+
     # Count files before deletion for audit trail
     files_removed = sum(1 for _ in plan_dir.rglob('*') if _.is_file())
 
     try:
         shutil.rmtree(plan_dir)
         log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Deleted plan ({files_removed} files)')
-        return {
+        result: dict[str, Any] = {
             'status': 'success',
             'plan_id': args.plan_id,
             'action': 'deleted',
             'path': str(plan_dir),
             'files_removed': files_removed,
+            'lesson_restored': lesson_restored,
         }
+        if restored_lesson_ids:
+            result['restored_lesson_ids'] = restored_lesson_ids
+        return result
     except PermissionError as e:
         return {
             'status': 'error',

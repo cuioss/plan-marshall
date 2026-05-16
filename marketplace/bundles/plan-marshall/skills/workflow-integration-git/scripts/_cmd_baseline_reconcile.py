@@ -125,6 +125,105 @@ def _has_remote(worktree_path: str) -> bool:
     return rc == 0 and bool(stdout.strip())
 
 
+def _remote_branch_exists(worktree_path: str, branch: str) -> bool:
+    """Return True when ``origin/{branch}`` resolves on the remote."""
+    rc, stdout, _ = run_git(['-C', worktree_path, 'ls-remote', '--heads', 'origin', branch])
+    return rc == 0 and bool(stdout.strip())
+
+
+def _detect_remote_default_branch(worktree_path: str) -> str | None:
+    """Detect the remote default branch.
+
+    Preference order: ``git ls-remote --symref origin HEAD`` (parses
+    ``ref: refs/heads/{name}``) → ``main`` if it exists on the remote → ``master``
+    if it exists → None when nothing resolves.
+    """
+    rc, stdout, _ = run_git(['-C', worktree_path, 'ls-remote', '--symref', 'origin', 'HEAD'])
+    if rc == 0:
+        for line in stdout.splitlines():
+            if line.startswith('ref:'):
+                # Format: ``ref: refs/heads/{name}\tHEAD``
+                rest = line[len('ref:'):].strip()
+                ref = rest.split('\t', 1)[0].strip() if '\t' in rest else rest.split()[0]
+                if ref.startswith('refs/heads/'):
+                    return ref[len('refs/heads/'):]
+
+    for fallback in ('main', 'master'):
+        if _remote_branch_exists(worktree_path, fallback):
+            return fallback
+    return None
+
+
+def _update_references_base_branch(plan_id: str, new_branch: str) -> bool:
+    """Persist the new ``base_branch`` in ``references.json``.
+
+    Returns True on a successful write, False when the references module is
+    unavailable or the file cannot be loaded — caller decides whether to
+    fail-loud or continue against the updated in-memory value.
+    """
+    try:
+        from _references_core import read_references, write_references  # type: ignore[import-not-found]
+    except ImportError:
+        return False
+
+    try:
+        refs = read_references(plan_id)
+    except FileNotFoundError:
+        refs = {}
+
+    if not isinstance(refs, dict):
+        refs = {}
+    refs['base_branch'] = new_branch
+    try:
+        write_references(plan_id, refs)
+    except (FileNotFoundError, OSError):
+        return False
+    return True
+
+
+def _maybe_auto_update_stale_base_branch(
+    plan_id: str,
+    worktree_path: str,
+    base_branch: str,
+) -> tuple[str, bool, str | None]:
+    """Detect a stale ``base_branch`` and auto-update it to the remote default.
+
+    Returns ``(resolved_branch, updated, original_branch_or_None)``:
+
+    * ``resolved_branch`` — the branch the caller should proceed with. Equals
+      ``base_branch`` when no update was needed.
+    * ``updated`` — True when references.json was updated AND a new default was
+      detected.
+    * ``original_branch_or_None`` — the prior ``base_branch`` value when
+      ``updated`` is True, ``None`` otherwise.
+    """
+    if _remote_branch_exists(worktree_path, base_branch):
+        return base_branch, False, None
+
+    detected = _detect_remote_default_branch(worktree_path)
+    if detected is None or detected == base_branch:
+        # Nothing to switch to — leave the value alone; downstream callers
+        # produce the canonical fetch_failed / unresolvable error.
+        return base_branch, False, None
+
+    persisted = _update_references_base_branch(plan_id, detected)
+    if persisted:
+        try:
+            from plan_logging import log_entry  # type: ignore[import-not-found]
+        except ImportError:
+            log_entry = None  # type: ignore[assignment]
+        if log_entry is not None:
+            log_entry(
+                'decision',
+                plan_id,
+                'INFO',
+                f'(plan-marshall:workflow-integration-git:baseline-reconcile) '
+                f'Stale base_branch {base_branch} (no remote ref) auto-updated to {detected}',
+            )
+
+    return detected, persisted, base_branch
+
+
 def _list_upstream_commits(
     worktree_path: str,
     baseline_sha: str,
@@ -233,6 +332,14 @@ def cmd_baseline_reconcile(args) -> dict:
 
     base_branch, branch_source = _resolve_base_branch(plan_id, override_branch)
 
+    # Stale-base-branch auto-update: if the configured base_branch no longer
+    # resolves on origin (e.g., a feature branch was merged-and-deleted), swap
+    # in the remote default before fetching so the fetch does not fail with a
+    # misleading ``could not find remote ref`` error.
+    base_branch, base_branch_updated, original_base_branch = _maybe_auto_update_stale_base_branch(
+        plan_id, worktree_path, base_branch
+    )
+
     if not skip_fetch and not os.environ.get('PLAN_MARSHALL_SKIP_FETCH'):
         rc, _, stderr = run_git(['-C', worktree_path, 'fetch', 'origin', base_branch])
         if rc != 0:
@@ -281,12 +388,13 @@ def cmd_baseline_reconcile(args) -> dict:
             if result.get('status') == 'success':
                 findings_emitted += 1
 
-    return {
+    payload: dict[str, Any] = {
         'status': 'success',
         'plan_id': plan_id,
         'worktree_path': worktree_path,
         'base_branch': base_branch,
         'base_branch_source': branch_source,
+        'base_branch_updated': base_branch_updated,
         'baseline_sha': baseline_sha,
         'baseline_sha_source': baseline_source,
         'upstream_commit_count': len(upstream_commits),
@@ -297,3 +405,6 @@ def cmd_baseline_reconcile(args) -> dict:
         'findings_emitted': findings_emitted,
         'emit': emit,
     }
+    if base_branch_updated and original_base_branch is not None:
+        payload['original_base_branch'] = original_base_branch
+    return payload

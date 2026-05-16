@@ -432,6 +432,90 @@ def test_delete_plan_invalid_id():
         assert exc_info.value.code == 0
 
 
+def test_delete_plan_auto_restores_lesson():
+    """delete-plan moves a lesson-{id}.md back to lessons-learned/ before deletion."""
+    with PlanContext(plan_id='lesson-2025-01-01-001') as ctx:
+        (ctx.plan_dir / 'request.md').write_text('# Request')
+        (ctx.plan_dir / 'lesson-2025-01-01-001.md').write_text(
+            'id=2025-01-01-001\ncomponent=foo\ncategory=bug\ncreated=2025-01-01\n\n# Lesson\n\nBody.\n'
+        )
+
+        lessons_dir = ctx.fixture_dir / 'lessons-learned'
+        # Pre-emptively confirm the destination does not exist
+        if lessons_dir.exists():
+            (lessons_dir / '2025-01-01-001.md').unlink(missing_ok=True)
+
+        result = cmd_delete_plan(Namespace(plan_id='lesson-2025-01-01-001', no_restore_lessons=False))
+
+        assert result['status'] == 'success'
+        assert result['action'] == 'deleted'
+        assert result['lesson_restored'] is True
+        assert result['restored_lesson_ids'] == ['2025-01-01-001']
+
+        # Plan dir was deleted
+        assert not ctx.plan_dir.exists()
+        # Lesson file lives in lessons-learned/ again
+        restored = ctx.fixture_dir / 'lessons-learned' / '2025-01-01-001.md'
+        assert restored.exists()
+        assert '# Lesson' in restored.read_text()
+
+
+def test_delete_plan_no_lesson_file_unchanged_behaviour():
+    """delete-plan on a plan dir without a lesson file reports lesson_restored: False."""
+    with PlanContext(plan_id='delete-no-lesson') as ctx:
+        (ctx.plan_dir / 'request.md').write_text('# Request')
+
+        result = cmd_delete_plan(Namespace(plan_id='delete-no-lesson', no_restore_lessons=False))
+
+        assert result['status'] == 'success'
+        assert result['action'] == 'deleted'
+        assert result['lesson_restored'] is False
+        assert 'restored_lesson_ids' not in result
+        assert not ctx.plan_dir.exists()
+
+
+def test_delete_plan_no_restore_lessons_flag_skips_restoration():
+    """--no-restore-lessons preserves the prior unconditional-delete behaviour."""
+    with PlanContext(plan_id='lesson-2025-01-01-002') as ctx:
+        (ctx.plan_dir / 'lesson-2025-01-01-002.md').write_text(
+            'id=2025-01-01-002\ncomponent=foo\ncategory=bug\ncreated=2025-01-01\n\n# Lesson\n\nBody.\n'
+        )
+
+        result = cmd_delete_plan(Namespace(plan_id='lesson-2025-01-01-002', no_restore_lessons=True))
+
+        assert result['status'] == 'success'
+        assert result['action'] == 'deleted'
+        assert result['lesson_restored'] is False
+        # The lesson file was discarded along with the plan dir
+        assert not ctx.plan_dir.exists()
+        assert not (ctx.fixture_dir / 'lessons-learned' / '2025-01-01-002.md').exists()
+
+
+def test_delete_plan_restores_all_lesson_files():
+    """delete-plan restores every lesson-*.md file in the plan dir (multi-lesson plans)."""
+    with PlanContext(plan_id='consolidate-multi') as ctx:
+        (ctx.plan_dir / 'request.md').write_text('# Request')
+        (ctx.plan_dir / 'lesson-2025-02-01-001.md').write_text(
+            'id=2025-02-01-001\ncomponent=foo\ncategory=bug\ncreated=2025-02-01\n\n# One\n'
+        )
+        (ctx.plan_dir / 'lesson-2025-02-01-002.md').write_text(
+            'id=2025-02-01-002\ncomponent=bar\ncategory=bug\ncreated=2025-02-01\n\n# Two\n'
+        )
+
+        result = cmd_delete_plan(Namespace(plan_id='consolidate-multi', no_restore_lessons=False))
+
+        assert result['status'] == 'success'
+        assert result['action'] == 'deleted'
+        assert result['lesson_restored'] is True
+        assert result['restored_lesson_ids'] == ['2025-02-01-001', '2025-02-01-002']
+
+        # Both lesson files exist in lessons-learned/
+        lessons_dir = ctx.fixture_dir / 'lessons-learned'
+        assert (lessons_dir / '2025-02-01-001.md').exists()
+        assert (lessons_dir / '2025-02-01-002.md').exists()
+        assert not ctx.plan_dir.exists()
+
+
 # =============================================================================
 # CLI Plumbing Tests (Tier 3 - subprocess)
 # =============================================================================
