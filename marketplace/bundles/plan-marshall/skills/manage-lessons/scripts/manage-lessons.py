@@ -585,6 +585,93 @@ def cmd_convert_to_plan(args: argparse.Namespace) -> dict:
     }
 
 
+def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
+    """Move a lesson file from a plan directory back to the global lessons directory.
+
+    Inverse of ``cmd_convert_to_plan``. Scans the plan directory for a single
+    ``lesson-*.md`` file, derives the original ``lesson_id`` from the filename,
+    and moves the file back to ``.plan/local/lessons-learned/{lesson_id}.md``.
+
+    Idempotent on missing lesson file — returns ``status: success`` with
+    ``action: no_lesson_file`` when nothing to restore so callers don't need to
+    pre-check. Refuses to clobber a pre-existing destination file.
+    """
+    if any(sep in args.plan_id for sep in ('/', '\\', '..')):
+        return {
+            'status': 'error',
+            'error': 'invalid_id',
+            'message': 'Identifiers must not contain path separators or traversal sequences',
+        }
+
+    plan_parent = base_path('plans').resolve()
+    plan_dir = (plan_parent / args.plan_id).resolve()
+    lessons_dir = get_lessons_dir().resolve()
+
+    if plan_dir.parent != plan_parent:
+        return {
+            'status': 'error',
+            'error': 'path_traversal',
+            'message': 'Resolved path escapes intended parent directory',
+        }
+
+    if not plan_dir.exists():
+        return {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'action': 'no_lesson_file',
+        }
+
+    matches = sorted(plan_dir.glob('lesson-*.md'))
+    if not matches:
+        return {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'action': 'no_lesson_file',
+        }
+
+    source = matches[0].resolve()
+    # Derive lesson id by stripping the ``lesson-`` prefix and ``.md`` suffix.
+    lesson_id = source.stem[len('lesson-'):]
+
+    # Defensive: ensure the derived id has no traversal sequences and resolves
+    # back inside the plan dir.
+    if any(sep in lesson_id for sep in ('/', '\\', '..')) or source.parent != plan_dir:
+        return {
+            'status': 'error',
+            'error': 'path_traversal',
+            'message': 'Resolved path escapes intended parent directory',
+        }
+
+    lessons_dir.mkdir(parents=True, exist_ok=True)
+    destination = (lessons_dir / f'{lesson_id}.md').resolve()
+
+    if destination.parent != lessons_dir:
+        return {
+            'status': 'error',
+            'error': 'path_traversal',
+            'message': 'Resolved path escapes intended parent directory',
+        }
+
+    if destination.exists():
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'lesson_id': lesson_id,
+            'error': 'destination_exists',
+            'message': f'Destination {destination} already exists; refusing to clobber',
+        }
+
+    shutil.move(source, destination)
+
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'lesson_id': lesson_id,
+        'source': str(source),
+        'destination': str(destination),
+    }
+
+
 def cmd_set_body(args: argparse.Namespace) -> dict:
     """Overwrite the body of an existing lesson stub.
 
@@ -1467,6 +1554,15 @@ def main() -> int:
     add_lesson_id_arg(convert_parser)
     add_plan_id_arg(convert_parser)
     convert_parser.set_defaults(func=cmd_convert_to_plan)
+
+    # restore-from-plan
+    restore_parser = subparsers.add_parser(
+        'restore-from-plan',
+        help='Move a lesson-{id}.md file from a plan directory back to the global lessons directory',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(restore_parser)
+    restore_parser.set_defaults(func=cmd_restore_from_plan)
 
     # set-body
     set_body_parser = subparsers.add_parser(

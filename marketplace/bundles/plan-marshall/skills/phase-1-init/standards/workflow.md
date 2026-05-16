@@ -61,6 +61,7 @@ lesson_id: "2025-12-02-001"
 - Extracts: title, category, component, detail, related
 - Context section populated with lesson metadata
 - After ingestion, the lesson file is **moved** out of `lessons-learned/` into the plan directory (Step 5b) — this guarantees the lesson is owned by exactly one plan and prevents duplicate work across re-runs.
+- After the move, Step 5b.5 seeds `status.metadata.plan_source` with the raw `lesson_id` value. This is what makes phase-2-refine Step 13.5's narrative-vs-code-validator activate for code-shaped lessons; recipe-derived plans are exempt because Step 5c overwrites `plan_source` to `"recipe"` when the lesson body is doc-shaped.
 - A doc-shaped lesson body triggers the **lesson auto-suggest hook** (Step 5c) which sets `plan_source=recipe` + `recipe_key=lesson_cleanup` in status metadata. See § "Lesson auto-suggest hook" below.
 
 ### Issue URL
@@ -94,7 +95,8 @@ issue: "https://github.com/org/repo/issues/123"
 **Integration with the lesson-conversion path**:
 
 - Step 5b owns the file move (lesson file leaves `lessons-learned/`, lands in `.plan/local/plans/{plan_id}/lesson-{lesson_id}.md`).
-- Step 5c owns the routing decision (recipe vs. full pipeline) by reading the file Step 5b just placed.
+- Step 5b.5 seeds `plan_source = {lesson_id}` so non-recipe routing is observable from status metadata.
+- Step 5c owns the routing decision (recipe vs. full pipeline) by reading the file Step 5b just placed. When doc-shaped, it overwrites `plan_source` to `"recipe"`; when code-shaped, the Step 5b.5 value is preserved.
 - Steps 6–11 are unaffected by auto-suggest — they always run regardless of `plan_source`. The recipe routing is consumed downstream by `phase-3-outline` Step 2.5 (loads `recipe-lesson-cleanup` when `recipe_key` is set).
 
 This separation keeps the lesson-conversion mechanics (file ownership) decoupled from the routing policy (which pipeline runs next) — either step can change without breaking the other.

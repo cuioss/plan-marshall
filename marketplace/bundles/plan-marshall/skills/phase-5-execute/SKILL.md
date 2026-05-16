@@ -328,13 +328,30 @@ Inlined flow:
 
    Extract `base_branch` and `worktree_path`. If `worktree_path` is absent, the plan runs against the main checkout; substitute `.` for `{worktree_path}` in every git command below.
 
-2. **Fetch base** (read-only network round-trip):
+2. **Entry guard — stale `base_branch` check**: before fetching, verify that `origin/{base_branch}` still resolves on the remote. A merged-and-deleted feature branch produces an empty `ls-remote` result, and a downstream `git fetch origin {base_branch}` will fail with a misleading `could not find remote ref` error.
+
+   ```bash
+   git -C {worktree_path} ls-remote --heads origin {base_branch}
+   ```
+
+   When the output is empty, return a structured error and ABORT the phase:
+
+   ```toon
+   status: error
+   error: base_branch_unresolvable
+   base_branch: {value}
+   suggested_fix: "Update references.json:base_branch to the repo default (main/master), then re-enter phase-5-execute. Run phase-2-refine to invoke baseline-reconcile auto-update."
+   ```
+
+   `baseline-reconcile` (invoked by phase-2-refine Step 3d) self-heals stale base-branch values by detecting the remote default and writing the new value to `references.json`; the canonical recovery is therefore to re-run phase-2-refine, not to manually fix-up references.json in-place. The entry guard here is purely a fail-loud surface so the orchestrator does not waste a `fetch` round-trip on a known-bad input.
+
+3. **Fetch base** (read-only network round-trip):
 
    ```bash
    git -C {worktree_path} fetch origin {base_branch}
    ```
 
-3. **Fast-path check** — verify the current branch tip already contains `origin/{base_branch}`:
+4. **Fast-path check** — verify the current branch tip already contains `origin/{base_branch}`:
 
    ```bash
    git -C {worktree_path} merge-base --is-ancestor origin/{base_branch} HEAD
@@ -348,7 +365,7 @@ Inlined flow:
      --message "[STATUS] (plan-marshall:phase-5-execute) Baseline fast-path: worktree already up to date with origin/{base_branch}"
    ```
 
-4. **Drift contract** — exit code non-zero means upstream has new commits the worktree does not contain. ABORT the phase fail-loud: do NOT merge, do NOT rebase, do NOT continue to Step 4. Capture the divergent commits:
+5. **Drift contract** — exit code non-zero means upstream has new commits the worktree does not contain. ABORT the phase fail-loud: do NOT merge, do NOT rebase, do NOT continue to Step 4. Capture the divergent commits:
 
    ```bash
    git -C {worktree_path} log --oneline HEAD..origin/{base_branch}

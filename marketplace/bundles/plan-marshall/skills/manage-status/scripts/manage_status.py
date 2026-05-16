@@ -210,6 +210,16 @@ def main() -> int:
     # delete-plan
     delete_plan_parser = subparsers.add_parser('delete-plan', help='Delete entire plan directory', allow_abbrev=False)
     add_plan_id_arg(delete_plan_parser)
+    delete_plan_parser.add_argument(
+        '--no-restore-lessons',
+        dest='no_restore_lessons',
+        action='store_true',
+        help=(
+            'Skip the default auto-restore of any lesson-{id}.md file inside the plan '
+            'directory back to .plan/local/lessons-learned/ before deletion. Use only '
+            'when the caller deliberately wants the moved lesson to be discarded.'
+        ),
+    )
     delete_plan_parser.set_defaults(func=cmd_delete_plan)
 
     # mark-step-done

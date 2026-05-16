@@ -790,7 +790,7 @@ If `qgate_pending_count > 0`, the orchestrator (planning.md) decides whether to 
 
 **Purpose**: Run the `narrative-vs-code-validator` (plan-marshall/workflow/q-gate-validation.md § 2.14) over the source lesson narrative so concrete code claims (file paths, profile→target mappings, function names, argument shapes, behavioral assertions) are reconciled against current code state at refine time. Catches silent baseline drift between lesson capture and plan execution before the outline locks intent.
 
-**Activation guard**: Runs only when `status.json` reports `plan_source: lesson`. For free-form, issue-derived, or recipe-derived plans, skip this step entirely.
+**Activation guard**: Runs whenever `status.json` reports a `plan_source` that is set and not equal to the literal string `recipe`. Lesson-derived plans encode the source lesson id directly in `plan_source` (e.g., `2026-05-11-08-004`), so the guard MUST treat any non-null, non-`recipe` value as lesson-derived. For recipe-derived plans, and for plans where `plan_source` is absent (free-form, issue-derived legacy data, etc.), skip this step entirely.
 
 **Read activation guard**:
 
@@ -799,7 +799,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metada
   --plan-id {plan_id} --get --field plan_source
 ```
 
-If `status: not_found` or `value != lesson`, skip Step 13.5 — log nothing and continue to Step 14.
+If `status: not_found`, or if `value` equals `recipe`, skip Step 13.5 — log nothing and continue to Step 14. Any other non-empty value (notably a lesson id such as `2026-05-11-08-004`) activates the step.
 
 **Dispatch the validator agent** (lesson-derived plans only):
 
