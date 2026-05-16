@@ -31,7 +31,12 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-fo
 
 ### Step 2: Producer-stage PR comments as findings
 
-Call the producer-side comments-stage subcommand once. It fetches PR review comments, applies pre-filters (resolved threads, plan author's own replies, etc.), and writes one `pr-comment` finding per surviving comment into the per-plan findings store. The producer is the ONLY surface that fetches and stores `pr-comment` findings — this lifecycle does NOT classify or decide on comments inline.
+Call the producer-side comments-stage subcommand once. It fetches PR review comments, applies pre-filters, and writes one `pr-comment` finding per surviving comment into the per-plan findings store. The producer is the ONLY surface that fetches and stores `pr-comment` findings — this lifecycle does NOT classify or decide on comments inline.
+
+Pre-filters applied by `comments-stage` (in order):
+
+1. **Already-resolved threads** — comments on threads where `isResolved=true` are dropped silently. The thread owner already addressed them; storing them as findings would produce spurious `ACCEPT` work.
+2. **Obvious text noise** — automated/acknowledgment patterns (e.g., "lgtm", bot signatures) matched via the `comment-patterns.json` ignore list.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
@@ -62,8 +67,16 @@ For each pending finding, perform the following sequence sequentially. The class
    |----------|--------|
    | **FIX** | Create a fix task (prepare-add → commit-add) and loop back to phase-5-execute |
    | **SUPPRESS** | Apply domain-specific annotation (per loaded `suppression.md`); reply on the thread acknowledging the suppression; resolve the thread |
-   | **ACCEPT** | Reply on the thread with rationale; resolve the thread |
+   | **ACCEPT** | Reply on the thread with rationale; resolve the thread. See **Affirmative acceptance policy** below. |
    | **AskUserQuestion** | Ask the user (one question per finding, never batched) when the loaded standards leave the call genuinely ambiguous |
+
+   **Affirmative acceptance policy.** `ACCEPT` is a first-class disposition — not a fallback for comments that cannot be classified. It applies when the reviewer's comment reflects a valid perspective but the current implementation is already correct and intentional. Three conditions must all hold before issuing `ACCEPT`:
+
+   1. **Substantive engagement**: the reply must explain the design decision or trade-off that makes the current code correct, not merely acknowledge the comment.
+   2. **No suppression annotation needed**: the concern is not a false-positive warning that needs to be silenced at the tool level — it is a deliberate choice that warrants explanation.
+   3. **Unambiguous call**: if there is genuine uncertainty about whether the code is correct as-is, escalate via `AskUserQuestion` rather than assuming `ACCEPT`.
+
+   When all three hold, reply on the thread with the rationale, then resolve the thread. `ACCEPT` resolves the finding with `resolution: accepted`.
 
 5. **Resolve the finding** via `manage-findings resolve --hash-id {hash_id} --resolution {fixed|suppressed|accepted|taken_into_account} --detail "{rationale}"`.
 
