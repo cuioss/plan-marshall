@@ -368,7 +368,7 @@ cache holds, which is exactly the published bundle definitions.
 
 #### Session-Restart Fence
 
-**This fence is normative, not advisory.** When the running finalize dispatch processes `project:finalize-step-sync-plugin-cache` AND the plan's `references.modified_files` contains paths under `marketplace/bundles/plan-marshall/` (i.e., the plan modifies plan-marshall itself), the dispatcher MUST halt immediately after the sync step records `outcome=done` and refuse to dispatch any subsequent agent-loaded step in the same Claude Code session.
+**This fence is normative, not advisory.** When the running finalize dispatch processes `project:finalize-step-sync-plugin-cache` AND the plan's `references.modified_files` contains paths under `marketplace/bundles/plan-marshall/` (i.e., the plan modifies `plan-marshall` itself), the dispatcher MUST halt immediately after the sync step records `outcome=done` and refuse to dispatch any subsequent agent-loaded step in the same Claude Code session.
 
 The fence is the single structural guard against the self-host blind spot — see [`standards/self-host-blind-spot.md`](standards/self-host-blind-spot.md) for the invariant and its three failure surfaces. The two-part remediation (cache sync + session restart) cannot be collapsed into the sync step alone: synchronising the cache does NOT refresh the host platform's in-process skill registry, so any agent dispatched in the same session continues to load the pre-sync skill bodies and workflow notations from its registry snapshot.
 

@@ -12,7 +12,7 @@ Plans that modify the `plan-marshall` bundle itself are the only callers exposed
 
 ## The Invariant
 
-> **A plan that modifies plan-marshall itself cannot use its own modified skills, workflows, or manifest-shape changes at phase-6 dispatch time unless (a) the plugin cache is synced from the worktree AND (b) the Claude Code session is restarted.**
+> **A plan that modifies `plan-marshall` itself cannot use its own modified skills, workflows, or manifest-shape changes at `phase-6` dispatch time unless (a) the plugin cache is synced from the worktree AND (b) the Claude Code session is restarted.**
 
 Both halves are load-bearing. Synchronising the cache without restarting the session leaves the in-process skill registry pinned to the pre-sync snapshot. Restarting the session without first syncing leaves the cache pinned to the previous commit on `main`. The invariant fails closed only when both conditions hold.
 
@@ -30,7 +30,7 @@ When the dispatcher emits `workflow: plan-marshall:plan-marshall/workflow/verifi
 
 ### 3. Execution-manifest content baked at write time
 
-The per-plan execution manifest at `.plan/local/plans/{plan_id}/execution.toon` is composed once (at plan-4 time, with phase-5 amendments) by reading the **then-current** plugin cache. The manifest's `phase_5.verification_steps` and `phase_6.steps` lists are snapshots; subsequent worktree edits to step ordering, step activation, or default profiles do NOT re-flow into an already-written manifest. Phase-6 readers see the pre-change manifest shape even after a successful cache sync, until the plan is re-planned or the manifest is recomposed. See [`../../manage-execution-manifest/SKILL.md`](../../manage-execution-manifest/SKILL.md) § Manifest-on-Write Semantics for the authoritative read/write semantics statement.
+The per-plan execution manifest at `.plan/local/plans/{plan_id}/execution.toon` is composed once (at `phase-4-plan` time, with `phase-5` amendments) by reading the **then-current** plugin cache. The manifest's `phase_5.verification_steps` and `phase_6.steps` lists are snapshots; subsequent worktree edits to step ordering, step activation, or default profiles do NOT re-flow into an already-written manifest. `Phase-6` readers see the pre-change manifest shape even after a successful cache sync, until the plan is re-planned or the manifest is recomposed. See [`../../manage-execution-manifest/SKILL.md`](../../manage-execution-manifest/SKILL.md) § Manifest-on-Write Semantics for the authoritative read/write semantics statement.
 
 ## Why the Remediation Is Both Halves
 
