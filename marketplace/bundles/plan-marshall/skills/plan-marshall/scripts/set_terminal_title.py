@@ -51,74 +51,30 @@ _COMMAND_ALIASES: dict[str, str] = {
 }
 
 
+# Phase values that signal the plan is no longer active. When
+# `_read_plan_meta` returns a phase in this set, `build_title` treats it
+# identically to "no phase resolved" and falls through to the
+# active-command / `claude` fallback chain.
+_TERMINAL_PHASE_VALUES = {'complete', 'archived'}
+
+
 def _resolve_plan_id(cwd: str) -> str | None:
     match = _WORKTREE_RE.match(cwd)
-    if match:
+    if match and os.path.isdir(cwd):
         return match.group('id')
     env_plan = os.environ.get('PLAN_ID')
     if env_plan:
         stripped = env_plan.strip()
-        if stripped:
-            return stripped
-    return _scan_active_plan(cwd)
-
-
-# Phase keys considered "in-progress" (i.e., the plan is still being worked on).
-# Plans whose `current_phase` is outside this set are skipped by the
-# active-plan scan so that completed/archived plans do not surface in the
-# main-checkout title resolution.
-_ACTIVE_PHASE_VALUES = {
-    '1-init',
-    '2-refine',
-    '3-outline',
-    '4-plan',
-    '5-execute',
-    '6-finalize',
-}
-
-
-def _scan_active_plan(cwd: str) -> str | None:
-    """Return the plan_id of the most-recently-modified active plan, or None.
-
-    Used as the third strategy in :func:`_resolve_plan_id` for main-checkout
-    sessions where neither the worktree-regex nor the ``PLAN_ID`` env var
-    identifies a plan. Scans ``<git-common-dir>/../.plan/local/plans/*/status.json``
-    and returns the plan_id of the in-progress plan with the most recent
-    ``status.json`` mtime. Returns ``None`` when no in-progress plan exists.
-    """
-    common_dir = _git_common_dir(cwd)
-    if common_dir is not None:
-        plans_root = common_dir.parent / '.plan' / 'local' / 'plans'
-    else:
-        walk_root = _walk_up_for_plan(Path(cwd))
-        if walk_root is None:
+        if not stripped:
             return None
-        plans_root = walk_root / '.plan' / 'local' / 'plans'
-    if not plans_root.is_dir():
-        return None
-    candidates: list[tuple[float, str]] = []
-    try:
-        plan_dirs = list(plans_root.iterdir())
-    except OSError:
-        return None
-    for plan_dir in plan_dirs:
-        if not plan_dir.is_dir():
-            continue
-        status_file = plan_dir / 'status.json'
-        if not status_file.is_file():
-            continue
-        phase, _ = _read_plan_meta(status_file)
-        if phase is None or phase not in _ACTIVE_PHASE_VALUES:
-            continue
-        try:
-            mtime = status_file.stat().st_mtime
-        except OSError:
-            continue
-        candidates.append((mtime, plan_dir.name))
-    if not candidates:
-        return None
-    candidates.sort(reverse=True)
-    return candidates[0][1]
+        # Path-traversal guard: the value is used directly as a directory
+        # component in .plan/local/plans/{plan_id}/status.json, so reject any
+        # value containing path separators or traversal sequences. Mirrors the
+        # session_id guard in `_command_state_path`.
+        if '/' in stripped or '\\' in stripped or stripped in ('..', '.'):
+            return None
+        return stripped
+    return None
 
 
 def _git_common_dir(cwd: str) -> Path | None:
@@ -157,7 +113,9 @@ def _resolve_status_file(cwd: str, plan_id: str) -> Path | None:
     if walk_root is None:
         return None
     candidate = walk_root / '.plan' / 'local' / 'plans' / plan_id / 'status.json'
-    return candidate if candidate.is_file() else None
+    if not candidate.is_file():
+        return None
+    return candidate
 
 
 def _read_plan_meta(status_file: Path) -> tuple[str | None, str | None]:
@@ -178,16 +136,6 @@ def _read_plan_meta(status_file: Path) -> tuple[str | None, str | None]:
     phase_value = phase if isinstance(phase, str) and phase else None
     short_value = short_description if isinstance(short_description, str) and short_description else None
     return phase_value, short_value
-
-
-def _read_phase(status_file: Path) -> str | None:
-    """Backwards-compatible wrapper returning only the phase field.
-
-    Retained so tests and any external callers that only need the phase
-    continue to work. New code should prefer :func:`_read_plan_meta`.
-    """
-    phase, _ = _read_plan_meta(status_file)
-    return phase
 
 
 def _command_state_path(session_id: str) -> Path | None:
@@ -392,8 +340,9 @@ def build_title(
         status_file = _resolve_status_file(cwd, plan_id)
         if status_file is not None:
             phase, short_description = _read_plan_meta(status_file)
-    if plan_id and not phase:
+    if plan_id and (not phase or phase in _TERMINAL_PHASE_VALUES):
         plan_id = None
+        phase = None
         short_description = None
     active_command: str | None = None
     if not (plan_id and phase):

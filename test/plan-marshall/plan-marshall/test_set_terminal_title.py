@@ -42,12 +42,16 @@ class TestPlanIdResolution(ScriptTestCase):
     script = 'set_terminal_title.py'
 
     def test_worktree_cwd_matches(self):
-        cwd = '/Users/x/repo/.plan/local/worktrees/my-plan/marketplace'
-        self.assertEqual(set_terminal_title._resolve_plan_id(cwd), 'my-plan')
+        # Strategy 1 requires the cwd to exist on disk (liveness guard); use a
+        # real worktree path under self.temp_dir.
+        cwd = self.temp_dir / '.plan' / 'local' / 'worktrees' / 'my-plan' / 'marketplace'
+        cwd.mkdir(parents=True)
+        self.assertEqual(set_terminal_title._resolve_plan_id(str(cwd)), 'my-plan')
 
     def test_worktree_cwd_without_trailing_path(self):
-        cwd = '/repo/.plan/local/worktrees/only-id'
-        self.assertEqual(set_terminal_title._resolve_plan_id(cwd), 'only-id')
+        cwd = self.temp_dir / '.plan' / 'local' / 'worktrees' / 'only-id'
+        cwd.mkdir(parents=True)
+        self.assertEqual(set_terminal_title._resolve_plan_id(str(cwd)), 'only-id')
 
     def test_legacy_claude_worktrees_no_longer_matches(self):
         """Legacy .claude/worktrees/ cwd is intentionally NOT recognized.
@@ -56,105 +60,81 @@ class TestPlanIdResolution(ScriptTestCase):
         fallback (compatibility: breaking). A legacy cwd must fall through to
         $PLAN_ID or None — never extract a plan id from the old segment.
         """
-        cwd = '/Users/x/repo/.claude/worktrees/old-plan/marketplace'
+        cwd = self.temp_dir / '.claude' / 'worktrees' / 'old-plan' / 'marketplace'
+        cwd.mkdir(parents=True)
         env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
         with mock.patch.dict(os.environ, env, clear=True):
-            self.assertIsNone(set_terminal_title._resolve_plan_id(cwd))
+            self.assertIsNone(set_terminal_title._resolve_plan_id(str(cwd)))
 
     def test_env_fallback_when_no_worktree_match(self):
         with mock.patch.dict(os.environ, {'PLAN_ID': 'from-env'}, clear=False):
             self.assertEqual(set_terminal_title._resolve_plan_id('/tmp/not-a-worktree'), 'from-env')
 
     def test_worktree_wins_over_env(self):
-        cwd = '/r/.plan/local/worktrees/from-cwd'
+        cwd = self.temp_dir / '.plan' / 'local' / 'worktrees' / 'from-cwd'
+        cwd.mkdir(parents=True)
         with mock.patch.dict(os.environ, {'PLAN_ID': 'from-env'}, clear=False):
-            self.assertEqual(set_terminal_title._resolve_plan_id(cwd), 'from-cwd')
+            self.assertEqual(set_terminal_title._resolve_plan_id(str(cwd)), 'from-cwd')
 
     def test_no_plan_when_neither_present(self):
+        """No worktree-cwd match, no $PLAN_ID env, no active-plan scan (removed).
+
+        With strategy 3 (_scan_active_plan) removed, _resolve_plan_id returns
+        None whenever the cwd does not string-match a live worktree path and
+        $PLAN_ID is unset — regardless of which plans live under
+        .plan/local/plans/. This is the fresh-session safety guarantee.
+        """
         env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
-        with (
-            mock.patch.dict(os.environ, env, clear=True),
-            mock.patch.object(set_terminal_title, '_scan_active_plan', return_value=None),
-        ):
+        with mock.patch.dict(os.environ, env, clear=True):
             self.assertIsNone(set_terminal_title._resolve_plan_id('/tmp/nowhere'))
 
+    def test_dead_worktree_cwd_falls_through(self):
+        """Strategy 1 must verify the worktree directory exists on disk.
 
-class TestScanActivePlan(ScriptTestCase):
-    """_scan_active_plan: main-checkout fallback that scans
-    ``.plan/local/plans/*/status.json`` for in-progress plans and returns
-    the most-recently-modified plan_id."""
-
-    bundle = 'plan-marshall'
-    skill = 'plan-marshall'
-    script = 'set_terminal_title.py'
-
-    def _make_plans_root(self) -> Path:
-        plans_root = self.temp_dir / '.plan' / 'local' / 'plans'
-        plans_root.mkdir(parents=True, exist_ok=True)
-        return plans_root
-
-    def test_single_in_progress_plan_returns_its_id(self):
-        """Case (a): one in-progress plan with cwd at the mocked repo
-        root — the script returns that plan_id."""
-        plans_root = self._make_plans_root()
-        _write_status(plans_root / 'only-plan', '5-execute')
-        with (
-            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
-        ):
-            result = set_terminal_title._scan_active_plan(str(self.temp_dir))
-        self.assertEqual(result, 'only-plan')
-
-    def test_multiple_in_progress_most_recent_wins(self):
-        """Case (b): two in-progress plans with differing mtimes — the
-        most-recently-modified status.json wins."""
-        plans_root = self._make_plans_root()
-        older = _write_status(plans_root / 'older-plan', '3-outline')
-        newer = _write_status(plans_root / 'newer-plan', '4-plan')
-        # Force older mtime to be 100 seconds before newer.
-        newer_mtime = newer.stat().st_mtime
-        os.utime(older, (newer_mtime - 100, newer_mtime - 100))
-        os.utime(newer, (newer_mtime, newer_mtime))
-        with (
-            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
-        ):
-            result = set_terminal_title._scan_active_plan(str(self.temp_dir))
-        self.assertEqual(result, 'newer-plan')
-
-    def test_only_archived_or_complete_returns_none(self):
-        """Case (c): only plans with non-in-progress phases — returns
-        None so the title falls back to active-command or claude."""
-        plans_root = self._make_plans_root()
-        # current_phase values outside the in-progress set MUST be skipped.
-        _write_status(plans_root / 'archived-plan', 'archived')
-        _write_status(plans_root / 'complete-plan', 'complete')
-        with (
-            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
-        ):
-            result = set_terminal_title._scan_active_plan(str(self.temp_dir))
-        self.assertIsNone(result)
-
-    def test_empty_plans_root_returns_none(self):
-        """No plan directories at all — returns None cleanly."""
-        self._make_plans_root()
-        with (
-            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
-        ):
-            result = set_terminal_title._scan_active_plan(str(self.temp_dir))
-        self.assertIsNone(result)
-
-    def test_resolve_plan_id_falls_through_to_scan(self):
-        """Integration: ``_resolve_plan_id`` falls through worktree-regex
-        and PLAN_ID env to ``_scan_active_plan`` and returns its result."""
-        plans_root = self._make_plans_root()
-        _write_status(plans_root / 'fallthrough-plan', '6-finalize')
+        A stale cwd that string-matches but no longer exists must fall
+        through to strategy 2 (and to None when $PLAN_ID is unset).
+        """
+        dead_cwd = '/nonexistent/repo/.plan/local/worktrees/ghost-plan/sub'
         env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
-        with (
-            mock.patch.dict(os.environ, env, clear=True),
-            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
-        ):
-            # cwd is the temp dir root (no worktree regex match), no PLAN_ID env.
-            result = set_terminal_title._resolve_plan_id(str(self.temp_dir))
-        self.assertEqual(result, 'fallthrough-plan')
+        with mock.patch.dict(os.environ, env, clear=True):
+            self.assertIsNone(set_terminal_title._resolve_plan_id(dead_cwd))
+
+    def test_env_plan_id_rejects_parent_traversal(self):
+        """A $PLAN_ID containing `..` is rejected — the value would otherwise
+        escape the `.plan/local/plans/` directory when joined into the
+        status.json path."""
+        with mock.patch.dict(os.environ, {'PLAN_ID': '..'}, clear=False):
+            self.assertIsNone(set_terminal_title._resolve_plan_id('/tmp/not-a-worktree'))
+
+    def test_env_plan_id_rejects_current_dir(self):
+        """A $PLAN_ID equal to `.` is rejected for the same reason as `..`."""
+        with mock.patch.dict(os.environ, {'PLAN_ID': '.'}, clear=False):
+            self.assertIsNone(set_terminal_title._resolve_plan_id('/tmp/not-a-worktree'))
+
+    def test_env_plan_id_rejects_forward_slash(self):
+        """Forward slash in $PLAN_ID would inject directory segments — reject."""
+        with mock.patch.dict(os.environ, {'PLAN_ID': '../escape'}, clear=False):
+            self.assertIsNone(set_terminal_title._resolve_plan_id('/tmp/not-a-worktree'))
+
+    def test_env_plan_id_rejects_embedded_forward_slash(self):
+        """Even a non-leading slash injects a subdirectory — reject."""
+        with mock.patch.dict(os.environ, {'PLAN_ID': 'foo/bar'}, clear=False):
+            self.assertIsNone(set_terminal_title._resolve_plan_id('/tmp/not-a-worktree'))
+
+    def test_env_plan_id_rejects_backslash(self):
+        """Backslash is rejected too (Windows-style separator parity with the
+        session_id guard in `_command_state_path`)."""
+        with mock.patch.dict(os.environ, {'PLAN_ID': 'foo\\bar'}, clear=False):
+            self.assertIsNone(set_terminal_title._resolve_plan_id('/tmp/not-a-worktree'))
+
+    def test_env_plan_id_accepts_dots_in_id(self):
+        """Dots inside an id are fine — only the standalone `.` and `..` and
+        path-separator characters are rejected."""
+        with mock.patch.dict(os.environ, {'PLAN_ID': 'plan.with.dots'}, clear=False):
+            self.assertEqual(
+                set_terminal_title._resolve_plan_id('/tmp/not-a-worktree'),
+                'plan.with.dots',
+            )
 
 
 class TestBuildTitle(ScriptTestCase):
@@ -251,7 +231,7 @@ class TestReadPlanMeta(ScriptTestCase):
 
 
 class TestStatusFileResolution(ScriptTestCase):
-    """_resolve_status_file + _read_phase integration via walk-up path."""
+    """_resolve_status_file + _read_plan_meta integration via walk-up path."""
 
     bundle = 'plan-marshall'
     skill = 'plan-marshall'
@@ -266,7 +246,8 @@ class TestStatusFileResolution(ScriptTestCase):
         with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None):
             status_file = set_terminal_title._resolve_status_file(str(nested), PLAN_ID)
             self.assertIsNotNone(status_file)
-            self.assertEqual(set_terminal_title._read_phase(status_file), '4-plan')
+            phase, _ = set_terminal_title._read_plan_meta(status_file)
+            self.assertEqual(phase, '4-plan')
 
     def test_missing_status_returns_none(self):
         nested = self.temp_dir / 'no-plan-here'
@@ -274,12 +255,24 @@ class TestStatusFileResolution(ScriptTestCase):
         with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None):
             self.assertIsNone(set_terminal_title._resolve_status_file(str(nested), PLAN_ID))
 
-    def test_malformed_status_read_returns_none(self):
-        plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / PLAN_ID
-        plan_dir.mkdir(parents=True)
-        bad = plan_dir / 'status.json'
-        bad.write_text('not-json', encoding='utf-8')
-        self.assertIsNone(set_terminal_title._read_phase(bad))
+    def test_archived_plans_path_rejected(self):
+        """Strategy 2 liveness guard: a status.json under archived-plans/ is
+        treated as if it did not exist — _resolve_status_file returns None."""
+        archived_dir = (
+            self.temp_dir / '.plan' / 'local' / 'archived-plans' / '2026-05-16-old-plan'
+        )
+        _write_status(archived_dir, '6-finalize')
+        nested = self.temp_dir / 'nested'
+        nested.mkdir(parents=True)
+        with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None):
+            # The archived-plans path lives under a different parent than the
+            # live plans/ directory walk-up looks for, so this primarily
+            # exercises the path-component check in resolve. Even when a plan
+            # of the same id exists in archived-plans/, _resolve_status_file
+            # must not return it.
+            self.assertIsNone(
+                set_terminal_title._resolve_status_file(str(nested), '2026-05-16-old-plan')
+            )
 
 
 class TestBuildTitleEndToEnd(ScriptTestCase):
@@ -322,6 +315,73 @@ class TestBuildTitleEndToEnd(ScriptTestCase):
         ):
             title = set_terminal_title.build_title('running', str(self.temp_dir))
         self.assertEqual(title, '▶ claude')
+
+    def test_fresh_session_with_lingering_plan_does_not_inherit_title(self):
+        """Strategy 3 removal regression test.
+
+        A main-checkout session with no worktree-cwd and no $PLAN_ID must
+        render the fallback even when an in-progress plan is sitting in
+        .plan/local/plans/. The active-plan scan was the regression path
+        that surfaced a previously-active plan's title in fresh sessions.
+        """
+        plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / 'lingering-plan'
+        _write_status(plan_dir, '6-finalize', short_description='Old_label')
+        env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
+        with mock.patch.dict(os.environ, env, clear=True):
+            title = set_terminal_title.build_title('idle', str(self.temp_dir))
+        self.assertEqual(title, '◯ claude')
+
+    def test_dead_worktree_cwd_end_to_end_falls_through(self):
+        """Strategy 1 liveness guard regression test (end-to-end)."""
+        dead_cwd = '/nonexistent/repo/.plan/local/worktrees/ghost-plan/sub'
+        env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
+        with mock.patch.dict(os.environ, env, clear=True):
+            title = set_terminal_title.build_title('idle', dead_cwd)
+        self.assertEqual(title, '◯ claude')
+
+    def test_stale_plan_id_with_archived_status_does_not_inherit_title(self):
+        """Strategy 2 archived-plans rejection regression test.
+
+        An exported $PLAN_ID that would resolve to an archived plan's
+        status.json must fall through — the archived-plans/ path is
+        rejected by _resolve_status_file.
+        """
+        archived_dir = (
+            self.temp_dir / '.plan' / 'local' / 'archived-plans' / '2026-05-16-old-plan'
+        )
+        _write_status(archived_dir, '6-finalize', short_description='Old_label')
+        with (
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+            mock.patch.dict(os.environ, {'PLAN_ID': '2026-05-16-old-plan'}, clear=True),
+        ):
+            title = set_terminal_title.build_title('idle', str(self.temp_dir))
+        self.assertEqual(title, '◯ claude')
+
+    def test_stale_plan_id_with_complete_phase_does_not_inherit_title(self):
+        """Strategy 2 terminal-phase rejection regression test.
+
+        An exported $PLAN_ID that resolves to a status.json with
+        current_phase=='complete' must fall through to the fallback.
+        """
+        plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / 'finished-plan'
+        _write_status(plan_dir, 'complete', short_description='Done_label')
+        with (
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+            mock.patch.dict(os.environ, {'PLAN_ID': 'finished-plan'}, clear=True),
+        ):
+            title = set_terminal_title.build_title('idle', str(self.temp_dir))
+        self.assertEqual(title, '◯ claude')
+
+    def test_stale_plan_id_with_archived_phase_does_not_inherit_title(self):
+        """Strategy 2 terminal-phase rejection — 'archived' phase variant."""
+        plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / 'finished-plan-2'
+        _write_status(plan_dir, 'archived', short_description='Done_label')
+        with (
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+            mock.patch.dict(os.environ, {'PLAN_ID': 'finished-plan-2'}, clear=True),
+        ):
+            title = set_terminal_title.build_title('idle', str(self.temp_dir))
+        self.assertEqual(title, '◯ claude')
 
 
 class TestEmitTerminalSequence(ScriptTestCase):
