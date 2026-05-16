@@ -281,15 +281,17 @@ value: feature
 
 ### mark-step-done
 
-Record the outcome of a phase step inside `status.metadata.phase_steps`. Phase skills use this to persist intra-phase progress (e.g., discovery, drift-detection) so that resuming a phase can skip completed steps. Outcomes are restricted to `done` or `skipped`. An optional `--display-detail` one-line string is persisted alongside the outcome so downstream renderers (phase-6-finalize vertical-steps block, etc.) can surface user-facing step summaries.
+Record the outcome of a phase step inside `status.metadata.phase_steps`. Phase skills use this to persist intra-phase progress (e.g., discovery, drift-detection) so that resuming a phase can skip completed steps. Outcomes are `done`, `skipped`, `loop_back`, or `failed`. An optional `--display-detail` one-line string is persisted alongside the outcome so downstream renderers (phase-6-finalize vertical-steps block, etc.) can surface user-facing step summaries. Loop-back outcomes carry a mandatory `--loop-back-target` granularity classifier (see "Loop-back target classification" below).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
   --plan-id {plan_id} \
   --phase {phase_name} \
   --step {step_id} \
-  --outcome {done|skipped} \
+  --outcome {done|skipped|loop_back|failed} \
   [--display-detail "one-line user-facing detail"] \
+  [--head-at-completion <sha>] \
+  [--loop-back-target {5-execute|6-finalize}] \
   [--force]
 ```
 
@@ -297,25 +299,38 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 - `--plan-id` (required): Plan identifier
 - `--phase` (required): Phase name (e.g., `5-execute`)
 - `--step` (required): Step identifier within the phase (free-form string chosen by the phase skill)
-- `--outcome` (required): `done` or `skipped`
+- `--outcome` (required): `done`, `skipped`, `loop_back`, or `failed`
 - `--display-detail` (optional at CLI level, required-by-convention for phase-6-finalize steps per the phase-6-finalize interface contract): One-line user-facing detail string. Persisted as `null` when omitted.
+- `--head-at-completion` (optional): Git SHA captured at step completion. Persisted alongside outcome and consulted by resumable phase dispatchers (e.g., phase-6-finalize `pre-push-quality-gate`) to detect HEAD advancement.
+- `--loop-back-target` (REQUIRED when `--outcome=loop_back`, FORBIDDEN otherwise): Loop-back target phase. Must be one of `5-execute` (full phase rollback for fix-task-required dispositions) or `6-finalize` (inline replay for inline-fixable dispositions). See "Loop-back target classification" below.
 - `--force` (optional): Overwrite an existing differing outcome
+
+**Loop-back target classification**:
+
+The `--loop-back-target` flag encodes the granularity invariant from the phase-6-finalize "Loop-back Target Contract" section. Two legal values:
+
+- `5-execute` — full phase rollback for **fix-task-required** dispositions. Use when triage allocated one or more fix tasks (`fix_tasks_created > 0`) or deferred any findings to overflow (`overflow_deferred > 0`). The continuation hook re-dispatches `phase-5-execute` against the freshly-allocated fix tasks before re-entering the finalize FOR loop.
+- `6-finalize` — inline replay for **inline-fixable** dispositions. Use when triage resolved every finding via SUPPRESS, narrow-rationale ACCEPT, or single-annotation FIX (no fix-task allocation, no overflow). The continuation hook stays in `6-finalize`, does NOT call `set-phase`, and re-fires the loop-back-marked step from the resumable re-entry check.
+
+The flag is REQUIRED on every `loop_back` outcome (returns `error: missing_loop_back_target` when absent) and FORBIDDEN on every other outcome (returns `error: unexpected_loop_back_target`). The `argparse` `choices` enforce the two-value enumeration at parse time. There is no backwards-compat fallback — every loop-back-emitting call site MUST classify the disposition before persisting the outcome.
 
 **Storage shape** (breaking — replaces the old bare-string shape):
 
 ```json
 status.metadata.phase_steps[{phase}][{step}] = {
-  "outcome": "done" | "skipped",
-  "display_detail": <string> | null
+  "outcome": "done" | "skipped" | "loop_back" | "failed",
+  "display_detail": <string> | null,
+  "head_at_completion": <sha> | absent,
+  "loop_back_target": "5-execute" | "6-finalize" | absent
 }
 ```
 
-Both the `metadata` and `phase_steps` containers are created on demand. Bare-string entries from prior versions are treated as drift — see conflict semantics below.
+Both the `metadata` and `phase_steps` containers are created on demand. Bare-string entries from prior versions are treated as drift — see conflict semantics below. The `head_at_completion` and `loop_back_target` keys are only present when the corresponding flag was supplied (per the `_build_entry` helper); `loop_back_target` is structurally guaranteed to be present iff `outcome == "loop_back"`.
 
 **Semantics**:
-- **Idempotent on identical outcome AND display_detail**: If the step already has the requested outcome and the same `display_detail`, no file write occurs and `changed: false` is returned.
-- **Detail-only update**: If the outcome matches but `display_detail` differs, the command updates the detail in place and returns `changed: true`.
-- **Conflict on differing outcome**: If the step already has a different outcome and `--force` is not supplied, the command returns `error: conflict` with the existing outcome surfaced in the response. Supplying `--force` overwrites the existing value (and detail).
+- **Idempotent on identical outcome AND display_detail AND head_at_completion AND loop_back_target**: If the step already has the requested outcome and all four fields match, no file write occurs and `changed: false` is returned.
+- **Detail / head / loop_back_target update**: If the outcome matches but any of `display_detail`, `head_at_completion`, or `loop_back_target` differ, the command updates the entry in place and returns `changed: true`.
+- **Conflict on differing outcome**: If the step already has a different outcome and `--force` is not supplied, the command returns `error: conflict` with the existing outcome surfaced in the response. Supplying `--force` overwrites the existing value (and detail / head / loop_back_target).
 - **Legacy drift rejection**: If the existing entry is a bare string (pre-migration shape), the command returns `error: legacy_string_entry` and refuses to write. The caller must migrate `status.metadata.phase_steps` to the dict shape before retrying — there is no automatic migration.
 
 > **Forward reference — `phase_steps_complete` invariant**: Downstream phase skills and verification helpers treat `status.metadata.phase_steps[{phase}]` as the authoritative record of which intra-phase steps have been marked `done` or `skipped`. A phase is considered `phase_steps_complete` when every step in the phase's declared step list has a dict entry with `outcome == 'done'`. The invariant reader rejects bare-string entries as legacy drift. Consumers must not fabricate entries by other means — always go through `mark-step-done`.
@@ -604,7 +619,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `update-phase` | `--plan-id --phase --status` | Update specific phase status |
 | `progress` | `--plan-id` | Calculate progress percentage |
 | `metadata` | `--plan-id --get/--set --field [--value]` | Get/set metadata fields |
-| `mark-step-done` | `--plan-id --phase --step --outcome [--display-detail] [--force]` | Record phase step outcome (+ optional display detail) in `metadata.phase_steps` |
+| `mark-step-done` | `--plan-id --phase --step --outcome [--display-detail] [--head-at-completion] [--loop-back-target] [--force]` | Record phase step outcome (+ optional display detail / HEAD SHA / loop-back target) in `metadata.phase_steps` |
 | `get-context` | `--plan-id` | Get combined status context |
 | `get-worktree-path` | `--plan-id` | Resolve persisted worktree path (returns empty string when `use_worktree==false`) |
 | `list` | `[--filter PHASE]` | Discover all plans, optionally filtered by phase |
@@ -780,8 +795,11 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status self-t
 | `not_found` | 0 | Metadata field doesn't exist — valid query result (returns `value: null`), not an error |
 | `conflict` | 1 | `mark-step-done`: step already has a different outcome and `--force` was not supplied |
 | `legacy_string_entry` | 1 | `mark-step-done`: existing entry uses the pre-migration bare-string shape; caller must migrate to dict shape before retrying |
-| `invalid_outcome` | 1 | `mark-step-done`: outcome not in `done`/`skipped` |
+| `invalid_outcome` | 1 | `mark-step-done`: outcome not in `done`/`skipped`/`loop_back`/`failed` |
 | `invalid_argument` | 1 | `mark-step-done`: empty `--phase` or `--step` |
+| `missing_loop_back_target` | 1 | `mark-step-done`: `--outcome=loop_back` supplied without `--loop-back-target`. The flag is REQUIRED on every loop_back outcome (no backwards-compat fallback). |
+| `invalid_loop_back_target` | 1 | `mark-step-done`: `--loop-back-target` value not in `5-execute`/`6-finalize`. (Argparse `choices` normally catches this at parse time; this error fires only when the validation is bypassed at the API layer.) |
+| `unexpected_loop_back_target` | 1 | `mark-step-done`: `--loop-back-target` supplied alongside an outcome other than `loop_back`. The flag is FORBIDDEN on `done`/`skipped`/`failed` outcomes. |
 | `invalid_worktree_args` | 1 | `create`: `--use-worktree` set without both `--worktree-path` and `--worktree-branch` |
 | `worktree_unresolved` | 1 | `phase_handshake verify`: `metadata.use_worktree==true` and `metadata.worktree_path` is non-empty but does not resolve on the filesystem. `get-worktree-path` does not emit this error — it returns `worktree_state: pending` for the pre-materialization state. |
 

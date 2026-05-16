@@ -1014,9 +1014,11 @@ class TestLoopBackWithoutAskingContract:
         self, config_defaults_text: str
     ):
         """``loop_back_without_asking`` MUST default to ``False`` — the
-        conservative interactive shape. Existing plans MUST continue to halt
-        and prompt on every loop-back outcome unless the user explicitly
-        opts in."""
+        asymmetric counterpart of ``finalize_without_asking=True``. Forward
+        auto-continue is the common case (default ``True``); reverse
+        loop-back surfaces a control return to the user so unattended runs
+        cannot silently re-enter execute on a finalize-side fix. The full
+        unattended cycle remains opt-in via ``loop_back_without_asking=True``."""
         # Locate the DEFAULT_PLAN_FINALIZE block and confirm the field is set
         # to False.
         assert "DEFAULT_PLAN_FINALIZE = {" in config_defaults_text, (

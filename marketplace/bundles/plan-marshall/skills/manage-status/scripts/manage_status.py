@@ -35,7 +35,7 @@ from _cmd_lifecycle import (
     cmd_transition,
     verify_blocks_transition,
 )
-from _cmd_mark_step import cmd_mark_step_done
+from _cmd_mark_step import VALID_LOOP_BACK_TARGETS, cmd_mark_step_done
 from _cmd_routing import cmd_get_routing_context, cmd_route, cmd_self_test
 from _status_query import (
     cmd_get_context,
@@ -55,6 +55,22 @@ from input_validation import (  # type: ignore[import-not-found]
     add_plan_id_arg,
     parse_args_with_toon_errors,
 )
+
+
+def _loop_back_target_type(value: str) -> str:
+    """Custom argparse type for --loop-back-target.
+
+    Normalises the input (lowercases) and validates against VALID_LOOP_BACK_TARGETS.
+    Raises argparse.ArgumentTypeError with the canonical error message format that
+    matches the API-layer guard's `invalid_loop_back_target` error code.
+    """
+    normalised = value.lower()
+    if normalised not in VALID_LOOP_BACK_TARGETS:
+        raise argparse.ArgumentTypeError(
+            f'--loop-back-target must be one of '
+            f'{list(VALID_LOOP_BACK_TARGETS)}, got: {value}'
+        )
+    return normalised
 
 
 @safe_main
@@ -231,6 +247,22 @@ def main() -> int:
             'display_detail; consulted by resumable phase dispatchers (e.g., phase-6-finalize '
             'pre-push-quality-gate) to decide whether to skip or re-fire after the worktree HEAD '
             'has advanced.'
+        ),
+    )
+    mark_step_parser.add_argument(
+        '--loop-back-target',
+        default=None,
+        type=_loop_back_target_type,
+        help=(
+            'Loop-back target phase. REQUIRED when --outcome=loop_back, must be one of '
+            '5-execute (full phase rollback for fix-task-required dispositions: FIX with '
+            'fix_tasks_created > 0, overflow_deferred > 0) or 6-finalize (inline replay '
+            'for inline-fixable dispositions: SUPPRESS, narrow-rationale ACCEPT, single-'
+            'annotation FIX). Persisted in the step outcome record alongside display_detail '
+            'and head_at_completion. The phase-6-finalize loop-back continuation hook reads '
+            'this field to decide between full-phase rollback (re-dispatch phase-5-execute) '
+            'and inline replay (re-fire the loop-back-marked step from the resumable '
+            're-entry check). Forbidden when --outcome != loop_back.'
         ),
     )
     mark_step_parser.set_defaults(func=cmd_mark_step_done)

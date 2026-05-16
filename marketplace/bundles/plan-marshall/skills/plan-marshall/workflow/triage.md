@@ -217,9 +217,21 @@ Scope-deviation detection signals (the LLM checks these against the loaded plan 
 - The required fix would introduce a new domain to the plan's `domains[]` set.
 - The finding's body explicitly references a refactor / restructure / migration that the plan did not authorise.
 
-## Step 7: Loop-back signalling
+## Step 7: Loop-back signalling and granularity classification
 
-`loop_back_needed: true` when any decision in any group resolved to FIX. The orchestrator handles the actual re-fire (the manifest dispatcher in phase-5-execute / phase-6-finalize re-enters the calling step on next phase entry; HEAD-dependent steps in phase-6-finalize already track this via `--head-at-completion`). This workflow does NOT call `manage-status set-phase` directly — that is the calling manifest step's responsibility.
+`loop_back_needed: true` when any decision in any group resolved to FIX OR when any group deferred via overflow. The orchestrator handles the actual re-fire (the manifest dispatcher in phase-5-execute / phase-6-finalize re-enters the calling step on next phase entry; HEAD-dependent steps in phase-6-finalize already track this via `--head-at-completion`). This workflow does NOT call `manage-status set-phase` directly — that is the calling manifest step's responsibility.
+
+**Granularity classification (`loop_back_target`)** — when `loop_back_needed: true`, classify the loop-back into one of two granularity tiers per the phase-6-finalize "Loop-back Target Contract":
+
+| Disposition | `loop_back_target` | Rationale |
+|-------------|--------------------|-----------|
+| ANY group resolved a finding via FIX with `fix_tasks_created > 0` | `5-execute` | Fix tasks are first-class work items that flow through the normal execute pipeline; full phase rollback is required to drive them to done. |
+| ANY group deferred findings via overflow (`overflow_deferred > 0`) | `5-execute` | Deferred findings need the next dispatch's fresh budget, which only re-entry through the execute pipeline guarantees. |
+| ALL loop-back-needing dispositions are SUPPRESS, narrow-rationale ACCEPT, or single-annotation FIX (no fix-task allocation, no overflow) | `6-finalize` | Inline-fixable; the calling step replays in place via the resumable re-entry check — no need to re-enter the execute pipeline. |
+
+**Computation rule** — set `loop_back_target = "5-execute"` when `fix_tasks_created > 0` OR `overflow_deferred > 0`; otherwise set `loop_back_target = "6-finalize"`. The two-value enumeration is structural (manage-status validates it); the workflow MUST emit the field on every `loop_back` outcome and MUST omit it on `success` outcomes.
+
+The calling manifest step (e.g., `automated-review.md` Branch C, `sonar-roundtrip.md` triage block) reads this field from the workflow's return TOON and forwards it to its own `mark-step-done --outcome loop_back --loop-back-target {value}` call. The dispatcher in `phase-6-finalize/SKILL.md` Step 3 § 7b reads the persisted field to route between full-phase rollback and inline replay.
 
 ## Output
 
@@ -233,11 +245,14 @@ fix_tasks_created: {K}
 fix_task_numbers[K]:
   - {task_number_1}
   - ...
-overflow_deferred: {O}        # only present when overflow fired
-deferred_user_questions: {Q}   # only present when AskUserQuestion fired
+overflow_deferred: {O}                       # only present when overflow fired
+deferred_user_questions: {Q}                  # only present when AskUserQuestion fired
+loop_back_target: 5-execute | 6-finalize     # REQUIRED when status: loop_back, OMITTED otherwise
 ```
 
-`status: loop_back` when `fix_tasks_created > 0` OR `overflow_deferred > 0`. Otherwise `status: success` (every pending finding resolved without creating new tasks).
+`status: loop_back` when `fix_tasks_created > 0` OR `overflow_deferred > 0` OR any inline-fixable disposition (SUPPRESS / narrow ACCEPT / single-annotation FIX) needs the calling step to be replayed. Otherwise `status: success` (every pending finding resolved without re-firing the calling step).
+
+`loop_back_target` is REQUIRED on every `status: loop_back` return per the manage-status `--loop-back-target` validation contract — it carries the granularity classification computed above. Callers forward it verbatim to `mark-step-done`.
 
 ## Related
 

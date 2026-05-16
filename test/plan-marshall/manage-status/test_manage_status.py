@@ -1790,3 +1790,222 @@ def test_transition_4_plan_skips_handshake_verify_on_drift(_stubbed_invariants, 
             'Non-guarded transition failed to advance current_phase despite '
             'returning success — write_status did not fire.'
         )
+
+
+# =============================================================================
+# Test: Hybrid loopback contract — `--loop-back-target` granularity flag
+# =============================================================================
+#
+# These tests cover the four required cases from the finalize-loopback plan
+# Deliverable 3 (TASK-005 test contract):
+#   1. mark-step-done --outcome loop_back WITHOUT --loop-back-target →
+#      error: missing_loop_back_target
+#   2. mark-step-done --outcome loop_back --loop-back-target 5-execute →
+#      success, persisted alongside outcome
+#   3. mark-step-done --outcome loop_back --loop-back-target 6-finalize →
+#      success, persisted alongside outcome
+#   4. mark-step-done --outcome loop_back --loop-back-target invalid-phase →
+#      argparse rejects via choices (exit code 2)
+#
+# Plus a forbidden-on-non-loop_back guard for completeness.
+
+_cmd_mark_step = _load_module('_cmd_mark_step', '_cmd_mark_step.py')
+cmd_mark_step_done = _cmd_mark_step.cmd_mark_step_done
+
+
+def _mark_step_args(
+    plan_id: str,
+    phase: str,
+    step: str,
+    outcome: str,
+    *,
+    force: bool = False,
+    display_detail: str | None = None,
+    head_at_completion: str | None = None,
+    loop_back_target: str | None = None,
+) -> Namespace:
+    """Build a Namespace for cmd_mark_step_done that mirrors the argparse layer."""
+    return Namespace(
+        plan_id=plan_id,
+        phase=phase,
+        step=step,
+        outcome=outcome,
+        force=force,
+        display_detail=display_detail,
+        head_at_completion=head_at_completion,
+        loop_back_target=loop_back_target,
+    )
+
+
+def _setup_plan(plan_id: str) -> None:
+    cmd_create(
+        Namespace(
+            plan_id=plan_id,
+            title='Loop-back Target Tests',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+
+
+class TestLoopBackTargetValidation:
+    """The `--loop-back-target` flag is REQUIRED on every loop_back outcome
+    and FORBIDDEN on every other outcome. Validation is breaking-change
+    semantics — no backwards-compat fallback. The four canonical cases plus
+    the forbidden-on-other-outcome guard pin the contract documented in
+    `manage-status/SKILL.md` § "Loop-back target classification" and
+    `phase-6-finalize/SKILL.md` § "Loop-back Target Contract".
+    """
+
+    def test_loop_back_without_target_returns_missing_error(self) -> None:
+        """Case 1: omitting `--loop-back-target` on a loop_back outcome
+        returns `error: missing_loop_back_target`. The validation runs in
+        cmd_mark_step_done before any disk write."""
+        plan_id = 'lbt-missing-target'
+        with PlanContext(plan_id=plan_id):
+            _setup_plan(plan_id)
+            result = cmd_mark_step_done(
+                _mark_step_args(
+                    plan_id,
+                    '6-finalize',
+                    'automated-review',
+                    'loop_back',
+                    display_detail='loop-back without target',
+                    loop_back_target=None,
+                )
+            )
+            assert result['status'] == 'error'
+            assert result['error'] == 'missing_loop_back_target'
+            assert 'required' in result['message'].lower()
+
+    def test_loop_back_with_target_5_execute_persists_field(self) -> None:
+        """Case 2: `--loop-back-target 5-execute` succeeds and the field
+        is persisted alongside outcome / display_detail in
+        `phase_steps[{phase}][{step}]`."""
+        plan_id = 'lbt-target-5-execute'
+        with PlanContext(plan_id=plan_id) as ctx:
+            _setup_plan(plan_id)
+            result = cmd_mark_step_done(
+                _mark_step_args(
+                    plan_id,
+                    '6-finalize',
+                    'sonar-roundtrip',
+                    'loop_back',
+                    display_detail='loop-back iter 1 (target=5-execute)',
+                    loop_back_target='5-execute',
+                )
+            )
+            assert result['status'] == 'success'
+            assert result['outcome'] == 'loop_back'
+            assert result['loop_back_target'] == '5-execute'
+
+            status = json.loads((ctx.plan_dir / 'status.json').read_text(encoding='utf-8'))
+            entry = status['metadata']['phase_steps']['6-finalize']['sonar-roundtrip']
+            assert entry['outcome'] == 'loop_back'
+            assert entry['loop_back_target'] == '5-execute', (
+                'Persisted phase_steps record must carry loop_back_target=5-execute'
+            )
+
+    def test_loop_back_with_target_6_finalize_persists_field(self) -> None:
+        """Case 3: `--loop-back-target 6-finalize` succeeds and the field
+        is persisted — the inline-replay tier of the granularity invariant."""
+        plan_id = 'lbt-target-6-finalize'
+        with PlanContext(plan_id=plan_id) as ctx:
+            _setup_plan(plan_id)
+            result = cmd_mark_step_done(
+                _mark_step_args(
+                    plan_id,
+                    '6-finalize',
+                    'automated-review',
+                    'loop_back',
+                    display_detail='loop-back iter 1 (target=6-finalize)',
+                    loop_back_target='6-finalize',
+                )
+            )
+            assert result['status'] == 'success'
+            assert result['outcome'] == 'loop_back'
+            assert result['loop_back_target'] == '6-finalize'
+
+            status = json.loads((ctx.plan_dir / 'status.json').read_text(encoding='utf-8'))
+            entry = status['metadata']['phase_steps']['6-finalize']['automated-review']
+            assert entry['outcome'] == 'loop_back'
+            assert entry['loop_back_target'] == '6-finalize', (
+                'Persisted phase_steps record must carry loop_back_target=6-finalize'
+            )
+
+    def test_loop_back_with_invalid_target_rejected_by_argparse(self) -> None:
+        """Case 4: `--loop-back-target invalid-phase` is rejected by argparse
+        `choices` enforcement at parse time (exit code 2). This exercises
+        the CLI argparse layer end-to-end via subprocess.
+
+        The script-level `invalid_loop_back_target` error path is unreachable
+        through the CLI (argparse catches it first); the API-layer test below
+        covers the script-level branch by bypassing argparse via direct
+        Namespace construction.
+        """
+        plan_id = 'lbt-invalid-target'
+        with PlanContext(plan_id=plan_id):
+            _setup_plan(plan_id)
+            result = run_script(
+                SCRIPT_PATH,
+                'mark-step-done',
+                '--plan-id',
+                plan_id,
+                '--phase',
+                '6-finalize',
+                '--step',
+                'automated-review',
+                '--outcome',
+                'loop_back',
+                '--loop-back-target',
+                'invalid-phase',
+                '--display-detail',
+                'loop-back invalid target',
+            )
+            assert result.returncode == 2, (
+                f'argparse must reject invalid --loop-back-target value '
+                f'with exit code 2; got {result.returncode}'
+            )
+            assert 'invalid choice' in result.stderr.lower() or 'invalid-phase' in result.stderr.lower()
+
+    def test_loop_back_target_forbidden_on_non_loop_back_outcome(self) -> None:
+        """Guard: supplying `--loop-back-target` alongside a non-loop_back
+        outcome (e.g., `done`) returns `error: unexpected_loop_back_target`.
+        The flag is structurally bound to the loop_back outcome — using it
+        on `done`/`skipped`/`failed` is a contract violation."""
+        plan_id = 'lbt-forbidden-on-done'
+        with PlanContext(plan_id=plan_id):
+            _setup_plan(plan_id)
+            result = cmd_mark_step_done(
+                _mark_step_args(
+                    plan_id,
+                    '6-finalize',
+                    'commit-push',
+                    'done',
+                    display_detail='step complete',
+                    loop_back_target='5-execute',
+                )
+            )
+            assert result['status'] == 'error'
+            assert result['error'] == 'unexpected_loop_back_target'
+
+    def test_loop_back_target_invalid_at_api_layer(self) -> None:
+        """API-layer guard: bypassing argparse and passing an invalid
+        loop_back_target value directly to cmd_mark_step_done returns
+        `error: invalid_loop_back_target`. This exercises the script-level
+        branch unreachable through the CLI."""
+        plan_id = 'lbt-api-invalid-target'
+        with PlanContext(plan_id=plan_id):
+            _setup_plan(plan_id)
+            result = cmd_mark_step_done(
+                _mark_step_args(
+                    plan_id,
+                    '6-finalize',
+                    'automated-review',
+                    'loop_back',
+                    display_detail='loop-back invalid api target',
+                    loop_back_target='not-a-real-phase',
+                )
+            )
+            assert result['status'] == 'error'
+            assert result['error'] == 'invalid_loop_back_target'
