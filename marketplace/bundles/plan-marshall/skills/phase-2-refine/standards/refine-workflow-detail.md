@@ -680,15 +680,25 @@ When confidence reaches threshold, persist results to sinks and return minimal s
 ### Persist Module Mapping to Work Directory
 
 **Persist module mapping** (intermediate analysis state, not a reference):
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
-  --plan-id {plan_id} \
-  --file work/module_mapping.toon \
-  --content "# Module Mapping
 
-{module_mapping_toon_content}
-"
-```
+1. Stage the rendered TOON payload via the `Write` tool to `.plan/temp/module_mapping.toon`. The payload is the multi-line block:
+
+   ```
+   # Module Mapping
+
+   {module_mapping_toon_content}
+   ```
+
+2. Invoke `manage-files write` with `--content-file`:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
+     --plan-id {plan_id} \
+     --file work/module_mapping.toon \
+     --content-file .plan/temp/module_mapping.toon
+   ```
+
+See `marketplace/bundles/plan-marshall/skills/manage-files/SKILL.md` § Enforcement and § write subsection for the binding rule.
 
 ### Persist scope_estimate to references.json
 
