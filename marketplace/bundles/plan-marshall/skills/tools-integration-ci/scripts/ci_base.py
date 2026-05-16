@@ -409,45 +409,13 @@ def extract_routing_args(argv: list[str]) -> tuple[str | None, list[str]]:
 
     # Slice the argv at the first known subcommand token. Only the prefix
     # is searched for ``--plan-id`` (router-level); the suffix (subcommand
-    # and its arguments) is the post-subcommand portion.
+    # and its arguments) is the post-subcommand portion. ``--project-dir``
+    # is already stripped from any position by ``extract_project_dir``
+    # above. Subcommand-level ``--plan-id`` (declared by body-consumer
+    # subparsers such as ``pr prepare-body``) survives in ``post`` and is
+    # consumed by the subcommand parser downstream — no guard is needed
+    # at the routing layer.
     pre, post = _split_at_subcommand(after_project)
-
-    # Positional routing-flag guard: routing flags that appear AFTER the
-    # subcommand boundary are a structural error — they end up in the
-    # subcommand's argv where no routing-layer consumer exists, which
-    # silently drops worktree resolution for the invocation. Emit a
-    # structured error immediately so the caller can fix the call site.
-    _ROUTING_FLAG_EXACT = frozenset({'--plan-id', '--project-dir'})
-    _ROUTING_FLAG_EQ_PREFIXES = ('--plan-id=', '--project-dir=')
-    for _token in post:
-        _is_routing_flag = _token in _ROUTING_FLAG_EXACT or any(
-            _token.startswith(_p) for _p in _ROUTING_FLAG_EQ_PREFIXES
-        )
-        if _is_routing_flag:
-            _offending_flag = _token.split('=', 1)[0] if '=' in _token else _token
-            _subcommand_token = post[0] if post else ''
-            # Explicit local import: the later try/except blocks also import
-            # serialize_toon locally, which makes the name a local for the
-            # entire function scope. We must import it here too to avoid
-            # UnboundLocalError on early-exit paths before those blocks run.
-            from toon_parser import serialize_toon as _ser  # type: ignore[import-not-found]
-
-            print(
-                _ser(
-                    {
-                        'status': 'error',
-                        'error_type': 'routing_flag_after_subcommand',
-                        'offending_flag': _offending_flag,
-                        'subcommand': _subcommand_token,
-                        'message': (
-                            f"Routing flag '{_offending_flag}' appears after subcommand "
-                            f"'{_subcommand_token}' and will not be consumed for worktree "
-                            "resolution. Pass it before the subcommand token instead."
-                        ),
-                    }
-                )
-            )
-            sys.exit(2)
 
     # Lazy import — keeps the dependency optional so older test fixtures
     # that monkeypatch ci_base in isolation do not need to satisfy the

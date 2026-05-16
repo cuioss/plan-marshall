@@ -64,17 +64,13 @@ def _seed_github_marshal(tmp_path: Path) -> Path:
 
 
 @pytest.mark.parametrize('axis,bad_value', MALFORMED_AXES['plan_id'])
-def test_pr_prepare_body_plan_id_after_subcommand_rejected_by_guard(axis, bad_value, tmp_path):
-    """``pr prepare-body --plan-id X`` is rejected by the positional routing-flag guard.
+def test_pr_prepare_body_malformed_plan_id_caught_by_subcommand_validator(axis, bad_value, tmp_path):
+    """``pr prepare-body --plan-id <malformed>`` is rejected by the subcommand validator.
 
-    Fix A (secondary guard): routing flags that appear after the subcommand
-    boundary are a structural error. The guard fires before argparse runs,
-    so the subcommand-level --plan-id validator is never reached via this path.
-    The guard emits exit 2 + ``routing_flag_after_subcommand`` TOON error.
-
-    Callers must place ``--plan-id`` before the subcommand token for routing
-    (e.g., ``ci.py --plan-id X pr prepare-body``) or use ``--project-dir``
-    before the subcommand for the explicit-path escape hatch.
+    The positional routing-flag guard intentionally allows ``--plan-id`` to pass
+    through to the subcommand parser (body-consumer subcommands declare their
+    own ``--plan-id``). A malformed value is therefore caught by the canonical
+    plan_id validator inside the subcommand layer, not by the routing guard.
     """
     _seed_github_marshal(tmp_path)
     result = run_script(
@@ -85,12 +81,11 @@ def test_pr_prepare_body_plan_id_after_subcommand_rejected_by_guard(axis, bad_va
         bad_value,
         cwd=tmp_path,
     )
-    assert result.returncode == 2, (
-        f'Expected exit 2 (routing_flag_after_subcommand guard), got {result.returncode}\n'
-        f'stdout={result.stdout!r}\nstderr={result.stderr!r}'
+    assert 'invalid_plan_id' in result.stdout, (
+        f'Expected invalid_plan_id in TOON output, got: {result.stdout!r}'
     )
-    assert 'routing_flag_after_subcommand' in result.stdout, (
-        f'Expected routing_flag_after_subcommand in TOON output, got: {result.stdout!r}'
+    assert 'routing_flag_after_subcommand' not in result.stdout, (
+        f'Routing guard MUST NOT fire on subcommand-level --plan-id: {result.stdout!r}'
     )
 
 
@@ -120,13 +115,13 @@ def test_pr_prepare_body_accepts_canonical_plan_id(tmp_path):
 # =============================================================================
 
 
-def test_pr_prepare_body_with_project_dir_plan_id_after_subcommand_rejected_by_guard(tmp_path):
-    """``--project-dir PATH pr prepare-body --plan-id X`` is rejected by the guard.
+def test_pr_prepare_body_with_router_project_dir_and_subcommand_plan_id_caught_by_validator(tmp_path):
+    """``--project-dir PATH pr prepare-body --plan-id <malformed>`` is rejected by the subcommand validator.
 
-    Fix A (secondary guard): routing flags that appear after the subcommand
-    boundary are rejected even when ``--project-dir`` is provided before
-    the subcommand. The ``--plan-id`` in the subcommand's argv triggers
-    the guard with ``routing_flag_after_subcommand``.
+    Router-level ``--project-dir`` is consumed by ``extract_routing_args`` and
+    stripped from the argv. The subcommand-level ``--plan-id`` then reaches the
+    subcommand parser unchanged. A malformed value is caught by the canonical
+    plan_id validator at that layer — no routing guard fires.
     """
     _seed_github_marshal(tmp_path)
     result = run_script(
@@ -139,13 +134,14 @@ def test_pr_prepare_body_with_project_dir_plan_id_after_subcommand_rejected_by_g
         'BAD!ID',
         cwd=tmp_path,
     )
-    assert result.returncode == 2, (
-        f'Expected exit 2 (routing_flag_after_subcommand guard), got {result.returncode}\n'
-        f'stdout={result.stdout!r}\nstderr={result.stderr!r}'
+    assert 'invalid_plan_id' in result.stdout, (
+        f'Expected invalid_plan_id in TOON output, got: {result.stdout!r}'
     )
-    assert 'routing_flag_after_subcommand' in result.stdout, (
-        f'Expected routing_flag_after_subcommand in TOON output, got: {result.stdout!r}'
+    assert 'routing_flag_after_subcommand' not in result.stdout, (
+        f'Routing guard MUST NOT fire on subcommand-level --plan-id: {result.stdout!r}'
     )
+
+
 
 
 # =============================================================================

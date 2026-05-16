@@ -1188,27 +1188,23 @@ def test_extract_routing_args_router_level_plan_id_before_prepare_body_accepted(
     assert remaining == ['pr', 'prepare-body']
 
 
-def test_extract_routing_args_plan_id_after_prepare_body_rejected_by_guard(capsys):
-    """``--plan-id`` AFTER the ``pr prepare-body`` subcommand is rejected by the positional guard.
+def test_extract_routing_args_plan_id_after_prepare_body_passes_through():
+    """``--plan-id`` AFTER ``pr prepare-body`` passes through to the subcommand parser.
 
-    Fix A (secondary guard): ``pr prepare-body`` is a body-consumer subcommand
-    that declares ``--plan-id`` as one of its own argparse arguments. A caller
-    that places ``--plan-id`` after the subcommand boundary (e.g. to satisfy the
-    subcommand's own argparse requirement) commits a structural error: the router
-    never sees the flag, worktree resolution is silently skipped, and the flag
-    ends up in the subcommand's argv where there is no routing consumer.
+    Body-consumer subcommands (``pr prepare-body``, ``pr create``, ``issue create`` …)
+    declare their own ``--plan-id`` argparse argument and consume the post-subcommand
+    occurrence themselves. The positional guard MUST NOT reject this placement —
+    rejecting it would break the documented invocation pattern for every body-
+    consumer call site.
 
-    The guard must detect this placement and emit exit 2 + a structured TOON
-    error with ``error_type: routing_flag_after_subcommand``.
+    The router returns ``resolved=None`` (no router-level routing flag supplied)
+    and the unchanged argv so the subcommand argparse can consume ``--plan-id``.
     """
     from ci_base import extract_routing_args
 
-    with pytest.raises(SystemExit) as exc_info:
-        extract_routing_args(['pr', 'prepare-body', '--plan-id', 'my-plan'])
-    assert exc_info.value.code == 2
-    captured = capsys.readouterr()
-    assert 'routing_flag_after_subcommand' in captured.out
-    assert '--plan-id' in captured.out
+    resolved, remaining = extract_routing_args(['pr', 'prepare-body', '--plan-id', 'my-plan'])
+    assert resolved is None
+    assert remaining == ['pr', 'prepare-body', '--plan-id', 'my-plan']
 
 
 def test_argparse_layer_plan_id_unaffected_by_routing_guard():
@@ -1236,78 +1232,43 @@ def test_argparse_layer_plan_id_unaffected_by_routing_guard():
     assert args.plan_id == 'my-plan'
 
 
-def test_extract_routing_args_subcommand_plan_id_rejected_by_guard(capsys):
-    """``--plan-id`` AFTER a subcommand token is rejected by the positional guard.
+def test_extract_routing_args_comments_stage_plan_id_passes_through(_reset_subcommand_cache):
+    """``--plan-id`` AFTER the ``comments-stage`` token passes through to the subcommand.
 
-    Fix A (secondary guard): routing flags that appear after the subcommand
-    boundary are a structural caller error — they end up in the subcommand's
-    argv where no routing consumer exists, silently dropping worktree
-    resolution. The guard emits exit 2 + structured TOON error.
+    ``comments-stage`` declares its own ``--plan-id`` argument (for finding-store
+    routing). The positional guard MUST NOT reject this placement — the subcommand
+    parser consumes ``--plan-id`` directly from its own argv.
+
+    Provider scripts register ``comments-stage`` via ``register_subcommands`` at
+    import time; this test mirrors that pattern.
     """
     from ci_base import extract_routing_args
 
-    with pytest.raises(SystemExit) as exc_info:
-        extract_routing_args(
-            ['pr', 'prepare-body', '--plan-id', 'subcommand-context'],
-        )
-    assert exc_info.value.code == 2
-    captured = capsys.readouterr()
-    assert 'routing_flag_after_subcommand' in captured.out
-    assert '--plan-id' in captured.out
-
-
-def test_extract_routing_args_comments_stage_plan_id_rejected_by_guard(capsys, _reset_subcommand_cache):
-    """``--plan-id`` AFTER the ``comments-stage`` token is rejected by the positional guard.
-
-    ``comments-stage`` is not registered in ``build_parser`` — it is a top-level
-    subcommand of ``github_pr.py`` / ``gitlab_pr.py``. Provider scripts register
-    it via ``register_subcommands`` at import time. This test mirrors that pattern
-    by registering the token before calling ``extract_routing_args``.
-
-    Fix A (secondary guard): routing flags after the subcommand boundary are
-    rejected immediately. Callers must pass ``--plan-id`` before the subcommand
-    token (e.g., ``--plan-id my-plan comments-stage --pr-number 123``).
-    """
-    from ci_base import extract_routing_args
-
-    # Mirror what github_pr.py / gitlab_pr.py do at module import time.
     register_subcommands({'comments-stage', 'fetch-comments'})
 
-    with pytest.raises(SystemExit) as exc_info:
-        extract_routing_args(
-            ['comments-stage', '--pr-number', '123', '--plan-id', 'my-plan'],
-        )
-    assert exc_info.value.code == 2
-    captured = capsys.readouterr()
-    assert 'routing_flag_after_subcommand' in captured.out
-    assert '--plan-id' in captured.out
+    resolved, remaining = extract_routing_args(
+        ['comments-stage', '--pr-number', '123', '--plan-id', 'my-plan'],
+    )
+    assert resolved is None
+    assert remaining == ['comments-stage', '--pr-number', '123', '--plan-id', 'my-plan']
 
 
-def test_extract_routing_args_fetch_comments_plan_id_rejected_by_guard(capsys, _reset_subcommand_cache):
-    """``--plan-id`` AFTER the ``fetch-comments`` token is rejected by the positional guard.
+def test_extract_routing_args_fetch_comments_plan_id_passes_through(_reset_subcommand_cache):
+    """``--plan-id`` AFTER the ``fetch-comments`` token passes through to the subcommand.
 
-    ``fetch-comments`` is not registered in ``build_parser`` — it is a top-level
-    subcommand of ``github_pr.py`` / ``gitlab_pr.py``. Provider scripts register
-    it via ``register_subcommands`` at import time. This test mirrors that pattern
-    by registering the token before calling ``extract_routing_args``.
-
-    Fix A (secondary guard): routing flags after the subcommand boundary are
-    rejected immediately. Callers must pass ``--plan-id`` before the subcommand
-    token (e.g., ``--plan-id my-plan fetch-comments --pr 5``).
+    Same contract as ``comments-stage`` — the subcommand parser declares and
+    consumes its own ``--plan-id`` argument; the router MUST NOT reject the
+    post-subcommand placement.
     """
     from ci_base import extract_routing_args
 
-    # Mirror what github_pr.py / gitlab_pr.py do at module import time.
     register_subcommands({'comments-stage', 'fetch-comments'})
 
-    with pytest.raises(SystemExit) as exc_info:
-        extract_routing_args(
-            ['fetch-comments', '--pr', '5', '--plan-id', 'my-plan'],
-        )
-    assert exc_info.value.code == 2
-    captured = capsys.readouterr()
-    assert 'routing_flag_after_subcommand' in captured.out
-    assert '--plan-id' in captured.out
+    resolved, remaining = extract_routing_args(
+        ['fetch-comments', '--pr', '5', '--plan-id', 'my-plan'],
+    )
+    assert resolved is None
+    assert remaining == ['fetch-comments', '--pr', '5', '--plan-id', 'my-plan']
 
 
 # =============================================================================
