@@ -58,10 +58,13 @@ For standalone dispatches outside any plan, pass `--plan-id none` and use `plan_
 A phase-2-refine dispatch from `plan-marshall/workflow/planning.md`:
 
 ```bash
-target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --role phase-2-refine)
-# Capture target=execution-context-high, level=high from the return TOON
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort resolve-target --role phase-2-refine
+```
 
+Extract the `target` and `level` fields from the TOON output (e.g., `target=execution-context-high`, `level=high`). Substitute those values into the post-resolve log line below as `{target}` and `{level}`:
+
+```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
   --message "[DISPATCH] (plan-marshall:plan-marshall) target=execution-context-high level=high role=phase-2-refine workflow=plan-marshall:phase-2-refine/SKILL.md plan_id={plan_id}"
@@ -84,19 +87,7 @@ The resulting work-log line is fully attributed, machine-parseable, and audit-re
 
 ## Anti-pattern (forbidden)
 
-A pre-resolve placeholder line, which carries only the role-key intent and no resolved attribution:
-
-```bash
-# ANTI-PATTERN — do not emit this shape
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO \
-  --message "[STATUS] (plan-marshall:plan-marshall) About to dispatch execution-context for role <role-key>"
-
-target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --role phase-2-refine)
-# ...
-Task: plan-marshall:{target}
-```
+A pre-resolve placeholder line, which carries only the role-key intent and no resolved attribution. The forbidden shape combines a generic `[STATUS]` work-log line emitted BEFORE the resolver runs (carrying only the role key — for example, `[STATUS] (plan-marshall:plan-marshall) About to dispatch execution-context for role <role-key>`) with a subsequent `target=$(... effort resolve-target --role phase-2-refine)` shell-substitution that captures the resolver result into a Bash variable, and finally a `Task: plan-marshall:{target}` dispatch — three separate forbidden patterns layered together. The `target=$(…)` shape is itself a violation of the no-`$()` Bash hard rule documented in `dev-general-practices/standards/tool-usage-patterns.md`; the pre-resolve `[STATUS]` line is a violation of this dispatch-logging contract; together they hide the actual dispatched variant from the audit trail.
 
 Failure mode the post-resolve shape prevents: the audit trail can identify only the role-key the caller intended to dispatch under. The actual `target`, `level`, and `workflow` are absent from the log — so the retrospective audit cannot tell whether the dispatch rode `execution-context-high`, `execution-context-medium`, or (worst case) bypassed the dispatcher entirely via `Task: general-purpose`. The shape also uses the generic `[STATUS]` prefix, which collides with phase-progress lines and breaks deterministic grep.
 

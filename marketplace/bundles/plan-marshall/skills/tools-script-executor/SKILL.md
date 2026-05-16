@@ -220,9 +220,10 @@ When `.plan/execute-script.py` doesn't exist yet (first run), use the bootstrap 
 
 Check `.plan/local/marshall-state.toon` for cached `plugin_root`, or detect it:
 
+Resolve the bootstrap script path with the `Glob` tool against the pattern `~/.claude/plugins/cache/*/plan-marshall/*/skills/marshall-steward/scripts/bootstrap_plugin.py` and capture the first match as `{BOOTSTRAP_PLUGIN}`. Then invoke it directly:
+
 ```bash
-BOOTSTRAP_PLUGIN=$(ls ~/.claude/plugins/cache/*/plan-marshall/*/skills/marshall-steward/scripts/bootstrap_plugin.py | head -n 1)
-python3 "$BOOTSTRAP_PLUGIN" get-root
+python3 "{BOOTSTRAP_PLUGIN}" get-root
 ```
 
 Output:
@@ -233,13 +234,12 @@ source	detected|cached
 
 ### Step 2: Execute Scripts Directly
 
-Use the plugin root with glob pattern for version:
+Use the plugin root with a glob pattern for the version segment. Resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/<skill>/scr*ts/<script>.py` and capture the first match as `{SCRIPT_FILE}`. Then invoke it directly:
 
 ```bash
-SKILL_DIR="${PLUGIN_ROOT}/plan-marshall/*/skills/<skill>"
-SCRIPT_FILE=$(ls ${SKILL_DIR}/scr*ts/<script>.py | head -n 1)
-python3 "$SCRIPT_FILE" <args>
+python3 "{SCRIPT_FILE}" <args>
 ```
+
 (Replace `<skill>`, `<script>`, and `<args>` with literal values. The `scr*ts` glob refers to the skill's `scripts` subdirectory; it is written with a wildcard to avoid scanner false positives on this standards document.)
 
 ### State File Format

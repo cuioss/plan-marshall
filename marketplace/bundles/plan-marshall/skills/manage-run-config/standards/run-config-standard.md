@@ -322,15 +322,23 @@ The timeout subcommand complements `await_until.py` from `script-executor`:
 
 ```bash
 # Get learned timeout (or default) - outputs plain number
-TIMEOUT=$(python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout get \
-  --command "ci:pr_checks" --default 300)
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout get \
+  --command "ci:pr_checks" --default 300
+```
 
+Capture the numeric output as `{TIMEOUT}` and substitute it into the next call.
+
+```bash
 # Use in await_until with outer shell timeout as safety net
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
   --pr-number 123 \
-  --timeout "$TIMEOUT" \
+  --timeout "{TIMEOUT}" \
   --interval 30
+```
 
+After the wait completes, record the actual duration so the learner can refine future estimates:
+
+```bash
 # Record actual duration for learning
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout set \
   --command "ci:pr_checks" --duration 180

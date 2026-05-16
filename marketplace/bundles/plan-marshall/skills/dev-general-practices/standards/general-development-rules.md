@@ -57,13 +57,19 @@ Compute the dispatch target via the role resolver. When the research fires from 
 
 ```bash
 # Inside a phase context (substitute the caller's phase)
-target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase {caller_phase} --role research)
-
-# Standalone / no plan context
-target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --default)
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort resolve-target --phase {caller_phase} --role research
 ```
+
+Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch below.
+
+```bash
+# Standalone / no plan context
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort resolve-target --default
+```
+
+Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch below.
 
 Dispatch:
 

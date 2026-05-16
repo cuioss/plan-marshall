@@ -663,9 +663,11 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 Compute the dispatch target via the role resolver:
 
 ```bash
-target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase phase-4-plan)
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort resolve-target --phase phase-4-plan
 ```
+
+Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
 
 Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
 

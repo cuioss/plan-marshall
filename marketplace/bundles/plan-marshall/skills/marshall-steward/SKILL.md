@@ -111,11 +111,10 @@ The `/marshall-steward` command must set `${PLUGIN_ROOT}` before loading this sk
 
 Determine whether to run wizard or menu based on existing files.
 
-**BOOTSTRAP**: Since execute-script.py may not exist yet, use DIRECT Python call with glob:
+**BOOTSTRAP**: Since execute-script.py may not exist yet, use a DIRECT Python call. Resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine_mode.py` and capture the first match as `{DETERMINE_MODE}`. Then invoke it directly:
 
 ```bash
-DETERMINE_MODE=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine_mode.py | head -n 1)
-python3 "$DETERMINE_MODE" mode
+python3 "{DETERMINE_MODE}" mode
 ```
 
 **Output (TOON)**:

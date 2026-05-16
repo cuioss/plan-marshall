@@ -85,9 +85,11 @@ Create a new plan and automatically continue to 2-refine/3-outline/4-plan phases
 Compute the dispatch target via the role resolver:
 
 ```bash
-target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --role phase-1-init)
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort resolve-target --role phase-1-init
 ```
+
+Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
 
 Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
 
@@ -154,12 +156,18 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake veri
 Compute the dispatch target via the role resolver and resolve the active worktree path so the Worktree Header can be populated explicitly (when `metadata.use_worktree==false`, `get-worktree-path` returns the main checkout, so the same call covers both flows):
 
 ```bash
-target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --role phase-2-refine)
-
-worktree_path=$(python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
-  get-worktree-path --plan-id {plan_id})
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort resolve-target --role phase-2-refine
 ```
+
+Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+  get-worktree-path --plan-id {plan_id}
+```
+
+Extract the `worktree_path` field from the TOON output. Use that value as `{worktree_path}` in the dispatch's `WORKTREE:` header below.
 
 Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract for the field semantics and placement rule:
 
@@ -421,9 +429,11 @@ If the user selects "Aggregate aggressively", route to `Action: lessons-aggregat
 When a specific lesson is selected, convert it to a plan via a `lesson_id` reference. Compute the dispatch target via the role resolver, then dispatch:
 
 ```bash
-target=$(python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --role phase-1-init)
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort resolve-target --role phase-1-init
 ```
+
+Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
 
 Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
 
