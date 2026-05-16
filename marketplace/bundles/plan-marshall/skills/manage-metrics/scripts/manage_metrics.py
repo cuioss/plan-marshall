@@ -1186,7 +1186,7 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
                 msg = entry.get('message', {}) if isinstance(entry, dict) else {}
                 usage = msg.get('usage', {}) if isinstance(msg, dict) else {}
                 if isinstance(usage, dict) and usage:
-                    if usage.get('input_tokens') or usage.get('output_tokens'):
+                    if usage.get('total_tokens') or usage.get('input_tokens') or usage.get('output_tokens'):
                         message_count += 1
                         if windows:
                             timestamp = entry.get('timestamp') if isinstance(entry, dict) else None
