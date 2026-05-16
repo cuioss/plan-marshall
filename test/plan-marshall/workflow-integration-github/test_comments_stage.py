@@ -169,6 +169,64 @@ class TestCommentsStage(unittest.TestCase):
             self.assertIn('thread_id: PRRT_a', stored['detail'])
             self.assertIn('Please fix the null pointer here', stored['detail'])
 
+    def test_stage_skips_resolved_thread_comments(self):
+        """Comments on already-resolved threads are dropped by pre-filter 1 before the noise check; each drop increments count_skipped_noise.
+
+        The ``resolved`` field is set by the provider (github_ops) on inline
+        comments whose parent thread is ``isResolved=True``. Producer-side
+        pre-filter 1 drops these before the noise check so they never reach
+        the finding store.
+        """
+        comments = [
+            {
+                'id': 'C1',
+                'kind': 'inline',
+                'author': 'reviewer',
+                'body': 'This concern was already addressed',
+                'path': 'src/Main.java',
+                'line': 10,
+                'thread_id': 'PRRT_resolved',
+                'resolved': True,
+            },
+            {
+                'id': 'C2',
+                'kind': 'inline',
+                'author': 'reviewer',
+                'body': 'This is still an open concern that needs fixing',
+                'path': 'src/Other.java',
+                'line': 20,
+                'thread_id': 'PRRT_open',
+                'resolved': False,
+            },
+        ]
+
+        with PlanContext(plan_id='gh-pr-stage-resolved') as ctx:
+            with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
+                mock_fetch.return_value = {
+                    'status': 'success',
+                    'provider': 'github',
+                    'comments': comments,
+                    'total': len(comments),
+                    'unresolved': 1,
+                }
+                result = cmd_comments_stage(self._make_args(127, ctx.plan_id))
+
+            self.assertEqual(result['status'], 'success')
+            self.assertEqual(result['count_fetched'], 2)
+            # Resolved thread comment is counted in skipped_noise
+            self.assertEqual(result['count_skipped_noise'], 1)
+            self.assertEqual(result['count_stored'], 1)
+            self.assertIsNone(result['producer_mismatch_hash_id'])
+
+            from _findings_core import query_findings  # type: ignore[import-not-found]
+
+            q = query_findings(ctx.plan_id, finding_type='pr-comment')
+            self.assertEqual(q['filtered_count'], 1)
+            stored = q['findings'][0]
+            # Only the open-thread comment survives
+            self.assertIn('PRRT_open', stored['detail'])
+            self.assertNotIn('PRRT_resolved', stored['detail'])
+
     def test_stage_no_comments(self):
         with PlanContext(plan_id='gh-pr-stage-empty') as ctx:
             with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:

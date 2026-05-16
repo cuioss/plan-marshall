@@ -35,6 +35,23 @@ A skill MAY hold zero, one, or many `workflow/*.md` files. A SKILL.md MAY itself
 
 **Cross-phase / multi-consumer placement rule**: when a workflow is consumed from multiple phases or from outside any phase (e.g., `triage`, `q-gate-validation`, `research-best-practices`, `enrich-module`), place it under `plan-marshall/skills/plan-marshall/workflow/` rather than under any single consumer phase. Single-phase workflows live under the consumer phase's `skill/workflow/`.
 
+### Workflow-Resolution Root
+
+The `workflow` field in a `Task:` prompt body is resolved against the **installed plugin cache** — `~/.claude/plugins/cache/plan-marshall/skills/{skill}/workflow/{file}.md` or `…/skills/{skill}/SKILL.md` — by the dispatched `plan-marshall:execution-context-{level}` agent. Resolution is never performed against:
+
+- the active worktree path (e.g., `.plan/local/worktrees/{plan_id}/marketplace/bundles/plan-marshall/skills/…`),
+- the main checkout's `marketplace/bundles/` tree,
+- any other filesystem root supplied at dispatch time.
+
+The cache is the single resolution root for every workflow load, regardless of `WORKTREE` value or call site. `WORKTREE` governs where the dispatched workflow's tool calls (Edit / Write / Read / `git -C`) act; it does NOT govern where the workflow body itself is loaded from.
+
+**Consequence — stale dispatch until cache sync + session restart**: a plan that modifies a `workflow/*.md` or `SKILL.md` in its worktree sees the **pre-change** version of that file at every dispatch site until BOTH of the following hold:
+
+1. The plugin cache has been synced from the worktree (via `/sync-plugin-cache` or `project:finalize-step-sync-plugin-cache`), and
+2. The Claude Code session has been restarted so the host platform re-reads the cache instead of serving its in-process registry snapshot.
+
+This is the second of the three failure surfaces described in [`../../phase-6-finalize/standards/self-host-blind-spot.md`](../../phase-6-finalize/standards/self-host-blind-spot.md). The structural enforcement that prevents the dispatcher from advancing past a worktree-modified workflow before both conditions hold is the session-restart fence in [`../../phase-6-finalize/SKILL.md`](../../phase-6-finalize/SKILL.md) § Session-Restart Fence.
+
 ### Input Contract — what the implementor can rely on
 
 Every dispatch into the implementor delivers, via the parent dispatcher (`plan-marshall:execution-context-{level}`):

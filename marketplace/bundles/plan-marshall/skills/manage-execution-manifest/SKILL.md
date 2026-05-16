@@ -149,6 +149,19 @@ phase_6_unknown_steps_count: 0
 
 On failure: `status: error`, `error: invalid_manifest`, plus a `message` and per-section unknown-step list.
 
+### Manifest-on-Write Semantics
+
+The execution manifest is a **write-time snapshot**, not a runtime view. Two halves, both load-bearing — the manifest's design depends on both:
+
+1. **Baked at write time.** `compose` reads the **then-current** plugin cache state (decision-rules tables, candidate step lists from `marshal.json`, recipe-key mappings, default `Phase 5` / `Phase 6` step sets) and writes a fixed list of step IDs into `.plan/local/plans/{plan_id}/execution.toon`. The composer is `phase-4-plan` Step 8b at plan-write time; `phase-5-execute` MAY re-invoke `compose` to amend during its own loop, but every invocation is idempotent — the file is overwritten in full from the inputs supplied to that call.
+2. **Not re-resolved at read time.** `read` is a literal file load. `phase-5-execute` and `phase-6-finalize` consume `phase_5.verification_steps` and `phase_6.steps` verbatim from the persisted file — they do NOT re-derive the list from current decision rules, do NOT re-consult `marshal.json` for fresh candidate sets, and do NOT re-apply the decision matrix at consumption time. The manifest IS the contract for the running plan.
+
+**Consequence — `Phase 6` reads the pre-change snapshot**: a plan that modifies a decision rule, a `marshal.json` default, the seven-row decision matrix, or any other manifest-composer input still sees the **pre-change** manifest shape when `phase-6-finalize` reads it back, even after `/sync-plugin-cache` has run and the Claude Code session has been restarted. The cache sync and session restart fix the manifest's **future composition** (subsequent plans that invoke `compose`), not the current plan's already-written `execution.toon`.
+
+This is the third of the three failure surfaces described in [`../phase-6-finalize/standards/self-host-blind-spot.md`](../phase-6-finalize/standards/self-host-blind-spot.md). Plans that intend to use a newly-introduced step or a newly-changed decision rule in their own finalize phase MUST either (a) re-run `compose` after the cache sync and session restart (re-composition re-reads the now-current cache state) or (b) edit `execution.toon` directly with the intended step list. The `validate` and `validate-loadable` operations remain valid post-edit; both check the persisted file, not a re-derived view.
+
+The write-time-snapshot model is a deliberate design choice — it makes the manifest diffable, auditable, and resumable across crashes. Re-resolving at read time would couple every Phase 6 step dispatch to the in-memory decision rules, which is precisely the coupling the manifest exists to break.
+
 ### validate-loadable
 
 Verify that the standards file backing each `phase_6.steps` entry is present and readable. This is the loadability fail-fast guard consumed by `phase-6-finalize` Step 1.5 to catch self-modifying plans that delete a built-in step's standards file without sweeping `marshal.json`.

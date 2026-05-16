@@ -162,11 +162,14 @@ def _is_obvious_noise(body: str) -> bool:
 def cmd_comments_stage(args):
     """Producer-side: fetch + pre-filter + write one finding per surviving comment.
 
-    Always-on storage: every surviving (non-noise) comment becomes a
-    ``pr-comment`` finding via ``add_finding``. ``count_fetched`` vs
-    ``count_stored`` mismatches are recorded as a ``qgate`` finding with title
-    prefix ``(producer-mismatch)`` so the LLM sees them in
-    ``manage-findings qgate query``.
+    Pre-filters applied in order (both contribute to ``count_skipped_noise``):
+    1. Already-resolved threads — skipped silently; the thread owner addressed them.
+    2. Obvious text noise — matched via ``_is_obvious_noise`` (lgtm, bot sigs, etc.).
+
+    Always-on storage: every surviving comment becomes a ``pr-comment`` finding
+    via ``add_finding``. ``count_fetched`` vs ``count_stored`` mismatches are
+    recorded as a ``qgate`` finding with title prefix ``(producer-mismatch)``
+    so the LLM sees them in ``manage-findings qgate query``.
     """
     from _findings_core import (  # type: ignore[import-not-found]
         add_finding,
@@ -188,6 +191,12 @@ def cmd_comments_stage(args):
     store_failures: list[str] = []
 
     for comment in raw_comments:
+        # Pre-filter 1: already-resolved threads — skip silently (not noise,
+        # not a finding; the thread owner already addressed the comment).
+        if comment.get('resolved'):
+            skipped_noise += 1
+            continue
+
         body = comment.get('body') or ''
         if _is_obvious_noise(body):
             skipped_noise += 1
