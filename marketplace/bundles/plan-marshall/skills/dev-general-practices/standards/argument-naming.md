@@ -73,16 +73,47 @@ The cross-cutting `--plan-id` and `--audit-plan-id` flags are accepted by virtua
 
 | Script | Operation | Canonical form |
 |---|---|---|
-| `manage-lessons` | Read a lesson by id | `manage-lessons get --lesson-id {id}` |
-| `manage-tasks` | Read a task body | `manage-tasks read --plan-id {id} --task-number {n}` |
-| `manage-tasks` | Update a task | `manage-tasks update --plan-id {id} --task-number {n}` |
-| `manage-tasks` | Finalize a step | `manage-tasks finalize-step --plan-id {id} --task-number {n} --step {s} --outcome {done|failed|skipped}` |
 | `manage-architecture` | Resolve a build command for a module | `architecture resolve --command {cmd} --module {name}` |
 | `manage-architecture` | Read a module entry | `architecture module --module {name}` |
 | `manage-architecture` | Read a derived module entry | `architecture derived-module --module {name}` |
 | `manage-architecture` | List commands for a module | `architecture commands --module {name}` |
 | `manage-architecture` | List sibling modules | `architecture siblings --module {name}` |
+| `manage-config` | Get a phase config field | `manage-config plan {phase} get [--field {name}] --audit-plan-id {id}` |
+| `manage-config` | Set a phase config field | `manage-config plan {phase} set --field {name} --value {v} --audit-plan-id {id}` |
+| `manage-config` | Read an effort target | `manage-config effort read [--role {role} \| --phase {phase} --role {subkey} \| --default]` |
+| `manage-config` | Resolve a recipe definition | `manage-config resolve-recipe --recipe {key}` |
+| `manage-lessons` | Read a lesson by id | `manage-lessons get --lesson-id {id}` |
 | `manage-logging` | Emit a warning-level log entry | `manage-logging work --plan-id {id} --level WARNING --message "{msg}"` |
+| `manage-references` | Read the entire references body | `manage-references read --plan-id {id}` |
+| `manage-references` | Get one field from references | `manage-references get --plan-id {id} --field {name}` |
+| `manage-references` | Set one field in references | `manage-references set --plan-id {id} --field {name} --value {v}` |
+| `manage-status` | Read plan status | `manage_status read --plan-id {id}` |
+| `manage-status` | Get a metadata field | `manage_status metadata --get --plan-id {id} --field {name}` |
+| `manage-status` | Set a metadata field | `manage_status metadata --set --plan-id {id} --field {name} --value {v}` |
+| `manage-status` | Transition to next phase | `manage_status transition --plan-id {id} --completed {phase}` |
+| `manage-status` | Resolve the worktree path for a plan | `manage_status get-worktree-path --plan-id {id}` |
+| `manage-status` | Classify a change type heuristically | `manage_status change-type-heuristic --plan-id {id}` |
+| `manage-tasks` | Read a task body | `manage-tasks read --plan-id {id} --task-number {n}` |
+| `manage-tasks` | Update a task | `manage-tasks update --plan-id {id} --task-number {n}` |
+| `manage-tasks` | Finalize a step | `manage-tasks finalize-step --plan-id {id} --task-number {n} --step {s} --outcome {done|failed|skipped}` |
+
+The script name for `manage-status` rows is spelled `manage_status` (underscore) because the on-disk filename is `manage_status.py` and the executor's 3-part notation MUST match the filename; the skill directory is still `manage-status` (kebab-case) per bundle convention. See [`tools-script-executor/standards/notation.md`](../../../tools-script-executor/standards/notation.md) for the notation-to-path resolution rule.
+
+### `workflow-integration-git:git_workflow`
+
+The git workflow script provides commit-message formatting, diff analysis, artifact detection, and the full worktree CRUD surface (`worktree-path`, `worktree-create`, `worktree-remove`, `worktree-list`, `worktree-rebase-to`) plus the `baseline-reconcile` mechanical reconciliation verb. There is no `commit`, `push`, or `branch-create` subcommand — those operations go through provider-neutral `git` calls in skill workflows (`git -C {path} commit ...`, `git -C {path} push ...`, `git -C {path} switch -c ...`) or through `tools-integration-ci:ci` for PR-level branch creation. The 3-part script notation is `plan-marshall:workflow-integration-git:git_workflow` (the third segment matches the on-disk filename `git_workflow.py`).
+
+| Operation | Canonical form |
+|---|---|
+| Format a conventional commit message | `git_workflow format-commit --type {type} [--scope {s}] --subject "{subject}" [--body "{b}"] [--breaking "{desc}"] [--footer "{f}"]` |
+| Capture and analyze a worktree diff | `git_workflow analyze-diff --worktree-path {path} [--cached]` |
+| Scan for committable artifacts | `git_workflow detect-artifacts [--root {path}] [--no-gitignore]` |
+| Resolve the worktree path for a plan | `git_workflow worktree-path --plan-id {id}` |
+| Create a worktree + feature branch + .plan symlink | `git_workflow worktree-create --plan-id {id} --branch {name} [--base {ref}]` |
+| Remove a worktree | `git_workflow worktree-remove --plan-id {id} [--force]` |
+| Enumerate plans that declare a worktree | `git_workflow worktree-list` |
+| Rebase a worktree onto a base ref | `git_workflow worktree-rebase-to --plan-id {id} --base {ref}` |
+| Baseline reconcile (phase-2-refine Step 3d) | `git_workflow baseline-reconcile --plan-id {id} [--base-branch {ref}] [--worktree-path {path}] [--skip-fetch] [--no-emit]` |
 
 ### `tools-integration-ci:ci` (provider-agnostic CI router)
 

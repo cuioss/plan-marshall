@@ -374,6 +374,7 @@ def _markdown_targets(marketplace_root: Path) -> list[Path]:
     - skills/*/standards/*.md
     - skills/*/recipes/*.md (rare; recipes are usually skill-level)
     - skills/*/references/*.md (referenced for invocation examples)
+    - skills/*/workflow/*.md (workflow bodies — Bash invocations live here)
     """
     targets: list[Path] = []
     bundles_dir = marketplace_root / 'bundles'
@@ -397,7 +398,7 @@ def _markdown_targets(marketplace_root: Path) -> list[Path]:
             skill_md = skill_dir / 'SKILL.md'
             if skill_md.is_file():
                 targets.append(skill_md)
-            for sub in ('standards', 'references', 'recipes'):
+            for sub in ('standards', 'references', 'recipes', 'workflow'):
                 sub_dir = skill_dir / sub
                 if sub_dir.is_dir():
                     targets.extend(sorted(sub_dir.glob('*.md')))
