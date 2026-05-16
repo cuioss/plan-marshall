@@ -30,7 +30,7 @@ user-invocable: true                # true = slash menu, false = internal
 
 Required fields: `name`, `description`, `user-invocable`.
 
-Skills do **not** support `tools` or `allowed-tools` fields (silently ignored by the plugin schema). Common errors: using `user-invokable` instead of the correct `user-invocable`, declaring unsupported `allowed-tools` field.
+Skills support the `allowed-tools` field per the Claude Code skills schema (see https://code.claude.com/docs/en/skills). The most common frontmatter mistake is using `user-invokable` instead of the correct `user-invocable`.
 
 ## Progressive Disclosure
 
@@ -114,7 +114,7 @@ Human-targeted content (ASCII diagrams, architecture overviews, motivational tex
 
 - SKILL.md exists with valid YAML frontmatter
 - `user-invocable` field present (true or false)
-- No `allowed-tools` or `tools` field (unsupported for skills)
+- `allowed-tools` field is supported per the Claude Code skills schema
 - Structure score >= 90
 - No missing or unreferenced files
 - Progressive disclosure implemented

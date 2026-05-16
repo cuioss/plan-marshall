@@ -259,30 +259,6 @@ def apply_lessons_via_skill_fix(file_path: Path, fix: dict, templates: dict) -> 
     return {'success': True, 'changes': changes_made}
 
 
-def apply_remove_frontmatter_field(file_path: Path, fix: dict, templates: dict) -> dict:
-    """Remove a named field from YAML frontmatter."""
-    field_type = fix.get('type', '')
-    # Map issue types to field patterns to remove
-    field_patterns = {
-        'unsupported-skill-tools-field': r'^(?:allowed-tools|tools):[^\n]*\n(?:[ \t]+-[^\n]*\n)*',
-    }
-    pattern = field_patterns.get(field_type)
-    if not pattern:
-        return {'success': False, 'error': f'No removal pattern for fix type: {field_type}'}
-
-    with open(file_path, encoding='utf-8') as f:
-        content = f.read()
-
-    new_content, count = re.subn(pattern, '', content, count=1, flags=re.MULTILINE)
-    if count == 0:
-        return {'success': False, 'error': 'Field not found in frontmatter'}
-
-    with open(file_path, 'w', encoding='utf-8') as f:
-        f.write(new_content)
-
-    return {'success': True, 'changes': ['Removed unsupported field from frontmatter']}
-
-
 def apply_rename_frontmatter_field(file_path: Path, fix: dict, templates: dict) -> dict:
     """Rename a misspelled field in YAML frontmatter."""
     field_type = fix.get('type', '')
@@ -358,7 +334,6 @@ FIX_HANDLERS = {
     'agent-skill-tool-visibility': apply_skill_tool_visibility_fix,
     'unused-tool-declared': apply_unused_tool_fix,
     'agent-lessons-via-skill': apply_lessons_via_skill_fix,
-    'unsupported-skill-tools-field': apply_remove_frontmatter_field,
     'misspelled-user-invocable': apply_rename_frontmatter_field,
     'missing-user-invocable': apply_missing_field_fix,
     'skill-invokable-mismatch': apply_invokable_mismatch_fix,

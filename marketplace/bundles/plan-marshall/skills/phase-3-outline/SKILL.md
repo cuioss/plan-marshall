@@ -28,6 +28,8 @@ Skill: plan-marshall:dev-general-practices
 - Never skip the phase transition — use `manage-status transition`
 - Never improvise script subcommands — use only those documented below
 - Never fall back to simple track if complex track fails — return error
+- **Never mutate source files outside `.plan/local/plans/{plan_id}/`** during outline. The outline phase is strictly analytical: it discovers, classifies, and writes solution documents into the plan workspace. Edits to any path under `marketplace/`, `target/`, `.claude/`, `test/`, `doc/`, or any other repository directory are categorically forbidden — those mutations are the responsibility of phase-5-execute. If a recipe or domain workflow proposes a fix, capture it as a deliverable in `solution_outline.md` rather than applying it directly.
+- **Never invoke any `*-doctor` tool (e.g., `plugin-doctor`, `plan-doctor`) carrying `fix`, `apply`, `--apply`, or `--fix`** during outline. Doctor tools may only be invoked in their read-only modes (`verify`, `check`, no flags) to surface findings. The `apply`/`fix`/`--fix`/`--apply` surfaces mutate source files and bypass the per-plan workspace boundary above — they are reserved for phase-5-execute task bodies that the planner explicitly authorized via a deliverable. This applies equally to `Bash`, `Skill:`, and `SlashCommand:` invocation shapes.
 
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline

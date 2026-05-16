@@ -3,6 +3,8 @@
 Rules that plugin-doctor validates in other components. See the Enforcement block in SKILL.md for this skill's own constraints.
 
 > **Related**: For architectural principles with rationale and examples, see `plugin-architecture:architecture-rules`. This catalog lists validation rules only.
+>
+> **Provenance**: For the source-of-truth classification and lesson / contract citation behind every rule below, see [rule-provenance.md](rule-provenance.md). Adding a rule without a corresponding provenance entry is inadmissible — the rule will be removed by the next provenance audit.
 
 ## Agent Rules
 
@@ -401,3 +403,31 @@ The ack tag must match `^ack-[a-z0-9_-]+$`. The slug after `ack-` must be non-em
 **Recommended fix**: Add `marketplace_root = find_marketplace_root(args.marketplace_root)` at the start of the function body, and add `p_sub.add_argument('--marketplace-root', dest='marketplace_root', ...)` to the corresponding subparser.
 
 **Suppression mechanism**: None — implement the anchoring contract.
+
+---
+
+## Provenance Contract for New Rules
+
+Every rule emitted by plugin-doctor must have a documented provenance entry before merge. This contract is enforced by the regression tests in `test/pm-plugin-development/plugin-doctor/test_rule_provenance_table.py`.
+
+**Required artifacts for any new rule** (created in a single PR):
+
+1. **Emitter** — a new branch in an `_analyze_*.py` module (or a new module under the same convention) that constructs the finding with `'type'` or `'rule_id'` set to the new rule ID.
+2. **Row in [rule-provenance.md](rule-provenance.md)** under the appropriate section, carrying:
+   - **Rule ID** (verbatim — the string that appears in the emitter)
+   - **Class** (`structural` / `content` / `style` / `safety`)
+   - **Emitter** (the module file that constructs the finding)
+   - **Source** citation — a lesson ID (`2026-MM-DD-HH-NNN`), a referenced architectural standard, or a `decision.log` entry. The Source field MUST be non-empty.
+3. **Row in this `rule-catalog.md`** documenting the rule's intent, detection approach, fix strategy, and suppression mechanism (if any).
+4. **Test** in `test/pm-plugin-development/plugin-doctor/` exercising the rule against synthetic fixtures.
+
+**Additional artifacts for fixable rules**:
+
+5. **Apply handler** in `_cmd_apply.py::FIX_HANDLERS` keyed by the rule ID.
+6. **Verify branch** in `_cmd_verify.py::cmd_verify` (or a deliberate route to `verify_generic`).
+7. **Row in [fix-catalog.md](fix-catalog.md)** documenting the safe/risky classification and the fix payload shape.
+8. **Membership in `_doctor_shared.py::FIXABLE_ISSUE_TYPES`** plus either `SAFE_FIX_TYPES` or `RISKY_FIX_TYPES`.
+
+**Inadmissible rules** — rules without a provenance entry are fabricated and will be removed in the next provenance audit. See the audit history at the bottom of `rule-provenance.md` for precedents.
+
+**Audit gate**: The `test_every_emitted_rule_id_has_provenance_entry` regression test in `test_rule_provenance_table.py` will fail the build if any analyzer-emitted rule ID is missing a provenance row. The `test_fixable_issue_types_have_provenance` test enforces the same constraint for the fix registry.

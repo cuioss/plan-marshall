@@ -232,12 +232,29 @@ def test_verify_rule_11_no_tools_field():
 
 
 # =============================================================================
-# Apply unsupported-skill-tools-field Tests (Tier 2 - direct import)
+# Regression: unsupported-skill-tools-field rule fully removed
 # =============================================================================
+#
+# This rule was fabricated and never had ecosystem support. It was removed in
+# the harden-phase3-outline-plugin-doctor-audit plan. The tests below pin the
+# removal in three independent ways:
+#   - apply: no handler is registered, cmd_apply rejects the fix type
+#   - verify: dispatch falls through to verify_generic (issue_resolved is None)
+#   - analyze: extract_issues_from_markdown_analysis does NOT emit the rule
+#     even when a skill carries a `tools:` field in its frontmatter (the exact
+#     trigger condition that the removed rule used to fire on).
 
 
-def test_apply_remove_unsupported_tools_field():
-    """Test applying unsupported-skill-tools-field fix removes allowed-tools."""
+def test_unsupported_tools_field_not_in_fix_handlers():
+    """Regression: unsupported-skill-tools-field is absent from FIX_HANDLERS."""
+    handlers = _cmd_apply_mod.FIX_HANDLERS
+    assert 'unsupported-skill-tools-field' not in handlers, (
+        f'Removed rule must not have an apply handler: {sorted(handlers.keys())}'
+    )
+
+
+def test_apply_unsupported_tools_field_rejected():
+    """Regression: cmd_apply returns success=False for the removed fix type."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         skill_file = Path(tmp_dir) / 'SKILL.md'
         skill_file.write_text(
@@ -252,87 +269,109 @@ def test_apply_remove_unsupported_tools_field():
             data = cmd_apply(args)
             Path(f.name).unlink()
 
-        assert data['success'] is True, f'Fix should succeed: {data}'
-
+        assert data['success'] is False, f'Fix should be rejected with no handler: {data}'
+        assert 'No handler' in data.get('error', ''), (
+            f"Error should name the missing handler: {data.get('error')}"
+        )
+        # The original file content must be untouched — no allowed-tools removal.
         content = skill_file.read_text()
-        assert 'allowed-tools' not in content, f'allowed-tools should be removed: {content}'
-        assert 'user-invocable: true' in content, 'Other fields should be preserved'
-        assert 'name: test-skill' in content, 'Name field should be preserved'
-
-
-def test_apply_remove_unsupported_tools_field_with_tools():
-    """Test applying unsupported-skill-tools-field fix removes tools: field."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        skill_file = Path(tmp_dir) / 'SKILL.md'
-        skill_file.write_text(
-            '---\nname: test-skill\ndescription: Test\ntools: Read\nuser-invocable: true\n---\n\n# Test\n'
+        assert 'allowed-tools: Read, Grep' in content, (
+            f'File must not be modified when no handler exists: {content}'
         )
 
-        fix_json = json.dumps({'type': 'unsupported-skill-tools-field', 'file': 'SKILL.md'})
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            f.write(fix_json)
-            f.flush()
-            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
-            data = cmd_apply(args)
-            Path(f.name).unlink()
 
-        assert data['success'] is True, f'Fix should succeed: {data}'
+def test_verify_unsupported_tools_field_falls_through_to_generic():
+    """Regression: cmd_verify routes the removed fix type to verify_generic."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+        f.write('---\nname: test\ndescription: Test\nallowed-tools: Read\n---\n\n# Test\n')
+        f.flush()
 
-        content = skill_file.read_text()
-        assert 'tools:' not in content, f'tools field should be removed: {content}'
-
-
-def test_apply_remove_unsupported_tools_field_block_list_form():
-    """Block-list form `tools:\\n  - A\\n  - B` must be removed entirely, not leave orphan list items."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        skill_file = Path(tmp_dir) / 'SKILL.md'
-        skill_file.write_text(
-            '---\n'
-            'name: test-skill\n'
-            'description: Test\n'
-            'user-invocable: false\n'
-            'tools:\n'
-            '  - Bash\n'
-            '  - Read\n'
-            '  - Write\n'
-            '  - AskUserQuestion\n'
-            '---\n\n# Test\n'
+        args = Namespace(fix_type='unsupported-skill-tools-field', file=f.name)
+        data = cmd_verify(args)
+        # verify_generic returns issue_resolved: None (manual verification recommended)
+        assert data.get('issue_resolved') is None, (
+            f'Removed rule must hit verify_generic fallthrough: {data}'
         )
 
-        fix_json = json.dumps({'type': 'unsupported-skill-tools-field', 'file': 'SKILL.md'})
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            f.write(fix_json)
-            f.flush()
-            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
-            data = cmd_apply(args)
-            Path(f.name).unlink()
-
-        assert data['success'] is True, f'Fix should succeed: {data}'
-
-        content = skill_file.read_text()
-        assert 'tools:' not in content, f'tools key should be removed: {content}'
-        assert '- Bash' not in content, f'Block-list items must be removed with the key: {content}'
-        assert '- Read' not in content, f'Block-list items must be removed with the key: {content}'
-        assert '- Write' not in content, f'Block-list items must be removed with the key: {content}'
-        assert '- AskUserQuestion' not in content, f'Block-list items must be removed with the key: {content}'
-        assert 'user-invocable: false\n---' in content, f'Remaining frontmatter should be intact: {content}'
+        Path(f.name).unlink()
 
 
-def test_apply_remove_unsupported_tools_no_field():
-    """Test applying unsupported-skill-tools-field fix when field absent fails gracefully."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        skill_file = Path(tmp_dir) / 'SKILL.md'
-        skill_file.write_text('---\nname: test-skill\ndescription: Test\nuser-invocable: true\n---\n\n# Test\n')
+def test_analysis_does_not_emit_unsupported_tools_field_for_skill_with_tools(tmp_path):
+    """Regression: extract_issues_from_markdown_analysis never emits the removed rule.
 
-        fix_json = json.dumps({'type': 'unsupported-skill-tools-field', 'file': 'SKILL.md'})
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            f.write(fix_json)
-            f.flush()
-            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
-            data = cmd_apply(args)
-            Path(f.name).unlink()
+    Builds the exact analysis dict shape that previously triggered the rule
+    (a skill with ``required_fields.tools.present == True``) and asserts that
+    the issue type is absent from the output.
+    """
+    # Direct-import the analysis module the same way other analyze tests do.
+    import importlib.util
 
-        assert data['success'] is False, 'Fix should fail when field not present'
+    spec = importlib.util.spec_from_file_location(
+        '_doctor_analysis_for_regression', _SCRIPTS_DIR / '_doctor_analysis.py'
+    )
+    assert spec is not None and spec.loader is not None
+    da = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(da)
+
+    skill_path = tmp_path / 'SKILL.md'
+    skill_path.write_text(
+        '---\nname: test-skill\ndescription: Test\ntools: Read\nuser-invocable: true\n---\n\n# Test\n'
+    )
+
+    analysis = {
+        'frontmatter': {
+            'present': True,
+            'yaml_valid': True,
+            'required_fields': {
+                'name': {'present': True},
+                'description': {'present': True},
+                'tools': {'present': True, 'field_type': 'tools'},
+                'user_invocable': {'present': True, 'misspelled': False, 'value': 'true'},
+            },
+        },
+        'metadata': {'line_count': 10},
+    }
+    issues = da.extract_issues_from_markdown_analysis(analysis, str(skill_path), 'skill')
+    issue_types = [i.get('type') for i in issues]
+    assert 'unsupported-skill-tools-field' not in issue_types, (
+        f'Removed rule must not be emitted by analysis: {issue_types}'
+    )
+
+
+def test_analysis_does_not_emit_unsupported_tools_field_for_skill_with_allowed_tools(tmp_path):
+    """Regression: the rule is also absent when skill uses allowed-tools variant."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        '_doctor_analysis_for_regression_allowed', _SCRIPTS_DIR / '_doctor_analysis.py'
+    )
+    assert spec is not None and spec.loader is not None
+    da = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(da)
+
+    skill_path = tmp_path / 'SKILL.md'
+    skill_path.write_text(
+        '---\nname: test-skill\ndescription: Test\nallowed-tools: Read, Grep\nuser-invocable: true\n---\n\n# Test\n'
+    )
+
+    analysis = {
+        'frontmatter': {
+            'present': True,
+            'yaml_valid': True,
+            'required_fields': {
+                'name': {'present': True},
+                'description': {'present': True},
+                'tools': {'present': True, 'field_type': 'allowed-tools'},
+                'user_invocable': {'present': True, 'misspelled': False, 'value': 'true'},
+            },
+        },
+        'metadata': {'line_count': 10},
+    }
+    issues = da.extract_issues_from_markdown_analysis(analysis, str(skill_path), 'skill')
+    issue_types = [i.get('type') for i in issues]
+    assert 'unsupported-skill-tools-field' not in issue_types, (
+        f'Removed rule must not be emitted by analysis: {issue_types}'
+    )
 
 
 # =============================================================================
@@ -376,37 +415,6 @@ def test_apply_rename_misspelled_user_invocable_not_present():
             Path(f.name).unlink()
 
         assert data['success'] is False, 'Fix should fail when not misspelled'
-
-
-# =============================================================================
-# Verify unsupported-skill-tools-field Tests (Tier 2 - direct import)
-# =============================================================================
-
-
-def test_verify_unsupported_tools_resolved():
-    """Test verify reports resolved after allowed-tools removed."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
-        f.write('---\nname: test\ndescription: Test\nuser-invocable: true\n---\n\n# Test\n')
-        f.flush()
-
-        args = Namespace(fix_type='unsupported-skill-tools-field', file=f.name)
-        data = cmd_verify(args)
-        assert data['issue_resolved'] is True, f'Issue should be resolved: {data}'
-
-        Path(f.name).unlink()
-
-
-def test_verify_unsupported_tools_still_present():
-    """Test verify reports not resolved when allowed-tools still present."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
-        f.write('---\nname: test\ndescription: Test\nallowed-tools: Read\n---\n\n# Test\n')
-        f.flush()
-
-        args = Namespace(fix_type='unsupported-skill-tools-field', file=f.name)
-        data = cmd_verify(args)
-        assert data['issue_resolved'] is False, f'Issue should NOT be resolved: {data}'
-
-        Path(f.name).unlink()
 
 
 # =============================================================================
