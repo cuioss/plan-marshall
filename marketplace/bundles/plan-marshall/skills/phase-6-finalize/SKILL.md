@@ -366,6 +366,22 @@ Consumer projects do not own bundle sources, so they do not register
 either step. Their finalize dispatches load whatever the host plugin
 cache holds, which is exactly the published bundle definitions.
 
+#### Session-Restart Fence
+
+**This fence is normative, not advisory.** When the running finalize dispatch processes `project:finalize-step-sync-plugin-cache` AND the plan's `references.modified_files` contains paths under `marketplace/bundles/plan-marshall/` (i.e., the plan modifies plan-marshall itself), the dispatcher MUST halt immediately after the sync step records `outcome=done` and refuse to dispatch any subsequent agent-loaded step in the same Claude Code session.
+
+The fence is the single structural guard against the self-host blind spot — see [`standards/self-host-blind-spot.md`](standards/self-host-blind-spot.md) for the invariant and its three failure surfaces. The two-part remediation (cache sync + session restart) cannot be collapsed into the sync step alone: synchronising the cache does NOT refresh the host platform's in-process skill registry, so any agent dispatched in the same session continues to load the pre-sync skill bodies and workflow notations from its registry snapshot.
+
+**Halt protocol**:
+
+1. Record the fence trigger via `manage-logging work` with the `[BLOCKED]` tag, naming the modified plan-marshall paths from `references.modified_files`.
+2. Emit the canonical halt instruction to the user: `"plan-marshall self-modification detected — session restart required before subsequent finalize steps. Re-enter /plan-marshall action=finalize plan={plan_id} in a fresh Claude Code session."`
+3. Return a structured `status: blocked` payload with `display_detail: "session-restart fence triggered"`. Do NOT mark the next step `failed`; do NOT advance the manifest pointer. The next session re-enters via resumable re-entry semantics and picks up at the first non-`done` step.
+
+**Why the fence is mandatory, not advisory**: surfaces (1) and (2) in the blind-spot invariant — skill resolution and workflow-notation resolution — both bind to the in-process registry. An advisory "consider restarting" note that left the dispatcher free to continue would let the dispatched `create-pr`, `automated-review`, or `lessons-capture` agent execute against stale skill bodies, producing a PR description / review comment / lesson record that reflects the pre-change shape of the very code the plan just shipped. The fence MUST NOT be skippable by a `--force` flag or a per-plan opt-out; the only escape is the prescribed session restart.
+
+**Scope**: the fence fires only when `references.modified_files` actually touches the `plan-marshall` bundle. Plans that modify sibling bundles only (`pm-dev-java`, `pm-documents`, etc.) do not trigger the fence — those bundles' modified skills become visible to the next session naturally, and the running finalize dispatch is unaffected because its own hot path is unchanged.
+
 **Resumable re-entry semantics**: Before dispatching each step, read the current step record from `status.metadata.phase_steps["6-finalize"]`. If the step is already marked `done`, skip dispatch entirely (no re-run, no log noise — the previous run completed it). If the step is marked `failed`, retry it from scratch. If the step has no record (or any other outcome), dispatch it as a fresh run. This makes finalize safe to re-enter after a partial run, a crash, or an explicit retry — completed steps stay completed, failed steps get exactly one retry per invocation.
 
 **Precondition resolution**: before dispatching any step in the FOR loop, parse the step's frontmatter `requires:` list (if present) and resolve each entry against its mapped resolver. The only precondition currently defined is `ci-complete`, mapped to the dispatcher-internal helper `scripts/_ci_complete_precondition.py`. The resolver is invoked inline (no Task agent dispatch — the helper itself is bounded by `ci wait --timeout 600`, matching the host platform's per-call ceiling):
