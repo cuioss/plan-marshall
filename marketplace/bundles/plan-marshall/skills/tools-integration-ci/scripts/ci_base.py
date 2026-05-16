@@ -387,10 +387,13 @@ def extract_routing_args(argv: list[str]) -> tuple[str | None, list[str]]:
     Routing-vs-subcommand disambiguation: ``--plan-id`` at the **router
     level** (i.e., before the first token in the known subcommand registry;
     see :func:`get_known_subcommands`) is consumed for worktree resolution.
-    ``--plan-id`` or ``--project-dir`` that appears AFTER a subcommand
-    token is a structural error — it will not be consumed for routing and
-    is rejected immediately via the positional routing-flag guard with
-    ``error_type: routing_flag_after_subcommand`` and ``sys.exit(2)``.
+    ``--plan-id`` or ``--project-dir`` appearing AFTER a subcommand token is
+    NOT consumed for routing — it passes through in ``remaining_argv`` so
+    that body-consumer subcommands (e.g. ``pr prepare-body``, ``pr create``,
+    ``issue create``) can declare and consume their own ``--plan-id``
+    argument via their argparse subparser. The router returns
+    ``resolved=None`` in this case (no router-level routing flag was found
+    before the subcommand boundary).
 
     Returns:
         ``(resolved_project_dir, remaining_argv)``. ``resolved_project_dir``
