@@ -38,14 +38,21 @@ Capture stdout into a model-context variable `{breakdown_content}`. On non-zero 
 
 ### Step 2: Persist captured content to work/phase-breakdown-output.txt
 
-Write the captured content to the cross-deliverable artifact path so the renderer's snapshot procedure can read it before archive:
+Write the captured content to the cross-deliverable artifact path so the renderer's snapshot procedure can read it before archive. The captured `{breakdown_content}` is a multi-line markdown block whose first line is a `## Phase Breakdown` heading, so the inline `--content` form is forbidden — stage to `.plan/temp/` and pass `--content-file`.
+
+Step 2a: Use the `Write` tool to stage `{breakdown_content}` to `.plan/temp/phase-breakdown-output.txt`.
+
+Step 2b: Invoke `manage-files write` with `--content-file`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
-  --plan-id {plan_id} --file work/phase-breakdown-output.txt --content "{breakdown_content}"
+  --plan-id {plan_id} --file work/phase-breakdown-output.txt \
+  --content-file .plan/temp/phase-breakdown-output.txt
 ```
 
 Capture `bytes_written` from the returned TOON.
+
+See `marketplace/bundles/plan-marshall/skills/manage-files/SKILL.md` § Enforcement and § write subsection for the binding rule.
 
 ### Step 3: Log artifact and mark step done
 

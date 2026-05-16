@@ -134,34 +134,43 @@ Group all paths by component type across all bundles.
 
 ## Step 4: Persist filtered inventory
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
-  --plan-id {plan_id} \
-  --file work/inventory_filtered.toon \
-  --audit-plan-id {plan_id} \
-  --content "# Filtered Inventory
+1. Stage the rendered TOON payload via the `Write` tool to `.plan/temp/inventory_filtered.toon`. The payload is the multi-line block:
 
-scope:
-  affected_artifacts: [{component_types}]
-  bundle_scope: {bundle_scope}
-  include_tests: {true|false}
-  include_project_skills: {true|false}
+   ```
+   # Filtered Inventory
 
-inventory:
-  skills[{skill_count}]:
-{skill_file_paths_indented}
-  commands[{command_count}]:
-{command_file_paths_indented}
-  agents[{agent_count}]:
-{agent_file_paths_indented}
-  tests[{test_count}]:
-{test_file_paths_indented}
+   scope:
+     affected_artifacts: [{component_types}]
+     bundle_scope: {bundle_scope}
+     include_tests: {true|false}
+     include_project_skills: {true|false}
 
-total_files: {total_count}
-"
-```
+   inventory:
+     skills[{skill_count}]:
+   {skill_file_paths_indented}
+     commands[{command_count}]:
+   {command_file_paths_indented}
+     agents[{agent_count}]:
+   {agent_file_paths_indented}
+     tests[{test_count}]:
+   {test_file_paths_indented}
+
+   total_files: {total_count}
+   ```
+
+2. Invoke `manage-files write` with `--content-file`:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
+     --plan-id {plan_id} \
+     --file work/inventory_filtered.toon \
+     --audit-plan-id {plan_id} \
+     --content-file .plan/temp/inventory_filtered.toon
+   ```
 
 Include the `tests` section only when `include_tests` is true and tests were discovered.
+
+See `marketplace/bundles/plan-marshall/skills/manage-files/SKILL.md` § Enforcement and § write subsection for the binding rule.
 
 ## Step 5: Log completion
 

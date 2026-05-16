@@ -17,6 +17,7 @@ Generic file operations for plan directories. Provides basic CRUD operations for
 - Do not pass absolute paths or `..` traversals in `--file` arguments
 - File paths are always relative to the plan directory
 - plan_id must be kebab-case format
+- Multi-line content and any payload whose first line begins with `#` MUST be passed via `--content-file` or `--stdin`, never via inline `--content`. The Bash permission heuristic ("Newline followed by `#` inside a quoted argument can hide arguments from path validation") fires before `manage-files.py` runs, so a script-level rejector cannot prevent the originating prompt — caller compliance is the only enforcement surface. Canonical pattern: stage the payload via the `Write` tool to `.plan/temp/{name}.{ext}` first, then invoke `manage-files write --plan-id {plan_id} --file work/{name}.{ext} --content-file .plan/temp/{name}.{ext}`.
 
 ## Storage Location
 
@@ -50,17 +51,24 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
 
 Write content to a file in a plan directory.
 
+Use only for single-line scalar values.
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
   --plan-id {plan_id} \
+  --file notes.txt \
+  --content "single line value with no newlines and no leading hash"
+```
+
+Use for any multi-line content (markdown, TOON, JSON) OR any payload whose first line begins with `#`.
+
+```bash
+# Stage payload via the Write tool to .plan/temp/payload.md
+# Write(.plan/temp/payload.md) with the multi-line content
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
+  --plan-id {plan_id} \
   --file request.md \
-  --content "# Request Title
-
-Task description with multiline content.
-
-## Section
-
-More content here..."
+  --content-file .plan/temp/payload.md
 ```
 
 **Parameters**:
@@ -70,7 +78,7 @@ More content here..."
 - `--content-file PATH`: Path to a UTF-8 file whose contents fill the write payload. Mutually exclusive with `--content`. Resolution order when multiple inputs are provided: `--content-file` wins over `--content`, which wins over `--stdin`. Combining `--content` and `--content-file` returns `mutually_exclusive`. A missing or non-regular path returns `content_file_not_found`.
 - `--stdin`: Read content from stdin instead of `--content`
 
-**Note**: The `--content` parameter supports multiline content. Do NOT use `--stdin` with shell heredocs or cat commands — the executor handles content passing; stdin is only for piped input from other scripts. For multi-line JSON or other large payloads, prefer `--content-file`: stage the payload via the `Write` tool to `.plan/temp/payload.json`, then run `manage-files write --plan-id {plan_id} --file work/foo.json --content-file .plan/temp/payload.json`.
+**Note**: For any multi-line content (markdown, TOON, JSON) OR any payload whose first line begins with `#`, the inline `--content` form is FORBIDDEN by the `## Enforcement` clause above — use `--content-file` (stage via `Write` to `.plan/temp/payload.{ext}` first, then pass `--content-file .plan/temp/payload.{ext}`) or `--stdin` for piped input from another script. Do NOT use `--stdin` with shell heredocs or cat commands — the executor handles content passing; stdin is only for piped input from other scripts.
 
 **Content requirement**: Content must be non-empty. Empty content produces an error (`missing_content`).
 
