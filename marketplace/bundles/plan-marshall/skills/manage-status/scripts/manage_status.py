@@ -35,7 +35,23 @@ from _cmd_lifecycle import (
     cmd_transition,
     verify_blocks_transition,
 )
-from _cmd_mark_step import cmd_mark_step_done
+from _cmd_mark_step import VALID_LOOP_BACK_TARGETS, cmd_mark_step_done
+
+
+def _loop_back_target_type(value: str) -> str:
+    """Custom argparse type for --loop-back-target.
+
+    Normalises the input (lowercases) and validates against VALID_LOOP_BACK_TARGETS.
+    Raises argparse.ArgumentTypeError with the canonical error message format that
+    matches the API-layer guard's `invalid_loop_back_target` error code.
+    """
+    normalised = value.lower()
+    if normalised not in VALID_LOOP_BACK_TARGETS:
+        raise argparse.ArgumentTypeError(
+            f'--loop-back-target must be one of '
+            f'{list(VALID_LOOP_BACK_TARGETS)}, got: {value}'
+        )
+    return normalised
 from _cmd_routing import cmd_get_routing_context, cmd_route, cmd_self_test
 from _status_query import (
     cmd_get_context,
@@ -236,7 +252,7 @@ def main() -> int:
     mark_step_parser.add_argument(
         '--loop-back-target',
         default=None,
-        choices=['5-execute', '6-finalize'],
+        type=_loop_back_target_type,
         help=(
             'Loop-back target phase. REQUIRED when --outcome=loop_back, must be one of '
             '5-execute (full phase rollback for fix-task-required dispositions: FIX with '

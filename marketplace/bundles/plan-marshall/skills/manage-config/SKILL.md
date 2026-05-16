@@ -138,7 +138,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 | Field | Phase | Type | Default | Semantics |
 |-------|-------|------|---------|-----------|
 | `finalize_without_asking` | `phase-5-execute` | bool | `false` | Forward direction. When `true`, after the `5-execute → 6-finalize` transition the orchestrator dispatches `phase-6-finalize` inline rather than halting and prompting the user. |
-| `loop_back_without_asking` | `phase-6-finalize` | bool | `true` | Reverse direction. When `true` (default), a phase-6-finalize step recording `outcome: loop_back` (FIX disposition on a `pr-comment` finding, `pr-comment-overflow` capture, or sonar-roundtrip FIX) re-dispatches the execute pipeline inline, transitions back to `6-finalize`, and re-enters the finalize loop — bounded by `phase-6-finalize.max_iterations` (default 3). When `false`, the dispatcher halts and returns control to the user. The two knobs are independent: full unattended execution requires both `true`. See `phase-6-finalize/SKILL.md` Step 3 § "Loop-back continuation hook" for the dispatch shape and the four-corner truth table. |
+| `loop_back_without_asking` | `phase-6-finalize` | bool | `false` | Reverse direction. When `true`, a phase-6-finalize step recording `outcome: loop_back` (FIX disposition on a `pr-comment` finding, `pr-comment-overflow` capture, or sonar-roundtrip FIX) re-dispatches the execute pipeline inline, transitions back to `6-finalize`, and re-enters the finalize loop — bounded by `phase-6-finalize.max_iterations` (default 3). When `false` (default), the dispatcher halts and returns control to the user. The two knobs are independent: full unattended execution requires both `true`. See `phase-6-finalize/SKILL.md` Step 3 § "Loop-back continuation hook" for the dispatch shape and the four-corner truth table. |
 
 Each is set with the standard phase-set verb:
 
@@ -295,7 +295,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     "phase-6-finalize": {
       "max_iterations": 3,
       "review_bot_buffer_seconds": 180,
-      "loop_back_without_asking": true,
+      "loop_back_without_asking": false,
       "steps": [
         "commit_push", "create_pr", "automated_review",
         "sonar_roundtrip", "lessons_capture",
