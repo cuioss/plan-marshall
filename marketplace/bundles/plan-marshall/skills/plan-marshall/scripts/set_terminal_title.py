@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
-"""Emit a terminal title (OSC) and/or statusline string that reflects the
-active plan-marshall plan and phase, the active slash command (if any),
-plus a live status icon.
+"""Emit a terminal title and/or statusline string that reflects the active
+plan-marshall plan and phase, the active slash command (if any), plus a live
+status icon.
+
+Hook subprocesses emit ``{"terminalSequence": "<OSC>"}`` JSON on stdout per
+the Claude Code 2.1.141+ hook-output contract; Claude Code forwards the
+sequence to the controlling terminal. The ``--statusline`` mode writes the
+plain title to stdout for Claude Code's statusLine command.
 
 Invoked from Claude Code hooks (SessionStart / UserPromptSubmit / Notification /
 PostToolUse(AskUserQuestion) / Stop) and from the Claude Code statusline
@@ -52,8 +57,68 @@ def _resolve_plan_id(cwd: str) -> str | None:
         return match.group('id')
     env_plan = os.environ.get('PLAN_ID')
     if env_plan:
-        return env_plan.strip() or None
-    return None
+        stripped = env_plan.strip()
+        if stripped:
+            return stripped
+    return _scan_active_plan(cwd)
+
+
+# Phase keys considered "in-progress" (i.e., the plan is still being worked on).
+# Plans whose `current_phase` is outside this set are skipped by the
+# active-plan scan so that completed/archived plans do not surface in the
+# main-checkout title resolution.
+_ACTIVE_PHASE_VALUES = {
+    '1-init',
+    '2-refine',
+    '3-outline',
+    '4-plan',
+    '5-execute',
+    '6-finalize',
+}
+
+
+def _scan_active_plan(cwd: str) -> str | None:
+    """Return the plan_id of the most-recently-modified active plan, or None.
+
+    Used as the third strategy in :func:`_resolve_plan_id` for main-checkout
+    sessions where neither the worktree-regex nor the ``PLAN_ID`` env var
+    identifies a plan. Scans ``<git-common-dir>/../.plan/local/plans/*/status.json``
+    and returns the plan_id of the in-progress plan with the most recent
+    ``status.json`` mtime. Returns ``None`` when no in-progress plan exists.
+    """
+    common_dir = _git_common_dir(cwd)
+    if common_dir is not None:
+        plans_root = common_dir.parent / '.plan' / 'local' / 'plans'
+    else:
+        walk_root = _walk_up_for_plan(Path(cwd))
+        if walk_root is None:
+            return None
+        plans_root = walk_root / '.plan' / 'local' / 'plans'
+    if not plans_root.is_dir():
+        return None
+    candidates: list[tuple[float, str]] = []
+    try:
+        plan_dirs = list(plans_root.iterdir())
+    except OSError:
+        return None
+    for plan_dir in plan_dirs:
+        if not plan_dir.is_dir():
+            continue
+        status_file = plan_dir / 'status.json'
+        if not status_file.is_file():
+            continue
+        phase, _ = _read_plan_meta(status_file)
+        if phase is None or phase not in _ACTIVE_PHASE_VALUES:
+            continue
+        try:
+            mtime = status_file.stat().st_mtime
+        except OSError:
+            continue
+        candidates.append((mtime, plan_dir.name))
+    if not candidates:
+        return None
+    candidates.sort(reverse=True)
+    return candidates[0][1]
 
 
 def _git_common_dir(cwd: str) -> Path | None:
@@ -291,23 +356,20 @@ def _read_hook_payload() -> dict[str, str | None]:
     }
 
 
-def _emit_osc(title: str) -> None:
-    """Write the OSC title sequence to the controlling terminal.
+def _emit_terminal_sequence(title: str) -> None:
+    """Emit the terminal-title escape sequence via the Claude Code 2.1.141+
+    hook output contract.
 
-    The hook subprocess runs under Claude Code's captured-stdio model where
-    ``sys.stdout`` is consumed by Claude Code's hook-output parser rather than
-    forwarded to the terminal. Writing OSC bytes to stdout in the fallback
-    branch surfaces as visible escape-sequence text (or is silently dropped),
-    so when ``/dev/tty`` is unavailable we exit cleanly without emitting
-    anything. The ``--statusline`` path uses ``sys.stdout`` directly via
-    ``main`` — that is the legitimate Claude Code statusLine contract and is
-    unaffected by this function.
+    Writes a JSON object ``{"terminalSequence": "<seq>"}`` to stdout. Claude
+    Code reads the hook subprocess's stdout, parses the JSON, and forwards the
+    ``terminalSequence`` value to the controlling terminal. This replaces the
+    pre-2.1.139 path that opened ``/dev/tty`` directly (no longer available to
+    hook subprocesses).
     """
-    escape = f'\033]0;{title}\007'
+    payload = {'terminalSequence': f'\033]0;{title}\007'}
     try:
-        with open('/dev/tty', 'w', encoding='utf-8') as tty:
-            tty.write(escape)
-            tty.flush()
+        json.dump(payload, sys.stdout)
+        sys.stdout.flush()
     except OSError:
         return
 
@@ -348,7 +410,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         '--statusline',
         action='store_true',
-        help='Print the title to stdout for Claude Code statusline (instead of OSC to /dev/tty)',
+        help=(
+            'Print the title to stdout for Claude Code statusline (instead '
+            'of the hook-output JSON terminalSequence emission)'
+        ),
     )
     parser.add_argument(
         '--plan-label',
@@ -386,7 +451,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.write(title)
         sys.stdout.flush()
     else:
-        _emit_osc(title)
+        _emit_terminal_sequence(title)
     return 0
 
 
