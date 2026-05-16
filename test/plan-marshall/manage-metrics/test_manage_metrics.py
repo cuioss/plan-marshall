@@ -39,8 +39,6 @@ def _ns_end_phase(
     plan_id: str,
     phase: str,
     total_tokens: int | None = None,
-    input_tokens: int | None = None,
-    output_tokens: int | None = None,
     duration_ms: int | None = None,
     tool_uses: int | None = None,
 ) -> Namespace:
@@ -49,8 +47,6 @@ def _ns_end_phase(
         plan_id=plan_id,
         phase=phase,
         total_tokens=total_tokens,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
         duration_ms=duration_ms,
         tool_uses=tool_uses,
         command='end-phase',
@@ -178,43 +174,6 @@ def test_end_phase_without_start():
         assert 'duration_seconds' not in result
 
 
-def test_end_phase_with_input_output_tokens():
-    """end-phase stores input and output token data separately."""
-    with PlanContext(plan_id='metrics-end-io-01') as ctx:
-        cmd_start_phase(_ns_start_phase('metrics-end-io-01', '1-init'))
-        result = cmd_end_phase(
-            _ns_end_phase(
-                'metrics-end-io-01',
-                '1-init',
-                total_tokens=30000,
-                input_tokens=25000,
-                output_tokens=5000,
-            )
-        )
-        assert result['status'] == 'success'
-        assert result['total_tokens'] == 30000
-
-        metrics_file = ctx.plan_dir / 'work' / 'metrics.toon'
-        content = metrics_file.read_text()
-        assert 'input_tokens: 25000' in content
-        assert 'output_tokens: 5000' in content
-        assert 'total_tokens: 30000' in content
-
-
-def test_end_phase_input_output_without_total():
-    """end-phase accepts input/output tokens without total_tokens."""
-    with PlanContext(plan_id='metrics-end-io-02') as ctx:
-        cmd_start_phase(_ns_start_phase('metrics-end-io-02', '2-refine'))
-        result = cmd_end_phase(_ns_end_phase('metrics-end-io-02', '2-refine', input_tokens=10000, output_tokens=2000))
-        assert result['status'] == 'success'
-        assert 'total_tokens' not in result
-
-        metrics_file = ctx.plan_dir / 'work' / 'metrics.toon'
-        content = metrics_file.read_text()
-        assert 'input_tokens: 10000' in content
-        assert 'output_tokens: 2000' in content
-
-
 def test_end_phase_no_optional_args():
     """end-phase works without optional token data."""
     with PlanContext(plan_id='metrics-end-04'):
@@ -254,35 +213,11 @@ def test_generate_creates_metrics_md():
         md_content = md_path.read_text()
         assert '# Metrics: metrics-gen-01' in md_content
         assert '## Phase Breakdown' in md_content
-        assert '| Phase | Duration | Tokens | Input | Output | Tool Uses |' in md_content
+        assert '| Phase | Duration | Tokens | Tool Uses |' in md_content
         assert '1-init' in md_content
         assert '2-refine' in md_content
         assert '25,000' in md_content
         assert '**Total**' in md_content
-
-
-def test_generate_shows_input_output_breakdown():
-    """generate includes input/output token columns when data is available."""
-    with PlanContext(plan_id='metrics-gen-io-01') as ctx:
-        cmd_start_phase(_ns_start_phase('metrics-gen-io-01', '1-init'))
-        cmd_end_phase(
-            _ns_end_phase(
-                'metrics-gen-io-01',
-                '1-init',
-                total_tokens=30000,
-                input_tokens=25000,
-                output_tokens=5000,
-            )
-        )
-        result = cmd_generate(_ns_generate('metrics-gen-io-01'))
-        assert result['status'] == 'success'
-        assert result['total_input_tokens'] == 25000
-        assert result['total_output_tokens'] == 5000
-
-        md_content = (ctx.plan_dir / 'metrics.md').read_text()
-        assert '| Phase | Duration | Tokens | Input | Output | Tool Uses |' in md_content
-        assert '25,000' in md_content
-        assert '5,000' in md_content
 
 
 def test_generate_no_data():
@@ -672,133 +607,6 @@ _TWO_PHASE_METRICS_TOON = """plan_id: {plan_id}
 """
 
 
-class TestEnrichMainContextAttribution:
-    """cmd_enrich persists per-phase main-context input/output by phase window."""
-
-    def _seed_two_phase_metrics(self, plan_dir: Path, plan_id: str) -> None:
-        metrics_path = plan_dir / 'work' / 'metrics.toon'
-        metrics_path.parent.mkdir(parents=True, exist_ok=True)
-        metrics_path.write_text(_TWO_PHASE_METRICS_TOON.format(plan_id=plan_id))
-
-    def test_per_phase_main_context_attribution(self, monkeypatch, tmp_path):
-        """Two messages in two phase windows produce per-phase input/output rows."""
-        with PlanContext(plan_id='enrich-main-01') as ctx:
-            self._seed_two_phase_metrics(ctx.plan_dir, 'enrich-main-01')
-
-            session_id = 'session-main-01'
-            projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
-            transcript_path = projects_root / f'{session_id}.jsonl'
-            entries = [
-                _main_context_entry('2026-03-27T09:15:00+00:00', input_tokens=1000, output_tokens=200),
-                _main_context_entry('2026-03-27T10:15:00+00:00', input_tokens=3000, output_tokens=500),
-            ]
-            _write_synthetic_transcript(transcript_path, entries)
-            monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
-
-            result = cmd_enrich(_ns_enrich('enrich-main-01', session_id))
-
-            assert result['status'] == 'success'
-            assert result['enriched'] is True
-            assert result['main_phases_attributed'] == 2
-            assert result['input_tokens'] == 4000  # session-level sum unchanged
-            assert result['output_tokens'] == 700
-
-            metrics_after = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
-            # 2-refine row carries the first message's tokens.
-            assert '[2-refine]' in metrics_after
-            assert 'input_tokens: 1000' in metrics_after
-            assert 'output_tokens: 200' in metrics_after
-            # 5-execute row carries the second message's tokens.
-            assert '[5-execute]' in metrics_after
-            assert 'input_tokens: 3000' in metrics_after
-            assert 'output_tokens: 500' in metrics_after
-
-    def test_rendered_breakdown_shows_non_dash_input_output(self, monkeypatch, tmp_path):
-        """After enrich, cmd_generate renders non-'-' Input / Output cells for attributed phases."""
-        from manage_metrics import cmd_generate  # type: ignore[import-not-found]
-
-        with PlanContext(plan_id='enrich-main-02') as ctx:
-            self._seed_two_phase_metrics(ctx.plan_dir, 'enrich-main-02')
-
-            session_id = 'session-main-02'
-            projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
-            transcript_path = projects_root / f'{session_id}.jsonl'
-            entries = [
-                _main_context_entry('2026-03-27T09:15:00+00:00', input_tokens=1000, output_tokens=200),
-                _main_context_entry('2026-03-27T10:15:00+00:00', input_tokens=3000, output_tokens=500),
-            ]
-            _write_synthetic_transcript(transcript_path, entries)
-            monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
-
-            cmd_enrich(_ns_enrich('enrich-main-02', session_id))
-
-            gen_result = cmd_generate(Namespace(plan_id='enrich-main-02', command='generate', func=cmd_generate))
-            assert gen_result['status'] == 'success'
-            md_content = (ctx.plan_dir / 'metrics.md').read_text(encoding='utf-8')
-
-            # 2-refine row renders 1,000 / 200 (formatted with comma grouping).
-            assert '| 2-refine ' in md_content
-            assert '1,000' in md_content
-            assert ' 200 ' in md_content or '| 200 |' in md_content
-            # 5-execute row renders 3,000 / 500.
-            assert '3,000' in md_content
-            assert '500' in md_content
-
-    def test_out_of_window_message_not_attributed(self, monkeypatch, tmp_path):
-        """A message timestamp outside all phase windows leaves per-phase rows untouched."""
-        with PlanContext(plan_id='enrich-main-03') as ctx:
-            self._seed_two_phase_metrics(ctx.plan_dir, 'enrich-main-03')
-
-            session_id = 'session-main-03'
-            projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
-            transcript_path = projects_root / f'{session_id}.jsonl'
-            entries = [
-                _main_context_entry('1999-01-01T00:00:00+00:00', input_tokens=9999, output_tokens=9999),
-            ]
-            _write_synthetic_transcript(transcript_path, entries)
-            monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
-
-            result = cmd_enrich(_ns_enrich('enrich-main-03', session_id))
-            assert result['status'] == 'success'
-            assert result['main_phases_attributed'] == 0
-            # Session totals still aggregate the message (sessions are not window-gated).
-            assert result['input_tokens'] == 9999
-
-            metrics_after = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
-            # No per-phase rows were touched — the seeded phases carry no input/output keys.
-            assert 'input_tokens: 9999' not in metrics_after
-            assert 'output_tokens: 9999' not in metrics_after
-
-    def test_session_totals_equal_sum_of_in_window_attributions(self, monkeypatch, tmp_path):
-        """Session-level result totals continue to equal the in-window per-phase sum (no out-of-window noise)."""
-        with PlanContext(plan_id='enrich-main-04') as ctx:
-            self._seed_two_phase_metrics(ctx.plan_dir, 'enrich-main-04')
-
-            session_id = 'session-main-04'
-            projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
-            transcript_path = projects_root / f'{session_id}.jsonl'
-            entries = [
-                _main_context_entry('2026-03-27T09:15:00+00:00', input_tokens=1000, output_tokens=200),
-                _main_context_entry('2026-03-27T10:15:00+00:00', input_tokens=3000, output_tokens=500),
-            ]
-            _write_synthetic_transcript(transcript_path, entries)
-            monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
-
-            result = cmd_enrich(_ns_enrich('enrich-main-04', session_id))
-
-            # Session-level totals on the result equal the sum of in-window per-phase attributions.
-            assert result['input_tokens'] == 1000 + 3000
-            assert result['output_tokens'] == 200 + 500
-
-            # Per-phase rows in metrics.toon carry the same per-window numbers (their sum equals
-            # the session-level totals because no out-of-window messages are present).
-            metrics_after = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
-            assert 'input_tokens: 1000' in metrics_after
-            assert 'input_tokens: 3000' in metrics_after
-            assert 'output_tokens: 200' in metrics_after
-            assert 'output_tokens: 500' in metrics_after
-
-
 def _seed_subagent_jsonl(
     sub_dir: Path,
     name: str,
@@ -847,8 +655,8 @@ class TestEnrichSubagentTranscriptWalk:
         monkeypatch.setattr(manage_session, '_resolve_cwd', lambda: fake_cwd)
         return fake_cwd
 
-    def test_two_subagent_files_attribute_per_phase(self, monkeypatch, tmp_path):
-        """One agent-*.jsonl per phase window → subagent_input/output_tokens land per phase."""
+    def test_two_subagent_files_counted(self, monkeypatch, tmp_path):
+        """Two agent-*.jsonl files under {slug}/{sid}/subagents/ are walked and counted."""
         with PlanContext(plan_id='enrich-sub-01') as ctx:
             self._seed_two_phase_metrics(ctx.plan_dir, 'enrich-sub-01')
 
@@ -856,8 +664,7 @@ class TestEnrichSubagentTranscriptWalk:
             slug = fake_cwd.replace('/', '-')
             session_id = 'session-sub-01'
 
-            # Parent transcript: at least one valid message to drive the walk;
-            # the main-context attribution itself doesn't matter for this test.
+            # Parent transcript: at least one valid message to drive the walk.
             parent_root = tmp_path / 'home' / '.claude' / 'projects' / slug
             parent_transcript = parent_root / f'{session_id}.jsonl'
             _write_synthetic_transcript(parent_transcript, [
@@ -886,16 +693,8 @@ class TestEnrichSubagentTranscriptWalk:
             assert result['status'] == 'success'
             assert result['subagent_transcripts_walked'] == 2
 
-            metrics_after = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
-            # 2-refine window (09:00-09:30) accumulates 500+700=1200 in / 50+70=120 out.
-            assert 'subagent_input_tokens: 1200' in metrics_after
-            assert 'subagent_output_tokens: 120' in metrics_after
-            # 5-execute window (10:00-10:30) accumulates 900 in / 90 out.
-            assert 'subagent_input_tokens: 900' in metrics_after
-            assert 'subagent_output_tokens: 90' in metrics_after
-
-    def test_main_context_only_fixture_writes_no_subagent_fields(self, monkeypatch, tmp_path):
-        """No subagent directory → no subagent_input_tokens / subagent_output_tokens in metrics.toon."""
+    def test_main_context_only_fixture_walks_no_subagents(self, monkeypatch, tmp_path):
+        """No subagent directory → subagent_transcripts_walked is zero."""
         with PlanContext(plan_id='enrich-sub-02') as ctx:
             self._seed_two_phase_metrics(ctx.plan_dir, 'enrich-sub-02')
 
@@ -914,49 +713,6 @@ class TestEnrichSubagentTranscriptWalk:
 
             assert result['status'] == 'success'
             assert result['subagent_transcripts_walked'] == 0
-
-            metrics_after = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
-            assert 'subagent_input_tokens' not in metrics_after
-            assert 'subagent_output_tokens' not in metrics_after
-
-    def test_breakdown_renders_unified_input_output(self, monkeypatch, tmp_path):
-        """Rendered Phase Breakdown shows main-context + subagent folded into Input/Output cells."""
-        from manage_metrics import cmd_generate  # type: ignore[import-not-found]
-
-        with PlanContext(plan_id='enrich-sub-03') as ctx:
-            self._seed_two_phase_metrics(ctx.plan_dir, 'enrich-sub-03')
-
-            fake_cwd = self._patch_session_paths(monkeypatch, tmp_path)
-            slug = fake_cwd.replace('/', '-')
-            session_id = 'session-sub-03'
-
-            parent_root = tmp_path / 'home' / '.claude' / 'projects' / slug
-            parent_transcript = parent_root / f'{session_id}.jsonl'
-            _write_synthetic_transcript(parent_transcript, [
-                _main_context_entry('2026-03-27T09:15:00+00:00', input_tokens=1000, output_tokens=200),
-                _main_context_entry('2026-03-27T10:15:00+00:00', input_tokens=3000, output_tokens=500),
-            ])
-            sub_dir = parent_root / session_id / 'subagents'
-            _seed_subagent_jsonl(
-                sub_dir,
-                'agent-001.jsonl',
-                [
-                    _subagent_msg('2026-03-27T09:20:00+00:00', 500, 50),
-                    _subagent_msg('2026-03-27T10:10:00+00:00', 200, 20),
-                ],
-            )
-
-            cmd_enrich(_ns_enrich('enrich-sub-03', session_id))
-            gen_result = cmd_generate(Namespace(plan_id='enrich-sub-03', command='generate', func=cmd_generate))
-            assert gen_result['status'] == 'success'
-            md_content = (ctx.plan_dir / 'metrics.md').read_text(encoding='utf-8')
-
-            # 2-refine: 1000 + 500 = 1500 input; 200 + 50 = 250 output.
-            assert '1,500' in md_content
-            assert '250' in md_content
-            # 5-execute: 3000 + 200 = 3200 input; 500 + 20 = 520 output.
-            assert '3,200' in md_content
-            assert '520' in md_content
 
     def test_subagent_transcripts_walked_matches_file_count(self, monkeypatch, tmp_path):
         """The subagent_transcripts_walked count matches the number of agent-*.jsonl files discovered."""

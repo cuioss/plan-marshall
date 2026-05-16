@@ -42,8 +42,6 @@ def _ns_end_phase(plan_id: str, phase: str, total_tokens: int | None = None) -> 
         plan_id=plan_id,
         phase=phase,
         total_tokens=total_tokens,
-        input_tokens=None,
-        output_tokens=None,
         duration_ms=None,
         tool_uses=None,
         command='end-phase',
@@ -210,7 +208,7 @@ class TestPhaseBreakdownRenderingRule:
             total_line = next(ln for ln in lines if '**Total**' in ln)
             # Every numeric cell on the Total row is '-' (no '0', no '0s').
             cells = [c.strip() for c in total_line.split('|') if c.strip()]
-            # cells = ['**Total**', '**-**', '**-**', '**-**', '**-**', '**-**']
+            # cells = ['**Total**', '**-**', '**-**', '**-**']  (Duration, Tokens, Tool Uses)
             assert cells[0] == '**Total**'
             for numeric_cell in cells[1:]:
                 assert numeric_cell == '**-**', f'expected dash, got {numeric_cell!r}'
@@ -241,16 +239,15 @@ class TestPhaseBreakdownRenderingRule:
             _seed_phases(
                 'render-rule-03',
                 {
-                    '1-init': {'total_tokens': 1000, 'input_tokens': 500, 'output_tokens': 50},
-                    '2-refine': {'total_tokens': 2000, 'input_tokens': 1500, 'output_tokens': 75},
+                    '1-init': {'total_tokens': 1000, 'tool_uses': 5},
+                    '2-refine': {'total_tokens': 2000, 'tool_uses': 7},
                 },
             )
             lines = _render_breakdown('render-rule-03')
             total_line = next(ln for ln in lines if '**Total**' in ln)
             # 2 contributors out of 2 breakdown rows → plain sum, no marker.
-            assert '3,000' in total_line
-            assert '2,000' in total_line  # input total
-            assert '125' in total_line  # output total
+            assert '3,000' in total_line  # tokens total
+            assert '12' in total_line  # tool_uses total
             assert '(n=' not in total_line, total_line
 
     def test_duration_agent_fallback_per_cell(self):
