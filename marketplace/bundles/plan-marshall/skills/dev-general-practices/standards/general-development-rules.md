@@ -146,7 +146,7 @@ The workflow body covers research scope and the synthesis contract; the prompt b
 - Build commands (`mvn`, `./mvnw`, `npm`, etc.)
 - Operations that truly require shell execution
 
-For complete patterns including file operations, content search, and Bash safety rules, see `tool-usage-patterns.md`.
+For complete patterns including file operations, content search, Bash safety rules, and env-var dispatch (the `VAR=val cmd` anti-pattern and safe alternatives), see `tool-usage-patterns.md`. The env-var dispatch rule is documented in [`tool-usage-patterns.md` § Env-var dispatch in Bash](tool-usage-patterns.md#env-var-dispatch-in-bash).
 
 ### Principle 5: Don't Proliferate Documents
 

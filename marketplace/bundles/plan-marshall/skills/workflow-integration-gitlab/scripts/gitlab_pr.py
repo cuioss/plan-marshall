@@ -31,7 +31,7 @@ import sys
 from typing import Any
 
 import gitlab_ops as _gitlab  # type: ignore[import-not-found]
-from ci_base import extract_routing_args, set_default_cwd  # type: ignore[import-not-found]
+from ci_base import extract_routing_args, register_subcommands, set_default_cwd  # type: ignore[import-not-found]
 from triage_helpers import (  # type: ignore[import-not-found]
     ErrorCode,
     compile_patterns_from_config,
@@ -40,6 +40,11 @@ from triage_helpers import (  # type: ignore[import-not-found]
     make_error,
     safe_main,
 )
+
+# Register this script's top-level subcommand tokens so that extract_routing_args
+# correctly identifies the subcommand boundary when gitlab_pr.py is the entry
+# point (i.e., does not consume a subcommand-level --plan-id as a router flag).
+register_subcommands({'fetch-comments', 'comments-stage'})
 
 # ============================================================================
 # PRE-FILTER CONFIGURATION (loaded from comment-patterns.json)

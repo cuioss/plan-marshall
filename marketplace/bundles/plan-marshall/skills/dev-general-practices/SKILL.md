@@ -46,15 +46,7 @@ Covers typed-ID flags (`--lesson-id`, `--plan-id`, `--task-number`, `--module`, 
 
 Each Bash tool call must contain exactly ONE command. Never combine with newlines, `&`, `&&`, `;`, or inline env-var assignment of the form `VAR=val cmd`.
 
-The `VAR=val cmd` shape (e.g., `MY_VAR=value python3 some_command.py ...`) is forbidden for two reasons: it combines the assignment and the command into a single shell argument, which trips the host platform's permission UI and produces a security prompt; and it obscures the env-var contract by hiding the variable inside the command line rather than declaring it explicitly.
-
-**Anti-pattern**: `MY_VAR=value python3 some_command.py ...`
-
-**Safe alternative (option A)** — Pass the value as a flag arg:
-
-`python3 some_command.py ... --my-var value`
-
-**Safe alternative (option B)** — Set the env var in the command's invocation header (e.g., a separate `env MY_VAR=…` line, NOT inline) before launching the bash command, or define the value as a Python module-level constant lookup inside the script itself.
+The `VAR=val cmd` shape trips the host platform's permission UI and obscures the env-var contract. Pass values as flag args instead, or set the env var in a separate invocation header outside the command line. See [standards/tool-usage-patterns.md § Env-var dispatch in Bash](standards/tool-usage-patterns.md#env-var-dispatch-in-bash) for the full anti-pattern walkthrough and both safe alternatives.
 
 ### Bash: No file operations
 
