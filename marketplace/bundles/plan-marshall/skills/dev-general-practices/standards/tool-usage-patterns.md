@@ -122,6 +122,18 @@ The foundational "Bash: One command per call" rule lives in [`dev-general-practi
 
 Each Bash call must contain exactly ONE command. Never combine with newlines, `&`, `&&`, or `;`. If independent, make parallel Bash calls. If sequential, make separate calls.
 
+### Env-var dispatch in Bash
+
+The `VAR=val cmd` shape (e.g., `MY_VAR=value python3 some_command.py ...`) is forbidden for two reasons: it combines the assignment and the command into a single shell argument, which trips the host platform's permission UI and produces a security prompt; and it obscures the env-var contract by hiding the variable inside the command line rather than declaring it explicitly.
+
+**Anti-pattern**: `MY_VAR=value python3 some_command.py ...`
+
+**Safe alternative (option A)** — Pass the value as a flag arg:
+
+`python3 some_command.py ... --my-var value`
+
+**Safe alternative (option B)** — Set the env var in the command's invocation header (e.g., a separate `env MY_VAR=…` line, NOT inline) before launching the bash command, or define the value as a Python module-level constant lookup inside the script itself.
+
 ### Chain shape, not chain content
 
 The rule applies to chain shape, not chain content. `git diff > /tmp/x.diff && wc -l /tmp/x.diff` is two commands chained with `&&` and is forbidden — even though the redirect target is `/tmp` and neither side contains markdown, heredocs, or `$(...)` substitution. The trivial appearance is the trap: short commands plus a benign redirect target still constitute a compound chain.

@@ -234,20 +234,29 @@ def test_ci_status_dual_flag_rejected(monkeypatch):
 
 def test_main_project_dir_sets_default_cwd(tmp_path, monkeypatch, capsys):
     """gitlab_ops.main() strips --project-dir from argv and installs it as the
-    process-global default cwd used by ci_base.run_cli."""
+    process-global default cwd used by ci_base.run_cli.
+
+    Uses ``pr view`` (no subcommand-level --plan-id) with a mocked glab response
+    so the test does not require a live GitLab token.
+
+    Fix A (secondary guard): ``--plan-id`` must appear before the subcommand
+    token, not after. ``--project-dir`` may still appear before the subcommand
+    as the explicit-path escape hatch.
+    """
     import sys
 
     import ci_base  # type: ignore[import-not-found]
 
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     monkeypatch.setattr(ci_base, '_DEFAULT_CWD', None, raising=False)
 
-    # Seed the plan dir so ci_base.prepare_body's require_plan_exists guard
-    # (lesson 2026-05-15-X) accepts the plan and lets prepare-body emit its
-    # success envelope.
-    plan_dir = tmp_path / 'plans' / 'test-plan'
-    plan_dir.mkdir(parents=True)
-    (plan_dir / 'status.json').write_text('{}', encoding='utf-8')
+    # Mock run_glab so pr view returns minimal success JSON without needing
+    # a live glab token or repository.
+    monkeypatch.setattr(
+        gitlab_ops,
+        'run_glab',
+        lambda args: (0, '{"iid": 1, "state": "opened", "title": "T", "pipeline": null}', ''),
+    )
+    monkeypatch.setattr(gitlab_ops, 'check_auth', lambda: (True, ''))
 
     worktree = str(tmp_path / 'worktree')
     monkeypatch.setattr(
@@ -258,9 +267,7 @@ def test_main_project_dir_sets_default_cwd(tmp_path, monkeypatch, capsys):
             '--project-dir',
             worktree,
             'pr',
-            'prepare-body',
-            '--plan-id',
-            'test-plan',
+            'view',
         ],
     )
 
@@ -268,23 +275,33 @@ def test_main_project_dir_sets_default_cwd(tmp_path, monkeypatch, capsys):
     assert rc == 0
     assert ci_base.get_default_cwd() == worktree
     assert '--project-dir' not in sys.argv
-    out = capsys.readouterr().out
-    assert 'status' in out and 'success' in out
+    capsys.readouterr()  # drain
 
 
 def test_main_project_dir_equals_form(tmp_path, monkeypatch, capsys):
-    """The --project-dir=PATH form is also honoured by gitlab_ops.main()."""
+    """The --project-dir=PATH form is also honoured by gitlab_ops.main().
+
+    Uses ``pr view`` (no subcommand-level --plan-id) with a mocked glab response
+    so the test does not require a live GitLab token.
+
+    Fix A (secondary guard): ``--plan-id`` must appear before the subcommand
+    token. ``--project-dir=PATH`` (equals form) before the subcommand is the
+    explicit-path escape hatch and must still work.
+    """
     import sys
 
     import ci_base  # type: ignore[import-not-found]
 
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     monkeypatch.setattr(ci_base, '_DEFAULT_CWD', None, raising=False)
 
-    # Seed status.json so the require_plan_exists guard accepts eq-plan.
-    plan_dir = tmp_path / 'plans' / 'eq-plan'
-    plan_dir.mkdir(parents=True)
-    (plan_dir / 'status.json').write_text('{}', encoding='utf-8')
+    # Mock run_glab so pr view returns minimal success JSON without needing
+    # a live glab token or repository.
+    monkeypatch.setattr(
+        gitlab_ops,
+        'run_glab',
+        lambda args: (0, '{"iid": 1, "state": "opened", "title": "T", "pipeline": null}', ''),
+    )
+    monkeypatch.setattr(gitlab_ops, 'check_auth', lambda: (True, ''))
 
     worktree = str(tmp_path / 'wt2')
     monkeypatch.setattr(
@@ -294,9 +311,7 @@ def test_main_project_dir_equals_form(tmp_path, monkeypatch, capsys):
             'gitlab_ops.py',
             f'--project-dir={worktree}',
             'pr',
-            'prepare-body',
-            '--plan-id',
-            'eq-plan',
+            'view',
         ],
     )
 

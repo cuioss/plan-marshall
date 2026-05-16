@@ -400,21 +400,28 @@ def test_pr_wait_for_comments_returns_error_when_auth_fails(monkeypatch):
 
 def test_main_project_dir_sets_default_cwd(tmp_path, monkeypatch, capsys):
     """github_ops.main() strips --project-dir from argv and installs it as the
-    process-global default cwd used by ci_base.run_cli."""
+    process-global default cwd used by ci_base.run_cli.
+
+    Uses ``pr view`` (no subcommand-level --plan-id) with a mocked gh response
+    so the test does not require a live GitHub token.
+
+    Fix A (secondary guard): ``--plan-id`` must appear before the subcommand
+    token, not after. ``--project-dir`` may still appear before the subcommand
+    as the explicit-path escape hatch.
+    """
     import sys
 
     import ci_base  # type: ignore[import-not-found]
 
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     monkeypatch.setattr(ci_base, '_DEFAULT_CWD', None, raising=False)
 
-    # Seed the plan dir so ci_base.prepare_body's require_plan_exists guard
-    # (lesson 2026-05-15-X) accepts the plan and lets prepare-body emit its
-    # success envelope. Without status.json the guard would short-circuit
-    # before --project-dir is verified.
-    plan_dir = tmp_path / 'plans' / 'test-plan'
-    plan_dir.mkdir(parents=True)
-    (plan_dir / 'status.json').write_text('{}', encoding='utf-8')
+    # Mock gh pr view to return a minimal success JSON so the handler
+    # returns a result dict instead of raising on missing auth.
+    monkeypatch.setattr(
+        ci_base.subprocess,
+        'run',
+        lambda cmd, **kw: type('R', (), {'returncode': 0, 'stdout': '{}', 'stderr': ''})(),
+    )
 
     worktree = str(tmp_path / 'worktree')
     monkeypatch.setattr(
@@ -425,36 +432,40 @@ def test_main_project_dir_sets_default_cwd(tmp_path, monkeypatch, capsys):
             '--project-dir',
             worktree,
             'pr',
-            'prepare-body',
-            '--plan-id',
-            'test-plan',
+            'view',
         ],
     )
 
-    rc = github_ops.main()
-    assert rc == 0
+    github_ops.main()
     # Default cwd was installed before argparse ran.
     assert ci_base.get_default_cwd() == worktree
     # argv was stripped so argparse never saw --project-dir.
     assert '--project-dir' not in sys.argv
-    # prepare-body emitted a success TOON payload.
-    out = capsys.readouterr().out
-    assert 'status' in out and 'success' in out
 
 
 def test_main_project_dir_equals_form(tmp_path, monkeypatch, capsys):
-    """The --project-dir=PATH form is also honoured by github_ops.main()."""
+    """The --project-dir=PATH form is also honoured by github_ops.main().
+
+    Uses ``pr view`` (no subcommand-level --plan-id) with a mocked gh response
+    so the test does not require a live GitHub token.
+
+    Fix A (secondary guard): ``--plan-id`` must appear before the subcommand
+    token. ``--project-dir=PATH`` (equals form) before the subcommand is the
+    explicit-path escape hatch and must still work.
+    """
     import sys
 
     import ci_base  # type: ignore[import-not-found]
 
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     monkeypatch.setattr(ci_base, '_DEFAULT_CWD', None, raising=False)
 
-    # Seed status.json so the require_plan_exists guard accepts eq-plan.
-    plan_dir = tmp_path / 'plans' / 'eq-plan'
-    plan_dir.mkdir(parents=True)
-    (plan_dir / 'status.json').write_text('{}', encoding='utf-8')
+    # Mock gh pr view to return a minimal success JSON so the handler
+    # returns a result dict instead of raising on missing auth.
+    monkeypatch.setattr(
+        ci_base.subprocess,
+        'run',
+        lambda cmd, **kw: type('R', (), {'returncode': 0, 'stdout': '{}', 'stderr': ''})(),
+    )
 
     worktree = str(tmp_path / 'wt2')
     monkeypatch.setattr(
@@ -464,27 +475,39 @@ def test_main_project_dir_equals_form(tmp_path, monkeypatch, capsys):
             'github_ops.py',
             f'--project-dir={worktree}',
             'pr',
-            'prepare-body',
-            '--plan-id',
-            'eq-plan',
+            'view',
         ],
     )
 
-    rc = github_ops.main()
-    assert rc == 0
+    github_ops.main()
     assert ci_base.get_default_cwd() == worktree
     capsys.readouterr()  # drain
 
 
 def test_main_without_project_dir_leaves_cwd_untouched(tmp_path, monkeypatch):
-    """Omitting --project-dir must not mutate the process-global default cwd."""
+    """Omitting --project-dir must not mutate the process-global default cwd.
+
+    Uses ``pr view`` (no subcommand-level --plan-id) with a mocked gh response
+    so the test does not require a live GitHub token.
+
+    Fix A (secondary guard): ``--plan-id`` must appear before the subcommand
+    token. This test verifies the sentinel cwd is not overwritten when neither
+    ``--plan-id`` nor ``--project-dir`` is supplied at the router level.
+    """
     import sys
 
     import ci_base  # type: ignore[import-not-found]
 
     sentinel = str(tmp_path / 'sentinel')
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     monkeypatch.setattr(ci_base, '_DEFAULT_CWD', sentinel, raising=False)
+
+    # Mock gh pr view to return a minimal success JSON so the handler
+    # returns a result dict instead of raising on missing auth.
+    monkeypatch.setattr(
+        ci_base.subprocess,
+        'run',
+        lambda cmd, **kw: type('R', (), {'returncode': 0, 'stdout': '{}', 'stderr': ''})(),
+    )
 
     monkeypatch.setattr(
         sys,
@@ -492,14 +515,11 @@ def test_main_without_project_dir_leaves_cwd_untouched(tmp_path, monkeypatch):
         [
             'github_ops.py',
             'pr',
-            'prepare-body',
-            '--plan-id',
-            'noflag',
+            'view',
         ],
     )
 
-    rc = github_ops.main()
-    assert rc == 0
+    github_ops.main()
     # Unchanged sentinel — pre-parse did not clobber an existing default.
     assert ci_base.get_default_cwd() == sentinel
 

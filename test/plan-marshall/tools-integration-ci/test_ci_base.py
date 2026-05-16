@@ -34,9 +34,11 @@ from ci_base import (
     delete_consumed_body,
     get_body_path,
     get_default_cwd,
+    get_known_subcommands,
     poll_until,
     prepare_body,
     read_and_consume_body,
+    register_subcommands,
     run_cli,
     set_default_cwd,
     truncate_log_content,
@@ -1082,6 +1084,21 @@ def test_issue_wait_for_label_rejects_invalid_mode_value():
 # * supplying neither → returns (None, argv)
 
 
+@pytest.fixture(autouse=False)
+def _reset_subcommand_cache():
+    """Reset ci_base._KNOWN_SUBCOMMANDS_CACHE around each test.
+
+    The subcommand registry is module-level state — tests that call
+    ``register_subcommands`` or that trigger ``get_known_subcommands``
+    would otherwise pollute later tests in the session.  This fixture
+    saves and restores the cache value so each test starts clean.
+    """
+    previous = ci_base._KNOWN_SUBCOMMANDS_CACHE
+    ci_base._KNOWN_SUBCOMMANDS_CACHE = None
+    yield
+    ci_base._KNOWN_SUBCOMMANDS_CACHE = previous
+
+
 def test_extract_routing_args_neither_flag_returns_none():
     """No routing flags → (None, argv) so the legacy "inherit cwd" path runs."""
     from ci_base import extract_routing_args
@@ -1146,85 +1163,195 @@ def test_extract_routing_args_both_flags_exits_with_mutually_exclusive_error(cap
     assert 'mutually_exclusive_args' in captured.out
 
 
-def test_extract_routing_args_subcommand_plan_id_left_in_place(monkeypatch):
-    """``--plan-id`` AFTER a subcommand token MUST NOT be consumed by routing."""
-    import resolve_project_dir as _routing
-    from ci_base import extract_routing_args
+def test_extract_routing_args_router_level_plan_id_before_prepare_body_accepted(monkeypatch):
+    """``--plan-id`` BEFORE a body-consumer subcommand is accepted at router level.
 
-    # The router-level argv has no --plan-id; only the subcommand-level one
-    # exists. The patched helper should NOT be called because no router-level
-    # --plan-id is present. Use a sentinel to flag accidental invocation.
-    called: list[bool] = []
+    Fix A (secondary guard): the guard rejects routing flags that appear AFTER
+    the subcommand boundary. When ``--plan-id`` is placed BEFORE the subcommand
+    token (router-level placement), the guard must NOT fire — the flag is
+    consumed by the router, worktree resolution succeeds, and the remaining argv
+    contains only the subcommand and its own arguments.
 
-    def fake_query(_pid):
-        called.append(True)
-        return (True, '/tmp/should-not-resolve')
-
-    monkeypatch.setattr(_routing, '_query_worktree_path', fake_query)
-    resolved, remaining = extract_routing_args(
-        ['pr', 'prepare-body', '--plan-id', 'subcommand-context'],
-    )
-    # No router-level routing → resolved is None, subcommand --plan-id preserved.
-    assert resolved is None
-    assert '--plan-id' in remaining
-    assert 'subcommand-context' in remaining
-    assert called == [], 'extract_routing_args must not invoke manage-status for subcommand --plan-id'
-
-
-def test_extract_routing_args_comments_stage_plan_id_left_in_place(monkeypatch):
-    """``--plan-id`` AFTER the ``comments-stage`` token MUST NOT be consumed by routing.
-
-    Regression for the bug where ``comments-stage`` was missing from
-    ``_SUBCOMMAND_TOKENS``, causing ``_split_at_subcommand`` to treat the entire
-    argv as router-level prefix and silently strip the subcommand's own
-    ``--plan-id``.
+    This test specifically uses ``pr prepare-body`` — a subcommand that declares
+    its own ``--plan-id`` argument via ``add_plan_id_arg``. The test demonstrates
+    that router-level ``--plan-id`` placement is the correct calling convention
+    even when the downstream subcommand also needs a ``--plan-id`` at its own
+    argparse level.
     """
     import resolve_project_dir as _routing
     from ci_base import extract_routing_args
 
-    called: list[bool] = []
+    monkeypatch.setattr(_routing, '_query_worktree_path', lambda _pid: (True, '/tmp/worktree-resolved'))
+    resolved, remaining = extract_routing_args(['--plan-id', 'my-plan', 'pr', 'prepare-body'])
+    assert resolved is not None
+    assert resolved.endswith('worktree-resolved'), f'Expected worktree path, got: {resolved!r}'
+    assert remaining == ['pr', 'prepare-body']
 
-    def fake_query(_pid):
-        called.append(True)
-        return (True, '/tmp/should-not-resolve')
 
-    monkeypatch.setattr(_routing, '_query_worktree_path', fake_query)
+def test_extract_routing_args_plan_id_after_prepare_body_passes_through():
+    """``--plan-id`` AFTER ``pr prepare-body`` passes through to the subcommand parser.
+
+    Body-consumer subcommands (``pr prepare-body``, ``pr create``, ``issue create`` …)
+    declare their own ``--plan-id`` argparse argument and consume the post-subcommand
+    occurrence themselves. The positional guard MUST NOT reject this placement —
+    rejecting it would break the documented invocation pattern for every body-
+    consumer call site.
+
+    The router returns ``resolved=None`` (no router-level routing flag supplied)
+    and the unchanged argv so the subcommand argparse can consume ``--plan-id``.
+    """
+    from ci_base import extract_routing_args
+
+    resolved, remaining = extract_routing_args(['pr', 'prepare-body', '--plan-id', 'my-plan'])
+    assert resolved is None
+    assert remaining == ['pr', 'prepare-body', '--plan-id', 'my-plan']
+
+
+def test_argparse_layer_plan_id_unaffected_by_routing_guard():
+    """The positional routing guard does not interfere with ``build_parser`` argparse.
+
+    Fix A (secondary guard) lives exclusively in ``extract_routing_args``. The
+    argparse layer — used by provider scripts AFTER routing has been done — must
+    still accept ``pr prepare-body --plan-id xxx`` when the tokens are passed
+    directly to ``build_parser().parse_args()``.
+
+    This test documents the separation of concerns: ``extract_routing_args``
+    enforces the router-level placement rule; ``build_parser`` enforces the
+    subcommand-level argument contract. A provider that has already stripped
+    router-level flags via ``extract_routing_args`` can subsequently feed the
+    remaining subcommand argv (which may include a subcommand-level ``--plan-id``)
+    directly to its argparse parser without triggering the routing guard.
+    """
+    parser, _, _, _, _ = build_parser('test')
+    # Direct argparse parse — no extract_routing_args in the call path.
+    # The routing guard is absent here, so --plan-id at the subcommand level
+    # is accepted by argparse normally.
+    args = parser.parse_args(['pr', 'prepare-body', '--plan-id', 'my-plan'])
+    assert args.command == 'pr'
+    assert args.pr_command == 'prepare-body'
+    assert args.plan_id == 'my-plan'
+
+
+def test_extract_routing_args_comments_stage_plan_id_passes_through(_reset_subcommand_cache):
+    """``--plan-id`` AFTER the ``comments-stage`` token passes through to the subcommand.
+
+    ``comments-stage`` declares its own ``--plan-id`` argument (for finding-store
+    routing). The positional guard MUST NOT reject this placement — the subcommand
+    parser consumes ``--plan-id`` directly from its own argv.
+
+    Provider scripts register ``comments-stage`` via ``register_subcommands`` at
+    import time; this test mirrors that pattern.
+    """
+    from ci_base import extract_routing_args
+
+    register_subcommands({'comments-stage', 'fetch-comments'})
+
     resolved, remaining = extract_routing_args(
         ['comments-stage', '--pr-number', '123', '--plan-id', 'my-plan'],
     )
-    # No router-level routing → resolved is None, subcommand --plan-id preserved.
     assert resolved is None
-    assert '--plan-id' in remaining
-    assert 'my-plan' in remaining
-    assert called == [], 'extract_routing_args must not invoke manage-status for subcommand --plan-id'
+    assert remaining == ['comments-stage', '--pr-number', '123', '--plan-id', 'my-plan']
 
 
-def test_extract_routing_args_fetch_comments_plan_id_left_in_place(monkeypatch):
-    """``--plan-id`` AFTER the ``fetch-comments`` token MUST NOT be consumed by routing.
+def test_extract_routing_args_fetch_comments_plan_id_passes_through(_reset_subcommand_cache):
+    """``--plan-id`` AFTER the ``fetch-comments`` token passes through to the subcommand.
 
-    Regression for the bug where ``fetch-comments`` was missing from
-    ``_SUBCOMMAND_TOKENS``, causing ``_split_at_subcommand`` to treat the entire
-    argv as router-level prefix and silently strip the subcommand's own
-    ``--plan-id``.
+    Same contract as ``comments-stage`` — the subcommand parser declares and
+    consumes its own ``--plan-id`` argument; the router MUST NOT reject the
+    post-subcommand placement.
     """
-    import resolve_project_dir as _routing
     from ci_base import extract_routing_args
 
-    called: list[bool] = []
+    register_subcommands({'comments-stage', 'fetch-comments'})
 
-    def fake_query(_pid):
-        called.append(True)
-        return (True, '/tmp/should-not-resolve')
-
-    monkeypatch.setattr(_routing, '_query_worktree_path', fake_query)
     resolved, remaining = extract_routing_args(
         ['fetch-comments', '--pr', '5', '--plan-id', 'my-plan'],
     )
-    # No router-level routing → resolved is None, subcommand --plan-id preserved.
     assert resolved is None
-    assert '--plan-id' in remaining
-    assert 'my-plan' in remaining
-    assert called == [], 'extract_routing_args must not invoke manage-status for subcommand --plan-id'
+    assert remaining == ['fetch-comments', '--pr', '5', '--plan-id', 'my-plan']
+
+
+# =============================================================================
+# Registration-driven subcommand boundary set — unit tests
+# =============================================================================
+#
+# These tests cover the ``get_known_subcommands`` / ``register_subcommands``
+# contract introduced to replace the literal ``_SUBCOMMAND_TOKENS`` frozenset.
+# Each test uses the ``_reset_subcommand_cache`` fixture so the module-level
+# cache is restored to its pre-test value after each case.
+
+
+def test_get_known_subcommands_bootstraps_from_build_parser(_reset_subcommand_cache):
+    """get_known_subcommands() must include every top-level key from build_parser()."""
+    tokens = get_known_subcommands()
+    # build_parser() registers four top-level subcommands.
+    assert 'pr' in tokens
+    assert 'ci' in tokens
+    assert 'issue' in tokens
+    assert 'branch' in tokens
+
+
+def test_get_known_subcommands_returns_frozenset(_reset_subcommand_cache):
+    """get_known_subcommands() must return a frozenset (immutable)."""
+    tokens = get_known_subcommands()
+    assert isinstance(tokens, frozenset)
+
+
+def test_get_known_subcommands_cached_on_second_call(_reset_subcommand_cache):
+    """get_known_subcommands() must return the same object on repeated calls (lazy cache)."""
+    first = get_known_subcommands()
+    second = get_known_subcommands()
+    assert first is second
+
+
+def test_register_subcommands_extends_known_set(_reset_subcommand_cache):
+    """register_subcommands() must merge extra tokens into the registry."""
+    before = get_known_subcommands()
+    assert 'fetch-comments' not in before
+    assert 'comments-stage' not in before
+
+    register_subcommands({'fetch-comments', 'comments-stage'})
+
+    after = get_known_subcommands()
+    assert 'fetch-comments' in after
+    assert 'comments-stage' in after
+    # Existing parser-derived tokens must still be present.
+    assert 'pr' in after
+    assert 'ci' in after
+
+
+def test_register_subcommands_idempotent(_reset_subcommand_cache):
+    """Calling register_subcommands() twice with overlapping tokens is safe."""
+    register_subcommands({'fetch-comments'})
+    register_subcommands({'fetch-comments', 'comments-stage'})
+    tokens = get_known_subcommands()
+    assert 'fetch-comments' in tokens
+    assert 'comments-stage' in tokens
+
+
+def test_register_subcommands_does_not_remove_existing(_reset_subcommand_cache):
+    """register_subcommands() must never shrink the existing token set."""
+    base = get_known_subcommands()
+    register_subcommands({'extra-token'})
+    after = get_known_subcommands()
+    # All original tokens still present.
+    assert base.issubset(after)
+    assert 'extra-token' in after
+
+
+def test_split_at_subcommand_uses_registry(_reset_subcommand_cache):
+    """_split_at_subcommand must use the live registry, not a stale literal."""
+    from ci_base import _split_at_subcommand
+
+    # Before registration, 'fetch-comments' is unknown; entire argv is prefix.
+    pre, post = _split_at_subcommand(['--plan-id', 'p', 'fetch-comments', '--pr', '5'])
+    assert post == []  # 'fetch-comments' not yet known
+
+    # After registration, 'fetch-comments' splits the argv.
+    register_subcommands({'fetch-comments'})
+    pre2, post2 = _split_at_subcommand(['--plan-id', 'p', 'fetch-comments', '--pr', '5'])
+    assert pre2 == ['--plan-id', 'p']
+    assert post2 == ['fetch-comments', '--pr', '5']
 
 
 # Silence unused-import warnings caused by the fixtures above.

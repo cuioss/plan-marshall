@@ -316,9 +316,62 @@ def extract_project_dir(argv: list[str]) -> tuple[str | None, list[str]]:
     return project_dir, out
 
 
-_SUBCOMMAND_TOKENS: frozenset[str] = frozenset(
-    {'pr', 'ci', 'issue', 'branch', 'fetch-comments', 'comments-stage'}
-)
+# ---------------------------------------------------------------------------
+# Subcommand token registry (registration-driven boundary set)
+# ---------------------------------------------------------------------------
+# The token set that _split_at_subcommand uses to locate the subcommand
+# boundary in argv is built lazily from build_parser() and extended by
+# provider scripts that expose top-level subcommand tokens not registered in
+# build_parser (e.g. 'fetch-comments', 'comments-stage' from github_pr.py /
+# gitlab_pr.py). Callers must invoke register_subcommands() before calling
+# extract_routing_args() for custom tokens to take effect.
+
+_KNOWN_SUBCOMMANDS_CACHE: frozenset[str] | None = None
+
+
+def get_known_subcommands() -> frozenset[str]:
+    """Return the canonical set of known CI router subcommand tokens.
+
+    Bootstraps lazily from ``build_parser()``'s top-level subparsers.choices
+    on first call so the set is always derived from the registered argparse
+    surface rather than a manually maintained literal.  Extra tokens added by
+    provider scripts via :func:`register_subcommands` are merged in.
+
+    Thread safety: not guaranteed — intended for single-threaded CLI use.
+    """
+    global _KNOWN_SUBCOMMANDS_CACHE
+    if _KNOWN_SUBCOMMANDS_CACHE is None:
+        # Bootstrap from the shared build_parser() defined later in this module.
+        # No import cycle: build_parser is a plain function in the same module.
+        parser, _, _, _, _ = build_parser('_subcommand_discovery')
+        choices: set[str] = set()
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                choices.update(action.choices.keys())
+                break
+        _KNOWN_SUBCOMMANDS_CACHE = frozenset(choices)
+    return _KNOWN_SUBCOMMANDS_CACHE
+
+
+def register_subcommands(tokens: frozenset[str] | set[str]) -> None:
+    """Extend the known subcommand registry with additional tokens.
+
+    Called by provider scripts that expose top-level subcommand tokens not
+    registered in ``build_parser`` (for example ``'fetch-comments'`` and
+    ``'comments-stage'`` from ``github_pr.py`` / ``gitlab_pr.py``).
+
+    Safe to call multiple times; each call merges *tokens* into the existing
+    registry.  Must be called **before** :func:`extract_routing_args` for the
+    new tokens to influence subcommand-boundary detection.
+
+    Example (at module level in a provider script)::
+
+        from ci_base import register_subcommands
+        register_subcommands({'fetch-comments', 'comments-stage'})
+    """
+    global _KNOWN_SUBCOMMANDS_CACHE
+    current = get_known_subcommands()
+    _KNOWN_SUBCOMMANDS_CACHE = current | frozenset(tokens)
 
 
 def extract_routing_args(argv: list[str]) -> tuple[str | None, list[str]]:
@@ -332,12 +385,15 @@ def extract_routing_args(argv: list[str]) -> tuple[str | None, list[str]]:
     ``extract_routing_args`` call and gain ``--plan-id`` support.
 
     Routing-vs-subcommand disambiguation: ``--plan-id`` at the **router
-    level** (i.e., before the first known CI subcommand token: ``pr``,
-    ``ci``, ``issue``, ``branch``) is consumed for worktree resolution.
-    ``--plan-id`` that appears AFTER a subcommand token is left in
-    place — the downstream argparse subcommand consumes it for its own
-    purpose (e.g., ``pr prepare-body --plan-id`` for plan-context
-    interpolation, never for routing).
+    level** (i.e., before the first token in the known subcommand registry;
+    see :func:`get_known_subcommands`) is consumed for worktree resolution.
+    ``--plan-id`` or ``--project-dir`` appearing AFTER a subcommand token is
+    NOT consumed for routing — it passes through in ``remaining_argv`` so
+    that body-consumer subcommands (e.g. ``pr prepare-body``, ``pr create``,
+    ``issue create``) can declare and consume their own ``--plan-id``
+    argument via their argparse subparser. The router returns
+    ``resolved=None`` in this case (no router-level routing flag was found
+    before the subcommand boundary).
 
     Returns:
         ``(resolved_project_dir, remaining_argv)``. ``resolved_project_dir``
@@ -356,7 +412,12 @@ def extract_routing_args(argv: list[str]) -> tuple[str | None, list[str]]:
 
     # Slice the argv at the first known subcommand token. Only the prefix
     # is searched for ``--plan-id`` (router-level); the suffix (subcommand
-    # arguments) is preserved verbatim so its own ``--plan-id`` survives.
+    # and its arguments) is the post-subcommand portion. ``--project-dir``
+    # is already stripped from any position by ``extract_project_dir``
+    # above. Subcommand-level ``--plan-id`` (declared by body-consumer
+    # subparsers such as ``pr prepare-body``) survives in ``post`` and is
+    # consumed by the subcommand parser downstream — no guard is needed
+    # at the routing layer.
     pre, post = _split_at_subcommand(after_project)
 
     # Lazy import — keeps the dependency optional so older test fixtures
@@ -406,14 +467,15 @@ def extract_routing_args(argv: list[str]) -> tuple[str | None, list[str]]:
 def _split_at_subcommand(argv: list[str]) -> tuple[list[str], list[str]]:
     """Return ``(pre_subcommand, post_subcommand_inclusive)``.
 
-    Walks ``argv`` until the first token in ``_SUBCOMMAND_TOKENS`` is
-    encountered. Returns the prefix (router-level args) and the
-    inclusive suffix (subcommand + its own args). When no subcommand is
-    found, the entire argv is returned as the prefix and the suffix is
-    empty — matching the historical "no subcommand" behaviour.
+    Walks ``argv`` until the first token in the known subcommand registry
+    (see :func:`get_known_subcommands`) is encountered. Returns the prefix
+    (router-level args) and the inclusive suffix (subcommand + its own args).
+    When no subcommand is found, the entire argv is returned as the prefix
+    and the suffix is empty — matching the historical "no subcommand" behaviour.
     """
+    tokens = get_known_subcommands()
     for index, token in enumerate(argv):
-        if token in _SUBCOMMAND_TOKENS:
+        if token in tokens:
             return argv[:index], argv[index:]
     return list(argv), []
 
