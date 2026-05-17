@@ -62,18 +62,6 @@ def _resolve_plan_id(cwd: str) -> str | None:
     match = _WORKTREE_RE.match(cwd)
     if match and os.path.isdir(cwd):
         return match.group('id')
-    env_plan = os.environ.get('PLAN_ID')
-    if env_plan:
-        stripped = env_plan.strip()
-        if not stripped:
-            return None
-        # Path-traversal guard: the value is used directly as a directory
-        # component in .plan/local/plans/{plan_id}/status.json, so reject any
-        # value containing path separators or traversal sequences. Mirrors the
-        # session_id guard in `_command_state_path`.
-        if '/' in stripped or '\\' in stripped or stripped in ('..', '.'):
-            return None
-        return stripped
     return None
 
 
