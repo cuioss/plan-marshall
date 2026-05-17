@@ -1,0 +1,71 @@
+name: Claude Distribute
+
+# Publish per-target marketplace roots to orphan distribution branches and,
+# on `v*` source tags, immutable dist tags. The job is parameterized via
+# strategy.matrix on target identity so additional targets (e.g. opencode)
+# plug in as a one-line append.
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish ${{ matrix.target_name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target_name: claude
+            branch_name: dist-claude
+            dist_tag_prefix: claude
+            publish_dir: target/claude
+            generator_target_flag: claude
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python 3
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.x'
+
+      - name: Regenerate target directory
+        run: |
+          python3 marketplace/targets/generate.py \
+            --target ${{ matrix.generator_target_flag }} \
+            --output ${{ matrix.publish_dir }}
+
+      - name: Publish to orphan branch (cui-release-bot identity)
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
+        with:
+          personal_token: ${{ secrets.CUI_RELEASE_BOT_TOKEN }}
+          publish_branch: ${{ matrix.branch_name }}
+          publish_dir: ./${{ matrix.publish_dir }}
+          force_orphan: true
+          user_name: cui-release-bot
+          user_email: cui-release-bot@cuioss.de
+          commit_message: "chore(dist): publish ${{ matrix.publish_dir }} from ${{ github.sha }}"
+
+      - name: Create and push dist tag (release flow only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          CUI_RELEASE_BOT_TOKEN: ${{ secrets.CUI_RELEASE_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          dist_tag="${{ matrix.dist_tag_prefix }}/${{ github.ref_name }}"
+          git config user.name 'cui-release-bot'
+          git config user.email 'cui-release-bot@cuioss.de'
+          git remote set-url origin \
+            "https://x-access-token:${CUI_RELEASE_BOT_TOKEN}@github.com/${{ github.repository }}.git"
+          git fetch origin ${{ matrix.branch_name }}
+          git tag -a "${dist_tag}" \
+            -m "Distribution for ${{ matrix.target_name }} ${{ github.ref_name }}" \
+            origin/${{ matrix.branch_name }}
+          git push origin "${dist_tag}"
