@@ -19,10 +19,10 @@ The table enumerates every rule emitted by the in-tree analyzers. The `Emitter` 
 
 | Rule ID | Class | Emitter | Source |
 |---------|-------|---------|--------|
-| `agent-task-tool-prohibited` | safety | `_doctor_analysis.py` | Plugin architecture contract — agents cannot declare `Task` (unavailable at runtime). See `pm-plugin-development:plugin-architecture` references/agent-design.md. |
+| `agent-task-tool-prohibited` | safety | `_doctor_analysis.py` | Project convention — Anthropic schema retains `Task` as an alias for `Agent` (https://code.claude.com/docs/en/sub-agents#restrict-which-subagents-can-be-spawned, verified 2026-05-17) so this is not a schema violation; plan-marshall forbids `Task` in agent `tools:` because spawning generic subagents from inside a phase bypasses workflow enforcement (lesson `2026-04-24-12-001`). See `pm-plugin-development:plugin-architecture` references/agent-design.md. |
 | `agent-maven-restricted` | safety | `_doctor_analysis.py` | Build-system isolation contract — only `maven-builder` may execute Maven commands. See `pm-plugin-development:plugin-architecture` references/agent-design.md. |
 | `agent-lessons-via-skill` | structural | `_doctor_analysis.py` | Plugin architecture contract — agents record lessons via `manage-lessons`, not via self-invoked commands. See `pm-plugin-development:plugin-architecture` references/agent-design.md. |
-| `agent-skill-tool-visibility` | structural | `_doctor_analysis.py` | Task-dispatch visibility contract — an agent declaring explicit `tools:` must include `Skill` or it is invisible to the `Task` dispatcher. See `pm-plugin-development:plugin-architecture` references/agent-design.md. |
+| `agent-skill-tool-visibility` | structural | `_doctor_analysis.py` | Project convention — Anthropic schema does not require `Skill` in `tools:` (https://code.claude.com/docs/en/sub-agents#supported-frontmatter-fields, verified 2026-05-17); plan-marshall requires it because agents that cannot invoke skills cannot participate in workflow dispatch chains. See `pm-plugin-development:plugin-architecture` references/agent-design.md. |
 | `agent-glob-resolver-workaround` | safety | `_doctor_analysis.py` | Lesson `2026-04-27-18-005` — `Glob` in agent `tools:` invites hand-rolled discovery that should be delegated to a canonical resolver script. |
 
 ### Workflow / prose rules
@@ -37,14 +37,14 @@ The table enumerates every rule emitted by the in-tree analyzers. The `Emitter` 
 
 | Rule ID | Class | Emitter | Source |
 |---------|-------|---------|--------|
-| `missing-frontmatter` | structural | `_doctor_analysis.py` | Plugin schema contract — every component markdown must carry a YAML frontmatter block. |
-| `invalid-yaml` | structural | `_doctor_analysis.py` | Plugin schema contract — frontmatter must parse as valid YAML. |
-| `missing-name-field` | structural | `_doctor_analysis.py` | Plugin schema contract — `name` is a required frontmatter field. |
-| `missing-description-field` | structural | `_doctor_analysis.py` | Plugin schema contract — `description` is a required frontmatter field. |
-| `missing-tools-field` | structural | `_doctor_analysis.py` | Plugin schema contract — agents/commands must declare `tools` explicitly. |
-| `misspelled-user-invocable` | style | `_doctor_analysis.py` | Plugin schema contract — `user-invokable` is the most common spelling mistake for `user-invocable`. |
-| `missing-user-invocable` | structural | `_doctor_analysis.py` | Plugin schema contract — `user-invocable` is a required frontmatter field on skills. |
-| `skill-invokable-mismatch` | structural | `_doctor_analysis.py` | Plugin schema contract — the registered `user-invocable` flag must agree with the skill's `plugin.json` registration. |
+| `missing-frontmatter` | structural | `_doctor_analysis.py` | Anthropic skills schema — "Every skill needs a `SKILL.md` file with two parts: YAML frontmatter between `---` markers ..." See https://code.claude.com/docs/en/skills#frontmatter-reference (verified 2026-05-17). |
+| `invalid-yaml` | structural | `_doctor_analysis.py` | Anthropic skills schema — frontmatter is YAML between `---` markers; parsing must succeed. See https://code.claude.com/docs/en/skills#frontmatter-reference (verified 2026-05-17). |
+| `missing-name-field` | structural | `_doctor_analysis.py` | Project convention — Anthropic schema treats `name` as optional ("If omitted, uses the directory name", see https://code.claude.com/docs/en/skills#frontmatter-reference, verified 2026-05-17), but plan-marshall requires explicit `name` for executor-notation stability. See `pm-plugin-development:plugin-architecture` references/skill-design.md. |
+| `missing-description-field` | structural | `_doctor_analysis.py` | Project convention — Anthropic schema treats `description` as recommended (see https://code.claude.com/docs/en/skills#frontmatter-reference, verified 2026-05-17); plan-marshall promotes it to required so skill catalogs render deterministically. See `pm-plugin-development:plugin-architecture` references/skill-design.md. |
+| `missing-tools-field` | structural | `_doctor_analysis.py` | Project convention — Anthropic schema treats `tools` as optional ("Inherits all tools if omitted", see https://code.claude.com/docs/en/sub-agents#supported-frontmatter-fields, verified 2026-05-17); plan-marshall requires explicit tool declarations on agents/commands for least-privilege auditability. See `pm-plugin-development:plugin-architecture` references/agent-design.md. |
+| `misspelled-user-invocable` | style | `_doctor_analysis.py` | Anthropic skills schema — canonical spelling is `user-invocable` with hyphen. See https://code.claude.com/docs/en/skills#frontmatter-reference (verified 2026-05-17). |
+| `missing-user-invocable` | structural | `_doctor_analysis.py` | Project convention — Anthropic schema makes `user-invocable` optional (defaults to `true`, see https://code.claude.com/docs/en/skills#frontmatter-reference, verified 2026-05-17); plan-marshall requires explicit declaration so the value is auditable per component. See `pm-plugin-development:plugin-architecture` references/skill-design.md. |
+| `skill-invokable-mismatch` | structural | `_doctor_analysis.py` | Project convention — internal consistency invariant between SKILL.md frontmatter and `plugin.json` registration. No Anthropic schema rule. See `pm-plugin-development:plugin-architecture` references/skill-design.md. |
 | `skill-naming-noun-suffix` | style | `_doctor_analysis.py` | Plugin architecture contract — skill directory names must not end with a reserved noun suffix (`-executor`, `-manager`, etc.) because those suffixes are reserved for spawnable marketplace agents. See `pm-plugin-development:plugin-architecture` references/skill-design.md § "Skill Naming Convention". |
 | `skill-resolver-gap` | content | `_doctor_analysis.py` | Lesson `2026-04-27-18-005` — LLM-Glob discovery prose without an adjacent `execute-script.py` invocation re-introduces the resolver-gap anti-pattern. |
 
@@ -55,7 +55,7 @@ Sub-documents are `standards/*.md`, `references/*.md`, `workflow/*.md`, `recipes
 | Rule ID | Class | Emitter | Source |
 |---------|-------|---------|--------|
 | `subdoc-bloat` | content | `_doctor_analysis.py` | Plugin architecture contract — sub-documents have BLOATED / CRITICAL line-count thresholds; suppressible via `quality.file-bloat: ack-<slug>` frontmatter. See `file-bloat-ack` entry below. |
-| `subdoc-forbidden-metadata` | structural | `_doctor_analysis.py` | Plugin schema contract — sub-documents must not declare top-level component metadata (`name`, `user-invocable`, etc.) that belongs in `SKILL.md`. |
+| `subdoc-forbidden-metadata` | structural | `_doctor_analysis.py` | Project convention — Anthropic schema is silent on sub-document frontmatter; plan-marshall forbids component metadata in sub-documents because the marketplace inventory scanner indexes any file with `name:` as a component and creates phantom entries. See `pm-plugin-development:plugin-architecture` references/skill-design.md. |
 | `subdoc-hardcoded-script-path` | structural | `_doctor_analysis.py` | Executor-notation contract — sub-documents must reference scripts via `{bundle}:{skill}:{script}` notation, never via hard-coded relative paths. |
 | `subdoc-checklist-pattern` | content | `_doctor_analysis.py` | Lesson — checkbox patterns (`- [ ]`, `- [x]`) are human UI elements with zero value for LLMs. Exception: `templates/` files (rendered by GitHub). |
 | `subdoc-display-detail-violation` | content | `_doctor_analysis.py` | Agent-return-shape contract — `display_detail` ≤80 chars, ASCII-only, no trailing period. Source: `plan-marshall:ref-workflow-architecture/standards/agents.md`. |
@@ -182,3 +182,4 @@ The seven-artifact contract is enforced by the regression test introduced in pla
 | Date | Plan | Rules removed | Rationale |
 |------|------|---------------|-----------|
 | 2026-05-16 | `harden-phase3-outline-plugin-doctor-audit` | `unsupported-skill-tools-field` | Fabricated rule — no lesson, no architectural source, no ecosystem support. Skills MAY declare `allowed-tools` per the Claude Code skills schema. |
+| 2026-05-17 | post-merge citation pass | (none retired) | Followed-up the Class A claim audit: WebFetched https://code.claude.com/docs/en/skills and https://code.claude.com/docs/en/sub-agents, confirmed 3 rules as truly Anthropic-schema-derived (`missing-frontmatter`, `invalid-yaml`, `misspelled-user-invocable`), and reclassified 8 rules from "Plugin schema contract" wording to "Project convention" with internal architectural-doc citations. Also struck the orphan `skill-unused-tools-declared` reference from `rule-catalog.md` and `SKILL.md` (no emitter exists). |
