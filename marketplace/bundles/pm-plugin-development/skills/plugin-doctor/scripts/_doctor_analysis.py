@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Analysis functions for doctor-marketplace."""
+"""Analysis functions for doctor-marketplace.
+
+Every rule emitted from this module must have a corresponding row in
+``references/rule-provenance.md``. New rule emitters require a paired
+provenance entry (rule ID, class, source citation) before merge. See the
+provenance contract in ``references/rule-provenance.md`` § "Provenance
+contract for new rules" and the audit history at the bottom of that file.
+"""
 
 import ast
 import re
@@ -330,18 +337,6 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
         # Skill-specific field checks
         if component_type == 'skill':
             user_inv = required.get('user_invocable', {})
-            # Check for unsupported allowed-tools field
-            tools_info = required.get('tools', {})
-            if tools_info.get('present'):
-                issues.append(
-                    {
-                        'type': 'unsupported-skill-tools-field',
-                        'file': file_path,
-                        'severity': 'warning',
-                        'fixable': True,
-                        'description': f'Skill declares unsupported `{tools_info.get("field_type")}` field (not in plugin schema)',
-                    }
-                )
             # Check for misspelled user-invokable (should be user-invocable)
             if user_inv.get('misspelled') and not user_inv.get('present'):
                 issues.append(

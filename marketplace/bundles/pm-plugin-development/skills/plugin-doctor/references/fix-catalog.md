@@ -2,6 +2,8 @@
 
 Comprehensive catalog of all fixable issue types, their categorization, and fix strategies.
 
+> **Provenance**: Every fix below is keyed on a rule emitted by an analyzer module. The source / classification / lesson citation for each rule lives in [rule-provenance.md](rule-provenance.md). New fixes must have a matching provenance entry.
+
 ## Fixable Issue Types Overview
 
 This catalog documents all issues that can be fixed by the plugin-doctor skill, organized by category.

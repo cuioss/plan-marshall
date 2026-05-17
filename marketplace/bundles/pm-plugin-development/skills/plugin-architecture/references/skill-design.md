@@ -512,8 +512,17 @@ allowed-tools: Read, Bash, Glob, Grep, Skill
 [Detailed workflow steps]
 ```
 
+## Plugin-Doctor Rule Provenance Contract
+
+When authoring a new `plugin-doctor` validation rule, every rule MUST be paired with a provenance entry before merge. The complete contract — required artifacts, fix-catalog requirements, audit gate — lives in `pm-plugin-development:plugin-doctor` `references/rule-catalog.md` § "Provenance Contract for New Rules" and the source-of-truth registry at `references/rule-provenance.md`.
+
+**Summary**: A new rule needs (1) an analyzer emitter, (2) a row in `rule-provenance.md` with class + Source citation, (3) a row in `rule-catalog.md` describing intent / detection / fix, and (4) a test in `test/pm-plugin-development/plugin-doctor/`. Fixable rules additionally need entries in `_doctor_shared.py::FIXABLE_ISSUE_TYPES`, `_cmd_apply.py::FIX_HANDLERS`, `_cmd_verify.py::cmd_verify`, and `fix-catalog.md`. Rules without a Source citation are inadmissible — the `test_rule_provenance_table.py` regression suite fails the build until provenance is added.
+
+**Rationale**: Rules emitted by plugin-doctor become hard constraints on every marketplace contributor. Without an explicit source citation, a rule's purpose becomes archaeology: nobody can tell why the rule fires or whether it still applies. The provenance table preserves the institutional knowledge that justifies each rule. See the audit history at the bottom of `rule-provenance.md` for the fabricated `unsupported-skill-tools-field` precedent that motivated this contract.
+
 ## Related References
 
 - Core Principles: references/core-principles.md
 - Skill Patterns: references/skill-patterns.md
 - Command Design: references/command-design.md
+- Plugin-Doctor Rule Provenance: `pm-plugin-development:plugin-doctor` `references/rule-provenance.md`

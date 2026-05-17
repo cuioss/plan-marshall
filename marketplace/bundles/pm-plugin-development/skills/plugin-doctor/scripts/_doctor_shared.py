@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Shared utilities for doctor-marketplace subcommands."""
+"""Shared utilities for doctor-marketplace subcommands.
+
+The ``FIXABLE_ISSUE_TYPES`` / ``SAFE_FIX_TYPES`` / ``RISKY_FIX_TYPES`` sets
+declared below are the registry of rule IDs that have an apply / verify
+handler pair. Every entry must have a matching row in
+``references/rule-provenance.md`` *and* in ``references/fix-catalog.md``.
+See the seven-artifact contract in ``references/rule-provenance.md`` §
+"Provenance contract for new rules".
+"""
 
 import json
 import os
@@ -297,7 +305,6 @@ FIXABLE_ISSUE_TYPES = {
     'missing-blank-line-before-list',
     'agent-skill-tool-visibility',
     'subdoc-forbidden-metadata',
-    'unsupported-skill-tools-field',
     'misspelled-user-invocable',
     'missing-user-invocable',
     'checklist-pattern',
@@ -326,7 +333,6 @@ SAFE_FIX_TYPES = {
     'missing-blank-line-before-list',
     'agent-skill-tool-visibility',
     'subdoc-forbidden-metadata',
-    'unsupported-skill-tools-field',
     'misspelled-user-invocable',
     'missing-user-invocable',
     'checklist-pattern',
