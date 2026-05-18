@@ -12,7 +12,7 @@ This is one of Plan Marshall's most powerful features. It turns a 5–10 minute 
 Plan Marshall splits build management into two responsibilities:
 
 * **`/marshall-steward`** discovers each module's actual build tool (Maven / Gradle / npm / Python) once at setup time, and builds a per-module mapping from canonical command names (`compile`, `quality-gate`, `module-tests`, `verify`, `coverage`, …) to the concrete tool invocation (`./mvnw verify -Ppre-commit -pl my-module`, `./gradlew :api:build`, `./pw verify core`, etc.). This mapping lives in `.plan/project-architecture/`.
-* **The LLM / task executor** asks for a canonical name by module: `architecture resolve --command verify --module my-module` returns the concrete command, then `{tool-skill} run --command-args "verify"` executes it. The model never has to know what underlying tool the module uses.
+* **The LLM / task executor** asks for a canonical name by module: `architecture resolve --command verify --module my-module` returns the **full executor-wrapped command** (e.g. `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -pl my-module"`); the LLM runs that returned string verbatim. The model never has to know what underlying tool the module uses, never has to construct a build-skill dispatch.
 
 The result is build-tool independence at the LLM-prompt layer. A skill author writing a verify step writes one workflow that works against Maven, Gradle, npm, and Python modules.
 
@@ -41,37 +41,34 @@ A small, build-system-agnostic vocabulary of operation names. The full list live
 
 A skill that wants "run the unit tests" asks for `module-tests` and stays portable. A skill that wants "full local verification before commit" asks for `verify`. The canonical name is what the LLM thinks in; the build-system invocation is what runs.
 
-== Two-step API at execution time
+== Resolve once, then run the returned command
 
-A skill that needs to run a build executes two scripts:
+A skill that needs to run a build calls the resolver once. **The resolver returns a complete, ready-to-execute shell command — already wrapped through the script-executor proxy, already bound to the right build skill for that module's tool, already carrying the correct `--command-args` for the canonical command.** The LLM does not separately construct a build-skill dispatch; it simply runs what the resolver returned.
 
 [source,bash]
 ----
-# 1. Resolve canonical → concrete command for a specific module
+# 1. Resolve the canonical command to a fully-wrapped executable
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   resolve --command verify --module my-module
 
-# Returns TOON containing:
-#   executable: ./mvnw verify -Ppre-commit -pl my-module
-#   wrapper:    ./mvnw
-#   tool:       maven
-#   ...
+# Returns TOON (real example from a Python module):
+#   status:           success
+#   module:           my-module
+#   command:          verify
+#   executable:       "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify my-module\""
+#   resolution_level: module
+#
+# For a Maven module the executable would be:
+#   "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit -pl my-module\""
+# — same shape, same script-executor proxy, just routed to a different build skill.
 
-# 2. Run it via the matching build skill
-python3 .plan/execute-script.py plan-marshall:build-maven:maven \
-  run --command-args "verify -Ppre-commit -pl my-module" --plan-id {plan_id}
+# 2. Execute the returned `executable` string verbatim
+{the executable string returned in step 1}
 ----
 
-Step 1 reads `.plan/project-architecture/{module}/enriched.json` (per-module, persisted) and looks up the requested canonical command in the module's `commands` map. The lookup is deterministic — no LLM judgement, no probabilistic match. If `verify` doesn't resolve, the module legitimately doesn't have it (e.g. pom-only aggregator modules have only `quality-gate`); the LLM gets an error TOON, not a hallucinated guess.
+The resolver reads `.plan/project-architecture/{module}/enriched.json` (per-module, persisted) and looks up the requested canonical command in the module's `commands` map. The stored value is **the full executor invocation, already pre-composed at architecture-discover time** — the LLM never has to know which build skill (`build-maven` / `build-gradle` / `build-npm` / `build-python`) owns this module, nor how to format the underlying tool's flags. The lookup is deterministic — no LLM judgement, no probabilistic match. If `verify` doesn't resolve, the module legitimately doesn't have it (e.g. pom-only aggregator modules have only `quality-gate`); the LLM gets an error TOON, not a hallucinated guess.
 
-Step 2 dispatches to the build skill that owns the underlying tool (`build-maven`, `build-gradle`, `build-npm`, `build-python`). All four skills implement the same `ext-point-build` contract, declared in their frontmatter:
-
-[source,yaml]
-----
-implements: plan-marshall:extension-api/standards/ext-point-build
-----
-
-So Step 2 looks the same regardless of which tool sits behind the wrapper.
+Behind the scenes the executor proxy routes to one of four link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-build.md[`ext-point-build`] implementations (`build-maven`, `build-gradle`, `build-npm`, `build-python`). All four expose the same `run --command-args …` subcommand and the same return TOON, so the LLM's interaction with the build is uniform regardless of which tool sits behind the wrapper.
 
 == The return TOON — what the LLM gets back
 
@@ -167,10 +164,13 @@ The phase-5-execute `default:build_verify` verify step runs as:
 [source]
 ----
 1. Read task.module from TASK-N.json                       (architecture lookup)
-2. architecture resolve --command verify --module {module}   → returns ./mvnw verify -pl {module}
-3. build-maven run --command-args "verify -pl {module}" --plan-id {plan_id}
+2. architecture resolve --command verify --module {module}
+   → returns executable: "python3 .plan/execute-script.py
+                           plan-marshall:build-maven:maven run
+                           --command-args \"verify -pl {module}\""
+3. Run the returned executable verbatim via Bash.
    ⏳ … 7 minutes pass …
-4. Result TOON returned:
+4. Result TOON returned by the build skill:
    - status=success → proceed to next verify step
    - status=error  → run check-warnings, capture findings, route to verification-feedback
 ----

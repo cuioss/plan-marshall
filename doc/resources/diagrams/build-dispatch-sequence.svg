@@ -49,10 +49,10 @@
   <rect class="activation" x="105" y="110" width="10" height="320"/>
 
   <!-- architecture short activation (resolve in-and-out) -->
-  <rect class="activation" x="355" y="110" width="10" height="40"/>
+  <rect class="activation" x="355" y="110" width="10" height="78"/>
 
   <!-- build-{tool} long activation (from receiving run to returning TOON) -->
-  <rect class="activation" x="595" y="195" width="10" height="220"/>
+  <rect class="activation" x="595" y="218" width="10" height="197"/>
 
   <!-- build process activation (subprocess from spawn to exit) -->
   <rect class="activation" x="825" y="225" width="10" height="120"/>
@@ -66,13 +66,15 @@
   <line class="arrow" x1="115" y1="115" x2="355" y2="115" marker-end="url(#arrow)"/>
   <text x="235" y="107" class="arrow-lbl">resolve --command verify --module X</text>
 
-  <!-- 2. architecture → LLM: return executable -->
-  <line class="arrow-return" x1="355" y1="150" x2="115" y2="150" marker-end="url(#arrow)"/>
-  <text x="235" y="142" class="arrow-lbl">{ executable: "./mvnw verify -pl X" }</text>
+  <!-- 2. architecture → LLM: return the FULL wrapped executable string -->
+  <text x="235" y="138" class="arrow-lbl">executable: "python3 .plan/execute-script.py</text>
+  <text x="235" y="153" class="arrow-lbl">             plan-marshall:build-maven:maven run</text>
+  <text x="235" y="168" class="arrow-lbl">             --command-args 'verify -pl X' "</text>
+  <line class="arrow-return" x1="355" y1="183" x2="115" y2="183" marker-end="url(#arrow)"/>
 
-  <!-- 3. LLM → build-{tool}: run -->
-  <line class="arrow" x1="115" y1="195" x2="595" y2="195" marker-end="url(#arrow)"/>
-  <text x="355" y="187" class="arrow-lbl">run --command-args "verify -pl X"</text>
+  <!-- 3. LLM → build-{tool}: execute the returned string verbatim -->
+  <line class="arrow" x1="115" y1="218" x2="595" y2="218" marker-end="url(#arrow)"/>
+  <text x="355" y="210" class="arrow-lbl">execute returned string (no new dispatch construction)</text>
 
   <!-- 4. build-{tool} → build process: spawn -->
   <line class="arrow" x1="605" y1="225" x2="825" y2="225" marker-end="url(#arrow)"/>
