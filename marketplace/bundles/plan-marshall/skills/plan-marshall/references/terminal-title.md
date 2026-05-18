@@ -36,4 +36,6 @@ The `--statusline` path is unchanged: the title is written verbatim to stdout fo
 
 The script silently falls back on any read/write error — hooks never break the session.
 
+See [hook-authoring-guide.md](hook-authoring-guide.md) for the general JSON envelope contract that applies to any new hook-driven plan-marshall script.
+
 Configure via `/marshall-steward` → **Configuration** → **Terminal Title** — the wizard writes only to `./.claude/settings.local.json` (project-local, per-developer, gitignored). See [menu-terminal-title.md](../../marshall-steward/references/menu-terminal-title.md).
