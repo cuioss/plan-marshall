@@ -8,7 +8,7 @@
 **Under Development. Not released yet. Alpha-Version**
 ====
 
-[cols="3,1", frame=none, grid=none]
+[cols="2,1", frame=none, grid=none]
 |===
 a|
 image:https://github.com/cuioss/plan-marshall/actions/workflows/python-verify.yml/badge.svg[Python Verify,link=https://github.com/cuioss/plan-marshall/actions/workflows/python-verify.yml]
@@ -19,7 +19,7 @@ image:https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg[License: AGP
 
 Plan Marshall is an orchestration layer for AI coding assistants (currently Claude Code) that enforces consistency, reliability, and more predictable outputs. It packages a phase-driven planning workflow, a library of domain skills, and a marketplace of ten production bundles covering Java, JavaScript, Python, OCI containers, requirements, and plugin development.
 
-a| image::doc/resources/planmarshall.png[Plan Marshall, width=200]
+a| image::doc/resources/planmarshall.png[Plan Marshall, width=300]
 |===
 
 == Prerequisites
