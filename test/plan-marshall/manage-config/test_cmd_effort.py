@@ -211,7 +211,7 @@ def test_apply_preset_economic_writes_expanded_payload():
 
         assert result['status'] == 'success'
         assert result['preset'] == 'economic'
-        assert result['default'] == 'low'
+        assert result['default'] == 'medium'
         # roles_count reflects the leaf-level EXPANDED set (flat groups
         # contribute 1, nested groups contribute len(subkeys)). Overrides
         # count is the per-leaf override count from the preset payload.
@@ -238,16 +238,18 @@ def test_apply_preset_economic_writes_expanded_payload():
                         f"subkey '{group}.{subkey}' missing from on-disk map"
                     )
 
-        # ECONOMIC omits `phase-6-finalize`, so the writer emits the
-        # compact default-string shorthand. The resolver returns the
-        # bare-phase source path (any sub-key lookup on a string-valued
-        # phase resolves to the same value).
+        # ECONOMIC carries `phase-6-finalize` as a dict-valued override
+        # ({'verification-feedback': 'high'}); the writer expands the
+        # dict so every sub-key is explicit on disk (overrides win,
+        # missing sub-keys receive the ECONOMIC default of 'medium').
+        # The resolver returns the sub-key-specific source path because
+        # the on-disk phase-6-finalize entry is a dict.
         read_result = cmd_effort(
             Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False)
         )
         assert read_result['status'] == 'success'
-        assert read_result['level'] == 'low'
-        assert read_result['source'] == 'plan.phase-6-finalize.effort'
+        assert read_result['level'] == 'high'
+        assert read_result['source'] == 'plan.phase-6-finalize.effort.verification-feedback'
 
 
 # =============================================================================
@@ -411,15 +413,18 @@ def test_apply_preset_round_trip_no_residue():
         on_disk = _read_marshal_models(ctx.fixture_dir)
         assert on_disk == _expanded_preset(EffortPresets.ECONOMIC)
 
-        # BALANCED-only overrides (e.g. phase-6-finalize.verification-feedback
-        # at 'high') must not survive the swap. ECONOMIC's clean-slate write
-        # replaces every per-phase entry; sub-keys for phase-6-finalize end
-        # up at the ECONOMIC default ('low') via schema expansion.
-        # Note: phase-6-finalize uses dict shorthand because BALANCED's
-        # carry-over schema expansion seeded all its sub-keys; ECONOMIC's
-        # writer overwrites the entire phase-6-finalize.effort attribute
-        # with the compact default-string shorthand.
-        assert on_disk['roles']['phase-6-finalize'] == 'low'
-        # phase-2-refine is bumped to 'high' in BALANCED but not in ECONOMIC;
-        # should now be the default 'low' (string shorthand).
-        assert on_disk['roles']['phase-2-refine'] == 'low'
+        # BALANCED's per-phase entries must not survive the swap.
+        # ECONOMIC's clean-slate write replaces every per-phase entry
+        # with the ECONOMIC payload after writer-expansion: phase-6-finalize
+        # is a dict-valued override in ECONOMIC ({'verification-feedback':
+        # 'high'}), so the writer emits a dict with the ECONOMIC default
+        # ('medium') filling every other sub-key.
+        assert on_disk['roles']['phase-6-finalize'] == {
+            'default': 'medium',
+            'verification-feedback': 'high',
+            'post-run-review': 'medium',
+        }
+        # phase-2-refine is bumped to 'high' in both BALANCED and ECONOMIC
+        # (the new ladder pushes the three analytical phases up); the
+        # writer keeps the string shorthand for flat-group overrides.
+        assert on_disk['roles']['phase-2-refine'] == 'high'

@@ -79,18 +79,28 @@ The per-phase `effort` attributes are **opt-in** — when absent entirely, every
 
 ### Recommended Starting Configuration
 
-For most workflows, this gets you most of the value at modest cost:
+For most workflows, this gets you most of the value at modest cost. The example below mirrors the on-disk shape that `apply-preset --preset balanced` writes after `_expand_phase_effort` — every `KNOWN_ROLES` phase carries an explicit entry so the wizard's deep-equality match recognises the preset:
 
 ```jsonc
 {
   "plan": {
-    "effort": "medium",
-    "phase-3-outline": { "effort": "high" },
+    "effort": "high",
+    "phase-1-init": { "effort": "high" },
+    "phase-2-refine": { "effort": "high" },
+    "phase-3-outline": { "effort": "xhigh" },
+    "phase-4-plan": { "effort": "high" },
     "phase-5-execute": {
-      "effort": { "verification-feedback": "high" }
+      "effort": {
+        "default": "xhigh",
+        "verification-feedback": "high"
+      }
     },
     "phase-6-finalize": {
-      "effort": { "verification-feedback": "high" }
+      "effort": {
+        "default": "high",
+        "verification-feedback": "high",
+        "post-run-review": "xhigh"
+      }
     }
   }
 }
@@ -161,7 +171,7 @@ Valid levels are `low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`, `inherit`. T
 
 ## Recommended Research Setting
 
-The `research` workflow benefits from the most capable model — it inherits the calling phase's default level, so the simplest tuning is to bump whichever phase fires research most often:
+The `research` workflow benefits from the most capable model — it inherits the calling phase's default level, so the simplest tuning is to bump whichever phase fires research most often. The `balanced` preset already sets `phase-3-outline.effort = xhigh` (Opus, medium); push the same slot to `max` when you want Opus-4.7's `xhigh` effort tier for novel decomposition:
 
 ```jsonc
 {
@@ -171,7 +181,7 @@ The `research` workflow benefits from the most capable model — it inherits the
 }
 ```
 
-(or `xxhigh` if you don't need Opus-4.7's `xhigh` effort tier — the `max` variant gracefully degrades to canonical when the alias does not accept `effort: xhigh`.)
+(The `max` variant gracefully degrades to canonical when the alias does not accept `effort: xhigh`. Keep the `balanced` anchor at `xhigh` when Opus-4.7 reasoning is sufficient.)
 
 For standalone `/research` outside any plan, the dispatch resolves via `--default` (`plan.effort` → `inherit`); bump `plan.effort` if you want every standalone research run at a higher tier.
 
