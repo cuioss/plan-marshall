@@ -20,19 +20,42 @@ See xref:getting-started.adoc[Getting Started] for the first-run wizard steps. T
 * **Health Check** — verify setup, diagnose missing scripts or stale configuration.
 * **Configuration** — adjust build systems, skill domains, the per-role effort/model registry (see xref:configuration.adoc[Configuration]), terminal-title integration (xref:terminal-title.adoc[Terminal Title]), and other project-level knobs.
 
-== /plan-manage
+== /plan-marshall
 
-Manage task plans — create, list, outline, and clean up.
+Unified plan lifecycle management — create, list, outline, execute, finalize, and clean up plans. The skill drives all six phases (`phase-1-init` … `phase-6-finalize`) through the xref:../concepts/execution-context.adoc[execution-context dispatcher]. See xref:../concepts/planning-workflow.adoc[Planning Workflow] for the phase sequence and boundaries.
+
+=== Common calls
 
 [source,bash]
 ----
-/plan-manage                # Interactive menu
-/plan-manage list           # List all plans
-/plan-manage create         # Create a new plan
-/plan-manage cleanup        # Remove completed plans
+/plan-marshall                                                  # List active plans (default)
+/plan-marshall action=init task="Add user authentication"       # Create new plan from a task description
+/plan-marshall action=init issue="https://github.com/org/repo/issues/42"   # Seed from a GitHub issue
+/plan-marshall action=init task="..." stop-after-init=true      # Create plan but stop before phase-2-refine
+/plan-marshall action=outline plan="user-auth"                  # Run outline + plan phases for an existing plan
+/plan-marshall action=execute plan="jwt-auth"                   # Resume execution of an existing plan
+/plan-marshall action=finalize plan="jwt-auth"                  # Run phase-6-finalize (commit, push, PR)
+/plan-marshall plan="jwt-auth"                                  # Continue an existing plan from its current phase
+/plan-marshall action=cleanup                                   # Remove completed plans
+/plan-marshall action=lessons                                   # List and convert lessons learned
+/plan-marshall action=lessons-aggregate                         # Cross-lesson aggregation + superseded-stub prune
+/plan-marshall action=recipe recipe="refactor-to-standards"     # Create plan from a predefined recipe
 ----
 
-The plan lifecycle runs through six phases (`phase-1-init` … `phase-6-finalize`); each is dispatched through the xref:../concepts/execution-context.adoc[execution-context dispatcher]. See xref:../concepts/planning-workflow.adoc[Planning Workflow] for the phase sequence and boundaries.
+=== Parameters
+
+[cols="1,1,3", options="header"]
+|===
+| Parameter | Type | Description
+
+| `action` | optional | One of `list` (default), `init`, `outline`, `execute`, `finalize`, `cleanup`, `lessons`, `lessons-aggregate`, `recipe`.
+| `task` | optional | Free-form task description used to create a new plan.
+| `issue` | optional | GitHub issue URL used to seed a new plan.
+| `lesson` | optional | Lesson ID to convert into a plan.
+| `recipe` | optional | Recipe key (e.g. `refactor-to-standards`) used with `action=recipe`.
+| `plan` | optional | Plan **name** (plan_id) for operations on an existing plan — not a path.
+| `stop-after-init` | optional | If `true`, stop after `phase-1-init` instead of auto-continuing to `phase-2-refine`. Default `false`.
+|===
 
 == /sync-plugin-cache (meta-project only)
 

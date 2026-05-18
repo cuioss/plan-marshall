@@ -52,13 +52,33 @@ The full distribution contract — publish triggers, versioning, source-vs-dist 
 
 ## Getting Started
 
-After installing the marketplace, run the setup wizard:
+### 1. Configure the project
+
+After installing the marketplace, run the setup wizard once per project:
 
 ```bash
 /marshall-steward
 ```
 
-The wizard configures `.gitignore`, generates the script executor, discovers project modules, initializes `marshal.json`, configures skill domains, and detects CI tools. See [User Guide › Getting Started](doc/user/getting-started.adoc) for the full first-run flow.
+The wizard configures `.gitignore`, generates the script executor, discovers project modules, initializes `marshal.json`, configures skill domains, and detects CI tools.
+
+### 2. Create your first plan
+
+Kick off a new plan with a free-form task description:
+
+```bash
+/plan-marshall action=init task="Add user authentication"
+```
+
+Or seed the plan from a GitHub issue:
+
+```bash
+/plan-marshall action=init issue="https://github.com/cuioss/plan-marshall/issues/42"
+```
+
+`/plan-marshall` drives the six-phase lifecycle (init → refine → outline → plan → execute → finalize). Call `/plan-marshall` with no arguments to list active plans, or `/plan-marshall action=execute plan="<plan-id>"` to resume one.
+
+See [User Guide › Getting Started](doc/user/getting-started.adoc) for the full first-run walkthrough and [User Guide › Commands](doc/user/commands.adoc) for the complete `/plan-marshall` parameter reference.
 
 ## Documentation
 

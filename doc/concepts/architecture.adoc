@@ -17,7 +17,7 @@ Plan Marshall is structured as a Claude Code marketplace: ten production bundles
 |Autonomous task executors. Plan Marshall ships exactly one role-eligible canonical agent — `plan-marshall:execution-context` — which is emitted in six effort-level variants by the Claude target build. Every plan-marshall `Task:` dispatch routes through one of those variants.
 
 |Commands
-|User-invocable slash commands that orchestrate workflows (e.g. `/marshall-steward`, `/plan-manage`).
+|User-invocable slash commands that orchestrate workflows (e.g. `/marshall-steward`, `/plan-marshall`).
 |===
 
 The dispatcher pattern that lets one canonical agent stand in for many role-pinned variants is described in xref:execution-context.adoc[Execution Context].

@@ -39,14 +39,21 @@ Use `--wizard` to force the first-run wizard explicitly:
 
 == Creating your first plan
 
-Once setup is complete:
+Once setup is complete, kick off a new plan with a free-form task description:
 
 [source,bash]
 ----
-/plan-manage create
+/plan-marshall action=init task="Add user authentication"
 ----
 
-This drops you into the six-phase planning flow (init → refine → outline → plan → execute → finalize) described in xref:../concepts/planning-workflow.adoc[Planning Workflow]. See xref:commands.adoc[Commands] for the full `/plan-manage` reference.
+Or seed the plan from a GitHub issue:
+
+[source,bash]
+----
+/plan-marshall action=init issue="https://github.com/cuioss/plan-marshall/issues/42"
+----
+
+`/plan-marshall` drops you into the six-phase planning flow (init → refine → outline → plan → execute → finalize) described in xref:../concepts/planning-workflow.adoc[Planning Workflow]. Call `/plan-marshall` with no arguments to list active plans, or `/plan-marshall action=execute plan="<plan-id>"` to resume one. See xref:commands.adoc[Commands] for the full parameter reference.
 
 == Where things live
 
