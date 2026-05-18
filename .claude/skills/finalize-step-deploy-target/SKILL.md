@@ -110,13 +110,29 @@ Capture exit code and stdout.
 | `status: success` | Generation completed; record `outcome=done` and use `emitted_count` for the display detail |
 | `status: error` | Generation failed; record `outcome=failed` and surface the `error` field in `display_detail` |
 
-### 4. Mark step complete
+### 4. Capture HEAD and mark step complete
+
+This step is a member of `CONDITIONAL_HEAD_DEPENDENT_STEPS` (see
+`marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md`
+§ Conditional HEAD-dependent steps). The dispatcher re-fires this step on
+loop-back IFF `references.modified_files` (at the prior `done` mark)
+intersects `marketplace/bundles/**` AND the live worktree HEAD has
+advanced past the persisted `head_at_completion`. To make that
+comparison meaningful, capture HEAD before `mark-step-done`:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Then forward the captured SHA to `mark-step-done` via
+`--head-at-completion`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
   mark-step-done --plan-id {plan_id} --phase 6-finalize \
   --step project:finalize-step-deploy-target \
-  --outcome {done|failed} --display-detail "{N} files emitted to target/claude/"
+  --outcome {done|failed} --head-at-completion {sha} \
+  --display-detail "{N} files emitted to target/claude/"
 ```
 
 On `status: success`, `{N}` is the integer from `emitted_count` and the
@@ -124,6 +140,10 @@ On `status: success`, `{N}` is the integer from `emitted_count` and the
 `status: error`, set `--outcome failed` and surface the generator's
 `error` field verbatim in `--display-detail` so the renderer shows the
 underlying failure.
+
+## Related
+
+- `marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md` § Conditional HEAD-dependent steps — defines `CONDITIONAL_HEAD_DEPENDENT_STEPS` membership and the `modified_files ∩ marketplace/bundles/**` re-fire predicate this step obeys.
 
 ## Why "always run" instead of a skip detector
 

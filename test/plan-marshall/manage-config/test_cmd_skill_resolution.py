@@ -639,15 +639,16 @@ def test_default_config_excludes_optional_bundle_finalize_steps():
 def test_list_finalize_steps_optional_bundle_order_from_frontmatter(tmp_path):
     """`order` for plan-retrospective is resolved from its SKILL.md frontmatter.
 
-    The skill declares `order: 995` in frontmatter; discovery must surface that
-    exact value (not None) so marshall-steward can slot it into the sorted
-    execution order.
+    The skill declares `order: 65` in frontmatter (placing it immediately before
+    `default:branch-cleanup` at `order: 70`); discovery must surface that exact
+    value (not None) so marshall-steward can slot it into the sorted execution
+    order.
     """
     with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):
         steps = _run_discovery_in_cwd(tmp_path)
 
     retro = next(s for s in steps if s['name'] == 'plan-marshall:plan-retrospective')
-    assert retro['order'] == 995, f'Expected order=995 from SKILL.md frontmatter, got {retro["order"]!r}'
+    assert retro['order'] == 65, f'Expected order=65 from SKILL.md frontmatter, got {retro["order"]!r}'
 
 
 def test_list_finalize_steps_optional_bundle_description_populated(tmp_path):

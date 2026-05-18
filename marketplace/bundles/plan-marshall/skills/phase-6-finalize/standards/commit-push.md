@@ -46,24 +46,32 @@ Execute the git_workflow skill's **Workflow: Commit Changes** with:
 - `push`: true (always push in finalize)
 - `worktree_path`: `{worktree_path}` resolved at finalize entry
 
-## Mark Step Complete
+## Capture HEAD and Mark Step Complete
 
-Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time.
+`commit-push` is a member of `HEAD_DEPENDENT_STEPS` (see `phase-6-finalize/SKILL.md` § HEAD-dependent steps). A loop-back fix task may produce a fresh commit *after* an earlier `commit-push` recorded `outcome=done` against the prior HEAD; without HEAD-comparison the dispatcher would skip `commit-push` on re-entry and leave the fix-task changes staged-but-uncommitted. To make the comparison meaningful, capture the live HEAD before `mark-step-done`:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Then record that this step ran on the live plan, forwarding the captured SHA via `--head-at-completion` so the dispatcher's HEAD-comparison logic can detect a loop-back fix-task commit on re-entry:
 
 Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the commit outcome. The payload differs by branch:
 
-**Branch A — commit created**: `{commit_hash}` is the short 7-character hash of the commit produced by the `workflow-integration-git` call above (captured from its return payload):
+**Branch A — commit created**: `{commit_hash}` is the short 7-character hash of the commit produced by the `workflow-integration-git` call above (captured from its return payload); `{sha}` is the full SHA from `git rev-parse HEAD` (which equals the commit just created):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step commit-push --outcome done \
+  --head-at-completion {sha} \
   --display-detail "-> {commit_hash}"
 ```
 
-**Branch B — no uncommitted changes** (no-changes path from "Check for uncommitted changes" above — `git status --porcelain` returned empty):
+**Branch B — no uncommitted changes** (no-changes path from "Check for uncommitted changes" above — `git status --porcelain` returned empty). `{sha}` is the full SHA from `git rev-parse HEAD` (the unchanged prior HEAD):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step commit-push --outcome done \
+  --head-at-completion {sha} \
   --display-detail "no changes"
 ```

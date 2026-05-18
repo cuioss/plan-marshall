@@ -1,16 +1,17 @@
 ---
-name: tools-self-review
-description: Deterministic candidate surfacing for pre-submission structural self-review (regexes, user-facing strings, markdown sections, symmetric-pair functions)
+name: ext-self-review-plan-marshall
+description: Plan-marshall-domain implementor of the ext-self-review-{domain} extension point. Surfaces deterministic candidates (regexes, user-facing strings, markdown sections, symmetric-pair functions, contract sources, schema-bearing files) for pre-submission structural self-review.
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacing
 ---
 
-# Self-Review Candidate Surfacing
+# Self-Review Candidate Surfacing — plan-marshall domain
 
-**Role**: Deterministic helper for the `default:pre-submission-self-review` finalize step. Surfaces concrete candidates from the worktree's staged diff so the LLM cognitive review pass can apply the four structural-defect checks (symmetric pair, regex over-fit, wording disambiguation, duplication) against a bounded surface, not an unbounded read of the whole diff.
+**Role**: Plan-marshall-domain implementor of the `ext-self-review-{domain}` extension point (see [`../extension-api/standards/ext-point-self-review-surfacing.md`](../extension-api/standards/ext-point-self-review-surfacing.md)). Surfaces concrete candidates from the worktree's staged diff so the LLM cognitive review pass in [`../phase-6-finalize/workflow/pre-submission-self-review.md`](../phase-6-finalize/workflow/pre-submission-self-review.md) can apply the five structural-defect checks (symmetric pair, regex over-fit, wording disambiguation, duplication, contract drift) against a bounded surface, not an unbounded read of the whole diff.
 
 ## Enforcement
 
-**Execution mode**: Library script; invoked via the standard 3-part executor notation by `phase-6-finalize/standards/pre-submission-self-review.md`.
+**Execution mode**: Library script; invoked via the standard 3-part executor notation by `phase-6-finalize/workflow/pre-submission-self-review.md` Step 1.
 
 **Prohibited actions:**
 - Do not modify any source files; the helper is read-only against the worktree
@@ -24,11 +25,11 @@ user-invocable: false
 
 ## When to Use
 
-Invoked exclusively by `default:pre-submission-self-review` (see `phase-6-finalize/standards/pre-submission-self-review.md`). No other caller is supported. The script is registered as `plan-marshall:tools-self-review:self_review` and is NOT user-invocable from a slash command — `user-invocable: false` per the script-only registration convention (see MEMORY.md "plugin.json Registration Rules"; this skill is intentionally absent from `plan-marshall/.claude-plugin/plugin.json`).
+Invoked exclusively by `default:pre-submission-self-review` (see `phase-6-finalize/workflow/pre-submission-self-review.md` Step 1). No other caller is supported. The script is registered as `plan-marshall:ext-self-review-plan-marshall:self_review` and is NOT user-invocable from a slash command — `user-invocable: false` per the script-only registration convention; this skill is intentionally absent from `plan-marshall/.claude-plugin/plugin.json`.
 
 ## Subcommand: `surface`
 
-Surfaces four candidate lists from the worktree's staged diff against the base branch.
+Surfaces six candidate lists from the worktree's staged diff against the base branch.
 
 ### Inputs
 
@@ -125,7 +126,7 @@ This script is **Bucket B** (per `tools-script-executor/standards/cwd-policy.md`
 
 ## Tests
 
-`test/plan-marshall/tools-self-review/test_self_review.py` covers:
+`test/plan-marshall/ext-self-review-plan-marshall/test_self_review.py` covers:
 
 - Regex detection across `.py` and `.md` hunks (positive + negative)
 - User-facing string detection in docstrings, `print()`, and argparse `help=`
@@ -136,6 +137,7 @@ This script is **Bucket B** (per `tools-script-executor/standards/cwd-policy.md`
 
 ## Related
 
-- `phase-6-finalize/standards/pre-submission-self-review.md` — sole consumer of this script's output
-- `manage-execution-manifest/standards/decision-rules.md` — `pre_submission_self_review_inactive` pre-filter that gates dispatch of the consumer step
-- `tools-script-executor/standards/cwd-policy.md` — Bucket B cwd contract this script obeys
+- [`../extension-api/standards/ext-point-self-review-surfacing.md`](../extension-api/standards/ext-point-self-review-surfacing.md) — extension-point contract this skill implements
+- [`../phase-6-finalize/workflow/pre-submission-self-review.md`](../phase-6-finalize/workflow/pre-submission-self-review.md) — sole consumer of this script's output
+- [`../manage-execution-manifest/standards/decision-rules.md`](../manage-execution-manifest/standards/decision-rules.md) — `pre_submission_self_review_inactive` pre-filter that gates dispatch of the consumer step
+- [`../tools-script-executor/standards/cwd-policy.md`](../tools-script-executor/standards/cwd-policy.md) — Bucket B cwd contract this script obeys

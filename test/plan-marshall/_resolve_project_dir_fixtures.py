@@ -4,7 +4,7 @@
 
 Re-used by the test modules that cover every Bucket B script consumer
 (build-maven, build-gradle, build-npm, build-python, tools-integration-ci,
-extension-api, tools-self-review, workflow-integration-{github,gitlab},
+extension-api, ext-self-review-plan-marshall, workflow-integration-{github,gitlab},
 workflow-integration-sonar, workflow-pr-doctor, manage-references,
 manage-architecture, script-shared, execute-task).
 

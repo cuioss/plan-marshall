@@ -8,6 +8,10 @@ Cross-check rules that compare the per-plan execution manifest (`execution.toon`
 - **Decision log** (`decision.log`): captures the rule that fired, with the `(plan-marshall:manage-execution-manifest:compose)` caller tag — load these alongside the manifest to present the WHY behind each WHAT.
 - **End-of-execute diff** (`git diff {base}...HEAD --name-only`): the authoritative list of files touched between the plan's base commit and the head of the execute branch. Used to compare against manifest assumptions.
 
+## Pre-Cleanup Invariants
+
+The retrospective runs BEFORE `default:branch-cleanup` (`order: 65` vs `branch-cleanup`'s `order: 70`). The manifest-crosscheck aspect therefore reads against a **live worktree**: the worktree directory still exists, the feature branch is un-merged, `references.modified_files` is still resolvable, and `git diff {base}...HEAD` still has a HEAD to anchor against. Earlier ordering (where the retrospective ran AFTER branch-cleanup) produced post-cleanup snapshots where the worktree had already been deleted and the branch ref dropped — the diff aspect could only operate on archived metadata, not on the live tree.
+
 ## Cross-Check Matrix
 
 Each row is one rule. The script emits exactly one finding when the rule's expected outcome is contradicted by the actual diff.

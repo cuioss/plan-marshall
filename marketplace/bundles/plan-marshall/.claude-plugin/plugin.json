@@ -75,7 +75,6 @@
     "./skills/tools-permission-doctor",
     "./skills/tools-permission-fix",
     "./skills/tools-script-executor",
-    "./skills/tools-self-review",
     "./skills/workflow-integration-git",
     "./skills/workflow-integration-github",
     "./skills/workflow-integration-gitlab",
