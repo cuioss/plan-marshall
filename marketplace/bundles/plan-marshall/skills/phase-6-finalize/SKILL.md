@@ -498,7 +498,15 @@ Per-step agent `<usage>` totals are persisted on disk by `manage-metrics accumul
 loop_back_iteration = 0   # initialised once, before the FOR loop; persists across FOR-loop re-entries from the loop-back hook (step 7b)
 
 FOR each step_id in manifest.phase_6.steps:
-  step_ref = "default:" + step_id   # manifest holds bare names; dispatcher prepends prefix
+  # Resolve full step reference. Manifest entries may be:
+  #   - bare names (e.g. `commit-push`) — built-in, prepend `default:`
+  #   - already-prefixed (`default:foo`, `project:bar`, `bundle:skill`) — use verbatim
+  # The composer preserves `project:` / `bundle:skill` prefixes from marshal.json;
+  # only `default:` may be stripped. So presence of `:` in step_id => external step.
+  IF step_id contains ':':
+      step_ref = step_id                 # external step (`project:` / `bundle:skill`) — preserve verbatim
+  ELSE:
+      step_ref = "default:" + step_id    # built-in step — prepend `default:` prefix
 
   1. Resumable re-entry check:
      Read status.metadata.phase_steps["6-finalize"][step_id]:

@@ -2309,3 +2309,159 @@ class TestAutomatedReviewPlacement:
             assert 'automated-review' in result['message']
             assert anchor in result['message']
             assert read_manifest(plan_id) is None
+
+
+# =============================================================================
+# marshal.json source-of-truth tests
+#
+# The composer prefers ``plan.phase-{5,6}-{execute,finalize}.steps`` from
+# marshal.json over the agent-supplied ``--phase-{5,6}-steps`` CSV. This
+# defends against agent-built CSVs that historically stripped ``project:`` and
+# ``bundle:skill`` prefixes (producing manifests with bare names the
+# phase-6-finalize dispatcher then mis-routed as built-in steps).
+# =============================================================================
+
+
+def _write_full_marshal(
+    ctx: PlanContext,
+    *,
+    phase_6_steps: list[str],
+    phase_5_steps: list[str] | None = None,
+) -> None:
+    """Write a marshal.json with the given phase-5/6 step lists.
+
+    The phase-5 list is optional — when omitted, only ``phase-6-finalize.steps``
+    is populated. Both lists are written verbatim (prefixes preserved). Adds
+    the bot-enforcement default ``ci.provider=github`` so the bot-enforcement
+    guard sees a CI provider when ``automated-review`` is in the list.
+    """
+    assert ctx.fixture_dir is not None
+    marshal_path = ctx.fixture_dir / 'marshal.json'
+    plan_block: dict = {'phase-6-finalize': {'steps': phase_6_steps}}
+    if phase_5_steps is not None:
+        plan_block['phase-5-execute'] = {'steps': phase_5_steps}
+    data = {'plan': plan_block}
+    marshal_path.write_text(json.dumps(data), encoding='utf-8')
+
+
+def test_marshal_json_preferred_over_csv_preserves_project_prefixes():
+    """When marshal.json declares project: steps, the manifest preserves them even if CSV strips them.
+
+    Regression for the lesson-2026-05-15-21-002 finalize abort: the phase-4-plan
+    agent built a CSV with prefixes stripped, producing a manifest of bare names
+    the dispatcher then mis-routed as built-in default: steps. The composer now
+    treats marshal.json as the source of truth — agent CSV is fallback only.
+    """
+    full_phase_6 = [
+        'default:commit-push',
+        'project:finalize-step-deploy-target',
+        'project:finalize-step-sync-plugin-cache',
+        'default:create-pr',
+        'default:automated-review',
+        'default:lessons-capture',
+        'project:finalize-step-plugin-doctor',
+        'default:branch-cleanup',
+        'project:finalize-step-regenerate-executor',
+        'default:record-metrics',
+        'plan-marshall:plan-retrospective',
+        'default:archive-plan',
+    ]
+    # The CSV the agent built (prefixes stripped). marshal.json should win.
+    bad_csv = ','.join(
+        [
+            'commit-push',
+            'deploy-target',
+            'sync-plugin-cache',
+            'create-pr',
+            'automated-review',
+            'lessons-capture',
+            'plugin-doctor',
+            'branch-cleanup',
+            'regenerate-executor',
+            'record-metrics',
+            'plan-retrospective',
+            'archive-plan',
+        ]
+    )
+    with PlanContext(plan_id='marshal-source-of-truth') as ctx:
+        _write_full_marshal(ctx, phase_6_steps=full_phase_6)
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='marshal-source-of-truth',
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=11,
+                phase_6_steps=bad_csv,  # noise — should be ignored
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        manifest = read_manifest('marshal-source-of-truth')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        # Prefixes from marshal.json are preserved (except `default:` which
+        # is stripped at the boundary normalization step).
+        assert 'project:finalize-step-deploy-target' in steps
+        assert 'project:finalize-step-sync-plugin-cache' in steps
+        assert 'project:finalize-step-plugin-doctor' in steps
+        assert 'project:finalize-step-regenerate-executor' in steps
+        assert 'plan-marshall:plan-retrospective' in steps
+        # Bare names from the CSV must not appear in the manifest output.
+        assert 'deploy-target' not in steps
+        assert 'sync-plugin-cache' not in steps
+        assert 'plugin-doctor' not in steps
+        assert 'regenerate-executor' not in steps
+        assert 'plan-retrospective' not in steps
+        # `default:` prefixes ARE stripped by boundary normalization.
+        assert 'commit-push' in steps
+        assert 'default:commit-push' not in steps
+
+
+def test_csv_fallback_when_marshal_json_missing():
+    """Without marshal.json, the composer falls back to the CSV input verbatim.
+
+    Backward-compat: existing tests that don't stage a marshal.json continue
+    to drive composition via the ``--phase-{5,6}-steps`` flag.
+    """
+    with PlanContext(plan_id='csv-fallback'):
+        # No marshal.json is written.
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='csv-fallback',
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=5,
+                phase_6_steps=','.join(DEFAULT_PHASE_6_STEPS),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        manifest = read_manifest('csv-fallback')
+        assert manifest is not None
+        # All DEFAULT_PHASE_6_STEPS survive (no marshal.json to override).
+        steps = manifest['phase_6']['steps']
+        for expected in ('commit-push', 'create-pr', 'lessons-capture', 'archive-plan'):
+            assert expected in steps
+
+
+def test_marshal_json_phase_5_steps_also_preferred():
+    """The marshal.json source-of-truth path applies to phase-5 steps as well as phase-6."""
+    custom_phase_5 = ['quality-gate', 'module-tests']
+    full_phase_6 = ['default:commit-push', 'default:create-pr', 'default:automated-review', 'default:archive-plan']
+    with PlanContext(plan_id='marshal-phase-5') as ctx:
+        _write_full_marshal(
+            ctx,
+            phase_5_steps=custom_phase_5,
+            phase_6_steps=full_phase_6,
+        )
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='marshal-phase-5',
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=3,
+                phase_5_steps='WRONG,STUFF',  # noise — marshal.json should win
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        manifest = read_manifest('marshal-phase-5')
+        assert manifest is not None
+        assert set(manifest['phase_5']['verification_steps']) == set(custom_phase_5)

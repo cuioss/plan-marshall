@@ -446,6 +446,19 @@ def _log_commit_push_omitted(plan_id: str) -> None:
     _emit_decision_log(plan_id, message)
 
 
+def _log_candidate_source(plan_id: str, phase_key: str, source: str) -> None:
+    """Emit a decision-log entry naming which input source produced the candidate list.
+
+    ``source`` is either ``'marshal.json'`` (preferred path — full prefixes
+    preserved) or ``'csv_fallback'`` (no marshal.json available; the
+    composer fell back to the ``--phase-{5,6}-steps`` CSV).
+    """
+    message = (
+        f'(plan-marshall:manage-execution-manifest:compose) {phase_key} candidate source: {source}'
+    )
+    _emit_decision_log(plan_id, message)
+
+
 def _log_pre_push_quality_gate_omitted(plan_id: str) -> None:
     """Emit the decision-log entry for the ``pre_push_quality_gate_inactive`` pre-filter."""
     message = (
@@ -536,6 +549,39 @@ def _read_activation_globs() -> list[str]:
     if not isinstance(globs, list):
         return []
     return [g for g in globs if isinstance(g, str) and g]
+
+
+def _read_marshal_phase_steps(phase_key: str) -> list[str] | None:
+    """Read ``plan.{phase_key}.steps`` from marshal.json.
+
+    ``phase_key`` is the marshal.json key (e.g. ``'phase-5-execute'`` or
+    ``'phase-6-finalize'``). Returns the list of full step references as
+    declared in marshal.json (prefixes preserved), or ``None`` when the
+    marshal file is missing, the keys are absent, or the value is not a list.
+
+    The composer prefers this source over the agent-supplied
+    ``--phase-{5,6}-steps`` CSV because marshal.json is the authoritative
+    project-level declaration: it preserves ``default:`` / ``project:`` /
+    ``bundle:skill`` prefixes that agent-built CSVs have historically
+    stripped, producing manifests with bare names the dispatcher then mis-
+    routed as built-in steps.
+    """
+    marshal_path = get_marshal_path()
+    if not marshal_path.exists():
+        return None
+    data = read_json(marshal_path, default={})
+    if not isinstance(data, dict):
+        return None
+    plan = data.get('plan')
+    if not isinstance(plan, dict):
+        return None
+    phase = plan.get(phase_key)
+    if not isinstance(phase, dict):
+        return None
+    steps = phase.get('steps')
+    if not isinstance(steps, list):
+        return None
+    return [s for s in steps if isinstance(s, str) and s]
 
 
 def _read_modified_files(plan_id: str) -> list[str]:
@@ -856,8 +902,26 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'message': f'Invalid commit_strategy: {commit_strategy!r}. Must be one of {list(VALID_COMMIT_STRATEGIES)}',
         }
 
-    phase_5_candidates = _split_csv(args.phase_5_steps, DEFAULT_PHASE_5_STEPS)
-    phase_6_candidates = _split_csv(args.phase_6_steps, DEFAULT_PHASE_6_STEPS)
+    # Source of truth for the candidate step lists: marshal.json
+    # ``plan.phase-{5,6}-{execute,finalize}.steps``. The agent-supplied
+    # ``--phase-{5,6}-steps`` CSV is a fallback for callers without a
+    # marshal.json (notably tests). marshal.json is preferred because the
+    # agent has historically built CSVs that strip ``project:`` and
+    # ``bundle:skill`` prefixes, producing manifests with bare names that
+    # the phase-6-finalize dispatcher then mis-routes as built-in steps.
+    # See lesson reference in ``_read_marshal_phase_steps``.
+    marshal_phase_5 = _read_marshal_phase_steps('phase-5-execute')
+    marshal_phase_6 = _read_marshal_phase_steps('phase-6-finalize')
+    phase_5_source = 'marshal.json' if marshal_phase_5 is not None else 'csv_fallback'
+    phase_6_source = 'marshal.json' if marshal_phase_6 is not None else 'csv_fallback'
+    if marshal_phase_5 is not None:
+        phase_5_candidates = list(marshal_phase_5)
+    else:
+        phase_5_candidates = _split_csv(args.phase_5_steps, DEFAULT_PHASE_5_STEPS)
+    if marshal_phase_6 is not None:
+        phase_6_candidates = list(marshal_phase_6)
+    else:
+        phase_6_candidates = _split_csv(args.phase_6_steps, DEFAULT_PHASE_6_STEPS)
 
     # Boundary normalization: callers (notably marshal.json) may pass step IDs
     # with the optional ``default:`` prefix; the seven-row matrix, the pre-filter
@@ -867,6 +931,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # without per-site `_strip_default_prefix` calls. Lessons:
     # ``2026-04-27-23-004`` (this lesson — peer-site audit closing the gap left
     # by ``2026-04-27-18-006`` which only normalized cascade-rule sites).
+    # External step prefixes (``project:``, ``bundle:skill``) are preserved
+    # verbatim so the dispatcher can route them as PROJECT / SKILL steps.
     phase_5_candidates = [_strip_default_prefix(s) for s in phase_5_candidates]
     phase_6_candidates = [_strip_default_prefix(s) for s in phase_6_candidates]
 
@@ -950,6 +1016,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         **body,
     }
     write_manifest(plan_id, manifest)
+    _log_candidate_source(plan_id, 'phase-5-execute', phase_5_source)
+    _log_candidate_source(plan_id, 'phase-6-finalize', phase_6_source)
     if commit_push_omitted:
         _log_commit_push_omitted(plan_id)
     if pre_push_quality_gate_omitted:
