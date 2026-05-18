@@ -5,7 +5,7 @@
      role="img" aria-labelledby="title desc"
      font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
   <title id="title">Findings pipeline — producer / store / consumer flow</title>
-  <desc id="desc">Plan-marshall findings pipeline. Producers on the left add findings to the manage-findings store in the middle; consumers on the right query and resolve them, dispatching per-finding ext-triage-{domain} skills.</desc>
+  <desc id="desc">Plan-marshall findings pipeline. The producer column lists the workflow bodies that drive writes to the manage-findings store, each annotated with the underlying script they call. The consumer column lists the entities that read findings and decide their resolution: the in-phase qgate-resolve steps that handle Q-Gate findings inline, the unified verification-feedback envelope (five producer modes) that handles build / Sonar / PR-comment / plugin-doctor / pr-state findings, and the per-domain ext-triage skill loaded per finding by verification-feedback.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
@@ -27,30 +27,36 @@
   </defs>
 
   <!-- =============================================================== -->
-  <!-- PRODUCERS (left column)                                           -->
+  <!-- PRODUCERS (left column) — workflow bodies that drive writes      -->
   <!-- =============================================================== -->
   <text x="150" y="28" class="col-header">PRODUCERS</text>
   <rect class="stroke" x="20" y="44" width="260" height="420" rx="6" ry="6"/>
 
-  <text x="36"  y="80"  class="item-bold">Q-Gate</text>
-  <text x="115" y="80"  class="item">(phases 2 / 3 / 4)</text>
+  <text x="36" y="78"  class="item-bold">Q-Gate validation</text>
+  <text x="36" y="96"  class="item">phases 2 · 3 · 4</text>
 
-  <text x="36"  y="130" class="item-bold">build-*</text>
-  <text x="36"  y="150" class="item">maven · gradle · npm · python</text>
+  <text x="36" y="135" class="item-bold">phase-5 verify-steps</text>
+  <text x="36" y="153" class="item">via build-{maven,gradle,</text>
+  <text x="36" y="169" class="item">     npm,python}</text>
 
-  <text x="36"  y="195" class="item-bold">tools-self-review</text>
-  <text x="36"  y="215" class="item">(pre-submission diff)</text>
+  <text x="36" y="206" class="item-bold">phase-6 pre-submission</text>
+  <text x="36" y="224" class="item">via tools-self-review</text>
 
-  <text x="36"  y="260" class="item-bold">workflow-integration-*</text>
-  <text x="36"  y="280" class="item">github · gitlab · sonar</text>
+  <text x="36" y="261" class="item-bold">phase-6 automated-review</text>
+  <text x="36" y="279" class="item">via workflow-integration-</text>
+  <text x="36" y="295" class="item">     {github, gitlab}</text>
 
-  <text x="36"  y="325" class="item-bold">tools-integration-ci</text>
-  <text x="36"  y="345" class="item">(CI status · pr-state)</text>
+  <text x="36" y="332" class="item-bold">phase-6 sonar-roundtrip</text>
+  <text x="36" y="350" class="item">via workflow-integration-sonar</text>
 
-  <text x="150" y="430" class="col-sub">script-based · deterministic</text>
+  <text x="36" y="387" class="item-bold">/workflow-pr-doctor</text>
+  <text x="36" y="405" class="item">via tools-integration-ci</text>
+  <text x="36" y="421" class="item">     (pr-state mode)</text>
+
+  <text x="150" y="450" class="col-sub">workflow body — drives the script call</text>
 
   <!-- =============================================================== -->
-  <!-- STORE (middle column)                                             -->
+  <!-- STORE (middle column) — manage-findings                          -->
   <!-- =============================================================== -->
   <text x="450" y="28" class="col-header">manage-findings</text>
   <text x="450" y="44" class="col-sub">artifacts/findings/</text>
@@ -76,31 +82,34 @@
   <text x="450" y="385" class="col-sub">qgate { add · query · resolve }</text>
 
   <!-- =============================================================== -->
-  <!-- CONSUMERS (right column)                                          -->
+  <!-- CONSUMERS (right column) — read findings, decide resolution      -->
   <!-- =============================================================== -->
   <text x="750" y="28" class="col-header">CONSUMERS</text>
   <rect class="stroke" x="620" y="44" width="260" height="420" rx="6" ry="6"/>
 
   <text x="636" y="78"  class="item-bold">phase-3-outline</text>
-  <text x="636" y="98"  class="item">qgate-resolve</text>
+  <text x="636" y="96"  class="item">qgate-resolve</text>
 
-  <text x="636" y="130" class="item-bold">phase-4-plan</text>
-  <text x="636" y="150" class="item">qgate-resolve</text>
+  <text x="636" y="128" class="item-bold">phase-4-plan</text>
+  <text x="636" y="146" class="item">qgate-resolve</text>
 
-  <text x="636" y="182" class="item-bold">phase-5-execute</text>
-  <text x="636" y="202" class="item">verify-steps</text>
+  <line class="sep" x1="636" y1="170" x2="864" y2="170"/>
 
-  <text x="636" y="234" class="item-bold">phase-6-finalize</text>
-  <text x="650" y="252" class="item">pre-submission-self-review</text>
-  <text x="650" y="270" class="item">automated-review</text>
-  <text x="650" y="288" class="item">sonar-roundtrip</text>
+  <text x="636" y="195" class="item-bold">verification-feedback</text>
+  <text x="636" y="213" class="item">one workflow, five</text>
+  <text x="636" y="229" class="item">producer modes:</text>
+  <text x="650" y="247" class="item">build-runner · sonar</text>
+  <text x="650" y="263" class="item">pr-comment · plugin-doctor</text>
+  <text x="650" y="279" class="item">pr-state</text>
 
-  <line class="sep" x1="636" y1="312" x2="864" y2="312"/>
+  <line class="sep" x1="636" y1="305" x2="864" y2="305"/>
 
-  <text x="636" y="335" class="item-bold">ext-triage-{domain}</text>
-  <text x="636" y="355" class="item">(loaded per finding)</text>
+  <text x="636" y="330" class="item-bold">ext-triage-{domain}</text>
+  <text x="636" y="348" class="item">loaded per finding by</text>
+  <text x="636" y="364" class="item">verification-feedback</text>
 
   <text x="750" y="430" class="col-sub">FIX · SUPPRESS · ACCEPT · ASK</text>
+  <text x="750" y="450" class="col-sub">writes resolution back to the store</text>
 
   <!-- =============================================================== -->
   <!-- Arrows between columns                                            -->

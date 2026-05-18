@@ -20,7 +20,7 @@ Plan Marshall runs a chain of automated reviews across phases 2 through 6 — an
 
 == The findings pipeline — one mechanism, many producers
 
-image::../resources/diagrams/findings-pipeline.svg[Findings pipeline — producers add to manage-findings store; consumers query and resolve, dispatching per-finding ext-triage-{domain} skills, align=center]
+image::../resources/diagrams/findings-pipeline.svg[Findings pipeline — workflow bodies on the left (Q-Gate validation, phase-5 verify-steps, phase-6 pre-submission/automated-review/sonar-roundtrip, /workflow-pr-doctor) drive producer scripts that write to the manage-findings store. Pure consumers on the right (phase-3/4 qgate-resolve for Q-Gate findings, verification-feedback envelope plus per-finding ext-triage-{domain} for all other types) query and resolve., align=center]
 
 Every quality signal — a Q-Gate verification failure, a build error, a Sonar issue, a reviewer's PR comment, a self-review hunk concern — becomes a row in one of the per-type JSONL files. The same `manage-findings` API reads/writes them. The same per-finding triage envelope decides what to do with them. Each producer is a script (xref:tools-and-scripts.adoc[Tools and Scripts]), so the producer side is deterministic; LLM judgement enters only at the triage step.
 
