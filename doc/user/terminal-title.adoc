@@ -1,4 +1,5 @@
 = Terminal Title
+:nofooter:
 :toc: left
 :toclevels: 2
 

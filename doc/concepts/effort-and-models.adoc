@@ -1,4 +1,5 @@
 = Effort and Models
+:nofooter:
 :toc: left
 :toclevels: 2
 

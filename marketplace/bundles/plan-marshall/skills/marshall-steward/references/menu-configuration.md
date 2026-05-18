@@ -537,7 +537,7 @@ AskUserQuestion:
 
 If user chooses "Refine", use the "Edit Module" operation flow.
 
-This regenerates the per-module architecture layout under `.plan/project-architecture/` from current build file definitions: a refreshed `_project.json` (the source of truth for the module index) plus one `derived.json` per indexed module. Per-module `enriched.json` files are preserved when "Keep enrichment" was selected and reset only when "Reset enrichment" was selected.
+This regenerates the per-module architecture layout under `.plan/project-architecture/` from current build file definitions: a refreshed `_project.json` (the source of truth for the module index) plus an `enriched.json` stub per indexed module. Per-module `enriched.json` files are preserved when "Keep enrichment" was selected and reset only when "Reset enrichment" was selected. Derived module data is not persisted — it is computed on demand by `crawl_module_derived`.
 
 ---
 

@@ -1,4 +1,5 @@
 = Configuration
+:nofooter:
 :toc: left
 :toclevels: 3
 

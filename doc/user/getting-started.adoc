@@ -1,4 +1,5 @@
 = Getting Started
+:nofooter:
 :toc: left
 :toclevels: 2
 
@@ -94,7 +95,7 @@ Everything else under `.plan/` is gitignored by `.plan/*` in the repository's `.
 
 [NOTE]
 ====
-The `.gitignore` also carries a defensive rule `.plan/project-architecture/**/derived.json`. The current `manage-architecture` code (see `_architecture_core.py`) computes the derived module data (paths, packages, dependencies, file inventories) **on demand by crawling the live worktree on every read**, so `derived.json` is no longer written by normal operation. The re-exclusion guards against (a) historical `derived.json` files left over from earlier code paths and (b) the test-only `save_module_derived` fixture writer accidentally producing committable files.
+The current `manage-architecture` code (see `_architecture_core.py`) computes per-module *derived* data (paths, packages, dependencies, file inventories) **on demand by crawling the live worktree on every read**. There is no `derived.json` to ignore or to track — only `enriched.json` (committed) and the on-the-fly crawl result (never written to disk).
 ====
 
 For the canonical rules, see the project's `.gitignore` — the `.plan/*` block plus the two `!.plan/...` re-includes is the source of truth.

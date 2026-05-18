@@ -1,4 +1,5 @@
 = Commands
+:nofooter:
 :toc: left
 :toclevels: 2
 

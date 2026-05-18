@@ -163,11 +163,18 @@ def check_structure(plan_dir: Path) -> tuple[str, Path, int]:
 
     The per-module layout consists of a top-level ``_project.json`` (the
     source of truth for "which modules exist") plus one subdirectory per
-    module containing ``derived.json`` and ``enriched.json``. The
-    ``_project.json`` ``modules`` index is authoritative — orphan or
-    half-written per-module directories are ignored. The layout is
-    considered to exist when ``_project.json`` parses successfully and at
-    least one module from its index has a readable ``derived.json``.
+    module containing ``enriched.json`` (an LLM-curated stub seeded by
+    ``architecture discover``). The ``_project.json`` ``modules`` index is
+    authoritative — orphan or half-written per-module directories are
+    ignored. The layout is considered to exist when ``_project.json``
+    parses successfully and at least one module from its index has a
+    readable ``enriched.json`` on disk.
+
+    Note: ``derived.json`` is intentionally NOT used as a marker. Derived
+    module data (paths, packages, dependencies, file inventories) is
+    ephemeral under the on-demand crawl model — see
+    ``manage-architecture/scripts/_architecture_core.py`` — and is not
+    written by normal operation.
 
     Args:
         plan_dir: Path to the .plan directory
@@ -176,7 +183,7 @@ def check_structure(plan_dir: Path) -> tuple[str, Path, int]:
         Tuple of (status, path, valid_modules_count) where status is
         'exists' or 'missing' and valid_modules_count is the number of
         per-module entries from ``_project.json["modules"]`` whose
-        ``derived.json`` file is present on disk.
+        ``enriched.json`` file is present on disk.
     """
     import json
 
@@ -197,8 +204,8 @@ def check_structure(plan_dir: Path) -> tuple[str, Path, int]:
 
     valid_count = 0
     for module_name in modules:
-        derived_path = arch_dir / module_name / 'derived.json'
-        if derived_path.is_file():
+        enriched_path = arch_dir / module_name / 'enriched.json'
+        if enriched_path.is_file():
             valid_count += 1
 
     if valid_count == 0:
