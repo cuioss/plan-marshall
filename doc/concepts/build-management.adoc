@@ -7,7 +7,7 @@ A technology-neutral build abstraction. From the LLM's point of view a build is 
 
 This is one of Plan Marshall's most powerful features. It turns a 5–10 minute Maven build (or `pytest` run, or `npm test`, …) from a token-burning, attention-fragmenting interaction into a single dispatched operation.
 
-== TL;DR
+== Overview
 
 Plan Marshall splits build management into two responsibilities:
 

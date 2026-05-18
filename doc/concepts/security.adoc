@@ -5,7 +5,7 @@
 
 How Plan Marshall reduces the prompt-vs-blast-radius trade-off that Claude Code's stock permission modes force on developers — and a frank statement of what it does **not** solve.
 
-== TL;DR
+== Overview
 
 Claude Code ships two extremes:
 

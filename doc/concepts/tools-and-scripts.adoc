@@ -5,7 +5,7 @@
 
 How Plan Marshall integrates with external systems (GitHub / GitLab / Sonar / git / future LSP) — and why none of those integrations is exposed to the LLM as an ad-hoc tool.
 
-== TL;DR
+== Overview
 
 Plan Marshall does **not** expose external tools to the LLM via MCP, live API exploration, or any other runtime-discovered surface. Every external integration ships as a Python *script* owned by a plan-marshall skill, called through the script-executor proxy with a contracted TOON return, and authenticated via credentials the LLM never sees.
 

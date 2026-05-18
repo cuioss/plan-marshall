@@ -5,7 +5,7 @@
 
 Plan Marshall runs a chain of automated reviews across phases 2 through 6 — analytical (Q-Gate over outline and task plan), internal (build / verify), structural (pre-submission self-review), and external (CI, Sonar, PR review comments). Every review feeds the **same** findings pipeline, the **same** per-finding triage envelope, and produces the **same** four decision outcomes (`fixed` / `suppressed` / `accepted` / `taken_into_account`). The uniformity is what makes the chain reproducible.
 
-== TL;DR
+== Overview
 
 * **Six review surfaces**, all funneling into one store:
   - **Q-Gate** over the outline + task plan (phase-3, phase-4, also a phase-2 lesson-derived check).
