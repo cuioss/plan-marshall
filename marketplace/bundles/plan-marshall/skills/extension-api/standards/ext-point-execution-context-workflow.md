@@ -50,7 +50,7 @@ The cache is the single resolution root for every workflow load, regardless of `
 1. The plugin cache has been synced from the worktree (via `/sync-plugin-cache` or `project:finalize-step-sync-plugin-cache`), and
 2. The Claude Code session has been restarted so the host platform re-reads the cache instead of serving its in-process registry snapshot.
 
-This is the second of the three failure surfaces described in [`../../phase-6-finalize/standards/self-host-blind-spot.md`](../../phase-6-finalize/standards/self-host-blind-spot.md). The structural enforcement that prevents the dispatcher from advancing past a worktree-modified workflow before both conditions hold is the session-restart fence in [`../../phase-6-finalize/SKILL.md`](../../phase-6-finalize/SKILL.md) § Session-Restart Fence.
+Meta-projects that author marketplace bundles maintain their own self-host fence (a project-local finalize step) that halts the dispatcher and demands a session restart before any agent-dispatched step runs against the worktree-modified workflow; consumer projects do not encounter the failure mode because their plans do not modify the bundles the dispatcher loads from.
 
 ### Input Contract — what the implementor can rely on
 
