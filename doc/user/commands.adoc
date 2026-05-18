@@ -28,18 +28,19 @@ Unified plan lifecycle management — create, list, outline, execute, finalize, 
 
 [source,bash]
 ----
-/plan-marshall                                                  # List active plans (default)
-/plan-marshall action=init task="Add user authentication"       # Create new plan from a task description
-/plan-marshall action=init issue="https://github.com/org/repo/issues/42"   # Seed from a GitHub issue
-/plan-marshall action=init task="..." stop-after-init=true      # Create plan but stop before phase-2-refine
+/plan-marshall                                                  # List active plans (interactive menu)
+/plan-marshall task="Add user authentication"                   # Create new plan from a task description (action=init implied)
+/plan-marshall issue="https://github.com/org/repo/issues/42"    # Seed from a GitHub issue (action=init implied)
+/plan-marshall task="Complex feature" stop-after-init=true      # Create plan but stop before phase-2-refine
 /plan-marshall action=outline plan="user-auth"                  # Run outline + plan phases for an existing plan
 /plan-marshall action=execute plan="jwt-auth"                   # Resume execution of an existing plan
 /plan-marshall action=finalize plan="jwt-auth"                  # Run phase-6-finalize (commit, push, PR)
 /plan-marshall plan="jwt-auth"                                  # Continue an existing plan from its current phase
 /plan-marshall action=cleanup                                   # Remove completed plans
 /plan-marshall action=lessons                                   # List and convert lessons learned
+/plan-marshall lesson="2026-05-18-11-001"                       # Convert a specific lesson to a plan (action=lessons implied)
 /plan-marshall action=lessons-aggregate                         # Cross-lesson aggregation + superseded-stub prune
-/plan-marshall action=recipe recipe="refactor-to-standards"     # Create plan from a predefined recipe
+/plan-marshall recipe="refactor-to-standards"                   # Create plan from a predefined recipe (action=recipe implied)
 ----
 
 === Parameters
@@ -48,14 +49,27 @@ Unified plan lifecycle management — create, list, outline, execute, finalize, 
 |===
 | Parameter | Type | Description
 
-| `action` | optional | One of `list` (default), `init`, `outline`, `execute`, `finalize`, `cleanup`, `lessons`, `lessons-aggregate`, `recipe`.
-| `task` | optional | Free-form task description used to create a new plan.
-| `issue` | optional | GitHub issue URL used to seed a new plan.
-| `lesson` | optional | Lesson ID to convert into a plan.
-| `recipe` | optional | Recipe key (e.g. `refactor-to-standards`) used with `action=recipe`.
-| `plan` | optional | Plan **name** (plan_id) for operations on an existing plan — not a path.
+| `action` | optional | One of `list` (default), `init`, `outline`, `execute`, `finalize`, `cleanup`, `lessons`, `lessons-aggregate`, `recipe`. When omitted, the action is inferred from other parameters — see <<action-resolution>>.
+| `task` | optional | Free-form task description used to create a new plan. Implies `action=init` when no explicit action is given.
+| `issue` | optional | GitHub issue URL used to seed a new plan. Implies `action=init` when no explicit action is given.
+| `lesson` | optional | Lesson ID to convert into a plan. Implies `action=lessons` when no explicit action is given.
+| `recipe` | optional | Recipe key (e.g. `refactor-to-standards`). Implies `action=recipe` when no explicit action is given.
+| `plan` | optional | Plan **name** (plan_id) for operations on an existing plan — not a path. When supplied without an explicit action, the action is auto-detected from the plan's current phase.
 | `stop-after-init` | optional | If `true`, stop after `phase-1-init` instead of auto-continuing to `phase-2-refine`. Default `false`.
 |===
+
+[#action-resolution]
+=== Action resolution
+
+When `action=` is omitted, the effective action is resolved in this order — first match wins:
+
+1. **`plan=` is supplied** → auto-detect from plan's current phase.
+2. **`task=` or `issue=` is supplied** → `init` (the supplied value becomes the plan source).
+3. **`lesson=` is supplied** → `lessons`.
+4. **`recipe=` is supplied** → `recipe`.
+5. **No source/target parameters at all** → `list` (interactive menu).
+
+If two or more of `{task, issue, lesson, recipe, plan}` are supplied together without an explicit `action=`, the skill returns `status: error` naming the conflict. Pass an explicit `action=` or drop the conflicting parameter to resolve.
 
 == /sync-plugin-cache (meta-project only)
 

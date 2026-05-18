@@ -14,7 +14,7 @@ Workflows for plan creation and setup phases: init, refine, outline, and plan.
 
 | Action | Workflow |
 |--------|----------|
-| `list` (default) | List all plans |
+| `list` (default — no inputs) | List all plans |
 | `init` | Create new plan, auto-continue |
 | `refine` | Clarify request until confident |
 | `outline` | Run 3-outline and 4-plan phases |
@@ -22,6 +22,18 @@ Workflows for plan creation and setup phases: init, refine, outline, and plan.
 | `lessons` | List and convert lessons to plans |
 | `lessons-aggregate` | Aggressive cross-lesson aggregation + superseded-stub prune in a single command |
 | `recipe` | Create plan from recipe (routes to `workflow/recipe.md`) |
+
+When `action=` is omitted, infer the action from the supplied source/target parameters per the [Action Resolution rules in SKILL.md](../SKILL.md#action-resolution):
+
+| Supplied parameter (no explicit `action=`) | Inferred action |
+|--------------------------------------------|-----------------|
+| `task=` or `issue=` | `init` (parameter becomes the plan source) |
+| `lesson=` | `lessons` (seeds the lessons workflow with the given lesson) |
+| `recipe=` | `recipe` (seeds the recipe workflow with the given recipe key) |
+| `plan=` | auto-detected from plan's current phase (see SKILL.md) |
+| (none) | `list` |
+
+If two or more of `{task, issue, lesson, recipe, plan}` are supplied together without an explicit `action=`, return `status: error` naming the conflict.
 
 ---
 

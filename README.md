@@ -70,16 +70,16 @@ The simplest way is to invoke `/plan-marshall` with no arguments and pick "Creat
 /plan-marshall
 ```
 
-If you prefer a one-liner, pass `action=init` together with a free-form task description:
+If you prefer a one-liner, pass a `task=` description directly — the `init` action is inferred:
 
 ```bash
-/plan-marshall action=init task="Add user authentication"
+/plan-marshall task="Add user authentication"
 ```
 
 Or seed the plan from a GitHub issue:
 
 ```bash
-/plan-marshall action=init issue="https://github.com/cuioss/plan-marshall/issues/42"
+/plan-marshall issue="https://github.com/cuioss/plan-marshall/issues/42"
 ```
 
 `/plan-marshall` drives the six-phase lifecycle (init → refine → outline → plan → execute → finalize). Resume an existing plan with `/plan-marshall plan="<plan-id>"` — it auto-detects the current phase.

@@ -43,12 +43,12 @@ This skill implements its **OWN** plan system. You must:
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `action` | optional | Explicit action: `list`, `init`, `outline`, `execute`, `finalize`, `cleanup`, `lessons`, `lessons-aggregate`, `recipe` (default: list) |
-| `task` | optional | Task description for creating new plan |
-| `issue` | optional | GitHub issue URL for creating new plan |
-| `lesson` | optional | Lesson ID to convert to plan |
-| `recipe` | optional | Recipe key for creating plan from predefined recipe |
-| `plan` | optional | Plan name for specific operations (e.g., `jwt-auth`, not path) |
+| `action` | optional | Explicit action: `list`, `init`, `outline`, `execute`, `finalize`, `cleanup`, `lessons`, `lessons-aggregate`, `recipe`. When omitted, the action is inferred from other parameters — see [Action Resolution](#action-resolution). |
+| `task` | optional | Task description for creating new plan. Implies `action=init` when no explicit action is given. |
+| `issue` | optional | GitHub issue URL for creating new plan. Implies `action=init` when no explicit action is given. |
+| `lesson` | optional | Lesson ID to convert to plan. Implies `action=lessons` when no explicit action is given. |
+| `recipe` | optional | Recipe key for creating plan from predefined recipe. Implies `action=recipe` when no explicit action is given. |
+| `plan` | optional | Plan name for specific operations (e.g., `jwt-auth`, not path). When supplied without an explicit action, the action is auto-detected from the plan's current phase. |
 | `stop-after-init` | optional | If true, stop after 1-init phase without continuing to 2-refine (default: false) |
 
 **Note**: The `plan` parameter accepts the plan **name** (plan_id) only, not the full path.
@@ -63,9 +63,22 @@ Load foundational development practices before any phase work:
 Skill: plan-marshall:dev-general-practices
 ```
 
+### Action Resolution
+
+Resolve the effective action in the following order. The first matching rule wins; stop at the first match.
+
+1. **Explicit `action=` parameter** — use it as-is. If the value is not in the action table below, return `status: error` with a remediation message naming the valid actions.
+2. **`plan=` without `action=`** — auto-detect from the plan's current phase (see [Auto-Detect from Phase](#auto-detect-from-phase) below).
+3. **`task=` or `issue=` without `action=`** — imply `action=init`. The supplied value becomes the plan source (`task` or `issue` respectively).
+4. **`lesson=` without `action=`** — imply `action=lessons`. The supplied lesson ID seeds the lessons workflow.
+5. **`recipe=` without `action=`** — imply `action=recipe`. The supplied recipe key seeds the recipe workflow.
+6. **No source/target parameters at all** — default to `action=list` (interactive menu).
+
+**Ambiguity guard**: if two or more *source-providing* parameters from {`task`, `issue`, `lesson`, `recipe`, `plan`} are supplied without an explicit `action=`, return `status: error` with a message naming the conflicting parameters and asking the user to either pass an explicit `action=` or remove one of the conflicting values.
+
 ### Action Routing
 
-Route based on action parameter. Load the appropriate workflow document and follow its instructions:
+Once the action is resolved, load the appropriate workflow document and follow its instructions:
 
 | Action | Workflow Document | Description |
 |--------|-------------------|-------------|
@@ -79,7 +92,7 @@ Route based on action parameter. Load the appropriate workflow document and foll
 | `finalize` | `Read workflow/execution.md` | Commit, push, PR |
 | `recipe` | `Read workflow/recipe.md` | Create plan from predefined recipe |
 
-### Auto-Detection (plan parameter without action)
+### Auto-Detect from Phase
 
 When `plan` is specified but no `action`, auto-detect from plan phase:
 
@@ -111,14 +124,14 @@ After determining the action and workflow document:
 # List all plans (interactive selection)
 /plan-marshall
 
-# Create new plan from task description
-/plan-marshall action=init task="Add user authentication"
+# Create new plan from task description (action=init implied by task=)
+/plan-marshall task="Add user authentication"
 
-# Create new plan from GitHub issue
-/plan-marshall action=init issue="https://github.com/org/repo/issues/42"
+# Create new plan from GitHub issue (action=init implied by issue=)
+/plan-marshall issue="https://github.com/org/repo/issues/42"
 
 # Create plan but stop after 1-init
-/plan-marshall action=init task="Complex feature" stop-after-init=true
+/plan-marshall task="Complex feature" stop-after-init=true
 
 # Outline specific plan
 /plan-marshall action=outline plan="user-auth"
@@ -138,14 +151,20 @@ After determining the action and workflow document:
 # List lessons and convert to plan
 /plan-marshall action=lessons
 
+# Convert specific lesson to plan (action=lessons implied by lesson=)
+/plan-marshall lesson="2026-05-18-11-001"
+
 # Aggressive cross-lesson aggregation + superseded-stub prune in one batch
 /plan-marshall action=lessons-aggregate
 
-# Create plan from predefined recipe (lists available recipes for selection)
+# Create plan from predefined recipe — lists available recipes for selection
 /plan-marshall action=recipe
 
-# Create plan from specific recipe
-/plan-marshall action=recipe recipe="refactor-to-standards"
+# Create plan from specific recipe (action=recipe implied by recipe=)
+/plan-marshall recipe="refactor-to-standards"
+
+# Explicit action= always wins over implicit inference
+/plan-marshall action=init task="Add user authentication"
 ```
 
 ## Continuous Improvement
