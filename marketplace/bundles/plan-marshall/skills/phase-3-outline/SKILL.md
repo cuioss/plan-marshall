@@ -81,7 +81,7 @@ Step 2: Load Inputs → Step 3: Recipe Detection → Step 4: Detect Change Type 
 
 **Purpose**: On re-entry (after Q-Gate or user review flagged issues), address unresolved findings before re-running the outline.
 
-Query pending findings for phase `3-outline`. For each finding: analyze context, verify file paths exist on disk, create assessments or update deliverables as needed, then resolve the finding with `taken_into_account`. Continue with normal Steps 2..12 after corrections are applied.
+Query pending findings for phase `3-outline`. For each finding: analyze context, verify file paths exist on disk, create assessments or update deliverables as needed, then resolve the finding with `taken_into_account`. Continue with normal Steps 2..12 after corrections are applied. When a finding scopes to one peer of a symmetric data structure (ladder, parallel-array, peer-set, matrix), apply the **symmetric-peer-audit rule**: audit every peer in the same structure for the same defect and apply the same fix in the same outline revision — see [`standards/outline-workflow-detail.md` § symmetric-peer-audit](standards/outline-workflow-detail.md#step-1-check-for-unresolved-q-gate-findings-detail) (lesson `lesson-2026-05-18-10-001`, PR #407).
 
 For detailed procedures (query commands, finding-type handling, resolution logging), see [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md#step-1-check-for-unresolved-q-gate-findings-detail).
 
