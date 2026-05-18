@@ -21,7 +21,7 @@ Plan Marshall organises every non-trivial change as a *plan* that moves through 
 
 |3. Outline
 |`phase-3-outline`
-|`solution_outline.md` produced via the Simple Track (localised changes) or Complex Track (cross-cutting discovery). Outline is strictly analytical — no source mutations and no `doctor` apply/fix calls.
+|`solution_outline.md` produced via the Simple Track (localised changes) or Complex Track (cross-cutting discovery). Outline is strictly analytical — no source mutations.
 
 |4. Plan
 |`phase-4-plan`
@@ -33,7 +33,7 @@ Plan Marshall organises every non-trivial change as a *plan* that moves through 
 
 |6. Finalize
 |`phase-6-finalize`
-|Git workflow, finalize-step pipeline (plugin-doctor, pre-submission self-review, post-run review, plus meta-project-only deploy and cache-sync steps), commit, push, and PR creation.
+|Git workflow, finalize-step pipeline (pre-submission self-review, automated review, Sonar roundtrip, lessons capture, branch cleanup), commit, push, and PR creation. Projects that develop marketplace plugins also run domain-specific finalize steps (e.g. `plugin-doctor`); the deploy and cache-sync steps are meta-project-only.
 |===
 
 The phase pipeline is described in detail in `ref-workflow-architecture/standards/phases.md`. The lifecycle states a plan transitions through are catalogued in `phase-lifecycle.md`.
@@ -44,7 +44,7 @@ A handful of workflows run inside multiple phases. They live under `marketplace/
 
 * `planning.md`, `planning-outline.md` — task and outline planning bodies invoked by phases 3 and 4.
 * `execution.md`, `q-gate-validation.md` — execution and quality-gate bodies invoked by phase 5.
-* `verification-feedback.md` — triage envelope shared by phases 5 and 6 (build, lint, Sonar, PR review, plugin-doctor).
+* `verification-feedback.md` — triage envelope shared by phases 5 and 6 (build failures, lint, Sonar findings, PR review comments, plus domain-specific producers configured per project).
 * `triage.md` — generic finding triage.
 * `research-best-practices.md` — research workflow dispatched by any phase.
 * `enrich-module.md` — Tier-1 architecture enrichment invoked from phase-6 architecture-refresh.
@@ -55,7 +55,7 @@ A handful of workflows run inside multiple phases. They live under `marketplace/
 Two boundaries that catch most violations:
 
 * **Refine never implements code.** If a `phase-2-refine` dispatch edits files outside `.plan/local/{plans,worktrees}/{plan_id}/`, that is a contract violation.
-* **Outline never mutates source files or runs `doctor fix/apply`.** Outline is read-only outside the plan directory.
+* **Outline never mutates source files.** Outline is read-only outside the plan directory.
 
 // TODO: expand with sequence diagrams from `dispatch-walkthrough.md` and `call-graph.md` once images render correctly in the AsciiDoc pipeline.
 

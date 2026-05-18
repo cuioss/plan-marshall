@@ -73,7 +73,7 @@ This shape means a *single broad Claude Code permission* covers the bulk of plan
 
 The `*` is bounded — it can only match arguments that the executor itself accepts, and the executor only dispatches to registered scripts. The LLM cannot smuggle arbitrary commands through this allow rule because the executor doesn't `exec` shell strings; it dispatches to Python.
 
-**Net effect**: hundreds of distinct plan-marshall operations (every `manage-*`, every build, every triage, every plugin-doctor sweep) collapse into one allow entry. Without the executor proxy, the same coverage would require either a permission prompt per operation, or a dozens-of-entries-long allow list that's easy to get wrong.
+**Net effect**: hundreds of distinct plan-marshall operations (every `manage-*`, every build, every triage, every finalize step) collapse into one allow entry. Without the executor proxy, the same coverage would require either a permission prompt per operation, or a dozens-of-entries-long allow list that's easy to get wrong.
 
 == Permission settings — shape and split
 
@@ -93,11 +93,9 @@ Sample allow entries from a real plan-marshall checkout:
 ----
 "Bash(python3 .plan/execute-script.py *)",   // the executor proxy — covers ~90% of operations
 "Bash(rm -rf .plan/logs/*)",                 // narrow cleanup, scoped to ignored paths
-"Bash(rsync:*)",                             // rsync (used by /sync-plugin-cache)
 "Edit(.plan/**)",                            // local plan files
 "Write(.plan/**)",                           // local plan files
 "Read(~/.claude/plugins/cache/**)",          // installed plugin cache (read-only)
-"Skill(finalize-step-plugin-doctor)",        // explicit skill invocations
 "WebFetch(domain:github.com)"                // narrow web access
 ----
 
