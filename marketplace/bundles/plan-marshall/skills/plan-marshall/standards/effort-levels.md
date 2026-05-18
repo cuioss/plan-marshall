@@ -67,18 +67,6 @@ The resolver and the wizard both enforce:
 | `max` resolves but the resolved Opus alias lacks `effort: xhigh` support | Build-time warning + per-level skip; runtime falls back to canonical. |
 | Role key is registered in [`effort-roles.md`](effort-roles.md) | Warning (not error): unknown roles resolve to `effort` / `inherit` so the registry can rename without breaking saved configs. |
 
-## Migration note — `xhigh` / `xxhigh` rebind, silent capability downgrade
-
-Plan-marshall is pre-1.0 and the level palette is allowed to evolve. With the addition of `xhigh = opus-medium` and the promotion of `max` to live, the existing `xhigh` and `xxhigh` keywords now bind to **weaker** primitives than they did before:
-
-| Level | Previous binding | New binding |
-|-------|------------------|-------------|
-| `xhigh` | `opus, high` | `opus, medium` |
-| `xxhigh` | `opus, xhigh` | `opus, high` |
-| `max` | (reserved — not accepted by resolver) | `opus, xhigh` (Opus-4.7-only) |
-
-Consumer `marshal.json` files that already set `xhigh` / `xxhigh` continue to resolve — but at the new (weaker) primitives. There is no auto-migration. User-side action: any role that previously needed *Opus, high* under `xhigh` should be re-pointed at `xxhigh`; any role that previously needed *Opus, xhigh* under `xxhigh` should be re-pointed at `max`.
-
 ## Cross-References
 
 | Document | Content |

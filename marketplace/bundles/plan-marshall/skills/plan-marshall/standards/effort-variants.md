@@ -1,197 +1,94 @@
-# Role Variants — User Guide
+# Effort Variants — Resolver Contract & Spec
 
-> User-facing centralised guide to configuring per-role models for plan-marshall subagents.
+> Precise resolution rules, environment-variable override semantics, and build-time guards for the per-role model variant system. Audience: skill authors writing dispatch sites, and maintainers debugging the resolver.
+>
+> **For the project-author / user-facing guide** — wizard walkthrough, presets, recipes, troubleshooting — see [`doc/user/efforts.adoc`](../../../../../doc/user/efforts.adoc).
 
-## What This Does
+## What the System Resolves
 
-By default, every subagent dispatched by plan-marshall inherits the model from the parent Claude Code session (typically Opus). Some workflows benefit from higher capability (verification-feedback triage, retrospective analysis); most don't, costing tokens for no gain. The role-variants system lets you pick a model + effort tier per phase (and per workflow inside a phase), applied automatically at dispatch time.
+Every plan-marshall `Task:` dispatch routes through the single role-eligible canonical agent `plan-marshall:execution-context`. The build target emits seven entries per role-eligible canonical (one canonical + six suffixed level variants). The resolver chooses which entry the dispatch calls, based on the caller's `--phase` (and optional `--role <subkey>`) plus the project's `marshal.json` configuration.
 
-You configure a small JSON block in `.plan/marshal.json`. The build target emits one variant agent file per (canonical agent × level) combination. Dispatch sites read your configuration and call the right variant by name. End result: the right model runs the right role, no per-dispatch overrides, no manual flag passing.
+Inputs: `--phase phase-N-{suffix}` (always required); `--role <subkey>` (optional). Output: a target name — either `execution-context` (the canonical, when the resolved level is `inherit`) or `execution-context-{level}` (one of the five suffixed variants).
 
-## The Level Palette
+## Resolution Order (Authoritative)
 
-Six ordinal tiers plus a sentinel:
+For a dispatch with `--phase phase-N-{suffix} [--role <subkey>]`, the resolver returns the first match in this order:
 
-| Level | Model | Effort | When to use |
-|-------|-------|--------|-------------|
-| `low` | Haiku | (n/a) | Mechanical tasks: log scrubbing, simple lookups, deterministic transforms. |
-| `medium` | Sonnet | medium | Default for routine work — most code edits, doc updates. |
-| `high` | Sonnet | high | Analytical work: triage, validation, multi-file reasoning. |
-| `xhigh` | Opus | medium | Opus reasoning without max thinking — fills the Sonnet-high → Opus-high cost/quality gap. |
-| `xxhigh` | Opus | high | High-effort Opus — today's standard Opus top tier. |
-| `max` | Opus | xhigh | Top tier (Opus-4.7-only). Research, novel problem decomposition; build-time guard skips emission when the alias does not accept `effort: xhigh`. |
-| `inherit` | (parent) | (parent) | Sentinel: dispatch the canonical, inheriting whatever the parent session uses. |
+1. **Explicit per-sub-key override** — `plan.phase-N-{suffix}.effort.<subkey>`, when the phase's `effort` value is an object and the sub-key is present.
+2. **Phase `default` slot** — `plan.phase-N-{suffix}.effort.default`, when `effort` is an object and the sub-key is unset or unspecified.
+3. **Phase plain-string `effort`** — `plan.phase-N-{suffix}.effort` when it is a string, applied to every workflow under that phase.
+4. **Plan-wide `effort`** — `plan.effort` (string).
+5. **Implicit fallback** — `inherit` (the canonical no-suffix variant; the dispatched subagent inherits the parent session's model).
 
-See [`effort-levels.md`](effort-levels.md) for the full level → `(model, effort)` primitive binding, alias rules, and the `max` build-time guard.
+`--default` (no `--phase`, no `--role`) short-circuits to step 4. This is the resolution path standalone `/research` outside any plan takes.
 
-## The Role Registry
+## Accepted Lookup Forms
 
-A **role** is a stable key naming a class of dispatch (e.g., `phase-6-finalize.verification-feedback`, `phase-3-outline`). The registry is phase-scoped (six groups, named after the SKILL.md they identify: `phase-1-init`, `phase-2-refine`, `phase-3-outline`, `phase-4-plan`, `phase-5-execute`, `phase-6-finalize`). The full registry — which sub-keys exist on which phase, which workflow doc each binds to, and the accepted lookup forms — lives in [`effort-roles.md`](effort-roles.md).
-
-## How to Configure
-
-### Option A: The Wizard (Recommended)
-
-Run the `marshall-steward` wizard and pick the **Models** submenu:
-
-```
-/marshall-steward
-```
-
-The wizard:
-
-- Shows the current per-phase `effort` configuration (or "(not configured — defaults apply)").
-- Edits `plan.effort` via prompt — your plan-wide fallback level.
-- Walks each phase, letting you set the phase default or override individual workflow sub-keys.
-- Refuses invalid levels (e.g., typos) at save time.
-
-### Option B: Edit `marshal.json` Directly
-
-The schema lives at `.plan/marshal.json` under the `plan` key:
-
-```jsonc
-{
-  "plan": {
-    "effort": "medium",
-    "phase-3-outline": { "effort": "high" },
-    "phase-5-execute": {
-      "effort": { "verification-feedback": "high" }
-    },
-    "phase-6-finalize": {
-      "effort": {
-        "verification-feedback": "high",
-        "post-run-review": "xhigh"
-      }
-    }
-  }
-}
-```
-
-Resolution order for any role:
-
-1. The deepest explicit sub-key override (e.g. `plan.phase-6-finalize.effort.verification-feedback`).
-2. The group's `default` slot when the sub-key is unset or unspecified (`plan.phase-6-finalize.effort.default`).
-3. A plain-string value at the phase entry (single-level shorthand applied to every workflow under that phase) — e.g. `"phase-3-outline": { "effort": "high" }`.
-4. `plan.effort` — plan-wide default.
-5. `inherit` — implicit fallback when nothing else matches.
-
-The per-phase `effort` attributes are **opt-in** — when absent entirely, every subagent inherits the parent session's model. The dispatcher resolves the level at dispatch time via `manage-config effort resolve-target --phase <phase> --role <subkey>`, so no Claude Code restart is required after editing.
-
-### Recommended Starting Configuration
-
-For most workflows, this gets you most of the value at modest cost. The example below mirrors the on-disk shape that `apply-preset --preset balanced` writes after `_expand_phase_effort` — every `KNOWN_ROLES` phase carries an explicit entry so the wizard's deep-equality match recognises the preset:
-
-```jsonc
-{
-  "plan": {
-    "effort": "high",
-    "phase-1-init": { "effort": "high" },
-    "phase-2-refine": { "effort": "high" },
-    "phase-3-outline": { "effort": "xhigh" },
-    "phase-4-plan": { "effort": "high" },
-    "phase-5-execute": {
-      "effort": {
-        "default": "xhigh",
-        "verification-feedback": "high"
-      }
-    },
-    "phase-6-finalize": {
-      "effort": {
-        "default": "high",
-        "verification-feedback": "high",
-        "post-run-review": "xhigh"
-      }
-    }
-  }
-}
-```
-
-Pre-built profiles cover the same ground:
+All four forms produce the same resolution:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort apply-preset --preset balanced
+manage-config effort resolve-target --phase phase-2-refine                                  # bare group
+manage-config effort resolve-target --role phase-6-finalize.verification-feedback           # dotted single-arg
+manage-config effort resolve-target --phase phase-6-finalize --role verification-feedback   # two-flag
+manage-config effort resolve-target --default                                               # zero-role fallback
 ```
 
-Available presets: `economic`, `balanced`, `high-end`. See [`effort-roles.md`](effort-roles.md) and `effort_presets.py` for the per-preset role tables.
+The dotted form (`phase-N-{suffix}.<subkey>`) and the two-flag form are equivalent and validated identically.
 
-## What Happens at Dispatch Time
+## Polymorphic `effort` Field
 
-When a dispatch site fires (e.g., phase-5-execute calling `verification-feedback` with `producer=build-runner`):
+The `plan.<phase>.effort` field accepts polymorphic JSON:
 
-1. The site calls `manage-config effort resolve-target --phase phase-5-execute --role verification-feedback`.
-2. If the level is `inherit` (or the resolver returned `inherit` as the implicit fallback), the target is the **canonical** no-suffix variant: `Task: plan-marshall:execution-context`. The runtime inherits the parent's model.
-3. Otherwise, the target is a **variant**: `Task: plan-marshall:execution-context-{level}`. The variant has `model:` and `effort:` baked into its frontmatter, so Claude Code runs the subagent on those exact settings.
+- **String** — applies the level to every workflow under the phase. Equivalent to an object with that level under every recognised sub-key.
+- **Object** — sets per-sub-key overrides plus an optional `default` slot. Sub-keys not present fall through to `default`, then to `plan.effort`, then to `inherit`.
 
-The dispatched `execution-context` agent reads the caller-supplied `workflow` (the doc path inside the prompt body) and executes it. One agent + one set of seven emitted variants (canonical + six levels) drives every plan-marshall `Task:` invocation in the marketplace. Variants are emitted at build time into `target/claude/plan-marshall/agents/`, then synced into the plugin cache via `/sync-plugin-cache`.
+Sub-key whitelist per phase (validated at wizard save time; unknown keys are accepted by the resolver as a warning but produce noise in audit logs):
 
-## Migration Note — `xhigh` / `xxhigh` rebind
+| Group | Whitelisted sub-keys |
+|-------|----------------------|
+| `phase-1-init` … `phase-4-plan` | `default`, `research` |
+| `phase-5-execute` | `default`, `verification-feedback`, `research` |
+| `phase-6-finalize` | `default`, `verification-feedback`, `post-run-review`, `research` |
 
-Plan-marshall is pre-1.0. The recent palette expansion — inserting `xhigh = opus-medium` and promoting `max` to live — rebinds the existing `xhigh` and `xxhigh` keywords to **weaker** primitives than they previously resolved to:
+The plan-wide `plan.effort` is a single string.
 
-| Level | Previous binding | New binding |
-|-------|------------------|-------------|
-| `xhigh` | `opus, high` | `opus, medium` |
-| `xxhigh` | `opus, xhigh` | `opus, high` |
-| `max` | (reserved — not accepted by resolver) | `opus, xhigh` (Opus-4.7-only) |
+## Validation
 
-There is no auto-migration. **User-side action** for any consumer `marshal.json` that was already opted in to per-role levels:
+| Condition | Behaviour |
+|-----------|-----------|
+| Configured value is one of `low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`, `inherit` | Accepted on read; refused at wizard save with a remediation message. |
+| Configured value is anything else | Hard error on read with the offending key path; refused at wizard save. |
+| Role key is not in the phase's sub-key whitelist | Warning (not error): unknown keys resolve via fallback (`default` → `effort` → `plan.effort` → `inherit`) so registry renames do not break saved configs. Audit log records the unknown key. |
 
-- If you previously wanted *Opus, high* under `xhigh` → now point at `xxhigh`.
-- If you previously wanted *Opus, xhigh* under `xxhigh` → now point at `max`.
+## Build-Time `max` Guard
 
-Configs that did not opt in to per-role levels (or that only used `low`/`medium`/`high`) are unaffected.
+`max` resolves to `(opus, xhigh)`, which is **Opus-4.7-only**. The Claude target's emitter (`marketplace/targets/claude/emitter.py`) inspects the canonical agent's resolved Opus alias capability flags and refuses to emit the `execution-context-max.md` variant when the alias does not advertise `effort: xhigh` support. The emitter logs a build-time warning naming the canonical and the missing capability.
 
-## Troubleshooting
+At runtime: a dispatch site whose resolver returns `execution-context-max` against a target where the variant was skipped will fail with `Agent type not found` from Claude Code's plugin loader. The resolver does not know the emitter skipped a variant — the contract is one-way (build → registry). Operators see this only via build logs.
 
-### Symptom: My configured level isn't taking effect
+## Environment-Variable Override
 
-**Check:**
-
-1. Is the role spelled correctly per the hierarchical registry in [`effort-roles.md`](effort-roles.md)? Keys are kebab-case and match the SKILL.md name (`phase-6-finalize.verification-feedback`, not `phase_6.verification_feedback` and not the bare `phase-6-finalize`).
-2. Is the level spelled correctly (`high`, not `High` or `hi`)?
-3. Is `target/claude/` regenerated? Run the `project:finalize-step-deploy-target` step (or `python3 marketplace/targets/generate.py --target claude --output target/claude`) to refresh emitted variants, then `/sync-plugin-cache` to push them into the plugin cache.
-
-### Symptom: A role configured as `max` is not running on Opus
-
-`max` resolves to `(opus, xhigh)`, which is currently Opus-4.7-only. The build target's guard refuses to emit the `max` variant when the canonical's resolved alias does not accept `effort: xhigh` — the dispatch falls back to the canonical, which inherits the parent's model. Check `.plan/logs/` for the build warning naming the canonical and the missing capability.
-
-### Symptom: Set a level but it's not even visible to the resolver
-
-`CLAUDE_CODE_SUBAGENT_MODEL` is an environment variable that overrides every subagent's pinned model at session start (per code.claude.com). When set, it beats the variant's `model:` declaration — including yours. Unset the env var or override it explicitly:
+`CLAUDE_CODE_SUBAGENT_MODEL`, when set at Claude Code session start, overrides every subagent's pinned `model:` declaration (per code.claude.com agent docs). This takes effect **above** the resolver: the variant is still selected per `marshal.json`, but Claude Code substitutes the env var's model on subagent launch. To restore variant-pinned behaviour:
 
 ```bash
 unset CLAUDE_CODE_SUBAGENT_MODEL
 ```
 
-Restart Claude Code after the unset.
+Restart Claude Code. The override is session-level, not dispatch-level — the resolver cannot work around it.
 
-### Symptom: Wizard refuses my level value
+## No-Restart Semantics
 
-Valid levels are `low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`, `inherit`. There are currently no reserved-future keywords; future palette expansion may add to the reserved set with a clear error message.
+The resolver reads `marshal.json` fresh on every dispatch via `manage-config effort resolve-target`. An `effort` edit takes effect on the **next** dispatch — no Claude Code restart, no plugin reinstall, no target regeneration required. The seven emitted variants are static; only which variant the resolver selects changes.
 
-## Recommended Research Setting
-
-The `research` workflow benefits from the most capable model — it inherits the calling phase's default level, so the simplest tuning is to bump whichever phase fires research most often. The `balanced` preset already sets `phase-3-outline.effort = xhigh` (Opus, medium); push the same slot to `max` when you want Opus-4.7's `xhigh` effort tier for novel decomposition:
-
-```jsonc
-{
-  "plan": {
-    "phase-3-outline": { "effort": "max" }
-  }
-}
-```
-
-(The `max` variant gracefully degrades to canonical when the alias does not accept `effort: xhigh`. Keep the `balanced` anchor at `xhigh` when Opus-4.7 reasoning is sufficient.)
-
-For standalone `/research` outside any plan, the dispatch resolves via `--default` (`plan.effort` → `inherit`); bump `plan.effort` if you want every standalone research run at a higher tier.
+A restart **is** required when `target/claude/` is regenerated (e.g., when the variant frontmatter changes shape, when a new role-eligible canonical is added, or when the `max` build guard's emission decision changes). That is a meta-project / contributor flow, not a user-side flow.
 
 ## Cross-References
 
 | Document | Content |
 |----------|---------|
-| [`effort-levels.md`](effort-levels.md) | Level → `(model, effort)` primitive binding. |
-| [`effort-roles.md`](effort-roles.md) | Role registry — which dispatch sites consume which roles. |
-| [`ext-point-dynamic-level-executor.md`](../../extension-api/standards/ext-point-dynamic-level-executor.md) | Agent-level extension point — variant emission contract. |
-| `marshall-steward/standards/effort-menu.md` | Wizard UX for the Effort submenu. |
-| `.claude/skills/finalize-step-deploy-target/` | Build-time variant emission step. |
-| `.claude/skills/finalize-step-sync-plugin-cache/` | Plugin cache sync (project-local). |
+| [`effort-levels.md`](effort-levels.md) | Level → `(model, effort)` primitive binding. The `max` Opus-4.7-only contract is specified there. |
+| [`effort-roles.md`](effort-roles.md) | Role registry — phase-scoped sub-keys, the workflow doc each binds to, dispatch-site usage. |
+| [`ext-point-dynamic-level-executor.md`](../../extension-api/standards/ext-point-dynamic-level-executor.md) | Variant-emission contract — what the build target produces from each role-eligible canonical. |
+| [`ext-point-execution-context-workflow.md`](../../extension-api/standards/ext-point-execution-context-workflow.md) | Workflow-doc contract — what the dispatched `execution-context` agent executes. |
+| `marshall-steward/standards/effort-menu.md` | Wizard preset-picker UX contract. |
+| [`doc/user/efforts.adoc`](../../../../../doc/user/efforts.adoc) | **User-facing guide** — presets, recipes, troubleshooting. Read this first if you are configuring a project. |

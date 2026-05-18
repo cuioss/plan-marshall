@@ -97,7 +97,7 @@ Concrete decomposition for finalize dispatches:
 
 ### 5.1 Phase-scoped resolution + producer-mode bundling
 
-When the same LLM workflow fires from multiple phases (e.g., `q-gate-validation` from phase-2-refine/3/4, or `research` from any phase), the resolver bubbles up from the caller phase's sub-key to that phase's default to `effort`. The workflow body lives in one doc; each caller passes `--phase phase-N` and the level resolves under whichever phase fired the dispatch. There is no `cross.*` group — the per-phase configuration is the routing mechanism.
+When the same LLM workflow fires from multiple phases (e.g., `q-gate-validation` from phase-2-refine/3/4, or `research` from any phase), the resolver bubbles up from the caller phase's sub-key to that phase's default to `effort`. The workflow body lives in one doc; each caller passes `--phase phase-N` and the level resolves under whichever phase fired the dispatch. The per-phase configuration is the routing mechanism.
 
 When one workflow has multiple producer sources, bundle them under one workflow with `producer` as the runtime axis. `verification-feedback` is the canonical example: five producers (`build-runner` from phase-5-execute; `sonar` / `pr-comment` / `plugin-doctor` / `pr-state` from phase-6-finalize) share the triage core but differ only in Step 1 (the producer-side data fetch). One workflow doc, one role-key sub-key, five runtime modes.
 

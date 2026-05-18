@@ -32,7 +32,6 @@ Unified plan lifecycle management — create, list, outline, execute, finalize, 
 /plan-marshall                                                  # List active plans (interactive menu)
 /plan-marshall task="Add user authentication"                   # Create new plan from a task description (action=init implied)
 /plan-marshall issue="https://github.com/org/repo/issues/42"    # Seed from a GitHub issue (action=init implied)
-/plan-marshall task="Complex feature" stop-after-init=true      # Create plan but stop before phase-2-refine
 /plan-marshall action=outline plan="user-auth"                  # Run outline + plan phases for an existing plan
 /plan-marshall action=execute plan="jwt-auth"                   # Resume execution of an existing plan
 /plan-marshall action=finalize plan="jwt-auth"                  # Run phase-6-finalize (commit, push, PR)
@@ -56,7 +55,6 @@ Unified plan lifecycle management — create, list, outline, execute, finalize, 
 | `lesson` | optional | Lesson ID to convert into a plan. Implies `action=lessons` when no explicit action is given.
 | `recipe` | optional | Recipe key (e.g. `refactor-to-standards`). Implies `action=recipe` when no explicit action is given.
 | `plan` | optional | Plan **name** (plan_id) for operations on an existing plan — not a path. When supplied without an explicit action, the action is auto-detected from the plan's current phase.
-| `stop-after-init` | optional | Per-invocation override of the `plan.phase-1-init.init_without_asking` config gate. If supplied, wins over the config: `true` stops after `phase-1-init`, `false` auto-continues. If omitted, the config decides (default `init_without_asking: true` → auto-continue). See xref:configuration.adoc#review-gates[Configuration › Review gates].
 |===
 
 [#action-resolution]

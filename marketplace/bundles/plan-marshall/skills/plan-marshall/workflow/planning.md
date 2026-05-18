@@ -148,17 +148,15 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capt
   --plan-id {plan_id} --phase 1-init
 ```
 
-**Automatic Continuation** — resolve the gate in this order (first match wins):
+**Automatic Continuation** — read `plan.phase-1-init.init_without_asking` from `marshal.json`:
 
-1. If the caller passed `stop-after-init=true` (CLI flag), STOP and display the plan summary.
-2. If the caller passed `stop-after-init=false`, auto-continue.
-3. Otherwise read `plan.phase-1-init.init_without_asking` from `marshal.json`:
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-     plan phase-1-init get --field init_without_asking --audit-plan-id {plan_id}
-   ```
-   - If `false` → STOP and display the plan summary.
-   - Otherwise (`true` or unset → default `true`) → continue through 2-refine, 3-outline, and 4-plan phases with the new plan_id.
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-1-init get --field init_without_asking --audit-plan-id {plan_id}
+```
+
+- If `false` → STOP and display the plan summary.
+- Otherwise (`true` or unset → default `true`) → continue through 2-refine, 3-outline, and 4-plan phases with the new plan_id.
 
 This mirrors the existing `plan_without_asking` (phase-3-outline) and `execute_without_asking` (phase-4-plan) gate-resolution pattern.
 

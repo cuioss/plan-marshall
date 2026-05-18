@@ -71,8 +71,8 @@ DEFAULT_PLAN_INIT = {
     'branch_strategy': 'feature',
     'use_worktree': True,
     # Auto-continue from 1-init to 2-refine. true = no gate (current behaviour);
-    # false = stop after init and wait for the user. CLI flag `stop-after-init`
-    # overrides this for a single invocation.
+    # false = stop after init and wait for the user. Mirrors the sibling
+    # plan_without_asking / execute_without_asking review-gate pattern.
     'init_without_asking': True,
 }
 

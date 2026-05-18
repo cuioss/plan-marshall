@@ -340,7 +340,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 
 ## 3. Phase-scoped sub-keys — workflows that fire from multiple phases
 
-The phase-scoped resolver bubbles every dispatch up from the caller phase's sub-key (or default) to `effort`. Workflows that previously lived in the retired `cross.*` group now sit as **sub-keys under every phase that invokes them** — the same workflow doc runs, the level just resolves under whichever phase fires the dispatch. Every arrow below is a `Task: execution-context` dispatch crossing an envelope boundary.
+The phase-scoped resolver bubbles every dispatch up from the caller phase's sub-key (or default) to `effort`. Workflows that fire from multiple phases sit as **sub-keys under every phase that invokes them** — the same workflow doc runs, the level just resolves under whichever phase fires the dispatch. Every arrow below is a `Task: execution-context` dispatch crossing an envelope boundary.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────────┐
@@ -428,7 +428,7 @@ The resolver accepts four lookup forms:
 - `--phase phase-6-finalize --role verification-feedback` — two-flag
 - `--default`                                  — short-circuit, fetch `effort`
 
-Retired legacy keys (`cross.*` and the five retired `phase-6-finalize.{create-pr,pre-submission-self-review,lessons-capture,retrospective,pr-doctor}`) return `status: error` with a remediation message naming the new target. See `../../plan-marshall/standards/effort-roles.md` for the full registry + per-key remediation table.
+See `../../plan-marshall/standards/effort-roles.md` for the full registry.
 
 Level values resolve to `(model, effort)` per `../../plan-marshall/standards/effort-levels.md` (six tiers: `low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`, plus the `inherit` sentinel). The graphs above abbreviate the dispatched target to `execution-context`; on the wire it's `execution-context-{level}` with `{level}` filled in by the resolver.
 

@@ -49,7 +49,6 @@ This skill implements its **OWN** plan system. You must:
 | `lesson` | optional | Lesson ID to convert to plan. Implies `action=lessons` when no explicit action is given. |
 | `recipe` | optional | Recipe key for creating plan from predefined recipe. Implies `action=recipe` when no explicit action is given. |
 | `plan` | optional | Plan name for specific operations (e.g., `jwt-auth`, not path). When supplied without an explicit action, the action is auto-detected from the plan's current phase. |
-| `stop-after-init` | optional | Per-invocation override of the `plan.phase-1-init.init_without_asking` config gate. If supplied, wins over the config: `true` stops after 1-init, `false` auto-continues to 2-refine. If omitted, the config decides (default `init_without_asking: true` → auto-continue). |
 
 **Note**: The `plan` parameter accepts the plan **name** (plan_id) only, not the full path.
 
@@ -129,9 +128,6 @@ After determining the action and workflow document:
 
 # Create new plan from GitHub issue (action=init implied by issue=)
 /plan-marshall issue="https://github.com/org/repo/issues/42"
-
-# Create plan but stop after 1-init
-/plan-marshall task="Complex feature" stop-after-init=true
 
 # Outline specific plan
 /plan-marshall action=outline plan="user-auth"

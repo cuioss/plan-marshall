@@ -10,7 +10,8 @@ Operating Plan Marshall in a target project. If you are working on Plan Marshall
 * xref:installation.adoc[Installation] — install and update the marketplace via Claude Code's `/plugin` tooling. Snapshot (`dist-claude`) and pinned (`claude/v*`) channels.
 * xref:getting-started.adoc[Getting Started] — first-run setup via `/marshall-steward`.
 * xref:commands.adoc[Commands] — `/marshall-steward` and `/plan-marshall`.
-* xref:configuration.adoc[Configuration] — `marshal.json`, per-role effort tuning, presets, no-restart semantics, worked example.
+* xref:configuration.adoc[Configuration] — surface map of every configuration file Plan Marshall touches and what governs each.
+* xref:efforts.adoc[Efforts] — per-role model selection: wizard presets, polymorphic `marshal.json` shape, worked example, troubleshooting.
 * xref:terminal-title.adoc[Terminal Title] — VS Code and IntelliJ-specific integration for the per-session status indicator.
 
 == Concept Crossover
@@ -18,5 +19,5 @@ Operating Plan Marshall in a target project. If you are working on Plan Marshall
 User-side workflows depend on a small handful of concepts. When something here references a mechanism or contract, the explanation lives under xref:../concepts/index.adoc[Concepts]:
 
 * xref:../concepts/planning-workflow.adoc[Planning Workflow] for `/plan-marshall` and the six phases.
-* xref:../concepts/effort-and-models.adoc[Effort and Models] for the per-role model system referenced from `Configuration`.
+* xref:../concepts/effort-and-models.adoc[Effort and Models] for the per-role model system referenced from xref:efforts.adoc[Efforts].
 * xref:../concepts/execution-context.adoc[Execution Context] for why effort changes take effect on the next dispatch without a Claude Code restart.

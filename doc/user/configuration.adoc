@@ -3,152 +3,68 @@
 :toc: left
 :toclevels: 3
 
-How project authors tune which model runs for each LLM-judgement workflow in Plan Marshall, plus the resolution rules that drive every dispatch.
+Survey of every configuration surface a project author touches when running Plan Marshall, with cross-references to the canonical specification for each topic.
 
-== The 6-Group Phase-Scoped Registry
+== Configuration surfaces — at a glance
 
-The role registry is phase-scoped, six groups (`phase-1-init` through `phase-6-finalize`). Every group is polymorphic — its value may be a plain string (single-level shorthand for every workflow under that phase) or an object whose sub-keys map to specific workflows under that phase. There are zero mandatory keys: a minimal config is `{}` and every dispatch resolves via `effort` → `inherit`.
-
-Sub-key whitelist per phase:
-
-[cols="1,3", options="header"]
+[cols="1,1,3", options="header"]
 |===
-| Group | Recognised sub-keys
+| Surface | Tracked? | What it controls
 
-| `phase-1-init` … `phase-4-plan` | `default`, `research`
-| `phase-5-execute` | `default`, `verification-feedback`, `research`
-| `phase-6-finalize` | `default`, `verification-feedback`, `post-run-review`, `research`
+| `.plan/marshal.json`
+| ✅ committed
+| Per-project behaviour: per-phase fields, review gates, the effort/model registry, verify- and finalize-step lists, build-system mappings, skill domains. See <<marshal-json>>.
+
+| `.plan/run-configuration.json`
+| ❌ ignored
+| Per-developer runtime settings (provider auth tokens, runtime overrides). Never committed.
+
+| `CLAUDE.md`, `agents.md`
+| project decision (usually ✅)
+| Agent instructions. The wizard appends three idempotent guidance blocks — see xref:getting-started.adoc#_what_the_wizard_writes_to_claude_md[Getting Started → What the wizard writes to `CLAUDE.md`].
+
+| `.claude/settings.local.json`
+| ❌ ignored (per-developer)
+| Local Claude Code settings — hooks, `statusLine`, env vars. Plan Marshall writes the terminal-title hooks here; see xref:terminal-title.adoc[Terminal Title].
+
+| `.gitignore`
+| ✅ committed
+| The `.plan/*` block plus `!.plan/marshal.json` and `!.plan/project-architecture/` re-includes. See xref:getting-started.adoc#_where_things_live[Getting Started → Where things live].
+
+| VS Code user settings
+| n/a
+| One-time opt-in for terminal-title integration. See xref:terminal-title.adoc[Terminal Title] § VS Code.
 |===
 
-The canonical map (which workflow doc each sub-key drives) lives in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-roles.md[`effort-roles.md`]. Retired pre-rewrite keys (`cross.*` and the five retired `phase-6-finalize.{create-pr,pre-submission-self-review,lessons-capture,retrospective,pr-doctor}`) return `status: error` with a remediation message naming the new target.
+[#marshal-json]
+== `.plan/marshal.json`
 
-== Polymorphic JSON Shape
+The bulk of project configuration. Canonical schema and field reference: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
 
-The `.plan/marshal.json` per-phase `effort` attributes accept polymorphic values. A string applies that level to every workflow under the phase; an object sets per-sub-key overrides plus an optional `default` slot that serves as the in-phase fallback. The plan-wide fallback is `plan.effort` (a single string):
+`marshal.json` is organised by phase under `plan.phase-1-init` … `plan.phase-6-finalize`. Each phase block holds fields specific to that phase. The sections below cover the fields project authors tune regularly; for everything else (`branch_strategy`, `confidence_threshold`, `compatibility`, `commit_strategy`, `verification_max_iterations`, `max_iterations`, `review_bot_buffer_seconds`, …) see `data-model.md`.
 
-[source,json]
-----
-{
-  "plan": {
-    "effort": "medium",
-    "phase-2-refine": { "effort": "high" },
-    "phase-3-outline": {
-      "effort": { "default": "high" }
-    },
-    "phase-5-execute": {
-      "effort": { "verification-feedback": "high" }
-    },
-    "phase-6-finalize": {
-      "effort": {
-        "default": "medium",
-        "verification-feedback": "high",
-        "post-run-review": "xxhigh"
-      }
-    }
-  }
-}
-----
+[#effort-and-models]
+=== Effort and model selection
 
-When a phase's `effort` is a plain string (e.g. `"phase-2-refine": { "effort": "high" }`), every sub-key under it resolves to that value. When `effort` is an object, sub-key lookups walk to the explicit override first, then to the `default` slot, then to `plan.effort`.
-
-Resolution order, deepest first:
-
-1. The explicit sub-key (e.g. `plan.phase-6-finalize.effort.verification-feedback`)
-2. The phase's `default` slot (e.g. `plan.phase-6-finalize.effort.default`)
-3. The phase's plain-string `effort` value (e.g. `"phase-2-refine": { "effort": "high" }`)
-4. `plan.effort` — plan-wide default
-5. `inherit` — implicit fallback (canonical no-suffix variant; inherits parent's model)
-
-== Four Accepted Lookup Forms
-
-The resolver accepts four input forms, mapping to the same resolution:
-
-[source,bash]
-----
-manage-config effort resolve-target --phase phase-2-refine                                  # bare group
-manage-config effort resolve-target --role phase-6-finalize.verification-feedback           # dotted
-manage-config effort resolve-target --phase phase-6-finalize --role verification-feedback   # two-flag
-manage-config effort resolve-target --default                                               # zero-role fallback
-----
-
-== Preset Shortcuts
-
-Three named presets cover most usage. Apply via `/marshall-steward` Effort submenu (preset-picker) or directly:
-
-[source,bash]
-----
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort apply-preset --preset {economic|balanced|high-end}
-----
-
-Payloads live in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/effort_presets.py[`effort_presets.py`] (`EffortPresets.ECONOMIC`, `BALANCED`, `HIGH_END`). The wizard delegates to `apply-preset`, which writes the per-phase `effort` attributes and the plan-wide `plan.effort` fallback.
-
-== No-Restart Semantics
-
-The resolver reads `.plan/marshal.json` fresh on every dispatch. An `effort` edit (manual or via the wizard) takes effect on the **next** dispatch — no Claude Code restart, no plugin reinstall, no extra setup required. The seven emitted `execution-context` variants (canonical + six levels) are static; only which variant the resolver selects changes.
-
-A restart IS required when `target/claude/` is regenerated (e.g., variant frontmatter changes), but that is a developer-side meta-project flow, not a user-side configuration flow.
-
-== Worked Example
-
-A project author wants the research workflow at the absolute top tier in phase-3-outline, Q-Gate checks on phase-3-outline / phase-4-plan at Sonnet-high (their phase defaults), the verification-feedback envelopes on Sonnet-high in both phase-5-execute and phase-6-finalize, and everything else on the default. Their `.plan/marshal.json`:
-
-[source,json]
-----
-{
-  "plan": {
-    "effort": "medium",
-    "phase-3-outline": {
-      "effort": { "default": "high" }
-    },
-    "phase-4-plan": { "effort": "high" },
-    "phase-5-execute": {
-      "effort": { "verification-feedback": "high" }
-    },
-    "phase-6-finalize": {
-      "effort": {
-        "default": "medium",
-        "verification-feedback": "high"
-      }
-    }
-  }
-}
-----
-
-After saving:
-
-* Q-Gate dispatches from phase-3-outline (`--phase phase-3-outline`, no `--role`) hit `execution-context-high` via the phase-3-outline `default` slot. Phase-4 Q-Gate dispatches hit `execution-context-high` via the bare-string at `phase-4-plan.effort`.
-* Every `--phase phase-5-execute --role verification-feedback` dispatch (Step 11 / Step 11b triage) hits `execution-context-high`.
-* Every `--phase phase-6-finalize --role verification-feedback` dispatch (sonar / pr-comment / plugin-doctor / pr-state) hits `execution-context-high`.
-* Every other phase-6-finalize dispatch (create-pr, pre-submission-self-review, post-run-review, enrich-module) hits `execution-context-medium` via the phase-6-finalize `default` slot.
-* Every other dispatch (phase-1-init, phase-2-refine, phase-5-execute body) hits `execution-context-medium` via the `plan.effort` plan-wide fallback.
-
-== Migration note — `xhigh` / `xxhigh` rebind
-
-Plan Marshall is pre-1.0. The recent palette expansion (insert `xhigh = opus-medium`, promote `max` to live) rebinds the existing `xhigh` and `xxhigh` keywords to weaker primitives than they previously resolved to. Consumer `marshal.json` files that already set per-role levels are unaffected at the resolver level (the keywords still resolve), but the *primitive* the variant pins is now weaker. User-side action: any role that previously needed *Opus, high* under `xhigh` should be re-pointed at `xxhigh`; any role that previously needed *Opus, xhigh* under `xxhigh` should be re-pointed at `max`. There is no auto-migration.
-
-| Level | Previous binding | New binding |
-| `xhigh` | `opus, high` | `opus, medium` |
-| `xxhigh` | `opus, xhigh` | `opus, high` |
-| `max` | (reserved — refused) | `opus, xhigh` (Opus-4.7-only) |
+Effort tuning has its own dedicated user-facing page — wizard walkthrough, presets, polymorphic `marshal.json` shape, worked example, research-tier note, troubleshooting. See xref:efforts.adoc[Efforts]. For the conceptual three-layer overview see xref:../concepts/effort-and-models.adoc[Concepts › Effort and Models].
 
 [#review-gates]
-== Review gates
+=== Review gates
 
-Phase transitions in `/plan-marshall` are guarded by *review gates*. Each gate is a boolean in `marshal.json` whose `true` value means "auto-continue without asking" and whose `false` means "stop and wait for the user". All four gates live under the phase whose **outbound** transition they govern:
+Boolean fields under each phase that decide whether the next-phase transition pauses for user review or auto-continues. Each gate lives under the phase whose **outbound** transition it governs.
 
 [cols="1,1,3", options="header"]
 |===
 | Config key | Default | Governs the transition…
 
-| `plan.phase-1-init.init_without_asking` | `true` | …from `phase-1-init` to `phase-2-refine`. Overridable per invocation via `/plan-marshall stop-after-init=true` or `=false` (see xref:commands.adoc[Commands]).
+| `plan.phase-1-init.init_without_asking` | `true` | …from `phase-1-init` to `phase-2-refine`. Set to `false` to stop after init and review the captured request before refinement starts.
 | `plan.phase-3-outline.plan_without_asking` | `false` | …from the outline review checkpoint to task creation.
-| `plan.phase-4-plan.execute_without_asking` | `true` (code default) | …from `phase-4-plan` to `phase-5-execute`.
+| `plan.phase-4-plan.execute_without_asking` | `true` | …from `phase-4-plan` to `phase-5-execute`.
 | `plan.phase-5-execute.finalize_without_asking` | `true` | …from `phase-5-execute` to `phase-6-finalize` (forward direction).
 | `plan.phase-5-execute.loop_back_without_asking` | `false` | …from a `phase-6-finalize` `loop_back` outcome back into `phase-5-execute` (reverse direction). Defaults differ from `finalize_without_asking` to prevent silent unattended loops.
 |===
 
-Set any of these via `/marshall-steward` → Configuration → Review Gates, or directly:
+Set via `/marshall-steward` → Configuration → Review Gates, or directly:
 
 [source,bash]
 ----
@@ -156,10 +72,78 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init set --field init_without_asking --value false
 ----
 
+[#step-configuration]
+=== Step configuration (verify + finalize pipelines)
+
+`plan.phase-5-execute.steps` and `plan.phase-6-finalize.steps` are flat ordered lists of step identifiers that run sequentially during their phase. Each step ID resolves to one of three sources:
+
+[cols="1,3", options="header"]
+|===
+| Step kind | Example
+
+| **Built-in** (prefix `default:`)
+| `default:quality_check`, `default:build_verify`, `default:coverage_check` (phase-5); `commit_push`, `create_pr`, `automated_review`, `sonar_roundtrip`, `lessons_capture`, `branch_cleanup`, `archive` (phase-6).
+
+| **Project-local** (prefix `project:`)
+| Loaded from `.claude/skills/finalize-step-<step>/` — a project-specific finalize step (e.g. a custom deploy or notification).
+
+| **Extension-provided**
+| Contributed by an installed bundle via `provides_verify_steps()` (phase-5) or `provides_finalize_steps()` (phase-6). The bundle's `extension.py` declares them; the wizard appends them in domain-defined order.
+|===
+
+Order is significant — phase-5 runs verify steps in list order until one fails; phase-6 runs finalize steps in list order until the pipeline completes or a `loop_back` outcome resets it. Configure via `/marshall-steward` → Configuration, or `manage-config plan phase-N set --field steps`.
+
+Reference: `data-model.md` §§ phase-5-execute / phase-6-finalize; link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-verify-steps.md[`ext-point-verify-steps.md`]; link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-steps.md[`ext-point-finalize-steps.md`].
+
+[#build-systems]
+=== Build systems and profiles
+
+The wizard discovers project modules and their build systems automatically (Maven / Gradle / npm / pyprojectx) via the extension API. The discovery output (which build commands a given module supports, the resolved canonical mapping, optional per-module profile filtering) is stored in `.plan/project-architecture/{module}/enriched.json`; derived data is computed on demand on every read and is never persisted.
+
+For Maven projects, unmatched profiles are surfaced for review (Ignore / Skip / Map) during Step 10 of the wizard. Canonical commands (`Compile`, `Quality gate`, `Tests`, `Full verify`, …) are resolved per module and written into `CLAUDE.md` under the `### Build Commands` heading so agents call builds via canonical names rather than hard-coding the underlying tool.
+
+Tune via `/marshall-steward` → Configuration → Build Systems. Canonical contracts: link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-build.md[`ext-point-build.md`] and link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/canonical-commands.md[`canonical-commands.md`].
+
+[#skill-domains]
+=== Skill domains
+
+`marshal.json` carries a `skill_domains` block that maps each project module to the bundles whose skills apply to it. Domains are detected automatically by the wizard from each bundle's `plan-marshall-plugin` manifest, then assigned per module either by detection (e.g. Java files → `pm-dev-java`) or by user confirmation.
+
+Canonical contracts: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/skill-domains.md[`skill-domains.md`] and link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/skill-domains-operations.md[`skill-domains-operations.md`].
+
+Tune via `/marshall-steward` → Configuration → Skill Domains.
+
+== Configuration outside `.plan/`
+
+=== `CLAUDE.md` and `agents.md`
+
+The first-run wizard appends three idempotent guidance blocks — Temporary Files, Tool Usage, Build Commands. All edits are marker-gated and never duplicate. Full breakdown in xref:getting-started.adoc#_what_the_wizard_writes_to_claude_md[Getting Started → What the wizard writes to `CLAUDE.md`].
+
+=== `.claude/settings.local.json`
+
+Per-developer Claude Code configuration — gitignored by convention. Plan Marshall writes the terminal-title hooks plus a `statusLine` entry here when you opt in via `/marshall-steward` → Configuration → Terminal title. See xref:terminal-title.adoc[Terminal Title] for the full hook chain and platform caveats.
+
+=== `.gitignore`
+
+The wizard adds a `.plan/*` block plus targeted re-includes for `marshal.json` and `project-architecture/`. See xref:getting-started.adoc#_where_things_live[Getting Started → Where things live] for the full layout.
+
+=== VS Code user settings
+
+VS Code's integrated terminal does not honor OSC title sequences by default — opt in by setting `terminal.integrated.tabs.title = "${sequence}"` in your VS Code user settings. The wizard cannot patch this file (it belongs to VS Code, not Claude Code). See xref:terminal-title.adoc[Terminal Title] § VS Code for the verification steps and troubleshooting.
+
+== Editing configuration
+
+Three paths, in increasing order of automation:
+
+1. **Wizard (recommended)** — `/marshall-steward` opens an interactive menu covering every section above. Inputs are validated at save time and conflicts are surfaced before writing.
+2. **`manage-config` CLI** — script-driven, useful for automation or for fields the wizard does not surface. Full command reference: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/api-reference.md[`api-reference.md`].
+3. **Direct file edit** — `marshal.json` is JSON; edit it in any editor. The resolver reads it fresh on every dispatch, so changes take effect on the next call without a Claude Code restart, no plugin reinstall.
+
 == Related
 
 * xref:../concepts/effort-and-models.adoc[Concepts › Effort and Models] — three-layer overview (levels, roles, variants)
 * xref:../concepts/execution-context.adoc[Concepts › Execution Context] — why edits take effect on the next dispatch
-* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md[`effort-variants.md`] — canonical user-facing guide (the authoritative version of this content)
-* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/marshal-json-reference.md[`marshal-json-reference.md`] — full `marshal.json` schema reference
-* link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] — schema for every per-phase config field including the review gates
+* link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] — canonical marshal.json schema
+* link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/api-reference.md[`api-reference.md`] — `manage-config` CLI reference
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md[`effort-variants.md`] — canonical user-facing effort/model guide
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/marshal-json-reference.md[`marshal-json-reference.md`] — extension-author schema table

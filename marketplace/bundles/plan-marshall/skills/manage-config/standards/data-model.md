@@ -133,7 +133,7 @@ Phase-specific configuration for the 6-phase workflow model. Each phase with con
 | Field | Type | Default | Values |
 |-------|------|---------|--------|
 | `branch_strategy` | string | "feature" | direct, feature |
-| `init_without_asking` | bool | true | Auto-continue from `phase-1-init` to `phase-2-refine`. `true` (default) skips the gate; `false` stops after init and waits for the user. The CLI flag `stop-after-init=true` overrides this for a single invocation. |
+| `init_without_asking` | bool | true | Auto-continue from `phase-1-init` to `phase-2-refine`. `true` (default) skips the gate; `false` stops after init and waits for the user. |
 
 ### phase-2-refine
 

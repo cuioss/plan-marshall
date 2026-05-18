@@ -23,11 +23,11 @@ Project authors configure `models.roles.<phase>[.<subkey>]` (hierarchical kebab-
 |The build target emits one canonical + five suffixed agent files per role-eligible agent. The resolver picks which variant a dispatch calls. Emission rules in `extension-api/standards/ext-point-dynamic-level-executor.md`.
 |===
 
-== Configuration Surface
+== How to configure this
 
-The user-facing configuration document, including resolution order, polymorphic value rules, preset shortcuts, and a worked example, lives in `plan-marshall/standards/effort-variants.md`. See also xref:../user/configuration.adoc[User Guide › Configuration] for the operator-side walkthrough.
+The user-facing guide is xref:../user/efforts.adoc[User Guide › Efforts] — wizard walkthrough, presets, the polymorphic `marshal.json` shape with a worked example, a research-tier note, and troubleshooting. Start there.
 
-The `/marshall-steward` Effort submenu offers three preset shortcuts (`economic`, `balanced`, `high-end`); their payloads live in `marshall-steward/standards/effort-menu.md`.
+For spec-level detail (precise resolution order, env-var override semantics, build-time `max` guard), see link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md[`effort-variants.md`] — the resolver contract. For the broader map of *every* configuration surface in Plan Marshall, see xref:../user/configuration.adoc[User Guide › Configuration].
 
 // TODO: expand with a decision tree mapping common project profiles (cost-optimised, balanced, high-end) to recommended `marshal.json` shapes.
 

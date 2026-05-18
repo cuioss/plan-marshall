@@ -144,7 +144,7 @@ AskUserQuestion:
   multiSelect: true
   options:
     - label: "Init without asking"
-      description: "Auto-continue from init (phase 1) to refine (phase 2). Default: enabled — disable to stop and review the captured request before refinement starts. The CLI flag stop-after-init= overrides this per invocation."
+      description: "Auto-continue from init (phase 1) to refine (phase 2). Default: enabled — disable to stop and review the captured request before refinement starts."
     - label: "Plan without asking"
       description: "Auto-continue from outline (phase 3) to planning (phase 4)"
     - label: "Execute without asking"
