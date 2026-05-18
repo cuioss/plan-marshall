@@ -59,22 +59,22 @@ _TERMINAL_PHASE_VALUES = {'complete', 'archived'}
 
 
 def _resolve_plan_id(cwd: str) -> str | None:
-    match = _WORKTREE_RE.match(cwd)
-    if match and os.path.isdir(cwd):
-        return match.group('id')
-    env_plan = os.environ.get('PLAN_ID')
-    if env_plan:
-        stripped = env_plan.strip()
-        if not stripped:
-            return None
-        # Path-traversal guard: the value is used directly as a directory
-        # component in .plan/local/plans/{plan_id}/status.json, so reject any
-        # value containing path separators or traversal sequences. Mirrors the
-        # session_id guard in `_command_state_path`.
-        if '/' in stripped or '\\' in stripped or stripped in ('..', '.'):
-            return None
-        return stripped
-    return None
+    # Normalize separators so the forward-slash regex matches both POSIX
+    # paths and Windows-style backslash paths surfaced by Claude Code hooks
+    # running on Windows. PurePath/Path only treat backslashes as separators
+    # when running on Windows itself, so a direct replace is the portable
+    # form that works regardless of host OS.
+    normalized = cwd.replace('\\', '/')
+    match = _WORKTREE_RE.match(normalized)
+    if not match or not os.path.isdir(cwd):
+        return None
+    plan_id = match.group('id')
+    # Path-traversal guard: the regex's [^/]+ class accepts '..' and '.',
+    # which would let a hostile cwd escape the .plan/local/plans/ tree once
+    # joined into a status-file path. Reject explicitly.
+    if plan_id in ('..', '.'):
+        return None
+    return plan_id
 
 
 def _git_common_dir(cwd: str) -> Path | None:

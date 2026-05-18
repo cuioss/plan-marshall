@@ -35,15 +35,22 @@ def _write_status(plan_dir: Path, phase: str, short_description: str | None = No
 
 
 class TestPlanIdResolution(ScriptTestCase):
-    """_resolve_plan_id: worktree regex vs $PLAN_ID env vs none."""
+    """_resolve_plan_id: worktree-cwd regex is the sole plan-id source.
+
+    The $PLAN_ID environment variable strategy was removed to prevent
+    cross-tab title pollution: an inherited $PLAN_ID from a parent shell
+    would render an unrelated plan's title in a freshly opened Claude
+    Code tab. The hook payload's cwd is per-session and cannot leak
+    across tabs, so the worktree-cwd regex is the only safe input.
+    """
 
     bundle = 'plan-marshall'
     skill = 'plan-marshall'
     script = 'set_terminal_title.py'
 
     def test_worktree_cwd_matches(self):
-        # Strategy 1 requires the cwd to exist on disk (liveness guard); use a
-        # real worktree path under self.temp_dir.
+        # Worktree-cwd strategy requires the cwd to exist on disk (liveness
+        # guard); use a real worktree path under self.temp_dir.
         cwd = self.temp_dir / '.plan' / 'local' / 'worktrees' / 'my-plan' / 'marketplace'
         cwd.mkdir(parents=True)
         self.assertEqual(set_terminal_title._resolve_plan_id(str(cwd)), 'my-plan')
@@ -57,84 +64,89 @@ class TestPlanIdResolution(ScriptTestCase):
         """Legacy .claude/worktrees/ cwd is intentionally NOT recognized.
 
         Worktrees migrated to ``.plan/local/worktrees/`` with no compatibility
-        fallback (compatibility: breaking). A legacy cwd must fall through to
-        $PLAN_ID or None — never extract a plan id from the old segment.
+        fallback (compatibility: breaking). A legacy cwd must resolve to None.
         """
         cwd = self.temp_dir / '.claude' / 'worktrees' / 'old-plan' / 'marketplace'
         cwd.mkdir(parents=True)
-        env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
-        with mock.patch.dict(os.environ, env, clear=True):
-            self.assertIsNone(set_terminal_title._resolve_plan_id(str(cwd)))
+        self.assertIsNone(set_terminal_title._resolve_plan_id(str(cwd)))
 
-    def test_env_fallback_when_no_worktree_match(self):
-        with mock.patch.dict(os.environ, {'PLAN_ID': 'from-env'}, clear=False):
-            self.assertEqual(set_terminal_title._resolve_plan_id('/tmp/not-a-worktree'), 'from-env')
+    def test_env_plan_id_is_ignored_when_cwd_outside_worktree(self):
+        """Cross-tab isolation regression: an inherited $PLAN_ID env var MUST
+        NOT influence plan-id resolution. A freshly opened Claude Code tab
+        with $PLAN_ID exported by the parent shell but a cwd outside any
+        worktree directory must resolve to None — never to the env-var value.
 
-    def test_worktree_wins_over_env(self):
+        This is the core invariant that prevents one tab's plan title from
+        leaking into another tab's terminal.
+        """
+        with mock.patch.dict(os.environ, {'PLAN_ID': 'leaked-from-parent'}, clear=False):
+            self.assertIsNone(set_terminal_title._resolve_plan_id('/tmp/not-a-worktree'))
+
+    def test_env_plan_id_is_ignored_even_when_cwd_matches_worktree(self):
+        """When the cwd matches a live worktree, the worktree directory name
+        is the plan_id — the $PLAN_ID env var is ignored entirely.
+        """
         cwd = self.temp_dir / '.plan' / 'local' / 'worktrees' / 'from-cwd'
         cwd.mkdir(parents=True)
-        with mock.patch.dict(os.environ, {'PLAN_ID': 'from-env'}, clear=False):
+        with mock.patch.dict(os.environ, {'PLAN_ID': 'leaked-from-parent'}, clear=False):
             self.assertEqual(set_terminal_title._resolve_plan_id(str(cwd)), 'from-cwd')
 
-    def test_no_plan_when_neither_present(self):
-        """No worktree-cwd match, no $PLAN_ID env, no active-plan scan (removed).
-
-        With strategy 3 (_scan_active_plan) removed, _resolve_plan_id returns
-        None whenever the cwd does not string-match a live worktree path and
-        $PLAN_ID is unset — regardless of which plans live under
-        .plan/local/plans/. This is the fresh-session safety guarantee.
+    def test_no_plan_when_cwd_outside_worktree(self):
+        """When the cwd does not match a live worktree path, _resolve_plan_id
+        returns None regardless of which plans live under .plan/local/plans/
+        or which env vars are set. This is the fresh-session safety guarantee.
         """
         env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
         with mock.patch.dict(os.environ, env, clear=True):
             self.assertIsNone(set_terminal_title._resolve_plan_id('/tmp/nowhere'))
 
     def test_dead_worktree_cwd_falls_through(self):
-        """Strategy 1 must verify the worktree directory exists on disk.
+        """The worktree-cwd strategy must verify the directory exists on disk.
 
-        A stale cwd that string-matches but no longer exists must fall
-        through to strategy 2 (and to None when $PLAN_ID is unset).
+        A stale cwd that string-matches a removed worktree path must resolve
+        to None (the liveness guard rejects the regex match).
         """
         dead_cwd = '/nonexistent/repo/.plan/local/worktrees/ghost-plan/sub'
-        env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
-        with mock.patch.dict(os.environ, env, clear=True):
-            self.assertIsNone(set_terminal_title._resolve_plan_id(dead_cwd))
+        self.assertIsNone(set_terminal_title._resolve_plan_id(dead_cwd))
 
-    def test_env_plan_id_rejects_parent_traversal(self):
-        """A $PLAN_ID containing `..` is rejected — the value would otherwise
-        escape the `.plan/local/plans/` directory when joined into the
-        status.json path."""
-        with mock.patch.dict(os.environ, {'PLAN_ID': '..'}, clear=False):
-            self.assertIsNone(set_terminal_title._resolve_plan_id('/tmp/not-a-worktree'))
+    def test_windows_style_backslash_cwd_matches(self):
+        """A Windows-style cwd with backslash separators must still resolve.
 
-    def test_env_plan_id_rejects_current_dir(self):
-        """A $PLAN_ID equal to `.` is rejected for the same reason as `..`."""
-        with mock.patch.dict(os.environ, {'PLAN_ID': '.'}, clear=False):
-            self.assertIsNone(set_terminal_title._resolve_plan_id('/tmp/not-a-worktree'))
+        Claude Code hooks running on Windows surface the cwd with native
+        backslash separators. The regex uses forward slashes, so the
+        resolver normalizes via Path(cwd).as_posix() before matching.
 
-    def test_env_plan_id_rejects_forward_slash(self):
-        """Forward slash in $PLAN_ID would inject directory segments — reject."""
-        with mock.patch.dict(os.environ, {'PLAN_ID': '../escape'}, clear=False):
-            self.assertIsNone(set_terminal_title._resolve_plan_id('/tmp/not-a-worktree'))
+        The liveness guard (os.path.isdir) is mocked because the backslash
+        path is not a real on-disk directory on POSIX hosts; the behaviour
+        under test is regex normalization, not the liveness guard.
+        """
+        cwd = r'C:\Users\dev\repo\.plan\local\worktrees\my-plan\marketplace'
+        with mock.patch.object(set_terminal_title.os.path, 'isdir', return_value=True):
+            self.assertEqual(set_terminal_title._resolve_plan_id(cwd), 'my-plan')
 
-    def test_env_plan_id_rejects_embedded_forward_slash(self):
-        """Even a non-leading slash injects a subdirectory — reject."""
-        with mock.patch.dict(os.environ, {'PLAN_ID': 'foo/bar'}, clear=False):
-            self.assertIsNone(set_terminal_title._resolve_plan_id('/tmp/not-a-worktree'))
+    def test_path_traversal_double_dot_returns_none(self):
+        """The regex character class [^/]+ accepts '..' as a path segment.
 
-    def test_env_plan_id_rejects_backslash(self):
-        """Backslash is rejected too (Windows-style separator parity with the
-        session_id guard in `_command_state_path`)."""
-        with mock.patch.dict(os.environ, {'PLAN_ID': 'foo\\bar'}, clear=False):
-            self.assertIsNone(set_terminal_title._resolve_plan_id('/tmp/not-a-worktree'))
+        A hostile or malformed cwd whose worktree segment is '..' would let
+        the constructed status-file path escape the .plan/local/plans/ tree.
+        The resolver must reject this explicitly and return None.
 
-    def test_env_plan_id_accepts_dots_in_id(self):
-        """Dots inside an id are fine — only the standalone `.` and `..` and
-        path-separator characters are rejected."""
-        with mock.patch.dict(os.environ, {'PLAN_ID': 'plan.with.dots'}, clear=False):
-            self.assertEqual(
-                set_terminal_title._resolve_plan_id('/tmp/not-a-worktree'),
-                'plan.with.dots',
-            )
+        The liveness guard is mocked so we exercise the traversal guard
+        specifically (a '..' segment on disk is not a normal directory the
+        test fixture sets up).
+        """
+        cwd = '/tmp/repo/.plan/local/worktrees/..'
+        with mock.patch.object(set_terminal_title.os.path, 'isdir', return_value=True):
+            self.assertIsNone(set_terminal_title._resolve_plan_id(cwd))
+
+    def test_path_traversal_single_dot_returns_none(self):
+        """Same rationale as '..': '.' as a plan_id segment would alias the
+        current directory and bypass the per-plan isolation invariant. The
+        resolver must reject single-dot too.
+        """
+        cwd = '/tmp/repo/.plan/local/worktrees/.'
+        with mock.patch.object(set_terminal_title.os.path, 'isdir', return_value=True):
+            self.assertIsNone(set_terminal_title._resolve_plan_id(cwd))
 
 
 class TestBuildTitle(ScriptTestCase):
@@ -255,51 +267,35 @@ class TestStatusFileResolution(ScriptTestCase):
         with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None):
             self.assertIsNone(set_terminal_title._resolve_status_file(str(nested), PLAN_ID))
 
-    def test_archived_plans_path_rejected(self):
-        """Strategy 2 liveness guard: a status.json under archived-plans/ is
-        treated as if it did not exist — _resolve_status_file returns None."""
-        archived_dir = (
-            self.temp_dir / '.plan' / 'local' / 'archived-plans' / '2026-05-16-old-plan'
-        )
-        _write_status(archived_dir, '6-finalize')
-        nested = self.temp_dir / 'nested'
-        nested.mkdir(parents=True)
-        with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None):
-            # The archived-plans path lives under a different parent than the
-            # live plans/ directory walk-up looks for, so this primarily
-            # exercises the path-component check in resolve. Even when a plan
-            # of the same id exists in archived-plans/, _resolve_status_file
-            # must not return it.
-            self.assertIsNone(
-                set_terminal_title._resolve_status_file(str(nested), '2026-05-16-old-plan')
-            )
-
 
 class TestBuildTitleEndToEnd(ScriptTestCase):
-    """The top-level build_title function: cwd → plan_id → phase → title."""
+    """The top-level build_title function: cwd → plan_id → phase → title.
+
+    Plan-id resolution is cwd-driven (worktree path). The $PLAN_ID env var
+    is NOT a resolution input — these tests verify that invariant alongside
+    the happy-path worktree-cwd rendering.
+    """
 
     bundle = 'plan-marshall'
     skill = 'plan-marshall'
     script = 'set_terminal_title.py'
 
-    def test_with_env_plan_and_status_file(self):
+    def test_worktree_cwd_with_status_file(self):
         plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / PLAN_ID
         _write_status(plan_dir, '3-outline')
-        with (
-            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
-            mock.patch.dict(os.environ, {'PLAN_ID': PLAN_ID}, clear=False),
-        ):
-            title = set_terminal_title.build_title('running', str(self.temp_dir))
+        cwd = self.temp_dir / '.plan' / 'local' / 'worktrees' / PLAN_ID
+        cwd.mkdir(parents=True)
+        with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None):
+            title = set_terminal_title.build_title('running', str(cwd))
         self.assertEqual(title, '▶ pm:3-outline')
 
-    def test_with_env_plan_and_short_description(self):
+    def test_worktree_cwd_with_short_description(self):
         plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / PLAN_ID
         _write_status(plan_dir, '4-plan', short_description='Refactor_title_handling')
-        with (
-            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
-            mock.patch.dict(os.environ, {'PLAN_ID': PLAN_ID}, clear=False),
-        ):
-            title = set_terminal_title.build_title('running', str(self.temp_dir))
+        cwd = self.temp_dir / '.plan' / 'local' / 'worktrees' / PLAN_ID
+        cwd.mkdir(parents=True)
+        with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None):
+            title = set_terminal_title.build_title('running', str(cwd))
         self.assertEqual(title, '▶ pm:4-plan:Refactor_title_handling')
 
     def test_fallback_when_no_plan(self):
@@ -308,79 +304,77 @@ class TestBuildTitleEndToEnd(ScriptTestCase):
             title = set_terminal_title.build_title('idle', str(self.temp_dir))
         self.assertEqual(title, '◯ claude')
 
-    def test_fallback_when_status_missing(self):
+    def test_cross_tab_isolation_regression(self):
+        """Cross-tab title leak regression test.
+
+        Scenario: Tab #1 runs a plan and exports $PLAN_ID into its parent
+        shell. Tab #3 inherits the env var but its cwd is OUTSIDE any
+        ``.plan/local/worktrees/{id}/`` path (e.g., the repo root or an
+        unrelated directory). Tab #3 MUST render the ``◯ claude`` fallback
+        regardless of whether a plan matching $PLAN_ID exists on disk.
+
+        This is the core invariant that prevents one Claude Code tab's plan
+        title from polluting another tab's terminal.
+        """
+        plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / 'leaked-plan'
+        _write_status(plan_dir, '5-execute', short_description='Other_tab_plan')
         with (
             mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
-            mock.patch.dict(os.environ, {'PLAN_ID': 'absent-plan'}, clear=False),
+            mock.patch.dict(os.environ, {'PLAN_ID': 'leaked-plan'}, clear=False),
         ):
-            title = set_terminal_title.build_title('running', str(self.temp_dir))
-        self.assertEqual(title, '▶ claude')
-
-    def test_fresh_session_with_lingering_plan_does_not_inherit_title(self):
-        """Strategy 3 removal regression test.
-
-        A main-checkout session with no worktree-cwd and no $PLAN_ID must
-        render the fallback even when an in-progress plan is sitting in
-        .plan/local/plans/. The active-plan scan was the regression path
-        that surfaced a previously-active plan's title in fresh sessions.
-        """
-        plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / 'lingering-plan'
-        _write_status(plan_dir, '6-finalize', short_description='Old_label')
-        env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
-        with mock.patch.dict(os.environ, env, clear=True):
             title = set_terminal_title.build_title('idle', str(self.temp_dir))
         self.assertEqual(title, '◯ claude')
 
+    def test_cross_tab_isolation_for_nonexistent_plan_id(self):
+        """An inherited $PLAN_ID with no on-disk plan also renders fallback.
+
+        Pairs with ``test_cross_tab_isolation_regression`` to confirm the env
+        var is unread regardless of whether the value resolves to an on-disk
+        plan directory.
+        """
+        with mock.patch.dict(os.environ, {'PLAN_ID': 'no-such-plan'}, clear=False):
+            title = set_terminal_title.build_title('idle', str(self.temp_dir))
+        self.assertEqual(title, '◯ claude')
+
+    def test_fallback_when_status_missing(self):
+        """A worktree-cwd that matches the regex but lacks a status.json
+        renders the fallback (no plan/phase context available).
+        """
+        cwd = self.temp_dir / '.plan' / 'local' / 'worktrees' / 'absent-plan'
+        cwd.mkdir(parents=True)
+        with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None):
+            title = set_terminal_title.build_title('running', str(cwd))
+        self.assertEqual(title, '▶ claude')
+
     def test_dead_worktree_cwd_end_to_end_falls_through(self):
-        """Strategy 1 liveness guard regression test (end-to-end)."""
+        """Worktree-cwd liveness guard regression test (end-to-end)."""
         dead_cwd = '/nonexistent/repo/.plan/local/worktrees/ghost-plan/sub'
         env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
         with mock.patch.dict(os.environ, env, clear=True):
             title = set_terminal_title.build_title('idle', dead_cwd)
         self.assertEqual(title, '◯ claude')
 
-    def test_stale_plan_id_with_archived_status_does_not_inherit_title(self):
-        """Strategy 2 archived-plans rejection regression test.
-
-        An exported $PLAN_ID that would resolve to an archived plan's
-        status.json must fall through — the archived-plans/ path is
-        rejected by _resolve_status_file.
-        """
-        archived_dir = (
-            self.temp_dir / '.plan' / 'local' / 'archived-plans' / '2026-05-16-old-plan'
-        )
-        _write_status(archived_dir, '6-finalize', short_description='Old_label')
-        with (
-            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
-            mock.patch.dict(os.environ, {'PLAN_ID': '2026-05-16-old-plan'}, clear=True),
-        ):
-            title = set_terminal_title.build_title('idle', str(self.temp_dir))
-        self.assertEqual(title, '◯ claude')
-
-    def test_stale_plan_id_with_complete_phase_does_not_inherit_title(self):
-        """Strategy 2 terminal-phase rejection regression test.
-
-        An exported $PLAN_ID that resolves to a status.json with
-        current_phase=='complete' must fall through to the fallback.
+    def test_worktree_cwd_with_terminal_phase_falls_through(self):
+        """When the resolved plan's current_phase is in the terminal set
+        ({'complete', 'archived'}), build_title falls through as if no
+        plan/phase were found.
         """
         plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / 'finished-plan'
         _write_status(plan_dir, 'complete', short_description='Done_label')
-        with (
-            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
-            mock.patch.dict(os.environ, {'PLAN_ID': 'finished-plan'}, clear=True),
-        ):
-            title = set_terminal_title.build_title('idle', str(self.temp_dir))
+        cwd = self.temp_dir / '.plan' / 'local' / 'worktrees' / 'finished-plan'
+        cwd.mkdir(parents=True)
+        with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None):
+            title = set_terminal_title.build_title('idle', str(cwd))
         self.assertEqual(title, '◯ claude')
 
-    def test_stale_plan_id_with_archived_phase_does_not_inherit_title(self):
-        """Strategy 2 terminal-phase rejection — 'archived' phase variant."""
+    def test_worktree_cwd_with_archived_phase_falls_through(self):
+        """Terminal-phase rejection — 'archived' phase variant."""
         plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / 'finished-plan-2'
         _write_status(plan_dir, 'archived', short_description='Done_label')
-        with (
-            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
-            mock.patch.dict(os.environ, {'PLAN_ID': 'finished-plan-2'}, clear=True),
-        ):
-            title = set_terminal_title.build_title('idle', str(self.temp_dir))
+        cwd = self.temp_dir / '.plan' / 'local' / 'worktrees' / 'finished-plan-2'
+        cwd.mkdir(parents=True)
+        with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None):
+            title = set_terminal_title.build_title('idle', str(cwd))
         self.assertEqual(title, '◯ claude')
 
 
@@ -476,13 +470,14 @@ class TestCliIntegration(ScriptTestCase):
     def test_statusline_reads_stdin_cwd(self):
         plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / PLAN_ID
         _write_status(plan_dir, '5-execute')
-        # Make the temp_dir look like a git repo so the script can resolve
-        # it without git subprocess interference: we supply cwd via stdin,
-        # and rely on walk-up fallback to find .plan/.
-        payload = json.dumps({'cwd': str(self.temp_dir / 'nested')})
-        (self.temp_dir / 'nested').mkdir()
+        # Drive plan-id resolution via the hook's cwd payload: the worktree
+        # path encodes the plan id and walk-up finds the status.json under
+        # the temp_dir .plan/local/plans/{plan_id}/ directory.
+        worktree_cwd = self.temp_dir / '.plan' / 'local' / 'worktrees' / PLAN_ID
+        worktree_cwd.mkdir(parents=True)
+        payload = json.dumps({'cwd': str(worktree_cwd)})
 
-        env_overrides = {'PLAN_ID': PLAN_ID}
+        env_overrides = {'PLAN_ID': ''}
         result = run_script(
             SCRIPT_PATH,
             '--statusline',
@@ -496,9 +491,10 @@ class TestCliIntegration(ScriptTestCase):
         self.assertIn('pm:', result.stdout)
         self.assertTrue(result.stdout.startswith('▶ '))
 
-    def test_exit_zero_on_missing_status_file(self):
-        # No status.json anywhere → script must still exit 0 with fallback.
-        env_overrides = {'PLAN_ID': 'nonexistent'}
+    def test_exit_zero_when_no_plan_context(self):
+        # Cwd is outside any worktree → no plan-id resolved → script must
+        # still exit 0 with the fallback title.
+        env_overrides = {'PLAN_ID': ''}
         result = run_script(
             SCRIPT_PATH,
             '--statusline',
@@ -508,8 +504,29 @@ class TestCliIntegration(ScriptTestCase):
             env_overrides=env_overrides,
         )
         self.assertTrue(result.success, msg=result.stderr)
-        # PLAN_ID is set but status.json missing — falls back to `? claude`.
         self.assertEqual(result.stdout.strip(), '? claude')
+
+    def test_inherited_plan_id_env_var_does_not_render_plan_title(self):
+        """Cross-tab isolation regression at the CLI level.
+
+        Tab #3 starts with an inherited $PLAN_ID=tab-1-plan from the parent
+        shell. Its cwd is the repo root (not inside any worktree). Even with
+        a matching status.json on disk, the statusline must render the
+        fallback — $PLAN_ID is no longer a resolution input.
+        """
+        plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / 'tab-1-plan'
+        _write_status(plan_dir, '5-execute', short_description='Other_tabs_plan')
+        env_overrides = {'PLAN_ID': 'tab-1-plan'}
+        result = run_script(
+            SCRIPT_PATH,
+            '--statusline',
+            'idle',
+            input_data='',
+            cwd=str(self.temp_dir),
+            env_overrides=env_overrides,
+        )
+        self.assertTrue(result.success, msg=result.stderr)
+        self.assertEqual(result.stdout.strip(), '◯ claude')
 
 
 class TestHookPayloadParsing(ScriptTestCase):
@@ -742,13 +759,15 @@ class TestBuildTitleWithSession(ScriptTestCase):
     def test_plan_phase_beats_active_command(self):
         plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / PLAN_ID
         _write_status(plan_dir, '3-outline')
+        worktree_cwd = self.temp_dir / '.plan' / 'local' / 'worktrees' / PLAN_ID
+        worktree_cwd.mkdir(parents=True)
         with mock.patch.dict(os.environ, {'HOME': str(self.temp_dir)}, clear=False):
             set_terminal_title._write_active_command('sess-1', 'plan-marshall')
         with (
             mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
-            mock.patch.dict(os.environ, {'PLAN_ID': PLAN_ID, 'HOME': str(self.temp_dir)}, clear=False),
+            mock.patch.dict(os.environ, {'HOME': str(self.temp_dir)}, clear=False),
         ):
-            title = set_terminal_title.build_title('running', str(self.temp_dir), 'sess-1')
+            title = set_terminal_title.build_title('running', str(worktree_cwd), 'sess-1')
         self.assertEqual(title, '▶ pm:3-outline')
 
     def test_falls_back_to_claude_when_no_session_nor_plan(self):
@@ -992,17 +1011,17 @@ class TestBuildTitleDoneEmission(ScriptTestCase):
         self.assertEqual(title, '✓ claude')
 
     def test_build_title_wrapper_shortcircuits_on_done_label(self):
-        # Even with a resolvable plan in env + status.json, done+label short-circuits
-        # so the caller's label wins over any ambient resolution.
+        # Even with a resolvable plan via worktree-cwd + status.json,
+        # done+label short-circuits so the caller's label wins over any
+        # ambient resolution.
         plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / PLAN_ID
         _write_status(plan_dir, '6-finalize', short_description='Old_derived')
-        with (
-            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
-            mock.patch.dict(os.environ, {'PLAN_ID': PLAN_ID}, clear=False),
-        ):
+        worktree_cwd = self.temp_dir / '.plan' / 'local' / 'worktrees' / PLAN_ID
+        worktree_cwd.mkdir(parents=True)
+        with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None):
             title = set_terminal_title.build_title(
                 'done',
-                str(self.temp_dir),
+                str(worktree_cwd),
                 plan_label='Explicit_label',
             )
         self.assertEqual(title, '✓ pm:done:Explicit_label')
