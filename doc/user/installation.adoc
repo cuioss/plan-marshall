@@ -76,7 +76,7 @@ After the core `plan-marshall` plugin is installed, add the language- or domain-
 /plugin install pm-plugin-development@plan-marshall
 ----
 
-The bundle table at the top of the project `README.adoc` links each bundle name to its `README.md`.
+The bundle table at the top of the project `README.md` links each bundle name to its `README.md`.
 
 == Next step
 
