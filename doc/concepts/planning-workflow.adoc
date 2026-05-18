@@ -5,6 +5,10 @@
 
 Plan Marshall organises every non-trivial change as a *plan* that moves through six phases. Each phase is a skill (`phase-1-init` … `phase-6-finalize`) whose workflow doc is dispatched through the xref:execution-context.adoc[execution-context dispatcher]. The `plan-marshall` meta-skill (`marketplace/bundles/plan-marshall/skills/plan-marshall/SKILL.md`) ties them together and is what `/plan-marshall` orchestrates.
 
+image::../resources/diagrams/phase-lifecycle.svg[Plan lifecycle — six phases from init through finalize with named forward gates and a curved back-edge for the finalize → execute loop-back outcome, align=center]
+
+The lifecycle is a forward state machine — each phase advances to the next when its review gate permits (see xref:../user/configuration.adoc#review-gates[Configuration › Review gates]). The single back-edge is the `loop_back` outcome from phase-6-finalize, which re-enters phase-5-execute to address fix tasks created during automated review or Sonar roundtrip and is bounded by `phase-6-finalize.max_iterations`.
+
 == Phase Sequence
 
 [cols="1,1,3", options="header"]
