@@ -41,7 +41,7 @@ Grouped by sweep wave. Each row records the script under sweep, its bundle, the 
 | `plan-retrospective/scripts/direct-gh-glab-usage.py` | plan-marshall | `--plan-id` | parse-then-rebuild | `test/plan-marshall/plan-retrospective/` |
 | `plan-retrospective/scripts/summarize-invariants.py` | plan-marshall | `--plan-id` | parse-then-rebuild | `test/plan-marshall/plan-retrospective/` |
 | `tools-integration-ci/scripts/ci.py` | plan-marshall | `--plan-id` (issue / pr-prepare-body / pr-prepare-comment) — propagates through `ci_base` to `github_ops` and `gitlab_ops` routers | argparse-only, parse-then-rebuild | `test/plan-marshall/tools-integration-ci/` |
-| `tools-self-review/scripts/self_review.py` | plan-marshall | `--plan-id` | parse-then-rebuild | `test/plan-marshall/tools-self-review/` |
+| `ext-self-review-plan-marshall/scripts/self_review.py` | plan-marshall | `--plan-id` | parse-then-rebuild | `test/plan-marshall/ext-self-review-plan-marshall/` |
 | `workflow-integration-sonar/scripts/sonar_rest.py` | plan-marshall | `--component` (canonical `COMPONENT_RE`) | argparse-only | `test/plan-marshall/workflow-integration-sonar/` |
 
 ### Wave C — pm-dev-java + pm-documents (2)

@@ -99,16 +99,36 @@ The script returns a TOON document with `status` (`success` |
 | `status: partial` | Some bundles failed; record `outcome=failed` and surface `summary_message` in `display_detail` |
 | `status: error` | Hard failure (no bundles synced); record `outcome=failed` and surface `summary_message` |
 
-### 4. Mark step complete
+### 4. Capture HEAD and mark step complete
+
+This step is a member of `CONDITIONAL_HEAD_DEPENDENT_STEPS` (see
+`marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md`
+§ Conditional HEAD-dependent steps). The dispatcher re-fires this step on
+loop-back IFF `references.modified_files` (at the prior `done` mark)
+intersects `marketplace/bundles/**` AND the live worktree HEAD has
+advanced past the persisted `head_at_completion`. To make that
+comparison meaningful, capture HEAD before `mark-step-done`:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Then forward the captured SHA to `mark-step-done` via
+`--head-at-completion`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
   mark-step-done --plan-id {plan_id} --phase 6-finalize \
   --step project:finalize-step-sync-plugin-cache \
-  --outcome {done|failed} --display-detail "{display_detail}"
+  --outcome {done|failed} --head-at-completion {sha} \
+  --display-detail "{display_detail}"
 ```
 
 On `status: success`, `{display_detail}` is `"{synced_count} bundles synced"`.
 On `status: partial` or `status: error`, surface the engine's
 `summary_message` field verbatim in `--display-detail` so the renderer
 shows the underlying failure for triage.
+
+## Related
+
+- `marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md` § Conditional HEAD-dependent steps — defines `CONDITIONAL_HEAD_DEPENDENT_STEPS` membership and the `modified_files ∩ marketplace/bundles/**` re-fire predicate this step obeys.
