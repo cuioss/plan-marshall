@@ -115,7 +115,8 @@ to the agent's terminal payload (text + structured TOON return):
 | `task_complete_returned_verbatim` | The agent returned the bare `task_complete` payload from `execute-task` verbatim, without wrapping it in a phase-5-execute terminal payload. (Implies the agent skipped the loop's bookkeeping after a single task.) |
 | `voluntary_checkpoint` | The agent emitted any of "Returning control to orchestrator", "progress checkpoint", "partial-completion handoff", or returned a non-error payload while pending tasks remain in the queue. |
 | `harness_cancellation` | The dispatch ended with a host-platform cancellation marker (timeout, context-window limit, etc.). |
-| `error` | The agent returned a structured error payload via the skill's Error Handling section (including the pending-task-drift fatal error). |
+| `error` | The agent returned a structured error payload via the skill's Error Handling section (including the pending-task-drift fatal error), EXCLUDING the `error_type: baseline_drift` discriminator below. |
+| `baseline_drift` | The agent returned `status: error, error_type: baseline_drift` from phase-5-execute Step 3 because `baseline-reconcile` reported `conflict_count > 0` (non-zero overlap between upstream commits and the worktree's in-flight changes). Triggers the **Baseline drift recovery (non-zero overlap)** sub-section below. The zero-overlap case (`conflict_count == 0`) NEVER reaches this branch — phase-5-execute self-absorbs it internally via the metadata-only contract documented in `phase-5-execute/standards/sync-with-main.md` § "Self-absorption contract", then continues its task loop without returning. |
 | `clean_exit_queue_empty` | Canonical value for clean exits where the loop drove to completion AND `manage-tasks loop-exit-guard` confirmed the pending queue is empty. The orchestrator MUST classify clean exits as `clean_exit_queue_empty`, NEVER fall back to a non-canonical value — missing or unrecognised causes are recorder-level script errors (the recorder no longer accepts the legacy `unknown` fallback). |
 
 **Script-level pending-count enforcement**: before classifying any return as `clean_exit_queue_empty`, the orchestrator MUST call `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks loop-exit-guard --plan-id {plan_id}` and confirm it returns `status: success` with `pending_count: 0`. `status: continue` forces re-dispatch — the orchestrator is forbidden from softening this signal. See `manage-tasks/SKILL.md` § "Loop-Exit Guard".
@@ -146,6 +147,61 @@ Step 12a "Pending-tasks transition guard" in `phase-5-execute` SKILL.md
 (which now points to the same `loop-exit-guard` verb as its authoritative
 enforcement) and is the structural complement to the script-level `[OUTCOME]`
 guard introduced in `manage-tasks finalize-step`.
+
+### Baseline drift recovery (non-zero overlap)
+
+**Trigger**: the just-returned execution-context dispatch is classified `termination-cause == baseline_drift`. The agent's structured error payload carries `error_type: baseline_drift` plus `divergent_commits`, `upstream_commit_count`, and `conflict_count > 0`.
+
+**Why this branch handles only non-zero overlap**: phase-5-execute Step 3 invokes `baseline-reconcile` to obtain a deterministic `conflict_count`. When `conflict_count == 0`, phase-5-execute self-absorbs the drift internally — it writes `worktree_sha` + `main_sha` into `status.metadata`, emits a single decision-log entry, and continues its task loop without returning. The orchestrator therefore sees the structured drift TOON ONLY when the upstream commits touch files that overlap with the worktree's in-flight changes, which is exactly the case where the request narrative + outline + tasks may no longer be valid against the new baseline. Re-cycling through phase-2-refine is the canonical absorption path for this case.
+
+**Recovery procedure**:
+
+1. **Log the drift to work-log**:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level ERROR \
+     --message "[STATUS] (plan-marshall:plan-marshall) Baseline drift recovery: {upstream_commit_count} upstream commits with {conflict_count} conflicting files. Divergent: {divergent_commits}. Re-dispatching phase-2-refine."
+   ```
+
+2. **Reset the persisted phase to `2-refine`** so the orchestrator's standard envelope re-enters refine cleanly:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-phase \
+     --plan-id {plan_id} --phase 2-refine
+   ```
+
+3. **Re-dispatch phase-2-refine using the standard envelope** from `workflow/planning.md` (no new fields, no `loop_back` discriminator — refine sees standard full-cycle re-entry; baseline reconciliation is its Step 3d responsibility):
+
+   See `plan-marshall/workflow/planning.md` § "2-Refine Phase" for the canonical dispatch envelope. The orchestrator MUST use that envelope verbatim — no additional inputs propagate the drift signal to refine, because the upstream commits are already visible to `baseline-reconcile` on refine entry.
+
+4. **On refine return**, re-enter phase-5-execute via the standard execute-phase envelope earlier in this document.
+
+**Bounded re-dispatch cap**: the orchestrator MUST track a counter for consecutive drift loops on a given plan and refuse to re-dispatch refine when the counter exceeds **3**. On cap, escalate to the user:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level ERROR \
+  --message "[ERROR] (plan-marshall:plan-marshall) Drift loop cap exceeded (3 consecutive baseline_drift recoveries). Plan requires manual intervention — upstream churn is too high to absorb automatically."
+```
+
+Return the orchestrator-level error TOON and STOP:
+
+```toon
+status: error
+error_type: drift_loop_cap_exceeded
+display_detail: "drift loop cap exceeded after 3 consecutive recoveries"
+plan_id: {plan_id}
+```
+
+The counter resets to zero on any phase-5-execute return that is NOT `baseline_drift` (success, voluntary_checkpoint, error, harness_cancellation, clean_exit_queue_empty all reset it).
+
+**No `loop_back` field**: this branch deliberately does NOT introduce a `loop_back` input on the phase-2-refine dispatch envelope. The orchestrator's existing phase-6-finalize → phase-5-execute loop-back routing is unrelated and remains the single owner of that field-shape. Drift recovery uses standard `set-phase` + dispatch, which is structurally simpler.
+
+**Cross-references**:
+- `phase-5-execute/SKILL.md` Step 3 — the deterministic drift detection that produces the structured TOON this branch consumes
+- `phase-5-execute/standards/sync-with-main.md` § "Self-absorption contract" — the zero-overlap case that NEVER reaches this branch
+- `plan-marshall/workflow/planning.md` § "2-Refine Phase" — the standard refine dispatch envelope this branch reuses
 
 ### Execute Phase Completion
 

@@ -28,6 +28,8 @@ from _analyze_markdown import (
     check_resolver_gap,
     get_bloat_classification,
 )
+from _analyze_phase2_refine_contract import RULE_ID as REFINE_CONTRACT_RULE_ID
+from _analyze_phase2_refine_contract import analyze_phase2_refine_contract
 from _analyze_shared import check_agent_glob_resolver_workaround, extract_frontmatter
 
 # Subdirectories that may contain markdown sub-documents
@@ -243,6 +245,22 @@ def analyze_component(component: dict, active_rules: frozenset[str] | None = Non
                 )
             )
 
+        # refine-contract-violation: catch Edit/Write tool references in
+        # phase-2-refine workflow files whose path argument is not prefixed
+        # with .plan/local/ (or its worktree-substituted forms). The analyzer
+        # self-filters to phase-2-refine/ files via path matching, so
+        # registration at the broader ``skills`` scope is correct: invoking
+        # plugin-doctor on a non-refine skill produces no findings because
+        # the analyzer's _is_refine_workflow_file predicate excludes them.
+        # Unconditionally active (not gated on active_rules) — the rule
+        # enforces a hard contract from lesson 2026-05-16-14-001 that must
+        # surface on every plugin-doctor run.
+        issues.extend(
+            extract_issues_from_refine_contract_analysis(
+                analyze_phase2_refine_contract([skill_dir])
+            )
+        )
+
     return {'component': component, 'analysis': analysis, 'issues': issues, 'issue_count': len(issues)}
 
 
@@ -308,6 +326,44 @@ def extract_issues_from_manage_findings_analysis(findings: list[dict]) -> list[d
                     '(manage-findings-invocation-invalid)',
                 ),
                 'details': finding.get('details', {}),
+            }
+        )
+    return issues
+
+
+def extract_issues_from_refine_contract_analysis(findings: list[dict]) -> list[dict]:
+    """Translate ``analyze_phase2_refine_contract`` output into plugin-doctor issue dicts.
+
+    The analyzer returns findings with the native shape
+    (``rule_id``/``file``/``line``/``tool``/``path``/``suggested_fix``).
+    Plugin-doctor's downstream categorizer keys on ``type``/``fixable`` (see
+    ``categorize_all_issues``), so this helper normalises each finding to the
+    shared schema while preserving rule-specific fields under ``details``.
+    """
+    issues: list[dict] = []
+    for finding in findings:
+        tool = finding.get('tool', '')
+        path_ref = finding.get('path', '')
+        issues.append(
+            {
+                'type': REFINE_CONTRACT_RULE_ID,
+                'rule_id': REFINE_CONTRACT_RULE_ID,
+                'file': finding.get('file', ''),
+                'line': finding.get('line'),
+                'severity': 'error',
+                'fixable': False,
+                'description': (
+                    f'phase-2-refine workflow file invokes `{tool}` against '
+                    f'a non-plan path `{path_ref}` — refine MUST write only '
+                    f'inside `.plan/local/plans/{{plan_id}}/**` or '
+                    f'`.plan/local/worktrees/{{plan_id}}/**` '
+                    f'(refine-contract-violation)'
+                ),
+                'details': {
+                    'tool': tool,
+                    'path': path_ref,
+                    'suggested_fix': finding.get('suggested_fix', ''),
+                },
             }
         )
     return issues

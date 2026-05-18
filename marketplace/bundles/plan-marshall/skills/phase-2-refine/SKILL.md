@@ -27,6 +27,13 @@ Skill: plan-marshall:dev-general-practices
 - Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
 - Never skip the phase transition — use `manage-status transition`
 - Never improvise script subcommands — use only those documented below
+- **Never write to any path outside `.plan/local/plans/{plan_id}/**` or `.plan/local/worktrees/{plan_id}/**`.** Implementation edits — even when the request narrative reads like an implementation brief, even when an upstream lesson "obviously" needs a doc tweak, even when a test fixture would clarify intent — are the responsibility of phase-5-execute task bodies, NOT phase-2-refine. Refine produces refined-request artifacts only. The recurring anti-pattern (captured as `feedback_phase2_refine_never_implements` in the project memory log and as the consolidated lesson `2026-05-16-14-001` in `manage-lessons`) is refine reaching for `Edit` / `Write` against `marketplace/bundles/**`, source files, or any other production path because the request narrative made the change "feel obvious". The Allowed write paths sub-section below is the only writable surface.
+
+**Allowed write paths:**
+- `.plan/local/plans/{plan_id}/**` — the plan's request, clarifications, references, status, decisions, and any other plan-scoped artifact.
+- `.plan/local/worktrees/{plan_id}/**` — the plan's isolated worktree, EXCLUDING the `marketplace/**`, source, and build-system sub-trees within it. (Refine MAY persist plan-scoped artifacts under the worktree's `.plan/` symlink, but MUST NOT edit the worktree's checked-out source tree — that surface belongs to phase-5-execute.)
+
+Every other path is forbidden. The orchestrator's post-dispatch main-checkout assertion (see `plan-marshall:plan-marshall:planning.md` § "2-Refine Phase" → "Post-dispatch contract assertion") detects violations structurally; the plugin-doctor `REFINE_CONTRACT_VIOLATION` analyzer detects them at edit time.
 
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
