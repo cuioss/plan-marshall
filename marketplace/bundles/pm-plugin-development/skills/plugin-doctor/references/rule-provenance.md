@@ -32,6 +32,7 @@ The table enumerates every rule emitted by the in-tree analyzers. The `Emitter` 
 | `workflow-hardcoded-script-path` | structural | `_doctor_analysis.py` | Executor-notation contract — workflows must reference scripts via `{bundle}:{skill}:{script}` notation, never via hard-coded relative paths. See `plan-marshall:tools-script-executor`. |
 | `workflow-prose-parameter-inconsistency` | content | `_doctor_analysis.py` | Plugin architecture contract — prose adjacent to `execute-script.py` bash blocks must reference parameter values consistent with the actual script API. |
 | `prose-verb-chain-consistency` | content | `_analyze_verb_chains.py` (via `_doctor_analysis.py`) | Lesson `2026-04-18-16-001` — drift between prose verb chains and registered argparse subcommands produced silent runtime rejections. |
+| `refine-contract-violation` | safety | `_analyze_phase2_refine_contract.py` (via `_doctor_analysis.py`) | Lesson `2026-05-16-14-001` and recurring anti-pattern `feedback_phase2_refine_never_implements` — phase-2-refine MUST NOT write outside `.plan/local/plans/{plan_id}/**` or `.plan/local/worktrees/{plan_id}/**`. See `plan-marshall:phase-2-refine/SKILL.md` § Enforcement → Allowed write paths. Runtime complement: `plan-marshall:plan-marshall:planning.md` § "Post-dispatch contract assertion". |
 
 ### Skill rules
 

@@ -192,6 +192,49 @@ Task: plan-marshall:{target}
 
 The agent returns confidence + track + scope_estimate + qgate_pending_count in its TOON. The 12-step confidence loop (Steps 3b/3c/8/9/10/11/12) iterates *inside* this single envelope; `AskUserQuestion` in Step 11 propagates to the host UI directly from the subagent (no main-context routing required).
 
+**Post-dispatch contract assertion**: phase-2-refine's contract restricts writes to `.plan/local/plans/{plan_id}/**` and `.plan/local/worktrees/{plan_id}/**` (see `plan-marshall:phase-2-refine` § Enforcement → Allowed write paths). Refine reaching for `Edit` / `Write` against the main checkout is a recurring failure mode (lesson `2026-05-16-14-001`, `feedback_phase2_refine_never_implements`) that silently advances the orchestrator into phase-3-outline with main-checkout drift. Assert structurally that the main checkout is clean before advancing:
+
+```bash
+git -C . status --porcelain
+```
+
+**Success branch** — empty output (main checkout clean):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[STATUS] (plan-marshall:plan-marshall) Post-refine main-checkout assertion passed (clean)"
+```
+
+Continue to the Metrics fused-call below.
+
+**Violation branch** — non-empty output (refine wrote to the main checkout). The orchestrator MUST emit a `[CRITICAL]` work-log entry naming each modified file, return the structured error TOON, and refuse to advance to phase-3-outline.
+
+`{file_list}` is assembled from the `git -C . status --porcelain` output captured in the "Check main checkout" call above — join the non-empty lines of that output (the porcelain lines already carry the `XY path` status-and-path encoding) into a single space- or comma-separated string and substitute it into both the log message and the error TOON below:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level ERROR \
+  --message "[CRITICAL] (plan-marshall:plan-marshall) Refine contract violation — main checkout dirty after phase-2-refine dispatch: {file_list}"
+```
+
+Return:
+
+```toon
+status: error
+error_type: refine_contract_violation
+display_detail: "refine dispatched edits to main checkout"
+plan_id: {plan_id}
+dirty_files: {file_list}
+```
+
+Do NOT call `manage-status transition` to 3-outline. Do NOT proceed with the metrics fused-call. The orchestrator stops here; recovery requires the user to inspect the offending files and either revert them or move them into `.plan/local/plans/{plan_id}/**`.
+
+**Cross-references**:
+- `plan-marshall:phase-2-refine` § Enforcement → Allowed write paths — the prohibition this assertion enforces (Deliverable 3)
+- Lesson `2026-05-16-14-001` (consolidated recurrence) — driving failure history
+- `pm-plugin-development:plugin-doctor` analyzer `REFINE_CONTRACT_VIOLATION` (Deliverable 5) — edit-time complement to this runtime assertion
+
 **Metrics**: After refine completes, record the `2-refine → 3-outline` boundary in a single fused call (forwarding the aggregated `<usage>` data from every dispatch that fired inside this phase — the `phase-2-refine` envelope itself plus any q-gate-validation sub-dispatch at Step 13.5 for lesson-derived plans). Sum `total_tokens`, `tool_uses`, and `duration_ms` across each dispatch's `<usage>` tag:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \

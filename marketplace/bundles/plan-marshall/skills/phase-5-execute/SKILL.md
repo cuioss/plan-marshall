@@ -365,21 +365,80 @@ Inlined flow:
      --message "[STATUS] (plan-marshall:phase-5-execute) Baseline fast-path: worktree already up to date with origin/{base_branch}"
    ```
 
-5. **Drift contract** — exit code non-zero means upstream has new commits the worktree does not contain. ABORT the phase fail-loud: do NOT merge, do NOT rebase, do NOT continue to Step 4. Capture the divergent commits:
+5. **Drift detected** — exit code non-zero means upstream has new commits the worktree does not contain. Do NOT merge, do NOT rebase, do NOT continue to Step 4 yet. First capture the divergent commits for both logging and the self-absorb decision below:
 
    ```bash
    git -C {worktree_path} log --oneline HEAD..origin/{base_branch}
    ```
 
-   Record the output as `{divergent_commits}`. Then log the failure with the documented redirect:
+   Record the output as `{divergent_commits}`.
+
+6. **Invoke `baseline-reconcile` to obtain a deterministic overlap predicate**. The script runs `git merge-tree` against `HEAD` and `origin/{base_branch}` and returns `conflict_count` — the number of files where the three-way merge would conflict. This is the structural "overlap" signal: `conflict_count == 0` means the upstream commits and the worktree's in-flight changes touch disjoint sets of files, so absorbing the upstream tip into the baseline metadata is safe without any working-tree mutation. `--no-emit` suppresses Q-Gate finding emission — phase-5-execute self-absorption is the wrong place to surface refine-time findings:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow \
+     baseline-reconcile --plan-id {plan_id} --no-emit
+   ```
+
+   Parse `conflict_count`, `upstream_commit_count`, and `upstream_commits` from the returned TOON.
+
+7. **Self-absorption branch — `conflict_count == 0`** (zero-overlap case): the upstream tip can be absorbed into the baseline metadata without re-authoring the request, the outline, or any task. Persist the new `worktree_sha` (the current HEAD sha after the fetch — unchanged, but recorded for audit) and the new `main_sha` (the resolved `origin/{base_branch}` sha) into `status.metadata` via a single fused `manage-status metadata --set` call:
+
+   ```bash
+   git -C {worktree_path} rev-parse HEAD
+   ```
+
+   Capture as `{worktree_sha}`.
+
+   ```bash
+   git -C {worktree_path} rev-parse origin/{base_branch}
+   ```
+
+   Capture as `{main_sha}`. Then write both keys:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+     --plan-id {plan_id} --set worktree_sha={worktree_sha} --set main_sha={main_sha}
+   ```
+
+   Emit exactly ONE decision-log entry naming the absorbed commits — the entry is the audit trail that ties the new metadata to the specific upstream commits that were absorbed:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level INFO \
+     --message "(plan-marshall:phase-5-execute:self-absorb) Absorbed {upstream_commit_count} upstream commits with zero overlap: {divergent_commits}"
+   ```
+
+   Log the work-log `[STATUS]` line for grep-ability:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level INFO \
+     --message "[STATUS] (plan-marshall:phase-5-execute) Self-absorbed zero-overlap drift: {upstream_commit_count} commits, new main_sha={main_sha}"
+   ```
+
+   Then **continue the task loop** — no return to orchestrator, no dispatch to phase-2-refine, no architecture reload, no source-premise verification, no Q-Gate. Self-absorption is metadata-only: the request narrative, solution outline, task list, and confidence score remain valid because the upstream commits touched no overlapping files. Proceed to Step 4.
+
+8. **Drift contract — `conflict_count > 0`** (non-zero-overlap case): the upstream commits touch files that overlap with the worktree's in-flight changes. ABORT the phase fail-loud — re-authoring is required and only refine's iterate-to-confidence loop can absorb the overlap correctly. Return the structured drift TOON for the orchestrator's drift-recovery branch to act on (see `plan-marshall:plan-marshall/workflow/execution.md` § "Baseline drift recovery (non-zero overlap)"):
+
+   ```toon
+   status: error
+   error_type: baseline_drift
+   divergent_commits: {divergent_commits}
+   upstream_commit_count: {upstream_commit_count}
+   conflict_count: {conflict_count}
+   display_detail: "baseline drift: {upstream_commit_count} upstream commits"
+   ```
+
+   Log the failure to work-log:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      work --plan-id {plan_id} --level ERROR \
-     --message "[ERROR] (plan-marshall:phase-5-execute) Baseline drift at {worktree_path} — origin/{base_branch} contains commits not in HEAD: {divergent_commits}. Phase aborted; re-run phase-2-refine to absorb upstream changes via Step 3d (Baseline Reconciliation), then re-enter phase-5-execute."
+     --message "[ERROR] (plan-marshall:phase-5-execute) Baseline drift at {worktree_path} with non-zero overlap ({conflict_count} conflicting files) — origin/{base_branch} contains commits not in HEAD: {divergent_commits}. Returning structured drift TOON; orchestrator will re-dispatch phase-2-refine."
    ```
 
-   Phase-5-execute does NOT perform substantive reconciliation. Re-running phase-2-refine surfaces the upstream commits as Q-Gate findings, the iterate-to-confidence loop absorbs them, and the user explicitly drives the rebase/merge through the refine clarifications. The fast-path here is the structural complement: it ensures execute starts only when refine has already reconciled the baseline.
+   Phase-5-execute does NOT perform substantive reconciliation for non-zero overlap. The orchestrator's drift-recovery branch dispatches phase-2-refine, which surfaces the upstream commits as Q-Gate findings and runs the iterate-to-confidence loop to absorb the overlap.
 
 Proceed to Step 4.
 
