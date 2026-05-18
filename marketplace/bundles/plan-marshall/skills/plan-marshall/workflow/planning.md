@@ -208,7 +208,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Continue to the Metrics fused-call below.
 
-**Violation branch** — non-empty output (refine wrote to the main checkout). The orchestrator MUST emit a `[CRITICAL]` work-log entry naming each modified file, return the structured error TOON, and refuse to advance to phase-3-outline:
+**Violation branch** — non-empty output (refine wrote to the main checkout). The orchestrator MUST emit a `[CRITICAL]` work-log entry naming each modified file, return the structured error TOON, and refuse to advance to phase-3-outline.
+
+`{file_list}` is assembled from the `git -C . status --porcelain` output captured in the "Check main checkout" call above — join the non-empty lines of that output (the porcelain lines already carry the `XY path` status-and-path encoding) into a single space- or comma-separated string and substitute it into both the log message and the error TOON below:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

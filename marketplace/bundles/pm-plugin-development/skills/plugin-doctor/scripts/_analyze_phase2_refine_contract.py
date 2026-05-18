@@ -92,6 +92,11 @@ def _path_is_allowed(path: str) -> bool:
     if not stripped:
         # Empty / placeholder-only paths are not contract violations.
         return True
+    if '..' in stripped:
+        # Reject path traversal sequences (e.g. '.plan/local/../../../etc/passwd')
+        # before the prefix check — the literal prefix match would otherwise
+        # accept any traversal that started inside an allowed prefix.
+        return False
     for prefix in _ALLOWED_PREFIXES:
         if stripped.startswith(prefix):
             return True
