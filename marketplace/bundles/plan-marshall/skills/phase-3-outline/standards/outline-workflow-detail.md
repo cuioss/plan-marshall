@@ -45,14 +45,19 @@ For each pending finding:
    a. Remove the redundant deliverable from solution_outline.md, OR
    b. Remove the `module_testing` profile from the overlapping deliverable
    c. Use `update` command to persist the corrected outline
-5. For other finding types: address by revising deliverables, adjusting scope, or removing false positives
-5. Resolve:
+5. **If the finding scopes to one peer of a symmetric structure (ladder, parallel-array, peer-set, matrix)** — apply the **symmetric-peer-audit rule**:
+   a. **Trigger predicate (tier-agnostic justification)**: ask "would the justification for this fix change if I were looking at $peer_element instead?" If the answer is no, the fix is symmetric and MUST propagate to every peer in the same enumerated structure.
+   b. **Audit action**: enumerate every peer of the flagged element within the same file/deliverable scope. Examples of symmetric structures: presets like `ECONOMIC` / `BALANCED` / `HIGH_END` in an effort-preset ladder; rows of a parallel-array constant; entries in a peer-set enum; tiers of a level matrix. The audit MUST include every peer named in the same enumerated structure, not only the one(s) flagged by the finding.
+   c. **Required revision behavior**: apply the same fix to every peer in the **same outline revision**. Do NOT defer peer fixes to a follow-up plan, do NOT split into successor lessons, and do NOT mark the original finding `taken_into_account` until every peer has been corrected in solution_outline.md. The single outline revision is the contract — partial application is the failure mode this rule exists to prevent.
+   d. **Back-reference**: this rule originates from lesson `lesson-2026-05-18-10-001` and the post-PR review of PR #407 (`reanchor-effort-presets-ladder`), where a literal-expansion fix to the `BALANCED` preset was not applied to `ECONOMIC` and `HIGH_END` until an automated review forced a loop-back iteration.
+6. For other finding types: address by revising deliverables, adjusting scope, or removing false positives
+7. Resolve:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate resolve --plan-id {plan_id} --hash-id {hash_id} --resolution taken_into_account --phase 3-outline \
   --detail "{what was done to address this finding}"
 ```
-6. Log resolution:
+8. Log resolution:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline:qgate) Finding {hash_id} [{source}]: taken_into_account — {resolution_detail}"
