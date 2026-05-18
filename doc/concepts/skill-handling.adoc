@@ -35,37 +35,7 @@ Tier 1 always loads first. Tier 2 and the workflow / extension entries load in t
 
 Skills travel through the planning pipeline as a deterministic data flow. Nothing about "which skills load" is decided by the model.
 
-[source]
-----
-.plan/project-architecture/{module}/enriched.json
-                            │
-                            │   skills_by_profile.implementation = [...]
-                            │   skills_by_profile.module_testing = [...]
-                            ▼
-                     phase-3-outline
-                            │
-                            │   deliverable names module + profiles
-                            │   (no skills resolved yet)
-                            ▼
-                     phase-4-plan
-                            │
-                            │   For each deliverable × profile:
-                            │     query architecture → skills_by_profile.{profile}
-                            │     write TASK-N.json with task.skills = […]
-                            ▼
-                     phase-5-execute
-                            │
-                            │   Read task.skills, dispatch via
-                            │   Task: plan-marshall:execution-context-{level}
-                            │   prompt body carries skills[] verbatim
-                            ▼
-                     execution-context agent
-                            │
-                            │   Step 2: implicit Skill: dev-general-practices
-                            │   Step 3: for s in skills[]:  Skill: s
-                            ▼
-                       loaded context
-----
+image::../resources/diagrams/skill-loading-flow.svg[Skill loading data flow — architecture's skills_by_profile becomes task.skills at plan time, travels through the dispatch verbatim, and is loaded by execution-context as Tier 2 on top of the implicit Tier 1 dev-general-practices, align=center]
 
 Each transition is a manage-* script call or a workflow-driven assignment. The canonical step-by-step is link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/skill-loading.md[`ref-workflow-architecture/standards/skill-loading.md`].
 

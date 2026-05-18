@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- theme-handling: A (theme-neutral) -->
+<!-- conforms to: pm-documents:ref-svg-diagrams (visual-language + diagram-type-block, vertical layout) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 760"
+     role="img" aria-labelledby="title desc"
+     font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
+  <title id="title">Skill loading data flow — from architecture to loaded context</title>
+  <desc  id="desc">Vertical data-flow diagram showing how skills travel from the per-module architecture record into a subagent's loaded context. Each stage transforms or forwards the skills data; no stage chooses skills at runtime. Architecture's skills_by_profile becomes task.skills at plan time, travels through the execute dispatch verbatim, and is loaded by execution-context as Tier 2 on top of the implicit Tier 1 dev-general-practices.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" class="arrow-fill"/>
+    </marker>
+    <style>
+      .col-header { font-size: 14px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
+      .col-sub    { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .item-c     { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; text-anchor: middle; }
+      .arrow-lbl  { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .stroke     { stroke: #6e7681; stroke-width: 1.2; fill: none; }
+      .arrow      { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+      .arrow-fill { fill: #6e7681; }
+    </style>
+  </defs>
+
+  <!-- ============= Stage 1: Architecture (input) ============= -->
+  <rect class="stroke" x="180" y="30" width="400" height="100" rx="6" ry="6"/>
+  <text x="380" y="56" class="col-header">Architecture</text>
+  <text x="380" y="76" class="col-sub">.plan/project-architecture/{module}/enriched.json</text>
+  <text x="380" y="102" class="item-c">skills_by_profile.implementation = [...]</text>
+  <text x="380" y="120" class="item-c">skills_by_profile.module_testing  = [...]</text>
+
+  <!-- Arrow 1 → 2 -->
+  <line class="arrow" x1="380" y1="135" x2="380" y2="173" marker-end="url(#arrow)"/>
+  <text x="395" y="158" class="arrow-lbl" text-anchor="start">read by outline</text>
+
+  <!-- ============= Stage 2: Outline ============= -->
+  <rect class="stroke" x="180" y="180" width="400" height="80" rx="6" ry="6"/>
+  <text x="380" y="207" class="col-header">phase-3-outline</text>
+  <text x="380" y="227" class="col-sub">deliverable names { module, profile } — no skills resolved yet</text>
+  <text x="380" y="248" class="item-c">solution_outline.md</text>
+
+  <!-- Arrow 2 → 3 -->
+  <line class="arrow" x1="380" y1="265" x2="380" y2="303" marker-end="url(#arrow)"/>
+  <text x="395" y="288" class="arrow-lbl" text-anchor="start">read by plan</text>
+
+  <!-- ============= Stage 3: Plan ============= -->
+  <rect class="stroke" x="180" y="310" width="400" height="90" rx="6" ry="6"/>
+  <text x="380" y="337" class="col-header">phase-4-plan</text>
+  <text x="380" y="357" class="col-sub">resolve skills_by_profile[profile] → task.skills</text>
+  <text x="380" y="382" class="item-c">TASK-N.json   (skills materialized per task)</text>
+
+  <!-- Arrow 3 → 4 -->
+  <line class="arrow" x1="380" y1="405" x2="380" y2="443" marker-end="url(#arrow)"/>
+  <text x="395" y="428" class="arrow-lbl" text-anchor="start">passed through verbatim</text>
+
+  <!-- ============= Stage 4: Execute ============= -->
+  <rect class="stroke" x="180" y="450" width="400" height="90" rx="6" ry="6"/>
+  <text x="380" y="477" class="col-header">phase-5-execute</text>
+  <text x="380" y="497" class="col-sub">dispatch via execution-context-{level}</text>
+  <text x="380" y="522" class="item-c">prompt body: { skills[]: task.skills }</text>
+
+  <!-- Arrow 4 → 5 -->
+  <line class="arrow" x1="380" y1="545" x2="380" y2="583" marker-end="url(#arrow)"/>
+  <text x="395" y="568" class="arrow-lbl" text-anchor="start">Task: dispatch</text>
+
+  <!-- ============= Stage 5: Execution-context (the loader) ============= -->
+  <rect class="stroke" x="180" y="590" width="400" height="100" rx="6" ry="6"/>
+  <text x="380" y="616" class="col-header">execution-context agent</text>
+  <text x="380" y="636" class="col-sub">six steps, two of them are skill loads</text>
+  <text x="380" y="660" class="item-c">Step 2 (implicit):  Skill: dev-general-practices</text>
+  <text x="380" y="678" class="item-c">Step 3 (for each):  Skill: {entry from skills[]}</text>
+
+  <!-- ============= Side bar — tier annotation ============= -->
+  <!-- Tier 1 callout pointing at execution-context step 2 -->
+  <text x="100" y="664" class="col-sub" text-anchor="end">Tier 1</text>
+  <line class="arrow" x1="115" y1="660" x2="175" y2="660"/>
+
+  <!-- Tier 2 callout pointing at execution-context step 3 -->
+  <text x="100" y="682" class="col-sub" text-anchor="end">Tier 2</text>
+  <line class="arrow" x1="115" y1="678" x2="175" y2="678"/>
+
+  <!-- Side bar — determinism band along stages 1-4 -->
+  <text x="650" y="55" class="col-sub" text-anchor="start">deterministic</text>
+  <text x="650" y="71" class="col-sub" text-anchor="start">resolution</text>
+  <line class="stroke" x1="650" y1="80" x2="650" y2="540"/>
+  <line class="stroke" x1="645" y1="80" x2="655" y2="80"/>
+  <line class="stroke" x1="645" y1="540" x2="655" y2="540"/>
+
+  <!-- Side bar — LLM judgement band over stage 5 -->
+  <text x="650" y="615" class="col-sub" text-anchor="start">LLM in</text>
+  <text x="650" y="631" class="col-sub" text-anchor="start">subagent</text>
+  <line class="stroke" x1="650" y1="640" x2="650" y2="690"/>
+  <line class="stroke" x1="645" y1="640" x2="655" y2="640"/>
+  <line class="stroke" x1="645" y1="690" x2="655" y2="690"/>
+
+  <!-- ============= Footer ============= -->
+  <text x="380" y="730" class="col-sub">No stage chooses skills at runtime. Every load above is named by the dispatch site.</text>
+
+</svg>
