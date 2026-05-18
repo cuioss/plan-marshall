@@ -44,12 +44,43 @@ behind the fence until the session restart completes).
 
 ## Predicate
 
-The fence fires iff `references.modified_files` intersects
-`marketplace/bundles/plan-marshall/`. Plans that touch sibling bundles
-only (`pm-dev-java`, `pm-documents`, etc.) do not trigger the fence — those
-bundles' modified skills become visible to the next session naturally, and
-the running finalize dispatch is unaffected because its own hot path is
-unchanged.
+The fence fires iff **both** of the following hold:
+
+1. `references.modified_files` intersects
+   `marketplace/bundles/plan-marshall/`. Plans that touch sibling bundles
+   only (`pm-dev-java`, `pm-documents`, etc.) do not trigger the fence —
+   those bundles' modified skills become visible to the next session
+   naturally, and the running finalize dispatch is unaffected because its
+   own hot path is unchanged.
+2. **Cache-freshness guard**: the in-process Claude Code session is the
+   same one that produced the modifications — i.e. the prior dispatcher
+   state for this step is either absent (first dispatch in this plan) or
+   `outcome=failed` from a fence trigger that has not yet been cleared by
+   a session restart. The dispatcher distinguishes these two cases via the
+   `manifest.phase_6.steps[project:finalize-step-self-host-fence]` record:
+
+   - **No record** → first dispatch in this plan. The session that called
+     `phase-5-execute` is the one whose in-process skill registry holds
+     the pre-change skill bodies; the fence MUST fire so the user
+     restarts before any downstream agent loads stale skills.
+   - **`outcome=failed`** → retry-once after the prescribed session
+     restart. The session is fresh by construction (the `[BLOCKED]` halt
+     prevented in-session continuation), so the in-process skill registry
+     was rebuilt from the synced cache during session boot. The
+     cache-freshness guard is satisfied; the fence records `outcome=done`
+     and the dispatcher advances. See § Resumable re-entry semantics
+     below.
+   - **`outcome=done`** → unreachable inside the predicate (the
+     dispatcher's `done → skip` rule short-circuits before the predicate
+     evaluates).
+
+The two-clause predicate is the source of truth for the apparent
+inconsistency between this section and § Resumable re-entry: the fence
+re-evaluates on every dispatch, but clause (2) flips between sessions
+even though clause (1) does not. `modified_files` alone is not enough —
+without the cache-freshness guard the dispatcher would loop on the fence
+forever, because the modified-files set is plan-scoped and survives
+session restarts unchanged.
 
 ## Halt protocol
 
@@ -131,8 +162,12 @@ and the dispatcher walks `manifest.phase_6.steps` from the start. Steps
 recorded `outcome=done` in the prior session are skipped (including
 `project:finalize-step-sync-plugin-cache`). The fence step itself was
 recorded `outcome=failed`, so the dispatcher retries it once — and on the
-re-entry the predicate no longer trips the halt path: the in-process
-skill registry now matches the synced cache, so the fence records
+re-entry the predicate no longer trips the halt path: clause (2) of the
+predicate (the cache-freshness guard documented in § Predicate above) is
+satisfied because the fresh session's in-process skill registry was
+rebuilt from the synced cache during session boot. Clause (1) still
+matches (`modified_files` is plan-scoped and unchanged across sessions),
+but the two-clause AND requires both — so the fence records
 `outcome=done` and the dispatcher continues into `default:create-pr`.
 
 The detailed resumable-re-entry contract — including the
