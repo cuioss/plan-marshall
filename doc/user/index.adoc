@@ -9,7 +9,7 @@ Operating Plan Marshall in a target project. If you are working on Plan Marshall
 
 * xref:installation.adoc[Installation] — install and update the marketplace via Claude Code's `/plugin` tooling. Snapshot (`dist-claude`) and pinned (`claude/v*`) channels.
 * xref:getting-started.adoc[Getting Started] — first-run setup via `/marshall-steward`.
-* xref:commands.adoc[Commands] — `/marshall-steward`, `/plan-marshall`, and (meta-project only) `/sync-plugin-cache`.
+* xref:commands.adoc[Commands] — `/marshall-steward` and `/plan-marshall`.
 * xref:configuration.adoc[Configuration] — `marshal.json`, per-role effort tuning, presets, no-restart semantics, worked example.
 * xref:terminal-title.adoc[Terminal Title] — VS Code and IntelliJ-specific integration for the per-session status indicator.
 

@@ -18,7 +18,8 @@ JSON structure and field definitions for project configuration.
   },
   "plan": {
     "phase-1-init": {
-      "branch_strategy": "feature"
+      "branch_strategy": "feature",
+      "init_without_asking": true
     },
     "phase-2-refine": {
       "confidence_threshold": 95,
@@ -122,7 +123,8 @@ Phase-specific configuration for the 6-phase workflow model. Each phase with con
 {
   "plan": {
     "phase-1-init": {
-      "branch_strategy": "feature"
+      "branch_strategy": "feature",
+      "init_without_asking": true
     }
   }
 }
@@ -131,6 +133,7 @@ Phase-specific configuration for the 6-phase workflow model. Each phase with con
 | Field | Type | Default | Values |
 |-------|------|---------|--------|
 | `branch_strategy` | string | "feature" | direct, feature |
+| `init_without_asking` | bool | true | Auto-continue from `phase-1-init` to `phase-2-refine`. `true` (default) skips the gate; `false` stops after init and waits for the user. The CLI flag `stop-after-init=true` overrides this for a single invocation. |
 
 ### phase-2-refine
 

@@ -85,7 +85,7 @@ Payloads live in link:../../marketplace/bundles/plan-marshall/skills/plan-marsha
 
 == No-Restart Semantics
 
-The resolver reads `.plan/marshal.json` fresh on every dispatch. An `effort` edit (manual or via the wizard) takes effect on the **next** dispatch — no Claude Code restart, no `/sync-plugin-cache`, no target regeneration required. The seven emitted `execution-context` variants (canonical + six levels) are static; only which variant the resolver selects changes.
+The resolver reads `.plan/marshal.json` fresh on every dispatch. An `effort` edit (manual or via the wizard) takes effect on the **next** dispatch — no Claude Code restart, no plugin reinstall, no extra setup required. The seven emitted `execution-context` variants (canonical + six levels) are static; only which variant the resolver selects changes.
 
 A restart IS required when `target/claude/` is regenerated (e.g., variant frontmatter changes), but that is a developer-side meta-project flow, not a user-side configuration flow.
 
@@ -132,9 +132,34 @@ Plan Marshall is pre-1.0. The recent palette expansion (insert `xhigh = opus-med
 | `xxhigh` | `opus, xhigh` | `opus, high` |
 | `max` | (reserved — refused) | `opus, xhigh` (Opus-4.7-only) |
 
+[#review-gates]
+== Review gates
+
+Phase transitions in `/plan-marshall` are guarded by *review gates*. Each gate is a boolean in `marshal.json` whose `true` value means "auto-continue without asking" and whose `false` means "stop and wait for the user". All four gates live under the phase whose **outbound** transition they govern:
+
+[cols="1,1,3", options="header"]
+|===
+| Config key | Default | Governs the transition…
+
+| `plan.phase-1-init.init_without_asking` | `true` | …from `phase-1-init` to `phase-2-refine`. Overridable per invocation via `/plan-marshall stop-after-init=true` or `=false` (see xref:commands.adoc[Commands]).
+| `plan.phase-3-outline.plan_without_asking` | `false` | …from the outline review checkpoint to task creation.
+| `plan.phase-4-plan.execute_without_asking` | `true` (code default) | …from `phase-4-plan` to `phase-5-execute`.
+| `plan.phase-5-execute.finalize_without_asking` | `true` | …from `phase-5-execute` to `phase-6-finalize` (forward direction).
+| `plan.phase-5-execute.loop_back_without_asking` | `false` | …from a `phase-6-finalize` `loop_back` outcome back into `phase-5-execute` (reverse direction). Defaults differ from `finalize_without_asking` to prevent silent unattended loops.
+|===
+
+Set any of these via `/marshall-steward` → Configuration → Review Gates, or directly:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-1-init set --field init_without_asking --value false
+----
+
 == Related
 
 * xref:../concepts/effort-and-models.adoc[Concepts › Effort and Models] — three-layer overview (levels, roles, variants)
 * xref:../concepts/execution-context.adoc[Concepts › Execution Context] — why edits take effect on the next dispatch
 * link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md[`effort-variants.md`] — canonical user-facing guide (the authoritative version of this content)
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/marshal-json-reference.md[`marshal-json-reference.md`] — full `marshal.json` schema reference
+* link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] — schema for every per-phase config field including the review gates

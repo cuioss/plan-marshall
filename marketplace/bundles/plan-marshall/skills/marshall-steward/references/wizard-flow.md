@@ -230,6 +230,10 @@ Ask user which transitions should auto-continue (multi-select):
 Apply each selection via manage-config:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-1-init set --field init_without_asking --value {true|false}
+```
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-3-outline set --field plan_without_asking --value {true|false}
 ```
 ```bash

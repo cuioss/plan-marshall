@@ -18,6 +18,7 @@ Central reference for all extension-related configuration paths in `marshal.json
 
 | Path | Set By | Used By | Extension Point Doc |
 |------|--------|---------|---------------------|
+| `plan.phase-1-init.init_without_asking` | User config | plan-marshall orchestrator | - |
 | `plan.phase-2-refine.confidence_threshold` | User config | phase-2-refine | - |
 | `plan.phase-2-refine.compatibility` | User config | phase-2-refine, phase-3-outline | - |
 | `plan.phase-3-outline.plan_without_asking` | User config | plan-marshall orchestrator | - |

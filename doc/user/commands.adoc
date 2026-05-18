@@ -56,7 +56,7 @@ Unified plan lifecycle management — create, list, outline, execute, finalize, 
 | `lesson` | optional | Lesson ID to convert into a plan. Implies `action=lessons` when no explicit action is given.
 | `recipe` | optional | Recipe key (e.g. `refactor-to-standards`). Implies `action=recipe` when no explicit action is given.
 | `plan` | optional | Plan **name** (plan_id) for operations on an existing plan — not a path. When supplied without an explicit action, the action is auto-detected from the plan's current phase.
-| `stop-after-init` | optional | If `true`, stop after `phase-1-init` instead of auto-continuing to `phase-2-refine`. Default `false`.
+| `stop-after-init` | optional | Per-invocation override of the `plan.phase-1-init.init_without_asking` config gate. If supplied, wins over the config: `true` stops after `phase-1-init`, `false` auto-continues. If omitted, the config decides (default `init_without_asking: true` → auto-continue). See xref:configuration.adoc#review-gates[Configuration › Review gates].
 |===
 
 [#action-resolution]
@@ -71,12 +71,3 @@ When `action=` is omitted, the effective action is resolved in this order — fi
 5. **No source/target parameters at all** → `list` (interactive menu).
 
 If two or more of `{task, issue, lesson, recipe, plan}` are supplied together without an explicit `action=`, the skill returns `status: error` naming the conflict. Pass an explicit `action=` or drop the conflicting parameter to resolve.
-
-== /sync-plugin-cache (meta-project only)
-
-[NOTE]
-====
-This command is project-local to the Plan Marshall meta-project — it exists only when you have checked out `cuioss/plan-marshall` itself. Consumer projects do not get this surface; Claude Code's `/plugin marketplace update` covers your case.
-====
-
-Synchronises bundles from `marketplace/bundles/` (or `target/claude/` after a deploy-target step) to `~/.claude/plugins/cache/plan-marshall/`. Used after editing marketplace source files so changes take effect in the running Claude Code session. The mechanism is described in xref:../developer/marketplace-build.adoc[Developer Guide › Marketplace Build].

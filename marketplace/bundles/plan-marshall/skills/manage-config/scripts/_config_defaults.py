@@ -70,6 +70,10 @@ DEFAULT_OPEN_IN_IDE = True
 DEFAULT_PLAN_INIT = {
     'branch_strategy': 'feature',
     'use_worktree': True,
+    # Auto-continue from 1-init to 2-refine. true = no gate (current behaviour);
+    # false = stop after init and wait for the user. CLI flag `stop-after-init`
+    # overrides this for a single invocation.
+    'init_without_asking': True,
 }
 
 DEFAULT_PLAN_REFINE = {

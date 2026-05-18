@@ -21,7 +21,7 @@ Unified entry point for plan lifecycle management covering all 6 phases.
 
 **Constraints:**
 - Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
-- User review gates (`plan_without_asking`, `execute_without_asking`) must be respected — never skip when config is false
+- User review gates (`init_without_asking`, `plan_without_asking`, `execute_without_asking`) must be respected — never skip when config is false
 - All user interactions use `AskUserQuestion` tool with proper YAML structure
 - Phase transitions use `manage-status transition` — never set phase status directly
 
@@ -49,7 +49,7 @@ This skill implements its **OWN** plan system. You must:
 | `lesson` | optional | Lesson ID to convert to plan. Implies `action=lessons` when no explicit action is given. |
 | `recipe` | optional | Recipe key for creating plan from predefined recipe. Implies `action=recipe` when no explicit action is given. |
 | `plan` | optional | Plan name for specific operations (e.g., `jwt-auth`, not path). When supplied without an explicit action, the action is auto-detected from the plan's current phase. |
-| `stop-after-init` | optional | If true, stop after 1-init phase without continuing to 2-refine (default: false) |
+| `stop-after-init` | optional | Per-invocation override of the `plan.phase-1-init.init_without_asking` config gate. If supplied, wins over the config: `true` stops after 1-init, `false` auto-continues to 2-refine. If omitted, the config decides (default `init_without_asking: true` → auto-continue). |
 
 **Note**: The `plan` parameter accepts the plan **name** (plan_id) only, not the full path.
 
