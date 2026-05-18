@@ -1,0 +1,138 @@
+= Tools and Scripts
+:nofooter:
+:toc: left
+:toclevels: 2
+
+How Plan Marshall integrates with external systems (GitHub / GitLab / Sonar / git / future LSP) — and why none of those integrations is exposed to the LLM as an ad-hoc tool.
+
+== TL;DR
+
+Plan Marshall does **not** expose external tools to the LLM via MCP, live API exploration, or any other runtime-discovered surface. Every external integration ships as a Python *script* owned by a plan-marshall skill, called through the script-executor proxy with a contracted TOON return, and authenticated via credentials the LLM never sees.
+
+The trade is intentional: dynamic tool surfaces are good for ad-hoc work and bad for repeatable workflows. Plan Marshall optimises for *the same plan running the same way every time*, so external operations are vetted, named, tested, and stored — not discovered at runtime.
+
+LSP integration is on the roadmap (an IDE-integration use case where letting the LLM "drive the editor" is a separate, smaller problem). The "no MCP" position is specifically about runtime tool *routing* being an LLM decision — not a blanket position on tool-server protocols.
+
+== Why scripts, not MCP
+
+A typical MCP setup hands the LLM a directory of tools and lets the model decide which to invoke per prompt. That is useful when the task shape is novel; it is corrosive when the task shape is fixed and you want reproducibility.
+
+Plan Marshall's failure mode without this rule is well-documented: the LLM, given access to `gh` directly, will sometimes use `gh pr review`, sometimes `gh api repos/...`, sometimes raw `git log` parsing — producing three different code paths for one operation. The wider the runtime tool surface, the broader the variance.
+
+Scripts narrow that surface to one path per operation:
+
+* **Deterministic.** Same inputs → same return TOON. No "the model chose a different verb today."
+* **Contracted I/O.** Every script returns a TOON block with `status`, `display_detail`, and operation-specific fields. The consumer's logic doesn't have to parse arbitrary CLI output.
+* **Tested.** Marketplace scripts have pytest coverage under `test/`; ad-hoc CLI invocations don't.
+* **Auditable.** Every script invocation flows through `.plan/execute-script.py` and lands in `script-execution.log` (see xref:audit-trail.adoc[Audit Trail]).
+* **Pre-built.** Adding a new integration writes one script + one provider declaration. The model doesn't have to discover the API at runtime.
+
+== The integration skill pattern
+
+Every external system gets a dedicated skill under `marketplace/bundles/plan-marshall/skills/{name}/` with the standard shape:
+
+* A **`SKILL.md`** documenting the operations table, enforcement rules, and TOON output contract.
+* One or more **Python scripts** implementing the operations.
+* A **`{provider}_provider.py`** declaring credential needs (when the integration calls authenticated HTTPS).
+* No MCP server, no `Task: general-purpose` dispatch, no live API surface exposed to the LLM.
+
+Invocation always routes through the executor proxy:
+
+[source,bash]
+----
+python3 .plan/execute-script.py {bundle}:{skill}:{script} {operation} [args...]
+----
+
+Skill authors get a uniform API to compose against (build skills, triage workflows, finalize steps); the LLM gets one named operation to call with structured I/O.
+
+== Current integration skills
+
+[cols="1,1,3", options="header"]
+|===
+| Skill | Target | Role
+
+| link:../../marketplace/bundles/plan-marshall/skills/tools-integration-ci/SKILL.md[`tools-integration-ci`] | GitHub + GitLab | Unified CI abstraction. One script per provider; config stores the full provider-specific command. Consumers call `ci pr view`, `ci pr merge`, `ci ci status`, … and the abstraction routes to `gh` or `glab` per project config. **Direct `gh`/`glab` calls are forbidden by `dev-general-practices`** — every CI operation goes here.
+
+| link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-github/SKILL.md[`workflow-integration-github`] | GitHub | GitHub-specific PR review-comment producer for the findings pipeline. Fetches PR review comments, pre-filters via `comment-patterns.json`, writes findings via `manage-findings add`. Consumer is the phase-6-finalize `automated-review` step.
+
+| link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-gitlab/SKILL.md[`workflow-integration-gitlab`] | GitLab | Same shape as the GitHub provider, against GitLab MR review comments via `glab`.
+
+| link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-sonar/SKILL.md[`workflow-integration-sonar`] | SonarQube / SonarCloud | Sonar issue producer for the findings pipeline. Fetches gate-blocking issues, pre-filters via `sonar-rules.json`, writes findings. Consumer is the phase-6-finalize `sonar-roundtrip` step.
+
+| link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-git/SKILL.md[`workflow-integration-git`] | local git | Conventional-commits workflow with artifact cleanup and optional push. Runs `git commit -F …` and (optionally) `git push` from inside the scripted envelope — covered by the executor-proxy permission allow (per xref:security.adoc[Security]).
+|===
+
+All five expose operations through the same `python3 .plan/execute-script.py {bundle}:{skill}:{script}` invocation shape; all five return TOON; all four HTTPS integrations route through the same `RestClient` and use the same credential store.
+
+== Credentials — outside LLM reach
+
+External-HTTPS integrations need authentication tokens. Plan Marshall's `manage-providers` skill handles the lifecycle so the LLM never sees a credential.
+
+Key properties:
+
+* **Stored outside the project tree.** Credentials live under `~/.plan-marshall-credentials/` — not in `marshal.json`, not in `.plan/`, not in the worktree. Survives `rm -rf .plan/` and never enters git.
+* **Filesystem-protected.** Directory `chmod 0o700`, files `chmod 0o600`, created via atomic `os.open()` (no umask race), all path resolution validated through `os.path.realpath()` for symlink protection.
+* **User-only entry path.** Tokens are entered by the user interactively into a Python script. The LLM dispatches the operation; the *script* reads the credential and constructs the auth header. The credential never enters LLM context, never appears in TOON output, never lands in logs.
+* **HTTPS-enforced.** The `RestClient` consumed by every integration refuses to send an auth header over plain HTTP.
+
+These constraints are enforced by `manage-providers`' own enforcement block: "Never print, log, serialize, or expose credentials to stdout, stderr, or TOON output. Never read credential files directly — all access goes through `_credentials_core.py`."
+
+== How a skill declares it needs credentials
+
+The provider extension point is **per-skill**, not per-domain — most skills don't need auth, the ones that do declare it themselves.
+
+A skill that needs external HTTPS auth ships a `{provider}_provider.py` in its `scripts/` directory:
+
+[source,python]
+----
+"""Extension point: plan-marshall:extension-api/standards/ext-point-provider"""
+
+def get_provider_declarations() -> list[dict]:
+    return [
+        {
+            'skill_name': 'plan-marshall:workflow-integration-sonar',
+            'category': 'other',
+            'display_name': 'SonarCloud/SonarQube',
+            'default_url': 'https://sonarcloud.io',
+            'header_name': 'Authorization',
+            'header_value_template': 'Bearer {token}',
+            'verify_endpoint': '/api/authentication/validate',
+            'verify_method': 'GET',
+            'description': 'SonarCloud/SonarQube code quality platform',
+        },
+    ]
+----
+
+Discovery is automatic: `manage-providers discover-and-persist` scans `PYTHONPATH` for `*_provider.py`, calls `get_provider_declarations()` on each, and persists the declarations into `marshal.json`. The user then configures credentials interactively via `/marshall-steward` → Providers.
+
+The full contract — every field, validation rules, runtime invocation flow — lives in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-provider.md[`ext-point-provider.md`].
+
+== Adding a new external integration
+
+Three steps:
+
+1. **Write the skill.** Standard plan-marshall skill shape: `SKILL.md` with operations table + enforcement, one or more Python scripts implementing operations, TOON return contract on each operation.
+2. **Declare auth needs** if the integration calls authenticated HTTPS. Drop a `{provider}_provider.py` next to the scripts.
+3. **Run `/marshall-steward`** in the consuming project to re-discover providers; the user configures credentials interactively.
+
+No MCP server. No model retraining. No runtime API exploration. The integration is part of the marketplace bundle, version-pinned, tested, and audited like any other skill.
+
+== Future — LSP
+
+LSP integration is planned for the IDE-side use case: structured code-symbol lookup, refactoring affordances, language-server-driven navigation. The motivation is the same as the build-management abstraction (xref:build-management.adoc[Build Management]) — give the LLM a structured, deterministic interface for an operation the tool naturally exposes structurally.
+
+The "no MCP" position is **specifically** about runtime tool *routing* being an LLM decision. LSP for editor integration is a different problem, and the same deterministic-script discipline will apply: a thin Python wrapper presenting a contracted TOON API in front of the language server, dispatched by name from a workflow doc.
+
+== Related
+
+* link:../../marketplace/bundles/plan-marshall/skills/tools-integration-ci/SKILL.md[`tools-integration-ci/SKILL.md`] — unified CI provider abstraction
+* link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-github/SKILL.md[`workflow-integration-github/SKILL.md`] — GitHub PR review producer
+* link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-gitlab/SKILL.md[`workflow-integration-gitlab/SKILL.md`] — GitLab MR review producer
+* link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-sonar/SKILL.md[`workflow-integration-sonar/SKILL.md`] — Sonar issue producer
+* link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-git/SKILL.md[`workflow-integration-git/SKILL.md`] — local git commit workflow
+* link:../../marketplace/bundles/plan-marshall/skills/manage-providers/SKILL.md[`manage-providers/SKILL.md`] — credential store + `RestClient`
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-provider.md[`ext-point-provider.md`] — provider declaration contract
+* link:../../marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md[`tools-script-executor/SKILL.md`] — the executor proxy through which every script call flows
+* xref:security.adoc[Concepts › Security] — why narrowing the runtime surface matters
+* xref:build-management.adoc[Concepts › Build Management] — the same deterministic-script pattern for the build-system surface
+* xref:audit-trail.adoc[Concepts › Audit Trail] — where every script call is logged

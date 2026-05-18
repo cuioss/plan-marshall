@@ -33,7 +33,7 @@ Plan Marshall organises every non-trivial change as a *plan* that moves through 
 
 |6. Finalize
 |`phase-6-finalize`
-|Git workflow, finalize-step pipeline (pre-submission self-review, automated review, Sonar roundtrip, lessons capture, branch cleanup), commit, push, and PR creation. Projects that develop marketplace plugins also run domain-specific finalize steps (e.g. `plugin-doctor`); the deploy and cache-sync steps are meta-project-only.
+|Git workflow, finalize-step pipeline (pre-submission self-review, automated review, Sonar roundtrip, lessons capture, branch cleanup), commit, push, and PR creation. Domain-specific finalize steps can be plugged in via the `provides_finalize_steps()` extension point.
 |===
 
 The phase pipeline is described in detail in `ref-workflow-architecture/standards/phases.md`. The lifecycle states a plan transitions through are catalogued in `phase-lifecycle.md`.
