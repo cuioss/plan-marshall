@@ -64,7 +64,13 @@ The wizard configures `.gitignore`, generates the script executor, discovers pro
 
 ### 2. Create your first plan
 
-Kick off a new plan with a free-form task description:
+The simplest way is to invoke `/plan-marshall` with no arguments and pick "Create new plan" from the interactive menu:
+
+```bash
+/plan-marshall
+```
+
+If you prefer a one-liner, pass `action=init` together with a free-form task description:
 
 ```bash
 /plan-marshall action=init task="Add user authentication"
@@ -76,7 +82,7 @@ Or seed the plan from a GitHub issue:
 /plan-marshall action=init issue="https://github.com/cuioss/plan-marshall/issues/42"
 ```
 
-`/plan-marshall` drives the six-phase lifecycle (init → refine → outline → plan → execute → finalize). Call `/plan-marshall` with no arguments to list active plans, or `/plan-marshall action=execute plan="<plan-id>"` to resume one.
+`/plan-marshall` drives the six-phase lifecycle (init → refine → outline → plan → execute → finalize). Resume an existing plan with `/plan-marshall plan="<plan-id>"` — it auto-detects the current phase.
 
 See [User Guide › Getting Started](doc/user/getting-started.adoc) for the full first-run walkthrough and [User Guide › Commands](doc/user/commands.adoc) for the complete `/plan-marshall` parameter reference.
 

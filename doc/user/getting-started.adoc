@@ -39,7 +39,14 @@ Use `--wizard` to force the first-run wizard explicitly:
 
 == Creating your first plan
 
-Once setup is complete, kick off a new plan with a free-form task description:
+Once setup is complete, the simplest way to start a plan is to invoke `/plan-marshall` with no arguments and pick "Create new plan" from the interactive menu:
+
+[source,bash]
+----
+/plan-marshall
+----
+
+If you prefer a one-liner, pass `action=init` together with a free-form task description:
 
 [source,bash]
 ----
@@ -53,7 +60,12 @@ Or seed the plan from a GitHub issue:
 /plan-marshall action=init issue="https://github.com/cuioss/plan-marshall/issues/42"
 ----
 
-`/plan-marshall` drops you into the six-phase planning flow (init → refine → outline → plan → execute → finalize) described in xref:../concepts/planning-workflow.adoc[Planning Workflow]. Call `/plan-marshall` with no arguments to list active plans, or `/plan-marshall action=execute plan="<plan-id>"` to resume one. See xref:commands.adoc[Commands] for the full parameter reference.
+`/plan-marshall` drops you into the six-phase planning flow (init → refine → outline → plan → execute → finalize) described in xref:../concepts/planning-workflow.adoc[Planning Workflow]. Resume an existing plan with `/plan-marshall plan="<plan-id>"` — it auto-detects the current phase. See xref:commands.adoc[Commands] for the full parameter reference.
+
+[NOTE]
+====
+Passing `task=...` *without* `action=init` will silently drop the task description: the default action is `list`, which opens the interactive menu and does not read `task`. Always include `action=init` when using the one-liner form.
+====
 
 == Where things live
 
