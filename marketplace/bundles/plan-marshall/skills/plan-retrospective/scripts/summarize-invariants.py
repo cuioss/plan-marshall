@@ -11,6 +11,11 @@ same names but does not import the registry because archived plans may have
 been captured by a different revision of the registry and any schema drift
 should manifest as ``invariants_missing`` entries, not import failures.
 
+``phase_steps_complete`` is **conditional**: it is only included in
+``expected_invariants`` when the phase has a
+``skills/phase-{phase}/standards/required-steps.md`` file in the bundle tree.
+Phases that do not opt in to required-step tracking are not penalised.
+
 Output is a deterministic TOON fragment consumed by the orchestrator and
 interpreted by ``references/invariant-check-summary.md``.
 
@@ -31,11 +36,14 @@ from input_validation import (  # type: ignore[import-not-found]
     add_plan_id_arg,
     parse_args_with_toon_errors,
 )
+from marketplace_paths import find_marketplace_path  # type: ignore[import-not-found]
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 # Invariants that apply to every plan. Additional invariants
 # (``worktree_sha``, ``worktree_dirty``) are only recorded when the plan
 # actually runs in a worktree; their absence should not be flagged.
+# ``phase_steps_complete`` is omitted here — it is appended conditionally by
+# ``expected_invariants`` when the phase opts in via ``required-steps.md``.
 _CORE_INVARIANTS = (
     'main_sha',
     'main_dirty',
@@ -43,7 +51,6 @@ _CORE_INVARIANTS = (
     'qgate_open_count',
     'config_hash',
     'pending_tasks_count',
-    'phase_steps_complete',
 )
 
 _WORKTREE_INVARIANTS = ('worktree_sha', 'worktree_dirty')
@@ -60,6 +67,27 @@ _NON_INVARIANT_COLUMNS = frozenset(
 )
 
 HANDSHAKE_FILE = 'handshakes.toon'
+
+
+def _phase_steps_complete_applies(phase: str) -> bool:
+    """Return ``True`` when the phase opts in to required-step tracking.
+
+    Resolution rule mirrors ``_invariants._resolve_required_steps_path``:
+    the file ``marketplace/bundles/plan-marshall/skills/phase-{phase}/
+    standards/required-steps.md`` must exist relative to the bundle root.
+    Returns ``False`` when the marketplace root cannot be located or the
+    file is absent, so phases that have not opted in are not penalised.
+
+    Resolved independently — does not import ``_invariants.py`` to keep
+    the no-import-from-registry contract documented in the module docstring.
+    """
+    bundles = find_marketplace_path()
+    if bundles is None:
+        return False
+    candidate = (
+        bundles / 'plan-marshall' / 'skills' / f'phase-{phase}' / 'standards' / 'required-steps.md'
+    )
+    return candidate.is_file()
 
 
 def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | None) -> Path:
@@ -141,15 +169,23 @@ def project_rows_to_phase_map(
     return phase_map
 
 
-def expected_invariants(metadata: dict[str, Any]) -> tuple[str, ...]:
-    """Return the tuple of invariants expected for this plan.
+def expected_invariants(metadata: dict[str, Any], phase: str | None = None) -> tuple[str, ...]:
+    """Return the tuple of invariants expected for this plan and phase.
 
     Worktree-only invariants are included whenever the plan has a
     ``worktree_path`` recorded in its metadata.
+
+    ``phase_steps_complete`` is appended only when ``phase`` is provided and
+    ``_phase_steps_complete_applies(phase)`` returns ``True`` — i.e. the phase
+    has opted in via a ``standards/required-steps.md`` file.  When ``phase``
+    is ``None`` (the no-handshakes fallback path), the invariant is omitted.
     """
+    base: tuple[str, ...] = _CORE_INVARIANTS
     if isinstance(metadata, dict) and metadata.get('worktree_path'):
-        return _CORE_INVARIANTS + _WORKTREE_INVARIANTS
-    return _CORE_INVARIANTS
+        base = base + _WORKTREE_INVARIANTS
+    if phase is not None and _phase_steps_complete_applies(phase):
+        base = base + ('phase_steps_complete',)
+    return base
 
 
 def detect_drift(phase_map: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
@@ -194,7 +230,9 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     plan_dir = resolve_plan_dir(args.mode, args.plan_id, args.archived_plan_path)
     metadata = load_status_metadata(plan_dir)
     rows = load_handshake_rows(plan_dir)
-    expected = expected_invariants(metadata)
+    # Un-phased default used only for the no-handshakes-found path where there
+    # is no phase to pass; per-phase expected sets are computed inside the loop.
+    default_expected = expected_invariants(metadata)
 
     phases_out: list[dict[str, Any]] = []
     findings: list[dict[str, str]] = []
@@ -212,6 +250,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         phase_map = project_rows_to_phase_map(rows)
 
     for phase, values in phase_map.items():
+        expected = expected_invariants(metadata, phase)
         present = sorted(k for k, v in values.items() if v not in (None, ''))
         missing = sorted(set(expected) - set(present))
         phases_out.append(
@@ -250,7 +289,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         'phases': phases_out,
         'drift': drift,
         'findings': findings,
-        'expected_invariants': list(expected),
+        'expected_invariants': list(default_expected),
     }
 
 
