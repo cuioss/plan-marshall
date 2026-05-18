@@ -20,7 +20,7 @@ When the dispatcher loads a skill via `Skill:` directive (e.g., `Skill: plan-mar
 
 ### 2. Workflow-notation resolution against the installed cache
 
-When the dispatcher emits `workflow: plan-marshall:plan-marshall/workflow/verification-feedback.md` in a `Task:` prompt body, the dispatched `execution-context-{level}` agent resolves the notation against the installed cache — same root as surface (1), same blind spot. A worktree edit to a `workflow/*.md` file is invisible to every dispatched workflow until the cache is synced. The cache-as-resolution-root contract is the authoritative source for this surface; see `marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-execution-context-workflow.md` § Workflow-Resolution Root.
+When the dispatcher emits `workflow: plan-marshall:plan-marshall/workflow/verification-feedback.md` in a `Task:` prompt body, the dispatched `execution-context-{level}` agent resolves the notation against the installed cache — same root as surface (1), same blind spot. A worktree edit to a `workflow/*.md` file is invisible to every dispatched workflow until the cache is synced. The cache-as-resolution-root contract is the authoritative source for this surface; see [`marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-execution-context-workflow.md`](../../../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-execution-context-workflow.md) § Workflow-Resolution Root.
 
 ### 3. Execution-manifest content baked at write time
 
