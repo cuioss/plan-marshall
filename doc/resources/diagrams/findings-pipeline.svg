@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- theme-handling: A (theme-neutral) -->
+<!-- conforms to: pm-documents:ref-svg-diagrams (visual-language + diagram-type-block) -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500"
      role="img" aria-labelledby="title desc"
      font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
@@ -8,7 +10,7 @@
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
             markerWidth="9" markerHeight="9" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#6e7681"/>
+      <path d="M0,0 L10,5 L0,10 z" class="arrow-fill"/>
     </marker>
     <style>
       .col-header { font-size: 15px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
@@ -17,9 +19,10 @@
       .item-bold  { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-weight: 700; }
       .item-c     { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; text-anchor: middle; }
       .arrow-lbl  { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
-      .group      { stroke: #6e7681; stroke-width: 1.2; fill: none; }
+      .stroke     { stroke: #6e7681; stroke-width: 1.2; fill: none; }
       .sep        { stroke: #6e7681; stroke-width: 0.6; stroke-dasharray: 3 3; }
-      .arrow-line { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+      .arrow      { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+      .arrow-fill { fill: #6e7681; }
     </style>
   </defs>
 
@@ -27,7 +30,7 @@
   <!-- PRODUCERS (left column)                                           -->
   <!-- =============================================================== -->
   <text x="150" y="28" class="col-header">PRODUCERS</text>
-  <rect class="group" x="20" y="44" width="260" height="420" rx="6" ry="6"/>
+  <rect class="stroke" x="20" y="44" width="260" height="420" rx="6" ry="6"/>
 
   <text x="36"  y="80"  class="item-bold">Q-Gate</text>
   <text x="115" y="80"  class="item">(phases 2 / 3 / 4)</text>
@@ -51,7 +54,7 @@
   <!-- =============================================================== -->
   <text x="450" y="28" class="col-header">manage-findings</text>
   <text x="450" y="44" class="col-sub">artifacts/findings/</text>
-  <rect class="group" x="320" y="60" width="260" height="404" rx="6" ry="6"/>
+  <rect class="stroke" x="320" y="60" width="260" height="404" rx="6" ry="6"/>
 
   <text x="450" y="92"  class="item-c">qgate-{phase}.jsonl</text>
   <text x="450" y="113" class="item-c">assessments.jsonl</text>
@@ -76,7 +79,7 @@
   <!-- CONSUMERS (right column)                                          -->
   <!-- =============================================================== -->
   <text x="750" y="28" class="col-header">CONSUMERS</text>
-  <rect class="group" x="620" y="44" width="260" height="420" rx="6" ry="6"/>
+  <rect class="stroke" x="620" y="44" width="260" height="420" rx="6" ry="6"/>
 
   <text x="636" y="78"  class="item-bold">phase-3-outline</text>
   <text x="636" y="98"  class="item">qgate-resolve</text>
@@ -104,15 +107,15 @@
   <!-- =============================================================== -->
 
   <!-- producers → store: add -->
-  <line class="arrow-line" x1="280" y1="220" x2="316" y2="220" marker-end="url(#arrow)"/>
+  <line class="arrow" x1="280" y1="220" x2="316" y2="220" marker-end="url(#arrow)"/>
   <text x="298" y="212" class="arrow-lbl">add</text>
 
   <!-- store → consumers: query -->
-  <line class="arrow-line" x1="584" y1="205" x2="616" y2="205" marker-end="url(#arrow)"/>
+  <line class="arrow" x1="584" y1="205" x2="616" y2="205" marker-end="url(#arrow)"/>
   <text x="600" y="197" class="arrow-lbl">query</text>
 
   <!-- consumers → store: resolve -->
-  <line class="arrow-line" x1="616" y1="240" x2="584" y2="240" marker-end="url(#arrow)"/>
+  <line class="arrow" x1="616" y1="240" x2="584" y2="240" marker-end="url(#arrow)"/>
   <text x="600" y="232" class="arrow-lbl">resolve</text>
 
 </svg>
