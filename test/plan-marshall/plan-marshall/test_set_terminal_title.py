@@ -109,6 +109,45 @@ class TestPlanIdResolution(ScriptTestCase):
         dead_cwd = '/nonexistent/repo/.plan/local/worktrees/ghost-plan/sub'
         self.assertIsNone(set_terminal_title._resolve_plan_id(dead_cwd))
 
+    def test_windows_style_backslash_cwd_matches(self):
+        """A Windows-style cwd with backslash separators must still resolve.
+
+        Claude Code hooks running on Windows surface the cwd with native
+        backslash separators. The regex uses forward slashes, so the
+        resolver normalizes via Path(cwd).as_posix() before matching.
+
+        The liveness guard (os.path.isdir) is mocked because the backslash
+        path is not a real on-disk directory on POSIX hosts; the behaviour
+        under test is regex normalization, not the liveness guard.
+        """
+        cwd = r'C:\Users\dev\repo\.plan\local\worktrees\my-plan\marketplace'
+        with mock.patch.object(set_terminal_title.os.path, 'isdir', return_value=True):
+            self.assertEqual(set_terminal_title._resolve_plan_id(cwd), 'my-plan')
+
+    def test_path_traversal_double_dot_returns_none(self):
+        """The regex character class [^/]+ accepts '..' as a path segment.
+
+        A hostile or malformed cwd whose worktree segment is '..' would let
+        the constructed status-file path escape the .plan/local/plans/ tree.
+        The resolver must reject this explicitly and return None.
+
+        The liveness guard is mocked so we exercise the traversal guard
+        specifically (a '..' segment on disk is not a normal directory the
+        test fixture sets up).
+        """
+        cwd = '/tmp/repo/.plan/local/worktrees/..'
+        with mock.patch.object(set_terminal_title.os.path, 'isdir', return_value=True):
+            self.assertIsNone(set_terminal_title._resolve_plan_id(cwd))
+
+    def test_path_traversal_single_dot_returns_none(self):
+        """Same rationale as '..': '.' as a plan_id segment would alias the
+        current directory and bypass the per-plan isolation invariant. The
+        resolver must reject single-dot too.
+        """
+        cwd = '/tmp/repo/.plan/local/worktrees/.'
+        with mock.patch.object(set_terminal_title.os.path, 'isdir', return_value=True):
+            self.assertIsNone(set_terminal_title._resolve_plan_id(cwd))
+
 
 class TestBuildTitle(ScriptTestCase):
     """_build_title icon + plan-phase formatting."""
