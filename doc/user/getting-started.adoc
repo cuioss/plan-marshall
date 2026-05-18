@@ -98,3 +98,39 @@ The `.gitignore` also carries a defensive rule `.plan/project-architecture/**/de
 ====
 
 For the canonical rules, see the project's `.gitignore` — the `.plan/*` block plus the two `!.plan/...` re-includes is the source of truth.
+
+== What the wizard writes to `CLAUDE.md`
+
+In addition to scaffolding `.plan/`, the first-run wizard *appends* a small set of guidance blocks to your project's `CLAUDE.md` (and, where applicable, `agents.md`) so the agents running in your project have the conventions they need. All edits are **idempotent and additive** — the wizard detects a marker substring per block and skips the edit if it's already present, so re-running the wizard never duplicates content. The only destructive path is explicit user confirmation under the Build Commands conflict prompt described below.
+
+[cols="1,1,2,2", options="header"]
+|===
+| Block | Target file(s) | Skip condition | What it appends
+
+| Temporary Files
+| `CLAUDE.md`, `agents.md`
+| File already contains the substring `.plan/temp`
+| A `## Temporary Files` section pointing all temporary and generated files at `.plan/temp/` (covered by the `Write(.plan/**)` permission).
+
+| Tool Usage
+| `CLAUDE.md`
+| File already contains the substring `use Glob, Read, Grep`
+| A `## Tool Usage` section reminding agents to prefer `Edit`/`Read`/`Write` over shell `echo`/`cat`, and `Glob`/`Read`/`Grep` over `find`/`grep`/`cat`/`ls`.
+
+| Build Commands
+| `CLAUDE.md`
+| File already contains a `### Build Commands` heading
+| A `### Build Commands` block (under a "Development Notes" section) with the resolved canonical commands for this project — `Compile`, `Quality gate`, `Tests`, `Full verify`, plus `Integration tests` / `E2E` / `Coverage` / `Benchmark` where they resolve on the default module, plus a bullet per child-module-only command. Includes a "Never hard-code" preamble, a reminder to call builds with a 10-minute Bash timeout (`600000` ms), and a reminder to analyze the TOON return (`status`, `errors[]`, `log_file`).
+|===
+
+[NOTE]
+====
+If `CLAUDE.md` already contains hand-written build patterns (`mvn`, `mvnw`, `gradle`, `npm run`, `./pw`, or the phrase "build command") *and* no `### Build Commands` heading, the wizard will pause and ask whether to **Replace existing** or **Keep existing** before writing the Build Commands block. Replace overwrites the hand-written section with the resolved canonical commands; Keep leaves your `CLAUDE.md` untouched.
+====
+
+The canonical implementations live in `marshall-steward`'s scripts and references:
+
+* link:../../marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py[`determine_mode.py`] — the `CONTENT_CHECKS` and `FIX_CONTENT` tables that drive Temporary Files and Tool Usage.
+* link:../../marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md[`wizard-flow.md`] § Step 9b — the Build Commands resolution and conflict handling.
+
+The Maintenance menu surfaces these same checks on demand — run `/marshall-steward` → Health Check to see which markers are present and which are missing without writing anything, or → Maintenance → Update Project Documentation to apply any missing blocks.
