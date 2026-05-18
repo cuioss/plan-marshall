@@ -17,7 +17,7 @@ Survey of every configuration surface a project author touches when running Plan
 
 | `.plan/run-configuration.json`
 | ❌ ignored
-| Per-developer runtime settings (provider auth tokens, runtime overrides). Never committed.
+| Per-developer command-execution state: adaptive build-command timeouts, acceptable-warning patterns, the `architecture_refresh` tier knobs, and last-execution metadata. **Holds no credentials** — provider auth tokens live outside the project tree under `~/.plan-marshall-credentials/` (see xref:../concepts/security.adoc[Security]).
 
 | `CLAUDE.md`, `agents.md`
 | project decision (usually ✅)
