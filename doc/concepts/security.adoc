@@ -23,6 +23,8 @@ Plan Marshall sits between them with a different approach: **narrow what the LLM
 The model is **way fewer prompts than accept-edits, way more secure than YOLO**. For the remaining cases where Claude Code violates the rules anyway, you still get the prompt — just much less often than you would interactively, and the prompt itself is the safety net.
 ====
 
+image::../resources/diagrams/security-spectrum.svg[Plan Marshall on the Claude Code permission spectrum — three modes positioned along a prompt-frequency axis with blast-radius annotations underneath each. accept-edits sits at high prompts with small radius; YOLO at no prompts with unbounded radius; plan-marshall achieves YOLO's low prompt rate with bounded radius via the script-executor proxy plus dev-general-practices hard rules. Marked as the sweet spot., align=center]
+
 == Claude Code's stock modes — recap
 
 For orientation:

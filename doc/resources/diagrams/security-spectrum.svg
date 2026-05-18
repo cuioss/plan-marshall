@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- theme-handling: A (theme-neutral) -->
+<!-- conforms to: pm-documents:ref-svg-diagrams (visual-language; custom positioning chart) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 540"
+     role="img" aria-labelledby="title desc"
+     font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
+  <title id="title">Security spectrum — accept-edits / plan-marshall / YOLO positioning</title>
+  <desc  id="desc">Positioning of plan-marshall on the Claude Code permission spectrum. Three modes laid out along a prompt-frequency axis: accept-edits (frequent prompts, small blast radius), plan-marshall (few prompts because the script-executor proxy narrows the runtime surface, with bounded blast radius), and YOLO (no prompts, unbounded blast radius). Plan-marshall achieves YOLO's low prompt rate while keeping accept-edits' safety properties.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" class="arrow-fill"/>
+    </marker>
+    <style>
+      .col-header { font-size: 15px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
+      .col-sub    { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .item       { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; text-anchor: middle; }
+      .label-bold { font-size: 13px; fill: #6e7681; text-anchor: middle; font-weight: 700; }
+      .stroke     { stroke: #6e7681; stroke-width: 1.2; fill: none; }
+      .arrow      { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+      .arrow-fill { fill: #6e7681; }
+      .dot        { fill: #6e7681; stroke: none; }
+      .dot-emph   { fill: #6e7681; stroke: #6e7681; stroke-width: 3; }
+      .axis-line  { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+    </style>
+  </defs>
+
+  <!-- ============= Axis: prompt frequency, horizontal at y=290 ============= -->
+  <line class="axis-line" x1="80" y1="290" x2="920" y2="290" marker-end="url(#arrow)"/>
+
+  <!-- Axis end labels -->
+  <text x="80"  y="318" class="col-sub" text-anchor="start">PROMPT FREQUENCY</text>
+  <text x="80"  y="335" class="col-sub" text-anchor="start">high (every action prompts)</text>
+  <text x="920" y="335" class="col-sub" text-anchor="end">none (no prompts at all)</text>
+
+  <!-- Axis tick marks at each mode position -->
+  <line class="stroke" x1="200" y1="285" x2="200" y2="295"/>
+  <line class="stroke" x1="500" y1="285" x2="500" y2="295"/>
+  <line class="stroke" x1="800" y1="285" x2="800" y2="295"/>
+
+  <!-- ============= Mode 1: accept-edits ============= -->
+  <circle class="dot" cx="200" cy="290" r="8"/>
+  <text x="200" y="225" class="label-bold">accept-edits</text>
+  <text x="200" y="245" class="col-sub">interactive mode</text>
+
+  <text x="200" y="365" class="col-sub">blast radius</text>
+  <text x="200" y="382" class="item">SMALL</text>
+  <text x="200" y="402" class="col-sub">narrow allow-list,</text>
+  <text x="200" y="418" class="col-sub">prompts catch the rest</text>
+
+  <!-- ============= Mode 2: plan-marshall (the sweet spot) ============= -->
+  <!-- Emphasised dot — double ring -->
+  <circle class="dot" cx="500" cy="290" r="10"/>
+  <circle class="stroke" cx="500" cy="290" r="16" stroke-width="1.5"/>
+
+  <text x="500" y="225" class="label-bold">plan-marshall</text>
+  <text x="500" y="245" class="col-sub">script-executor proxy +</text>
+  <text x="500" y="261" class="col-sub">dev-general-practices hard rules</text>
+
+  <text x="500" y="365" class="col-sub">blast radius</text>
+  <text x="500" y="382" class="item">BOUNDED</text>
+  <text x="500" y="402" class="col-sub">scripts narrow the runtime surface;</text>
+  <text x="500" y="418" class="col-sub">prompts only when rules are violated</text>
+
+  <!-- Sweet-spot annotation -->
+  <text x="500" y="465" class="label-bold">★   sweet spot</text>
+  <text x="500" y="483" class="col-sub">low prompt rate AND bounded blast radius</text>
+
+  <!-- ============= Mode 3: YOLO ============= -->
+  <circle class="dot" cx="800" cy="290" r="8"/>
+  <text x="800" y="225" class="label-bold">YOLO</text>
+  <text x="800" y="245" class="col-sub">--dangerously-skip-permissions</text>
+
+  <text x="800" y="365" class="col-sub">blast radius</text>
+  <text x="800" y="382" class="item">UNBOUNDED</text>
+  <text x="800" y="402" class="col-sub">no allow-list,</text>
+  <text x="800" y="418" class="col-sub">no rule fallback</text>
+
+  <!-- ============= Header ============= -->
+  <text x="500" y="40"  class="col-header">Plan Marshall on the Claude Code permission spectrum</text>
+  <text x="500" y="60"  class="col-sub">prompt rate ≈ YOLO,   safety properties ≈ accept-edits</text>
+
+  <!-- ============= Footer caveat ============= -->
+  <text x="500" y="520" class="col-sub">Caveat: dev-general-practices is skill-loaded guidance, not kernel enforcement. The LLM CAN ignore it; the narrow allow-list bounds the damage when it does.</text>
+
+</svg>
