@@ -4,13 +4,21 @@ Defines :class:`EffortPresets` — a constant-class that bundles a per-phase
 effort payload (``{"default": <level>, "roles": {<phase>: <level | dict>, ...}}``)
 under three named profiles:
 
-- ``ECONOMIC`` — minimum-cost configuration; reserves ``medium`` for the
-  outline + plan phases and leaves everything else at ``low``.
-- ``BALANCED`` — middle-of-the-road profile; defaults to ``medium`` and
-  bumps the analytical phases plus the verification-feedback workflow
-  on phase-5-execute and phase-6-finalize to ``high``.
-- ``HIGH_END`` — maximum-quality profile; defaults to ``high`` and pushes
-  the analytical phases to ``xhigh``.
+- ``ECONOMIC`` — minimum-cost configuration; defaults to ``medium`` and
+  bumps the analytical phases (phase-2-refine, phase-3-outline,
+  phase-4-plan) plus the verification-feedback workflow on
+  phase-5-execute and phase-6-finalize to ``high``.
+- ``BALANCED`` — middle-of-the-road profile; stored in literal-expanded
+  form (every ``KNOWN_ROLES`` phase carries an explicit entry mirroring
+  the on-disk shape that ``apply-preset balanced`` writes after
+  ``_expand_phase_effort``). Defaults to ``high`` and lifts
+  ``phase-3-outline``, ``phase-5-execute.default``, and
+  ``phase-6-finalize.post-run-review`` to ``xhigh``.
+- ``HIGH_END`` — upper-tier profile; defaults to ``high`` and pushes
+  every analytical / verification-feedback / post-run-review slot to
+  ``xhigh``. No slot uses ``xxhigh`` — ``xxhigh`` requires opus-4.7-only
+  and is reserved for explicit per-phase opt-in, never as a preset
+  default.
 
 The presets sit alongside the role registry inside the
 ``plan-marshall:plan-marshall`` skill so that policy decisions about
@@ -85,17 +93,6 @@ class EffortPresets:
     # ---- preset payloads -------------------------------------------------
 
     ECONOMIC: dict = {
-        'default': 'low',
-        'roles': {
-            'phase-3-outline': 'medium',
-            'phase-4-plan': 'medium',
-        },
-    }
-    """Minimum-cost preset. Default ``low``; bumps phase-3-outline and
-    phase-4-plan to ``medium``. Use when running large batches of routine
-    plans where output quality is acceptable at the cheapest tier."""
-
-    BALANCED: dict = {
         'default': 'medium',
         'roles': {
             'phase-2-refine': 'high',
@@ -105,12 +102,40 @@ class EffortPresets:
             'phase-6-finalize': {'verification-feedback': 'high'},
         },
     }
-    """Middle-of-the-road preset. Default ``medium``; bumps the three
-    analytical phases (phase-2-refine, phase-3-outline, phase-4-plan) to
-    ``high``, plus the verification-feedback workflow on phase-5-execute
+    """Minimum-cost preset. Default ``medium``; bumps the three analytical
+    phases (phase-2-refine, phase-3-outline, phase-4-plan) to ``high``,
+    plus the verification-feedback workflow on phase-5-execute
     (build-runner triage) and phase-6-finalize (sonar / pr-comment /
-    plugin-doctor / pr-state triage). The recommended default for
-    non-trivial work."""
+    plugin-doctor / pr-state triage). Use for routine plans where the
+    analytical phases warrant a bump but everything else can ride at
+    medium."""
+
+    BALANCED: dict = {
+        'default': 'high',
+        'roles': {
+            'phase-1-init': 'high',
+            'phase-2-refine': 'high',
+            'phase-3-outline': 'xhigh',
+            'phase-4-plan': 'high',
+            'phase-5-execute': {
+                'default': 'xhigh',
+                'verification-feedback': 'high',
+            },
+            'phase-6-finalize': {
+                'default': 'high',
+                'verification-feedback': 'high',
+                'post-run-review': 'xhigh',
+            },
+        },
+    }
+    """Middle-of-the-road preset, stored in literal-expanded form (every
+    ``KNOWN_ROLES`` phase carries an explicit entry). Default ``high``;
+    lifts ``phase-3-outline``, ``phase-5-execute.default``, and
+    ``phase-6-finalize.post-run-review`` to ``xhigh``. The redundancy
+    against the bubbling-resolution semantics is intentional — it mirrors
+    the on-disk shape produced by ``apply-preset balanced`` after
+    ``_expand_phase_effort`` so the wizard's deep-equality match in
+    ``effort-menu.md`` Step 1 recognises ``Current: balanced preset``."""
 
     HIGH_END: dict = {
         'default': 'high',
@@ -118,19 +143,21 @@ class EffortPresets:
             'phase-2-refine': 'xhigh',
             'phase-3-outline': 'xhigh',
             'phase-4-plan': 'xhigh',
-            'phase-5-execute': {'verification-feedback': 'xhigh'},
+            'phase-5-execute': {
+                'default': 'xhigh',
+                'verification-feedback': 'xhigh',
+            },
             'phase-6-finalize': {
                 'verification-feedback': 'xhigh',
                 'post-run-review': 'xhigh',
             },
         },
     }
-    """Maximum-quality preset. Default ``high``; pushes the analytical
-    phases to ``xhigh``. Phase-5-execute / phase-6-finalize
-    verification-feedback and phase-6-finalize post-run-review
-    (retrospective + lessons-capture) ride at ``xhigh``. Use for
-    high-stakes plans where the extra reasoning cost is justified by
-    output quality."""
+    """Upper-tier preset. Default ``high``; pushes every analytical /
+    verification-feedback / post-run-review slot to ``xhigh``, including
+    ``phase-5-execute.default`` (the per-task implementation tier). No
+    slot uses ``xxhigh`` — ``xxhigh`` requires opus-4.7-only and is
+    reserved for explicit per-phase opt-in, never as a preset default."""
 
     # ---- canonical name table -------------------------------------------
 
@@ -145,19 +172,20 @@ class EffortPresets:
 
     _DESCRIPTIONS: dict[str, str] = {
         'economic': (
-            'Minimum-cost preset — default low, with phase-3-outline and '
-            'phase-4-plan bumped to medium.'
+            'Minimum-cost preset — default medium, with phase-2-refine / '
+            'phase-3-outline / phase-4-plan and phase-5-execute / '
+            'phase-6-finalize verification-feedback bumped to high.'
         ),
         'balanced': (
-            'Middle-of-the-road preset — default medium, with '
-            'phase-2-refine / phase-3-outline / phase-4-plan and '
-            'phase-5-execute / phase-6-finalize verification-feedback '
-            'bumped to high.'
+            'Middle-of-the-road preset (literal-expanded) — default high, '
+            'with phase-3-outline, phase-5-execute.default, and '
+            'phase-6-finalize.post-run-review lifted to xhigh; mirrors the '
+            'on-disk shape written by apply-preset balanced.'
         ),
         'high-end': (
-            'Maximum-quality preset — default high, analytical phases at '
-            'xhigh, phase-5-execute / phase-6-finalize verification-feedback '
-            'and phase-6-finalize post-run-review at xhigh.'
+            'Upper-tier preset — default high, with every analytical / '
+            'verification-feedback / post-run-review slot at xhigh '
+            '(including phase-5-execute.default). No slot uses xxhigh.'
         ),
     }
 

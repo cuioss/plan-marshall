@@ -144,7 +144,7 @@ The mechanism: the dispatch prompt body's existing `name` field encodes the call
 | [`effort-levels.md`](effort-levels.md) | Level → `(model, effort)` primitive binding. |
 | [`effort-variants.md`](effort-variants.md) | User-facing centralised doc for configuring effort. |
 | `marshall-steward/standards/effort-menu.md` | Wizard UX for editing the per-phase effort attributes. |
-| [`marketplace/bundles/plan-marshall/scripts/effort_presets.py`](../scripts/effort_presets.py) | Preset payloads — `ECONOMIC`, `BALANCED`, `HIGH_END` — written by `manage-config effort apply-preset`. |
+| [`marketplace/bundles/plan-marshall/scripts/effort_presets.py`](../scripts/effort_presets.py) | Preset payloads — `ECONOMIC`, `BALANCED`, `HIGH_END` — written by `manage-config effort apply-preset`. Re-anchored on a 3-tier monotonic ladder (`economic` ≤ `balanced` ≤ `high-end` on every phase/role); `BALANCED` is stored in literal-expanded form to mirror the on-disk shape `apply-preset` writes (so the wizard's deep-equality match recognises it after apply). |
 
 ## Adding a new role
 

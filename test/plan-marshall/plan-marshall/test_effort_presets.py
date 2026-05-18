@@ -74,17 +74,48 @@ def test_high_end_preset_is_class_attribute() -> None:
 
 def test_get_economic_returns_economic_preset() -> None:
     result = mp.EffortPresets.get('economic')
-    assert result['default'] == 'low'
+    assert result['default'] == 'medium'
 
 
 def test_get_balanced_returns_balanced_preset() -> None:
     result = mp.EffortPresets.get('balanced')
-    assert result['default'] == 'medium'
+    assert result['default'] == 'high'
+    # BALANCED is stored in literal-expanded form: every KNOWN_ROLES phase
+    # carries an explicit entry that mirrors the on-disk shape produced by
+    # apply-preset balanced after _expand_phase_effort. The wizard's
+    # deep-equality match in effort-menu.md Step 1 only recognises
+    # ``Current: balanced preset`` when the on-disk config equals the
+    # constant verbatim, so the redundancy against bubbling-resolution
+    # semantics is intentional.
+    assert set(result['roles'].keys()) == {
+        'phase-1-init',
+        'phase-2-refine',
+        'phase-3-outline',
+        'phase-4-plan',
+        'phase-5-execute',
+        'phase-6-finalize',
+    }
+    assert result['roles']['phase-1-init'] == 'high'
+    assert result['roles']['phase-2-refine'] == 'high'
+    assert result['roles']['phase-3-outline'] == 'xhigh'
+    assert result['roles']['phase-4-plan'] == 'high'
+    assert result['roles']['phase-5-execute'] == {
+        'default': 'xhigh',
+        'verification-feedback': 'high',
+    }
+    assert result['roles']['phase-6-finalize'] == {
+        'default': 'high',
+        'verification-feedback': 'high',
+        'post-run-review': 'xhigh',
+    }
 
 
 def test_get_high_end_with_hyphen_returns_high_end_preset() -> None:
     result = mp.EffortPresets.get('high-end')
     assert result['default'] == 'high'
+    # HIGH_END pushes phase-5-execute.default up to xhigh — the per-task
+    # implementation tier for the upper-tier preset.
+    assert result['roles']['phase-5-execute']['default'] == 'xhigh'
 
 
 def test_get_high_end_uppercase_underscore_resolves() -> None:
@@ -101,6 +132,26 @@ def test_get_mixed_case_resolves() -> None:
     # Sanity: arbitrary case spellings should still resolve.
     result = mp.EffortPresets.get('High-End')
     assert result['default'] == 'high'
+
+
+def test_high_end_contains_no_xxhigh_anywhere() -> None:
+    # Structural guard: HIGH_END is the upper tier, NOT a maximum-cost
+    # tier. ``xxhigh`` requires opus-4.7-only and is reserved for explicit
+    # per-phase opt-in, never as a preset default. Any future edit that
+    # re-introduces ``xxhigh`` into HIGH_END must fail this test.
+    preset = mp.EffortPresets.get('high-end')
+    assert preset['default'] != 'xxhigh'
+    for group, group_value in preset['roles'].items():
+        if isinstance(group_value, str):
+            assert group_value != 'xxhigh', (
+                f"HIGH_END role '{group}' carries forbidden level 'xxhigh'"
+            )
+        else:
+            for subkey, level in group_value.items():
+                assert level != 'xxhigh', (
+                    f"HIGH_END role '{group}.{subkey}' carries forbidden "
+                    "level 'xxhigh'"
+                )
 
 
 # =============================================================================
@@ -260,3 +311,87 @@ def test_get_returns_deep_copy_nested_roles_mutation_does_not_leak() -> None:
     assert mp.EffortPresets.BALANCED['roles'] == original_roles
     # A fresh get() must still return the pristine roles dict.
     assert mp.EffortPresets.get('balanced')['roles'] == original_roles
+
+
+# =============================================================================
+# (9) Ladder monotonicity — index(ECONOMIC[slot]) <= index(BALANCED[slot])
+#     <= index(HIGH_END[slot]) on the ordinal scale across the union of
+#     phase/role slots, with unset slots bubbled through the preset's
+#     own default per effort-roles.md's polymorphic-value rule.
+# =============================================================================
+
+
+def test_preset_ladder_is_monotonic() -> None:
+    """Structural guard: ECONOMIC <= BALANCED <= HIGH_END at every slot.
+
+    Walks the union of phase/role slots across the three presets and
+    asserts the ladder monotonicity on the ordinal scale ``(low, medium,
+    high, xhigh, xxhigh, max)``. Empty preset cells bubble through the
+    preset's own ``default`` per the resolver's polymorphic-value rule.
+    Any future preset edit that softens the ladder at any slot must
+    fail this test.
+    """
+    ordinal: tuple[str, ...] = ('low', 'medium', 'high', 'xhigh', 'xxhigh', 'max')
+    rank = {level: idx for idx, level in enumerate(ordinal)}
+
+    presets = {
+        'economic': mp.EffortPresets.get('economic'),
+        'balanced': mp.EffortPresets.get('balanced'),
+        'high-end': mp.EffortPresets.get('high-end'),
+    }
+
+    # Collect the union of (group, subkey) slots seen across all three
+    # presets. ``subkey`` is None for flat (string-valued) phase entries.
+    slots: set[tuple[str, str | None]] = set()
+    for preset in presets.values():
+        for group, group_value in preset['roles'].items():
+            if isinstance(group_value, dict):
+                for subkey in group_value:
+                    slots.add((group, subkey))
+            else:
+                slots.add((group, None))
+
+    def resolve(preset: dict, group: str, subkey: str | None) -> str:
+        """Resolve the effective level at (group, subkey) for ``preset``.
+
+        Bubbles through the group's value (string shorthand applies to
+        every sub-key under the phase) and falls back to the preset's
+        own ``default`` for any slot the preset omits — mirroring the
+        bubbling-resolution semantics documented in effort-roles.md.
+        """
+        group_value = preset['roles'].get(group)
+        if group_value is None:
+            return preset['default']
+        if isinstance(group_value, str):
+            return group_value
+        # dict-valued group: subkey override wins; missing subkey bubbles
+        # to the group's ``default`` entry, then to the preset default.
+        if subkey is not None and subkey in group_value:
+            return group_value[subkey]
+        if 'default' in group_value:
+            return group_value['default']
+        return preset['default']
+
+    # Also include the ``default`` slot itself in the walk.
+    slots.add(('__plan_default__', None))
+
+    for group, subkey in sorted(slots, key=lambda s: (s[0], s[1] or '')):
+        if group == '__plan_default__':
+            eco = presets['economic']['default']
+            bal = presets['balanced']['default']
+            high = presets['high-end']['default']
+            slot_label = 'default'
+        else:
+            eco = resolve(presets['economic'], group, subkey)
+            bal = resolve(presets['balanced'], group, subkey)
+            high = resolve(presets['high-end'], group, subkey)
+            slot_label = group if subkey is None else f'{group}.{subkey}'
+
+        assert rank[eco] <= rank[bal], (
+            f"Ladder violation at slot '{slot_label}': ECONOMIC={eco} "
+            f'(rank {rank[eco]}) > BALANCED={bal} (rank {rank[bal]})'
+        )
+        assert rank[bal] <= rank[high], (
+            f"Ladder violation at slot '{slot_label}': BALANCED={bal} "
+            f'(rank {rank[bal]}) > HIGH_END={high} (rank {rank[high]})'
+        )
