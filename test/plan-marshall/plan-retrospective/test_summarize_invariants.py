@@ -215,3 +215,89 @@ class TestArchivedMode:
         data = result.toon()
         assert data['status'] == 'success'
         assert len(data['phases']) == 2
+
+
+class TestConditionalPhaseStepsExpectation:
+    """Tests for the conditional phase_steps_complete expected-invariant rule.
+
+    ``phase_steps_complete`` is expected only when the phase has a
+    ``standards/required-steps.md`` file (currently only ``6-finalize``).
+    Phases without that file must not be penalised for a missing
+    ``phase_steps_complete`` column.
+    """
+
+    def test_phase_without_required_steps_not_penalised(self, tmp_path, monkeypatch):
+        """Phase 1-init has no required-steps.md; phase_steps_complete must not appear in invariants_missing."""
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        # Strip phase_steps_complete from the 1-init row to simulate a plan
+        # captured before the invariant existed.
+        from _fixtures import write_handshakes  # noqa: PLC0415
+        rows = [dict(r) for r in _HAPPY_HANDSHAKE_ROWS]
+        rows[0].pop('phase_steps_complete', None)
+        rows[0]['phase_steps_complete'] = ''
+        write_handshakes(plan_dir, plan_id=plan_id, rows=rows)
+
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+        init_phase = next((p for p in data['phases'] if p['phase'] == '1-init'), None)
+        assert init_phase is not None, 'expected 1-init phase in output'
+        assert 'phase_steps_complete' not in init_phase['invariants_missing'], (
+            'phase_steps_complete must not be flagged as missing for 1-init '
+            '(no required-steps.md for that phase)'
+        )
+
+    def test_phase_with_required_steps_flagged_when_missing(self, tmp_path, monkeypatch):
+        """Phase 6-finalize has required-steps.md; absent phase_steps_complete is a real gap."""
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        from _fixtures import write_handshakes  # noqa: PLC0415
+        rows = [dict(r) for r in _HAPPY_HANDSHAKE_ROWS]
+        # Clear the phase_steps_complete column for the 6-finalize row.
+        rows[1]['phase_steps_complete'] = ''
+        write_handshakes(plan_dir, plan_id=plan_id, rows=rows)
+
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+        finalize_phase = next((p for p in data['phases'] if p['phase'] == '6-finalize'), None)
+        assert finalize_phase is not None, 'expected 6-finalize phase in output'
+        assert 'phase_steps_complete' in finalize_phase['invariants_missing'], (
+            'phase_steps_complete must be flagged as missing for 6-finalize '
+            '(required-steps.md is present for that phase)'
+        )
+
+    def test_phase_with_required_steps_present_not_flagged(self, tmp_path, monkeypatch):
+        """Phase 6-finalize with phase_steps_complete captured must list it in invariants_present."""
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+        finalize_phase = next((p for p in data['phases'] if p['phase'] == '6-finalize'), None)
+        assert finalize_phase is not None, 'expected 6-finalize phase in output'
+        assert 'phase_steps_complete' in finalize_phase['invariants_present'], (
+            'phase_steps_complete must appear in invariants_present for 6-finalize '
+            'when the value was captured'
+        )
+        assert 'phase_steps_complete' not in finalize_phase['invariants_missing'], (
+            'phase_steps_complete must not be in invariants_missing for 6-finalize '
+            'when the value was captured'
+        )
+
+    def test_default_expected_invariants_omits_phase_steps_complete(self, tmp_path, monkeypatch):
+        """The un-phased default (no-handshakes path) must not include phase_steps_complete.
+
+        ``expected_invariants`` is also reported in the top-level
+        ``expected_invariants`` TOON field; without a phase it must reflect
+        only the core invariants.
+        """
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        # Remove the handshakes file so cmd_run uses the no-handshakes path.
+        (plan_dir / 'handshakes.toon').unlink()
+
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+        assert 'phase_steps_complete' not in data['expected_invariants'], (
+            'phase_steps_complete must not appear in top-level expected_invariants '
+            'when no phase is in context'
+        )
