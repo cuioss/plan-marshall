@@ -41,9 +41,10 @@ Plan Marshall is distributed via a `dist-claude` orphan branch (snapshot, tracks
 ----
 /plugin marketplace add cuioss/plan-marshall@dist-claude
 /plugin install plan-marshall@plan-marshall
+/reload-plugins
 ----
 
-Refresh later with `/plugin marketplace update plan-marshall`.
+Refresh later with `/plugin marketplace update plan-marshall` followed by `/reload-plugins`.
 
 === Pinned release
 
@@ -51,6 +52,7 @@ Refresh later with `/plugin marketplace update plan-marshall`.
 ----
 /plugin marketplace add cuioss/plan-marshall@claude/v{x.y.z}
 /plugin install plan-marshall@plan-marshall
+/reload-plugins
 ----
 
 Substitute `{x.y.z}` with the desired version. The `claude/v*` tag is immutable.
