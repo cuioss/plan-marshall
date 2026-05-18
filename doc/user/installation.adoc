@@ -1,0 +1,87 @@
+= Installation
+:toc: left
+:toclevels: 2
+
+Plan Marshall installs into Claude Code as a marketplace. There is no tarball, no PyPI / npm registry, no GitHub Pages — installs are pure `git-clone-from-ref` operations performed by Claude Code's `/plugin marketplace add` against `cuioss/plan-marshall` at the chosen ref.
+
+== Prerequisites
+
+[IMPORTANT]
+====
+Python 3 must be available as `python3` in your PATH.
+
+[source,bash]
+----
+python3 --version
+----
+====
+
+== Snapshot (tracks main)
+
+The `@dist-claude` ref tracks `main`: every push to `main` force-updates this branch to the freshly regenerated `target/claude/` tree.
+
+[source,bash]
+----
+/plugin marketplace add cuioss/plan-marshall@dist-claude
+/plugin install plan-marshall@plan-marshall
+/reload-plugins
+----
+
+Restart Claude Code or run `/reload-plugins` to load the plugin.
+
+=== Updating the snapshot
+
+[source,bash]
+----
+/plugin marketplace update plan-marshall
+----
+
+Re-pulls `dist-claude` HEAD. Reinstall plugins to pick up updated `plugin.json` entries, then restart Claude Code or run `/reload-plugins`.
+
+== Pinned release
+
+The `claude/v{x.y.z}` tag is immutable — it remains pinned to the orphan commit produced for that release even after `dist-claude` is later overwritten by subsequent `main` pushes.
+
+[source,bash]
+----
+/plugin marketplace add cuioss/plan-marshall@claude/v{x.y.z}
+/plugin install plan-marshall@plan-marshall
+/reload-plugins
+----
+
+Substitute `{x.y.z}` with the desired version, for example `@claude/v1.2.3`.
+
+=== Updating to a newer pinned release
+
+[source,bash]
+----
+/plugin marketplace remove plan-marshall
+/plugin marketplace add cuioss/plan-marshall@claude/v{new.x.y}
+----
+
+Reinstall plugins and restart.
+
+== Installing additional bundles
+
+After the core `plan-marshall` plugin is installed, add the language- or domain-specific bundles you need:
+
+[source,bash]
+----
+/plugin install pm-dev-java@plan-marshall
+/plugin install pm-dev-frontend@plan-marshall
+/plugin install pm-dev-python@plan-marshall
+/plugin install pm-dev-oci@plan-marshall
+/plugin install pm-documents@plan-marshall
+/plugin install pm-requirements@plan-marshall
+/plugin install pm-plugin-development@plan-marshall
+----
+
+The bundle table at the top of the project `README.adoc` links each bundle name to its `README.md`.
+
+== Next step
+
+Run xref:getting-started.adoc[`/marshall-steward`] to wire the planning system into your project.
+
+== Distribution contract
+
+Publish triggers, source-vs-dist tag semantics, the multi-target architecture, and what is explicitly *not* shipped (no tarballs, no GitHub Pages) are documented under xref:../developer/distribution.adoc[Developer Guide › Distribution].

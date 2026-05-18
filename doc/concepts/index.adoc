@@ -1,0 +1,18 @@
+= Concepts
+:toc: left
+:toclevels: 2
+
+How Plan Marshall is built and why. These pages are short navigational summaries over the canonical specifications co-located with the code under `marketplace/bundles/plan-marshall/`. When a concept page describes a contract, mechanism, or extension point, follow the `== Related` links to the authoritative source.
+
+== Pages
+
+* xref:architecture.adoc[Architecture] — the three-tier component model (skills, agents, commands), bundle layout, and where things physically live in the repository.
+* xref:planning-workflow.adoc[Planning Workflow] — the six-phase plan lifecycle (init → refine → outline → plan → execute → finalize) and the orchestrator that drives it.
+* xref:execution-context.adoc[Execution Context] — why Plan Marshall ships exactly one role-eligible agent and how every `Task:` dispatch flows through it.
+* xref:effort-and-models.adoc[Effort and Models] — the per-role model system: how `.plan/marshal.json` selects which model and effort level runs each LLM-judgement workflow.
+
+== Terminology
+
+The canonical glossary for Plan Marshall concepts (canonical agent, dispatcher, role-eligible, extension point, phase, workflow doc, manage-contract, etc.) lives in `marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/glossary.md`. Read it first when an unfamiliar term appears.
+
+// TODO: expand each concept page with diagrams adapted from `ref-workflow-architecture/standards/call-graph.md` and `dispatch-walkthrough.md`.

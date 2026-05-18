@@ -1,0 +1,49 @@
+= Workflow Verification
+:toc: left
+:toclevels: 2
+
+Workflow output verification is provided by the opt-in `plan-retrospective` skill rather than a dedicated `/verify-workflow` command. The structural check scripts (`collect-artifacts.py` and `verify-structure.py`) live inside `plan-retrospective` as aspect scripts.
+
+== What it verifies
+
+Verifies that workflow outputs (solution outline, references, tasks) are correct and complete. Classical assertions cannot work because LLM outputs vary in wording while semantic correctness matters.
+
+[cols="1,3"]
+|===
+| Skill | `marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md`
+| Aspects | `artifact-consistency`, `request-result-alignment`, `log-analysis`, `script-failure-analysis`, `permission-prompt-analysis`
+| Scripts | `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/`
+|===
+
+== Architecture
+
+[source]
+----
+Phase 1: Structural Checks (Script)     Phase 2: Semantic Assessment (LLM)
+┌─────────────────────────┐            ┌─────────────────────────┐
+│ • File existence        │            │ • Scope correctness     │
+│ • TOON/MD validation    │────────────│ • Completeness check    │
+│ • Required sections     │            │ • Decision quality      │
+│ • Cross-references      │            │ • Intent alignment      │
+└─────────────────────────┘            └─────────────────────────┘
+----
+
+Key principle: uses `manage-*` tool interfaces, not direct filesystem access.
+
+== Usage
+
+Verification is invoked as an opt-in retrospective at the end of a plan:
+
+[source]
+----
+Skill: plan-marshall:plan-retrospective
+----
+
+See the skill's `SKILL.md` for aspect selection, invocation patterns, and report structure.
+
+== Related
+
+* link:../../marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md[`plan-retrospective/SKILL.md`] — retrospective orchestration
+* link:../../marketplace/bundles/plan-marshall/skills/plan-retrospective/references/artifact-consistency.md[`references/artifact-consistency.md`] — structural checks
+* link:../../marketplace/bundles/plan-marshall/skills/plan-retrospective/references/request-result-alignment.md[`references/request-result-alignment.md`] — scope alignment
+* xref:testing.adoc[Testing] — unit-test infrastructure (separate from semantic verification)

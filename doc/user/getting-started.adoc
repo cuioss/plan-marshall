@@ -1,0 +1,65 @@
+= Getting Started
+:toc: left
+:toclevels: 2
+
+After installing Plan Marshall, run the setup wizard to wire it into your project:
+
+[source,bash]
+----
+/marshall-steward
+----
+
+== First-run wizard
+
+When the executor (`​.plan/execute-script.py`) is missing, `/marshall-steward` runs in wizard mode and walks you through:
+
+1. **Configure `.gitignore`** — adds the `.plan/` directory so plan data and worktrees stay local.
+2. **Generate the script executor** — emits `.plan/execute-script.py` with the script mappings embedded for every installed bundle.
+3. **Discover project modules** — walks the codebase via the extension API to identify build modules.
+4. **Initialise `marshal.json`** — seeds the per-project configuration file with sensible defaults.
+5. **Configure skill domains** — chooses which bundles' skill domains apply to which modules.
+6. **Detect CI provider and tools** — identifies GitHub vs. GitLab, Sonar/SonarCloud, and any other integrations.
+
+The wizard is idempotent — re-running it on a fresh checkout produces the same setup.
+
+== Interactive menu (returning users)
+
+Once the executor exists, `/marshall-steward` opens an interactive menu instead:
+
+* **Maintenance** — regenerate the executor (after bundle changes), clean execution logs.
+* **Health Check** — verify the setup, diagnose missing scripts or stale configuration.
+* **Configuration** — adjust build systems, skill domains, the per-role effort/model registry, terminal-title integration, and other project-level knobs.
+
+Use `--wizard` to force the first-run wizard explicitly:
+
+[source,bash]
+----
+/marshall-steward --wizard
+----
+
+== Creating your first plan
+
+Once setup is complete:
+
+[source,bash]
+----
+/plan-manage create
+----
+
+This drops you into the six-phase planning flow (init → refine → outline → plan → execute → finalize) described in xref:../concepts/planning-workflow.adoc[Planning Workflow]. See xref:commands.adoc[Commands] for the full `/plan-manage` reference.
+
+== Where things live
+
+After setup, expect the following inside your project:
+
+[source]
+----
+.plan/
+├── execute-script.py           # generated executor — do not edit by hand
+├── marshal.json                # project configuration
+├── run-configuration.json      # runtime settings
+├── project-architecture/       # module analysis
+└── plans/{plan-id}/            # one directory per active plan
+----
+
+`.plan/` is gitignored and never committed; it is your local working directory for plans.

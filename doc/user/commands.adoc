@@ -1,0 +1,44 @@
+= Commands
+:toc: left
+:toclevels: 2
+
+User-invocable slash commands provided by the marketplace.
+
+== /marshall-steward
+
+Project configuration wizard for the planning system.
+
+[source,bash]
+----
+/marshall-steward           # Interactive menu, or first-run wizard if .plan/execute-script.py is missing
+/marshall-steward --wizard  # Force first-run wizard
+----
+
+See xref:getting-started.adoc[Getting Started] for the first-run wizard steps. The interactive menu offers:
+
+* **Maintenance** — regenerate the executor (after `/plugin install` / `/plugin uninstall`), clean execution logs.
+* **Health Check** — verify setup, diagnose missing scripts or stale configuration.
+* **Configuration** — adjust build systems, skill domains, the per-role effort/model registry (see xref:configuration.adoc[Configuration]), terminal-title integration (xref:terminal-title.adoc[Terminal Title]), and other project-level knobs.
+
+== /plan-manage
+
+Manage task plans — create, list, outline, and clean up.
+
+[source,bash]
+----
+/plan-manage                # Interactive menu
+/plan-manage list           # List all plans
+/plan-manage create         # Create a new plan
+/plan-manage cleanup        # Remove completed plans
+----
+
+The plan lifecycle runs through six phases (`phase-1-init` … `phase-6-finalize`); each is dispatched through the xref:../concepts/execution-context.adoc[execution-context dispatcher]. See xref:../concepts/planning-workflow.adoc[Planning Workflow] for the phase sequence and boundaries.
+
+== /sync-plugin-cache (meta-project only)
+
+[NOTE]
+====
+This command is project-local to the Plan Marshall meta-project — it exists only when you have checked out `cuioss/plan-marshall` itself. Consumer projects do not get this surface; Claude Code's `/plugin marketplace update` covers your case.
+====
+
+Synchronises bundles from `marketplace/bundles/` (or `target/claude/` after a deploy-target step) to `~/.claude/plugins/cache/plan-marshall/`. Used after editing marketplace source files so changes take effect in the running Claude Code session. The mechanism is described in xref:../developer/marketplace-build.adoc[Developer Guide › Marketplace Build].

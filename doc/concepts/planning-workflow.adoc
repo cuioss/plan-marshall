@@ -1,0 +1,76 @@
+= Planning Workflow
+:toc: left
+:toclevels: 2
+
+Plan Marshall organises every non-trivial change as a *plan* that moves through six phases. Each phase is a skill (`phase-1-init` … `phase-6-finalize`) whose workflow doc is dispatched through the xref:execution-context.adoc[execution-context dispatcher]. The `plan-marshall` meta-skill (`marketplace/bundles/plan-marshall/skills/plan-marshall/SKILL.md`) ties them together and is what `/plan-manage` orchestrates.
+
+== Phase Sequence
+
+[cols="1,1,3", options="header"]
+|===
+|Phase |Skill |Outcome
+
+|1. Init
+|`phase-1-init`
+|Plan directory created, `request.md` captured, references seeded, status initialised.
+
+|2. Refine
+|`phase-2-refine`
+|Iterative request clarification until the confidence threshold is reached. Refine returns confidence + track + scope estimate; it never edits source files.
+
+|3. Outline
+|`phase-3-outline`
+|`solution_outline.md` produced via the Simple Track (localised changes) or Complex Track (cross-cutting discovery). Outline is strictly analytical — no source mutations and no `doctor` apply/fix calls.
+
+|4. Plan
+|`phase-4-plan`
+|Deliverables transformed into ordered `TASK-*.json` files with skill resolution and optimisation.
+
+|5. Execute
+|`phase-5-execute`
+|Tasks executed sequentially via a profile-based workflow selector (implementation, module testing, verification). The phase skill is a dumb task runner — task content drives the work.
+
+|6. Finalize
+|`phase-6-finalize`
+|Git workflow, finalize-step pipeline (deploy-target, sync-plugin-cache, plugin-doctor, pre-submission self-review, post-run review), commit, push, and PR creation.
+|===
+
+The phase pipeline is described in detail in `ref-workflow-architecture/standards/phases.md`. The lifecycle states a plan transitions through are catalogued in `phase-lifecycle.md`.
+
+== Cross-Cutting Workflows
+
+A handful of workflows run inside multiple phases. They live under `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/` and are dispatched directly through `execution-context`:
+
+* `planning.md`, `planning-outline.md` — task and outline planning bodies invoked by phases 3 and 4.
+* `execution.md`, `q-gate-validation.md` — execution and quality-gate bodies invoked by phase 5.
+* `verification-feedback.md` — triage envelope shared by phases 5 and 6 (build, lint, Sonar, PR review, plugin-doctor).
+* `triage.md` — generic finding triage.
+* `research-best-practices.md` — research workflow dispatched by any phase.
+* `enrich-module.md` — Tier-1 architecture enrichment invoked from phase-6 architecture-refresh.
+* `recipe.md`, `planning-lessons-aggregate.md` — recipe/lesson orchestration.
+
+== Phase Boundaries
+
+Two boundaries that catch most violations:
+
+* **Refine never implements code.** If a `phase-2-refine` dispatch edits files outside `.plan/local/{plans,worktrees}/{plan_id}/`, that is a contract violation.
+* **Outline never mutates source files or runs `doctor fix/apply`.** Outline is read-only outside the plan directory.
+
+// TODO: expand with sequence diagrams from `dispatch-walkthrough.md` and `call-graph.md` once images render correctly in the AsciiDoc pipeline.
+
+== Related
+
+* link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/phases.md[`ref-workflow-architecture/standards/phases.md`] — full phase pipeline specification
+* link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/phase-lifecycle.md[`ref-workflow-architecture/standards/phase-lifecycle.md`] — plan lifecycle states
+* link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/call-graph.md[`ref-workflow-architecture/standards/call-graph.md`] — dispatch call graph
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/SKILL.md[`plan-marshall/SKILL.md`] — orchestrator skill
+* link:../../marketplace/bundles/plan-marshall/skills/phase-1-init/SKILL.md[`phase-1-init/SKILL.md`]
+* link:../../marketplace/bundles/plan-marshall/skills/phase-2-refine/SKILL.md[`phase-2-refine/SKILL.md`]
+* link:../../marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md[`phase-3-outline/SKILL.md`]
+* link:../../marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md[`phase-4-plan/SKILL.md`]
+* link:../../marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md[`phase-5-execute/SKILL.md`]
+* link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md[`phase-6-finalize/SKILL.md`]
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning.md[`plan-marshall/workflow/planning.md`]
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/execution.md[`plan-marshall/workflow/execution.md`]
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/q-gate-validation.md[`plan-marshall/workflow/q-gate-validation.md`]
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/verification-feedback.md[`plan-marshall/workflow/verification-feedback.md`]

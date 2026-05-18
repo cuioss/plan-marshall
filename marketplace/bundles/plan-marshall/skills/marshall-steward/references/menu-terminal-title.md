@@ -152,7 +152,7 @@ This is a VS Code-side setting; the wizard does not patch it because `settings.l
 
 The IntelliJ Terminal tool window (JediTerm-based, shared by IDEA / PyCharm / GoLand / WebStorm / RustRover / Rider / etc.) does **not** honor OSC 0/2 title escape sequences for the tab title, and unlike VS Code there is no setting that lets you opt in. JediTerm parses the bytes correctly, but the IDE owns the tab name and renders shell/cwd (classic terminal) or last command (Reworked Terminal) instead. JetBrains tickets IDEA-156492 and IJPL-92196 track the limitation.
 
-The statusline still works: Claude Code renders it as plain text in its TUI footer, so the same `<icon> pm:<phase>:<short>` label appears at the bottom of the Claude pane regardless of terminal emulator. That is the supported live-status surface inside JetBrains IDEs. See `doc/usage.adoc` → "Terminal title in IntelliJ IDEA" for the full explanation and optional workarounds (manual tab rename via `Rename Session…`, or run `claude` in an external terminal).
+The statusline still works: Claude Code renders it as plain text in its TUI footer, so the same `<icon> pm:<phase>:<short>` label appears at the bottom of the Claude pane regardless of terminal emulator. That is the supported live-status surface inside JetBrains IDEs. See `doc/user/terminal-title.adoc` → "JetBrains IDEs" for the full explanation and optional workarounds (manual tab rename via `Rename Session…`, or run `claude` in an external terminal).
 
 ---
 

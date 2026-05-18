@@ -1,49 +1,55 @@
-# Distribution
+= Distribution
+:toc: left
+:toclevels: 2
 
-## Overview
+== Overview
 
 `plan-marshall` ships its Claude Code target as a perfect-match marketplace root on the `dist-claude` orphan branch and immutable dist tags `claude/v{x.y.z}`. There is no tarball, no live URL, no PyPI/npm registry, and no GitHub Pages. Installs are pure `git-clone-from-ref` operations performed by Claude Code's `/plugin marketplace add` against `cuioss/plan-marshall` at the chosen ref.
 
-## Installing — snapshot (bleeding edge)
+== Installing — snapshot (bleeding edge)
 
-```text
+[source,text]
+----
 /plugin marketplace add cuioss/plan-marshall@dist-claude
 /plugin install plan-marshall@plan-marshall
-```
+----
 
-Restart Claude Code or run `/reload-plugins`. Install additional bundles per the usage guide as desired.
+Restart Claude Code or run `/reload-plugins`. Install additional bundles per xref:../user/installation.adoc[User Guide › Installation] as desired.
 
 The `@dist-claude` ref tracks `main`: every push to `main` force-updates this branch to the freshly regenerated `target/claude/` tree.
 
-## Installing — pinned (specific release)
+== Installing — pinned (specific release)
 
-```text
+[source,text]
+----
 /plugin marketplace add cuioss/plan-marshall@claude/v{x.y.z}
 /plugin install plan-marshall@plan-marshall
-```
+----
 
 For example, `@claude/v1.2.3`. Restart Claude Code or run `/reload-plugins`.
 
 The `claude/v{x.y.z}` tag is immutable — it remains pinned to the orphan commit produced for that release even after `dist-claude` is later overwritten by subsequent `main` pushes.
 
-## Updating — snapshot users
+== Updating — snapshot users
 
-```text
+[source,text]
+----
 /plugin marketplace update plan-marshall
-```
+----
 
 Re-pulls `dist-claude` HEAD. Reinstall plugins to pick up updated `plugin.json` entries, then restart Claude Code or run `/reload-plugins`.
 
-## Updating — pinned users
+== Updating — pinned users
 
-```text
+[source,text]
+----
 /plugin marketplace remove plan-marshall
 /plugin marketplace add cuioss/plan-marshall@claude/v{new.x.y}
-```
+----
 
 Reinstall plugins and restart.
 
-## Versioning convention
+== Versioning convention
 
 Source tags follow `v{major}.{minor}.{patch}` (SemVer-flavoured) on the `cuioss/plan-marshall` repository. The dist tag mirrors the source tag with a `claude/` namespace prefix: source tag `v1.2.3` produces dist tag `claude/v1.2.3`.
 
@@ -51,42 +57,43 @@ The entire marketplace is versioned as a unit — every bundle ships under the s
 
 The same source `v*` tag drives every target distribution. The per-target dist tag is `{target_name}/v{x.y.z}`, so a future opencode target publishes `opencode/v1.2.3` from the same source `v1.2.3`.
 
-## What triggers a publish
+== What triggers a publish
 
 Two events trigger the `Claude Distribute` workflow:
 
-- A push to `main` updates the `dist-claude` snapshot branch (force-orphan).
-- A push of a `v{x.y.z}` tag updates `dist-claude` and creates the immutable dist tag `claude/v{x.y.z}` pointing at the new orphan commit.
+* A push to `main` updates the `dist-claude` snapshot branch (force-orphan).
+* A push of a `v{x.y.z}` tag updates `dist-claude` and creates the immutable dist tag `claude/v{x.y.z}` pointing at the new orphan commit.
 
 There are no pull-request triggers, no scheduled or nightly builds, no `latest` floating tag, and no `workflow_dispatch`. A maintainer pushes the source tag manually; the workflow does the rest. Force-pushes to `dist-claude` and pushes of `claude/v*` dist tags are performed by the organization-wide `cui-release-bot` identity, not by the maintainer who pushed the source tag.
 
-## Source tag vs. dist tag
+== Source tag vs. dist tag
 
 The source repository's `v{x.y.z}` git tag remains pinned to the source commit on `main` — the auto-created GitHub Release for that source tag may exist with no attached assets. The dist tag `claude/v{x.y.z}` points at a different commit: the orphan commit on `dist-claude`. The two coexist by design. Install commands always reference the dist branch or dist tag, never the source `v*` tag.
 
-## Multi-target architecture
+== Multi-target architecture
 
 The publish workflow is target-parametrized via a GitHub Actions `strategy.matrix`. Each matrix entry defines one distribution target with its own:
 
-- branch (`dist-{target_name}`)
-- dist-tag prefix (`{target_name}/`)
-- publish directory (`target/{target_name}`)
-- generator flag (`--target {target_name}`)
+* branch (`dist-{target_name}`)
+* dist-tag prefix (`{target_name}/`)
+* publish directory (`target/{target_name}`)
+* generator flag (`--target {target_name}`)
 
 Today the matrix has one entry (`claude`) and the user-facing install commands in this document are Claude-specific. Adding a future target (for example `opencode`) is a config-only change — one line appended to the matrix list — and adds its own `dist-opencode` branch plus `opencode/v*` dist tags. End-user install commands remain per-target: a hypothetical opencode user would run `/plugin marketplace add cuioss/plan-marshall@dist-opencode` (or `@opencode/v{x.y.z}`) against an OpenCode-compatible client.
 
 The single source `v{x.y.z}` tag drives all targets; versioning stays unified across the marketplace.
 
-## What is NOT shipped
+== What is NOT shipped
 
-- No GitHub Pages
-- No deploy branch on `main`
-- No committed `dist/` directory on `main`
-- No `target/` directory in `main`'s history (`.gitignore` excludes `target/`)
-- No tarball assets attached to GitHub Releases
+* No GitHub Pages
+* No deploy branch on `main`
+* No committed `dist/` directory on `main`
+* No `target/` directory in `main`'s history (`.gitignore` excludes `target/`)
+* No tarball assets attached to GitHub Releases
 
 The orphan branch and dist tags ARE the distribution — installs are pure git-clone-from-branch-or-tag-ref.
 
-## See also
+== See also
 
-- [Usage guide](usage.adoc) — invoking plan-marshall in a target project once installed
+* xref:../user/installation.adoc[User Guide › Installation] — operator-side install/update walkthrough
+* xref:marketplace-build.adoc[Marketplace Build] — pipeline that produces the `target/claude/` tree this distribution publishes
