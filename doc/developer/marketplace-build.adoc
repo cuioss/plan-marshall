@@ -9,7 +9,7 @@ How the marketplace source under `marketplace/bundles/` is transformed into depl
 
 image::../resources/diagrams/marketplace-build-pipeline.svg[Marketplace build pipeline — marketplace/bundles/ source is transformed by marketplace/targets/generate.py into target/claude/ per-bundle output with role-eligible agents expanded into per-level variants; the meta-project-local /sync-plugin-cache rsyncs that target directory into ~/.claude/plugins/cache/ which is what Claude Code actually loads, align=center]
 
-The middle hop (`target/claude/`) is produced by `marketplace/targets/generate.py --target claude` or by the `project:finalize-step-deploy-target` finalize step in the meta-project. The `/sync-plugin-cache` slash command rsyncs that directory into the plugin cache; consumer projects of Plan Marshall use the cache directly via `/plugin marketplace update` and never see the SOURCE or TARGET stages.
+The middle hop (`target/claude/`) is produced by `marketplace/targets/generate.py --target claude` or by the link:../../.claude/skills/finalize-step-deploy-target/SKILL.md[`project:finalize-step-deploy-target`] finalize step in the meta-project. The `/sync-plugin-cache` slash command rsyncs that directory into the plugin cache; consumer projects of Plan Marshall use the cache directly via `/plugin marketplace update` and never see the SOURCE or TARGET stages.
 
 == Variant Emission
 

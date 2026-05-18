@@ -182,13 +182,13 @@ The referenced skill's `SKILL.md` (or its `standards/` directory) MUST include:
 
 Current implementations:
 
-* `pm-dev-java:ext-triage-java`
-* `pm-dev-frontend:ext-triage-js`
-* `pm-dev-oci:ext-triage-oci`
-* `pm-dev-python:ext-triage-python`
-* `pm-documents:ext-triage-docs`
-* `pm-requirements:ext-triage-reqs`
-* `pm-plugin-development:ext-triage-plugin`
+* link:../../marketplace/bundles/pm-dev-java/skills/ext-triage-java/SKILL.md[`pm-dev-java:ext-triage-java`]
+* link:../../marketplace/bundles/pm-dev-frontend/skills/ext-triage-js/SKILL.md[`pm-dev-frontend:ext-triage-js`]
+* link:../../marketplace/bundles/pm-dev-oci/skills/ext-triage-oci/SKILL.md[`pm-dev-oci:ext-triage-oci`]
+* link:../../marketplace/bundles/pm-dev-python/skills/ext-triage-python/SKILL.md[`pm-dev-python:ext-triage-python`]
+* link:../../marketplace/bundles/pm-documents/skills/ext-triage-docs/SKILL.md[`pm-documents:ext-triage-docs`]
+* link:../../marketplace/bundles/pm-requirements/skills/ext-triage-reqs/SKILL.md[`pm-requirements:ext-triage-reqs`]
+* link:../../marketplace/bundles/pm-plugin-development/skills/ext-triage-plugin/SKILL.md[`pm-plugin-development:ext-triage-plugin`]
 
 Domain detection at triage time is by `file_path` — file extension and path prefix determine which `ext-triage` skill loads. If the path matches no registered domain, the triage envelope falls back to `AskUserQuestion` rather than silently picking a default.
 

@@ -24,9 +24,9 @@ Every dispatch's context is built from up to three tiers, stacked in order:
 |===
 | Tier | Source | Examples
 
-| **Tier 1 — System** | `skill_domains.system.defaults` in `marshal.json`. Loaded by the dispatcher unconditionally; never in the caller's `skills[]` array. | `plan-marshall:dev-general-practices`
-| **Tier 2 — Domain** | `skill_domains.{domain}` in `marshal.json`, materialized into `task.skills` via per-module `skills_by_profile`. Loaded per task. | `pm-dev-java:java-core`, `pm-dev-java:junit-core`, `plan-marshall:dev-general-module-testing`
-| **Workflow + Extensions** | Profile-routed (`execute-task` for phase-5 tasks) or finding-routed (`ext-triage-{domain}` during finalize). Resolved via `manage-config` lookups, passed through `skills[]`. | `plan-marshall:execute-task`, `pm-dev-java:ext-triage-java`
+| **Tier 1 — System** | `skill_domains.system.defaults` in `marshal.json`. Loaded by the dispatcher unconditionally; never in the caller's `skills[]` array. | link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/SKILL.md[`plan-marshall:dev-general-practices`]
+| **Tier 2 — Domain** | `skill_domains.{domain}` in `marshal.json`, materialized into `task.skills` via per-module `skills_by_profile`. Loaded per task. | link:../../marketplace/bundles/pm-dev-java/skills/java-core/SKILL.md[`pm-dev-java:java-core`], link:../../marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md[`pm-dev-java:junit-core`], link:../../marketplace/bundles/plan-marshall/skills/dev-general-module-testing/SKILL.md[`plan-marshall:dev-general-module-testing`]
+| **Workflow + Extensions** | Profile-routed (link:../../marketplace/bundles/plan-marshall/skills/execute-task/SKILL.md[`execute-task`] for phase-5 tasks) or finding-routed (`ext-triage-{domain}` during finalize). Resolved via `manage-config` lookups, passed through `skills[]`. | link:../../marketplace/bundles/plan-marshall/skills/execute-task/SKILL.md[`plan-marshall:execute-task`], link:../../marketplace/bundles/pm-dev-java/skills/ext-triage-java/SKILL.md[`pm-dev-java:ext-triage-java`]
 |===
 
 Tier 1 always loads first. Tier 2 and the workflow / extension entries load in the order the dispatch site arranged them — typically domain knowledge before workflow logic so the workflow can apply the loaded standards.

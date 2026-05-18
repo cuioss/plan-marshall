@@ -3,7 +3,7 @@
 :toc: left
 :toclevels: 2
 
-Why Plan Marshall ships exactly one role-eligible agent (`plan-marshall:execution-context`) and how every plan-marshall `Task:` invocation dispatches through it.
+Why Plan Marshall ships exactly one role-eligible agent (link:../../marketplace/bundles/plan-marshall/agents/execution-context.md[`plan-marshall:execution-context`]) and how every plan-marshall `Task:` invocation dispatches through it.
 
 == One Generic Dispatcher
 
@@ -29,7 +29,7 @@ Dispatch sites resolve which variant to call via `manage-config effort resolve-t
 
 == Granularity
 
-Not every step belongs in its own dispatch. The granularity heuristics in `extension-api:dispatch-granularity` govern the call:
+Not every step belongs in its own dispatch. The granularity heuristics in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/dispatch-granularity.md[`extension-api:dispatch-granularity`] govern the call:
 
 * **Script-over-dispatch** — deterministic work (regex matches, structural checks, build invocations) belongs in a script. Dispatches are reserved for LLM judgement.
 * **Bundle-shared-context** — a multi-step LLM workflow runs inside ONE dispatch envelope rather than N sequential dispatches.
