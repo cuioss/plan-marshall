@@ -15,6 +15,7 @@ How Plan Marshall is built and why. These pages are short navigational summaries
 * xref:security.adoc[Security] — how Plan Marshall narrows what the LLM does (hard rules + the script-executor proxy) so the permission surface is small enough to pre-approve. The compromise between accept-edits and YOLO, with a frank caveat about what it doesn't solve.
 * xref:audit-trail.adoc[Audit Trail] — what every plan run records (logs, structured artifacts, findings), why it's exhaustive, and how `plan-retrospective` evaluates it.
 * xref:tools-and-scripts.adoc[Tools and Scripts] — why Plan Marshall doesn't use MCP. Every external integration (GitHub, GitLab, Sonar, git) ships as a vetted Python script with a contracted TOON return; credentials live outside LLM reach in `~/.plan-marshall-credentials/`.
+* xref:automatic-reviews.adoc[Automatic Reviews] — the chain of automated review surfaces (Q-Gate over outline/task plan, build/verify, pre-submission self-review, PR comment automated review, Sonar roundtrip), all funnelled through one findings pipeline with a uniform triage envelope and four resolution outcomes.
 
 == Terminology
 
