@@ -33,16 +33,29 @@ python3 --version
 
 == Installation
 
-Add the Plan Marshall marketplace to Claude Code:
+Plan Marshall is distributed via a `dist-claude` orphan branch (snapshot, tracks `main`) and immutable `claude/v{x.y.z}` dist tags (pinned releases). See link:doc/distribution.md[doc/distribution.md] for the full install/update/versioning contract.
+
+=== Snapshot (tracks main)
 
 [source,bash]
 ----
-/plugin
-->   3. Add marketplace
-->   "https://github.com/cuioss/plan-marshall/marketplace"
+/plugin marketplace add cuioss/plan-marshall@dist-claude
+/plugin install plan-marshall@plan-marshall
 ----
 
-Then install the desired bundles using Claude Code's plugin tooling.
+Refresh later with `/plugin marketplace update plan-marshall`.
+
+=== Pinned release
+
+[source,bash]
+----
+/plugin marketplace add cuioss/plan-marshall@claude/v{x.y.z}
+/plugin install plan-marshall@plan-marshall
+----
+
+Substitute `{x.y.z}` with the desired version. The `claude/v*` tag is immutable.
+
+Then install additional bundles (e.g. `/plugin install pm-dev-java@plan-marshall`) per Claude Code's plugin tooling.
 
 == Getting Started
 
