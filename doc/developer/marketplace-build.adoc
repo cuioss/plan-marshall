@@ -7,34 +7,9 @@ How the marketplace source under `marketplace/bundles/` is transformed into depl
 
 == Pipeline
 
-[source]
-----
-marketplace/bundles/{bundle}/        ── source of truth (Claude Code format)
-        │
-        ▼
-python3 marketplace/targets/generate.py --target claude --output target/claude
-        │
-        ▼
-target/claude/{bundle}/              ── per-bundle output, plugin.json registers components
-        │
-        ├─ agents/execution-context.md           # canonical (inherit), implements/levels stripped
-        ├─ agents/execution-context-low.md       # model: haiku
-        ├─ agents/execution-context-medium.md    # model: sonnet, effort: medium
-        ├─ agents/execution-context-high.md      # model: sonnet, effort: high
-        ├─ agents/execution-context-xhigh.md     # model: opus, effort: high
-        ├─ agents/execution-context-xxhigh.md    # model: opus, effort: xhigh (Opus-4.7-only)
-        ├─ commands/
-        ├─ skills/
-        └─ .claude-plugin/plugin.json (registers 6 agent entries from this one source)
-        │
-        ▼
-/sync-plugin-cache  (project-local skill, meta-project only)
-        │
-        ▼
-~/.claude/plugins/cache/plan-marshall/{bundle}/{version}/   ── what Claude Code runs
-----
+image::../resources/diagrams/marketplace-build-pipeline.svg[Marketplace build pipeline — marketplace/bundles/ source is transformed by marketplace/targets/generate.py into target/claude/ per-bundle output with role-eligible agents expanded into per-level variants; the meta-project-local /sync-plugin-cache rsyncs that target directory into ~/.claude/plugins/cache/ which is what Claude Code actually loads, align=center]
 
-The middle hop (`target/claude/`) is produced by `marketplace/targets/generate.py --target claude` or by the `project:finalize-step-deploy-target` finalize step in the meta-project. The `/sync-plugin-cache` slash command rsyncs that directory into the plugin cache; consumer projects of Plan Marshall use the cache directly via `/plugin marketplace update`.
+The middle hop (`target/claude/`) is produced by `marketplace/targets/generate.py --target claude` or by the `project:finalize-step-deploy-target` finalize step in the meta-project. The `/sync-plugin-cache` slash command rsyncs that directory into the plugin cache; consumer projects of Plan Marshall use the cache directly via `/plugin marketplace update` and never see the SOURCE or TARGET stages.
 
 == Variant Emission
 
