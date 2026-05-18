@@ -21,6 +21,6 @@ Working in this repository is governed by the hard rules in `CLAUDE.md` (workflo
 
 Developer work touches the dispatcher emission and per-role model system regularly. Background:
 
-* xref:../concepts/architecture.adoc[Concepts › Architecture] — three-tier component model, repository layout.
+* xref:repository-layout.adoc[Repository Layout] — directory map of the source tree: `marketplace/`, `target/`, `test/`, `doc/`, `.plan/`, `.claude/`, build wrappers.
 * xref:../concepts/execution-context.adoc[Concepts › Execution Context] — the dispatcher that drives variant emission described in xref:marketplace-build.adoc[Marketplace Build].
 * xref:../concepts/effort-and-models.adoc[Concepts › Effort and Models] — the per-role model system whose variants the build emits.

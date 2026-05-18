@@ -1,0 +1,128 @@
+= Repository Layout
+:nofooter:
+:toc: left
+:toclevels: 2
+
+The directory layout of the Plan Marshall source tree, with developer-facing notes on what each top-level directory holds and which artifacts it produces.
+
+This page is for contributors working **on** Plan Marshall. If you are using Plan Marshall in your own project, the user-facing layout of `.plan/` is documented in xref:../user/getting-started.adoc#_where_things_live[Getting Started › Where things live].
+
+== Source tree
+
+[source]
+----
+plan-marshall/
+├── marketplace/
+│   ├── .claude-plugin/marketplace.json   # master marketplace configuration
+│   ├── adapters/                         # multi-assistant export adapters
+│   ├── bundles/                          # 10 production bundles (source of truth)
+│   └── targets/                          # per-target emitters (claude, opencode, …)
+├── target/                               # build output, per target (gitignored)
+│   └── claude/                           # populated by marketplace/targets/generate.py
+├── test/                                 # pytest tests for marketplace scripts
+├── doc/                                  # documentation tree (you are here)
+│   ├── concepts/                         # conceptual overviews
+│   ├── user/                             # operator-facing guides
+│   ├── developer/                        # contributor-facing guides (this directory)
+│   ├── refactor/                         # historical refactor plans (out of active scope)
+│   └── resources/                        # static assets (hero image, etc.)
+├── .plan/                                # partially tracked — see below
+├── .claude/                              # project-level Claude Code configuration
+├── pw / pw.bat / pw.lock                 # Pyprojectx wrapper (committed)
+├── build.py                              # per-module build dispatcher (committed)
+├── pyproject.toml                        # tool configuration (Pyprojectx, ruff, mypy, pytest)
+└── README.md
+----
+
+== `marketplace/`
+
+The marketplace is the source of truth — everything else is built from here.
+
+[cols="1,3", options="header"]
+|===
+| Path | Role
+
+| `marketplace/.claude-plugin/marketplace.json` | The master marketplace manifest listing every bundle.
+| `marketplace/bundles/` | The ten production bundles. Each bundle is a self-contained Claude Code plugin (`.claude-plugin/plugin.json` manifest + `skills/` + optional `agents/` and `commands/`).
+| `marketplace/adapters/` | Multi-assistant export adapters. Currently host the Claude and OpenCode target generators.
+| `marketplace/targets/` | Per-target emitters (`generate.py` + per-target subdirectories). See xref:marketplace-build.adoc[Marketplace Build] for the variant-emission pipeline.
+|===
+
+Each bundle under `marketplace/bundles/` follows the same internal layout: `.claude-plugin/plugin.json`, optional `agents/`, optional `commands/`, and a `skills/` tree where each skill is a `SKILL.md` accompanied by `standards/`, `scripts/`, `references/`, `templates/`, or `workflow/` subdirectories as needed.
+
+== `target/` (gitignored)
+
+Build output. `marketplace/targets/generate.py --target claude --output target/claude` populates `target/claude/`; future targets (OpenCode, etc.) populate `target/{target_name}/`. The `target/` tree is gitignored and never committed — distribution happens via orphan branches (`dist-claude`) and immutable tags (`claude/v*`) created by CI. See xref:distribution.adoc[Distribution].
+
+== `test/`
+
+Pytest tests for marketplace scripts. Mirrors the `marketplace/bundles/{bundle}/skills/{skill}/scripts/` layout — every script-bearing skill has a matching `test/{bundle}/{skill}/test_*.py` directory. See xref:testing.adoc[Testing] for the fixture stack and the `ScriptTestCase` base class.
+
+== `doc/`
+
+The documentation tree you are reading. Three audience-segmented areas plus a resources directory and an out-of-scope refactor archive:
+
+* `doc/concepts/` — conceptual overviews (Component Model, Planning Workflow, Skill Handling, Execution Context, Effort and Models, Build Management, Security, Audit Trail).
+* `doc/user/` — operator-facing guides (Installation, Getting Started, Commands, Configuration, Efforts, Terminal Title).
+* `doc/developer/` — contributor-facing guides (this page, Build, Marketplace Build, Distribution, Testing, Workflow Verification).
+* `doc/refactor/` — historical refactor plans. Out of active scope; do not edit unless explicitly part of one of those plans.
+* `doc/resources/` — static assets (currently the README hero image).
+
+== `.plan/` (partially tracked)
+
+The runtime data layer Plan Marshall maintains for itself. Mostly local-only, with two committed exceptions.
+
+[source]
+----
+.plan/
+├── marshal.json                          # ✅ committed — project configuration
+├── project-architecture/                 # ✅ committed — per-module enriched.json + _project.json
+│   ├── _project.json
+│   └── {module}/enriched.json
+├── execute-script.py                     # ❌ ignored — generated by /marshall-steward
+├── local/                                # ❌ ignored — private working area
+│   ├── plans/{plan-id}/
+│   ├── worktrees/{plan-id}/
+│   ├── lessons-learned/
+│   ├── logs/
+│   ├── archived-plans/
+│   └── …
+└── temp/                                 # ❌ ignored — scratch space
+----
+
+The gitignore rules and rationale are documented end-to-end in xref:../user/getting-started.adoc#_where_things_live[User Guide › Getting Started › Where things live]. From a developer perspective the two things to remember are:
+
+* `.plan/marshal.json` is the per-project committed configuration — when you change schema in `manage-config` you must keep this file backward-compatible.
+* `.plan/project-architecture/{module}/enriched.json` is committed module analysis — regenerated by `/marshall-steward` Maintenance → Regenerate Architecture; **do not edit by hand**.
+
+All access to `.plan/` from inside a workflow goes through `python3 .plan/execute-script.py {notation}` (a hard rule in `dev-general-practices`). Direct Read/Write/Edit on `.plan/` files is forbidden except via documented workflow exceptions. See xref:../concepts/security.adoc[Concepts › Security] for the rationale.
+
+== `.claude/`
+
+Project-level Claude Code configuration committed to the repository:
+
+* `.claude/settings.json` — team-shared permission allow-list. Narrow by design (see xref:../concepts/security.adoc[Security]).
+* `.claude/skills/` — project-local skills (the meta-project only — `finalize-step-deploy-target/`, `finalize-step-sync-plugin-cache/`, `sync-plugin-cache/`). Consumer projects of Plan Marshall do not get these.
+* `.claude/commands/` — project-local slash commands.
+* `.claude/run-configuration.json` — runtime command configuration.
+
+`.claude/settings.local.json` (per-developer, gitignored) sits alongside but is never committed.
+
+== Build wrappers and configuration
+
+[cols="1,3", options="header"]
+|===
+| File | Role
+
+| `pw`, `pw.bat`, `pw.lock` | https://pyprojectx.github.io/[Pyprojectx] wrapper — the only host-system dependency is Python 3. See xref:build.adoc[Build].
+| `build.py` | Per-module build dispatcher invoked by Pyprojectx aliases.
+| `pyproject.toml` | Tool configuration (Pyprojectx aliases, ruff, mypy, pytest, coverage).
+|===
+
+== Related
+
+* xref:build.adoc[Build] — Pyprojectx commands and project-internal Python build configuration
+* xref:marketplace-build.adoc[Marketplace Build] — the `marketplace/` → `target/` generation pipeline and variant emission
+* xref:distribution.adoc[Distribution] — `dist-claude` orphan branch and the `claude/v*` tag policy
+* xref:testing.adoc[Testing] — pytest fixture stack and conventions
+* xref:../concepts/index.adoc[Concepts] — the three-tier model (skills / agents / commands) the marketplace exposes is introduced in the concepts index preamble

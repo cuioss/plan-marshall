@@ -5,13 +5,35 @@
 
 How Plan Marshall is built and why. These pages are short navigational summaries over the canonical specifications co-located with the code under `marketplace/bundles/plan-marshall/`. When a concept page describes a contract, mechanism, or extension point, follow the `== Related` links to the authoritative source.
 
+== The three-tier vocabulary
+
+Every concept page below assumes a small vocabulary — Plan Marshall composes three kinds of component:
+
+[cols="1,3", options="header"]
+|===
+| Tier | Purpose
+
+| Skills
+| Domain knowledge, standards, scripts, and workflows. The building blocks every other tier composes. See xref:skill-handling.adoc[Skill Handling] for how skills load into agent context.
+
+| Agents
+| Autonomous task executors. Plan Marshall ships exactly **one** role-eligible canonical agent — `plan-marshall:execution-context` — emitted in six effort-level variants. See xref:execution-context.adoc[Execution Context].
+
+| Commands
+| User-invocable slash commands that orchestrate workflows (`/marshall-steward`, `/plan-marshall`). See xref:../user/commands.adoc[User Guide › Commands].
+|===
+
+A typical plan execution touches all three: a **command** is the entry point; it dispatches **agents**; each agent loads **skills** explicitly per xref:skill-handling.adoc[Skill Handling]. The single-agent / many-skills shape is deliberate — see xref:execution-context.adoc[Execution Context] for why. For the developer-facing repository layout, see xref:../developer/repository-layout.adoc[Developer Guide › Repository Layout].
+
 == Pages
 
-* xref:architecture.adoc[Architecture] — the three-tier component model (skills, agents, commands), bundle layout, and where things physically live in the repository.
+* xref:build-management.adoc[Build Management] — technology-neutral build abstraction: canonical command names (`verify`, `quality-gate`, `module-tests`, …) resolved per module to whatever tool the module actually uses (Maven / Gradle / npm / Python). The LLM dispatches one method call, waits for a structured TOON, spends no tokens on build output noise during the wait.
 * xref:planning-workflow.adoc[Planning Workflow] — the six-phase plan lifecycle (init → refine → outline → plan → execute → finalize) and the orchestrator that drives it.
 * xref:skill-handling.adoc[Skill Handling] — explicit, deterministic skill loading: the two-tier model (system + domain), how `task.skills` is built from architecture, and the dispatch-time loading sequence inside `execution-context`.
 * xref:execution-context.adoc[Execution Context] — why Plan Marshall ships exactly one role-eligible agent and how every `Task:` dispatch flows through it.
 * xref:effort-and-models.adoc[Effort and Models] — the per-role model system: how `.plan/marshal.json` selects which model and effort level runs each LLM-judgement workflow.
+* xref:security.adoc[Security] — how Plan Marshall narrows what the LLM does (hard rules + the script-executor proxy) so the permission surface is small enough to pre-approve. The compromise between accept-edits and YOLO, with a frank caveat about what it doesn't solve.
+* xref:audit-trail.adoc[Audit Trail] — what every plan run records (logs, structured artifacts, findings), why it's exhaustive, and how `plan-retrospective` evaluates it.
 
 == Terminology
 
