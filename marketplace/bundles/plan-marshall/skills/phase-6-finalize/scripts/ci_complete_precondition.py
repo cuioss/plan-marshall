@@ -29,14 +29,14 @@ Outcome semantics:
   ``failure`` or ``timeout`` so the caller can surface the reason in the
   consumer step's ``display_detail``.
 
-The script is intentionally a private helper (underscore prefix) — it is
-invoked inline by the markdown dispatcher in
-``phase-6-finalize/SKILL.md`` Step 3 ("Precondition resolution" block) and
-is NOT exposed as a marketplace notation. The dispatcher bears
-responsibility for mapping ``wait_failed`` to the consumer step's outcome
-record (``failed`` with ``display_detail "ci_failure (precondition)"``);
-this script never calls ``mark-step-done`` directly because the
-precondition is not itself a finalize step.
+The script is invoked via the marketplace executor notation
+``plan-marshall:phase-6-finalize:ci_complete_precondition`` from the
+markdown dispatcher in ``phase-6-finalize/SKILL.md`` Step 3 ("Precondition
+resolution" block). The dispatcher bears responsibility for mapping
+``wait_failed`` to the consumer step's outcome record (``failed`` with
+``display_detail "ci_failure (precondition)"``); this script never calls
+``mark-step-done`` directly because the precondition is not itself a
+finalize step.
 
 Cache lifecycle:
 
@@ -53,6 +53,15 @@ Cache lifecycle:
 Subprocess seams (``_run_git_rev_parse_head``, ``_run_ci_wait``) are split
 out to keep the orchestration body easy to test without a live git
 worktree or live CI provider.
+
+The script is registered through ``generate_executor.py`` and consumed via
+the executor proxy: ``python3 .plan/execute-script.py
+plan-marshall:phase-6-finalize:ci_complete_precondition resolve ...``.
+The executor injects ``PYTHONPATH`` for ``toon_parser`` and
+``marketplace_paths``, so no in-script ``sys.path`` manipulation is
+required (the previous underscore-prefixed sibling-traversal pattern broke
+when the script was invoked from outside the source tree, e.g., from
+``target/claude/`` or a relocated checkout — see lesson 2026-05-18-11-001).
 """
 
 from __future__ import annotations
@@ -64,17 +73,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Resolve the marketplace_paths + toon_parser modules without committing
-# this helper to the global executor (it is a private dispatcher-side
-# helper, not a registered notation). The path manipulation mirrors the
-# pattern used by other underscore-prefixed marketplace scripts.
-_SCRIPTS_DIR = Path(__file__).parent
-_SCRIPT_SHARED = _SCRIPTS_DIR.parent.parent.parent / 'script-shared' / 'scripts'
-_REF_TOON = _SCRIPTS_DIR.parent.parent.parent / 'ref-toon-format' / 'scripts'
-for _candidate in (_SCRIPT_SHARED, _REF_TOON):
-    if str(_candidate) not in sys.path:
-        sys.path.insert(0, str(_candidate))
-
+from marketplace_paths import git_main_checkout_root  # type: ignore[import-not-found]
 from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 
 # ---------------------------------------------------------------------------
@@ -145,7 +144,14 @@ def _run_ci_wait(
     worktree path itself; passing both ``--plan-id`` and
     ``--project-dir`` would trigger ``mutually_exclusive_args``.
     """
-    executor = Path(_SCRIPTS_DIR).parents[4] / '.plan' / 'execute-script.py'
+    repo_root = git_main_checkout_root()
+    if repo_root is None:
+        raise RuntimeError(
+            'ci_complete_precondition: unable to resolve the git main '
+            'checkout root via marketplace_paths.git_main_checkout_root() — '
+            'is this script running outside a git repository?'
+        )
+    executor = repo_root / '.plan' / 'execute-script.py'
     cmd = [
         sys.executable,
         str(executor),

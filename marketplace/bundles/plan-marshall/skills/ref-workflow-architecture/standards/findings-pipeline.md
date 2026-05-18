@@ -62,14 +62,14 @@ The plan-marshall findings pipeline routes every quality signal — PR review co
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The diagram shows the per-finding dispatch path. CI completion is resolved as a **dispatcher-side precondition** before the `automated-review` consumer's body runs — consumer steps declare `requires: [ci-complete]` in their YAML frontmatter, and the phase-6-finalize dispatcher invokes `_ci_complete_precondition.resolve(plan_id, worktree_path, pr_number)` inline ahead of dispatch. The resolver caches success outcomes per HEAD SHA so subsequent same-HEAD lookups short-circuit. On `wait_failed`, the dispatcher skips the consumer body entirely and records `ci_failure (precondition)` as the consumer step's outcome. The precondition isolates CI wait time from the triage budget without introducing a sibling step:
+The diagram shows the per-finding dispatch path. CI completion is resolved as a **dispatcher-side precondition** before the `automated-review` consumer's body runs — consumer steps declare `requires: [ci-complete]` in their YAML frontmatter, and the phase-6-finalize dispatcher invokes `ci_complete_precondition.resolve(plan_id, worktree_path, pr_number)` inline ahead of dispatch. The resolver caches success outcomes per HEAD SHA so subsequent same-HEAD lookups short-circuit. On `wait_failed`, the dispatcher skips the consumer body entirely and records `ci_failure (precondition)` as the consumer step's outcome. The precondition isolates CI wait time from the triage budget without introducing a sibling step:
 
 ```
                                                     automated-review step
                                                     (phase-6-finalize, requires: [ci-complete])
    ┌─────────────────────────────┐                  ┌─────────────────────┐
    │ dispatcher Step 3:          │── satisfied ────▶│ comments-stage      │
-   │ _ci_complete_precondition   │   or             │ (producer)          │
+   │ ci_complete_precondition   │   or             │ (producer)          │
    │ .resolve(plan_id,           │   wait_succeeded │       ▼             │
    │   worktree_path,            │                  │ per-finding         │
    │   pr_number,                │                  │ dispatch (consumer) │

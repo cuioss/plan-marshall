@@ -2,7 +2,7 @@
 # ruff: noqa: I001, E402
 """Unit tests for the phase-6-finalize CI-completion precondition resolver.
 
-The helper at ``scripts/_ci_complete_precondition.py`` is the dispatcher-side
+The helper at ``scripts/ci_complete_precondition.py`` is the dispatcher-side
 implementation of the ``requires: [ci-complete]`` frontmatter declaration on
 consumer finalize steps. These tests pin the four contracts documented in
 the deliverable's Success Criteria:
@@ -26,14 +26,21 @@ MEMORY.md "Test Isolation Pattern").
 from __future__ import annotations
 
 import importlib.util
+import os
+import subprocess
 import sys
 from pathlib import Path
 
 from conftest import PlanContext  # type: ignore[import-not-found]
 
 # ---------------------------------------------------------------------------
-# Module loading — private underscore-prefixed helpers are not registered
-# in the executor mapping, so we import via importlib from the source path.
+# Module loading — the helper is registered in the executor mapping under
+# the notation ``plan-marshall:phase-6-finalize:ci_complete_precondition``,
+# but the unit tests still load it via importlib from the source path so
+# the test seams (``ci_wait_runner`` / ``git_head_resolver``) can be
+# injected at the Python-call level without spawning a subprocess. The
+# executor-level invocation is exercised separately in
+# :func:`test_executor_invocation_with_scrubbed_pythonpath` below.
 # ---------------------------------------------------------------------------
 
 _SCRIPTS_DIR = (
@@ -58,13 +65,25 @@ def _load_module(name: str, filename: str):
 
 
 _resolver_mod = _load_module(
-    '_ci_complete_precondition',
-    '_ci_complete_precondition.py',
+    'ci_complete_precondition',
+    'ci_complete_precondition.py',
 )
 resolve = _resolver_mod.resolve
 DEFAULT_CI_WAIT_TIMEOUT_SECONDS = _resolver_mod.DEFAULT_CI_WAIT_TIMEOUT_SECONDS
 _cache_path = _resolver_mod._cache_path
 _read_cache = _resolver_mod._read_cache
+
+# ---------------------------------------------------------------------------
+# Repo root anchor — the executor lives at ``<repo>/.plan/execute-script.py``
+# and the renamed source script at the bundled path under
+# ``marketplace/bundles/...``. The tests below subprocess the executor with
+# a deliberately scrubbed environment, so we need an absolute anchor that
+# does NOT depend on the parent process's cwd or PYTHONPATH.
+# ---------------------------------------------------------------------------
+
+_REPO_ROOT = Path(__file__).parent.parent.parent.parent
+_EXECUTOR_PATH = _REPO_ROOT / '.plan' / 'execute-script.py'
+_SOURCE_SCRIPT_PATH = _SCRIPTS_DIR / 'ci_complete_precondition.py'
 
 
 # ---------------------------------------------------------------------------
@@ -298,3 +317,127 @@ def test_default_timeout_matches_documented_ceiling():
     # matching the documented ci-wait budget. A change here would silently
     # tighten the precondition's tolerance, so we pin it.
     assert DEFAULT_CI_WAIT_TIMEOUT_SECONDS == 600
+
+
+# ---------------------------------------------------------------------------
+# Test 6 — regression guard: invoking the script via the executor notation
+# with a deliberately scrubbed PYTHONPATH must still succeed. This pins the
+# fix for lesson 2026-05-18-11-001: the prior underscore-prefixed helper
+# carried an in-script ``sys.path`` self-bootstrap block that resolved the
+# script-shared directory by walking parents of ``__file__``. When the
+# script was relocated (e.g., when run from the plugin cache at
+# ``target/claude/`` or from ``~/.claude/plugins/cache/`` rather than from
+# the source tree), the parent-arithmetic landed one level too high and
+# imports of ``toon_parser`` / ``marketplace_paths`` failed.
+#
+# The corrected helper drops the self-bootstrap entirely and trusts the
+# executor proxy to inject PYTHONPATH. This test exercises that contract
+# explicitly: it strips PYTHONPATH from the subprocess environment and
+# invokes the executor with the documented notation. If the helper ever
+# regrows a self-bootstrap that hard-codes parent traversal, this test
+# would only mask the regression; the companion
+# :func:`test_source_script_has_no_self_bootstrap` test below pins the
+# absence of the legacy bootstrap pattern at the source-text level.
+# ---------------------------------------------------------------------------
+
+
+def test_executor_invocation_with_scrubbed_pythonpath():
+    """Spawn the executor proxy with PYTHONPATH scrubbed and confirm the
+    renamed helper still resolves cross-skill imports via the executor's
+    injected paths.
+    """
+    # The executor must be present before the subprocess runs. The
+    # session-level conftest bootstrap ensures this for fresh checkouts;
+    # local dev environments and CI both pass through that path.
+    assert _EXECUTOR_PATH.is_file(), (
+        f'Executor missing at {_EXECUTOR_PATH} — '
+        'conftest session bootstrap should have generated it'
+    )
+
+    # Build a deliberately scrubbed environment: drop PYTHONPATH and
+    # PYTHONHOME entirely so the subprocess CANNOT inherit any path
+    # injection from the calling pytest session. Keep PATH / HOME /
+    # encoding vars so subprocess startup itself remains viable.
+    scrubbed_env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in {'PYTHONPATH', 'PYTHONHOME'}
+    }
+    # Belt-and-braces: even an inherited '' value would break our intent.
+    assert 'PYTHONPATH' not in scrubbed_env
+    assert 'PYTHONHOME' not in scrubbed_env
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(_EXECUTOR_PATH),
+            'plan-marshall:phase-6-finalize:ci_complete_precondition',
+            '--help',
+        ],
+        capture_output=True,
+        text=True,
+        env=scrubbed_env,
+        cwd=str(_REPO_ROOT),
+        timeout=30,
+        check=False,
+    )
+
+    # The subprocess MUST exit cleanly. A non-zero exit here means the
+    # renamed script failed to import its cross-skill dependencies under
+    # the executor's PYTHONPATH injection — the exact failure mode the
+    # lesson is meant to prevent.
+    assert completed.returncode == 0, (
+        f'Executor invocation failed (exit={completed.returncode}): '
+        f'stdout={completed.stdout!r}, stderr={completed.stderr!r}'
+    )
+
+    # The argparse help banner MUST appear on stdout. We pin the script
+    # filename (``ci_complete_precondition.py``) and the documented
+    # ``resolve`` subcommand to guard against accidental rename drift in
+    # the future.
+    assert 'usage: ci_complete_precondition.py' in completed.stdout, (
+        f'Argparse usage banner missing from stdout: {completed.stdout!r}'
+    )
+    assert 'resolve' in completed.stdout, (
+        f'``resolve`` subcommand missing from help output: '
+        f'{completed.stdout!r}'
+    )
+
+
+def test_source_script_has_no_self_bootstrap():
+    """Pin the absence of the legacy ``sys.path`` self-bootstrap block.
+
+    The pre-rename helper computed the script-shared directory via
+    parent-arithmetic on ``__file__`` and called ``sys.path.insert(...)``
+    inside the script body. That pattern broke when the script was
+    relocated under ``target/claude/`` or the plugin cache because the
+    parent count was hard-coded for the source tree layout. The
+    executor-injected PYTHONPATH replaces this scheme.
+
+    If a future change re-introduces a path-arithmetic ``sys.path``
+    mutation in this script, the executor invocation may still succeed
+    (the executor PYTHONPATH would mask the issue) but the regression
+    would silently land. This text-level check catches it directly.
+    """
+    body = _SOURCE_SCRIPT_PATH.read_text(encoding='utf-8')
+
+    # The legacy patterns we are guarding against.
+    forbidden_markers = (
+        # The exact identifiers the old self-bootstrap block defined.
+        '_SCRIPTS_DIR',
+        '_SCRIPT_SHARED',
+        '_REF_TOON',
+        # Any sys.path mutation inside the source script body. The
+        # executor's PYTHONPATH injection is the only allowed mechanism.
+        'sys.path.insert',
+        'sys.path.append',
+    )
+    for marker in forbidden_markers:
+        assert marker not in body, (
+            f'Legacy self-bootstrap marker {marker!r} reappeared in '
+            f'{_SOURCE_SCRIPT_PATH}. The renamed helper MUST rely on the '
+            'executor proxy to inject PYTHONPATH; in-script sys.path '
+            'mutation breaks when the script is relocated under '
+            'target/claude/ or the plugin cache. See lesson '
+            '2026-05-18-11-001.'
+        )

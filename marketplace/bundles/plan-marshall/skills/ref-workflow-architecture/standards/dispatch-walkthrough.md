@@ -122,7 +122,7 @@ The most complex case. The manifest step `automated-review` runs **mostly inline
 ### Setup
 - `{plan_id}` = `feature-jwt-auth`
 - `manifest.phase_6.steps` includes `automated-review` (declares `requires: [ci-complete]` in its frontmatter, ordered before `sonar-roundtrip`)
-- The phase-6-finalize dispatcher just resolved the `ci-complete` precondition for the current HEAD via `_ci_complete_precondition.resolve` — the cache now records `success` for this SHA.
+- The phase-6-finalize dispatcher just resolved the `ci-complete` precondition for the current HEAD via `ci_complete_precondition.resolve` — the cache now records `success` for this SHA.
 
 ### Orchestrator: inline orchestration prologue
 
