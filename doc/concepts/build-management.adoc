@@ -16,6 +16,10 @@ Plan Marshall splits build management into two responsibilities:
 
 The result is build-tool independence at the LLM-prompt layer. A skill author writing a verify step writes one workflow that works against Maven, Gradle, npm, and Python modules.
 
+image::../resources/diagrams/build-dispatch-sequence.svg[Build dispatch sequence — LLM resolves the canonical command, dispatches the build skill, suspends on the tool call while the build process runs, then receives a structured TOON return. No tokens spent during the wait., align=center]
+
+The diagram above shows the synchronous call shape. The LLM holds control during steps 1-3 (resolve, then dispatch run), is suspended for the duration of step 4 (the build subprocess), and resumes only when the build skill returns a single TOON. The sections below walk through each piece.
+
 == The canonical command vocabulary
 
 A small, build-system-agnostic vocabulary of operation names. The full list lives in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/canonical-commands.md[`canonical-commands.md`]; the most-used entries:
