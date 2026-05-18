@@ -35,7 +35,7 @@ plan-marshall/
 │   └── claude/                           # populated by marketplace/targets/generate.py
 ├── test/                                 # pytest tests for marketplace scripts
 ├── doc/                                  # the documentation tree you are reading
-├── .plan/                                # planning + temporary files (gitignored)
+├── .plan/                                # partially tracked — marshal.json + project-architecture/ committed, .plan/local/ + execute-script.py + .plan/temp/ ignored
 └── .claude/                              # project-level Claude Code configuration
 ----
 
