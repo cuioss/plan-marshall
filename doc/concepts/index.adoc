@@ -9,6 +9,7 @@ How Plan Marshall is built and why. These pages are short navigational summaries
 
 * xref:build-management.adoc[Build Management] — technology-neutral build abstraction: canonical command names (`verify`, `quality-gate`, `module-tests`, …) resolved per module to whatever tool the module actually uses (Maven / Gradle / npm / Python). The LLM dispatches one method call, waits for a structured TOON, spends no tokens on build output noise during the wait.
 * xref:planning-workflow.adoc[Planning Workflow] — the six-phase plan lifecycle (init → refine → outline → plan → execute → finalize) and the orchestrator that drives it.
+* xref:process-enforcement.adoc[Process Enforcement] — four cooperating mechanisms (hard rules · script funnel · Q-Gate · phase handshakes) that keep the LLM on the documented process. Small surface, load-bearing impact at every phase boundary.
 * xref:skill-handling.adoc[Skill Handling] — explicit, deterministic skill loading: the two-tier model (system + domain), how `task.skills` is built from architecture, and the dispatch-time loading sequence inside `execution-context`.
 * xref:execution-context.adoc[Execution Context] — why Plan Marshall ships exactly one role-eligible agent and how every `Task:` dispatch flows through it.
 * xref:effort-and-models.adoc[Effort and Models] — the per-role model system: how `.plan/marshal.json` selects which model and effort level runs each LLM-judgement workflow.

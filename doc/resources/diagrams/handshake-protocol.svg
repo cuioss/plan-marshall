@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- theme-handling: A (theme-neutral) -->
+<!-- conforms to: pm-documents:ref-svg-diagrams (visual-language + diagram-type-sequence) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 660"
+     role="img" aria-labelledby="title desc"
+     font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
+  <title id="title">Phase handshake protocol — capture at completion, verify at entry, refuse on drift</title>
+  <desc  id="desc">Sequence diagram of the phase-handshake protocol. At the end of phase N the plan-marshall orchestrator runs phase_handshake capture, which writes a row of invariant fingerprints (main_sha, dirty count, task_state_hash, qgate_open_count, config_hash, pending_findings_blocking_count, phase_steps_complete) into handshakes.toon. At the start of phase N plus one, the orchestrator runs phase_handshake verify --strict; the script recomputes each invariant against live state, compares, and returns one of three outcomes — ok (continue), drift (surface diffs, exit 1, refuse to advance), or skipped (log warning, continue). On the guarded 5-execute to 6-finalize boundary, manage-status transition inlines the verify so the boundary refusal and the state advance are one atomic call.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" class="arrow-fill"/>
+    </marker>
+    <style>
+      .col-header   { font-size: 14px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
+      .col-sub      { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .arrow-lbl    { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .mono         { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; fill: #6e7681; text-anchor: middle; }
+      .stroke       { stroke: #6e7681; stroke-width: 1.2; fill: none; }
+      .arrow        { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+      .arrow-return { stroke: #6e7681; stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+      .arrow-fill   { fill: #6e7681; }
+      .sep          { stroke: #6e7681; stroke-width: 0.6; stroke-dasharray: 3 3; }
+      .activation   { stroke: #6e7681; stroke-width: 0.8; fill: #6e7681; opacity: 0.22; }
+    </style>
+  </defs>
+
+  <!-- ============= Actor headers (4 actors at x = 110, 360, 600, 830) ============= -->
+  <text x="110" y="32" class="col-header">phase N</text>
+  <rect class="stroke" x="50" y="44" width="120" height="34" rx="6"/>
+  <text x="110" y="65" class="col-sub">completion protocol</text>
+
+  <text x="360" y="32" class="col-header">phase_handshake</text>
+  <rect class="stroke" x="300" y="44" width="120" height="34" rx="6"/>
+  <text x="360" y="65" class="mono">script</text>
+
+  <text x="600" y="32" class="col-header">handshakes.toon</text>
+  <rect class="stroke" x="540" y="44" width="120" height="34" rx="6"/>
+  <text x="600" y="65" class="col-sub">per-plan store</text>
+
+  <text x="830" y="32" class="col-header">phase N+1</text>
+  <rect class="stroke" x="770" y="44" width="120" height="34" rx="6"/>
+  <text x="830" y="65" class="col-sub">entry protocol</text>
+
+  <!-- ============= Lifelines ============= -->
+  <line class="sep" x1="110" y1="85" x2="110" y2="610"/>
+  <line class="sep" x1="360" y1="85" x2="360" y2="610"/>
+  <line class="sep" x1="600" y1="85" x2="600" y2="610"/>
+  <line class="sep" x1="830" y1="85" x2="830" y2="610"/>
+
+  <!-- ============= Activation bars ============= -->
+  <!-- phase N activation during capture -->
+  <rect class="activation" x="105" y="105" width="10" height="135"/>
+
+  <!-- phase_handshake activation for capture (compute invariants + write) -->
+  <rect class="activation" x="355" y="130" width="10" height="100"/>
+
+  <!-- store activation during write -->
+  <rect class="activation" x="595" y="195" width="10" height="20"/>
+
+  <!-- phase N+1 activation during entry (verify and after) -->
+  <rect class="activation" x="825" y="295" width="10" height="280"/>
+
+  <!-- phase_handshake activation for verify -->
+  <rect class="activation" x="355" y="320" width="10" height="225"/>
+
+  <!-- store activation during read -->
+  <rect class="activation" x="595" y="380" width="10" height="25"/>
+
+  <!-- ============= Section A — Capture (at phase N completion) ============= -->
+  <text x="450" y="100" class="col-sub">— Section A · capture at phase N completion —</text>
+
+  <!-- Step A1: phase N → phase_handshake: capture -->
+  <line class="arrow" x1="115" y1="130" x2="355" y2="130" marker-end="url(#arrow)"/>
+  <text x="235" y="122" class="arrow-lbl">capture (phase = N)</text>
+
+  <!-- Step A2: phase_handshake runs invariant registry — annotation block ABOVE the write-arrow -->
+  <text x="360" y="158" class="arrow-lbl">run INVARIANTS registry</text>
+  <text x="360" y="173" class="arrow-lbl">(main_sha · dirty · task_hash · qgate · config · blocking sum)</text>
+
+  <!-- Step A3: phase_handshake → store: write row -->
+  <line class="arrow" x1="365" y1="200" x2="595" y2="200" marker-end="url(#arrow)"/>
+  <text x="480" y="192" class="arrow-lbl">write handshake row</text>
+
+  <!-- Return: store → phase_handshake (no label) -->
+  <line class="arrow-return" x1="595" y1="220" x2="365" y2="220" marker-end="url(#arrow)"/>
+
+  <!-- Return: phase_handshake → phase N: status success -->
+  <line class="arrow-return" x1="355" y1="235" x2="115" y2="235" marker-end="url(#arrow)"/>
+  <text x="235" y="227" class="arrow-lbl">status: success</text>
+
+  <!-- ============= Section B — Verify (at phase N+1 entry) ============= -->
+  <text x="450" y="275" class="col-sub">— Section B · verify (strict) at phase N+1 entry —</text>
+
+  <!-- Step B1: phase N+1 dispatches verify (strict mode) -->
+  <line class="arrow" x1="825" y1="305" x2="365" y2="305" marker-end="url(#arrow)"/>
+  <text x="595" y="297" class="arrow-lbl">verify (phase = N, strict)</text>
+
+  <!-- Step B2: phase_handshake → store: read captured row -->
+  <line class="arrow" x1="365" y1="385" x2="595" y2="385" marker-end="url(#arrow)"/>
+  <text x="480" y="377" class="arrow-lbl">read captured row</text>
+
+  <!-- Return: store → phase_handshake -->
+  <line class="arrow-return" x1="595" y1="405" x2="365" y2="405" marker-end="url(#arrow)"/>
+
+  <!-- Self-action: phase_handshake recomputes against live state -->
+  <text x="360" y="435" class="arrow-lbl">re-run INVARIANTS against live state · diff vs captured</text>
+
+  <!-- Two outcomes — annotated in the column gutter -->
+  <text x="595" y="465" class="col-sub">two outcomes:</text>
+
+  <!-- Outcome 1: OK — phase_handshake → phase N+1 -->
+  <line class="arrow-return" x1="365" y1="495" x2="825" y2="495" marker-end="url(#arrow)"/>
+  <text x="595" y="487" class="arrow-lbl">status: ok · phase N+1 continues</text>
+
+  <!-- Outcome 2: DRIFT — phase_handshake → phase N+1 (refusal) -->
+  <line class="arrow-return" x1="365" y1="540" x2="825" y2="540" marker-end="url(#arrow)"/>
+  <text x="595" y="525" class="arrow-lbl">status: drift · diffs[invariant,captured,observed] · exit 1</text>
+  <text x="595" y="558" class="arrow-lbl">→ phase N+1 STOPS · transition refuses to advance</text>
+
+  <!-- ============= Footer caption ============= -->
+  <text x="450" y="615" class="col-sub">On the guarded 5-execute → 6-finalize boundary, `manage-status transition --completed 5-execute` inlines the strict verify — refusal and advance are one atomic call.</text>
+  <text x="450" y="635" class="col-sub">Drift is a signal, not a nuisance. Valid responses: authorized override (capture --override --reason X) or manual investigation.</text>
+
+</svg>
