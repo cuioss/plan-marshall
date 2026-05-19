@@ -50,9 +50,8 @@ branch-cleanup
 archive-plan
 ```
 
-`ci-verify` (lesson-2026-05-18-16-001 deliverable 6) sits between
-`create-pr` and `automated-review` so CI verdicts are triaged before
-the consumer steps that depend on them.
+`ci-verify` sits between `create-pr` and `automated-review` so CI
+verdicts are triaged before the consumer steps that depend on them.
 
 ## Per-producer dispatch fan-out
 

@@ -376,7 +376,7 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:ci_complete_preco
   resolve --plan-id {plan_id} --worktree-path {worktree_path} --pr-number {pr_number} [--timeout 600]
 ```
 
-The helper returns a TOON envelope with `status`, `head_sha`, `ci_final_status`, and (on `wait_failed`) `failing_checks` plus `wait_outcome`. The underlying `ci wait` envelope partitions GitHub check conclusions per the canonical table (`success | skipped | neutral` → non-failing; `failure | timed_out | cancelled | action_required | stale` → failing; `null | in_progress | queued` → wait); the previous `mixed` outcome is no longer returned by any github_ops function. See lesson-2026-05-18-16-001 deliverable 1 for the full partition table and rationale. Outcome mapping:
+The helper returns a TOON envelope with `status`, `head_sha`, `ci_final_status`, and (on `wait_failed`) `failing_checks` plus `wait_outcome`. The underlying `ci wait` envelope partitions GitHub check conclusions per the canonical table (`success | skipped | neutral` → non-failing; `failure | timed_out | cancelled | action_required | stale` → failing; `null | in_progress | queued` → wait); the previous `mixed` outcome is no longer returned by any github_ops function. Outcome mapping:
 
 | Resolver `status` | `ci_final_status` | Dispatcher action |
 |-------------------|--------------------|--------------------|
