@@ -13,7 +13,9 @@ directly)::
 
     status: satisfied | wait_succeeded | wait_failed
     head_sha: <40-char hex SHA>
-    ci_final_status: success | failure | timeout | null
+    ci_final_status: success | failure | timeout | no_checks | null
+    failing_checks: [str, ...]      # present on wait_failed (may be empty)
+    wait_outcome: completed | deadline_exceeded   # present on wait_failed
 
 Outcome semantics:
 
@@ -24,10 +26,17 @@ Outcome semantics:
   fresh ``ci wait`` returned ``final_status: success``. The cache is
   populated with the live HEAD SHA. ``ci_final_status`` is ``success``.
 * ``wait_failed`` — the cache was missing (or stale); a fresh ``ci wait``
-  returned ``final_status: failure`` OR ``status: timeout``. No cache entry
-  is written (re-entry will re-poll). ``ci_final_status`` carries either
-  ``failure`` or ``timeout`` so the caller can surface the reason in the
-  consumer step's ``display_detail``.
+  returned ``final_status: failure`` (with ``failing_checks`` enumerating
+  the failing checks), ``final_status: none`` (no checks reported — a
+  distinct ``ci_final_status: no_checks`` so the dispatcher can
+  distinguish "CI never ran" from a real failure), OR ``status: timeout``
+  (``ci_final_status: timeout`` with ``failing_checks`` carrying the
+  still-running checks at the deadline). No cache entry is written
+  (re-entry will re-poll). The ``failing_checks`` and ``wait_outcome``
+  fields are forwarded from the underlying ``ci wait`` envelope so
+  downstream consumers (see lesson-2026-05-18-16-001 deliverables 5 and 6)
+  can route the precondition decision into the correct triage producer
+  string without re-fetching the CI run.
 
 The script is invoked via the marketplace executor notation
 ``plan-marshall:phase-6-finalize:ci_complete_precondition`` from the
@@ -275,6 +284,7 @@ def resolve(
     timeout_seconds: int = DEFAULT_CI_WAIT_TIMEOUT_SECONDS,
     ci_wait_runner=None,
     git_head_resolver=None,
+    mode: str = 'strict',
 ) -> dict:
     """Resolve the ``ci-complete`` precondition for the current HEAD.
 
@@ -303,6 +313,12 @@ def resolve(
     head_fn = git_head_resolver or _run_git_rev_parse_head
     wait_fn = ci_wait_runner or _run_ci_wait
 
+    if mode not in ('strict', 'consume-failures'):
+        raise RuntimeError(
+            f"ci_complete_precondition.resolve: invalid mode {mode!r} — "
+            "must be 'strict' or 'consume-failures'"
+        )
+
     head_sha = head_fn(worktree_path)
 
     # Cache hit?
@@ -321,9 +337,13 @@ def resolve(
     # Cache miss (or stale) → run the bounded wait.
     wait_result = wait_fn(plan_id, pr_number, timeout_seconds, worktree_path)
 
-    # Interpret the wait envelope.
+    # Interpret the wait envelope. The ``failing_checks`` and
+    # ``wait_outcome`` fields are forwarded verbatim from ``ci wait`` so
+    # downstream consumers can classify the failure without re-fetching.
     final_status = wait_result.get('final_status')
     envelope_status = wait_result.get('status')
+    failing_checks = wait_result.get('failing_checks') or []
+    wait_outcome = wait_result.get('wait_outcome') or 'completed'
 
     if envelope_status == 'success' and final_status == 'success':
         _write_cache(plan_id, head_sha, 'success')
@@ -339,13 +359,33 @@ def resolve(
             'status': 'wait_failed',
             'head_sha': head_sha,
             'ci_final_status': 'failure',
+            'failing_checks': failing_checks,
+            'wait_outcome': wait_outcome,
+            'mode': mode,
         }
 
-    # Timeout or any other non-success envelope.
+    if envelope_status == 'success' and final_status == 'none':
+        # CI never produced any checks. Distinct from real failure so the
+        # dispatcher can surface "no CI configured" vs "CI ran red".
+        return {
+            'status': 'wait_failed',
+            'head_sha': head_sha,
+            'ci_final_status': 'no_checks',
+            'failing_checks': [],
+            'wait_outcome': wait_outcome,
+            'mode': mode,
+        }
+
+    # Timeout or any other non-success envelope. ``ci wait`` carries
+    # ``wait_outcome: deadline_exceeded`` and ``failing_checks`` enumerating
+    # the still-running checks at the deadline.
     return {
         'status': 'wait_failed',
         'head_sha': head_sha,
         'ci_final_status': 'timeout',
+        'failing_checks': failing_checks,
+        'wait_outcome': wait_outcome or 'deadline_exceeded',
+        'mode': mode,
     }
 
 
@@ -362,6 +402,7 @@ def cmd_resolve(args: argparse.Namespace) -> int:
             worktree_path=args.worktree_path,
             pr_number=args.pr_number,
             timeout_seconds=args.timeout,
+            mode=args.mode,
         )
     except RuntimeError as exc:
         payload = {
@@ -418,6 +459,20 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             f'ci wait --timeout ceiling in seconds '
             f'(default: {DEFAULT_CI_WAIT_TIMEOUT_SECONDS})'
+        ),
+    )
+    resolve_parser.add_argument(
+        '--mode',
+        choices=('strict', 'consume-failures'),
+        default='strict',
+        dest='mode',
+        help=(
+            "Precondition mode. 'strict' (default) is used by "
+            "automated-review / sonar-roundtrip — wait_failed short-"
+            "circuits the consumer step. 'consume-failures' is used by "
+            "ci-verify — wait_failed threads the envelope through to "
+            "the consumer body without short-circuiting. See "
+            "phase-6-finalize/standards/ci-verify.md."
         ),
     )
     resolve_parser.set_defaults(func=cmd_resolve)

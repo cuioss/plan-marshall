@@ -75,6 +75,7 @@ DEFAULT_PHASE_5_STEPS = ('quality-gate', 'module-tests')
 DEFAULT_PHASE_6_STEPS = (
     'commit-push',
     'create-pr',
+    'ci-verify',
     'automated-review',
     'sonar-roundtrip',
     'lessons-capture',

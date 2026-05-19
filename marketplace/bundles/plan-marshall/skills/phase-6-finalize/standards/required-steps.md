@@ -32,6 +32,7 @@ otherwise a manifest pruning would deadlock the phase transition.
 - pre-submission-self-review
 - commit-push
 - create-pr
+- ci-verify
 - architecture-refresh
 - automated-review
 - sonar-roundtrip
