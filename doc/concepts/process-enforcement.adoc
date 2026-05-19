@@ -7,7 +7,9 @@ How Plan Marshall keeps the LLM on the documented process — four cooperating m
 
 == Overview
 
-The thesis: an LLM left alone will drift. It will skip a step that "looks done already", swap an inline `gh pr view` for the documented CI abstraction, or report task success against a tree it never actually edited. Plan Marshall does not assume the LLM will follow the process — it assumes it might not, and stacks four mechanisms in increasing order of bindingness so something catches the slip.
+This is not a hypothesis about LLMs in general — it is a record of observed drift in this project. Plan Marshall's hard rules, Q-Gate checks, and handshake invariants were each carved from an incident: a workflow body that invented a non-existent CLI subcommand and produced silent `exit_code: 2`; a task that reported success against a clean worktree; a phase that advanced with Q-Gate findings still pending. Most of these incidents are still traceable in the lessons store — `dev-general-practices` § "Never invent script subcommands" cites lesson `2026-04-29-23-002` ("three recurrences in ~3 days") as the explicit prompt for promoting that rule to a hard one. The four layers below are the deposit of those incidents, not a precaution against hypothetical ones.
+
+The four layers sit in increasing order of bindingness so the *next* observed drift is more likely to terminate at a higher layer before it reaches the codebase.
 
 image::../resources/diagrams/enforcement-layers.svg[Process enforcement — four layers stacked from soft (skill-loaded text) to hard (mechanical gate). Layer 1 is the dev-general-practices hard rules. Layer 2 is the script-executor proxy plus manage-* funnel for all .plan/ access. Layer 3 is the Q-Gate findings checkpoint resolved at the next phase's entry. Layer 4 is the phase-handshake invariant registry that captures fingerprints at completion and verifies them at entry, refusing to advance on drift., align=center]
 
