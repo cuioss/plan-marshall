@@ -231,10 +231,17 @@ def _scan_file(path: Path, rel_to_bundles: str) -> list[dict]:
         if not matches:
             continue
 
-        # Suppression marker (same line or preceding line).
-        suppressed = _line_has_suppress_marker(line) or (
-            idx > 0 and _line_has_suppress_marker(lines[idx - 1])
-        )
+        # Suppression marker:
+        #   - Same line: suppresses findings on this line.
+        #   - Preceding line: suppresses findings on this line ONLY when the
+        #     preceding line is a standalone marker (no lesson-ID on it).
+        #     Otherwise the marker on the preceding line was consumed by its
+        #     own same-line suppression and must not double-suppress here.
+        suppressed = _line_has_suppress_marker(line)
+        if not suppressed and idx > 0:
+            prev = lines[idx - 1]
+            if _line_has_suppress_marker(prev) and not _LESSON_ID_RE.search(prev):
+                suppressed = True
         if suppressed:
             continue
 
