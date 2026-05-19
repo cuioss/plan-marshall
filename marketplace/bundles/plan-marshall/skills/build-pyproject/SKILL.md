@@ -1,36 +1,34 @@
 ---
-name: build-python
+name: build-pyproject
 description: Python/pyprojectx build operations — mypy type-checking, ruff linting, pytest with Cobertura coverage, and test-directory-based module discovery
 user-invocable: false
 implements: plan-marshall:extension-api/standards/ext-point-build
 ---
 
-# Build Python
+# Build Pyproject
 
 Python build execution via pyprojectx (`./pw` wrapper) with output parsing for mypy, ruff, and pytest.
 
 ## Enforcement
 
 See `build-api-reference.md` § Enforcement for shared rules.
-All commands use `python3 .plan/execute-script.py plan-marshall:build-python:python_build {command} {args}`.
-
-**Note on script naming**: Named `python_build.py` (not `python.py`) to avoid shadowing Python's module namespace. Notation: `plan-marshall:build-python:python_build`.
+All commands use `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build {command} {args}`.
 
 ## Scripts
 
 | Script | Purpose |
 |--------|---------|
-| `python_build.py` | CLI dispatcher |
-| `_python_execute.py` | Execution config via factory (uses shared `default_command_key_fn`, `default_build_command_fn`) |
-| `_python_cmd_parse.py` | Multi-parser registry for mypy, ruff, pytest |
-| `_python_cmd_discover.py` | Module discovery via test directory detection |
+| `pyproject_build.py` | CLI dispatcher |
+| `_pyproject_execute.py` | Execution config via factory (uses shared `default_command_key_fn`, `default_build_command_fn`) |
+| `_pyproject_cmd_parse.py` | Multi-parser registry for mypy, ruff, pytest |
+| `_pyproject_cmd_discover.py` | Module discovery via test directory detection |
 
 ## Subcommands
 
 Supports: **run**, **parse**, **coverage-report**, **check-warnings**, **discover**.
 See `build-api-reference.md` for the full subcommand API and availability matrix.
 
-### Python-Specific Behavior
+### Pyproject-Specific Behavior
 
 - **run**: `--command-args` takes pyprojectx commands, e.g., `"verify"`, `"module-tests core"`, `"quality-gate"`. Result includes `wrapper` field showing resolved executable path
 - **coverage-report**: Searches `coverage.xml`, `htmlcov/coverage.xml`. Generate with `pytest --cov --cov-report=xml`
@@ -38,7 +36,7 @@ See `build-api-reference.md` for the full subcommand API and availability matrix
 
 ### Producer-Side Finding Storage (`run --plan-id`)
 
-When `run` is invoked with `--plan-id <P>`, every parsed issue from a failed build is auto-stored via the producer path (always-on — there is no separate `--store-findings` flag). When `--plan-id` is omitted, the historical silent behaviour is preserved (parse + format only). The python-specific issue→finding-type routing is:
+When `run` is invoked with `--plan-id <P>`, every parsed issue from a failed build is auto-stored via the producer path (always-on — there is no separate `--store-findings` flag). When `--plan-id` is omitted, the historical silent behaviour is preserved (parse + format only). The pyproject-specific issue→finding-type routing is:
 
 | Parsed `category` (Issue) | Finding type |
 |---------------------------|--------------|
@@ -82,4 +80,4 @@ Directories with `test/` or `tests/` subdirectories. Searches one level deep fro
 
 - `build-api-reference.md` — Shared subcommand API, error categories, issue routing, wrapper detection
 - `build-execution.md` — Execution contract and lifecycle
-- `standards/python-impl.md` — Python/pyprojectx execution details
+- `standards/pyproject-impl.md` — Python/pyprojectx execution details

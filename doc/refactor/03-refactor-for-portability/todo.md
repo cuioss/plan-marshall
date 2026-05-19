@@ -90,8 +90,8 @@ Read these documents in full **before touching anything**. Do not start the task
 
 Run **once**, after every task above is complete. Do not run between tasks — the gate is a single pre-ship checkpoint, not a per-task check.
 
-- [ ] Run the quality gate: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "quality-gate"` (Bash timeout ≥ 600000 ms). Inspect TOON.
-- [ ] Run full verify: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "verify"` (Bash timeout ≥ 600000 ms).
+- [ ] Run the quality gate: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate"` (Bash timeout ≥ 600000 ms). Inspect TOON.
+- [ ] Run full verify: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "verify"` (Bash timeout ≥ 600000 ms).
 - [ ] Both `status: success` before "Ship".
 
 ## Ship

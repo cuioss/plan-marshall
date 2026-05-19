@@ -18,7 +18,7 @@ This file pins:
   is a string suitable for passing into ``--worktree-path``.
 
 The Bucket B consumers that DO declare the two-state routing pair are
-covered in their own test files (``test_python_build``, ``test_maven``,
+covered in their own test files (``test_pyproject_build``, ``test_maven``,
 ``test_ci``, etc.).
 """
 

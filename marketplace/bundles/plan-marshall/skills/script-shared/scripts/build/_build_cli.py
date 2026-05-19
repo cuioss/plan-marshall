@@ -3,7 +3,7 @@
 
 Provides argparse subparser helpers, registration utilities, and the common
 main() entry point used by all build skill scripts (maven.py, gradle.py,
-npm.py, python_build.py).
+npm.py, pyproject_build.py).
 
 Split from _build_shared.py to separate CLI wiring from command implementations.
 """

@@ -42,7 +42,7 @@ This domain is applicable when:
 - `python` is listed in the module's `build_systems`
 - `.py` files are found in source or test paths
 
-Build operations (pyprojectx execution, parsing, discovery) are provided by `plan-marshall:build-python`, not this bundle.
+Build operations (pyprojectx execution, parsing, discovery) are provided by `plan-marshall:build-pyproject`, not this bundle.
 
 ## Integration
 

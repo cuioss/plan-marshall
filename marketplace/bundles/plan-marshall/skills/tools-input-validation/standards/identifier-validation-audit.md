@@ -60,7 +60,7 @@ The classification certainty `CERTAIN_EXCLUDE` was assigned during phase-3-outli
 | `plan-marshall/skills/build-gradle/scripts/` | `gradle.py` | Build runner — only `--project-name`/`--project-path`/`--root` |
 | `plan-marshall/skills/build-maven/scripts/` | `maven.py` | Build runner — uses `register_standard_subparsers`, no in-scope flags |
 | `plan-marshall/skills/build-npm/scripts/` | `js_coverage.py`, `npm.py` | Coverage parser / build runner — no in-scope flags |
-| `plan-marshall/skills/build-python/scripts/` | `python_build.py` | Build runner — uses `register_standard_subparsers`, no in-scope flags |
+| `plan-marshall/skills/build-pyproject/scripts/` | `pyproject_build.py` | Build runner — uses `register_standard_subparsers`, no in-scope flags |
 | `plan-marshall/skills/execute-task/scripts/` | `assert_test_identifiers.py`, `inject_project_dir.py` | Helper utilities — no in-scope identifier flags |
 | `plan-marshall/skills/manage-logging/scripts/` | `plan_logging.py` | Shared logging library — imports `is_valid_plan_id`, no argparse main |
 | `plan-marshall/skills/manage-providers/scripts/` | `credentials.py` | Provider credentials handler — only `--skill`/`--scope`/`--auth-type`/`--extra` |

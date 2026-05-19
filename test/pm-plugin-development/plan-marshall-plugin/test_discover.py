@@ -135,8 +135,8 @@ class TestBuildCommands(unittest.TestCase):
         self.assertIn('verify', commands)
         self.assertIn('coverage', commands)
         self.assertIn('clean', commands)
-        # Commands should use python_build via execute-script
-        self.assertIn('plan-marshall:build-python:python_build', commands['module-tests'])
+        # Commands should use pyproject_build via execute-script
+        self.assertIn('plan-marshall:build-pyproject:pyproject_build', commands['module-tests'])
         self.assertIn('pm-plugin-development', commands['module-tests'])
 
 

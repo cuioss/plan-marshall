@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Parse functionality for Python build output.
+"""Parse functionality for Pyproject (Python/pyprojectx) build output.
 
 Uses the shared ParserRegistry for consistent detection and routing.
 Handles output from mypy, ruff, and pytest.
 
 Usage (internal):
-    from _python_cmd_parse import parse_log
+    from _pyproject_cmd_parse import parse_log
 """
 
 import re

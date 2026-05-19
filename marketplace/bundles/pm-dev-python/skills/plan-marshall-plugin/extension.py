@@ -4,7 +4,7 @@
 Slim domain registration providing skill domains, module applicability,
 and triage for Python projects.
 
-Build operations (python_build) have moved to plan-marshall:build-python.
+Build operations (pyproject_build) have moved to plan-marshall:build-pyproject.
 Module discovery is in plan-marshall:plan-marshall-plugin.
 """
 

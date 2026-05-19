@@ -111,4 +111,4 @@ class ExecuteConfig:
 | plan-marshall | build-maven | Maven | pom.xml |
 | plan-marshall | build-gradle | Gradle | build.gradle / build.gradle.kts |
 | plan-marshall | build-npm | npm | package.json |
-| plan-marshall | build-python | Python (pyprojectx) | pyproject.toml |
+| plan-marshall | build-pyproject | Python (pyprojectx) | pyproject.toml |

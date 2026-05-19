@@ -100,7 +100,7 @@ The Glob fallback covers the case where the new test file lives in a recipe / ex
 | Module under test | Existing collision | Disambiguated basename |
 |-------------------|--------------------|------------------------|
 | `manage-findings` | `test/.../test_findings_store.py` | `test_findings_findings_store.py` (or `test_findings_store_manage.py` — match the existing naming style of the target directory) |
-| `build-python` (findings module) | `test/.../test_findings_store.py` | `test_build_findings_store.py` |
+| `build-pyproject` (findings module) | `test/.../test_findings_store.py` | `test_build_findings_store.py` |
 | `recipe-lesson-cleanup` (parser) | `test/.../test_parser.py` | `test_lesson_cleanup_parser.py` |
 
 The disambiguation prefix MUST be a substring of the module path (kebab-case stem, joined by `_`) so the basename remains greppable from the module name. Numeric suffixes (`test_findings_store_2.py`) and copy-cat ordinals are forbidden — they preserve the collision risk for the next addition and lose the module-under-test signal entirely.
@@ -442,7 +442,7 @@ The `--tasks-file PATH` form is the canonical entrypoint for phase-4-plan (and a
 > ```
 > verification:
 >   commands:
->     - python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests plan-marshall"
+>     - python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests plan-marshall"
 >   criteria: module-tests plan-marshall succeeds
 > ```
 >
@@ -450,7 +450,7 @@ The `--tasks-file PATH` form is the canonical entrypoint for phase-4-plan (and a
 > ```
 > verification:
 >   commands:
->     - "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests plan-marshall\""
+>     - "python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args \"module-tests plan-marshall\""
 >   criteria: module-tests plan-marshall succeeds
 > ```
 

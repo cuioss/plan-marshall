@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for _python_execute.py.
+"""Tests for _pyproject_execute.py.
 
 Tests the Python execution config and factory-generated functions.
 """
@@ -23,7 +23,7 @@ _SCRIPTS_DIR = (
     / 'bundles'
     / 'plan-marshall'
     / 'skills'
-    / 'build-python'
+    / 'build-pyproject'
     / 'scripts'
 )
 
@@ -35,10 +35,10 @@ def _load_module(name, filename):
     return mod
 
 
-_python_execute_mod = _load_module('_python_execute', '_python_execute.py')
+_pyproject_execute_mod = _load_module('_pyproject_execute', '_pyproject_execute.py')
 
-_CONFIG = _python_execute_mod._CONFIG
-execute_direct = _python_execute_mod.execute_direct
+_CONFIG = _pyproject_execute_mod._CONFIG
+execute_direct = _pyproject_execute_mod.execute_direct
 
 # =============================================================================
 # Config Tests
@@ -179,7 +179,7 @@ def test_self_heal_retries_on_uv_missing(tmp_path):
     failure = {'status': 'error', 'exit_code': 127, 'log_file': log_file, 'command': './pw verify', 'error': ''}
     success = {'status': 'success', 'exit_code': 0, 'log_file': log_file, 'command': './pw verify'}
     fake, calls = _patched_execute_direct([failure, success])
-    with patch.object(_python_execute_mod, '_inner_execute_direct', side_effect=fake):
+    with patch.object(_pyproject_execute_mod, '_inner_execute_direct', side_effect=fake):
         result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
     assert result['status'] == 'success'
     assert len(calls) == 2
@@ -198,7 +198,7 @@ def test_self_heal_retries_on_directory_not_empty(tmp_path):
     failure = {'status': 'error', 'exit_code': 1, 'log_file': log_file, 'command': './pw verify', 'error': ''}
     success = {'status': 'success', 'exit_code': 0, 'log_file': log_file, 'command': './pw verify'}
     fake, calls = _patched_execute_direct([failure, success])
-    with patch.object(_python_execute_mod, '_inner_execute_direct', side_effect=fake):
+    with patch.object(_pyproject_execute_mod, '_inner_execute_direct', side_effect=fake):
         result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
     assert result['status'] == 'success'
     assert len(calls) == 2
@@ -211,7 +211,7 @@ def test_self_heal_skipped_for_unrelated_failure(tmp_path):
     log_file = _make_log(tmp_path, 'FAILED tests/test_foo.py::test_bar - AssertionError')
     failure = {'status': 'error', 'exit_code': 1, 'log_file': log_file, 'command': './pw verify', 'error': ''}
     fake, calls = _patched_execute_direct([failure])
-    with patch.object(_python_execute_mod, '_inner_execute_direct', side_effect=fake):
+    with patch.object(_pyproject_execute_mod, '_inner_execute_direct', side_effect=fake):
         result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
     assert result is failure
     assert len(calls) == 1
@@ -226,7 +226,7 @@ def test_self_heal_skipped_when_broken_dir_already_exists(tmp_path):
     log_file = _make_log(tmp_path, '/bin/sh: uv: command not found')
     failure = {'status': 'error', 'exit_code': 127, 'log_file': log_file, 'command': './pw verify', 'error': ''}
     fake, calls = _patched_execute_direct([failure])
-    with patch.object(_python_execute_mod, '_inner_execute_direct', side_effect=fake):
+    with patch.object(_pyproject_execute_mod, '_inner_execute_direct', side_effect=fake):
         result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
     assert result is failure
     assert len(calls) == 1
@@ -238,7 +238,7 @@ def test_self_heal_passthrough_on_success(tmp_path):
     (tmp_path / '.pyprojectx').mkdir()
     success = {'status': 'success', 'exit_code': 0, 'log_file': '', 'command': './pw verify'}
     fake, calls = _patched_execute_direct([success])
-    with patch.object(_python_execute_mod, '_inner_execute_direct', side_effect=fake):
+    with patch.object(_pyproject_execute_mod, '_inner_execute_direct', side_effect=fake):
         result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
     assert result is success
     assert len(calls) == 1

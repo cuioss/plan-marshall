@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Python build operations - run, parse, check warnings, coverage report.
+"""Pyproject build operations - run, parse, check warnings, coverage report.
 
 Usage:
-    python_build.py run --command-args <args> [options]
-    python_build.py parse --log <path> [--mode <mode>]
-    python_build.py check-warnings --warnings <json> [--acceptable-warnings <json>]
-    python_build.py coverage-report [--project-path <path>] [--threshold <percent>]
-    python_build.py --help
+    pyproject_build.py run --command-args <args> [options]
+    pyproject_build.py parse --log <path> [--mode <mode>]
+    pyproject_build.py check-warnings --warnings <json> [--acceptable-warnings <json>]
+    pyproject_build.py coverage-report [--project-path <path>] [--threshold <percent>]
+    pyproject_build.py --help
 
 Subcommands:
     run             Execute build and auto-parse on failure (primary API)
@@ -24,9 +24,9 @@ from _build_cli import (
     safe_main,
 )
 from _build_coverage_report import create_coverage_report_handler
-from _python_cmd_discover import discover_python_modules
-from _python_cmd_parse import parse_log
-from _python_execute import cmd_run
+from _pyproject_cmd_discover import discover_python_modules
+from _pyproject_cmd_parse import parse_log
+from _pyproject_execute import cmd_run
 
 # --- Tool-specific configuration inlined from former wrapper files ---
 
@@ -46,7 +46,7 @@ cmd_check_warnings = create_check_warnings_handler(
 def main() -> int:
     """Main entry point."""
     return build_main(
-        'Python/pyprojectx build operations',
+        'Python/pyprojectx (build-pyproject) build operations',
         register_standard_subparsers(
             run_handler=cmd_run,
             run_args_help="Canonical command to execute (e.g., 'verify', 'module-tests', 'quality-gate')",

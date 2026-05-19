@@ -74,7 +74,7 @@ Per the plugin.json registration convention documented in `frontmatter-standards
 | build-gradle | script-only | Gradle module discovery and command execution |
 | build-maven | script-only | Maven module discovery and command execution |
 | build-npm | script-only | npm/Node.js module discovery and command execution |
-| build-python | script-only | Python (pyprojectx) module discovery and command execution |
+| build-pyproject | script-only | Python (pyprojectx) module discovery and command execution |
 
 ## Reference & Development Skills (6 total, 5 registered)
 

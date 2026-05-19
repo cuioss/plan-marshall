@@ -40,7 +40,7 @@ pm-dev-python/
 
 ## Build Operations
 
-Build operations (pyprojectx execution, parsing, discovery) are provided by `plan-marshall:build-python`, not this bundle. See `plan-marshall:extension-api/standards/build-execution.md` for execution patterns.
+Build operations (pyprojectx execution, parsing, discovery) are provided by `plan-marshall:build-pyproject`, not this bundle. See `plan-marshall:extension-api/standards/build-execution.md` for execution patterns.
 
 ## Integration
 

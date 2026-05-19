@@ -373,11 +373,11 @@ This is the Python/pytest-specific realization of the language-agnostic rule. Se
 
 ```bash
 # Run all tests
-python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests"
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests"
 
 # Run specific module
-python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests pm-dev-python"
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests pm-dev-python"
 
 # Run with coverage
-python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "coverage"
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "coverage"
 ```

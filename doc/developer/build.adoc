@@ -23,7 +23,7 @@ Never hard-code `./pw` in workflow or skill code. Always resolve build commands 
 
 [source,bash]
 ----
-python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "{command}"
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "{command}"
 ----
 
 The `./pw` shortcuts below are appropriate for ad-hoc local development only.

@@ -231,7 +231,7 @@ def _allocate_and_write_scaffold(metadata_factory: Callable[[str], dict], title:
             # ``manage-lessons`` is a global script with no plan context, so the
             # WARNING line lands in the date-suffixed global script-execution log.
             # The ``'global'`` sentinel matches the convention used by other
-            # global callers (build-python/build-npm/manage-architecture).
+            # global callers (build-pyproject/build-npm/manage-architecture).
             log_entry(
                 'script',
                 'global',

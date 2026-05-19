@@ -60,8 +60,8 @@ BUNDLES_DIR = 'marketplace/bundles'
 BUILD_SYSTEM = 'marshall-plugin'
 """Build system identifier for plugin bundles."""
 
-PYTHON_BUILD_BASE = 'python3 .plan/execute-script.py plan-marshall:build-python:python_build run'
-"""Base command for Python build execution via pm-dev-python."""
+PYPROJECT_BUILD_BASE = 'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run'
+"""Base command for Python build execution via plan-marshall:build-pyproject."""
 
 # Marketplace identification
 MARKETPLACE_JSON = 'marketplace/.claude-plugin/marketplace.json'
@@ -351,15 +351,15 @@ def build_commands(bundle_name: str) -> dict:
     """Build canonical commands for a bundle module.
 
     Each bundle gets the full set of canonical Python build commands
-    that delegate to pm-dev-python's python_build.py via execute-script.
+    that delegate to plan-marshall:build-pyproject's pyproject_build.py via execute-script.
 
     Args:
         bundle_name: Name of the bundle (e.g., 'pm-dev-java').
 
     Returns:
-        Dict of canonical commands using python_build execution.
+        Dict of canonical commands using pyproject_build execution.
     """
-    base = PYTHON_BUILD_BASE
+    base = PYPROJECT_BUILD_BASE
     return {
         'compile': f'{base} --command-args "compile {bundle_name}"',
         'test-compile': f'{base} --command-args "test-compile {bundle_name}"',

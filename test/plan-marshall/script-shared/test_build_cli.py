@@ -9,7 +9,7 @@ Covers:
   check-warnings).
 * :func:`_build_cli.build_main` — dispatches to the resolver before the
   selected handler reads ``args.project_dir``, so all Bucket B build
-  scripts (maven, gradle, npm, python_build) inherit the contract.
+  scripts (maven, gradle, npm, pyproject_build) inherit the contract.
 * :func:`resolve_project_dir.resolve_project_dir` — the canonical
   four-state contract:
 
@@ -20,7 +20,7 @@ Covers:
   - neither → main checkout
 
 The resolver tests are exercised at the library level (no subprocess)
-because per-build-script tests (``test_python_build``, ``test_maven``,
+because per-build-script tests (``test_pyproject_build``, ``test_maven``,
 ``test_gradle``, ``test_npm``) only pin the parser surface and the
 subprocess-level both-supplied error path. Centralising the deep
 behaviour here avoids 4× duplication.

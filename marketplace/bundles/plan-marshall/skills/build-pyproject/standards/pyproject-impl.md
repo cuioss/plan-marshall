@@ -1,4 +1,4 @@
-# Python Implementation Standards
+# Pyproject Implementation Standards
 
 Python/pyprojectx-specific standards for build execution, output parsing, and issue handling. For shared standards (timeouts, warnings, log files), see `extension-api/standards/build-systems-common.md`. For canonical commands, see `build-api-reference.md`.
 
@@ -104,4 +104,4 @@ python3 --version
 
 See SKILL.md for coverage report paths and parser details. See `build-api-reference.md` for shared build documentation.
 
-**Notation**: `plan-marshall:build-python:python_build`
+**Notation**: `plan-marshall:build-pyproject:pyproject_build`
