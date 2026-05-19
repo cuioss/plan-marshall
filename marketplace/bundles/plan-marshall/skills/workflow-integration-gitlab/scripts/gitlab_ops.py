@@ -597,6 +597,109 @@ def cmd_pr_comments(args: argparse.Namespace) -> dict:
     return fetch_pr_comments_data(args.pr_number, args.unresolved_only)
 
 
+# GitLab job ``status`` partitioning. The raw job-status vocabulary is
+# lower-case ``success | skipped | manual | failed | canceled | created |
+# pending | running | preparing | scheduled | waiting_for_resource``; see
+# lesson-2026-05-18-16-001 deliverable 4 for the canonical table.
+_JOB_STATUS_NON_FAILING: frozenset[str] = frozenset({'success', 'skipped', 'manual'})
+_JOB_STATUS_FAILING: frozenset[str] = frozenset({'failed', 'canceled'})
+_JOB_STATUS_WAIT: frozenset[str] = frozenset(
+    {'created', 'pending', 'running', 'preparing', 'scheduled', 'waiting_for_resource', ''}
+)
+
+
+def _normalize_job_status(job: dict) -> str:
+    """Return the canonical lower-case status for a GitLab job row.
+
+    Missing or null values are normalised to the empty string, which the
+    partition table treats as a wait-state.
+    """
+
+    raw = job.get('status')
+    if raw is None:
+        return ''
+    return str(raw).lower()
+
+
+def _build_failing_check_entry(job: dict) -> dict:
+    """Build the transport-rich ``failing_checks[]`` entry for a single job.
+
+    Mirrors the GitHub provider entry shape so deliverables 6 and 7 see a
+    provider-independent contract.
+    """
+
+    entry: dict[str, Any] = {
+        'name': job.get('name', 'unknown'),
+        'conclusion': _normalize_job_status(job) or 'pending',
+        'workflow_name': job.get('stage') or '',
+        'job_name': job.get('name', '') or '',
+        'started_at': job.get('started_at') or job.get('created_at') or '',
+        'completed_at': job.get('finished_at') or '',
+        'run_id': str(job.get('pipeline_id') or job.get('pipeline', {}).get('id', '') if isinstance(job.get('pipeline'), dict) else (job.get('pipeline_id') or '')),
+        'run_url': job.get('web_url') or '',
+    }
+    return entry
+
+
+def _classify_check_buckets(
+    jobs: list[dict],
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Partition GitLab job rows into ``(failing, wait, non_failing)``.
+
+    Unknown future statuses default to the failing partition (defense in
+    depth — an unknown status is never silently accepted as success).
+    """
+
+    failing: list[dict] = []
+    wait: list[dict] = []
+    non_failing: list[dict] = []
+    for job in jobs:
+        status = _normalize_job_status(job)
+        if status in _JOB_STATUS_NON_FAILING:
+            non_failing.append(job)
+        elif status in _JOB_STATUS_WAIT:
+            wait.append(job)
+        else:
+            failing.append(job)
+    return failing, wait, non_failing
+
+
+def _derive_overall_status(jobs: list[dict]) -> tuple[str, list[dict], list[dict]]:
+    """Derive ``overall | final_status`` plus failing-jobs transport.
+
+    Returns ``(status, failing_job_rows, wait_job_rows)`` where ``status``
+    is one of ``pending | success | failure | none``. The ``mixed`` outcome
+    is intentionally absent — every input resolves to one of the four
+    canonical states.
+    """
+
+    if not jobs:
+        return 'none', [], []
+    failing, wait, _non_failing = _classify_check_buckets(jobs)
+    if wait:
+        return 'pending', [], wait
+    if failing:
+        return 'failure', failing, []
+    return 'success', [], []
+
+
+def _fetch_mr_head_sha(pr_number: int | str) -> str:
+    """Resolve the head commit SHA for a MR via ``glab mr view``.
+
+    Returns the SHA on success; on any failure path returns an empty string
+    so callers can still emit the rest of the envelope without aborting.
+    """
+
+    returncode, stdout, _stderr = run_glab(['mr', 'view', str(pr_number), '--output', 'json'])
+    if returncode != 0:
+        return ''
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        return ''
+    return str(data.get('sha') or data.get('diff_refs', {}).get('head_sha') or '')
+
+
 def format_checks_toon(
     jobs: list[dict],
     *,
@@ -706,17 +809,24 @@ def cmd_ci_status(args: argparse.Namespace) -> dict:
             except json.JSONDecodeError:
                 pass
 
-    # Map GitLab pipeline status to overall status
-    status_map = {
-        'success': 'success',
-        'failed': 'failure',
-        'canceled': 'failure',
-        'skipped': 'success',
-        'running': 'pending',
-        'pending': 'pending',
-        'created': 'pending',
-    }
-    overall = status_map.get(pipeline_status, 'unknown')
+    # Derive overall via the canonical job-status partition. ``mixed`` is no
+    # longer possible — every input resolves to ``pending | success |
+    # failure | none``. See lesson-2026-05-18-16-001 deliverable 4.
+    overall, _failing_rows, _wait_rows = _derive_overall_status(jobs)
+    # When the pipeline envelope itself reports a definitive state but jobs
+    # are missing (rare API hiccup), fall back to the pipeline_status mapping
+    # so callers still see a sensible overall instead of ``none``.
+    if not jobs and pipeline_status and pipeline_status != 'unknown':
+        pipeline_map = {
+            'success': 'success',
+            'failed': 'failure',
+            'canceled': 'failure',
+            'skipped': 'success',
+            'running': 'pending',
+            'pending': 'pending',
+            'created': 'pending',
+        }
+        overall = pipeline_map.get(pipeline_status, overall)
 
     # Format checks table — ci_status has no caller-supplied duration ceiling,
     # so out-of-range aggregates are substituted with 0.
@@ -739,8 +849,6 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
     is_auth, err = check_auth()
     if not is_auth:
         return make_error('ci_wait', err)
-
-    completed_statuses = {'success', 'failed', 'canceled', 'skipped'}
 
     def check_fn() -> tuple[bool, dict]:
         returncode, stdout, stderr = run_glab(['mr', 'view', str(args.pr_number), '--output', 'json'])
@@ -765,10 +873,17 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
                 except json.JSONDecodeError:
                     pass
 
-        return True, {'pipeline_status': pipeline_status, 'jobs': jobs}
+        return True, {'pipeline_status': pipeline_status, 'jobs': jobs, 'pipeline_id': pipeline_id}
 
     def is_complete_fn(data: dict) -> bool:
-        return data.get('pipeline_status', 'unknown') in completed_statuses
+        jobs = data.get('jobs', [])
+        if not jobs:
+            # Fall back to pipeline_status when the jobs list is empty —
+            # some GitLab states (manual-only, no-op pipelines) report a
+            # terminal pipeline status with zero job rows.
+            return data.get('pipeline_status', 'unknown') in {'success', 'failed', 'canceled', 'skipped'}
+        _failing, wait, _non_failing = _classify_check_buckets(jobs)
+        return not wait
 
     result = poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
 
@@ -777,11 +892,19 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
 
     last_data = result['last_data']
     jobs = last_data.get('jobs', [])
+    pipeline_id = last_data.get('pipeline_id', '')
     # ci_wait already tracks its own poll duration — use it as the clamp ceiling
     # so an out-of-range aggregate is substituted with the actual poll time.
     check_dicts, total_elapsed = format_checks_toon(jobs, duration_ceiling=result['duration_sec'])
+    head_sha = _fetch_mr_head_sha(args.pr_number)
 
     if result['timed_out']:
+        # Wait-deadline exhaustion: at least one job is still in the wait
+        # partition. Enumerate every wait-state job as a ``failing_checks``
+        # entry so deliverables 6 and 7 can route the timeout into the
+        # ``ci-verify-timeout`` producer.
+        _f, wait_rows, _nf = _classify_check_buckets(jobs)
+        wait_entries = [_build_failing_check_entry(c) for c in wait_rows]
         error_data: dict[str, Any] = {
             'status': 'error',
             'operation': 'ci_wait',
@@ -789,14 +912,21 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
             'pr_number': args.pr_number,
             'duration_sec': result['duration_sec'],
             'last_status': 'pending',
+            'wait_outcome': 'deadline_exceeded',
+            'failing_checks': wait_entries,
+            'run_id': str(pipeline_id) if pipeline_id and pipeline_id != 'unknown' else '',
+            'head_sha': head_sha,
         }
         if check_dicts:
             error_data['elapsed_sec'] = total_elapsed
             error_data['checks'] = check_dicts
         return error_data
 
-    pipeline_status = last_data.get('pipeline_status', 'unknown')
-    final_status = 'success' if pipeline_status == 'success' else 'failure'
+    # Wait loop terminated naturally — every job reached a terminal status.
+    # Partition and derive the final status; the ``mixed`` outcome no longer
+    # exists.
+    final_status, failing_rows, _wait_rows = _derive_overall_status(jobs)
+    failing_checks_entries = [_build_failing_check_entry(c) for c in failing_rows]
 
     return {
         'status': 'success',
@@ -807,6 +937,10 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
         'polls': result['polls'],
         'elapsed_sec': total_elapsed,
         'checks': check_dicts,
+        'failing_checks': failing_checks_entries,
+        'wait_outcome': 'completed',
+        'run_id': str(pipeline_id) if pipeline_id and pipeline_id != 'unknown' else '',
+        'head_sha': head_sha,
     }
 
 
@@ -846,16 +980,21 @@ def _fetch_pr_overall_ci_status(pr_number: int) -> tuple[bool, Any]:
     if not pipeline or not pipeline_status:
         return True, 'none'
 
-    status_map = {
-        'success': 'success',
-        'failed': 'failure',
-        'canceled': 'failure',
-        'skipped': 'success',
-        'running': 'pending',
-        'pending': 'pending',
-        'created': 'pending',
-    }
-    overall = status_map.get(pipeline_status, 'pending')
+    # Map the pipeline-level status to the canonical four-valued vocabulary
+    # via the same partition the per-job classifier uses. This keeps the
+    # provider-independent envelope shape consistent across cmd_ci_status,
+    # cmd_ci_wait, and _fetch_pr_overall_ci_status. See
+    # lesson-2026-05-18-16-001 deliverable 4.
+    synthetic_job = {'status': pipeline_status}
+    failing, wait, non_failing = _classify_check_buckets([synthetic_job])
+    if wait:
+        overall = 'pending'
+    elif failing:
+        overall = 'failure'
+    elif non_failing:
+        overall = 'success'
+    else:
+        overall = 'pending'
     return True, overall
 
 

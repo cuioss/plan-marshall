@@ -1052,6 +1052,138 @@ def cmd_pr_edit(args: argparse.Namespace) -> dict:
     return result
 
 
+# GitHub check ``conclusion`` (raw ``state`` from ``gh pr checks --json state``)
+# partitioning. The raw conclusion vocabulary is upper-case
+# ``SUCCESS | SKIPPED | NEUTRAL | FAILURE | TIMED_OUT | CANCELLED |
+# ACTION_REQUIRED | STALE | STARTUP_FAILURE | IN_PROGRESS | QUEUED | PENDING |
+# null``. The three partitions below carry the canonical conclusion → outcome
+# mapping for ``cmd_ci_status``, ``cmd_ci_wait``, and
+# ``_fetch_pr_overall_ci_status``; see lesson-2026-05-18-16-001 deliverable 1
+# for the table.
+_CONCLUSION_NON_FAILING: frozenset[str] = frozenset({'SUCCESS', 'SKIPPED', 'NEUTRAL'})
+_CONCLUSION_FAILING: frozenset[str] = frozenset(
+    {'FAILURE', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STALE', 'STARTUP_FAILURE'}
+)
+_CONCLUSION_WAIT: frozenset[str] = frozenset({'IN_PROGRESS', 'QUEUED', 'PENDING', ''})
+
+
+def _normalize_conclusion(check: dict) -> str:
+    """Return the canonical upper-case conclusion for a check row.
+
+    Reads the raw ``state`` field from ``gh pr checks --json state``. Missing
+    or null values are normalised to the empty string, which the partition
+    table treats as a wait-state.
+    """
+
+    raw = check.get('state')
+    if raw is None:
+        return ''
+    return str(raw).upper()
+
+
+def _extract_run_id_from_link(link: str | None) -> str:
+    """Extract the workflow run id from a check ``link`` URL.
+
+    GitHub check links follow the pattern
+    ``https://github.com/<owner>/<repo>/actions/runs/<run_id>/job/<job_id>``.
+    Returns the run id segment when present, otherwise an empty string.
+    """
+
+    if not link:
+        return ''
+    marker = '/actions/runs/'
+    idx = link.find(marker)
+    if idx == -1:
+        return ''
+    tail = link[idx + len(marker):]
+    run_id = tail.split('/', 1)[0]
+    return run_id
+
+
+def _build_failing_check_entry(check: dict) -> dict:
+    """Build the transport-rich ``failing_checks[]`` entry for a single check.
+
+    Includes the per-check fields downstream consumers (deliverables 6 and 7)
+    need to classify failure modes and persist artifacts.
+    """
+
+    link = check.get('link') or ''
+    entry: dict[str, Any] = {
+        'name': check.get('name', 'unknown'),
+        'conclusion': _normalize_conclusion(check) or 'PENDING',
+        'workflow_name': check.get('workflow') or '',
+        'job_name': check.get('name', '') or '',
+        'started_at': check.get('startedAt') or '',
+        'completed_at': check.get('completedAt') or '',
+        'run_id': _extract_run_id_from_link(link),
+        'run_url': link,
+    }
+    return entry
+
+
+def _classify_check_buckets(
+    checks: list[dict],
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Partition GitHub check rows into ``(failing, wait, non_failing)``.
+
+    The partition uses the raw ``state`` (conclusion) field per the canonical
+    table documented in lesson-2026-05-18-16-001 deliverable 1. Conclusions
+    not present in any partition table are treated as failing (defense in
+    depth — an unknown conclusion is never silently accepted as success).
+    """
+
+    failing: list[dict] = []
+    wait: list[dict] = []
+    non_failing: list[dict] = []
+    for check in checks:
+        conclusion = _normalize_conclusion(check)
+        if conclusion in _CONCLUSION_NON_FAILING:
+            non_failing.append(check)
+        elif conclusion in _CONCLUSION_WAIT:
+            wait.append(check)
+        else:
+            # Includes _CONCLUSION_FAILING and any unknown future conclusion.
+            failing.append(check)
+    return failing, wait, non_failing
+
+
+def _fetch_pr_head_sha(pr_number: int | str) -> str:
+    """Resolve the head commit SHA for a PR via ``gh pr view``.
+
+    Returns the SHA on success; on any failure path returns an empty string
+    so callers can still emit the rest of the envelope without aborting. The
+    head SHA is needed by deliverable 7 to key artifact persistence by run.
+    """
+
+    returncode, stdout, _stderr = run_gh(['pr', 'view', str(pr_number), '--json', 'headRefOid'])
+    if returncode != 0:
+        return ''
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        return ''
+    return str(data.get('headRefOid') or '')
+
+
+def _derive_overall_status(checks: list[dict]) -> tuple[str, list[dict], list[dict]]:
+    """Derive ``overall | final_status`` plus failing-checks transport.
+
+    Returns ``(status, failing_check_rows, wait_check_rows)`` where ``status``
+    is one of ``pending | success | failure | none``. The ``mixed`` outcome
+    is intentionally absent — every input resolves to one of the four
+    canonical states.
+    """
+
+    if not checks:
+        return 'none', [], []
+    failing, wait, _non_failing = _classify_check_buckets(checks)
+    if wait:
+        return 'pending', [], wait
+    if failing:
+        return 'failure', failing, []
+    return 'success', [], []
+
+
 def format_checks_toon(
     checks: list[dict],
     *,
@@ -1132,17 +1264,10 @@ def cmd_ci_status(args: argparse.Namespace) -> dict:
     except json.JSONDecodeError:
         return make_error('ci_status', 'Failed to parse gh output', stdout[:100])
 
-    # Determine overall status (bucket: pass, fail, pending, skipped)
-    if not checks:
-        overall = 'none'
-    elif all(c.get('bucket') == 'pass' for c in checks):
-        overall = 'success'
-    elif any(c.get('bucket') == 'fail' for c in checks):
-        overall = 'failure'
-    elif all(c.get('bucket') in ('pass', 'skipped') for c in checks):
-        overall = 'success'
-    else:
-        overall = 'pending'
+    # Determine overall status via the canonical conclusion partition.
+    # ``mixed`` is no longer a possible outcome — every input resolves to
+    # ``pending | success | failure | none``.
+    overall, _failing_rows, _wait_rows = _derive_overall_status(checks)
 
     # Format checks table — ci_status has no caller-supplied duration ceiling,
     # so out-of-range aggregates are substituted with 0.
@@ -1179,7 +1304,10 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
 
     def is_complete_fn(data: dict) -> bool:
         checks = data.get('checks', [])
-        return bool(checks) and all(c.get('bucket') != 'pending' for c in checks)
+        if not checks:
+            return False
+        _failing, wait, _non_failing = _classify_check_buckets(checks)
+        return not wait
 
     result = poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
 
@@ -1191,7 +1319,16 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
     # so an out-of-range aggregate is substituted with the actual poll time.
     check_dicts, total_elapsed = format_checks_toon(checks, duration_ceiling=result['duration_sec'])
 
+    head_sha = _fetch_pr_head_sha(args.pr_number)
+
     if result['timed_out']:
+        # Wait-deadline exhaustion: at least one check is still in the wait
+        # partition. Enumerate every wait-state check as a ``failing_checks``
+        # entry so deliverables 6 and 7 can route the timeout into the
+        # ``ci-verify-timeout`` producer.
+        _f, wait_rows, _nf = _classify_check_buckets(checks)
+        wait_entries = [_build_failing_check_entry(c) for c in wait_rows]
+        run_ids = sorted({e['run_id'] for e in wait_entries if e['run_id']})
         error_data: dict[str, Any] = {
             'status': 'error',
             'operation': 'ci_wait',
@@ -1199,19 +1336,28 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
             'pr_number': args.pr_number,
             'duration_sec': result['duration_sec'],
             'last_status': 'pending',
+            'wait_outcome': 'deadline_exceeded',
+            'failing_checks': wait_entries,
+            'run_id': run_ids[0] if run_ids else '',
+            'head_sha': head_sha,
         }
         if check_dicts:
             error_data['elapsed_sec'] = total_elapsed
             error_data['checks'] = check_dicts
         return error_data
 
-    # Determine final status
-    if all(c.get('bucket') in ('pass', 'skipped') for c in checks):
-        final_status = 'success'
-    elif any(c.get('bucket') == 'fail' for c in checks):
-        final_status = 'failure'
-    else:
-        final_status = 'mixed'
+    # Wait loop terminated naturally — every check reached a terminal
+    # conclusion. Partition and derive the final status; the ``mixed``
+    # outcome no longer exists.
+    final_status, failing_rows, _wait_rows = _derive_overall_status(checks)
+    failing_checks_entries = [_build_failing_check_entry(c) for c in failing_rows]
+    run_ids = sorted(
+        {
+            _extract_run_id_from_link(c.get('link') or '')
+            for c in checks
+            if _extract_run_id_from_link(c.get('link') or '')
+        }
+    )
 
     return {
         'status': 'success',
@@ -1222,6 +1368,10 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
         'polls': result['polls'],
         'elapsed_sec': total_elapsed,
         'checks': check_dicts,
+        'failing_checks': failing_checks_entries,
+        'wait_outcome': 'completed',
+        'run_id': run_ids[0] if run_ids else '',
+        'head_sha': head_sha,
     }
 
 
@@ -1255,16 +1405,7 @@ def _fetch_pr_overall_ci_status(pr_number: int) -> tuple[bool, Any]:
     except json.JSONDecodeError:
         return False, {'error': 'Failed to parse gh output', 'context': stdout[:100]}
 
-    if not checks:
-        overall = 'none'
-    elif any(c.get('bucket') == 'pending' for c in checks):
-        overall = 'pending'
-    elif any(c.get('bucket') == 'fail' for c in checks):
-        overall = 'failure'
-    elif all(c.get('bucket') in ('pass', 'skipped') for c in checks):
-        overall = 'success'
-    else:
-        overall = 'pending'
+    overall, _failing_rows, _wait_rows = _derive_overall_status(checks)
 
     return True, overall
 

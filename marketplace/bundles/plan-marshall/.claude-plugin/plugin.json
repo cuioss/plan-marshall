@@ -39,6 +39,7 @@
     "./skills/execute-task",
     "./skills/extension-api",
     "./skills/manage-architecture",
+    "./skills/manage-ci-artifacts",
     "./skills/manage-config",
     "./skills/manage-execution-manifest",
     "./skills/manage-files",

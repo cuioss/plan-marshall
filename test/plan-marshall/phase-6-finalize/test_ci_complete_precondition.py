@@ -441,3 +441,187 @@ def test_source_script_has_no_self_bootstrap():
             'target/claude/ or the plugin cache. See lesson '
             '2026-05-18-11-001.'
         )
+
+
+# ---------------------------------------------------------------------------
+# Lesson-2026-05-18-16-001 deliverable 5 — failing_checks + wait_outcome
+# forwarding through the precondition resolver.
+# ---------------------------------------------------------------------------
+
+
+def test_failure_forwards_failing_checks_list():
+    """A ``ci wait`` envelope with ``failing_checks`` MUST forward the list
+    verbatim through the resolver return so the dispatcher can name the
+    failing checks in the consumer step's display_detail and emit the
+    structured triage finding documented in deliverable 5.
+    """
+    plan_id = 'ci-precond-failing-checks'
+    with PlanContext(plan_id=plan_id):
+        git_stub = _StubGitHead(_SHA_A)
+        wait_stub = _StubCiWait(
+            [
+                {
+                    'status': 'success',
+                    'final_status': 'failure',
+                    'failing_checks': [
+                        {'name': 'lint', 'conclusion': 'FAILURE'},
+                        {'name': 'dep-review', 'conclusion': 'CANCELLED'},
+                    ],
+                    'wait_outcome': 'completed',
+                }
+            ]
+        )
+
+        result = resolve(
+            plan_id=plan_id,
+            worktree_path=_WORKTREE,
+            pr_number=_PR,
+            ci_wait_runner=wait_stub,
+            git_head_resolver=git_stub,
+        )
+
+        assert result['status'] == 'wait_failed'
+        assert result['ci_final_status'] == 'failure'
+        assert result['failing_checks'] == [
+            {'name': 'lint', 'conclusion': 'FAILURE'},
+            {'name': 'dep-review', 'conclusion': 'CANCELLED'},
+        ]
+        assert result['wait_outcome'] == 'completed'
+
+
+def test_no_checks_returns_distinct_ci_final_status():
+    """``final_status: none`` from ``ci wait`` MUST surface as
+    ``ci_final_status: no_checks`` so the dispatcher can distinguish
+    "CI never ran" from a real failure and route to the
+    ``ci-verify-missing`` producer (deliverable 6).
+    """
+    plan_id = 'ci-precond-no-checks'
+    with PlanContext(plan_id=plan_id):
+        git_stub = _StubGitHead(_SHA_A)
+        wait_stub = _StubCiWait(
+            [
+                {
+                    'status': 'success',
+                    'final_status': 'none',
+                    'failing_checks': [],
+                    'wait_outcome': 'completed',
+                }
+            ]
+        )
+
+        result = resolve(
+            plan_id=plan_id,
+            worktree_path=_WORKTREE,
+            pr_number=_PR,
+            ci_wait_runner=wait_stub,
+            git_head_resolver=git_stub,
+        )
+
+        assert result['status'] == 'wait_failed'
+        assert result['ci_final_status'] == 'no_checks', (
+            'no_checks must be distinct from failure so the dispatcher can '
+            'route to ci-verify-missing instead of ci-verify-build'
+        )
+        assert result['failing_checks'] == []
+        # Cache MUST remain absent — no_checks is a non-cacheable verdict.
+        assert not _cache_path(plan_id).exists()
+
+
+def test_timeout_forwards_wait_outcome_deadline_exceeded():
+    """A wait-deadline exhaustion MUST forward
+    ``wait_outcome: deadline_exceeded`` and the still-running checks so the
+    dispatcher routes to the ``ci-verify-timeout`` producer.
+    """
+    plan_id = 'ci-precond-timeout-forward'
+    with PlanContext(plan_id=plan_id):
+        git_stub = _StubGitHead(_SHA_A)
+        wait_stub = _StubCiWait(
+            [
+                {
+                    'status': 'error',
+                    'operation': 'ci_wait',
+                    'error': 'Timeout waiting for CI',
+                    'pr_number': _PR,
+                    'duration_sec': 600,
+                    'last_status': 'pending',
+                    'wait_outcome': 'deadline_exceeded',
+                    'failing_checks': [
+                        {'name': 'slow-deploy', 'conclusion': 'PENDING'},
+                    ],
+                }
+            ]
+        )
+
+        result = resolve(
+            plan_id=plan_id,
+            worktree_path=_WORKTREE,
+            pr_number=_PR,
+            ci_wait_runner=wait_stub,
+            git_head_resolver=git_stub,
+        )
+
+        assert result['status'] == 'wait_failed'
+        assert result['ci_final_status'] == 'timeout'
+        assert result['wait_outcome'] == 'deadline_exceeded'
+        assert [c['name'] for c in result['failing_checks']] == ['slow-deploy']
+
+
+def test_satisfied_does_not_carry_failing_checks_field():
+    """``satisfied`` (cache hit) MUST NOT include the failing_checks /
+    wait_outcome fields — they are wait_failed-only signals. Deliverable 5
+    specifies "satisfied and wait_succeeded outcomes produce no finding";
+    the absence of the fields is the structural complement.
+    """
+    plan_id = 'ci-precond-satisfied-no-failing-checks'
+    with PlanContext(plan_id=plan_id):
+        git_stub = _StubGitHead(_SHA_A)
+        # First call: populate the cache via wait_succeeded.
+        wait_stub = _StubCiWait(
+            [{'status': 'success', 'final_status': 'success'}]
+        )
+        resolve(
+            plan_id=plan_id,
+            worktree_path=_WORKTREE,
+            pr_number=_PR,
+            ci_wait_runner=wait_stub,
+            git_head_resolver=git_stub,
+        )
+        # Second call: cache hit → satisfied.
+        result = resolve(
+            plan_id=plan_id,
+            worktree_path=_WORKTREE,
+            pr_number=_PR,
+            ci_wait_runner=wait_stub,
+            git_head_resolver=git_stub,
+        )
+
+        assert result['status'] == 'satisfied'
+        # The "no triage finding on satisfied" guarantee is structurally
+        # enforced by the absence of the failing_checks field — the SKILL.md
+        # dispatcher only emits findings when wait_failed is observed.
+        assert 'failing_checks' not in result
+        assert 'wait_outcome' not in result
+
+
+def test_wait_succeeded_does_not_carry_failing_checks_field():
+    """``wait_succeeded`` (fresh poll succeeded) MUST NOT include
+    failing_checks / wait_outcome — same rationale as satisfied above.
+    """
+    plan_id = 'ci-precond-wait-succeeded-no-failing-checks'
+    with PlanContext(plan_id=plan_id):
+        git_stub = _StubGitHead(_SHA_A)
+        wait_stub = _StubCiWait(
+            [{'status': 'success', 'final_status': 'success'}]
+        )
+
+        result = resolve(
+            plan_id=plan_id,
+            worktree_path=_WORKTREE,
+            pr_number=_PR,
+            ci_wait_runner=wait_stub,
+            git_head_resolver=git_stub,
+        )
+
+        assert result['status'] == 'wait_succeeded'
+        assert 'failing_checks' not in result
+        assert 'wait_outcome' not in result
