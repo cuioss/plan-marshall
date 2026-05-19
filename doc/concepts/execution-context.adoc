@@ -3,6 +3,8 @@
 :toc: left
 :toclevels: 2
 
+xref:../../README.md[Plan Marshall] » xref:index.adoc[Concepts]
+
 Why Plan Marshall ships exactly one role-eligible agent (link:../../marketplace/bundles/plan-marshall/agents/execution-context.md[`plan-marshall:execution-context`]) and how every plan-marshall `Task:` invocation dispatches through it.
 
 == One Generic Dispatcher

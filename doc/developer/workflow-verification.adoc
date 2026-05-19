@@ -3,6 +3,8 @@
 :toc: left
 :toclevels: 2
 
+xref:../../README.md[Plan Marshall] » xref:index.adoc[Developer Guide]
+
 Workflow output verification is provided by the opt-in `plan-retrospective` skill rather than a dedicated `/verify-workflow` command. The structural check scripts (`collect-artifacts.py` and `verify-structure.py`) live inside `plan-retrospective` as aspect scripts.
 
 == What it verifies

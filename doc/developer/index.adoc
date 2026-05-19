@@ -3,6 +3,8 @@
 :toc: left
 :toclevels: 2
 
+xref:../../README.md[Plan Marshall] » Developer Guide
+
 Working on Plan Marshall itself: build, test, generate, distribute. If you are operating Plan Marshall in a project, see xref:../user/index.adoc[User Guide] instead.
 
 == Pages

@@ -3,6 +3,8 @@
 :toc: left
 :toclevels: 2
 
+xref:../../README.md[Plan Marshall] » Concepts
+
 How Plan Marshall is built and why. These pages are short navigational summaries over the canonical specifications co-located with the code under `marketplace/bundles/plan-marshall/`. When a concept page describes a contract, mechanism, or extension point, follow the `== Related` links to the authoritative source.
 
 == Pages

@@ -3,6 +3,8 @@
 :toc: left
 :toclevels: 3
 
+xref:../../README.md[Plan Marshall] » xref:index.adoc[User Guide]
+
 How a project author tunes which model and effort tier runs for each LLM-judgement workflow in Plan Marshall. This page is self-contained for everyday use; spec-level details (precise resolution order, env-var override semantics, build-time guards) live in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md[`effort-variants.md`] — referenced from each section where they matter.
 
 == What this does

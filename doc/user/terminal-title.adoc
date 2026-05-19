@@ -3,6 +3,8 @@
 :toc: left
 :toclevels: 2
 
+xref:../../README.md[Plan Marshall] » xref:index.adoc[User Guide]
+
 Operational guidance for the per-session terminal-title indicator that Plan Marshall configures via `/marshall-steward` → Configuration → Terminal title.
 
 The wizard wires hooks and a `statusLine` entry into `./.claude/settings.local.json` so each Claude Code session tab shows `▶` (running), `?` (waiting), `◯` (idle), or `✓` (done) followed by the active plan and phase. It also sets `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` to stop Claude Code's built-in OSC emitter from clobbering the title on every render cycle.

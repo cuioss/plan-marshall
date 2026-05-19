@@ -3,6 +3,8 @@
 :toc: left
 :toclevels: 2
 
+xref:../../README.md[Plan Marshall] » xref:index.adoc[Concepts]
+
 How Plan Marshall keeps the LLM on the documented process — four cooperating mechanisms, from skill-loaded guidance the model can still ignore, to a mechanical gate that exits non-zero on drift.
 
 == Overview

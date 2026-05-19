@@ -3,6 +3,8 @@
 :toc: left
 :toclevels: 2
 
+xref:../../README.md[Plan Marshall] » xref:index.adoc[Developer Guide]
+
 == Overview
 
 `plan-marshall` publishes its Claude Code target to two refs on `cuioss/plan-marshall`: the `dist-claude` orphan branch (snapshot, force-updated on every push to `main`) and the immutable dist tag `claude/v{x.y.z}` (per-release). Each ref's root holds a `.claude-plugin/marketplace.json` and the expanded bundle tree, so Claude Code's `/plugin marketplace add` against the ref registers the marketplace directly — no intermediate fetch, no asset extraction.

@@ -3,6 +3,8 @@
 :toc: left
 :toclevels: 2
 
+xref:../../README.md[Plan Marshall] » xref:index.adoc[Concepts]
+
 Plan Marshall organises every non-trivial change as a *plan* that moves through six phases. Each phase is a skill (`phase-1-init` … `phase-6-finalize`) whose workflow doc is dispatched through the xref:execution-context.adoc[execution-context dispatcher]. The `plan-marshall` meta-skill (link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/SKILL.md[`plan-marshall/SKILL.md`]) ties them together and is what `/plan-marshall` orchestrates.
 
 image::../resources/diagrams/phase-lifecycle.svg[Plan lifecycle — six phases from init through finalize with named forward gates and a curved back-edge for the finalize → execute loop-back outcome, align=center]

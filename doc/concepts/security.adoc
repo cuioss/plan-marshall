@@ -3,6 +3,8 @@
 :toc: left
 :toclevels: 2
 
+xref:../../README.md[Plan Marshall] » xref:index.adoc[Concepts]
+
 How Plan Marshall reduces the prompt-vs-blast-radius trade-off that Claude Code's stock permission modes force on developers — and a frank statement of what it does **not** solve.
 
 == Overview

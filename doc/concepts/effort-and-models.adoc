@@ -3,6 +3,8 @@
 :toc: left
 :toclevels: 2
 
+xref:../../README.md[Plan Marshall] » xref:index.adoc[Concepts]
+
 How Plan Marshall selects which model and effort level runs each LLM-judgement workflow.
 
 Project authors configure `models.roles.<phase>[.<subkey>]` (hierarchical kebab-case keys like `phase-3-outline.research`, `phase-6-finalize.verification-feedback`) in `.plan/marshal.json`. The Claude target emits six `execution-context[-{level}].md` agent variants for the sole role-eligible agent. Dispatch sites resolve the target via `manage-config effort resolve-target --phase <phase> [--role <subkey>]` and call the matching variant by name. End users get the right model per role at dispatch time without any user-side build step or Claude Code restart.

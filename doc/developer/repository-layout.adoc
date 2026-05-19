@@ -3,6 +3,8 @@
 :toc: left
 :toclevels: 2
 
+xref:../../README.md[Plan Marshall] » xref:index.adoc[Developer Guide]
+
 The directory layout of the Plan Marshall source tree, with developer-facing notes on what each top-level directory holds and which artifacts it produces.
 
 This page is for contributors working **on** Plan Marshall. If you are using Plan Marshall in your own project, the user-facing layout of `.plan/` is documented in xref:../user/getting-started.adoc#_where_things_live[Getting Started › Where things live].

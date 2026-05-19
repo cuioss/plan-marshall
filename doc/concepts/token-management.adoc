@@ -3,6 +3,8 @@
 :toc: left
 :toclevels: 2
 
+xref:../../README.md[Plan Marshall] » xref:index.adoc[Concepts]
+
 How Plan Marshall keeps LLM token spend bounded — and where it deliberately spends more in exchange for verifiable process.
 
 == Overview

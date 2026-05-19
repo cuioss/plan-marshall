@@ -3,6 +3,8 @@
 :toc: left
 :toclevels: 2
 
+xref:../../README.md[Plan Marshall] » xref:index.adoc[Concepts]
+
 A technology-neutral build abstraction. From the LLM's point of view a build is a single synchronous method call: "run the canonical command X on module Y, return when it's done." The model is suspended on the tool call until the build finishes — no prompt tokens spent waiting, no log scrolled into context, just one structured TOON back with status, errors, optional partially-filtered warnings, and a pointer to the full log on disk.
 
 This is one of Plan Marshall's most powerful features. It turns a 5–10 minute Maven build (or `pytest` run, or `npm test`, …) from a token-burning, attention-fragmenting interaction into a single dispatched operation.
