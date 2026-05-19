@@ -5,24 +5,26 @@
 
 xref:../../README.md[Plan Marshall] » xref:index.adoc[Concepts]
 
-Plan Marshall runs a chain of automated reviews across phases 2 through 6 — analytical (Q-Gate over outline and task plan), internal (build / verify), structural (pre-submission self-review), and external (CI, Sonar, PR review comments). Every review feeds the **same** findings pipeline, the **same** per-finding triage envelope, and produces the **same** four decision outcomes (`fixed` / `suppressed` / `accepted` / `taken_into_account`). The uniformity is what makes the chain reproducible.
+Plan Marshall runs a chain of automated reviews across phases 2 through 6 — analytical (Q-Gate over outline and task plan), internal (build / verify), structural (pre-submission self-review), and external (CI verify, Sonar roundtrip, PR review comments). Every review feeds the **same** findings pipeline, the **same** per-finding triage envelope, and produces the **same** four decision outcomes (`fixed` / `suppressed` / `accepted` / `taken_into_account`). The uniformity is what makes the chain reproducible.
 
 == Overview
 
-* **Six review surfaces**, all funneling into one store:
+* **Seven review surfaces**, all funneling into one store:
   - **Q-Gate** over the outline + task plan (phase-3, phase-4, also a phase-2 lesson-derived check).
   - **Build / verify** during phase-5-execute (per-language build skills as producers).
   - **Pre-submission self-review** at the start of phase-6-finalize (structural review of the diff).
+  - **CI verify** immediately after `create-pr` (phase-6-finalize). Classifies CI failures into a multi-failure-mode taxonomy.
   - **Automated review** of PR comments after CI completes (phase-6-finalize).
   - **Sonar roundtrip** after CI completes (phase-6-finalize).
+  - **`/workflow-pr-doctor`** slash command (on-demand multi-source PR sweep).
 * **One unified store** — `.plan/local/{plans,archived-plans}/{plan_id}/artifacts/findings/{type}.jsonl`, append-only, hash-id deduplicated.
-* **One triage envelope** — the `verification-feedback` workflow, parameterised by `producer ∈ {build-runner, sonar, pr-comment, plugin-doctor, pr-state}`. Steps 2-6 are identical across producers; Step 1 is the producer-specific fetch.
+* **One triage envelope** — the `verification-feedback` workflow, parameterised by a `producer` runtime input. The five base modes (`build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`) plus the seven ci-verify subtypes (`ci-verify-build`, `-policy`, `-timeout`, `-cancelled`, `-action-required`, `-stale`, `-missing`) share Steps 2-6; Step 1 is the producer-specific fetch.
 * **Per-domain decision knowledge** — pluggable via the `ext-triage-{domain}` extension point. The triage workflow loads the right domain's standards at dispatch time.
 * **Four resolution outcomes** — `fixed`, `suppressed`, `accepted`, `taken_into_account`. Persisted with the finding; pending counts gate phase transitions via phase-handshake invariants.
 
 == The findings pipeline — one mechanism, many producers
 
-image::../resources/diagrams/findings-pipeline.svg[Findings pipeline — workflow bodies on the left (Q-Gate validation, phase-5 verify-steps, phase-6 pre-submission/automated-review/sonar-roundtrip, /workflow-pr-doctor) drive producer scripts that write to the manage-findings store. Pure consumers on the right (phase-3/4 qgate-resolve for Q-Gate findings, verification-feedback envelope plus per-finding ext-triage-{domain} for all other types) query and resolve., align=center]
+image::../resources/diagrams/findings-pipeline.svg[Findings pipeline — workflow bodies on the left (Q-Gate validation, phase-5 verify-steps, phase-6 pre-submission, phase-6 ci-verify, phase-6 automated-review, phase-6 sonar-roundtrip, /workflow-pr-doctor) drive producer scripts that write to the manage-findings store. Pure consumers on the right (phase-3/4 qgate-resolve for Q-Gate findings, verification-feedback envelope plus per-finding ext-triage-{domain} for all other types) query and resolve., align=center]
 
 Every quality signal — a Q-Gate verification failure, a build error, a Sonar issue, a reviewer's PR comment, a self-review hunk concern — becomes a row in one of the per-type JSONL files. The same `manage-findings` API reads/writes them. The same per-finding triage envelope decides what to do with them. Each producer is a script (xref:tools-and-scripts.adoc[Tools and Scripts]), so the producer side is deterministic; LLM judgement enters only at the triage step.
 
@@ -96,7 +98,32 @@ Canonical workflow: link:../../marketplace/bundles/plan-marshall/skills/phase-6-
 
 == External reviews — phase-6-finalize, post-CI
 
-Both external roundtrips are gated by the dispatcher-resolved `ci-complete` precondition (declared via `requires: [ci-complete]` in the workflow doc's frontmatter). The phase-6-finalize dispatcher waits for CI to go green (600-second ceiling) before either body runs; on `wait_failed` it marks the step `failed` and continues. Triage budgets are independent of CI queue depth.
+All three external roundtrips declare `requires: [ci-complete]` in their workflow-doc frontmatter; the phase-6-finalize dispatcher resolves the precondition before each body runs. The default order is `ci-verify` → `automated-review` → `sonar-roundtrip`, with `ci-verify` placed immediately after `create-pr` so the CI verdict is already triaged before the reviewer-bot and Sonar consumers run. Two precondition modes are in use: `ci-verify` runs in **`consume-failures`** mode (failing checks become structured findings, no short-circuit); `automated-review` and `sonar-roundtrip` keep the default **`strict`** mode (a non-success CI marks the step `failed` and the dispatcher continues). Triage budgets are independent of CI queue depth.
+
+=== CI verify (`producer=ci-verify-*`)
+
+Workflow: link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/ci-verify.md[`phase-6-finalize/workflow/ci-verify.md`]. Standards: link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/ci-verify.md[`phase-6-finalize/standards/ci-verify.md`].
+
+Placement: AFTER `create-pr`, BEFORE `architecture-refresh` / `automated-review` / `sonar-roundtrip`. The step is the *only* finalize consumer that runs `ci-complete` in `consume-failures` mode — it ingests `failing_checks`, `final_status`, and `wait_outcome` from the resolver without short-circuiting, then classifies each failing check.
+
+The producer side reads CI run state via `tools-integration-ci:ci status`, persists per-job log slices via `manage-ci-artifacts persist` (runs even on green CI so retrospectives have full evidence), then classifies each failing check against this taxonomy:
+
+[cols="1,2,2,3", options="header"]
+|===
+| Row | Failure mode | Producer string | Detection
+
+| b | Build / test / lint / coverage failure | `ci-verify-build` | `conclusion=failure` AND `workflow_name` matches an architecture-resolved build profile (`verify`, `quality-gate`, `module-tests`, `coverage`)
+| c | Policy-workflow failure | `ci-verify-policy` | `conclusion=failure` AND `workflow_name` does NOT match a build profile (license/cla, dep-review, codeql, …)
+| e | Timeout | `ci-verify-timeout` | `conclusion=timed_out` OR `wait_outcome=deadline_exceeded`
+| f | Cancelled | `ci-verify-cancelled` | `conclusion=cancelled`
+| g | Action required | `ci-verify-action-required` | `conclusion=action_required`
+| h | Stale | `ci-verify-stale` | `conclusion=stale`
+| i | No checks reported | `ci-verify-missing` | `final_status=none` (zero checks across the PR)
+|===
+
+Sonar quality-gate failures (row a in the canonical taxonomy) are deliberately excluded from `ci-verify`'s scope — Sonar's quality gate is fetched by `sonar-roundtrip` from the Sonar API, not from the GitHub-checks surface. If a project wires Sonar as a GitHub status check, that check still appears under row (c) `ci_policy_failure`, but `sonar-roundtrip` remains the authoritative consumer of the gate verdict.
+
+Each classified check produces ONE finding with `finding-type: triage`, severity `warning`, message tagged with the subtype (`[ci_build_failure]`, `[ci_policy_failure]`, …) for retrospective grep, and a `source-path` pointing at the persisted per-job log. The consumer side then dispatches `verification-feedback` **once per producer string** (not once per finding) so the triage envelope batches findings of the same kind. If any per-producer triage returns `loop_back`, the step marks `loop_back`; otherwise `done`.
 
 === Automated review — PR comments (`producer=pr-comment`)
 
@@ -128,7 +155,7 @@ When Sonar isn't configured for the project (no project key, no credentials), th
 
 == The unified triage envelope — `verification-feedback`
 
-Workflow: link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/verification-feedback.md[`plan-marshall/workflow/verification-feedback.md`]. **One workflow, five producer modes.**
+Workflow: link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/verification-feedback.md[`plan-marshall/workflow/verification-feedback.md`]. **One workflow, twelve producer modes** — five base (`build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`) plus the seven `ci-verify-{build,policy,timeout,cancelled,action-required,stale,missing}` subtypes.
 
 The `producer` runtime input selects only Step 1's branch — the producer-specific fetch/parse work. Steps 2-6 are identical across producers:
 
@@ -136,7 +163,7 @@ The `producer` runtime input selects only Step 1's branch — the producer-speci
 |===
 | Step | Action
 
-| 1 (producer-mode branch) | `build-runner` / `sonar` / `pr-comment` — store-only query (pre-flight was already mechanical). `plugin-doctor` — inline marketplace analysis (LLM-heavy). `pr-state` — multi-source PR sweep (CI status + comments + Sonar).
+| 1 (producer-mode branch) | `build-runner` / `sonar` / `pr-comment` / `ci-verify-*` — store-only query (pre-flight was already mechanical). `plugin-doctor` — inline marketplace analysis (LLM-heavy). `pr-state` — multi-source PR sweep (CI status + comments + Sonar).
 | 2 | Per-finding loop — enumerate every pending finding from the store.
 | 3 | For each finding: resolve domain from `file_path`, load `ext-triage-{domain}` skill.
 | 4 | Apply per-domain standards (severity, suppression, acceptable-to-accept, pr-comment-disposition) to decide **FIX** / **SUPPRESS** / **ACCEPT** / `AskUserQuestion`.
@@ -212,6 +239,8 @@ Combined with the audit trail (xref:audit-trail.adoc[Audit Trail]), every review
 * link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/q-gate-validation.md[`q-gate-validation.md`] — Q-Gate validator workflow (3 call sites, shared body)
 * link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/verification-feedback.md[`verification-feedback.md`] — the unified triage envelope (five producer modes)
 * link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md[`pre-submission-self-review.md`] — structural self-review workflow
+* link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/ci-verify.md[`ci-verify.md`] — CI failure-classification workflow (7 producer subtypes)
+* link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/ci-verify.md[`ci-verify standards`] — multi-failure-mode taxonomy, precondition-mode contract, build-profile match rule
 * link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/automated-review.md[`automated-review.md`] — PR review comment workflow
 * link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/sonar-roundtrip.md[`sonar-roundtrip.md`] — Sonar issue workflow
 * link:../../marketplace/bundles/plan-marshall/skills/manage-findings/SKILL.md[`manage-findings/SKILL.md`] — the unified findings store API

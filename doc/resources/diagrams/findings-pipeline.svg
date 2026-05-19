@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- theme-handling: A (theme-neutral) -->
 <!-- conforms to: pm-documents:ref-svg-diagrams (visual-language + diagram-type-block) -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 580"
      role="img" aria-labelledby="title desc"
      font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
   <title id="title">Findings pipeline — producer / store / consumer flow</title>
-  <desc id="desc">Plan-marshall findings pipeline. The producer column lists the workflow bodies that drive writes to the manage-findings store, each annotated with the underlying script they call. The consumer column lists the entities that read findings and decide their resolution: the in-phase qgate-resolve steps that handle Q-Gate findings inline, the unified verification-feedback envelope (five producer modes) that handles build / Sonar / PR-comment / plugin-doctor / pr-state findings, and the per-domain ext-triage skill loaded per finding by verification-feedback.</desc>
+  <desc id="desc">Plan-marshall findings pipeline. The producer column lists the workflow bodies that drive writes to the manage-findings store, each annotated with the underlying script they call. The consumer column lists the entities that read findings and decide their resolution: the in-phase qgate-resolve steps that handle Q-Gate findings inline, the unified verification-feedback envelope (twelve producer modes — five base plus seven ci-verify subtypes) that handles every other finding type, and the per-domain ext-triage skill loaded per finding by verification-feedback.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
@@ -30,7 +30,7 @@
   <!-- PRODUCERS (left column) — workflow bodies that drive writes      -->
   <!-- =============================================================== -->
   <text x="150" y="28" class="col-header">PRODUCERS</text>
-  <rect class="stroke" x="20" y="44" width="260" height="420" rx="6" ry="6"/>
+  <rect class="stroke" x="20" y="44" width="260" height="495" rx="6" ry="6"/>
 
   <text x="36" y="78"  class="item-bold">Q-Gate validation</text>
   <text x="36" y="96"  class="item">phases 2 · 3 · 4</text>
@@ -42,25 +42,29 @@
   <text x="36" y="206" class="item-bold">phase-6 pre-submission</text>
   <text x="36" y="224" class="item">via tools-self-review</text>
 
-  <text x="36" y="261" class="item-bold">phase-6 automated-review</text>
-  <text x="36" y="279" class="item">via workflow-integration-</text>
-  <text x="36" y="295" class="item">     {github, gitlab}</text>
+  <text x="36" y="261" class="item-bold">phase-6 ci-verify</text>
+  <text x="36" y="279" class="item">via tools-integration-ci</text>
+  <text x="36" y="295" class="item">     (consume-failures)</text>
 
-  <text x="36" y="332" class="item-bold">phase-6 sonar-roundtrip</text>
-  <text x="36" y="350" class="item">via workflow-integration-sonar</text>
+  <text x="36" y="332" class="item-bold">phase-6 automated-review</text>
+  <text x="36" y="350" class="item">via workflow-integration-</text>
+  <text x="36" y="366" class="item">     {github, gitlab}</text>
 
-  <text x="36" y="387" class="item-bold">/workflow-pr-doctor</text>
-  <text x="36" y="405" class="item">via tools-integration-ci</text>
-  <text x="36" y="421" class="item">     (pr-state mode)</text>
+  <text x="36" y="403" class="item-bold">phase-6 sonar-roundtrip</text>
+  <text x="36" y="421" class="item">via workflow-integration-sonar</text>
 
-  <text x="150" y="450" class="col-sub">workflow body — drives the script call</text>
+  <text x="36" y="458" class="item-bold">/workflow-pr-doctor</text>
+  <text x="36" y="476" class="item">via tools-integration-ci</text>
+  <text x="36" y="492" class="item">     (pr-state mode)</text>
+
+  <text x="150" y="525" class="col-sub">workflow body — drives the script call</text>
 
   <!-- =============================================================== -->
   <!-- STORE (middle column) — manage-findings                          -->
   <!-- =============================================================== -->
   <text x="450" y="28" class="col-header">manage-findings</text>
   <text x="450" y="44" class="col-sub">artifacts/findings/</text>
-  <rect class="stroke" x="320" y="60" width="260" height="404" rx="6" ry="6"/>
+  <rect class="stroke" x="320" y="60" width="260" height="479" rx="6" ry="6"/>
 
   <text x="450" y="92"  class="item-c">qgate-{phase}.jsonl</text>
   <text x="450" y="113" class="item-c">assessments.jsonl</text>
@@ -75,17 +79,21 @@
   <text x="450" y="246" class="item-c">sonar-issue.jsonl</text>
   <line class="sep" x1="360" y1="258" x2="540" y2="258"/>
 
-  <text x="450" y="281" class="item-c">…  per-type</text>
+  <text x="450" y="281" class="item-c">triage.jsonl</text>
+  <text x="450" y="298" class="col-sub">(ci-verify subtypes)</text>
+  <line class="sep" x1="360" y1="312" x2="540" y2="312"/>
 
-  <text x="450" y="345" class="col-sub">append-only · hash_id dedup</text>
-  <text x="450" y="365" class="col-sub">CLI: add  ·  query  ·  resolve</text>
-  <text x="450" y="385" class="col-sub">qgate { add · query · resolve }</text>
+  <text x="450" y="335" class="item-c">…  per-type</text>
+
+  <text x="450" y="430" class="col-sub">append-only · hash_id dedup</text>
+  <text x="450" y="450" class="col-sub">CLI: add  ·  query  ·  resolve</text>
+  <text x="450" y="470" class="col-sub">qgate { add · query · resolve }</text>
 
   <!-- =============================================================== -->
   <!-- CONSUMERS (right column) — read findings, decide resolution      -->
   <!-- =============================================================== -->
   <text x="750" y="28" class="col-header">CONSUMERS</text>
-  <rect class="stroke" x="620" y="44" width="260" height="420" rx="6" ry="6"/>
+  <rect class="stroke" x="620" y="44" width="260" height="495" rx="6" ry="6"/>
 
   <text x="636" y="78"  class="item-bold">phase-3-outline</text>
   <text x="636" y="96"  class="item">qgate-resolve</text>
@@ -96,35 +104,39 @@
   <line class="sep" x1="636" y1="170" x2="864" y2="170"/>
 
   <text x="636" y="195" class="item-bold">verification-feedback</text>
-  <text x="636" y="213" class="item">one workflow, five</text>
-  <text x="636" y="229" class="item">producer modes:</text>
+  <text x="636" y="213" class="item">one workflow,</text>
+  <text x="636" y="229" class="item">twelve producer modes:</text>
   <text x="650" y="247" class="item">build-runner · sonar</text>
   <text x="650" y="263" class="item">pr-comment · plugin-doctor</text>
   <text x="650" y="279" class="item">pr-state</text>
+  <text x="650" y="297" class="item">ci-verify-{build,policy,</text>
+  <text x="650" y="313" class="item">  timeout,cancelled,</text>
+  <text x="650" y="329" class="item">  action-required,stale,</text>
+  <text x="650" y="345" class="item">  missing}</text>
 
-  <line class="sep" x1="636" y1="305" x2="864" y2="305"/>
+  <line class="sep" x1="636" y1="370" x2="864" y2="370"/>
 
-  <text x="636" y="330" class="item-bold">ext-triage-{domain}</text>
-  <text x="636" y="348" class="item">loaded per finding by</text>
-  <text x="636" y="364" class="item">verification-feedback</text>
+  <text x="636" y="395" class="item-bold">ext-triage-{domain}</text>
+  <text x="636" y="413" class="item">loaded per finding by</text>
+  <text x="636" y="429" class="item">verification-feedback</text>
 
-  <text x="750" y="430" class="col-sub">FIX · SUPPRESS · ACCEPT · ASK</text>
-  <text x="750" y="450" class="col-sub">writes resolution back to the store</text>
+  <text x="750" y="495" class="col-sub">FIX · SUPPRESS · ACCEPT · ASK</text>
+  <text x="750" y="515" class="col-sub">writes resolution back to the store</text>
 
   <!-- =============================================================== -->
   <!-- Arrows between columns                                            -->
   <!-- =============================================================== -->
 
   <!-- producers → store: add -->
-  <line class="arrow" x1="280" y1="220" x2="316" y2="220" marker-end="url(#arrow)"/>
-  <text x="298" y="212" class="arrow-lbl">add</text>
+  <line class="arrow" x1="280" y1="280" x2="316" y2="280" marker-end="url(#arrow)"/>
+  <text x="298" y="272" class="arrow-lbl">add</text>
 
   <!-- store → consumers: query -->
-  <line class="arrow" x1="584" y1="205" x2="616" y2="205" marker-end="url(#arrow)"/>
-  <text x="600" y="197" class="arrow-lbl">query</text>
+  <line class="arrow" x1="584" y1="265" x2="616" y2="265" marker-end="url(#arrow)"/>
+  <text x="600" y="257" class="arrow-lbl">query</text>
 
   <!-- consumers → store: resolve -->
-  <line class="arrow" x1="616" y1="240" x2="584" y2="240" marker-end="url(#arrow)"/>
-  <text x="600" y="232" class="arrow-lbl">resolve</text>
+  <line class="arrow" x1="616" y1="300" x2="584" y2="300" marker-end="url(#arrow)"/>
+  <text x="600" y="292" class="arrow-lbl">resolve</text>
 
 </svg>
