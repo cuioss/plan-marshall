@@ -5,7 +5,7 @@
 
 == Overview
 
-`plan-marshall` ships its Claude Code target as a perfect-match marketplace root on the `dist-claude` orphan branch and immutable dist tags `claude/v{x.y.z}`. There is no tarball, no live URL, no PyPI/npm registry, and no GitHub Pages. Installs are pure `git-clone-from-ref` operations performed by Claude Code's `/plugin marketplace add` against `cuioss/plan-marshall` at the chosen ref.
+`plan-marshall` publishes its Claude Code target to two refs on `cuioss/plan-marshall`: the `dist-claude` orphan branch (snapshot, force-updated on every push to `main`) and the immutable dist tag `claude/v{x.y.z}` (per-release). Each ref's root holds a `.claude-plugin/marketplace.json` and the expanded bundle tree, so Claude Code's `/plugin marketplace add` against the ref registers the marketplace directly — no intermediate fetch, no asset extraction.
 
 == Installing — snapshot (bleeding edge)
 
@@ -65,7 +65,7 @@ Two events trigger the `Claude Distribute` workflow:
 * A push to `main` updates the `dist-claude` snapshot branch (force-orphan).
 * A push of a `v{x.y.z}` tag updates `dist-claude` and creates the immutable dist tag `claude/v{x.y.z}` pointing at the new orphan commit.
 
-There are no pull-request triggers, no scheduled or nightly builds, no `latest` floating tag, and no `workflow_dispatch`. A maintainer pushes the source tag manually; the workflow does the rest. Force-pushes to `dist-claude` and pushes of `claude/v*` dist tags are performed by the organization-wide `cui-release-bot` identity, not by the maintainer who pushed the source tag.
+A maintainer pushes the source tag manually; the workflow does the rest. Force-pushes to `dist-claude` and pushes of `claude/v*` dist tags are performed by the organization-wide `cui-release-bot` identity, not by the maintainer who pushed the source tag.
 
 == Source tag vs. dist tag
 
@@ -83,16 +83,6 @@ The publish workflow is target-parametrized via a GitHub Actions `strategy.matri
 Today the matrix has one entry (`claude`) and the user-facing install commands in this document are Claude-specific. Adding a future target (for example `opencode`) is a config-only change — one line appended to the matrix list — and adds its own `dist-opencode` branch plus `opencode/v*` dist tags. End-user install commands remain per-target: a hypothetical opencode user would run `/plugin marketplace add cuioss/plan-marshall@dist-opencode` (or `@opencode/v{x.y.z}`) against an OpenCode-compatible client.
 
 The single source `v{x.y.z}` tag drives all targets; versioning stays unified across the marketplace.
-
-== What is NOT shipped
-
-* No GitHub Pages
-* No deploy branch on `main`
-* No committed `dist/` directory on `main`
-* No `target/` directory in `main`'s history (`.gitignore` excludes `target/`)
-* No tarball assets attached to GitHub Releases
-
-The orphan branch and dist tags ARE the distribution — installs are pure git-clone-from-branch-or-tag-ref.
 
 == See also
 

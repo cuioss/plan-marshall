@@ -36,20 +36,6 @@ Plan Marshall is distributed via a `dist-claude` orphan branch (snapshot, tracks
 
 Refresh later with `/plugin marketplace update plan-marshall` followed by `/reload-plugins`.
 
-### Pinned release
-
-```bash
-/plugin marketplace add cuioss/plan-marshall@claude/v{x.y.z}
-/plugin install plan-marshall@plan-marshall
-/reload-plugins
-```
-
-Substitute `{x.y.z}` with the desired version. The `claude/v*` tag is immutable.
-
-Install additional bundles (e.g. `/plugin install pm-dev-java@plan-marshall`) per Claude Code's plugin tooling.
-
-The full distribution contract — publish triggers, versioning, source-vs-dist tag semantics, multi-target architecture — lives in [Developer Documentation › Distribution](doc/developer/distribution.adoc).
-
 ## Getting Started
 
 ### 1. Configure the project
