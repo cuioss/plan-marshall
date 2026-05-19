@@ -96,7 +96,7 @@ For each consumer, the `**Change per file:**` field MUST describe the migration 
 
 ---
 
-## 4. Worked Example: `load_derived_data` (lesson 2026-04-30-23-001)
+## 4. Worked Example: `load_derived_data`
 
 The driving failure case for this standard came from plan `phase-a-arch-split`, which split monolithic `derived-data.json` into a per-module layout. TASK-2's deliverable removed `load_derived_data` and `save_derived_data` from `_architecture_core` and added `load_module_derived` / `save_module_derived` / `load_project_meta` / `save_project_meta`. The deliverable's `Affected files` enumerated only the manage-architecture core files — the pm-dev-java consumer (`profiles.py::list_profiles`) was not listed.
 

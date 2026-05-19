@@ -240,7 +240,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   --audit-plan-id {plan_id}
 ```
 
-**Worked example (lesson 2026-04-18-05-002)**: Plan `plan-retrospective-opt-in-audit` Deliverable 4 listed every file under `.claude/skills/verify-workflow/` for deletion. Pattern A run against the worktree produced `test/verify-workflow/conftest.py:12` loading `scripts/verify-structure.py` via `spec_from_file_location`. `test/verify-workflow/` was not listed as an affected file of any deliverable in the outline, so the suppression rule did not apply and a Q-Gate finding would now be emitted — blocking phase-3-outline until the outline adds `test/verify-workflow/` to the deletion deliverable (or adds a follow-up deliverable that removes it). With this check in place, task 10 (holistic `module-tests`) would never have hit the `FileNotFoundError` at pytest collection time.
+**Worked example**: Plan `plan-retrospective-opt-in-audit` Deliverable 4 listed every file under `.claude/skills/verify-workflow/` for deletion. Pattern A run against the worktree produced `test/verify-workflow/conftest.py:12` loading `scripts/verify-structure.py` via `spec_from_file_location`. `test/verify-workflow/` was not listed as an affected file of any deliverable in the outline, so the suppression rule did not apply and a Q-Gate finding would now be emitted — blocking phase-3-outline until the outline adds `test/verify-workflow/` to the deletion deliverable (or adds a follow-up deliverable that removes it). With this check in place, task 10 (holistic `module-tests`) would never have hit the `FileNotFoundError` at pytest collection time.
 
 #### 2.9 Consumer Sweep Completeness Check
 

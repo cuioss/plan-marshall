@@ -106,7 +106,7 @@ This separation keeps the lesson-conversion mechanics (file ownership) decoupled
 | Source | Derivation Rule | Example |
 |--------|----------------|---------|
 | Description | First 3-5 meaningful words | "add-dark-mode-toggle" |
-| Lesson | Prefix + lesson ID | "lesson-2025-12-02-001" |
+| Lesson | Prefix + lesson ID | `lesson-{lesson-id}` |
 | Issue | Prefix + issue number | "issue-123" |
 
 Rules:

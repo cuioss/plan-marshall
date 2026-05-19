@@ -55,11 +55,10 @@ findings[*]{severity,message}:
 
 ### Phase-5 invariants (precondition-guarded)
 
-The four rules below were added as part of the lesson-2026-05-08-14-001 cure
-for `[OUTCOME]`-log coverage loss on agent-initiated re-dispatch. Each rule
-is **precondition-guarded** so it does NOT false-positive on plans whose
-execution predates the corresponding deliverable. When the precondition is
-absent, the rule emits no finding.
+The four rules below guard `[OUTCOME]`-log coverage against loss on
+agent-initiated re-dispatch. Each rule is **precondition-guarded** so it does
+NOT false-positive on plans whose execution predates the corresponding
+deliverable. When the precondition is absent, the rule emits no finding.
 
 - **OUTCOME_COVERAGE** (category: `OUTCOME_COVERAGE`) — **Precondition**: at
   least one `[OUTCOME] (plan-marshall:phase-5-execute) Completed` entry

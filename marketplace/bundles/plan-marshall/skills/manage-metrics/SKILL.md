@@ -229,7 +229,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics reco
 ```
 
 **Parameters:**
-- `--phase` — Phase whose dispatch terminated (must be a valid phase name; in practice this is `5-execute` for the lesson-2026-05-08-14-001 use case, but the subcommand accepts any valid phase).
+- `--phase` — Phase whose dispatch terminated (must be a valid phase name; in practice this is `5-execute`, but the subcommand accepts any valid phase).
 - `--termination-cause` — Why the dispatch ended. Required — missing or unrecognised values are rejected as script errors (there is no implicit fallback). One of:
   - `voluntary_checkpoint` — the agent emitted a "Returning control to orchestrator" / "progress checkpoint" line and stopped with pending work in the queue.
   - `task_complete_returned_verbatim` — the agent returned `execute-task`'s bare `task_complete` payload without wrapping it.

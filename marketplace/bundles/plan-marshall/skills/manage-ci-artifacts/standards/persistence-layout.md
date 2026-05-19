@@ -3,7 +3,7 @@
 Standards document for the `manage-ci-artifacts` skill. Defines the
 on-disk layout, manifest schema, idempotence contract, and retention
 policy for the persistence layer that backs the `ci-verify` finalize
-step (lesson-2026-05-18-16-001 deliverable 6 + 7).
+step.
 
 ## Storage layout
 

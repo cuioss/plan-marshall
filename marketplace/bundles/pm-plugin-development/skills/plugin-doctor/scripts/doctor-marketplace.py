@@ -32,6 +32,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from _analyze_argument_naming import analyze_argument_naming
+from _analyze_lesson_id_in_skill_prose import analyze_lesson_id_in_skill_prose
 from _analyze_shell_substitution_in_skills import analyze_shell_substitution_in_skills
 from _analyze_test_conventions import (
     analyze_subprocess_pythonpath,
@@ -344,6 +345,14 @@ def cmd_analyze(args) -> dict:
     all_issues.extend(shell_substitution_issues)
     total_issues += len(shell_substitution_issues)
 
+    # Marketplace-wide no-lesson-id-in-skill-prose rule. Unconditionally
+    # active — strips narrative lesson-ID citations from skill prose while
+    # exempting structural-provenance contexts and the lesson-domain
+    # allowlist. Analyzer is regex-cheap.
+    lesson_id_issues = analyze_lesson_id_in_skill_prose(marketplace_root)
+    all_issues.extend(lesson_id_issues)
+    total_issues += len(lesson_id_issues)
+
     # Marketplace-wide argument-naming rule cluster (notation/subcommand/
     # flag/Canonical-Forms cross-check). Gated OFF by default; opt in via
     # ``--rules argument_naming`` or the ``--enable-argument-naming`` alias.
@@ -485,6 +494,12 @@ def cmd_quality_gate(args) -> dict:
     all_issues.extend(shell_substitution_findings)
     rule_summaries.append(
         {'rule': 'analyze_shell_substitution_in_skills', 'findings': len(shell_substitution_findings)}
+    )
+
+    lesson_id_findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+    all_issues.extend(lesson_id_findings)
+    rule_summaries.append(
+        {'rule': 'analyze_lesson_id_in_skill_prose', 'findings': len(lesson_id_findings)}
     )
 
     return {

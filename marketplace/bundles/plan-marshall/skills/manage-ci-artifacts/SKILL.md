@@ -8,9 +8,9 @@ scope: plan
 # Manage CI Artifacts Skill
 
 Persistence layer for CI run artifacts. The `ci-verify` finalize step
-(lesson-2026-05-18-16-001 deliverable 6) calls this skill to write a
-per-job log slice plus a `manifest.toon` under
-`artifacts/ci-runs/{run_id}/` inside the plan directory at classification
+calls this skill to write a per-job log slice plus a `manifest.toon`
+under `artifacts/ci-runs/{run_id}/` inside the plan directory at
+classification
 time. The eager-fetch model keeps the evidence on disk before
 retrospectives run, immune to GitHub's 90-day log retention window.
 
