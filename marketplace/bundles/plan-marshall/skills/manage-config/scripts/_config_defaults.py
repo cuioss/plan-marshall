@@ -154,7 +154,7 @@ BUILT_IN_FINALIZE_STEP_DESCRIPTIONS = {
     'default:pre-push-quality-gate': 'Run quality-gate per affected bundle as the last gate before push',
     'default:commit-push': 'Commit and push changes',
     'default:create-pr': 'Create pull request',
-    'default:ci-verify': 'Classify CI run failures into the multi-failure-mode taxonomy and emit one structured triage finding per failing check',
+    'default:ci-verify': 'Classify CI run failures into the multi-failure-mode taxonomy and emit one structured triage finding per failing check (requires: [ci-complete] in consume-failures mode)',
     'default:automated-review': 'CI automated review (CI completion is a dispatcher-resolved precondition declared via requires: [ci-complete] on this step; triage-only 900 s budget)',
     'default:sonar-roundtrip': 'Sonar analysis roundtrip',
     'default:lessons-capture': 'Record lessons learned',
