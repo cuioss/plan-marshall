@@ -48,7 +48,7 @@ The bulk of project configuration. Canonical schema and field reference: link:..
 [#effort-and-models]
 === Effort and model selection
 
-Effort tuning has its own dedicated user-facing page — wizard walkthrough, presets, polymorphic `marshal.json` shape, worked example, research-tier note, troubleshooting. See xref:efforts.adoc[Efforts]. For the conceptual three-layer overview see xref:../concepts/effort-and-models.adoc[Concepts › Effort and Models].
+Effort tuning has its own dedicated user-facing page — wizard walkthrough, presets, polymorphic `marshal.json` shape, worked example, research-tier note, troubleshooting. See xref:efforts.adoc[Efforts]. For the conceptual three-layer overview see xref:../concepts/execution-context.adoc#per-role-model-selection[Concepts › Execution Context › Per-Role Model Selection].
 
 [#review-gates]
 === Review gates
@@ -143,7 +143,7 @@ Three paths, in increasing order of automation:
 
 == Related
 
-* xref:../concepts/effort-and-models.adoc[Concepts › Effort and Models] — three-layer overview (levels, roles, variants)
+* xref:../concepts/execution-context.adoc#per-role-model-selection[Concepts › Execution Context › Per-Role Model Selection] — three-layer overview (levels, roles, variants)
 * xref:../concepts/execution-context.adoc[Concepts › Execution Context] — why edits take effect on the next dispatch
 * link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] — canonical marshal.json schema
 * link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/api-reference.md[`api-reference.md`] — `manage-config` CLI reference

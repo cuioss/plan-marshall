@@ -25,4 +25,4 @@ Developer work touches the dispatcher emission and per-role model system regular
 
 * xref:repository-layout.adoc[Repository Layout] — directory map of the source tree: `marketplace/`, `target/`, `test/`, `doc/`, `.plan/`, `.claude/`, build wrappers.
 * xref:../concepts/execution-context.adoc[Concepts › Execution Context] — the dispatcher that drives variant emission described in xref:marketplace-build.adoc[Marketplace Build].
-* xref:../concepts/effort-and-models.adoc[Concepts › Effort and Models] — the per-role model system whose variants the build emits.
+* xref:../concepts/execution-context.adoc#per-role-model-selection[Concepts › Execution Context › Per-Role Model Selection] — the per-role model system whose variants the build emits.

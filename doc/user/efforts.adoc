@@ -186,7 +186,7 @@ unset CLAUDE_CODE_SUBAGENT_MODEL
 
 == Reference
 
-* xref:../concepts/effort-and-models.adoc[Concepts › Effort and Models] — the three-layer overview (levels, roles, variants)
+* xref:../concepts/execution-context.adoc#per-role-model-selection[Concepts › Execution Context › Per-Role Model Selection] — the three-layer overview (levels, roles, variants)
 * xref:../concepts/execution-context.adoc[Concepts › Execution Context] — what the `execution-context-{level}` agent does at dispatch time
 * link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md[`effort-variants.md`] — resolver contract & spec (precise resolution rules, env-var override, build-time `max` guard)
 * link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-roles.md[`effort-roles.md`] — full role registry (sub-key → workflow doc → dispatch site)

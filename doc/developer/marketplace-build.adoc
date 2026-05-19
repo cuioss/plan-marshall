@@ -75,7 +75,7 @@ One-time migration on a developer machine:
 == Related
 
 * xref:../concepts/execution-context.adoc[Concepts › Execution Context] — why one dispatcher
-* xref:../concepts/effort-and-models.adoc[Concepts › Effort and Models] — entry-point map for the per-role model system
+* xref:../concepts/execution-context.adoc#per-role-model-selection[Concepts › Execution Context › Per-Role Model Selection] — entry-point map for the per-role model system
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-dynamic-level-executor.md[`ext-point-dynamic-level-executor.md`] — agent-emission contract
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-execution-context-workflow.md[`ext-point-execution-context-workflow.md`] — workflow-doc contract
 * link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-roles.md[`effort-roles.md`] — role registry
