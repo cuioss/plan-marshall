@@ -35,7 +35,19 @@ Not every step belongs in its own dispatch. The granularity heuristics in link:.
 * **Bundle-shared-context** — a multi-step LLM workflow runs inside ONE dispatch envelope rather than N sequential dispatches.
 * **Per-iteration only when parallel-or-different-models** — N parallel dispatches are justified only when each subagent runs independently. The sole such case in the marketplace is `enrich-module` dispatched under phase-6-finalize from architecture-refresh Tier-1.
 
-// TODO: expand with a fully worked example tracing one phase-5 verification-feedback dispatch from resolver → variant → workflow body → return TOON.
+== Dispatch Lifecycle
+
+image::../resources/diagrams/dispatch-walkthrough.svg[Sequence diagram of one execution-context dispatch — the orchestrator resolves the level via manage-config, constructs a five-field prompt body, dispatches Task: execution-context-{level}, suspends while the subagent loads dev-general-practices plus caller-named skills and reads/executes the workflow doc, then records the TOON return via manage-status mark-step-done, align=center]
+
+The dispatch is synchronous. The orchestrator suspends on the `Task:` call for the entire duration of the subagent's run (skill loads, workflow read, internal loops, AskUserQuestion gates) and resumes only when the subagent returns its TOON record. No tokens are billed to the orchestrator during the suspension — only the subagent's `<usage>` is counted.
+
+Three properties make the 8-step shape worth pinning:
+
+* **Step 2's level resolution reads `marshal.json` fresh.** A configuration edit takes effect on the *next* dispatch — no Claude Code restart needed. The variant target string returned by the resolver is what `Task:` is called with.
+* **Step 4's prompt body has exactly five required fields.** `name`, `plan_id`, `skills[]`, exactly one of `workflow`/`instructions`, and `WORKTREE`. Workflow-specific runtime inputs (`producer`, `track`, `module`, …) layer on top per the workflow doc's contract.
+* **Step 6's skill loads are deterministic.** `dev-general-practices` is implicit-first, then each `skills[]` entry in caller-declared order, then `Read` on the workflow doc. The order is part of the contract — see xref:skill-handling.adoc[Skill Handling].
+
+Three worked end-to-end traces (a single-workflow phase entry, a `verification-feedback` sub-dispatch by reference, and a parallel `enrich-module` fan-out) live in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/dispatch-walkthrough.md[`ref-workflow-architecture/standards/dispatch-walkthrough.md`].
 
 == Related
 

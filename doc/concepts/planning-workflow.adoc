@@ -54,14 +54,27 @@ A handful of workflows run inside multiple phases. They live under link:../../ma
 * link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/enrich-module.md[`enrich-module.md`] — Tier-1 architecture enrichment invoked from phase-6 architecture-refresh.
 * link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/recipe.md[`recipe.md`], link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning-lessons-aggregate.md[`planning-lessons-aggregate.md`] — recipe/lesson orchestration.
 
+== Dispatch Call Graph
+
+image::../resources/diagrams/call-graph.svg[Call graph of plan-marshall dispatches — the orchestrator at top fans out to six phase envelopes, three of which dispatch shared workflow bodies (q-gate-validation, verification-feedback, enrich-module) under specified conditions, align=center]
+
+Every arrow above is a `Task: plan-marshall:execution-context-{level}` dispatch. The orchestrator runs in the main agent's context; each phase envelope is a separate subagent. The three shared envelopes at the bottom are workflow bodies invoked from multiple phases — the same `*.md` runs from every caller, but the `{level}` resolves under the calling phase's role registry, so the model/effort can differ per call site.
+
+The conditionals on the bottom arrows are the per-call-site predicates that govern whether the dispatch fires:
+
+* `phase-3-outline` Step 11 is skipped when `scope_estimate=surgical` AND `change_type ∈ {bug_fix, tech_debt, verification}` AND `deliverable_count=1`. Every other path through outline triggers it.
+* `phase-5-execute` dispatches `verification-feedback` only when the task verification (`verification.passed`) comes back false.
+* `phase-6-finalize` `automated-review`, `sonar-roundtrip`, and the `pr-doctor` slash command all use the same `verification-feedback` shape, parameterised by `producer`.
+* `phase-6-finalize` `architecture-refresh` Tier-1 is the only per-iteration parallel dispatch in the contract — one envelope per affected module, fanned out in parallel.
+
+The full graph (every conditional, every shared workflow, every inline-script step) is canonical in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/call-graph.md[`ref-workflow-architecture/standards/call-graph.md`]. The 8-step anatomy of one dispatch (resolve → construct → dispatch → load → execute → return → record) is in xref:execution-context.adoc[Execution Context].
+
 == Phase Boundaries
 
 Two boundaries that catch most violations:
 
 * **Refine never implements code.** If a `phase-2-refine` dispatch edits files outside `.plan/local/{plans,worktrees}/{plan_id}/`, that is a contract violation.
 * **Outline never mutates source files.** Outline is read-only outside the plan directory.
-
-// TODO: expand with sequence diagrams from `dispatch-walkthrough.md` and `call-graph.md` once images render correctly in the AsciiDoc pipeline.
 
 == Related
 
