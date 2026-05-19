@@ -56,6 +56,7 @@ jobs:
           publish_branch: ${{ matrix.branch_name }}
           publish_dir: ./${{ matrix.publish_dir }}
           force_orphan: true
+          enable_jekyll: true
           user_name: cui-release-bot
           user_email: cui-release-bot@cuioss.de
           commit_message: "chore(dist): publish ${{ matrix.publish_dir }} from ${{ github.sha }}"
