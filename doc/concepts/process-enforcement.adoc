@@ -7,7 +7,7 @@ How Plan Marshall keeps the LLM on the documented process — four cooperating m
 
 == Overview
 
-Observed behavior, not theory: LLMs drift. Every rule and invariant below was promoted from an incident in the lessons store — e.g. lesson `2026-04-29-23-002`, "three recurrences in ~3 days" of workflows inventing non-existent CLI subcommands. The four layers compose in increasing order of bindingness so the next drift terminates higher up.
+LLMs drift. The four layers below compose in increasing order of bindingness so a drift terminates as high up the stack as possible.
 
 image::../resources/diagrams/enforcement-layers.svg[Process enforcement — four layers stacked from soft (skill-loaded text) to hard (mechanical gate). Layer 1 is the dev-general-practices hard rules. Layer 2 is the script-executor proxy plus manage-* funnel for all .plan/ access. Layer 3 is the Q-Gate findings checkpoint resolved at the next phase's entry. Layer 4 is the phase-handshake invariant registry that captures fingerprints at completion and verifies them at entry, refusing to advance on drift., align=center]
 
