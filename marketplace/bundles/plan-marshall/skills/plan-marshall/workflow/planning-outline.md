@@ -90,7 +90,46 @@ Task: plan-marshall:{target}
     WORKTREE: {worktree_path}
 ```
 
-The agent returns the outline summary (`track`, `deliverable_count`, `qgate_pending_count`, etc.) in its TOON. The Complex-Track per-deliverable loop (Steps 9c + 10 + 10b) iterates *inside* this envelope; the per-deliverable loop never spawns per-iteration subagents.
+The agent returns the outline summary (`track`, `deliverable_count`, `qgate_pending_count`, `qgate_validation_required`, etc.) in its TOON. The Complex-Track per-deliverable loop (Steps 9c + 10 + 10b) iterates *inside* this envelope; the per-deliverable loop never spawns per-iteration subagents.
+
+**Post-return q-gate-validation dispatch (conditional)**: Read `qgate_validation_required` from the phase return TOON captured above. When `true` (the surgical-bypass predicate did NOT fire in Step 11), dispatch q-gate-validation as a sibling top-level Task at the orchestrator layer — the phase body cannot spawn it because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. When `false` (bypass fired or recipe path short-circuited), skip this block and continue directly to "Log solution outline creation" below.
+
+Resolve the dispatch target via the same role used for phase-3-outline (q-gate-validation tracks the calling phase's default):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort resolve-target --role phase-3-outline
+```
+
+Extract the `target` field. Emit the standardized post-resolve dispatch log line:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=q-gate-validation workflow=plan-marshall:plan-marshall/workflow/q-gate-validation.md plan_id={plan_id}"
+```
+
+Dispatch:
+
+```
+Task: plan-marshall:{target}
+  prompt: |
+    name: q-gate-validation
+    plan_id: {plan_id}
+    skills[6]:
+    - plan-marshall:manage-solution-outline
+    - plan-marshall:manage-findings
+    - plan-marshall:manage-plan-documents
+    - plan-marshall:manage-status
+    - plan-marshall:manage-architecture
+    - plan-marshall:manage-logging
+    workflow: plan-marshall:plan-marshall/workflow/q-gate-validation.md
+    WORKTREE: {worktree_path}
+
+    activation_context: 3-outline
+```
+
+The agent returns `qgate_pending_count` in its TOON. ADD that value to the `qgate_pending_count` already returned by phase-3-outline so the combined aggregate drives the Step 2b auto-loop predicate uniformly. Fold the q-gate-validation `<usage>` data into the per-phase running totals so it lands in the fused `phase-boundary` metrics call below.
 
 Log solution outline creation:
 ```bash
@@ -126,9 +165,10 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transi
 ```
 
 **Metrics**: After outline completes, record the `3-outline → 4-plan` boundary
-in a single fused call (forwarding the aggregated `<usage>` data from the
-dispatches spawned during this phase — the `phase-3-outline` outline envelope plus
-any q-gate-validation dispatch, and any LLM fallback dispatched from
+in a single fused call (forwarding the aggregated `<usage>` data from every
+dispatch spawned during this phase — the `phase-3-outline` outline envelope,
+the sibling orchestrator-level q-gate-validation dispatch above when
+`qgate_validation_required` was `true`, and any LLM fallback dispatched from
 `manage-status:change-type-heuristic` when its heuristic returned
 `ambiguous`). Sum `total_tokens`, `tool_uses`, and `duration_ms` across each
 dispatch's `<usage>` tag:
@@ -273,17 +313,59 @@ Task: plan-marshall:{target}
     WORKTREE: {worktree_path}
 ```
 
-The agent returns the task creation summary (`tasks` array with `domain`, `profile`, `skills`) in its TOON.
+The agent returns the task creation summary (`tasks` array with `domain`, `profile`, `skills`) plus `qgate_pending_count` and `qgate_validation_required` in its TOON.
+
+**Post-return q-gate-validation dispatch (conditional)**: Read `qgate_validation_required` from the phase return TOON captured above. When `true` (the default — phase-4-plan signals unconditionally on successful completion per Step 9b), dispatch q-gate-validation as a sibling top-level Task at the orchestrator layer — the phase body cannot spawn it because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. When `false` (unrecoverable error path), skip this block and continue directly to the Metrics fused-call below.
+
+Resolve the dispatch target via the same role used for phase-4-plan (q-gate-validation tracks the calling phase's default):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort resolve-target --role phase-4-plan
+```
+
+Extract the `target` field. Emit the standardized post-resolve dispatch log line:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=q-gate-validation workflow=plan-marshall:plan-marshall/workflow/q-gate-validation.md plan_id={plan_id}"
+```
+
+Dispatch:
+
+```
+Task: plan-marshall:{target}
+  prompt: |
+    name: q-gate-validation
+    plan_id: {plan_id}
+    skills[6]:
+    - plan-marshall:manage-solution-outline
+    - plan-marshall:manage-findings
+    - plan-marshall:manage-plan-documents
+    - plan-marshall:manage-status
+    - plan-marshall:manage-architecture
+    - plan-marshall:manage-logging
+    workflow: plan-marshall:plan-marshall/workflow/q-gate-validation.md
+    WORKTREE: {worktree_path}
+
+    activation_context: 4-plan
+    validators: [module-mapping-validator, scope-criterion-validator]
+```
+
+The agent returns `qgate_pending_count` in its TOON. ADD that value to the `qgate_pending_count` already returned by phase-4-plan so the combined aggregate drives the existing 3-iteration auto-loop predicate uniformly (re-dispatch phase-4-plan via the same envelope used in Step 4 when the combined count is non-zero, up to `verification_max_iterations`). Fold the q-gate-validation `<usage>` data into the per-phase running totals so it lands in the fused `phase-boundary` metrics call below.
 
 **Metrics**: After the plan agent completes, record the `4-plan → 5-execute`
-boundary in a single fused call (forwarding the agent's `<usage>` data to
-the closing phase):
+boundary in a single fused call (forwarding the aggregated `<usage>` data
+from every dispatch spawned during this phase — the `phase-4-plan` envelope
+itself plus the sibling orchestrator-level q-gate-validation dispatch above
+when `qgate_validation_required` was `true`):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
   --plan-id {plan_id} --prev-phase 4-plan --next-phase 5-execute \
-  --total-tokens {total_tokens from <usage>} \
-  --duration-ms {duration_ms from <usage>} \
-  --tool-uses {tool_uses from <usage>}
+  --total-tokens {sum of total_tokens from all agent <usage> tags} \
+  --duration-ms {sum of duration_ms from all agent <usage> tags} \
+  --tool-uses {sum of tool_uses from all agent <usage> tags}
 ```
 
 **Phase handshake**: Capture invariants for the just-completed phase. The `5-execute` entry verifies this row before the task loop runs (see `workflow/execution.md`):

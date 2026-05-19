@@ -209,7 +209,47 @@ Task: plan-marshall:{target}
     WORKTREE: {worktree_path}
 ```
 
-The agent returns confidence + track + scope_estimate + qgate_pending_count in its TOON. The 12-step confidence loop (Steps 3b/3c/8/9/10/11/12) iterates *inside* this single envelope; `AskUserQuestion` in Step 11 propagates to the host UI directly from the subagent (no main-context routing required).
+The agent returns confidence + track + scope_estimate + qgate_pending_count + qgate_validation_required in its TOON. The 12-step confidence loop (Steps 3b/3c/8/9/10/11/12) iterates *inside* this single envelope; `AskUserQuestion` in Step 11 propagates to the host UI directly from the subagent (no main-context routing required).
+
+**Post-return q-gate-validation dispatch (conditional)**: Read `qgate_validation_required` from the phase return TOON captured above. When `true` (lesson-derived plan activated Step 13.5's `narrative-vs-code-validator`), dispatch q-gate-validation as a sibling top-level Task at the orchestrator layer — the phase body cannot spawn it because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. When `false` or absent, skip this block and continue to the Post-dispatch contract assertion below.
+
+Resolve the dispatch target via the same role used for phase-2-refine (q-gate-validation tracks the calling phase's default per the manage-config effort contract):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort resolve-target --role phase-2-refine
+```
+
+Extract the `target` field. Emit the standardized post-resolve dispatch log line:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=q-gate-validation workflow=plan-marshall:plan-marshall/workflow/q-gate-validation.md plan_id={plan_id}"
+```
+
+Dispatch:
+
+```
+Task: plan-marshall:{target}
+  prompt: |
+    name: q-gate-validation
+    plan_id: {plan_id}
+    skills[6]:
+    - plan-marshall:manage-solution-outline
+    - plan-marshall:manage-findings
+    - plan-marshall:manage-plan-documents
+    - plan-marshall:manage-status
+    - plan-marshall:manage-architecture
+    - plan-marshall:manage-logging
+    workflow: plan-marshall:plan-marshall/workflow/q-gate-validation.md
+    WORKTREE: {worktree_path}
+
+    activation_context: 2-refine
+    validators: [narrative-vs-code-validator]
+```
+
+The agent returns `qgate_pending_count` in its TOON. ADD that value to the `qgate_pending_count` already returned by phase-2-refine so the combined aggregate drives the existing 3-iteration auto-loop predicate uniformly. Fold the q-gate-validation `<usage>` data into the per-phase running totals so it lands in the fused `phase-boundary` metrics call below.
 
 **Post-dispatch contract assertion**: phase-2-refine's contract restricts writes to `.plan/local/plans/{plan_id}/**` and `.plan/local/worktrees/{plan_id}/**` (see `plan-marshall:phase-2-refine` § Enforcement → Allowed write paths). Refine reaching for `Edit` / `Write` against the main checkout is a recurring failure mode (lesson `2026-05-16-14-001`, `feedback_phase2_refine_never_implements`) that silently advances the orchestrator into phase-3-outline with main-checkout drift. Assert structurally that the main checkout is clean before advancing:
 

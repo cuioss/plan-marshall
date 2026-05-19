@@ -36,7 +36,7 @@ Skill: plan-marshall:dev-general-practices
 
 ## Dispatched workflows vs inline steps
 
-This phase dispatches under one role key: **`phase-3-outline`** (resolves through `phase-3-outline.default`; `track={simple|complex}` is a runtime input — both tracks share the envelope and resolver lookup). The Complex Track bundles Steps 9c (per-deliverable design-intent classification), 10 (the heavyweight design body), and 10b (self-modifying classification) into one `phase-3-outline` envelope — the per-deliverable loop iterates *inside* the dispatch. Mechanical sub-procedures stay inline: Step 4 detect-change-type uses `manage-status:change-type-heuristic` (heuristic-first, dispatches via `effort read --default` when ambiguous); Simple Track Step 6 target validation is a Bash one-liner; Complex Track Step 9 domain-resolution and Step 10b consumer-sweep run as scripts. Step 11 Q-Gate validation dispatches under `--phase phase-3-outline` (no `--role` — q-gate-validation tracks the calling phase's default; the workflow is shared with phase-2-refine and phase-4-plan) — bypassed (no dispatch) when the surgical-bypass predicate holds (`scope_estimate == surgical` AND `change_type ∈ {bug_fix, tech_debt, verification}` AND `deliverable_count == 1`). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 3–4 (bundle when steps share context; per-iteration only when models differ or parallel).
+This phase dispatches under one role key: **`phase-3-outline`** (resolves through `phase-3-outline.default`; `track={simple|complex}` is a runtime input — both tracks share the envelope and resolver lookup). The Complex Track bundles Steps 9c (per-deliverable design-intent classification), 10 (the heavyweight design body), and 10b (self-modifying classification) into one `phase-3-outline` envelope — the per-deliverable loop iterates *inside* the dispatch. Mechanical sub-procedures stay inline: Step 4 detect-change-type uses `manage-status:change-type-heuristic` (heuristic-first, dispatches via `effort read --default` when ambiguous); Simple Track Step 6 target validation is a Bash one-liner; Complex Track Step 9 domain-resolution and Step 10b consumer-sweep run as scripts. Step 11 Q-Gate validation activation is *signaled* by setting `qgate_validation_required: true` in the phase return TOON; the orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads that flag and issues q-gate-validation as a sibling top-level `Task: plan-marshall:{target}` dispatch — the phase body cannot spawn it directly because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. The flag is set to `false` (no orchestrator dispatch) when the surgical-bypass predicate holds (`scope_estimate == surgical` AND `change_type ∈ {bug_fix, tech_debt, verification}` AND `deliverable_count == 1`). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 3–4 (bundle when steps share context; per-iteration only when models differ or parallel).
 
 ## cwd for `.plan/execute-script.py` calls
 
@@ -252,25 +252,25 @@ For codebase-wide changes requiring discovery and analysis.
 | **9c. Read Target Skill Design Intent** | For each deliverable that adds capability to an existing skill, classify the skill's design model and record it on the deliverable | Read the target skill's `SKILL.md` and design-intent docs; classify as `script-deterministic`, `LLM-driven`, or `hybrid`; record the classification in the deliverable's `**Design notes:**` block; reroute or justify when the proposed implementation contradicts the model. Detailed procedure: [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md#step-9c-read-target-skill-design-intent). |
 | **10. Execute Workflow** | Run discovery, analysis, write solution | Follow change-type instructions, resolve verification commands, write `solution_outline.md`. Step 10 includes a consumer-sweep when the deliverable deletes/renames a public symbol — see [`consumer-sweep.md`](standards/consumer-sweep.md). |
 | **10b. Self-Modifying Classification** | Classify deliverables that touch plan-marshall runtime infrastructure and surface phasing decision | When predicate fires (path heuristic + `compatibility: breaking` + hard-cutover language), prompt author via `AskUserQuestion` for split / inline-rationale / additive-mode resolution. Standard: [`ref-workflow-architecture/standards/self-modifying-classification.md`](../ref-workflow-architecture/standards/self-modifying-classification.md). |
-| **11. Q-Gate Verification** | Full quality verification (with surgical bypass) | Bypass when surgical+bug_fix/tech_debt/verification+1 deliverable; otherwise dispatch the q-gate validation workflow under `--phase phase-3-outline` (no `--role` — q-gate-validation tracks the phase default; resolved via `manage-config effort resolve-target --phase phase-3-outline`; see [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md) for the canonical dispatch). The workflow runs phase-3-applicable validators: existing checks 2.1-2.7, consumer-sweep §2.9, **argparse-validator §2.10**, **tier-delta-validator §2.13**, **self-modifying-phased-rollout-validator §2.16**, **architecture-mismatch-validator §2.17**. |
+| **11. Q-Gate Verification** | Signal q-gate-validation requirement (with surgical bypass) | Bypass when surgical+bug_fix/tech_debt/verification+1 deliverable → set `qgate_validation_required: false`; otherwise set `qgate_validation_required: true` in the return TOON so the orchestrator dispatches `plan-marshall:plan-marshall/workflow/q-gate-validation.md` as a sibling top-level Task after the phase returns (see [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md) for the activation contract). The orchestrator-dispatched workflow runs phase-3-applicable validators: existing checks 2.1-2.7, consumer-sweep §2.9, **argparse-validator §2.10**, **tier-delta-validator §2.13**, **self-modifying-phased-rollout-validator §2.16**, **architecture-mismatch-validator §2.17**. |
 
 **Step 10 may also refine `scope_estimate`**: After Complex Track discovery and deliverable composition, the concrete Affected files lists may narrow the actual scope. Phase-3-outline MAY downgrade `scope_estimate` (e.g., `multi_module` → `single_module`, or `single_module` → `surgical`) and persist via `manage-references set --field scope_estimate`. Refinement happens BEFORE Step 11 so the bypass rule sees the refined value.
 
-**Step 11 — Q-Gate surgical bypass rule** (evaluated BEFORE spawning the Q-Gate validation agent):
+**Step 11 — Q-Gate surgical bypass rule** (evaluated BEFORE signaling the Q-Gate validation requirement):
 
 Bypass Q-Gate when ALL of the following are true:
 - `scope_estimate == surgical`, AND
 - `change_type ∈ {bug_fix, tech_debt, verification}`, AND
 - `deliverable_count == 1` (exactly one deliverable was created in Step 10)
 
-When bypass fires, log the decision and skip directly to Step 12:
+When bypass fires, log the decision, set `qgate_validation_required: false` in the return TOON, and skip directly to Step 12:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline:qgate-bypass) Q-Gate skipped — scope_estimate=surgical, change_type={change_type}, 1 deliverable"
 ```
 
-Otherwise, resolve the dispatch target via `manage-config effort resolve-target --phase phase-3-outline` and dispatch `plan-marshall:{target}` with workflow `plan-marshall:plan-marshall/workflow/q-gate-validation.md`. Auto-loop on pending findings as documented in the detail standards.
+Otherwise, set `qgate_validation_required: true` in the return TOON. The orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads that flag after the phase returns and dispatches `plan-marshall:plan-marshall/workflow/q-gate-validation.md` as a sibling top-level Task. The orchestrator aggregates the validator's `qgate_pending_count` into the phase's running count before re-evaluating the existing 3-iteration auto-loop predicate.
 
 **CRITICAL**: If Complex Track skill workflow fails, do NOT fall back to grep/search. Fail clearly.
 
@@ -406,7 +406,10 @@ track: {simple|complex}
 deliverable_count: {N}
 qgate_passed: {true|false}
 qgate_pending_count: {0 if no findings}
+qgate_validation_required: {true|false}
 ```
+
+`qgate_validation_required` is `true` when the phase decided q-gate-validation must run (surgical-bypass predicate did NOT fire), and `false` otherwise (bypass fired or recipe path short-circuited at Step 3). The orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads this flag after the phase returns and dispatches `q-gate-validation` as a sibling top-level Task when it is `true`.
 
 ---
 
@@ -417,11 +420,12 @@ The "Return Results" block above (under Step 12) is the single source of truth f
 ```toon
 status: success | error
 display_detail: "<track {track}, {deliverable_count} deliverables, {qgate_pending_count} pending>"
+qgate_validation_required: {true|false}
 ```
 
 `display_detail` shape on success: `"track {track}, {deliverable_count} deliverables, {qgate_pending_count} pending"` (e.g. `"track complex, 5 deliverables, 0 pending"`); ≤80 chars, ASCII, no trailing period. On error, carries the short error label from § Error Handling.
 
-All other fields (`plan_id`, `track`, `deliverable_count`, `qgate_passed`, `qgate_pending_count`) are documented in "Return Results" above.
+All other fields (`plan_id`, `track`, `deliverable_count`, `qgate_passed`, `qgate_pending_count`, `qgate_validation_required`) are documented in "Return Results" above.
 
 ---
 
@@ -458,7 +462,9 @@ All other fields (`plan_id`, `track`, `deliverable_count`, `qgate_passed`, `qgat
 
 **Spawns** (Complex Track):
 - `plan-marshall:phase-3-outline/workflow/detect-change-type.md` workflow (Step 4 — change type detection)
-- `plan-marshall:plan-marshall/workflow/q-gate-validation.md` workflow under `--phase phase-3-outline` (Step 11 — Q-Gate verification)
+
+**Signals to orchestrator** (Complex Track):
+- `qgate_validation_required: true|false` in the return TOON. The orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) dispatches `plan-marshall:plan-marshall/workflow/q-gate-validation.md` as a sibling top-level Task when the flag is `true` (Step 11 — Q-Gate verification).
 
 **Loads Skills** (Recipe path):
 - `{recipe_skill}` (Step 3 - recipe skill with input parameters, built-in or custom)

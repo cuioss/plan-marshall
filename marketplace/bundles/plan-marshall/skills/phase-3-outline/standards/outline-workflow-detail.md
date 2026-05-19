@@ -728,7 +728,7 @@ The same predicate that gates the Simple Track Q-Gate (Step 8) ALSO gates the Co
 2. `change_type ∈ {bug_fix, tech_debt, verification}`.
 3. `deliverable_count == 1`.
 
-When all three predicates hold, emit the bypass decision log entry and skip directly to Step 12 (do NOT spawn the Q-Gate validation agent):
+When all three predicates hold, emit the bypass decision log entry, set `qgate_validation_required: false` in the phase return TOON, and skip directly to Step 12 (do NOT signal Q-Gate validation):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -737,45 +737,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 The worked-examples table in Step 8 (above) applies verbatim to Step 11 — the rule, predicates, and log message are identical across both tracks. Recipe plans never reach Step 11 (Step 3 short-circuits them).
 
-#### Spawn Q-Gate Agent
+#### Signal Q-Gate Validation Requirement
 
-If the bypass rule above did NOT fire, spawn the Q-Gate validation agent.
+If the bypass rule above did NOT fire, the phase records the requirement by setting `qgate_validation_required: true` in its return TOON (see `SKILL.md` § Return Output). The orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads that flag after the phase returns and dispatches `q-gate-validation` as a sibling top-level `Task: plan-marshall:{target}` invocation — the phase body does NOT spawn `q-gate-validation` itself because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. Aggregation of the validator's `qgate_pending_count` into the phase aggregate also moves to the orchestrator; this step only signals intent.
 
-Compute the dispatch target via the role resolver:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase phase-3-outline
-```
-
-Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
-
-Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+Log the intent so the run record shows the activation:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:phase-3-outline) target={target} level={level} role=phase-3-outline workflow=plan-marshall:plan-marshall/workflow/q-gate-validation.md plan_id={plan_id}"
-```
-
-Dispatch:
-
-```
-Task: plan-marshall:{target}
-  prompt: |
-    name: q-gate-validation
-    plan_id: {plan_id}
-    skills[6]:
-    - plan-marshall:manage-solution-outline
-    - plan-marshall:manage-findings
-    - plan-marshall:manage-plan-documents
-    - plan-marshall:manage-status
-    - plan-marshall:manage-architecture
-    - plan-marshall:manage-logging
-    workflow: plan-marshall:plan-marshall/workflow/q-gate-validation.md
-    WORKTREE: {worktree_path}
-
-    activation_context: 3-outline
+  --message "[STATUS] (plan-marshall:phase-3-outline) qgate_validation_required=true — orchestrator will dispatch q-gate-validation after phase return"
 ```
 
 **Q-Gate reads from**:
