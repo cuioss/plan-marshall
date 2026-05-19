@@ -81,7 +81,7 @@ When `manage-findings query` reports a non-zero pending count, phase-5-execute d
 `finalize-step-pre-submission-self-review` — order 10 in the default phase-6 step list, runs **before** the PR is created. A structural review of the diff itself. Two-phase by design:
 
 * **Deterministic phase** — `tools-self-review:self_review surface --plan-id {plan_id}` walks the diff and emits six candidate lists in a TOON envelope: regex literals, user-facing strings, markdown sections, symmetric-pair function names, contract source files, schema-bearing files.
-* **LLM-judgement phase** — `pre-submission-self-review.md` workflow body (dispatched under `--phase phase-6-finalize`, no `--role`, tracking `phase-6-finalize.default`) reads only the candidates the surface helper produced and applies five checks:
+* **LLM-judgement phase** — link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md[`pre-submission-self-review.md`] workflow body (dispatched under `--phase phase-6-finalize`, no `--role`, tracking `phase-6-finalize.default`) reads only the candidates the surface helper produced and applies five checks:
   1. **Symmetric pair test coverage** — `save`/`load`, `init`/`restore`, `push`/`pop`, `acquire`/`release`, `open`/`close`, `start`/`stop` — does a test exercise both halves?
   2. **Regex over-fit** — does the regex match what it should AND not match what it shouldn't?
   3. **Ambiguous user-facing wording** — could an operator read this two ways?

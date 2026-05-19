@@ -52,7 +52,7 @@ Skill: plan-marshall:dev-general-practices
 
 Step 3 then walks `skills[]` for caller-named loads. If a caller accidentally passes `plan-marshall:dev-general-practices` in `skills[]`, the dispatcher de-dupes.
 
-The skill itself follows **reference-mode** loading — it doesn't execute logic; it pulls in `standards/general-development-rules.md` and (on demand) related standards files. The hard rules live there; the skill is the loader.
+The skill itself follows **reference-mode** loading — it doesn't execute logic; it pulls in link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/general-development-rules.md[`standards/general-development-rules.md`] and (on demand) related standards files. The hard rules live there; the skill is the loader.
 
 == `dev-general-module-testing` — a profile-driven Tier-2 skill
 

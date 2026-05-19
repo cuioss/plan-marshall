@@ -19,6 +19,6 @@ How Plan Marshall is built and why. These pages are short navigational summaries
 
 == Terminology
 
-The canonical glossary for Plan Marshall concepts (canonical agent, dispatcher, role-eligible, extension point, phase, workflow doc, manage-contract, etc.) lives in `marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/glossary.md`. Read it first when an unfamiliar term appears.
+The canonical glossary for Plan Marshall concepts (canonical agent, dispatcher, role-eligible, extension point, phase, workflow doc, manage-contract, etc.) lives in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/glossary.md[`ref-workflow-architecture/standards/glossary.md`]. Read it first when an unfamiliar term appears.
 
 // TODO: expand each concept page with diagrams adapted from `ref-workflow-architecture/standards/call-graph.md` and `dispatch-walkthrough.md`.

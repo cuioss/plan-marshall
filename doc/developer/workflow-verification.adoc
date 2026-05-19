@@ -11,9 +11,9 @@ Verifies that workflow outputs (solution outline, references, tasks) are correct
 
 [cols="1,3"]
 |===
-| Skill | `marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md`
+| Skill | link:../../marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md[`plan-retrospective/SKILL.md`]
 | Aspects | `artifact-consistency`, `request-result-alignment`, `log-analysis`, `script-failure-analysis`, `permission-prompt-analysis`
-| Scripts | `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/`
+| Scripts | link:../../marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/[`plan-retrospective/scripts/`]
 |===
 
 == Architecture

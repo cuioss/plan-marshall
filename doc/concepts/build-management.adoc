@@ -130,7 +130,7 @@ The mapping from canonical name to concrete invocation is built once at setup ti
 * `.plan/project-architecture/{module}/enriched.json` — per-module persisted state, including the LLM-curated commentary.
 * Per-module derived data (paths, packages, build commands with filtered profiles) — computed on demand by `crawl_module_derived` from the live filesystem on every read (see xref:audit-trail.adoc[Audit Trail]).
 
-For each module, the discovery extension also runs the canonical-command resolution rules described in `canonical-commands.md`:
+For each module, the discovery extension also runs the canonical-command resolution rules described in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/canonical-commands.md[`canonical-commands.md`]:
 
 * *Always-available* commands (`clean`, `quality-gate`) for every module.
 * *Source-conditional* commands (`compile`) when the module has source files.

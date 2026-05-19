@@ -3,7 +3,7 @@
 :toc: left
 :toclevels: 2
 
-Plan Marshall organises every non-trivial change as a *plan* that moves through six phases. Each phase is a skill (`phase-1-init` … `phase-6-finalize`) whose workflow doc is dispatched through the xref:execution-context.adoc[execution-context dispatcher]. The `plan-marshall` meta-skill (`marketplace/bundles/plan-marshall/skills/plan-marshall/SKILL.md`) ties them together and is what `/plan-marshall` orchestrates.
+Plan Marshall organises every non-trivial change as a *plan* that moves through six phases. Each phase is a skill (`phase-1-init` … `phase-6-finalize`) whose workflow doc is dispatched through the xref:execution-context.adoc[execution-context dispatcher]. The `plan-marshall` meta-skill (link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/SKILL.md[`plan-marshall/SKILL.md`]) ties them together and is what `/plan-marshall` orchestrates.
 
 image::../resources/diagrams/phase-lifecycle.svg[Plan lifecycle — six phases from init through finalize with named forward gates and a curved back-edge for the finalize → execute loop-back outcome, align=center]
 
@@ -40,19 +40,19 @@ The lifecycle is a forward state machine — each phase advances to the next whe
 |Git workflow, finalize-step pipeline (pre-submission self-review, automated review, Sonar roundtrip, lessons capture, branch cleanup), commit, push, and PR creation. Domain-specific finalize steps can be plugged in via the `provides_finalize_steps()` extension point.
 |===
 
-The phase pipeline is described in detail in `ref-workflow-architecture/standards/phases.md`. The lifecycle states a plan transitions through are catalogued in `phase-lifecycle.md`.
+The phase pipeline is described in detail in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/phases.md[`ref-workflow-architecture/standards/phases.md`]. The lifecycle states a plan transitions through are catalogued in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/phase-lifecycle.md[`phase-lifecycle.md`].
 
 == Cross-Cutting Workflows
 
-A handful of workflows run inside multiple phases. They live under `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/` and are dispatched directly through `execution-context`:
+A handful of workflows run inside multiple phases. They live under link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/[`plan-marshall/workflow/`] and are dispatched directly through `execution-context`:
 
-* `planning.md`, `planning-outline.md` — task and outline planning bodies invoked by phases 3 and 4.
-* `execution.md`, `q-gate-validation.md` — execution and quality-gate bodies invoked by phase 5.
-* `verification-feedback.md` — triage envelope shared by phases 5 and 6 (build failures, lint, Sonar findings, PR review comments, plus domain-specific producers configured per project).
-* `triage.md` — generic finding triage.
-* `research-best-practices.md` — research workflow dispatched by any phase.
-* `enrich-module.md` — Tier-1 architecture enrichment invoked from phase-6 architecture-refresh.
-* `recipe.md`, `planning-lessons-aggregate.md` — recipe/lesson orchestration.
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning.md[`planning.md`], link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning-outline.md[`planning-outline.md`] — task and outline planning bodies invoked by phases 3 and 4.
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/execution.md[`execution.md`], link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/q-gate-validation.md[`q-gate-validation.md`] — execution and quality-gate bodies invoked by phase 5.
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/verification-feedback.md[`verification-feedback.md`] — triage envelope shared by phases 5 and 6 (build failures, lint, Sonar findings, PR review comments, plus domain-specific producers configured per project).
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/triage.md[`triage.md`] — generic finding triage.
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/research-best-practices.md[`research-best-practices.md`] — research workflow dispatched by any phase.
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/enrich-module.md[`enrich-module.md`] — Tier-1 architecture enrichment invoked from phase-6 architecture-refresh.
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/recipe.md[`recipe.md`], link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning-lessons-aggregate.md[`planning-lessons-aggregate.md`] — recipe/lesson orchestration.
 
 == Phase Boundaries
 

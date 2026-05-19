@@ -41,7 +41,7 @@ Survey of every configuration surface a project author touches when running Plan
 
 The bulk of project configuration. Canonical schema and field reference: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
 
-`marshal.json` is organised by phase under `plan.phase-1-init` … `plan.phase-6-finalize`. Each phase block holds fields specific to that phase. The sections below cover the fields project authors tune regularly; for everything else (`branch_strategy`, `confidence_threshold`, `compatibility`, `commit_strategy`, `verification_max_iterations`, `max_iterations`, `review_bot_buffer_seconds`, …) see `data-model.md`.
+`marshal.json` is organised by phase under `plan.phase-1-init` … `plan.phase-6-finalize`. Each phase block holds fields specific to that phase. The sections below cover the fields project authors tune regularly; for everything else (`branch_strategy`, `confidence_threshold`, `compatibility`, `commit_strategy`, `verification_max_iterations`, `max_iterations`, `review_bot_buffer_seconds`, …) see link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
 
 [#effort-and-models]
 === Effort and model selection
