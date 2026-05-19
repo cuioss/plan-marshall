@@ -35,18 +35,15 @@ class Extension(ExtensionBase):
         ...
 ----
 
-`ExtensionBase` declares one abstract method (`get_skill_domains`) and seven optional hooks with default no-op implementations. A bundle only overrides the hooks it actually needs.
+`ExtensionBase` declares one abstract method (`get_skill_domains`) and eight optional hooks with default no-op implementations (`discover_modules`, `config_defaults`, `provides_triage`, `provides_outline_skill`, `provides_recipes`, `provides_verify_steps`, `provides_finalize_steps`, `applies_to_module`). A bundle only overrides the hooks it actually needs.
 
 == The ten extension points
+
+The required `get_skill_domains()` method is the contract entry point — every bundle implements it to declare its domain identity (key, name, description) and organise its skills by profile (`core`, `implementation`, `module_testing`, `integration_testing`, `quality`, `documentation`). Beyond that, the seam exposes ten *optional* extension points:
 
 [cols="2,2,1,3", options="header"]
 |===
 | Extension point | Declaration | Status | What it lets a bundle do
-
-| link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/extension-contract.md[`get_skill_domains`] (core)
-| `get_skill_domains()` method
-| Required
-| Declare the bundle's domain identity (key, name, description) and organise its skills by profile (`core`, `implementation`, `module_testing`, `integration_testing`, `quality`, `documentation`). The only abstract method.
 
 | link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-build.md[`ext-point-build`]
 | `discover_modules()` + `ExecuteConfig`
@@ -75,8 +72,8 @@ class Extension(ExtensionBase):
 
 | link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-execution-context-workflow.md[`ext-point-execution-context-workflow`]
 | `implements:` frontmatter on a workflow `.md`
-| Active · many
-| Declare a new LLM-judgement workflow body and pin it to a role key. Every phase skill, every Q-Gate, every shared workflow under `plan-marshall/workflow/` rides this extension point.
+| Active
+| Declare a new LLM-judgement workflow body and pin it to a role key. Every phase skill, every Q-Gate, every shared workflow under `plan-marshall/workflow/` rides this extension point. The canonical ext-point spec carries no `Implementations:` count — each `implements:` declaration in a workflow doc is one.
 
 | link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-dynamic-level-executor.md[`ext-point-dynamic-level-executor`]
 | `implements:` frontmatter on an agent `.md`
@@ -99,7 +96,7 @@ class Extension(ExtensionBase):
 | Add domain-specific steps to the phase-6-finalize pipeline. No domain implementers today; project-level finalize steps (under `.claude/skills/finalize-step-*`) cover today's needs.
 |===
 
-A bundle doesn't have to fill every slot. A frontend bundle might only override `get_skill_domains`, `provides_triage`, and ship a profile-overriding workflow body — three of ten. The unfilled hooks return the default no-op and the core uses its generic behaviour.
+A bundle doesn't have to fill every slot. A frontend bundle might only override `get_skill_domains` and `provides_triage`, and ship a profile-overriding workflow body — three extension points filled out of the ten. The unfilled hooks return the default no-op and the core uses its generic behaviour.
 
 == Discovery
 
@@ -145,7 +142,7 @@ The reference implementation of "what minimum looks like" is link:../../marketpl
 
 == Where this fits
 
-Extension Architecture is the *plumbing* answer to "what is Plan Marshall." The xref:planning-workflow.adoc[Planning Workflow] is the *user-visible* answer. The eight hooks are the contact points between the two: every domain decision a plan makes — which build skill to dispatch (xref:build-management.adoc[Build Management]), which triage skill loads for a Sonar issue (xref:automatic-reviews.adoc[Automatic Reviews]), which skills enter the subagent context for a Java testing task (xref:skill-handling.adoc[Skill Handling]) — flows through one of the eight hooks.
+Extension Architecture is the *plumbing* answer to "what is Plan Marshall." The xref:planning-workflow.adoc[Planning Workflow] is the *user-visible* answer. The ten extension points are the contact points between the two: every domain decision a plan makes — which build skill to dispatch (xref:build-management.adoc[Build Management]), which triage skill loads for a Sonar issue (xref:automatic-reviews.adoc[Automatic Reviews]), which skills enter the subagent context for a Java testing task (xref:skill-handling.adoc[Skill Handling]) — flows through one of them.
 
 == Related
 

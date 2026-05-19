@@ -27,7 +27,7 @@ Six ordinal tiers plus a sentinel. The build emits one `execution-context-{level
 | `high` | Sonnet | high | Analytical work: triage, validation, multi-file reasoning.
 | `xhigh` | Opus | medium | Opus reasoning without max thinking — fills the Sonnet-high → Opus-high cost/quality gap.
 | `xxhigh` | Opus | high | High-effort Opus — today's standard Opus top tier.
-| `max` | Opus | xhigh | Top tier (Opus-4.7-only). Research, novel decomposition. Build-time guard skips emission when the resolved alias does not accept `effort: xhigh`.
+| `max` | Opus | xhigh | Top tier (Opus-4.7-only). Build-time guard skips emission when the resolved alias does not accept `effort: xhigh`.
 | `inherit` | (parent) | (parent) | Sentinel: dispatch the canonical no-suffix variant, inheriting whatever the parent session uses.
 |===
 

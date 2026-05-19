@@ -84,7 +84,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 | Step kind | Example
 
 | **Built-in** (prefix `default:`)
-| `default:quality-check`, `default:build-verify`, `default:coverage-check` (phase-5); `default:pre-push-quality-gate`, `default:commit-push`, `default:create-pr`, `default:ci-verify`, `default:automated-review`, `default:sonar-roundtrip`, `default:lessons-capture`, `default:branch-cleanup`, `default:record-metrics`, `default:archive-plan` (phase-6, canonical default order).
+| `default:quality_check`, `default:build_verify`, `default:coverage_check` (phase-5 — underscore form); `default:pre-push-quality-gate`, `default:commit-push`, `default:create-pr`, `default:ci-verify`, `default:automated-review`, `default:sonar-roundtrip`, `default:lessons-capture`, `default:branch-cleanup`, `default:record-metrics`, `default:archive-plan` (phase-6, kebab-case, canonical default order).
 
 | **Project-local** (prefix `project:`)
 | Loaded from `.claude/skills/finalize-step-<step>/` — a project-specific finalize step (e.g. a custom deploy or notification).

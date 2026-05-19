@@ -98,7 +98,7 @@ Canonical workflow: link:../../marketplace/bundles/plan-marshall/skills/phase-6-
 
 == External reviews — phase-6-finalize, post-CI
 
-All three external roundtrips declare `requires: [ci-complete]` in their workflow-doc frontmatter; the phase-6-finalize dispatcher resolves the precondition before each body runs. The default order is `ci-verify` → `automated-review` → `sonar-roundtrip`, with `ci-verify` placed immediately after `create-pr` so the CI verdict is already triaged before the reviewer-bot and Sonar consumers run. Two precondition modes are in use: `ci-verify` runs in **`consume-failures`** mode (failing checks become structured findings, no short-circuit); `automated-review` and `sonar-roundtrip` keep the default **`strict`** mode (a non-success CI short-circuits the step itself — the consumer body is skipped and the dispatcher records the precondition outcome before moving on). Triage budgets are independent of CI queue depth.
+All three external roundtrips declare `requires: [ci-complete]` in their workflow-doc frontmatter; the phase-6-finalize dispatcher resolves the precondition before each body runs. The default phase-6 order around these consumers is `create-pr` → `ci-verify` → `architecture-refresh` → `automated-review` → `sonar-roundtrip`, with `ci-verify` placed immediately after `create-pr` so the CI verdict is already triaged before the reviewer-bot and Sonar consumers run. Two precondition modes are in use: `ci-verify` runs in **`consume-failures`** mode (failing checks become structured findings, no short-circuit); `automated-review` and `sonar-roundtrip` keep the default **`strict`** mode (a non-success CI short-circuits the step itself — the consumer body is skipped and the dispatcher records the precondition outcome before moving on). Triage budgets are independent of CI queue depth.
 
 === CI verify (`producer=ci-verify-*`)
 
@@ -121,7 +121,7 @@ The producer side reads CI run state via `tools-integration-ci:ci status`, persi
 | i | No checks reported | `ci-verify-missing` | `final_status=none` (zero checks across the PR)
 |===
 
-Sonar quality-gate failures (row a in the canonical taxonomy) are deliberately excluded from `ci-verify`'s scope — Sonar's quality gate is fetched by `sonar-roundtrip` from the Sonar API, not from the GitHub-checks surface. If a project wires Sonar as a GitHub status check, that check still appears under row (c) `ci_policy_failure`, but `sonar-roundtrip` remains the authoritative consumer of the gate verdict.
+Sonar quality-gate failures (row a in the canonical taxonomy) are deliberately excluded from `ci-verify`'s scope — Sonar's quality gate is fetched by `sonar-roundtrip` from the Sonar API, not from the GitHub-checks surface. If a project wires Sonar as a GitHub status check, `ci-verify` still files a finding for it under row (c) `ci_policy_failure`, but `sonar-roundtrip` remains the authoritative consumer of the gate verdict — the two consumers coexist by design and dedup via `hash_id` in the findings store.
 
 Each classified check produces ONE finding with `finding-type: triage`, severity `warning`, message tagged with the subtype (`[ci_build_failure]`, `[ci_policy_failure]`, …) for retrospective grep, and a `source-path` pointing at the persisted per-job log. The consumer side then dispatches `verification-feedback` **once per producer string** (not once per finding) so the triage envelope batches findings of the same kind. If any per-producer triage returns `loop_back`, the step marks `loop_back`; otherwise `done`.
 
@@ -157,7 +157,7 @@ When Sonar isn't configured for the project (no project key, no credentials), th
 
 Workflow: link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/verification-feedback.md[`plan-marshall/workflow/verification-feedback.md`]. **One workflow, five base producer modes** — `build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state` (canonical enum in the workflow's Step 1 branch table). The seven `ci-verify-{build,policy,timeout,cancelled,action-required,stale,missing}` dispatch keys ride the same envelope through the store-only-query branch shape `pr-comment`/`sonar` use, but are surfaced as distinct producer strings so retrospectives can grep by subtype.
 
-The `producer` runtime input selects only Step 1's branch — the producer-specific fetch/parse work. Steps 2-6 are identical across producers:
+The `producer` runtime input selects only Step 1's branch — the producer-specific fetch/parse work. Steps 2-6 are identical across producers and live in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/triage.md[`plan-marshall/workflow/triage.md`] (the shared triage core that `verification-feedback` hands off to):
 
 [cols="1,3", options="header"]
 |===
@@ -237,7 +237,8 @@ Combined with the audit trail (xref:audit-trail.adoc[Audit Trail]), every review
 * link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/findings-pipeline.md[`findings-pipeline.md`] — canonical pipeline architecture (producer → store → consumer → gate)
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-triage.md[`ext-point-triage.md`] — per-domain triage extension contract
 * link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/q-gate-validation.md[`q-gate-validation.md`] — Q-Gate validator workflow (3 call sites, shared body)
-* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/verification-feedback.md[`verification-feedback.md`] — the unified triage envelope (five producer modes)
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/verification-feedback.md[`verification-feedback.md`] — the unified triage envelope (five producer modes; producer-specific Step 1 only)
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/triage.md[`triage.md`] — the shared triage core (Steps 2-6) that `verification-feedback` hands off to
 * link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md[`pre-submission-self-review.md`] — structural self-review workflow
 * link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/ci-verify.md[`ci-verify.md`] — CI failure-classification workflow (7 producer subtypes)
 * link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/ci-verify.md[`ci-verify standards`] — multi-failure-mode taxonomy, precondition-mode contract, build-profile match rule

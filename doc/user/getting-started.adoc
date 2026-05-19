@@ -20,8 +20,8 @@ When the executor (`​.plan/execute-script.py`) is missing, `/marshall-steward`
 2. **Update project documentation** — appends idempotent guidance blocks (Temporary Files, Tool Usage, Build Commands) to `CLAUDE.md` and `agents.md`. See xref:#_what_the_wizard_writes_to_claude_md[What the wizard writes to `CLAUDE.md`] below.
 3. **Ensure executor permission** — verifies (and adds if missing) the `Bash(python3 .plan/execute-script.py *)` allow entry in `.claude/settings.json`.
 4. **Generate the script executor** — emits `.plan/execute-script.py` with the script mappings embedded for every installed bundle.
-5. **Discover project modules** — walks the codebase via the extension API to identify build modules.
-6. **Initialise `marshal.json`** — seeds the per-project configuration file with sensible defaults.
+5. **Initialise `marshal.json`** — seeds the per-project configuration file with sensible defaults.
+6. **Discover project modules** — walks the codebase via the extension API to identify build modules.
 7. **Configure skill domains** — chooses which bundles' skill domains apply to which modules.
 8. **Set review gates** — interactive prompts for the four review-gate booleans (`init_without_asking`, `plan_without_asking`, `execute_without_asking`, `finalize_without_asking` + the asymmetric `loop_back_without_asking`). See xref:configuration.adoc#review-gates[Configuration › Review gates].
 9. **Detect CI provider and tools** — identifies GitHub vs. GitLab, Sonar/SonarCloud, and any other integrations.

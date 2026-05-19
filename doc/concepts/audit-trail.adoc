@@ -41,7 +41,7 @@ Tag prefixes inside `work.log` provide structure:
 | `[STATUS]` | Phase milestones — "Starting init phase", "Init phase complete", "Refine phase complete".
 | `[DISPATCH]` | Every `Task: execution-context-{level}` subagent dispatch — target, level, role, workflow doc, plan id.
 | `[SKILL]` | Every `Skill:` load inside an `execution-context` envelope — see xref:skill-handling.adoc#_auditing_what_loaded[Skill Handling § Auditing what loaded].
-| `[ARTIFACT]` | Every artifact creation — "Created request.md", "Snapshotted architecture into architecture-pre/".
+| `[ARTIFACT]` | Every artifact creation — "Created request.md", "Captured handshake row for phase-3-outline".
 | `[REFINE:N]` | Phase-2 refine-iteration markers.
 |===
 
@@ -72,7 +72,6 @@ Every plan accumulates a fixed set of structured files. Each file is produced by
 | `execution.toon` | phase-4-plan | The per-plan finalize-step manifest — which verify steps run in phase-5, which finalize steps run in phase-6.
 | `handshakes.toon` | every phase | Each phase boundary's captured invariants (e.g. `pending_findings_by_type`, `pending_findings_blocking_count`).
 | `metrics.md` | phase-1 → phase-6 | Per-phase duration, token usage, tool-use counts; rolled up by `manage-metrics`.
-| `architecture-pre/` | phase-1-init | Snapshot of `.plan/project-architecture/` at plan start. Lets retrospective detect mid-plan architecture drift.
 | `quality-verification-report.md` | plan-retrospective | The retrospective output (when run). Optional, opt-in.
 |===
 
@@ -135,7 +134,7 @@ The design has two layers:
 [source]
 ----
 work/fragment-artifact-consistency.toon
-work/fragment-dispatch-audit.toon
+work/fragment-execution-context-dispatch-audit.toon
 work/fragment-log-analysis.toon
 work/fragment-permission-prompt-analysis.toon
 work/fragment-request-result-alignment.toon
@@ -144,7 +143,7 @@ work/fragment-plan-efficiency.toon
 work/fragment-llm-to-script-opportunities.toon
 work/fragment-logging-gap-analysis.toon
 work/fragment-invariant-outcomes.toon
-work/fragment-direct-gh-glab.toon
+work/fragment-direct-gh-glab-usage.toon
 work/fragment-lessons-proposal.toon
 work/fragment-manifest-decisions.toon
 ----

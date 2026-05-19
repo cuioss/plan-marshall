@@ -35,7 +35,7 @@
   <text x="82"  y="200" class="item">.claude-plugin/plugin.json</text>
   <text x="82"  y="220" class="item">agents/</text>
   <text x="96"  y="240" class="item">execution-context.md</text>
-  <text x="111" y="258" class="col-sub">implements: ext-point-…</text>
+  <text x="111" y="258" class="col-sub">implements: ext-point-dynamic-level-executor</text>
   <text x="111" y="274" class="col-sub">levels: [low … max]</text>
   <text x="82"  y="298" class="item">commands/</text>
   <text x="82"  y="318" class="item">skills/</text>
@@ -66,7 +66,7 @@
   <text x="922"  y="200" class="item">{bundle}/</text>
   <text x="936"  y="220" class="item">{version}/</text>
   <text x="950"  y="240" class="item">agents/</text>
-  <text x="965"  y="258" class="col-sub">(canonical + 5–6 variants)</text>
+  <text x="965"  y="258" class="col-sub">(canonical + up to 6 variants)</text>
   <text x="950"  y="280" class="item">commands/ ·  skills/</text>
   <text x="950"  y="300" class="item">.claude-plugin/</text>
   <text x="965"  y="318" class="col-sub">plugin.json</text>

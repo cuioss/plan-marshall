@@ -107,7 +107,7 @@ The list is short by design — every entry maps to a known operation pattern pl
 
 == When prompts still happen
 
-Plan Marshall reduces prompt frequency; it does not eliminate prompts. Note that git itself does *not* prompt — commits and pushes flow through link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-git/SKILL.md[`workflow-integration-git`]'s `git_workflow` script, which runs under the executor proxy, so the broad `Bash(python3 .plan/execute-script.py *)` allow covers them. Prompts you should still expect:
+Plan Marshall reduces prompt frequency; it does not eliminate prompts. Note that `git -C {worktree} commit/push` invocations are issued directly via Bash by the caller (the link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-git/SKILL.md[`workflow-integration-git`] skill provides supporting operations — `format-commit`, `analyze-diff`, `detect-artifacts`, `worktree-*` — that run through the executor proxy, but the commit/push themselves do not). The `.claude/settings.json` allow list therefore carries narrow `Bash(git -C * commit *)` / `Bash(git -C * push *)` entries alongside the executor-proxy allow. Prompts you should still expect:
 
 * **Bash file-ops (`find`, `cat`, `grep`, `ls`, `head`, `tail`)** — banned by hard rule, but if the LLM tries them anyway, the absence of a matching allow rule surfaces a prompt before damage.
 * **Compound shell commands** — `&&`, `;`, `&`, newlines, `$()`, heredocs, `for`/`while` loops. All banned by hard rule, all unmatched by any allow pattern, so they prompt.

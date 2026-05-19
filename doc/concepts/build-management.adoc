@@ -82,8 +82,8 @@ Success shape:
 status              success
 exit_code           0
 duration_seconds    45
-log_file            .plan/temp/build-output/default/maven-2026-05-18T10-23-15.log
-command             ./mvnw -l .plan/temp/build-output/default/maven-2026-05-18T10-23-15.log clean verify
+log_file            .plan/temp/build-output/default/maven-2026-05-18-102315.log
+command             ./mvnw -l .plan/temp/build-output/default/maven-2026-05-18-102315.log clean verify
 ----
 
 Failure shape (the same skill auto-parses the log into structured errors on non-zero exit):
@@ -93,8 +93,8 @@ Failure shape (the same skill auto-parses the log into structured errors on non-
 status              error
 exit_code           1
 duration_seconds    23
-log_file            .plan/temp/build-output/default/maven-2026-05-18T10-23-15.log
-command             ./mvnw -l .plan/temp/build-output/default/maven-2026-05-18T10-23-15.log clean verify
+log_file            .plan/temp/build-output/default/maven-2026-05-18-102315.log
+command             ./mvnw -l .plan/temp/build-output/default/maven-2026-05-18-102315.log clean verify
 error               build_failed
 
 errors[N]{file,line,message,category}:

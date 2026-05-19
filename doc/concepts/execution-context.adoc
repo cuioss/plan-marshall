@@ -40,8 +40,8 @@ What "which model and effort level runs each LLM-judgement workflow" reduces to.
 | Layer | What it is
 
 | **Levels** | Six ordinals (`low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`) plus the `inherit` sentinel. Each ordinal binds to a single `(model, effort)` primitive. Defined in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md[`effort-levels.md`].
-| **Roles** | Phase-scoped registry of LLM-judgement workflows that may be pinned to a level. Six top-level groups (`phase-1-init` … `phase-6-finalize`), each polymorphic — its value is either a string (single-level shorthand for the whole phase) or an object whose recognised sub-keys are `default`, `research`, `verification-feedback`, `post-run-review`. Defined in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-roles.md[`effort-roles.md`].
-| **Variants** | The emitted agent files described in <<_level_variants,Level Variants>> above. The resolver picks one of them per dispatch.
+| **Roles** | Phase-scoped registry of LLM-judgement workflows that may be pinned to a level. Six top-level groups (`phase-1-init` … `phase-6-finalize`), each polymorphic — its value is either a string (single-level shorthand for the whole phase) or an object whose recognised sub-keys are `default`, `verification-feedback`, `post-run-review`. Research dispatches do not get their own sub-key — they inherit the calling phase's `default`. Defined in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-roles.md[`effort-roles.md`].
+| **Variants** | The emitted agent files described in <<level-variants,Level Variants>> above. The resolver picks one of them per dispatch.
 |===
 
 The runtime resolution path: caller passes `--phase <phase>` and optionally `--role <subkey>` to `manage-config effort resolve-target`. The resolver walks the bubbling chain `phase.subkey` → `phase.default` → `phase` string shorthand → plan-wide `effort` → `inherit` and returns the first level it finds. The variant emitter has already produced an agent file for that level (or the canonical no-suffix file for `inherit` — see <<level-variants,Level Variants>> above); the orchestrator dispatches that variant by name.
@@ -62,10 +62,10 @@ image::../resources/diagrams/dispatch-walkthrough.svg[Sequence diagram of one ex
 
 The dispatch is synchronous. The orchestrator suspends on the `Task:` call for the entire duration of the subagent's run (skill loads, workflow read, internal loops, AskUserQuestion gates) and resumes only when the subagent returns its TOON record. No tokens are billed to the orchestrator during the suspension — only the subagent's `<usage>` is counted.
 
-Three properties make the 8-step shape worth pinning:
+Three properties make the 8-step shape worth pinning (step numbers refer to the canonical sequence in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/dispatch-walkthrough.md[`dispatch-walkthrough.md`] § Generic eight-step sequence):
 
 * **Step 2's level resolution reads `marshal.json` fresh.** A configuration edit takes effect on the *next* dispatch — no Claude Code restart needed. The variant target string returned by the resolver is what `Task:` is called with.
-* **Step 4's prompt body has exactly five required fields.** `name`, `plan_id`, `skills[]`, exactly one of `workflow`/`instructions`, and `WORKTREE`. Workflow-specific runtime inputs (`producer`, `track`, `module`, …) layer on top per the workflow doc's contract.
+* **Step 3's prompt body has exactly five required fields.** `name`, `plan_id`, `skills[]`, exactly one of `workflow`/`instructions`, and `WORKTREE`. Workflow-specific runtime inputs (`producer`, `track`, `module`, …) layer on top per the workflow doc's contract.
 * **Step 5's skill loads are deterministic.** `dev-general-practices` is implicit-first, then each `skills[]` entry in caller-declared order, then `Read` on the workflow doc. The order is part of the contract — see xref:skill-handling.adoc[Skill Handling].
 
 Three worked end-to-end traces (a single-workflow phase entry, a `verification-feedback` sub-dispatch by reference, and a parallel `enrich-module` fan-out) live in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/dispatch-walkthrough.md[`ref-workflow-architecture/standards/dispatch-walkthrough.md`].
