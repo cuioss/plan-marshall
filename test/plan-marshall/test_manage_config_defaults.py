@@ -99,3 +99,51 @@ class TestLoopBackWithoutAskingDefault:
             finalize['loop_back_without_asking']
             == _config_defaults.DEFAULT_PLAN_FINALIZE['loop_back_without_asking']
         )
+
+
+class TestCiVerifyRegistration:
+    """``default:ci-verify`` MUST be registered in the canonical built-in
+    finalize-step set so that ``marshall-steward`` seeds it into new
+    projects and the phase-6-finalize dispatcher can resolve it. Position
+    is load-bearing: ``ci-verify`` consumes the completed-CI signal and
+    classifies failures BEFORE ``automated-review`` consumes PR-comment
+    findings, so it must sit immediately after ``default:create-pr`` and
+    immediately before ``default:automated-review``."""
+
+    def test_ci_verify_in_built_in_finalize_steps(self) -> None:
+        """``BUILT_IN_FINALIZE_STEPS`` MUST contain ``'default:ci-verify'``
+        at the index immediately after ``'default:create-pr'`` and
+        immediately before ``'default:automated-review'`` — the canonical
+        position declared by ``standards/ci-verify.md`` § Placement and
+        the originating plan's deliverable 6."""
+        steps = _config_defaults.BUILT_IN_FINALIZE_STEPS
+        assert 'default:ci-verify' in steps, (
+            "BUILT_IN_FINALIZE_STEPS must contain 'default:ci-verify'"
+        )
+        create_pr_idx = steps.index('default:create-pr')
+        ci_verify_idx = steps.index('default:ci-verify')
+        automated_review_idx = steps.index('default:automated-review')
+        assert ci_verify_idx == create_pr_idx + 1, (
+            "'default:ci-verify' must sit immediately after "
+            "'default:create-pr' in BUILT_IN_FINALIZE_STEPS"
+        )
+        assert automated_review_idx == ci_verify_idx + 1, (
+            "'default:automated-review' must sit immediately after "
+            "'default:ci-verify' in BUILT_IN_FINALIZE_STEPS"
+        )
+
+    def test_ci_verify_has_description(self) -> None:
+        """``BUILT_IN_FINALIZE_STEP_DESCRIPTIONS`` MUST carry a
+        non-empty description for ``'default:ci-verify'`` so that
+        ``list-finalize-steps`` and the wizard can surface a meaningful
+        label. The text is copied verbatim from the workflow doc's
+        frontmatter ``description`` field — the two stay in lockstep."""
+        descriptions = _config_defaults.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
+        assert 'default:ci-verify' in descriptions, (
+            "BUILT_IN_FINALIZE_STEP_DESCRIPTIONS must register "
+            "'default:ci-verify'"
+        )
+        assert descriptions['default:ci-verify'], (
+            "BUILT_IN_FINALIZE_STEP_DESCRIPTIONS['default:ci-verify'] "
+            'must be a non-empty string'
+        )

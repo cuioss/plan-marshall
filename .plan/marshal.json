@@ -47,6 +47,7 @@
         "project:finalize-step-sync-plugin-cache",
         "project:finalize-step-self-host-fence",
         "default:create-pr",
+        "default:ci-verify",
         "default:automated-review",
         "default:lessons-capture",
         "project:finalize-step-plugin-doctor",
