@@ -23,7 +23,7 @@ The table enumerates every rule emitted by the in-tree analyzers. The `Emitter` 
 | `agent-maven-restricted` | safety | `_doctor_analysis.py` | Build-system isolation contract — only `maven-builder` may execute Maven commands. See `pm-plugin-development:plugin-architecture` references/agent-design.md. |
 | `agent-lessons-via-skill` | structural | `_doctor_analysis.py` | Plugin architecture contract — agents record lessons via `manage-lessons`, not via self-invoked commands. See `pm-plugin-development:plugin-architecture` references/agent-design.md. |
 | `agent-skill-tool-visibility` | structural | `_doctor_analysis.py` | Project convention — Anthropic schema does not require `Skill` in `tools:` (https://code.claude.com/docs/en/sub-agents#supported-frontmatter-fields, verified 2026-05-17); plan-marshall requires it because agents that cannot invoke skills cannot participate in workflow dispatch chains. See `pm-plugin-development:plugin-architecture` references/agent-design.md. |
-| `agent-glob-resolver-workaround` | safety | `_doctor_analysis.py` | Lesson `2026-04-27-18-005` — `Glob` in agent `tools:` invites hand-rolled discovery that should be delegated to a canonical resolver script. |
+| `agent-glob-resolver-workaround` | safety | `_doctor_analysis.py` (delegates to `_analyze_shared.check_agent_glob_resolver_workaround`) | Lesson `2026-04-27-18-005` — `Glob` in agent `tools:` invites hand-rolled discovery that should be delegated to a canonical resolver script. Exemption mechanism: structured frontmatter flag `forwards_tool_capabilities: true` (lowercase YAML boolean). The legacy body-comment marker `# resolver-glob-exempt:` is no longer authoritative. |
 
 ### Workflow / prose rules
 

@@ -16,12 +16,12 @@ Rules that plugin-doctor validates in other components. See the Enforcement bloc
 
 **agent-skill-tool-visibility**: Agents declaring explicit tools must include Skill, otherwise invisible to Task dispatcher.
 
-**agent-glob-resolver-workaround** (severity: error): Flags `agents/*.md` whose YAML frontmatter `tools:` field includes `Glob` unless the agent body contains a `# resolver-glob-exempt:` marker followed by a one-line non-empty justification. Scope: `marketplace/bundles/*/agents/*.md`.
+**agent-glob-resolver-workaround** (severity: error): Flags `agents/*.md` whose YAML frontmatter `tools:` field includes `Glob` unless the same frontmatter declares `forwards_tool_capabilities: true` as a typed boolean flag. Scope: `marketplace/bundles/*/agents/*.md`.
 
 - **Rationale**: Agents granted `Glob` access overwhelmingly use it to hand-roll discovery that should be delegated to a canonical resolver script. This is the same resolver-gap anti-pattern as `skill-resolver-gap`, but at the agent permission layer: once `Glob` is in the agent's tool list, prose-driven discovery becomes the path of least resistance and resolver scripts go unused.
-- **Discovery approach**: Parse YAML frontmatter, check the `tools:` array for the `Glob` token (handles both inline `tools: Read, Write, Glob` and block-list forms). If present, scan the body for a `# resolver-glob-exempt:` marker followed by a non-empty justification on the same line. Absence emits a `agent-glob-resolver-workaround` finding pointing at the agent file.
-- **Fix**: Remove `Glob` from the agent's `tools:` field and replace any Glob-driven discovery with a `python3 .plan/execute-script.py` call to a canonical resolver. If the agent legitimately needs raw `Glob` access (rare — typically only for diagnostics or one-off introspection), add a `# resolver-glob-exempt: <one-line justification>` line in the agent body to declare intent.
-- **Exemptions**: Add a `# resolver-glob-exempt: <justification>` line in the agent body. The justification text must be non-empty; an empty marker does not suppress the finding.
+- **Discovery approach**: Parse YAML frontmatter, check the `tools:` array for the `Glob` token (handles both inline `tools: Read, Write, Glob` and block-list forms). If present, check the same frontmatter for `forwards_tool_capabilities: true` (canonical lowercase YAML boolean, top-level key). Absence emits an `agent-glob-resolver-workaround` finding pointing at the agent file.
+- **Fix**: Remove `Glob` from the agent's `tools:` field and replace any Glob-driven discovery with a `python3 .plan/execute-script.py` call to a canonical resolver. If the agent legitimately forwards tool capabilities to dispatched subagents (the recognized exemption case — e.g., dispatchers that need to pass `Glob` access through), add `forwards_tool_capabilities: true` to the agent's frontmatter to declare intent structurally.
+- **Exemptions**: Add `forwards_tool_capabilities: true` as a top-level YAML key in the agent's frontmatter. The value MUST be the unquoted lowercase YAML boolean `true`; quoted forms (`"true"`, `'true'`), `True`, and `yes` are NOT accepted. The legacy body-comment marker `# resolver-glob-exempt: <justification>` is no longer scoped as an exemption — agents still carrying that marker without the frontmatter flag will be flagged.
 
 ## Workflow Rules
 

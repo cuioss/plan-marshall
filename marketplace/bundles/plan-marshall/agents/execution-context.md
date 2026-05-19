@@ -7,6 +7,7 @@ description: |
   - Input: name=commit-push, plan_id=EXAMPLE-PLAN, skills=[workflow-integration-git], workflow=plan-marshall:phase-6-finalize/standards/commit-push.md, WORKTREE=.plan/local/worktrees/EXAMPLE-PLAN
   - Output: TOON with status, display_detail, plus workflow-specific return fields
 tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill
+forwards_tool_capabilities: true
 implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor
 ---
 
@@ -143,5 +144,3 @@ display_detail: "<≤80 char ASCII summary, no trailing period>"
 Plus any workflow-specific return fields declared in the workflow doc's output contract. The `display_detail` constraints (≤80 chars, ASCII-only, no trailing period) are the canonical agent-return-shape rules — single source of truth is `plan-marshall:ref-workflow-architecture/standards/agents.md`.
 
 If the workflow itself failed to declare a return contract, the minimum two fields (`status`, `display_detail`) are still required from this dispatcher.
-
-# resolver-glob-exempt: forwards tool capabilities to dispatched workflows

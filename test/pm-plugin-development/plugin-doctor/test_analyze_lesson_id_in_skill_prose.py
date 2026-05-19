@@ -382,6 +382,86 @@ class TestSuppressionMarker:
 
 
 # ===========================================================================
+# (d.1) Standalone-marker scoping — regression guards
+# ===========================================================================
+
+
+class TestStandaloneMarkerScoping:
+    """Regression: the suppression marker MUST scope to its own line (and the
+    immediately following one), and MUST NOT bleed across sections or files.
+
+    The marker semantics are line-local — a standalone marker at the top of a
+    section does NOT suppress lesson IDs deeper in the same section, and a
+    marker in one file has zero effect on findings in a sibling file.
+    """
+
+    def test_marker_does_not_bleed_two_lines_below(self, tmp_path: Path) -> None:
+        """Marker two lines above the citation does NOT suppress the finding."""
+        content = (
+            '<!-- doctor-ignore: lesson-id-prose -->\n'
+            '\n'
+            'See lesson 2026-04-17-012 for context.\n'
+        )
+        marketplace_root, _ = _make_skill_md(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert len(findings) == 1
+        assert findings[0]['line'] == 3
+
+    def test_marker_does_not_bleed_across_section_boundary(
+        self, tmp_path: Path
+    ) -> None:
+        """A marker in one section MUST NOT suppress citations in the next section."""
+        content = (
+            '## Section A\n'
+            '<!-- doctor-ignore: lesson-id-prose -->\n'
+            'See lesson 2026-04-17-012 (suppressed by marker above).\n'
+            '\n'
+            '## Section B\n'
+            'See lesson 2026-04-29-23-002 (must be flagged).\n'
+        )
+        marketplace_root, _ = _make_skill_md(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert len(findings) == 1
+        assert findings[0]['line'] == 6
+
+    def test_standalone_marker_at_top_of_file_does_not_blanket_file(
+        self, tmp_path: Path
+    ) -> None:
+        """A single marker at file top does NOT act as a file-wide suppression."""
+        content = (
+            '<!-- doctor-ignore: lesson-id-prose -->\n'
+            '\n'
+            '## Heading\n'
+            'See lesson 2026-04-17-012 here.\n'
+            'And another: lesson 2026-04-29-23-002.\n'
+        )
+        marketplace_root, _ = _make_skill_md(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert len(findings) == 2
+
+    def test_marker_does_not_bleed_across_files(self, tmp_path: Path) -> None:
+        """A marker in one skill file does NOT affect findings in a sibling file."""
+        # File 1: has marker + citation (suppressed).
+        skill_a_dir = tmp_path / 'bundle-a' / 'skills' / 'skill-a'
+        skill_a_dir.mkdir(parents=True)
+        (skill_a_dir / 'SKILL.md').write_text(
+            '<!-- doctor-ignore: lesson-id-prose -->\n'
+            'See lesson 2026-04-17-012.\n',
+            encoding='utf-8',
+        )
+        # File 2: citation without marker (must be flagged).
+        skill_b_dir = tmp_path / 'bundle-b' / 'skills' / 'skill-b'
+        skill_b_dir.mkdir(parents=True)
+        (skill_b_dir / 'SKILL.md').write_text(
+            'See lesson 2026-04-29-23-002.\n',
+            encoding='utf-8',
+        )
+        findings = analyze_lesson_id_in_skill_prose(tmp_path)
+        assert len(findings) == 1
+        assert findings[0]['file'].endswith('bundle-b/skills/skill-b/SKILL.md')
+
+
+# ===========================================================================
 # (e) Boundary cases
 # ===========================================================================
 
