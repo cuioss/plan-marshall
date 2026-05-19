@@ -28,6 +28,13 @@ jobs:
             publish_dir: target/claude
             generator_target_flag: claude
     steps:
+      - name: Generate Release Bot Token
+        id: release-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
       - name: Checkout source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -45,7 +52,7 @@ jobs:
       - name: Publish to orphan branch (cui-release-bot identity)
         uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
         with:
-          personal_token: ${{ secrets.CUI_RELEASE_BOT_TOKEN }}
+          personal_token: ${{ steps.release-token.outputs.token }}
           publish_branch: ${{ matrix.branch_name }}
           publish_dir: ./${{ matrix.publish_dir }}
           force_orphan: true
@@ -53,19 +60,22 @@ jobs:
           user_email: cui-release-bot@cuioss.de
           commit_message: "chore(dist): publish ${{ matrix.publish_dir }} from ${{ github.sha }}"
 
-      - name: Create and push dist tag (release flow only)
+      - name: Create dist tag (release flow only)
         if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          CUI_RELEASE_BOT_TOKEN: ${{ secrets.CUI_RELEASE_BOT_TOKEN }}
         run: |
           set -euo pipefail
           dist_tag="${{ matrix.dist_tag_prefix }}/${{ github.ref_name }}"
           git config user.name 'cui-release-bot'
           git config user.email 'cui-release-bot@cuioss.de'
-          git remote set-url origin \
-            "https://x-access-token:${CUI_RELEASE_BOT_TOKEN}@github.com/${{ github.repository }}.git"
           git fetch origin ${{ matrix.branch_name }}
           git tag -a "${dist_tag}" \
             -m "Distribution for ${{ matrix.target_name }} ${{ github.ref_name }}" \
             origin/${{ matrix.branch_name }}
-          git push origin "${dist_tag}"
+
+      - name: Push dist tag (release flow only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: ad-m/github-push-action@4cc74773234f74829a8c21bc4d69dd4be9cfa599 # v1.1.0
+        with:
+          github_token: ${{ steps.release-token.outputs.token }}
+          tags: true
+          branch: ${{ matrix.branch_name }}
