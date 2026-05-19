@@ -127,6 +127,7 @@ Each step declares an `order: <int>` value in its authoritative source — front
 | `default:pre-submission-self-review` | `workflow/pre-submission-self-review.md` | Pre-submission structural self-review (symmetric pairs, regex, wording, duplication, contract drift) |
 | `default:commit-push` | `standards/commit-push.md` | Commit and push changes |
 | `default:create-pr` | `standards/create-pr.md` | Create pull request |
+| `default:ci-verify` | `workflow/ci-verify.md` | Classify CI run failures into the multi-failure-mode taxonomy and emit one structured triage finding per failing check (`requires: [ci-complete]` in consume-failures mode) |
 | `default:architecture-refresh` | `standards/architecture-refresh.md` | Refresh architecture descriptors (tier-0 deterministic discover + diff, tier-1 LLM re-enrichment) |
 | `default:automated-review` | `standards/automated-review.md` | CI automated review — orchestration prose; the per-finding LLM core dispatches [`workflow/triage.md`](workflow/triage.md) with `finding_type=pr-comment` (see [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) for the architectural flow) |
 | `default:sonar-roundtrip` | `standards/sonar-roundtrip.md` | Sonar analysis roundtrip — orchestration prose; the per-finding LLM core dispatches [`workflow/triage.md`](workflow/triage.md) with `finding_type=sonar-issue` |
@@ -457,6 +458,7 @@ For each step reference:
 | Step reference | Resolver lookup | Workflow doc |
 |----------------|-----------------|--------------|
 | `default:create-pr` | `--phase phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`) | `plan-marshall:phase-6-finalize/workflow/create-pr.md` |
+| `default:ci-verify` | `--phase phase-6-finalize --role verification-feedback` (LLM core classifies failing checks into the multi-failure-mode taxonomy) | `plan-marshall:phase-6-finalize/workflow/ci-verify.md` |
 | `default:lessons-capture` | `--phase phase-6-finalize --role post-run-review` | `plan-marshall:phase-6-finalize/workflow/lessons-capture.md` |
 | `default:automated-review` | `--phase phase-6-finalize --role verification-feedback` (LLM core; outer wrapper tracks `phase-6-finalize.default`) | `plan-marshall:phase-6-finalize/workflow/automated-review.md` |
 | `default:sonar-roundtrip` | `--phase phase-6-finalize --role verification-feedback` (LLM core; outer wrapper tracks `phase-6-finalize.default`) | `plan-marshall:phase-6-finalize/workflow/sonar-roundtrip.md` |
@@ -565,6 +567,7 @@ FOR each step_id in manifest.phase_6.steps:
 
        Per-step workflow docs and resolver lookups:
          * default:create-pr        -> workflow: workflow/create-pr.md        | --phase phase-6-finalize                              (no --role)
+         * default:ci-verify        -> workflow: workflow/ci-verify.md        | --phase phase-6-finalize --role verification-feedback
          * default:automated-review -> workflow: workflow/automated-review.md | --phase phase-6-finalize                              (outer wrapper; inner verification-feedback dispatch uses --role verification-feedback) | timeout: 900s
          * default:sonar-roundtrip  -> workflow: workflow/sonar-roundtrip.md  | --phase phase-6-finalize                              (outer wrapper; inner verification-feedback dispatch uses --role verification-feedback) | timeout: 900s
          * default:lessons-capture  -> workflow: workflow/lessons-capture.md  | --phase phase-6-finalize --role post-run-review       | timeout: 300s
@@ -925,6 +928,7 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `workflow/pre-submission-self-review.md` | `default:pre-submission-self-review` | Deterministic helper (resolved via `ext-self-review-{domain}` ext-point) + LLM cognitive review for symmetric-pair / regex-overfit / wording / duplication / contract-drift defects (hard-fail) |
 | `standards/commit-push.md` | `default:commit-push` | Commit strategy, git status, workflow-integration-git delegation |
 | `standards/create-pr.md` | `default:create-pr` | PR existence check, body generation, CI pr create |
+| `workflow/ci-verify.md` | `default:ci-verify` | Classify CI run failures into multi-failure-mode taxonomy and emit one triage finding per failing check |
 | `standards/architecture-refresh.md` | `default:architecture-refresh` | Tier-0 deterministic `architecture discover --force` + `diff-modules --pre` driven `chore(architecture)` commit; Tier-1 LLM re-enrichment with `prompt`/`auto`/`disabled` modes; respects `architecture_refresh.tier_0` / `tier_1` run-config knobs and `change_type ∈ {bug_fix, verification}` shortcut |
 | `standards/automated-review.md` | `default:automated-review` | Consume completed-CI signal, then consumer dispatch (FIX / SUPPRESS / ACCEPT / AskUserQuestion); loop-back on FIX or pr-comment-overflow. Architectural flow: [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) |
 | `standards/sonar-roundtrip.md` | `default:sonar-roundtrip` | Sonar consumer dispatch (FIX / SUPPRESS / ACCEPT / AskUserQuestion); loop-back on FIX. Architectural flow: [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) |
