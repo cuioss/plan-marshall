@@ -1,0 +1,88 @@
+= Testing
+:nofooter:
+:toc: left
+:toclevels: 2
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
+
+How marketplace scripts are tested.
+
+== Overview
+
+Tests use https://docs.pytest.org/[pytest] via the Pyprojectx wrapper. The full suite runs as part of `./pw verify`; isolated test directories can be run with `./pw module-tests {bundle}`.
+
+[source,bash]
+----
+./pw module-tests                  # pytest test/
+./pw module-tests plan-marshall    # pytest test/plan-marshall
+./pw module-tests -p               # pytest test/ --parallel
+./pw coverage                      # pytest with coverage (to .plan/temp/htmlcov/)
+./pw coverage pm-dev-frontend      # coverage for single module
+----
+
+For workflow-resolved invocations, see xref:build.adoc[Build] — never hard-code `./pw` in workflow code.
+
+== Test infrastructure
+
+[cols="1,3", options="header"]
+|===
+|File / class |Purpose
+
+|`test/conftest.py`
+|Shared fixtures and utilities loaded by every test file.
+
+|Fixture: `fixture_dir`
+|Per-test scratch directory under `pytest`'s `tmp_path`.
+
+|Fixture: `plan_context`
+|`PlanContext` context manager that sets `PLAN_BASE_DIR` and gives the test a writable plan directory. Use unique `plan_id` per test to prevent cross-test contamination — the dedup logic in some manage-* scripts (notably `manage-findings.add_qgate_finding`) makes shared `plan_id` values unsafe.
+
+|Fixture: `build_context`
+|Per-test build-system scaffolding for tests that exercise build invocations.
+
+|Base class: `ScriptTestCase`
+|Inheritable base for tests that drive marketplace scripts via subprocess. Resolves scripts via the executor convention (`{bundle}:{skill}:{script}`) using `get_script_path(bundle, skill, script)`.
+|===
+
+== Patterns
+
+=== Resolve scripts via `get_script_path`
+
+`get_script_path(bundle, skill, script)` resolves to `marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}`. Always use it rather than hand-built paths so tests stay portable across worktrees.
+
+=== Pass `PYTHONPATH` when wrapping `subprocess.run`
+
+Custom `subprocess.run` wrappers MUST pass `PYTHONPATH` with `_MARKETPLACE_SCRIPT_DIRS` from `conftest.py`, otherwise scripts cannot find shared modules such as `toon_parser`.
+
+=== TOON parsing in assertions
+
+* Use `from toon_parser import parse_toon` and `parse_toon(stdout)` rather than `json.loads(stdout)`.
+* `parse_toon()` only captures the first line of TOON quoted multiline values — assertions for multiline content (e.g. formatted commit messages) should check `stdout` directly instead of `result['field']`.
+* TOON parser returns ints for numeric strings (`'123'` → `123`). Use `str(result['field'])` when comparing against expected string values.
+
+=== Worktree fixtures need `.gitignore`
+
+Test repos exercising `git worktree remove` with a dropped shim must commit a `.gitignore` containing `.plan/`. Without it, non-force remove refuses because the shim is "untracked" in fresh fixtures.
+
+== Quality gate
+
+Run BOTH the test suite and the quality gate before any commit that touches scripts or tests — mypy and ruff errors slip through tests-only runs:
+
+[source,bash]
+----
+./pw module-tests
+./pw quality-gate
+----
+
+The architecture-resolved equivalents are:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests"
+python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "quality-gate"
+----
+
+== Related
+
+* xref:build.adoc[Build] — the wrapper, layout, and tool configuration
+* xref:workflow-verification.adoc[Workflow Verification] — opt-in semantic verification of plan artifacts (separate from unit tests)

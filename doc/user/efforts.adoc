@@ -1,0 +1,194 @@
+= Efforts — Per-Role Model Selection
+:nofooter:
+:toc: left
+:toclevels: 3
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
+
+How a project author tunes which model and effort tier runs for each LLM-judgement workflow in Plan Marshall. This page is self-contained for everyday use; spec-level details (precise resolution order, env-var override semantics, build-time guards) live in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md[`effort-variants.md`] — referenced from each section where they matter.
+
+== What this does
+
+By default every subagent dispatched by `/plan-marshall` inherits the model from the parent Claude Code session (typically Opus). Most workflows don't need that — paying Opus tokens for routine refactors is wasteful. The *Efforts* system lets you pin a `(model, effort)` tier per phase, and (optionally) per workflow inside a phase. End result: research and triage run on a heavyweight model; routine work runs on something cheaper; you configure once and never pass per-dispatch flags.
+
+The configuration lives in `.plan/marshal.json`. No Claude Code restart is needed — the resolver reads `marshal.json` fresh on every dispatch.
+
+[#level-palette]
+== The level palette
+
+Six ordinal tiers plus a sentinel. The build emits one `execution-context-{level}` agent variant per tier; the resolver picks which one each dispatch calls.
+
+[cols="1,1,1,3", options="header"]
+|===
+| Level | Model | Effort | When to use
+
+| `low` | Haiku | (n/a) | Mechanical work: log scrubbing, simple lookups, deterministic transforms.
+| `medium` | Sonnet | medium | Routine code edits, doc updates. Sensible plan-wide default.
+| `high` | Sonnet | high | Analytical work: triage, validation, multi-file reasoning.
+| `xhigh` | Opus | medium | Opus reasoning without max thinking — fills the Sonnet-high → Opus-high cost/quality gap.
+| `xxhigh` | Opus | high | High-effort Opus — today's standard Opus top tier.
+| `max` | Opus | xhigh | Top tier (Opus-4.7-only). Build-time guard skips emission when the resolved alias does not accept `effort: xhigh`.
+| `inherit` | (parent) | (parent) | Sentinel: dispatch the canonical no-suffix variant, inheriting whatever the parent session uses.
+|===
+
+Canonical level → primitive binding: link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md[`effort-levels.md`].
+
+[#what-you-can-tune]
+== What you can tune
+
+Plan Marshall's role registry is **phase-scoped**: six groups, named after each SKILL.md (`phase-1-init` … `phase-6-finalize`). Inside each group, you can either set a single level (applies to every workflow under that phase) or set per-workflow sub-keys.
+
+Sub-keys recognised per phase:
+
+[cols="1,3", options="header"]
+|===
+| Group | Recognised sub-keys
+
+| `phase-1-init` … `phase-4-plan` | `default`, `research`
+| `phase-5-execute` | `default`, `verification-feedback`, `research`
+| `phase-6-finalize` | `default`, `verification-feedback`, `post-run-review`, `research`
+|===
+
+Plus the plan-wide fallback `plan.effort` (a single string applied to anything no phase pinned).
+
+The full registry — which workflow doc each sub-key drives, and therefore which `execution-context-{level}` variant runs when that role fires — lives in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-roles.md[`effort-roles.md`].
+
+== Recommended starting point — presets
+
+Don't tune individual sub-keys until you've tried a preset. Three are bundled and cover most projects:
+
+[cols="1,3", options="header"]
+|===
+| Preset | Profile
+
+| `economic` | Cost-optimised. Default `medium`. The three analytical phases (`phase-2-refine`, `phase-3-outline`, `phase-4-plan`) plus the `verification-feedback` workflow on phase-5-execute and phase-6-finalize are bumped to `high`. `post-run-review` stays `medium`.
+| `balanced` | Middle of the road. Default `high`. Lifts `phase-3-outline`, `phase-5-execute.default`, and `phase-6-finalize.post-run-review` to `xhigh`; `verification-feedback` stays at `high`.
+| `high-end` | Upper-tier. Default `high`. Every analytical / `verification-feedback` / `post-run-review` slot (including `phase-5-execute.default`) is `xhigh`. **No slot is `xxhigh` or `max`** — those tiers require explicit per-phase opt-in.
+|===
+
+Apply via the wizard:
+
+[source,bash]
+----
+/marshall-steward         # → Configuration → Effort → preset picker
+----
+
+…or directly:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort apply-preset --preset balanced
+----
+
+The preset payloads live in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/effort_presets.py[`effort_presets.py`].
+
+== Direct configuration
+
+If presets don't fit, edit `marshal.json` directly. The `plan.<phase>.effort` field is polymorphic — a string applies that level to every workflow under the phase; an object sets per-sub-key overrides plus an optional `default` slot. The plan-wide fallback is `plan.effort`.
+
+[source,jsonc]
+----
+{
+  "plan": {
+    "effort": "medium",                          // plan-wide fallback
+    "phase-3-outline": { "effort": "high" },     // string form — applies to everything under phase-3-outline
+    "phase-5-execute": {
+      "effort": {                                // object form — per-sub-key overrides
+        "default": "high",
+        "verification-feedback": "xxhigh"
+      }
+    }
+  }
+}
+----
+
+**Resolution in one line**: deepest match wins — explicit sub-key → phase `default` slot → phase string → `plan.effort` → `inherit`. The full 5-step resolution rules and edge cases live in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md[`effort-variants.md`].
+
+The `effort` block is **opt-in**: when absent entirely, every subagent inherits the parent session's model — same as if every key were `inherit`.
+
+== Worked example
+
+A project author wants:
+
+* Research at the absolute top tier in phase-3-outline.
+* Q-Gate checks (phase-3 and phase-4) on Sonnet-high (`high`).
+* Verification triage on Sonnet-high in both phase-5 and phase-6.
+* Everything else on the default.
+
+[source,jsonc]
+----
+{
+  "plan": {
+    "effort": "medium",
+    "phase-3-outline": {
+      "effort": {
+        "default": "high",
+        "research": "max"
+      }
+    },
+    "phase-4-plan": { "effort": "high" },
+    "phase-5-execute": {
+      "effort": { "verification-feedback": "high" }
+    },
+    "phase-6-finalize": {
+      "effort": {
+        "default": "medium",
+        "verification-feedback": "high"
+      }
+    }
+  }
+}
+----
+
+After saving:
+
+* Q-Gate dispatches from phase-3-outline hit `execution-context-high` via the phase-3 `default` slot. Phase-4 Q-Gate dispatches hit `execution-context-high` via the bare-string at `phase-4-plan.effort`.
+* `--phase phase-5-execute --role verification-feedback` dispatches hit `execution-context-high`.
+* `--phase phase-6-finalize --role verification-feedback` dispatches hit `execution-context-high`.
+* Other phase-6-finalize dispatches (create-pr, pre-submission-self-review, post-run-review) hit `execution-context-medium` via the phase-6 `default` slot.
+* Everything else (phase-1-init, phase-2-refine, phase-5-execute body) hits `execution-context-medium` via the plan-wide fallback.
+
+[#research-tier]
+== Research-tier note
+
+The `research` workflow is bound under each phase's sub-key, not as its own group. It inherits the calling phase's `default` unless you set `<phase>.research` explicitly. To push research to the top tier across the most common research entry point (outline), pin `phase-3-outline.research = max` — but note this is an explicit per-phase opt-in; none of the three presets does it for you.
+
+For *standalone* `/research` outside any plan (no `--phase` flag), the dispatch resolves via `--default` (`plan.effort` → `inherit`). Bump `plan.effort` to raise every standalone research run.
+
+[#troubleshooting]
+== Troubleshooting
+
+=== My configured level isn't taking effect
+
+Check, in order:
+
+1. **Spelling.** Role keys are kebab-case and match the SKILL.md name exactly (`phase-6-finalize.verification-feedback`, not `phase_6.verification_feedback`, not the bare `phase-6-finalize`).
+2. **Level value.** Valid: `low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`, `inherit`. Case-sensitive.
+3. **Target rebuilt.** For meta-project developers only: if you changed variant frontmatter, `target/claude/` needs regenerating. Consumer projects don't have this concern — the variants are static and only the resolver selection changes.
+
+=== `max` isn't running on Opus
+
+`max` resolves to `(opus, xhigh)`, which is Opus-4.7-only. When the build target can't emit that variant (the resolved alias does not accept `effort: xhigh`), it skips emission and the dispatch falls back to the canonical no-suffix variant, which inherits the parent session's model. Check `.plan/logs/` for the build warning.
+
+=== Wizard refuses my level value
+
+Valid levels are listed above. Typos (`hi`, `High`, `MAX`) are refused at save time, by design.
+
+=== Configured level visible but the subagent runs on the wrong model
+
+Likely cause: `CLAUDE_CODE_SUBAGENT_MODEL` is set in your environment, overriding every subagent's pinned model at session start. Unset it and restart Claude Code:
+
+[source,bash]
+----
+unset CLAUDE_CODE_SUBAGENT_MODEL
+----
+
+== Reference
+
+* xref:../concepts/execution-context.adoc#per-role-model-selection[Concepts › Execution Context › Per-Role Model Selection] — the three-layer overview (levels, roles, variants)
+* xref:../concepts/execution-context.adoc[Concepts › Execution Context] — what the `execution-context-{level}` agent does at dispatch time
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md[`effort-variants.md`] — resolver contract & spec (precise resolution rules, env-var override, build-time `max` guard)
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-roles.md[`effort-roles.md`] — full role registry (sub-key → workflow doc → dispatch site)
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md[`effort-levels.md`] — canonical level → `(model, effort)` primitive binding
+* link:../../marketplace/bundles/plan-marshall/skills/marshall-steward/standards/effort-menu.md[`effort-menu.md`] — wizard preset-picker contract

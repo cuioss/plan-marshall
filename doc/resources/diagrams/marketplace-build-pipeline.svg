@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- theme-handling: A (theme-neutral) -->
+<!-- conforms to: pm-documents:ref-svg-diagrams (visual-language + diagram-type-block, horizontal pipeline) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 480"
+     role="img" aria-labelledby="title desc"
+     font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
+  <title id="title">Marketplace build pipeline — source to target to plugin cache</title>
+  <desc  id="desc">Plan-marshall marketplace build pipeline. The marketplace/bundles/ source of truth is transformed by marketplace/targets/generate.py into target/claude/ per-bundle output with role-eligible agents expanded into per-level variants. The project-local /sync-plugin-cache slash command (meta-project only) rsyncs target/claude/ into ~/.claude/plugins/cache/, which is what Claude Code actually loads. Consumer projects skip the middle step and consume the published cache directly.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" class="arrow-fill"/>
+    </marker>
+    <style>
+      .col-header { font-size: 14px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
+      .col-sub    { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .item       { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+      .item-c     { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; text-anchor: middle; }
+      .item-bold  { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-weight: 700; }
+      .arrow-lbl  { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .stroke     { stroke: #6e7681; stroke-width: 1.2; fill: none; }
+      .arrow      { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+      .arrow-fill { fill: #6e7681; }
+    </style>
+  </defs>
+
+  <!-- ============= Stage 1: SOURCE — marketplace/bundles/ ============= -->
+  <rect class="stroke" x="40" y="80" width="280" height="280" rx="6" ry="6"/>
+  <text x="180" y="110" class="col-header">SOURCE</text>
+  <text x="180" y="128" class="col-sub">source of truth · committed</text>
+
+  <text x="55"  y="158" class="item-bold">marketplace/bundles/</text>
+  <text x="68"  y="180" class="item">{bundle}/</text>
+  <text x="82"  y="200" class="item">.claude-plugin/plugin.json</text>
+  <text x="82"  y="220" class="item">agents/</text>
+  <text x="96"  y="240" class="item">execution-context.md</text>
+  <text x="111" y="258" class="col-sub">implements: ext-point-dynamic-level-executor</text>
+  <text x="111" y="274" class="col-sub">levels: [low … max]</text>
+  <text x="82"  y="298" class="item">commands/</text>
+  <text x="82"  y="318" class="item">skills/</text>
+
+  <!-- ============= Stage 2: TARGET — target/claude/ ============= -->
+  <rect class="stroke" x="460" y="80" width="280" height="280" rx="6" ry="6"/>
+  <text x="600" y="110" class="col-header">TARGET</text>
+  <text x="600" y="128" class="col-sub">build output · gitignored</text>
+
+  <text x="475" y="158" class="item-bold">target/claude/</text>
+  <text x="488" y="180" class="item">{bundle}/</text>
+  <text x="502" y="200" class="item">.claude-plugin/plugin.json</text>
+  <text x="517" y="216" class="col-sub">(registers 7 agent entries)</text>
+  <text x="502" y="238" class="item">agents/</text>
+  <text x="516" y="256" class="item">execution-context.md</text>
+  <text x="516" y="272" class="item">execution-context-low.md</text>
+  <text x="516" y="288" class="item">… -medium · -high · -xhigh</text>
+  <text x="516" y="304" class="item">… -xxhigh · -max</text>
+  <text x="502" y="324" class="item">commands/ ·  skills/</text>
+
+  <!-- ============= Stage 3: CACHE — ~/.claude/plugins/cache/ ============= -->
+  <rect class="stroke" x="880" y="80" width="280" height="280" rx="6" ry="6"/>
+  <text x="1020" y="110" class="col-header">PLUGIN CACHE</text>
+  <text x="1020" y="128" class="col-sub">what Claude Code runs</text>
+
+  <text x="895"  y="158" class="item-bold">~/.claude/plugins/cache/</text>
+  <text x="908"  y="180" class="item">plan-marshall/</text>
+  <text x="922"  y="200" class="item">{bundle}/</text>
+  <text x="936"  y="220" class="item">{version}/</text>
+  <text x="950"  y="240" class="item">agents/</text>
+  <text x="965"  y="258" class="col-sub">(canonical + up to 6 variants)</text>
+  <text x="950"  y="280" class="item">commands/ ·  skills/</text>
+  <text x="950"  y="300" class="item">.claude-plugin/</text>
+  <text x="965"  y="318" class="col-sub">plugin.json</text>
+
+  <!-- ============= Arrows + transformation labels ============= -->
+
+  <!-- Source → Target -->
+  <line class="arrow" x1="320" y1="220" x2="456" y2="220" marker-end="url(#arrow)"/>
+  <text x="388" y="195" class="arrow-lbl">marketplace/targets/</text>
+  <text x="388" y="211" class="arrow-lbl">generate.py</text>
+  <text x="388" y="240" class="arrow-lbl">--target claude</text>
+  <text x="388" y="256" class="arrow-lbl">--output target/claude</text>
+
+  <!-- Target → Cache -->
+  <line class="arrow" x1="740" y1="220" x2="876" y2="220" marker-end="url(#arrow)"/>
+  <text x="808" y="195" class="arrow-lbl">/sync-plugin-cache</text>
+  <text x="808" y="211" class="arrow-lbl">(rsync --delete)</text>
+  <text x="808" y="240" class="arrow-lbl">meta-project only;</text>
+  <text x="808" y="256" class="arrow-lbl">consumers use cache directly</text>
+
+  <!-- ============= Footer captions ============= -->
+  <text x="600" y="405" class="col-sub">Consumer projects of plan-marshall load the cache via `/plugin marketplace update`. They never see the SOURCE or TARGET stages.</text>
+  <text x="600" y="425" class="col-sub">In the meta-project the deploy step regenerates TARGET; the sync step rsyncs it into CACHE; Claude Code reloads to pick up new variants.</text>
+
+</svg>

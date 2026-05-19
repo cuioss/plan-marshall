@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- theme-handling: A (theme-neutral) -->
+<!-- conforms to: pm-documents:ref-svg-diagrams (visual-language + diagram-type-sequence) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 540"
+     role="img" aria-labelledby="title desc"
+     font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
+  <title id="title">Build dispatch — synchronous call shape, no tokens spent while waiting</title>
+  <desc  id="desc">Sequence diagram showing the four actors involved in a plan-marshall build dispatch: the LLM workflow body resolves a canonical command via the architecture skill, dispatches the build skill, which spawns the underlying build process. The LLM is suspended on the tool call until the build skill returns a single structured TOON. No tokens are spent during the long build wait.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" class="arrow-fill"/>
+    </marker>
+    <style>
+      .col-header   { font-size: 14px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
+      .col-sub      { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .arrow-lbl    { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .stroke       { stroke: #6e7681; stroke-width: 1.2; fill: none; }
+      .arrow        { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+      .arrow-return { stroke: #6e7681; stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+      .arrow-fill   { fill: #6e7681; }
+      .sep          { stroke: #6e7681; stroke-width: 0.6; stroke-dasharray: 3 3; }
+      .activation   { stroke: #6e7681; stroke-width: 0.8; fill: #6e7681; opacity: 0.22; }
+    </style>
+  </defs>
+
+  <!-- ============= Actor headers ============= -->
+  <text x="110" y="32" class="col-header">LLM workflow</text>
+  <rect class="stroke" x="50" y="44" width="120" height="34" rx="6"/>
+
+  <text x="360" y="32" class="col-header">architecture</text>
+  <rect class="stroke" x="300" y="44" width="120" height="34" rx="6"/>
+
+  <text x="600" y="32" class="col-header">build-{tool}</text>
+  <rect class="stroke" x="540" y="44" width="120" height="34" rx="6"/>
+
+  <text x="830" y="32" class="col-header">build process</text>
+  <rect class="stroke" x="770" y="44" width="120" height="34" rx="6"/>
+
+  <!-- ============= Lifelines (dashed verticals) ============= -->
+  <line class="sep" x1="110" y1="80" x2="110" y2="470"/>
+  <line class="sep" x1="360" y1="80" x2="360" y2="470"/>
+  <line class="sep" x1="600" y1="80" x2="600" y2="470"/>
+  <line class="sep" x1="830" y1="80" x2="830" y2="470"/>
+
+  <!-- ============= Activation bars ============= -->
+  <!-- LLM holds control for the whole sequence (from msg 1 to msg 8) -->
+  <rect class="activation" x="105" y="110" width="10" height="320"/>
+
+  <!-- architecture short activation (resolve in-and-out) -->
+  <rect class="activation" x="355" y="110" width="10" height="78"/>
+
+  <!-- build-{tool} long activation (from receiving run to returning TOON) -->
+  <rect class="activation" x="595" y="218" width="10" height="197"/>
+
+  <!-- build process activation (subprocess from spawn to exit) -->
+  <rect class="activation" x="825" y="225" width="10" height="120"/>
+
+  <!-- build-{tool} short post-subprocess activation (log parse) -->
+  <!-- (already inside the longer build-{tool} activation; emphasised inline by the "parse log" note) -->
+
+  <!-- ============= Messages ============= -->
+
+  <!-- 1. LLM → architecture: resolve -->
+  <line class="arrow" x1="115" y1="115" x2="355" y2="115" marker-end="url(#arrow)"/>
+  <text x="235" y="107" class="arrow-lbl">resolve --command verify --module X</text>
+
+  <!-- 2. architecture → LLM: return the FULL wrapped executable string -->
+  <text x="235" y="138" class="arrow-lbl">executable: "python3 .plan/execute-script.py</text>
+  <text x="235" y="153" class="arrow-lbl">             plan-marshall:build-maven:maven run</text>
+  <text x="235" y="168" class="arrow-lbl">             --command-args 'verify -pl X' "</text>
+  <line class="arrow-return" x1="355" y1="183" x2="115" y2="183" marker-end="url(#arrow)"/>
+
+  <!-- 3. LLM → build-{tool}: execute the returned string verbatim -->
+  <line class="arrow" x1="115" y1="218" x2="595" y2="218" marker-end="url(#arrow)"/>
+  <text x="355" y="210" class="arrow-lbl">execute returned string (no new dispatch construction)</text>
+
+  <!-- 4. build-{tool} → build process: spawn -->
+  <line class="arrow" x1="605" y1="225" x2="825" y2="225" marker-end="url(#arrow)"/>
+  <text x="715" y="217" class="arrow-lbl">spawn build</text>
+
+  <!-- Wait callout (no emoji — system-font stack has no glyph for ⏳ and falls back to a substitute) -->
+  <text x="450" y="290" class="col-sub">— LLM suspended on the tool call —</text>
+  <text x="450" y="308" class="col-sub">no tokens spent during the wait</text>
+
+  <!-- Note on the build process column (kept short to fit inside the viewBox) -->
+  <text x="830" y="298" class="arrow-lbl">writes log file</text>
+
+  <!-- 5. build process → build-{tool}: exit code -->
+  <line class="arrow-return" x1="825" y1="350" x2="605" y2="350" marker-end="url(#arrow)"/>
+  <text x="715" y="342" class="arrow-lbl">exit code + log path</text>
+
+  <!-- Note on build-{tool} column for log parse -->
+  <text x="600" y="385" class="arrow-lbl">parse log → TOON</text>
+
+  <!-- 6. build-{tool} → LLM: TOON return -->
+  <line class="arrow-return" x1="595" y1="415" x2="115" y2="415" marker-end="url(#arrow)"/>
+  <text x="355" y="407" class="arrow-lbl">{ status, exit_code, duration_seconds, log_file, errors[N] }</text>
+
+  <!-- ============= Footer caption ============= -->
+  <text x="450" y="510" class="col-sub">Synchronous — caller resumes only on return.   Token cost ≈ TOON return size, independent of build duration.</text>
+
+</svg>

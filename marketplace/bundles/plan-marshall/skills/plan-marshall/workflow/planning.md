@@ -14,7 +14,7 @@ Workflows for plan creation and setup phases: init, refine, outline, and plan.
 
 | Action | Workflow |
 |--------|----------|
-| `list` (default) | List all plans |
+| `list` (default — no inputs) | List all plans |
 | `init` | Create new plan, auto-continue |
 | `refine` | Clarify request until confident |
 | `outline` | Run 3-outline and 4-plan phases |
@@ -22,6 +22,18 @@ Workflows for plan creation and setup phases: init, refine, outline, and plan.
 | `lessons` | List and convert lessons to plans |
 | `lessons-aggregate` | Aggressive cross-lesson aggregation + superseded-stub prune in a single command |
 | `recipe` | Create plan from recipe (routes to `workflow/recipe.md`) |
+
+When `action=` is omitted, infer the action from the supplied source/target parameters per the [Action Resolution rules in SKILL.md](../SKILL.md#action-resolution):
+
+| Supplied parameter (no explicit `action=`) | Inferred action |
+|--------------------------------------------|-----------------|
+| `task=` or `issue=` | `init` (parameter becomes the plan source) |
+| `lesson=` | `lessons` (seeds the lessons workflow with the given lesson) |
+| `recipe=` | `recipe` (seeds the recipe workflow with the given recipe key) |
+| `plan=` | auto-detected from plan's current phase (see SKILL.md) |
+| (none) | `list` |
+
+If two or more of `{task, issue, lesson, recipe, plan}` are supplied together without an explicit `action=`, return `status: error` naming the conflict.
 
 ---
 
@@ -136,10 +148,17 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capt
   --plan-id {plan_id} --phase 1-init
 ```
 
-**Automatic Continuation**:
-1. Check `stop-after-init` parameter
-2. If true: Stop and display plan summary
-3. If false (default): Continue through 2-refine, 3-outline, and 4-plan phases with the new plan_id
+**Automatic Continuation** — read `plan.phase-1-init.init_without_asking` from `marshal.json`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-1-init get --field init_without_asking --audit-plan-id {plan_id}
+```
+
+- If `false` → STOP and display the plan summary.
+- Otherwise (`true` or unset → default `true`) → continue through 2-refine, 3-outline, and 4-plan phases with the new plan_id.
+
+This mirrors the existing `plan_without_asking` (phase-3-outline) and `execute_without_asking` (phase-4-plan) gate-resolution pattern.
 
 **2-Refine Phase**: Dispatch the refine phase under role key `phase-2-refine` (single-workflow phase per [`call-graph.md`](../../ref-workflow-architecture/standards/call-graph.md) § 2.2 and [`dispatch-walkthrough.md`](../../ref-workflow-architecture/standards/dispatch-walkthrough.md) § Example A).
 

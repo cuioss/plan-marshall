@@ -1,0 +1,80 @@
+= Build
+:nofooter:
+:toc: left
+:toclevels: 2
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
+
+How Plan Marshall is built and tested locally.
+
+== Overview
+
+This project uses https://pyprojectx.github.io/[Pyprojectx] for Python development tooling, following the Maven/Gradle wrapper pattern. Only Python 3 is required on the host system.
+
+== Rationale
+
+Pyprojectx was chosen because it provides a proven, mvnw/gradlew-style wrapper for Python that requires only Python 3 on the host system. Unlike custom solutions, it is actively maintained (since 2022), supports multiple tools (uv, ruff, mypy, pytest), and provides reproducible builds via lock files. This approach avoids reinventing the wheel while matching industry best practices for 2025.
+
+== Canonical Commands
+
+[IMPORTANT]
+====
+Never hard-code `./pw` in workflow or skill code. Always resolve build commands via the architecture API:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "{command}"
+----
+
+The `./pw` shortcuts below are appropriate for ad-hoc local development only.
+====
+
+[source,bash]
+----
+# Canonical commands with optional module filtering (see build.py)
+./pw compile                      # mypy marketplace/bundles/
+./pw compile pm-dev-frontend      # mypy single bundle
+./pw test-compile                 # mypy test/
+./pw test-compile plan-marshall   # mypy single test directory
+./pw module-tests                 # pytest test/
+./pw module-tests pm-dev-frontend # pytest single directory
+./pw quality-gate                 # ruff check all
+./pw quality-gate pm-dev-java     # ruff on single bundle + tests
+./pw coverage                     # pytest with coverage
+./pw verify                       # Full: compile + quality-gate + module-tests
+./pw verify pm-dev-frontend       # Full verification on single bundle
+./pw clean                        # Remove build artifacts
+----
+
+Always call build commands with a Bash timeout of at least 10 minutes (600000ms) when running them from inside a Plan Marshall workflow. The build emits TOON; analyse `status`, `errors[N]{file,line,message,category}`, and `log_file` as needed.
+
+== Project Structure
+
+[source]
+----
+plan-marshall/
+├── pw                 # Unix wrapper (committed)
+├── pw.bat             # Windows wrapper (committed)
+├── pw.lock            # Tool version lock (committed)
+├── build.py           # Build script with module filtering (committed)
+├── .pyprojectx/       # Tool installations (gitignored)
+├── pyproject.toml     # Configuration
+├── marketplace/       # Marketplace bundles (source of truth)
+└── test/              # Tests
+----
+
+== Tool Configuration
+
+Tool configuration is in `pyproject.toml`:
+
+* `[tool.pyprojectx.main]` — dev tool requirements (uv, pytest, ruff, mypy)
+* `[tool.pyprojectx.aliases]` — command shortcuts
+* `[tool.pytest.ini_options]` — pytest configuration
+* `[tool.coverage.run]` / `[tool.coverage.report]` — coverage data-collection + reporting settings. The HTML output directory (`.plan/temp/htmlcov/`) is wired in `build.py` via `--cov-report=html:…`, not in `pyproject.toml`.
+* `[tool.ruff]` — linter/formatter configuration
+* `[tool.mypy]` — type checker configuration
+
+== Related
+
+* xref:testing.adoc[Testing] — pytest infrastructure, fixtures, and the `ScriptTestCase` base class
+* xref:marketplace-build.adoc[Marketplace Build] — the `target/` generation pipeline that consumes this build output

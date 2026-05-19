@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- theme-handling: A (theme-neutral) -->
+<!-- conforms to: pm-documents:ref-svg-diagrams (visual-language + diagram-type-block; core-plus-hooks variant) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760"
+     role="img" aria-labelledby="title desc"
+     font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
+  <title id="title">Extension topology — Plan Marshall core plus ten named extension points</title>
+  <desc  id="desc">Plan Marshall is a core orchestrator plus six phase skills plus the execution-context dispatcher plus a family of manage-* services, extended by ten production bundles through ten named extension points: build, triage, recipe, outline, provider, execution-context-workflow, dynamic-level-executor, self-review-surfacing, verify-steps, and finalize-steps. The diagram shows the core on the left and the ten extension points on the right as cards, each annotated with how the contract is declared (ExtensionBase method, implements: frontmatter, or standalone convention) and a current implementation count. Two points are placeholders today (verify-steps, finalize-steps).</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" class="arrow-fill"/>
+    </marker>
+    <style>
+      .col-header { font-size: 14px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
+      .col-sub    { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .mono       { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; fill: #6e7681; text-anchor: middle; }
+      .axis-lbl   { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .item       { font-size: 11px; fill: #6e7681; text-anchor: middle; }
+      .stroke     { stroke: #6e7681; stroke-width: 1.2; fill: none; }
+      .arrow      { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+      .arrow-fill { fill: #6e7681; }
+    </style>
+  </defs>
+
+  <!-- ============= Title ============= -->
+  <text x="600" y="32" class="col-header">Extension topology — core plus the ten extension points</text>
+  <text x="600" y="52" class="col-sub">all ten production bundles implement `get_skill_domains()`; the other points are optional and per-domain</text>
+
+  <!-- ============= LEFT — Plan Marshall core ============= -->
+  <rect class="stroke" x="60" y="100" width="320" height="600" rx="8" ry="8"/>
+
+  <text x="220" y="128" class="col-header">Plan Marshall core</text>
+  <text x="220" y="146" class="col-sub">always present; never extends itself</text>
+
+  <text x="220" y="195" class="item">Orchestrator</text>
+  <text x="220" y="211" class="mono">/plan-marshall</text>
+
+  <text x="220" y="260" class="item">Six phase skills</text>
+  <text x="220" y="276" class="mono">phase-1-init … phase-6-finalize</text>
+
+  <text x="220" y="325" class="item">Dispatcher (canonical agent)</text>
+  <text x="220" y="341" class="mono">execution-context-{level}</text>
+
+  <text x="220" y="390" class="item">manage-* services</text>
+  <text x="220" y="406" class="mono">status · tasks · findings · architecture …</text>
+
+  <text x="220" y="455" class="item">Discovery + the seam</text>
+  <text x="220" y="471" class="mono">extension_discovery.py</text>
+  <text x="220" y="487" class="item">scans `plan-marshall-plugin/extension.py`</text>
+  <text x="220" y="501" class="item">in every installed bundle</text>
+
+  <text x="220" y="555" class="item">Required from every bundle:</text>
+  <text x="220" y="573" class="mono" style="font-weight: 700">get_skill_domains()</text>
+  <text x="220" y="590" class="item">the only abstract method</text>
+
+  <text x="220" y="640" class="col-sub">all other points are optional</text>
+  <text x="220" y="655" class="col-sub">— default to no-op when absent —</text>
+
+  <!-- Connector arrows from core to hooks (visual cue, not pinned per point) -->
+  <line class="arrow" x1="385" y1="200" x2="490" y2="200" marker-end="url(#arrow)"/>
+  <line class="arrow" x1="385" y1="400" x2="490" y2="400" marker-end="url(#arrow)"/>
+  <line class="arrow" x1="385" y1="600" x2="490" y2="600" marker-end="url(#arrow)"/>
+
+  <!-- ============= RIGHT — Ten extension points (5 × 2 grid) ============= -->
+  <!-- Column 1 (x = 500-820), Column 2 (x = 840-1160). Card width 320, height 100, vertical gap 14. -->
+
+  <!-- Row 1 -->
+  <rect class="stroke" x="500" y="105" width="320" height="100" rx="6" ry="6"/>
+  <text x="660" y="127" class="mono" style="font-weight: 700">ext-point-build</text>
+  <text x="660" y="146" class="mono">discover_modules() + ExecuteConfig</text>
+  <text x="660" y="165" class="col-sub">4 impls · Active</text>
+  <text x="660" y="185" class="item">Maven · Gradle · npm · Python</text>
+
+  <rect class="stroke" x="840" y="105" width="320" height="100" rx="6" ry="6"/>
+  <text x="1000" y="127" class="mono" style="font-weight: 700">ext-point-triage</text>
+  <text x="1000" y="146" class="mono">provides_triage()</text>
+  <text x="1000" y="165" class="col-sub">7 impls · Active</text>
+  <text x="1000" y="185" class="item">java · js · oci · python · docs · reqs · plugin</text>
+
+  <!-- Row 2 -->
+  <rect class="stroke" x="500" y="219" width="320" height="100" rx="6" ry="6"/>
+  <text x="660" y="241" class="mono" style="font-weight: 700">ext-point-recipe</text>
+  <text x="660" y="260" class="mono">provides_recipes()</text>
+  <text x="660" y="279" class="col-sub">4 impls · Active</text>
+  <text x="660" y="299" class="item">refactor-to-profile · doc-verify · diagrams · cui-logging</text>
+
+  <rect class="stroke" x="840" y="219" width="320" height="100" rx="6" ry="6"/>
+  <text x="1000" y="241" class="mono" style="font-weight: 700">ext-point-outline</text>
+  <text x="1000" y="260" class="mono">provides_outline_skill()</text>
+  <text x="1000" y="279" class="col-sub">1 impl · Active</text>
+  <text x="1000" y="299" class="item">pm-plugin-development:ext-outline-workflow</text>
+
+  <!-- Row 3 -->
+  <rect class="stroke" x="500" y="333" width="320" height="100" rx="6" ry="6"/>
+  <text x="660" y="355" class="mono" style="font-weight: 700">ext-point-provider</text>
+  <text x="660" y="374" class="mono">{provider}_provider.py file</text>
+  <text x="660" y="393" class="col-sub">4 impls · Active</text>
+  <text x="660" y="413" class="item">GitHub · GitLab · Sonar · Git</text>
+
+  <rect class="stroke" x="840" y="333" width="320" height="100" rx="6" ry="6"/>
+  <text x="1000" y="355" class="mono" style="font-weight: 700">ext-point-execution-context-workflow</text>
+  <text x="1000" y="374" class="mono">implements: in workflow doc</text>
+  <text x="1000" y="393" class="col-sub">many · Active</text>
+  <text x="1000" y="413" class="item">every workflow doc dispatched through execution-context</text>
+
+  <!-- Row 4 -->
+  <rect class="stroke" x="500" y="447" width="320" height="100" rx="6" ry="6"/>
+  <text x="660" y="469" class="mono" style="font-weight: 700">ext-point-dynamic-level-executor</text>
+  <text x="660" y="488" class="mono">implements: in agent doc</text>
+  <text x="660" y="507" class="col-sub">1 impl · Active</text>
+  <text x="660" y="527" class="item">execution-context (level-suffixed variants)</text>
+
+  <rect class="stroke" x="840" y="447" width="320" height="100" rx="6" ry="6"/>
+  <text x="1000" y="469" class="mono" style="font-weight: 700">ext-point-self-review-surfacing</text>
+  <text x="1000" y="488" class="mono">ext-self-review-{domain} skill</text>
+  <text x="1000" y="507" class="col-sub">1 impl · Active</text>
+  <text x="1000" y="527" class="item">pre-submission candidate surface (regex · contracts · schema)</text>
+
+  <!-- Row 5 -->
+  <rect class="stroke" x="500" y="561" width="320" height="100" rx="6" ry="6"/>
+  <text x="660" y="583" class="mono" style="font-weight: 700">ext-point-verify-steps</text>
+  <text x="660" y="602" class="mono">provides_verify_steps()</text>
+  <text x="660" y="621" class="col-sub">0 impls · Placeholder</text>
+  <text x="660" y="641" class="item">domain-specific phase-5 verification</text>
+
+  <rect class="stroke" x="840" y="561" width="320" height="100" rx="6" ry="6"/>
+  <text x="1000" y="583" class="mono" style="font-weight: 700">ext-point-finalize-steps</text>
+  <text x="1000" y="602" class="mono">provides_finalize_steps()</text>
+  <text x="1000" y="621" class="col-sub">0 impls · Placeholder</text>
+  <text x="1000" y="641" class="item">domain-specific phase-6 finalize hooks</text>
+
+  <!-- ============= Footer caption ============= -->
+  <text x="600" y="725" class="col-sub">Adding a domain: drop `skills/plan-marshall-plugin/extension.py` into the bundle, implement `get_skill_domains()`, optionally override any other hook.</text>
+
+</svg>

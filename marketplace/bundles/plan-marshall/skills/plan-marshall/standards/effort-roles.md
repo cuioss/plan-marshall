@@ -6,7 +6,7 @@
 
 A **role** is a stable key that identifies a class of subagent dispatch (e.g., `phase-1-init`, `phase-6-finalize.verification-feedback`). The role key sits at the LLM-judgement-workflow layer, NOT at the manifest-step / call-site layer — multiple call sites that dispatch the same LLM-judgement workflow from the same phase share one role key.
 
-The registry is **phase-scoped**: every role key sits under a `phase-N-{suffix}` group whose name matches the SKILL.md it identifies (`phase-1-init`, `phase-2-refine`, `phase-3-outline`, `phase-4-plan`, `phase-5-execute`, `phase-6-finalize`). There is no `cross.*` group; workflows that fire from multiple phases inherit the calling phase's level via bubbling resolution (`plan.<phase>.effort.<subkey>` → `plan.<phase>.effort.default` → `plan.effort` → `inherit`). The calling phase is supplied by the dispatch site via `--phase phase-N-{suffix}`.
+The registry is **phase-scoped**: every role key sits under a `phase-N-{suffix}` group whose name matches the SKILL.md it identifies (`phase-1-init`, `phase-2-refine`, `phase-3-outline`, `phase-4-plan`, `phase-5-execute`, `phase-6-finalize`). Workflows that fire from multiple phases inherit the calling phase's level via bubbling resolution (`plan.<phase>.effort.<subkey>` → `plan.<phase>.effort.default` → `plan.effort` → `inherit`). The calling phase is supplied by the dispatch site via `--phase phase-N-{suffix}`.
 
 Research dispatches do NOT get their own sub-key — they inherit the calling phase's default (or use `--default` for standalone `/research` outside any plan).
 

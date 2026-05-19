@@ -1,20 +1,23 @@
-= Usage
-:toc:
-:toclevels: 3
+= Terminal Title
+:nofooter:
+:toc: left
+:toclevels: 2
 
-Operational guidance for running plan-marshall in day-to-day work. Each top-level section covers one self-contained topic; add new sections as new workflows land.
+xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
 
-== Terminal title in VS Code
+Operational guidance for the per-session terminal-title indicator that Plan Marshall configures via `/marshall-steward` → Configuration → Terminal title.
 
-The `/marshall-steward` → Configuration → Terminal title wizard wires hooks and a `statusLine` entry into `./.claude/settings.local.json` so each Claude Code session tab shows `▶` (running), `?` (waiting), `◯` (idle), or `✓` (done) followed by the active plan and phase. It also sets `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` to stop Claude Code's built-in OSC emitter from clobbering the title on every render cycle.
+The wizard wires hooks and a `statusLine` entry into `./.claude/settings.local.json` so each Claude Code session tab shows `▶` (running), `?` (waiting), `◯` (idle), or `✓` (done) followed by the active plan and phase. It also sets `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` to stop Claude Code's built-in OSC emitter from clobbering the title on every render cycle.
 
-iTerm2, Ghostty, Kitty, and Terminal.app pick up the OSC-set title automatically and need no additional configuration. **VS Code does not** — its integrated terminal ignores OSC title sequences unless you opt in.
+iTerm2, Ghostty, Kitty, and Terminal.app pick up the OSC-set title automatically and need no additional configuration. **VS Code does not** — its integrated terminal ignores OSC title sequences unless you opt in. **JetBrains IDEs do not either** — and unlike VS Code, no client-side setting fixes it.
 
-=== Scope
+== Scope
 
 Installation is project-local and per-developer. The wizard writes exclusively to `./.claude/settings.local.json`, which is gitignored by Claude Code convention so absolute per-user paths never enter version control. There is no global-scope option and no wizard path to uninstall — removing the feature is a manual edit of the file.
 
-=== One-time VS Code user-settings change
+== VS Code
+
+=== One-time user-settings change
 
 Open VS Code user settings (`Cmd+,` → "Open Settings (JSON)" icon, or edit `~/Library/Application Support/Code/User/settings.json` directly) and add:
 
@@ -44,9 +47,9 @@ If you have Settings Sync enabled, the change propagates across all your VS Code
 * **Tab shows `2.1.114` intermittently** — `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE` is missing or set to a non-`"1"` value in `./.claude/settings.local.json`. Re-run `/marshall-steward` → Configuration → Terminal title, or add the key manually under the `env` block.
 * **Tab label is blank inside Claude Code** — the hook subprocess couldn't open `/dev/tty` and fell back to stdout; check `~/.claude/plugins/cache/plan-marshall/plan-marshall/<version>/skills/plan-marshall/scripts/set_terminal_title.py` is on disk and executable by your Python 3.
 
-== Terminal title in IntelliJ IDEA
+== JetBrains IDEs (IntelliJ IDEA, PyCharm, GoLand, WebStorm, RustRover, Rider, …)
 
-IntelliJ IDEA (and the rest of the JetBrains IDE family — PyCharm, GoLand, WebStorm, RustRover, Rider, etc.) ships a built-in terminal tool window backed by JediTerm. Unlike VS Code, **there is no setting, registry flag, or shell hook that makes the IntelliJ terminal tab title reflect OSC 0/2 title escape sequences.** The `/marshall-steward` wizard configures everything correctly, the script emits the OSC bytes correctly, JediTerm parses them correctly — and then the IDE discards them for tab-title purposes.
+JetBrains IDEs ship a built-in terminal tool window backed by JediTerm. Unlike VS Code, **there is no setting, registry flag, or shell hook that makes the JetBrains terminal tab title reflect OSC 0/2 title escape sequences.** The `/marshall-steward` wizard configures everything correctly, the script emits the OSC bytes correctly, JediTerm parses them correctly — and then the IDE discards them for tab-title purposes.
 
 === Why it cannot be fixed from our side
 
@@ -54,7 +57,7 @@ JediTerm consumes the `\033]0;...\007` sequence and stores the title on the inte
 
 === What still works
 
-The `statusLine` entry the wizard writes into `./.claude/settings.local.json` is the supported source of truth inside JetBrains IDEs. Claude Code renders the statusline as plain text in its TUI footer, so the same `<icon> pm:<phase>:<short>` label that drives the tab title elsewhere shows up at the bottom of the Claude pane regardless of terminal emulator. Look there for the live status when running `claude` inside the IntelliJ terminal.
+The `statusLine` entry the wizard writes into `./.claude/settings.local.json` is the supported source of truth inside JetBrains IDEs. Claude Code renders the statusline as plain text in its TUI footer, so the same `<icon> pm:<phase>:<short>` label that drives the tab title elsewhere shows up at the bottom of the Claude pane regardless of terminal emulator. Look there for the live status when running `claude` inside the JetBrains terminal.
 
 === Optional workarounds
 
@@ -65,4 +68,4 @@ The `statusLine` entry the wizard writes into `./.claude/settings.local.json` is
 === Troubleshooting
 
 * **Statusline missing inside Claude Code** — confirm `settings["statusLine"]` exists in `./.claude/settings.local.json` and points at the script with the `--statusline` flag. Re-run `/marshall-steward` → Configuration → Terminal title if absent.
-* **OSC bytes leak as visible text in the terminal** (e.g. `]0;◯ claude` appearing as output) — the script ran fine; what failed is the `/dev/tty` write. The script then falls back to stdout, Claude Code captures that stdout as hook output, and IntelliJ renders the bytes literally because they never reached JediTerm as an in-band escape sequence. This is cosmetic and harmless — the tab title couldn't update anyway (see "Why it cannot be fixed from our side" above). If you want to silence the leak, run `claude` from a tty session where the hook subprocess can open `/dev/tty` directly, e.g. an external terminal.
+* **OSC bytes leak as visible text in the terminal** (e.g. `]0;◯ claude` appearing as output) — the script ran fine; what failed is the `/dev/tty` write. The script then falls back to stdout, Claude Code captures that stdout as hook output, and the IDE renders the bytes literally because they never reached JediTerm as an in-band escape sequence. This is cosmetic and harmless — the tab title couldn't update anyway (see "Why it cannot be fixed from our side" above). If you want to silence the leak, run `claude` from a tty session where the hook subprocess can open `/dev/tty` directly, e.g. an external terminal.

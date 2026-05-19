@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- theme-handling: A (theme-neutral) -->
+<!-- conforms to: pm-documents:ref-svg-diagrams (visual-language + diagram-type-block; comparison-column variant) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 620"
+     role="img" aria-labelledby="title desc"
+     font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
+  <title id="title">Per-dispatch context isolation — single growing context vs orchestrator-plus-execution-context-variants</title>
+  <desc  id="desc">Side-by-side comparison of two context-growth strategies. On the left, a monolithic single-context approach accumulates everything (system prompt, tool outputs, raw build logs, intermediate reasoning) into one growing context that ends near the token-window limit. On the right, the plan-marshall orchestrator stays small and dispatches per-phase or per-task work into `execution-context-{level}` variants that each run in their own context; each variant returns a small TOON record to the orchestrator and is then discarded. Net effect: the orchestrator's context grows only by the size of the TOON returns, while the heavy intermediate context lives and dies inside the execution-context envelope.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" class="arrow-fill"/>
+    </marker>
+    <style>
+      .col-header { font-size: 15px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
+      .col-sub    { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .item       { font-size: 11px; fill: #6e7681; text-anchor: middle; }
+      .mono       { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; fill: #6e7681; text-anchor: middle; }
+      .stroke     { stroke: #6e7681; stroke-width: 1.2; fill: none; }
+      .fill-faint { fill: #6e7681; fill-opacity: 0.08; stroke: #6e7681; stroke-width: 1.2; }
+      .arrow      { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+      .arrow-return { stroke: #6e7681; stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+      .arrow-fill { fill: #6e7681; }
+      .sep        { stroke: #6e7681; stroke-width: 0.6; stroke-dasharray: 3 3; }
+    </style>
+  </defs>
+
+  <!-- ============= Header ============= -->
+  <text x="500" y="34" class="col-header">Per-dispatch context isolation — where the heavy context actually lives</text>
+  <text x="500" y="54" class="col-sub">same task, two approaches · only the right column survives a long-running session</text>
+
+  <!-- Vertical centre divider -->
+  <line class="sep" x1="500" y1="80" x2="500" y2="530"/>
+
+  <!-- ============= LEFT — Monolithic single context ============= -->
+  <text x="250" y="95"  class="col-header">Monolithic single context</text>
+  <text x="250" y="113" class="col-sub">all intermediate work stays in the chat</text>
+
+  <!-- Single growing column. Bar height proportional to accumulated tokens. -->
+  <rect class="fill-faint" x="170" y="135" width="160" height="370" rx="6" ry="6"/>
+
+  <!-- Internal segments (cumulative bands) -->
+  <line class="sep" x1="170" y1="180" x2="330" y2="180"/>
+  <text x="250" y="160" class="item">System prompt + skills</text>
+  <text x="250" y="174" class="mono">~3 K</text>
+
+  <line class="sep" x1="170" y1="240" x2="330" y2="240"/>
+  <text x="250" y="200" class="item">Tool calls + tool outputs</text>
+  <text x="250" y="216" class="item">(`ls`, `cat`, `grep`,</text>
+  <text x="250" y="230" class="item">build log lines, …)</text>
+
+  <line class="sep" x1="170" y1="320" x2="330" y2="320"/>
+  <text x="250" y="265" class="item">Raw build / test output</text>
+  <text x="250" y="280" class="item">accumulated as the LLM</text>
+  <text x="250" y="294" class="item">polls and narrates</text>
+  <text x="250" y="310" class="mono">~10–25 K</text>
+
+  <line class="sep" x1="170" y1="400" x2="330" y2="400"/>
+  <text x="250" y="345" class="item">Intermediate reasoning,</text>
+  <text x="250" y="359" class="item">narration, fix attempts,</text>
+  <text x="250" y="373" class="item">more tool outputs …</text>
+  <text x="250" y="390" class="mono">monotonically growing</text>
+
+  <text x="250" y="430" class="item">Final answer</text>
+  <text x="250" y="448" class="mono">tokens at session end:</text>
+  <text x="250" y="466" class="col-header" style="font-size: 13px">30 – 50 K</text>
+  <text x="250" y="485" class="item">(or context-window overflow)</text>
+
+  <!-- Caption -->
+  <text x="250" y="555" class="col-sub">Failure mode: context grows monotonically with task duration.</text>
+  <text x="250" y="572" class="col-sub">Long task → token cost ↑, recall quality ↓, overflow risk ↑.</text>
+
+  <!-- ============= RIGHT — Orchestrator + dispatched execution-context variants ============= -->
+  <text x="750" y="95"  class="col-header">Plan Marshall — orchestrator + `execution-context-{level}` dispatches</text>
+  <text x="750" y="113" class="col-sub">each variant runs in its own context; only the TOON return survives</text>
+
+  <!-- Orchestrator (small, persistent) -->
+  <rect class="fill-faint" x="690" y="135" width="120" height="80" rx="6" ry="6"/>
+  <text x="750" y="160" class="col-header">orchestrator</text>
+  <text x="750" y="180" class="mono">~5 K</text>
+  <text x="750" y="198" class="item">grows only by TOON returns</text>
+
+  <!-- Three dispatched execution-context variants at lower y -->
+  <!-- Variant 1: medium effort -->
+  <rect class="fill-faint" x="535" y="300" width="120" height="90" rx="6" ry="6"/>
+  <text x="595" y="320" class="mono">execution-context</text>
+  <text x="595" y="335" class="mono" style="font-weight: 700">-medium</text>
+  <text x="595" y="354" class="item">isolated context</text>
+  <text x="595" y="368" class="mono">~10–15 K</text>
+  <text x="595" y="384" class="item">discarded at return</text>
+
+  <!-- Variant 2: high effort -->
+  <rect class="fill-faint" x="685" y="300" width="120" height="90" rx="6" ry="6"/>
+  <text x="745" y="320" class="mono">execution-context</text>
+  <text x="745" y="335" class="mono" style="font-weight: 700">-high</text>
+  <text x="745" y="354" class="item">isolated context</text>
+  <text x="745" y="368" class="mono">~10–15 K</text>
+  <text x="745" y="384" class="item">discarded at return</text>
+
+  <!-- Variant 3: xhigh effort -->
+  <rect class="fill-faint" x="835" y="300" width="120" height="90" rx="6" ry="6"/>
+  <text x="895" y="320" class="mono">execution-context</text>
+  <text x="895" y="335" class="mono" style="font-weight: 700">-xhigh</text>
+  <text x="895" y="354" class="item">isolated context</text>
+  <text x="895" y="368" class="mono">~10–15 K</text>
+  <text x="895" y="384" class="item">discarded at return</text>
+
+  <!-- Arrows orchestrator → subagents (Task dispatches) -->
+  <line class="arrow" x1="720" y1="218" x2="595" y2="296" marker-end="url(#arrow)"/>
+  <line class="arrow" x1="750" y1="218" x2="745" y2="296" marker-end="url(#arrow)"/>
+  <line class="arrow" x1="780" y1="218" x2="895" y2="296" marker-end="url(#arrow)"/>
+
+  <!-- Single label centered above the arrow fan, between orchestrator and variant row -->
+  <text x="750" y="245" class="col-sub">Task: execution-context-{level} — one dispatch per phase / task</text>
+
+  <!-- TOON returns — text annotation only; rendering all six arrows would clutter the column -->
+  <text x="750" y="420" class="item">each variant returns one TOON record · the rest is discarded</text>
+  <text x="750" y="438" class="mono">~200 – 500 tokens each</text>
+
+  <text x="750" y="468" class="item">orchestrator token-cost after 3 dispatches:</text>
+  <text x="750" y="488" class="col-header" style="font-size: 13px">~5 K + 3 × ~300  ≈  6 K</text>
+
+  <!-- Caption -->
+  <text x="750" y="555" class="col-sub">Heavy intermediate context lives and dies inside the execution-context envelope.</text>
+  <text x="750" y="572" class="col-sub">Long task → orchestrator stays small; recall stays high; no overflow.</text>
+
+  <!-- ============= Footer caption ============= -->
+  <text x="500" y="605" class="col-sub">Side-effect: every execution-context dispatch is a fresh context that re-loads `dev-general-practices` and caller-named skills — process rules cannot decay.</text>
+
+</svg>

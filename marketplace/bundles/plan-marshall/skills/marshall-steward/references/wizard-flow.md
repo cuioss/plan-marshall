@@ -161,7 +161,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config init -
 
 **Output**: "Created .plan/marshal.json with defaults"
 
-**Note**: marshal.json contains configuration only. The module list comes from `_project.json["modules"]` (Step 9), which is the source of truth — per-module `derived.json` files are loaded lazily off that index.
+**Note**: marshal.json contains configuration only. The module list comes from `_project.json["modules"]` (Step 9), which is the source of truth — per-module derived data is computed lazily off that index on demand by `crawl_module_derived`.
 
 ---
 
@@ -230,6 +230,10 @@ Ask user which transitions should auto-continue (multi-select):
 Apply each selection via manage-config:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-1-init set --field init_without_asking --value {true|false}
+```
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-3-outline set --field plan_without_asking --value {true|false}
 ```
 ```bash
@@ -286,7 +290,7 @@ See `standards/extension-contract.md` in `extension-api` skill for the callback 
 
 ## Step 9: Discover Project Architecture (Source of Truth)
 
-Discover modules directly from filesystem via extension API. This writes the per-module architecture layout under `.plan/project-architecture/`: a top-level `_project.json` whose `modules` index is the single source of truth for "which modules exist", plus one subdirectory per module containing a deterministic `derived.json`. Per-module directories present on disk but absent from `_project.json["modules"]` MUST be ignored — the index is authoritative, not the filesystem.
+Discover modules directly from filesystem via extension API. This writes the per-module architecture layout under `.plan/project-architecture/`: a top-level `_project.json` whose `modules` index is the single source of truth for "which modules exist", plus one subdirectory per module containing an LLM-curated `enriched.json` stub (seeded empty, filled by later enrichment runs). Per-module directories present on disk but absent from `_project.json["modules"]` MUST be ignored — the index is authoritative, not the filesystem. Derived module data (paths, packages, dependencies, file inventories) is intentionally NOT persisted to disk — it is computed on demand by `crawl_module_derived` against the live worktree on every read.
 
 **Prerequisites**: Step 8 sets up profile skip lists and mappings in `run-configuration.json`, so discovered profiles are already filtered.
 
@@ -302,8 +306,11 @@ output_dir	.plan/project-architecture/
 ```
 
 This produces:
+
 - `.plan/project-architecture/_project.json` — project metadata (`name`, `description`, `extensions_used`) and the module index.
-- `.plan/project-architecture/{module}/derived.json` — per-module discovery output (paths, build systems, packaging, packages, dependencies, source/test counts, documentation paths, build commands with filtered profiles).
+- `.plan/project-architecture/{module}/enriched.json` — LLM-curated stub for each module (seeded empty by discover; populated by later enrichment runs).
+
+Derived module data (paths, packages, dependencies, file inventories) is *not* written here — it is computed on demand by `crawl_module_derived` whenever a downstream caller asks for it.
 
 **Verification** - Display discovered modules:
 ```
@@ -354,7 +361,7 @@ Only include commands that resolved successfully.
 
 **Condition**: Only if any Maven module was discovered.
 
-Iterate the modules listed in `_project.json["modules"]` and load each module's `derived.json` to look for profiles with `"canonical": "NO-MATCH-FOUND"` in `metadata.profiles`.
+Iterate the modules listed in `_project.json["modules"]` and load each module's derived data (computed on demand by `crawl_module_derived`) to look for profiles with `"canonical": "NO-MATCH-FOUND"` in `metadata.profiles`.
 
 **If NO-MATCH-FOUND profiles exist**:
 
@@ -373,7 +380,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture d
 
 **Condition**: Only if any Maven module was discovered.
 
-Iterate the modules listed in `_project.json["modules"]` and inspect each module's `derived.json` for cases where multiple profiles map to the same canonical command. The `commands` section in each `derived.json` is built from `_build_commands()` which detects conflicts — look for a `conflicts` key in any module's commands output.
+Iterate the modules listed in `_project.json["modules"]` and inspect each module's derived data (computed on demand by `crawl_module_derived`) for cases where multiple profiles map to the same canonical command. The `commands` section in the derived payload is built from `_build_commands()` which detects conflicts — look for a `conflicts` key in any module's commands output.
 
 Alternatively, inspect each module's `metadata.profiles` and group by canonical value. If any canonical has more than one profile mapped to it, a conflict exists.
 
@@ -600,7 +607,7 @@ Confirm that `system` has `execute_task_skills` populated and each technical dom
 
 Generate project structure knowledge for solution outline support.
 
-**Prerequisites**: Step 9 created the per-module architecture layout (`_project.json` plus per-module `derived.json` files) under `.plan/project-architecture/`.
+**Prerequisites**: Step 9 created the per-module architecture layout (`_project.json` plus per-module `enriched.json` stubs) under `.plan/project-architecture/`. Derived module data is computed on demand by `crawl_module_derived` whenever downstream readers need it.
 
 ### Step 13a: LLM Architectural Analysis
 

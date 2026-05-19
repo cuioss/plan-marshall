@@ -157,7 +157,7 @@ python3 .plan/execute-script.py {notation} [subcommand] {args...}
 
 ### Testing
 
-Tests use pytest via the `pw` (Pyprojectx) wrapper. Only Python 3 is required on the host system. Use the resolved build commands from the Development Notes section below — never invoke `./pw` directly. See `doc/build-structure.adoc` for build system details.
+Tests use pytest via the `pw` (Pyprojectx) wrapper. Only Python 3 is required on the host system. Use the resolved build commands from the Development Notes section below — never invoke `./pw` directly. See `doc/developer/build.adoc` for build system details.
 
 ### Development Notes
 

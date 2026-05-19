@@ -1,0 +1,27 @@
+= Concepts
+:nofooter:
+:toc: left
+:toclevels: 2
+
+xref:../../README.md[Plan Marshall] » Concepts
+
+How Plan Marshall is built and why. These pages are short navigational summaries over the canonical specifications co-located with the code under `marketplace/bundles/plan-marshall/`. When a concept page describes a contract, mechanism, or extension point, follow the `== Related` links to the authoritative source.
+
+== Pages
+
+* xref:build-management.adoc[Build Management] — technology-neutral build abstraction: canonical command names (`verify`, `quality-gate`, `module-tests`, …) resolved per module to whatever tool the module actually uses (Maven / Gradle / npm / Python). The LLM dispatches one method call, waits for a structured TOON, spends no tokens on build output noise during the wait.
+* xref:planning-workflow.adoc[Planning Workflow] — the six-phase plan lifecycle (init → refine → outline → plan → execute → finalize) and the orchestrator that drives it.
+* xref:recipes.adoc[Recipes] — predefined, repeatable transformations whose plan shape is known. Skips refine confidence and outline discovery; produces deliverables from a deterministic mapping. The workflow's known-shape escape hatch.
+* xref:process-enforcement.adoc[Process Enforcement] — four cooperating mechanisms (hard rules · script funnel · Q-Gate · phase handshakes) that keep the LLM on the documented process. Small surface, load-bearing impact at every phase boundary.
+* xref:automatic-reviews.adoc[Automatic Reviews] — the chain of automated review surfaces (Q-Gate over outline/task plan, build/verify, pre-submission self-review, PR comment automated review, Sonar roundtrip), all funnelled through one findings pipeline with a uniform triage envelope and four resolution outcomes.
+* xref:skill-handling.adoc[Skill Handling] — explicit, deterministic skill loading: the two-tier model (system + domain), how `task.skills` is built from architecture, and the dispatch-time loading sequence inside `execution-context`.
+* xref:execution-context.adoc[Execution Context] — why Plan Marshall ships exactly one role-eligible agent, how every `Task:` dispatch flows through it, and the per-role model system (`marshal.json`'s `plan.<phase>.effort` blocks selecting which model and effort level runs each LLM-judgement workflow).
+* xref:extension-architecture.adoc[Extension Architecture] — the plumbing seam: a small core plus ten production bundles that plug in through ten named extension points (build · triage · recipe · outline · provider · execution-context-workflow · dynamic-level-executor · self-review-surfacing · verify-steps · finalize-steps). The contract every bundle satisfies and how to add a new one.
+* xref:token-management.adoc[Token Usage and Context Management] — six mechanisms that keep LLM token spend bounded (scripts over LLM · build-management synchronous returns · TOON · skill-driven guidance · persisted knowledge · per-dispatch context isolation) and two places where the design deliberately spends more.
+* xref:tools-and-scripts.adoc[Tools and Scripts] — why Plan Marshall doesn't use MCP. Every external integration (GitHub, GitLab, Sonar, git) ships as a vetted Python script with a contracted TOON return; credentials live outside LLM reach in `~/.plan-marshall-credentials/`.
+* xref:security.adoc[Security] — how Plan Marshall narrows what the LLM does (hard rules + the script-executor proxy) so the permission surface is small enough to pre-approve. The compromise between accept-edits and YOLO, with a frank caveat about what it doesn't solve.
+* xref:audit-trail.adoc[Audit Trail] — what every plan run records (logs, structured artifacts, findings), why it's exhaustive, and how `plan-retrospective` evaluates it.
+
+== Terminology
+
+The canonical glossary for Plan Marshall concepts (canonical agent, dispatcher, role-eligible, extension point, phase, workflow doc, manage-contract, etc.) lives in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/glossary.md[`ref-workflow-architecture/standards/glossary.md`]. Read it first when an unfamiliar term appears.

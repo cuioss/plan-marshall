@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- theme-handling: A (theme-neutral) -->
+<!-- conforms to: pm-documents:ref-svg-diagrams (visual-language + diagram-type-block, vertical layout with row of outputs) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 480"
+     role="img" aria-labelledby="title desc"
+     font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
+  <title id="title">Variant emission — one canonical SKILL becomes seven emitted agent files at build time</title>
+  <desc  id="desc">The build target reads the single role-eligible canonical agent (plan-marshall:execution-context) and emits seven output files: one canonical no-suffix variant that inherits the parent session model, plus six level-suffixed variants (low, medium, high, xhigh, xxhigh, max) with model and effort baked into the frontmatter. The dispatch-time resolver picks which variant a Task: call routes to.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" class="arrow-fill"/>
+    </marker>
+    <style>
+      .col-header { font-size: 14px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
+      .col-sub    { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .item       { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; text-anchor: middle; }
+      .item-bold  { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-weight: 700; text-anchor: middle; }
+      .arrow-lbl  { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .stroke     { stroke: #6e7681; stroke-width: 1.2; fill: none; }
+      .arrow      { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+      .arrow-fill { fill: #6e7681; }
+    </style>
+  </defs>
+
+  <!-- ============= SOURCE: canonical SKILL declaration ============= -->
+  <rect class="stroke" x="350" y="40" width="400" height="105" rx="6" ry="6"/>
+  <text x="550" y="65" class="col-header">plan-marshall:execution-context.md</text>
+  <text x="550" y="83" class="col-sub">the single role-eligible canonical agent</text>
+  <text x="550" y="108" class="item">implements: ext-point-dynamic-level-executor</text>
+  <text x="550" y="128" class="item">levels: [low, medium, high, xhigh, xxhigh, max]</text>
+
+  <!-- ============= Emitter arrow ============= -->
+  <line class="arrow" x1="550" y1="148" x2="550" y2="218" marker-end="url(#arrow)"/>
+  <text x="565" y="170" class="arrow-lbl" text-anchor="start">marketplace/targets/claude/emitter.py</text>
+  <text x="565" y="186" class="arrow-lbl" text-anchor="start">reads implements + levels,</text>
+  <text x="565" y="202" class="arrow-lbl" text-anchor="start">strips them on canonical, bakes model + effort on variants</text>
+
+  <!-- ============= OUTPUTS: 7 emitted files ============= -->
+  <!-- 7 boxes at y=230..335, width 130, gutter 12 → total 982 → margin 59 each side -->
+
+  <!-- Box 1: canonical (inherit) -->
+  <rect class="stroke" x="59" y="230" width="130" height="115" rx="6" ry="6"/>
+  <text x="124" y="252" class="item-bold">execution-</text>
+  <text x="124" y="268" class="item-bold">context.md</text>
+  <text x="124" y="295" class="col-sub">canonical</text>
+  <text x="124" y="318" class="item">inherit</text>
+  <text x="124" y="336" class="col-sub">(parent)</text>
+
+  <!-- Box 2: low (haiku) -->
+  <rect class="stroke" x="201" y="230" width="130" height="115" rx="6" ry="6"/>
+  <text x="266" y="252" class="item-bold">…-low.md</text>
+  <text x="266" y="295" class="col-sub">low</text>
+  <text x="266" y="318" class="item">haiku</text>
+  <text x="266" y="336" class="col-sub">(no effort)</text>
+
+  <!-- Box 3: medium -->
+  <rect class="stroke" x="343" y="230" width="130" height="115" rx="6" ry="6"/>
+  <text x="408" y="252" class="item-bold">…-medium.md</text>
+  <text x="408" y="295" class="col-sub">medium</text>
+  <text x="408" y="318" class="item">sonnet</text>
+  <text x="408" y="336" class="col-sub">effort: medium</text>
+
+  <!-- Box 4: high -->
+  <rect class="stroke" x="485" y="230" width="130" height="115" rx="6" ry="6"/>
+  <text x="550" y="252" class="item-bold">…-high.md</text>
+  <text x="550" y="295" class="col-sub">high</text>
+  <text x="550" y="318" class="item">sonnet</text>
+  <text x="550" y="336" class="col-sub">effort: high</text>
+
+  <!-- Box 5: xhigh -->
+  <rect class="stroke" x="627" y="230" width="130" height="115" rx="6" ry="6"/>
+  <text x="692" y="252" class="item-bold">…-xhigh.md</text>
+  <text x="692" y="295" class="col-sub">xhigh</text>
+  <text x="692" y="318" class="item">opus</text>
+  <text x="692" y="336" class="col-sub">effort: medium</text>
+
+  <!-- Box 6: xxhigh -->
+  <rect class="stroke" x="769" y="230" width="130" height="115" rx="6" ry="6"/>
+  <text x="834" y="252" class="item-bold">…-xxhigh.md</text>
+  <text x="834" y="295" class="col-sub">xxhigh</text>
+  <text x="834" y="318" class="item">opus</text>
+  <text x="834" y="336" class="col-sub">effort: high</text>
+
+  <!-- Box 7: max (Opus-4.7-only build guard) -->
+  <rect class="stroke" x="911" y="230" width="130" height="115" rx="6" ry="6"/>
+  <text x="976" y="252" class="item-bold">…-max.md</text>
+  <text x="976" y="295" class="col-sub">max</text>
+  <text x="976" y="318" class="item">opus</text>
+  <text x="976" y="336" class="col-sub">effort: xhigh</text>
+
+  <!-- Fan-out lines from emitter arrow base to each box top -->
+  <line class="arrow" x1="550" y1="220" x2="124" y2="226"/>
+  <line class="arrow" x1="550" y1="220" x2="266" y2="226"/>
+  <line class="arrow" x1="550" y1="220" x2="408" y2="226"/>
+  <line class="arrow" x1="550" y1="220" x2="550" y2="226"/>
+  <line class="arrow" x1="550" y1="220" x2="692" y2="226"/>
+  <line class="arrow" x1="550" y1="220" x2="834" y2="226"/>
+  <line class="arrow" x1="550" y1="220" x2="976" y2="226"/>
+
+  <!-- ============= Footer ============= -->
+  <text x="550" y="395" class="col-sub">The resolver picks one variant per dispatch via  manage-config effort resolve-target --phase &lt;phase&gt; [--role &lt;subkey&gt;]</text>
+  <text x="550" y="415" class="col-sub">max is Opus-4.7-only — emission is skipped when the resolved alias does not accept effort: xhigh.</text>
+
+</svg>

@@ -143,6 +143,8 @@ AskUserQuestion:
   header: "Review Gates"
   multiSelect: true
   options:
+    - label: "Init without asking"
+      description: "Auto-continue from init (phase 1) to refine (phase 2). Default: enabled — disable to stop and review the captured request before refinement starts."
     - label: "Plan without asking"
       description: "Auto-continue from outline (phase 3) to planning (phase 4)"
     - label: "Execute without asking"
@@ -153,7 +155,12 @@ AskUserQuestion:
       description: "Auto-continue when a phase-6-finalize step records outcome=loop_back: dispatch the execute pipeline inline against fix tasks and re-enter finalize, capped by phase-6-finalize.max_iterations [reverse direction; symmetric counterpart of finalize_without_asking]"
 ```
 
-Apply: for each selected gate, set to `true`. For each deselected gate, set to `false`.
+Apply: for each selected gate, set to `true`. For each deselected gate, set to `false`. The `Init without asking` default is `true` (the only gate whose default is on); all others default to `false` (conservative). When the user accepts defaults, persist `init_without_asking=true` and the rest `false`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-1-init set --field init_without_asking --value {true|false}
+```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \

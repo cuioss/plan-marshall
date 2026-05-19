@@ -1,0 +1,73 @@
+= Commands
+:nofooter:
+:toc: left
+:toclevels: 2
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
+
+User-invocable slash commands provided by the marketplace.
+
+== /marshall-steward
+
+Project configuration wizard for the planning system.
+
+[source,bash]
+----
+/marshall-steward           # Interactive menu, or first-run wizard if .plan/execute-script.py is missing
+/marshall-steward --wizard  # Force first-run wizard
+----
+
+See xref:getting-started.adoc[Getting Started] for the first-run wizard steps. The interactive menu offers:
+
+* **Maintenance** — regenerate the executor (after `/plugin install` / `/plugin uninstall`), clean execution logs.
+* **Health Check** — verify setup, diagnose missing scripts or stale configuration.
+* **Configuration** — adjust build systems, skill domains, the per-role effort/model registry (see xref:configuration.adoc[Configuration]), terminal-title integration (xref:terminal-title.adoc[Terminal Title]), and other project-level knobs.
+
+== /plan-marshall
+
+Unified plan lifecycle management — create, list, outline, execute, finalize, and clean up plans. The skill drives all six phases (`phase-1-init` … `phase-6-finalize`) through the xref:../concepts/execution-context.adoc[execution-context dispatcher]. See xref:../concepts/planning-workflow.adoc[Planning Workflow] for the phase sequence and boundaries.
+
+=== Common calls
+
+[source,bash]
+----
+/plan-marshall                                                  # List active plans (interactive menu)
+/plan-marshall task="Add user authentication"                   # Create new plan from a task description (action=init implied)
+/plan-marshall issue="https://github.com/org/repo/issues/42"    # Seed from a GitHub issue (action=init implied)
+/plan-marshall action=outline plan="user-auth"                  # Run outline + plan phases for an existing plan
+/plan-marshall action=execute plan="jwt-auth"                   # Resume execution of an existing plan
+/plan-marshall action=finalize plan="jwt-auth"                  # Run phase-6-finalize (commit, push, PR)
+/plan-marshall plan="jwt-auth"                                  # Continue an existing plan from its current phase
+/plan-marshall action=cleanup                                   # Remove completed plans
+/plan-marshall action=lessons                                   # List and convert lessons learned
+/plan-marshall lesson="2026-05-18-11-001"                       # Convert a specific lesson to a plan (action=lessons implied)
+/plan-marshall action=lessons-aggregate                         # Cross-lesson aggregation + superseded-stub prune
+/plan-marshall recipe="refactor-to-standards"                   # Create plan from a predefined recipe (action=recipe implied)
+----
+
+=== Parameters
+
+[cols="1,1,3", options="header"]
+|===
+| Parameter | Type | Description
+
+| `action` | optional | One of `list` (default), `init`, `outline`, `execute`, `finalize`, `cleanup`, `lessons`, `lessons-aggregate`, `recipe`. When omitted, the action is inferred from other parameters — see <<action-resolution>>.
+| `task` | optional | Free-form task description used to create a new plan. Implies `action=init` when no explicit action is given.
+| `issue` | optional | GitHub issue URL used to seed a new plan. Implies `action=init` when no explicit action is given.
+| `lesson` | optional | Lesson ID to convert into a plan. Implies `action=lessons` when no explicit action is given.
+| `recipe` | optional | Recipe key (e.g. `refactor-to-standards`). Implies `action=recipe` when no explicit action is given.
+| `plan` | optional | Plan **name** (plan_id) for operations on an existing plan — not a path. When supplied without an explicit action, the action is auto-detected from the plan's current phase.
+|===
+
+[#action-resolution]
+=== Action resolution
+
+When `action=` is omitted, the effective action is resolved in this order — first match wins:
+
+1. **`plan=` is supplied** → auto-detect from plan's current phase.
+2. **`task=` or `issue=` is supplied** → `init` (the supplied value becomes the plan source).
+3. **`lesson=` is supplied** → `lessons`.
+4. **`recipe=` is supplied** → `recipe`.
+5. **No source/target parameters at all** → `list` (interactive menu).
+
+If two or more of `{task, issue, lesson, recipe, plan}` are supplied together without an explicit `action=`, the skill returns `status: error` naming the conflict. Pass an explicit `action=` or drop the conflicting parameter to resolve.

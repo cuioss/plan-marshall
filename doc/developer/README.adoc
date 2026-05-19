@@ -1,0 +1,28 @@
+= Developer Guide
+:nofooter:
+:toc: left
+:toclevels: 2
+
+xref:../../README.md[Plan Marshall] » Developer Guide
+
+Working on Plan Marshall itself: build, test, generate, distribute. If you are operating Plan Marshall in a project, see xref:../user/README.adoc[User Guide] instead.
+
+== Pages
+
+* xref:build.adoc[Build] — Pyprojectx wrapper (`./pw`), project layout, tool configuration, canonical commands.
+* xref:marketplace-build.adoc[Marketplace Build] — how `marketplace/bundles/` is transformed into per-target deployable artifacts (`target/claude/`, `target/opencode/`), variant emission, dispatch-cost considerations, adapter system.
+* xref:distribution.adoc[Distribution] — publish triggers, versioning, source-vs-dist tag semantics, the `dist-claude` orphan branch, multi-target architecture, what is *not* shipped.
+* xref:testing.adoc[Testing] — pytest infrastructure, shared fixtures, the `ScriptTestCase` base class, test-isolation patterns.
+* xref:workflow-verification.adoc[Workflow Verification] — the `plan-retrospective` opt-in retrospective skill and its aspect scripts.
+
+== Workflow discipline
+
+Working in this repository is governed by the hard rules in `CLAUDE.md` (workflow discipline section): script-only `.plan/` access, one Bash command per call, no shell constructs, no workflow improvisation, CI abstraction over direct `gh`/`glab`, build commands resolved through the architecture API, and structured queries before Glob/Grep. Read those rules before your first non-trivial change.
+
+== Concept crossover
+
+Developer work touches the dispatcher emission and per-role model system regularly. Background:
+
+* xref:repository-layout.adoc[Repository Layout] — directory map of the source tree: `marketplace/`, `target/`, `test/`, `doc/`, `.plan/`, `.claude/`, build wrappers.
+* xref:../concepts/execution-context.adoc[Concepts › Execution Context] — the dispatcher that drives variant emission described in xref:marketplace-build.adoc[Marketplace Build].
+* xref:../concepts/execution-context.adoc#per-role-model-selection[Concepts › Execution Context › Per-Role Model Selection] — the per-role model system whose variants the build emits.

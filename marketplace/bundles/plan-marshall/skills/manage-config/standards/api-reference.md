@@ -254,9 +254,7 @@ manage-config effort read --default
 Walks the documented resolution order and validates the resolved value against
 `ALLOWED_LEVELS` (`low|medium|high|xhigh|xxhigh|max|inherit`). Unknown role
 groups produce a warning (not an error) so registry renames do not break
-saved configs. Retired legacy keys (`cross.*`, the five retired `phase-6-finalize.*`
-sub-keys) return `status: error` with a remediation message naming the new
-target — see `effort-roles.md` § "Per-phase sub-keys".
+saved configs.
 
 ### Verb: apply-preset
 

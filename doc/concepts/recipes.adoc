@@ -1,0 +1,87 @@
+= Recipes
+:nofooter:
+:toc: left
+:toclevels: 2
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
+
+Predefined, repeatable transformations whose plan shape is already known — so the lifecycle skips the refine confidence loop and the outline-discovery work and produces deliverables from a deterministic mapping.
+
+== Overview
+
+The standard pipeline (xref:planning-workflow.adoc[Planning Workflow]) assumes a request whose scope must be *discovered*: phase-2-refine iterates on confidence, phase-3-outline's Complex Track walks the architecture and proposes deliverables, phase-4-plan creates tasks. That's the right shape for "build the thing the user just described."
+
+It is the wrong shape for *recurring* transformations: "refactor this codebase to comply with the configured profile standards", "verify every architecture diagram is up to date", "enforce CUI logging conventions across all modules". The plan shape is *already known* — one deliverable per package, or per module, or per ADR — and the work is filling in the affected files, not discovering what to do.
+
+Recipes are the extension point for that case. A recipe declares "I know what this plan looks like; ask me, not the LLM."
+
+== How the lifecycle changes
+
+A recipe-driven plan still passes through every phase, but the work inside three phases shortcuts:
+
+* **phase-2-refine** — the recipe shortcut: `confidence=100, track=complex` returned immediately. No iteration on intent.
+* **phase-3-outline** — recipe detection routes to the recipe skill (link:../../marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md[`phase-3-outline`] Step 3). The recipe skill produces `solution_outline.md` via its own discovery + deliverable pattern instead of the Simple/Complex Track LLM analysis.
+* **phase-3-outline Q-Gate** — bypassed when the recipe yields surgical scope with a single-deliverable shape; pays the Q-Gate cost otherwise.
+
+The cost saving is real: a Complex Track outline on a 30-module codebase is a multi-thousand-token LLM exercise. A recipe-driven outline producing the same N deliverables is mostly script invocations (`architecture modules`, `architecture module --full`, `manage-files discover`) plus a templated write.
+
+User entry point:
+
+[source,bash]
+----
+/plan-marshall action=recipe
+----
+
+The list pulls from `manage-config list-recipes`, the user picks one, and `phase-1-init` writes the recipe metadata into `status.json` (`recipe_key`, `recipe_skill`, `recipe_domain`, `recipe_profile`, `recipe_package_source`).
+
+== The contract
+
+A recipe is a skill whose `SKILL.md` declares `implements: plan-marshall:extension-api/standards/ext-point-recipe`. It is registered for discovery by one of two routes — both fully documented in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-recipe.md[`extension-api/standards/ext-point-recipe.md`]:
+
+* **Extension-provided** — a domain bundle implements `provides_recipes()` and returns a list of recipe dicts (`key`, `name`, `description`, `skill`, `default_change_type`, `scope`).
+* **Project-local** — the project ships its own recipe under `.claude/skills/recipe-*` (mirrors the finalize-step pattern).
+
+At runtime the recipe skill is invoked under phase-3-outline Step 3 with `plan_id`, optional `recipe_domain`, optional `recipe_profile`, and optional `recipe_package_source`. It is responsible for:
+
+1. Resolving the applicable skills for the recipe's profile (e.g. via `manage-config resolve-domain-skills`).
+2. Querying the architecture for the input set (modules, packages, diagrams, ADRs, …).
+3. Mapping the input set to deliverables — one row per "unit of repetition" (one deliverable per package, per diagram, …).
+4. Writing `solution_outline.md` via `manage-solution-outline` so the file is structure-validated like any other outline.
+
+The recipe skill is the *single source of truth* for what its deliverables look like — phase-3-outline does not second-guess it.
+
+== Current implementations
+
+[cols="1,1,3", options="header"]
+|===
+| Bundle | Recipe key | Use
+
+| link:../../marketplace/bundles/plan-marshall/skills/recipe-refactor-to-profile-standards/SKILL.md[`plan-marshall`]
+| `refactor-to-profile-standards`
+| Iterate every package in the selected module set and produce one deliverable per package. Skills are resolved from the chosen profile (`implementation` / `module_testing`) and domain (`java`, `javascript`, …). Domain-invariant — the same recipe handles Java, JS, Python depending on the parameters.
+
+| link:../../marketplace/bundles/pm-documents/skills/recipe-doc-verify/SKILL.md[`pm-documents`]
+| `doc-verify`
+| Sweep documentation for drift — AsciiDoc validation, link checks, format compliance. One deliverable per document or document group.
+
+| link:../../marketplace/bundles/pm-documents/skills/recipe-verify-architecture-diagrams/SKILL.md[`pm-documents`]
+| `verify-architecture-diagrams`
+| Verify PlantUML architecture diagrams against current code and regenerate PNGs where drift is found. One deliverable per diagram.
+
+| link:../../marketplace/bundles/pm-dev-java-cui/skills/recipe-cui-logging-enforce/SKILL.md[`pm-dev-java-cui`]
+| `cui-logging-enforce`
+| Enforce CUI logging conventions module-by-module — migrate loggers, implement `LogRecord` constants, add coverage.
+|===
+
+== Where this fits
+
+Recipes are the workflow's *known-shape escape hatch*. The standard pipeline is what makes Plan Marshall safe for arbitrary requests; recipes are what make it efficient for recurring ones. The hooks the recipe pattern rides on (xref:execution-context.adoc[execution-context dispatch], xref:skill-handling.adoc[skill loading], xref:audit-trail.adoc[audit trail]) are the same — the recipe just supplies its own discovery step.
+
+== Related
+
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-recipe.md[`extension-api/standards/ext-point-recipe.md`] — full extension-point contract: hook signature, return dict shape, lifecycle, resolution.
+* link:../../marketplace/bundles/plan-marshall/skills/recipe-refactor-to-profile-standards/SKILL.md[`recipe-refactor-to-profile-standards/SKILL.md`] — reference implementation: input parameters, the 4-step discovery → write flow.
+* link:../../marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md[`phase-3-outline/SKILL.md`] — Step 3 (recipe detection, recipe-skill load).
+* link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/recipe.md[`plan-marshall/workflow/recipe.md`] — the orchestrator workflow body for `action=recipe`.
+* link:../../marketplace/bundles/plan-marshall/skills/manage-config/SKILL.md[`manage-config/SKILL.md`] — the `list-recipes` and `resolve-recipe` subcommands (recipe discovery API).
+* xref:planning-workflow.adoc[Concepts › Planning Workflow] — the standard six-phase pipeline recipes shortcut into.
