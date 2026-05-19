@@ -1,0 +1,93 @@
+= Token Usage and Context Management
+:nofooter:
+:toc: left
+:toclevels: 2
+
+How Plan Marshall keeps LLM token spend bounded — and where it deliberately spends more in exchange for verifiable process.
+
+== Overview
+
+Every LLM tool call, every line of build output streamed into the context, every "let me check that file" detour costs tokens that the host pays for and that crowd the context window. On a long-running plan, naive token spend climbs into tens of thousands per session and the *recall quality* of anything earlier in the context degrades. Plan Marshall treats token efficiency as a first-class design goal across six concrete mechanisms — and then accepts targeted *overspend* in two places where the verification payoff is worth it.
+
+== Mechanisms that reduce token spend
+
+=== 1. Scripts over LLM for deterministic work
+
+LLM work is reserved for *judgement*. Anything that can be expressed as a deterministic Python function lives in a `manage-*` or `tools-*` script and runs through the executor proxy.
+
+Concrete examples:
+
+* `manage-architecture which-module --path foo/bar.java` — pure filesystem-to-module lookup. Takes no LLM tokens. The naive alternative ("ask the LLM to grep for the module owner of this file") burns ~2-5 K tokens *each time*.
+* `manage-status mark-step-done` — JSON write, no LLM. Naive alternative would have the LLM hand-craft the JSON and re-read it back.
+* `manage-findings query --plan-id X --type Y --resolution pending` — store query, no LLM. Naive alternative would have the LLM scan the JSONL store linearly.
+
+The dispatch-vs-script verdict is decided per call site by the heuristics in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/dispatch-granularity.md[`extension-api:dispatch-granularity`]. The rule of thumb: if the work is mechanical, don't pay LLM tokens for it.
+
+=== 2. Build management — long waits at zero token cost
+
+Build invocations are the most token-toxic LLM tool calls in stock workflows: a 10-minute Maven run can stream tens of thousands of log lines back into the chat. Plan Marshall's link:../../marketplace/bundles/plan-marshall/skills/build-maven/SKILL.md[`build-maven`] / link:../../marketplace/bundles/plan-marshall/skills/build-gradle/SKILL.md[`build-gradle`] / link:../../marketplace/bundles/plan-marshall/skills/build-npm/SKILL.md[`build-npm`] / link:../../marketplace/bundles/plan-marshall/skills/build-python/SKILL.md[`build-python`] skills route every build through one script call that:
+
+* Spawns the build as a subprocess.
+* Suspends the LLM on the tool call (orchestrator pays *zero* tokens during the wait).
+* Captures the log to a file.
+* Returns a single TOON: `{ status, exit_code, duration_seconds, log_file, errors[N]{file,line,message,category} }`.
+
+Token cost ≈ size of the TOON return, **independent of build duration**. The synchronous shape and the full eight-step trace are in xref:build-management.adoc[Build Management].
+
+=== 3. TOON over JSON on every `manage-*` API
+
+Every script in the marketplace returns link:../../marketplace/bundles/plan-marshall/skills/ref-toon-format/SKILL.md[TOON] (Token-Oriented Object Notation) — a CSV-style compact encoding of the JSON data model. Uniform arrays declare their structure once and use single-line rows.
+
+The Sonar-issues worked example in `ref-toon-format`:
+
+* JSON: 580 tokens.
+* TOON: 240 tokens.
+* **59 % reduction.**
+
+Across the typical Plan Marshall return surface (findings queries, task lists, architecture inventories, phase handshakes), 30-60 % reductions compound across hundreds of calls per plan. The format is enforced by the `manage-contract` shared contract — see link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/manage-contract.md[`manage-contract.md`].
+
+=== 4. Skill-driven guidance — no tool exploration
+
+A stock LLM faced with a new task will explore: `ls`, `find`, `grep`, `cat`, `head` to learn the codebase shape. Each step costs tokens *and* fills the context with noise. Plan Marshall pre-loads the skills that map to the task — `dev-general-practices` first (always), then task-declared `skills[]` — so the LLM enters the workflow already knowing where things are and which API to call.
+
+The link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/general-development-rules.md[hard rules] explicitly forbid the exploratory pattern: "Structured queries first — consult `architecture files --module X` before `Glob` / `Grep`." Architecture queries return TOON; ad-hoc `find` calls return free-form text. The skill set is the *prior* that prevents the exploration loop from starting.
+
+=== 5. Persisted knowledge — enrich once, read many
+
+`manage-architecture` runs an LLM-driven enrichment step once per module (per project, per re-discovery) and persists the result to `.plan/project-architecture/{module}/enriched.json`. Every subsequent dispatch reads the persisted file — never re-derives. The module's responsibility, key packages, and dependency edges are TOON-cheap reads instead of repeat LLM analysis.
+
+The `overview` subcommand (link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md[`client-api.md`] § `overview`) is the consumer side: a token-bounded deterministic markdown render of the persisted state — cheap, repeatable, and always available without re-asking the LLM "describe this project".
+
+=== 6. Per-dispatch context isolation
+
+The biggest single token-management lever. Each `Task: execution-context-{level}` dispatch runs the workflow body inside an isolated `execution-context-{level}` variant — its own context. The variant loads its skills, reads the workflow doc, executes (potentially with internal loops and tool calls), and returns one TOON. The variant's intermediate context — typically 10-15 K tokens of skill bodies, tool outputs, reasoning — **lives and dies inside the envelope.** The orchestrator's context grows only by the TOON return.
+
+image::../resources/diagrams/context-isolation.svg[Side-by-side comparison of two context-growth strategies. On the left, a monolithic single-context approach accumulates system prompt, tool outputs, raw build logs, and intermediate reasoning into one growing context heading toward the token-window limit. On the right, the plan-marshall orchestrator stays small and dispatches per-phase or per-task work into `execution-context-{level}` variants that each run in their own context; each variant returns a small TOON record (~200-500 tokens) to the orchestrator, while the heavy intermediate context is discarded at return., align=center]
+
+Net effect: a plan that would consume 30-50 K tokens (or overflow the window) in a single-context shape consumes ~6 K orchestrator-side in Plan Marshall, with each `execution-context-{level}` variant's larger context being independent — and never additive — because variants do not see each other's history. The 8-step dispatch lifecycle is described in xref:execution-context.adoc[Execution Context].
+
+== Bonus side-effect — process compliance survives long sessions
+
+Every `execution-context-{level}` dispatch is a fresh context that re-loads `dev-general-practices` plus the caller-named skills. The hard rules — `.plan/` scripts-only, one Bash command per call, architecture-resolve for builds — are *present in the variant's context at every dispatch*, never "decayed out" by an accumulating chat. This is the link between context management and xref:process-enforcement.adoc[Process Enforcement]: per-dispatch isolation isn't just cheaper, it's *more compliant* over the lifetime of a long plan.
+
+== Where Plan Marshall deliberately spends more
+
+Token efficiency is not absolute — there are two places where the design accepts a higher cost for a verification payoff:
+
+* **Q-Gate verification.** Outline (phase-3) and task-plan (phase-4) each run an LLM Q-Gate that re-reads the produced artifact and writes findings. That is a measurable extra `execution-context-{level}` dispatch per phase, ~10-15 K tokens of variant context, plus per-finding triage tokens at the next phase entry. Bypass exists for surgical scope with a single deliverable, but the *default* path pays this cost on every non-trivial plan. The rationale is in xref:automatic-reviews.adoc[Automatic Reviews] § Q-Gate.
+* **Complex process for minimal changes.** The six-phase pipeline plus handshakes plus finalize steps is overkill for a one-line typo fix. The "Simple Track" branch in xref:planning-workflow.adoc[Planning Workflow] § Phase 3 and the surgical-scope Q-Gate bypass exist to cut the cost on small changes, but a one-line fix still passes through phase-1-init, phase-2-refine, phase-3-outline, phase-4-plan, phase-5-execute, phase-6-finalize — adding ~5-10 dispatches the change itself doesn't need. The argument for paying this cost is that *most* changes are not one-line fixes, and the process keeps the model honest about which class the current change belongs to.
+
+Both overspends are deliberate. Both have escape hatches (Simple Track, Q-Gate bypass). Neither is silent — the audit trail (xref:audit-trail.adoc[Audit Trail]) records per-phase token usage via `manage-metrics accumulate-agent-usage`, so the cost is measurable and tunable per plan.
+
+== Related
+
+* xref:build-management.adoc[Concepts › Build Management] — the synchronous-call shape that puts build duration outside the token budget.
+* xref:execution-context.adoc[Concepts › Execution Context] — the 8-step dispatch lifecycle each `execution-context-{level}` variant follows.
+* xref:process-enforcement.adoc[Concepts › Process Enforcement] — the side-effect: fresh contexts re-load the hard rules every dispatch.
+* xref:tools-and-scripts.adoc[Concepts › Tools and Scripts] — why every integration is a deterministic script, not an MCP tool.
+* xref:audit-trail.adoc[Concepts › Audit Trail] — per-phase token / tool-use accumulation that lets the costs above be measured.
+* link:../../marketplace/bundles/plan-marshall/skills/ref-toon-format/SKILL.md[`ref-toon-format/SKILL.md`] — TOON format specification + 59 % reduction worked example.
+* link:../../marketplace/bundles/plan-marshall/skills/ref-toon-format/knowledge/toon-specification.md[`ref-toon-format/knowledge/toon-specification.md`] — full spec, syntax, conversion patterns.
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/dispatch-granularity.md[`extension-api/standards/dispatch-granularity.md`] — the heuristics that decide script-vs-dispatch per call site.
+* link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/architecture-persistence.md[`manage-architecture/standards/architecture-persistence.md`] — the persisted-knowledge storage format.
+* link:../../marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md[`manage-metrics/SKILL.md`] — token / tool-use accumulation API.

@@ -9,14 +9,16 @@ How Plan Marshall is built and why. These pages are short navigational summaries
 
 * xref:build-management.adoc[Build Management] — technology-neutral build abstraction: canonical command names (`verify`, `quality-gate`, `module-tests`, …) resolved per module to whatever tool the module actually uses (Maven / Gradle / npm / Python). The LLM dispatches one method call, waits for a structured TOON, spends no tokens on build output noise during the wait.
 * xref:planning-workflow.adoc[Planning Workflow] — the six-phase plan lifecycle (init → refine → outline → plan → execute → finalize) and the orchestrator that drives it.
+* xref:recipes.adoc[Recipes] — predefined, repeatable transformations whose plan shape is known. Skips refine confidence and outline discovery; produces deliverables from a deterministic mapping. The workflow's known-shape escape hatch.
 * xref:process-enforcement.adoc[Process Enforcement] — four cooperating mechanisms (hard rules · script funnel · Q-Gate · phase handshakes) that keep the LLM on the documented process. Small surface, load-bearing impact at every phase boundary.
+* xref:automatic-reviews.adoc[Automatic Reviews] — the chain of automated review surfaces (Q-Gate over outline/task plan, build/verify, pre-submission self-review, PR comment automated review, Sonar roundtrip), all funnelled through one findings pipeline with a uniform triage envelope and four resolution outcomes.
 * xref:skill-handling.adoc[Skill Handling] — explicit, deterministic skill loading: the two-tier model (system + domain), how `task.skills` is built from architecture, and the dispatch-time loading sequence inside `execution-context`.
 * xref:execution-context.adoc[Execution Context] — why Plan Marshall ships exactly one role-eligible agent and how every `Task:` dispatch flows through it.
 * xref:effort-and-models.adoc[Effort and Models] — the per-role model system: how `.plan/marshal.json` selects which model and effort level runs each LLM-judgement workflow.
+* xref:token-management.adoc[Token Usage and Context Management] — six mechanisms that keep LLM token spend bounded (scripts over LLM · build-management synchronous returns · TOON · skill-driven guidance · persisted knowledge · per-dispatch context isolation) and two places where the design deliberately spends more.
+* xref:tools-and-scripts.adoc[Tools and Scripts] — why Plan Marshall doesn't use MCP. Every external integration (GitHub, GitLab, Sonar, git) ships as a vetted Python script with a contracted TOON return; credentials live outside LLM reach in `~/.plan-marshall-credentials/`.
 * xref:security.adoc[Security] — how Plan Marshall narrows what the LLM does (hard rules + the script-executor proxy) so the permission surface is small enough to pre-approve. The compromise between accept-edits and YOLO, with a frank caveat about what it doesn't solve.
 * xref:audit-trail.adoc[Audit Trail] — what every plan run records (logs, structured artifacts, findings), why it's exhaustive, and how `plan-retrospective` evaluates it.
-* xref:tools-and-scripts.adoc[Tools and Scripts] — why Plan Marshall doesn't use MCP. Every external integration (GitHub, GitLab, Sonar, git) ships as a vetted Python script with a contracted TOON return; credentials live outside LLM reach in `~/.plan-marshall-credentials/`.
-* xref:automatic-reviews.adoc[Automatic Reviews] — the chain of automated review surfaces (Q-Gate over outline/task plan, build/verify, pre-submission self-review, PR comment automated review, Sonar roundtrip), all funnelled through one findings pipeline with a uniform triage envelope and four resolution outcomes.
 
 == Terminology
 

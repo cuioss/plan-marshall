@@ -7,7 +7,9 @@ How Plan Marshall keeps the LLM on the documented process — four cooperating m
 
 == Overview
 
-LLMs drift. The four layers below compose in increasing order of bindingness so a drift terminates as high up the stack as possible.
+LLMs are not reliable process followers. They sidestep documented steps, invent plausible-but-wrong CLI verbs, shortcut around checks they consider "obviously satisfied", and report success against state they never produced. Telling them not to does not stop them.
+
+Plan Marshall responds with four cooperating mechanisms ordered from soft (skill-loaded text) to hard (mechanical refusal). Each layer assumes the layers above it can be bypassed; the stack is designed so a drift terminates as high up as possible, and so the deeper a violation tries to reach, the more mechanical the resistance becomes.
 
 image::../resources/diagrams/enforcement-layers.svg[Process enforcement — four layers stacked from soft (skill-loaded text) to hard (mechanical gate). Layer 1 is the dev-general-practices hard rules. Layer 2 is the script-executor proxy plus manage-* funnel for all .plan/ access. Layer 3 is the Q-Gate findings checkpoint resolved at the next phase's entry. Layer 4 is the phase-handshake invariant registry that captures fingerprints at completion and verifies them at entry, refusing to advance on drift., align=center]
 
