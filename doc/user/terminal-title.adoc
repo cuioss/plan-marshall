@@ -3,7 +3,7 @@
 :toc: left
 :toclevels: 2
 
-xref:../../README.md[Plan Marshall] » xref:index.adoc[User Guide]
+xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
 
 Operational guidance for the per-session terminal-title indicator that Plan Marshall configures via `/marshall-steward` → Configuration → Terminal title.
 

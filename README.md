@@ -76,9 +76,9 @@ See [User Guide › Getting Started](doc/user/getting-started.adoc) for the full
 
 | Section | Purpose |
 |---|---|
-| [Concepts](doc/concepts/index.adoc) | How Plan Marshall is built and why — architecture, planning workflow, the execution-context dispatcher, the per-role model system. |
-| [User Guide](doc/user/index.adoc) | Operating Plan Marshall in a target project — installation, configuration, commands, terminal-title integration. |
-| [Developer Guide](doc/developer/index.adoc) | Working on Plan Marshall itself — build system, marketplace generation pipeline, distribution, testing, workflow verification. |
+| [Concepts](doc/concepts/README.adoc) | How Plan Marshall is built and why — architecture, planning workflow, the execution-context dispatcher, the per-role model system. |
+| [User Guide](doc/user/README.adoc) | Operating Plan Marshall in a target project — installation, configuration, commands, terminal-title integration. |
+| [Developer Guide](doc/developer/README.adoc) | Working on Plan Marshall itself — build system, marketplace generation pipeline, distribution, testing, workflow verification. |
 
 The canonical source of truth for every skill, standard, and extension point is co-located with the code under `marketplace/bundles/`. The `doc/` tree is a thin navigational surface over it.
 

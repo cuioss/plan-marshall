@@ -3,7 +3,7 @@
 :toc: left
 :toclevels: 2
 
-xref:../../README.md[Plan Marshall] » xref:index.adoc[User Guide]
+xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
 
 Plan Marshall installs into Claude Code as a marketplace. Installs are `git-clone-from-ref` operations performed by Claude Code's `/plugin marketplace add` against `cuioss/plan-marshall` at the chosen ref — `@dist-claude` for the snapshot branch, `@claude/v{x.y.z}` for an immutable dist tag.
 

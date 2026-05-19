@@ -3,7 +3,7 @@
 :toc: left
 :toclevels: 2
 
-xref:../../README.md[Plan Marshall] » xref:index.adoc[User Guide]
+xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
 
 User-invocable slash commands provided by the marketplace.
 

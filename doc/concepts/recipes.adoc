@@ -3,7 +3,7 @@
 :toc: left
 :toclevels: 2
 
-xref:../../README.md[Plan Marshall] » xref:index.adoc[Concepts]
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
 Predefined, repeatable transformations whose plan shape is already known — so the lifecycle skips the refine confidence loop and the outline-discovery work and produces deliverables from a deterministic mapping.
 

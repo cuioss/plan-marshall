@@ -3,7 +3,7 @@
 :toc: left
 :toclevels: 2
 
-xref:../../README.md[Plan Marshall] » xref:index.adoc[Developer Guide]
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
 
 Workflow output verification is provided by the opt-in `plan-retrospective` skill rather than a dedicated `/verify-workflow` command. The structural and analytic aspect scripts (eight today: `collect-plan-artifacts.py`, `collect-fragments.py`, `check-artifact-consistency.py`, `check-manifest-consistency.py`, `analyze-logs.py`, `direct-gh-glab-usage.py`, `summarize-invariants.py`, `compile-report.py`) live inside `plan-retrospective/scripts/`.
 

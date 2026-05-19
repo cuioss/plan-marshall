@@ -3,7 +3,7 @@
 :toc: left
 :toclevels: 2
 
-xref:../../README.md[Plan Marshall] » xref:index.adoc[Concepts]
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
 Plan Marshall runs a chain of automated reviews across phases 2 through 6 — analytical (Q-Gate over outline and task plan), internal (build / verify), structural (pre-submission self-review), and external (CI verify, Sonar roundtrip, PR review comments). Every review feeds the **same** findings pipeline, the **same** per-finding triage envelope, and produces the **same** four decision outcomes (`fixed` / `suppressed` / `accepted` / `taken_into_account`). The uniformity is what makes the chain reproducible.
 

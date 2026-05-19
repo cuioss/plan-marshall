@@ -3,7 +3,7 @@
 :toc: left
 :toclevels: 2
 
-xref:../../README.md[Plan Marshall] » xref:index.adoc[Concepts]
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
 How Plan Marshall loads skills into agent context — and why it does so *explicitly* rather than via the probabilistic skill-matching that LLM hosts default to.
 

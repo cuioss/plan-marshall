@@ -3,7 +3,7 @@
 :toc: left
 :toclevels: 3
 
-xref:../../README.md[Plan Marshall] » xref:index.adoc[User Guide]
+xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
 
 Survey of every configuration surface a project author touches when running Plan Marshall, with cross-references to the canonical specification for each topic.
 

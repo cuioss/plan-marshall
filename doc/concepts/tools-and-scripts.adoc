@@ -3,7 +3,7 @@
 :toc: left
 :toclevels: 2
 
-xref:../../README.md[Plan Marshall] » xref:index.adoc[Concepts]
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
 How Plan Marshall integrates with external systems (GitHub / GitLab / Sonar / git / future LSP) — and why none of those integrations is exposed to the LLM as an ad-hoc tool.
 

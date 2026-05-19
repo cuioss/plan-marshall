@@ -3,7 +3,7 @@
 :toc: left
 :toclevels: 2
 
-xref:../../README.md[Plan Marshall] » xref:index.adoc[Developer Guide]
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
 
 The directory layout of the Plan Marshall source tree, with developer-facing notes on what each top-level directory holds and which artifacts it produces.
 
@@ -125,4 +125,4 @@ Project-level Claude Code configuration committed to the repository:
 * xref:marketplace-build.adoc[Marketplace Build] — the `marketplace/` → `target/` generation pipeline and variant emission
 * xref:distribution.adoc[Distribution] — `dist-claude` orphan branch and the `claude/v*` tag policy
 * xref:testing.adoc[Testing] — pytest fixture stack and conventions
-* xref:../concepts/index.adoc[Concepts] — the three-tier model (skills / agents / commands) the marketplace exposes is introduced in the concepts index preamble
+* xref:../concepts/README.adoc[Concepts] — the three-tier model (skills / agents / commands) the marketplace exposes is introduced in the concepts index preamble

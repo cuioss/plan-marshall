@@ -3,7 +3,7 @@
 :toc: left
 :toclevels: 3
 
-xref:../../README.md[Plan Marshall] » xref:index.adoc[Developer Guide]
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
 
 How the marketplace source under `marketplace/bundles/` is transformed into deployable plugin artifacts. This document is orientation — the canonical specs live next to the code they govern.
 

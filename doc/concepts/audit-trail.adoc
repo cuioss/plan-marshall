@@ -3,7 +3,7 @@
 :toc: left
 :toclevels: 2
 
-xref:../../README.md[Plan Marshall] » xref:index.adoc[Concepts]
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
 Every Plan Marshall run leaves a structured, machine-readable record of *everything* it did — every dispatch, every script call, every skill load, every configuration decision, every finding, every phase boundary, every artifact produced. The record lives next to the plan on local disk, never leaves the developer's machine, and is detailed enough that the `plan-retrospective` skill can audit a plan automatically.
 

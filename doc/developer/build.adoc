@@ -3,7 +3,7 @@
 :toc: left
 :toclevels: 2
 
-xref:../../README.md[Plan Marshall] » xref:index.adoc[Developer Guide]
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
 
 How Plan Marshall is built and tested locally.
 

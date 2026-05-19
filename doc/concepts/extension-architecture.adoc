@@ -3,7 +3,7 @@
 :toc: left
 :toclevels: 2
 
-xref:../../README.md[Plan Marshall] » xref:index.adoc[Concepts]
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
 How Plan Marshall is built as a small core plus a set of domain bundles that plug in through ten named extension points. The contract every bundle satisfies, the discovery mechanism, and how to add a new domain.
 

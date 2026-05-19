@@ -5,7 +5,7 @@
 
 xref:../../README.md[Plan Marshall] » User Guide
 
-Operating Plan Marshall in a target project. If you are working on Plan Marshall itself, see xref:../developer/index.adoc[Developer Guide] instead.
+Operating Plan Marshall in a target project. If you are working on Plan Marshall itself, see xref:../developer/README.adoc[Developer Guide] instead.
 
 == Pages
 
@@ -18,7 +18,7 @@ Operating Plan Marshall in a target project. If you are working on Plan Marshall
 
 == Concept Crossover
 
-User-side workflows depend on a small handful of concepts. When something here references a mechanism or contract, the explanation lives under xref:../concepts/index.adoc[Concepts]:
+User-side workflows depend on a small handful of concepts. When something here references a mechanism or contract, the explanation lives under xref:../concepts/README.adoc[Concepts]:
 
 * xref:../concepts/planning-workflow.adoc[Planning Workflow] for `/plan-marshall` and the six phases.
 * xref:../concepts/execution-context.adoc#per-role-model-selection[Execution Context › Per-Role Model Selection] for the per-role model system referenced from xref:efforts.adoc[Efforts].
