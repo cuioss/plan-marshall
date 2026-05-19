@@ -717,3 +717,86 @@ def test_main_emits_mutually_exclusive_error_on_both_flags(monkeypatch, capsys):
     assert exc_info.value.code == 2
     captured = capsys.readouterr()
     assert 'mutually_exclusive_args' in captured.out
+
+
+# =============================================================================
+# ci_status / ci_wait bucket aggregation — `skipping` is non-failing
+# =============================================================================
+#
+# gh CLI reports `bucket: "skipping"` (not `"skipped"`) for skipped/neutral
+# check conclusions. The aggregator must treat this as non-failing so a PR
+# with all-pass-plus-skipped checks aggregates to overall=success /
+# final_status=success rather than the (incorrect) pending / mixed.
+
+
+def _mixed_pass_skipping_checks_json():
+    return (
+        '['
+        '{"name":"a","state":"SUCCESS","bucket":"pass","startedAt":"","completedAt":"","link":"","workflow":"CI"},'
+        '{"name":"b","state":"SKIPPED","bucket":"skipping","startedAt":"","completedAt":"","link":"","workflow":"CI"}'
+        ']'
+    )
+
+
+def test_ci_status_aggregates_pass_plus_skipping_as_success(monkeypatch):
+    """pass + skipping → overall=success (skipping is non-failing)."""
+    payload = _mixed_pass_skipping_checks_json()
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        if args[:2] == ['pr', 'checks']:
+            return 0, payload, ''
+        return 0, '', ''
+
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(pr_number=42, head=None)
+    result = github_ops.cmd_ci_status(ns)
+    assert result['status'] == 'success'
+    assert result['overall_status'] == 'success', result
+
+
+def test_ci_wait_aggregates_pass_plus_skipping_as_success(monkeypatch):
+    """ci_wait: pass + skipping → final_status=success (not 'mixed')."""
+    import json as _json
+
+    checks = _json.loads(_mixed_pass_skipping_checks_json())
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        if args[:2] == ['pr', 'checks']:
+            return 0, _mixed_pass_skipping_checks_json(), ''
+        return 0, '', ''
+
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    # poll_until returns the fully-resolved check set immediately.
+    monkeypatch.setattr(
+        github_ops,
+        'poll_until',
+        lambda check_fn, is_complete_fn, **_: {
+            'timed_out': False,
+            'duration_sec': 1,
+            'polls': 1,
+            'last_data': {'checks': checks},
+        },
+    )
+
+    ns = argparse.Namespace(pr_number=42, timeout=30, interval=5)
+    result = github_ops.cmd_ci_wait(ns)
+    assert result['status'] == 'success'
+    assert result['final_status'] == 'success', result
+
+
+def test_fetch_pr_overall_ci_status_pass_plus_skipping_is_success(monkeypatch):
+    """_fetch_pr_overall_ci_status: pass + skipping → 'success'."""
+    payload = _mixed_pass_skipping_checks_json()
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        if args[:2] == ['pr', 'checks']:
+            return 0, payload, ''
+        return 0, '', ''
+
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    ok, overall = github_ops._fetch_pr_overall_ci_status(42)
+    assert ok is True
+    assert overall == 'success'
