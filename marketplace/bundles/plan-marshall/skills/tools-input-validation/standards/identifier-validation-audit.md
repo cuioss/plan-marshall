@@ -1,6 +1,6 @@
 # Identifier Validation Audit
 
-This document is the single source of truth for the canonical identifier-validator sweep across the marketplace. The validator foundation (regex constants, raising validators, `add_<id>_arg(parser)` builders, and the `parse_args_with_toon_errors()` helper) shipped via lesson-2026-04-28-12-001. The cross-bundle sweep that consumed those validators across 32 scripts in `plan-marshall`, `pm-dev-java`, and `pm-documents` landed via lesson-2026-04-29-08-003. Every entry below reflects the post-sweep state: which scripts were migrated, which were excluded and why, and the breaking-compat decisions that fell out of the audit. New scripts and new identifier-shaped flags MUST be reflected in both this document and the SKILL.md adoption table.
+This document is the single source of truth for the canonical identifier-validator sweep across the marketplace. The validator foundation provides regex constants, raising validators, `add_<id>_arg(parser)` builders, and the `parse_args_with_toon_errors()` helper. The cross-bundle sweep consumed those validators across 32 scripts in `plan-marshall`, `pm-dev-java`, and `pm-documents`. Every entry below reflects the post-sweep state: which scripts were migrated, which were excluded and why, and the breaking-compat decisions that fell out of the audit. New scripts and new identifier-shaped flags MUST be reflected in both this document and the SKILL.md adoption table.
 
 ## Migrated Scripts (30)
 
@@ -87,7 +87,7 @@ The classification certainty `CERTAIN_EXCLUDE` was assigned during phase-3-outli
 
 ## Edge cases
 
-These breaking-compat decisions fell out of the sweep and deviate from the strict pre-sweep lesson-2026-04-28-12-001 contract. Each is intentional and documented here as the source of truth.
+These breaking-compat decisions fell out of the sweep and deviate from the strict pre-sweep contract. Each is intentional and documented here as the source of truth.
 
 - **`manage_session.py` — `SESSION_ID_RE` relaxed**: The inline `_SESSION_ID_RE` constant enforced the strict 8-4-4-4-12 UUID grouping. The canonical `SESSION_ID_RE` in `input_validation.py` is the permissive `^[A-Za-z0-9_-]{1,128}$` form, accepting any identifier shape produced by upstream session-id sources. Any caller previously emitting non-UUID session ids (e.g., test fixtures, IDE-supplied tokens) is now accepted.
 - **`sonar_rest.py` — canonical `COMPONENT_RE` rejects uppercase / path-shaped keys**: SonarQube allows component keys with uppercase letters and embedded path-like delimiters (e.g., `org:src/Main.java`). The canonical `COMPONENT_RE` `^[a-z0-9-]+(:[a-z0-9-]+)*$` is stricter and now rejects such keys at the CLI boundary. SonarCloud projects with non-canonical keys will receive `status: error / error: invalid_component`. This is the intended behaviour per the canonical-form contract.

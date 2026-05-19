@@ -132,6 +132,12 @@ Seven forward-looking lint rules added by the lesson-2026-05-05-18-001 remediati
 |---------|-------|---------|--------|
 | `shell-substitution-in-skills` | safety | `_analyze_shell_substitution_in_skills.py` | Lesson `2026-05-15-13-001` — `$(` command substitution in plan-marshall skill markdown violates the dev-general-practices "Bash: no shell constructs" hard rule. Structural exemptions: inline-code spans and fenced blocks with `markdown`/`text` info-string. |
 
+### Lesson-ID prose hygiene
+
+| Rule ID | Class | Emitter | Source |
+|---------|-------|---------|--------|
+| `no-lesson-id-in-skill-prose` | content | `_analyze_lesson_id_in_skill_prose.py` | Plan `remove-lesson-ref-noise` (2026-05-19) — narrative lesson-ID citations in skill prose add no durable value to the rule/decision content they accompany. Structural exemptions: allowlisted skill paths (`manage-lessons/**`, `phase-6-finalize/workflow/lessons-*.md`, `phase-6-finalize/standards/lessons-*.md`, `plugin-doctor/references/rule-provenance.md`), YAML frontmatter, fenced code blocks, `Source:` provenance lines, and inline-code spans. Suppressible per-line via `<!-- doctor-ignore: lesson-id-prose -->`. |
+
 ### Test-convention rules
 
 | Rule ID | Class | Emitter | Source |

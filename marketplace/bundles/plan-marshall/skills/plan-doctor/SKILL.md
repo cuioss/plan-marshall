@@ -16,7 +16,7 @@ This skill complements the at-write-time validation in `manage-tasks` (which pre
 
 **Prohibited actions:**
 - Do not re-implement lesson-ID detection — always import `scan_lesson_id_tokens` and `verify_lesson_ids_exist` from `tools-input-validation` (single source of truth — no duplication)
-- Do not silently degrade to "no findings" when the live inventory is unavailable — propagate the typed `LessonInventoryUnavailable` / `LessonRegexAnchoringError` failures so live-anchor discipline (lessons 2026-04-29-10-001 and 2026-05-03-21-002) is enforced
+- Do not silently degrade to "no findings" when the live inventory is unavailable — propagate the typed `LessonInventoryUnavailable` / `LessonRegexAnchoringError` failures so live-anchor discipline is enforced
 - Do not write findings outside the plan-scoped Q-Gate store — use `manage-findings qgate add` so they participate in the standard triage loop
 
 **Constraints:**

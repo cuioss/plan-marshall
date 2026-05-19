@@ -18,7 +18,7 @@ Rules that plugin-doctor validates in other components. See the Enforcement bloc
 
 **agent-glob-resolver-workaround** (severity: error): Flags `agents/*.md` whose YAML frontmatter `tools:` field includes `Glob` unless the agent body contains a `# resolver-glob-exempt:` marker followed by a one-line non-empty justification. Scope: `marketplace/bundles/*/agents/*.md`.
 
-- **Rationale**: Agents granted `Glob` access overwhelmingly use it to hand-roll discovery that should be delegated to a canonical resolver script. This is the same resolver-gap anti-pattern as `skill-resolver-gap`, but at the agent permission layer: once `Glob` is in the agent's tool list, prose-driven discovery becomes the path of least resistance and resolver scripts go unused. See driving lesson 2026-04-27-18-005.
+- **Rationale**: Agents granted `Glob` access overwhelmingly use it to hand-roll discovery that should be delegated to a canonical resolver script. This is the same resolver-gap anti-pattern as `skill-resolver-gap`, but at the agent permission layer: once `Glob` is in the agent's tool list, prose-driven discovery becomes the path of least resistance and resolver scripts go unused.
 - **Discovery approach**: Parse YAML frontmatter, check the `tools:` array for the `Glob` token (handles both inline `tools: Read, Write, Glob` and block-list forms). If present, scan the body for a `# resolver-glob-exempt:` marker followed by a non-empty justification on the same line. Absence emits a `agent-glob-resolver-workaround` finding pointing at the agent file.
 - **Fix**: Remove `Glob` from the agent's `tools:` field and replace any Glob-driven discovery with a `python3 .plan/execute-script.py` call to a canonical resolver. If the agent legitimately needs raw `Glob` access (rare — typically only for diagnostics or one-off introspection), add a `# resolver-glob-exempt: <one-line justification>` line in the agent body to declare intent.
 - **Exemptions**: Add a `# resolver-glob-exempt: <justification>` line in the agent body. The justification text must be non-empty; an empty marker does not suppress the finding.
@@ -33,7 +33,7 @@ Rules that plugin-doctor validates in other components. See the Enforcement bloc
 
 **prose-verb-chain-consistency** (severity: error): Flags prose sentences in workflow documentation that reference a `{notation} {verb-chain}` combination where the verb chain is not a registered subcommand path of the referenced script. Scope: `SKILL.md` plus every `standards/*.md` inside each script-bearing skill directory under `marketplace/bundles/*/skills/`.
 
-- **Rationale**: Prose drift lets workflow instructions reference verb chains the script never exposed. Concrete drift incident driving this rule: `phase-2-refine/SKILL.md` prose referenced `manage-plan-documents request clarify` when the script only registered `request read` and `request mark-clarified` — a human-reader would copy the command and hit an argparse error at runtime, with no structural check catching the mismatch. See driving lesson 2026-04-18-16-001.
+- **Rationale**: Prose drift lets workflow instructions reference verb chains the script never exposed. Concrete drift incident driving this rule: `phase-2-refine/SKILL.md` prose referenced `manage-plan-documents request clarify` when the script only registered `request read` and `request mark-clarified` — a human-reader would copy the command and hit an argparse error at runtime, with no structural check catching the mismatch.
 - **Discovery approach**: AST-based, mirroring `argparse_safety`. The rule walks each script's argparse tree (`add_subparsers` → `add_parser` calls) recursively to enumerate the set of registered verb chains, then greps prose for `{notation} {tokens...}` occurrences and reports any token sequence that is not a valid prefix path in the registered tree. No subprocess execution, no imports of the target script — pure static analysis.
 - **Fix**: Update the prose to use a registered verb chain. If the intended verb chain does not yet exist in the script, either add it to the argparse tree or choose the nearest registered command.
 - **Exemptions**: Place `<!-- doctor-ignore: verb-check -->` on the line immediately preceding a bash fence to suppress verb-chain validation for that specific block (use sparingly — only when prose deliberately documents a command the script does not expose, e.g., illustrative or aspirational examples).
@@ -67,7 +67,7 @@ Four detection modes:
 
 **skill-resolver-gap** (severity: warning): Flags skill `SKILL.md` and `standards/*.md` prose containing LLM-Glob discovery patterns (`Use Glob:`, `Glob pattern:`, `Discover ... using Glob`, `find ... using Glob patterns`) without an adjacent `python3 .plan/execute-script.py` invocation within the next 5 lines. Scope: `marketplace/bundles/*/skills/*/SKILL.md` and `marketplace/bundles/*/skills/*/standards/*.md`.
 
-- **Rationale**: Skills that direct an LLM to perform discovery via `Glob`/`Grep` when a canonical resolver script already exists for that domain re-introduce the resolver-gap anti-pattern: the LLM hand-rolls discovery logic that should live in a deterministic script, and successive runs drift in coverage and ordering. Concrete drift incident: prose like "Use Glob: marketplace/bundles/*/skills/*/SKILL.md" appearing without a follow-up `execute-script.py` call to a resolver — a human-reader copies the suggestion and produces non-deterministic results compared to the resolver's output. See driving lesson 2026-04-27-18-005.
+- **Rationale**: Skills that direct an LLM to perform discovery via `Glob`/`Grep` when a canonical resolver script already exists for that domain re-introduce the resolver-gap anti-pattern: the LLM hand-rolls discovery logic that should live in a deterministic script, and successive runs drift in coverage and ordering. Concrete drift incident: prose like "Use Glob: marketplace/bundles/*/skills/*/SKILL.md" appearing without a follow-up `execute-script.py` call to a resolver — a human-reader copies the suggestion and produces non-deterministic results compared to the resolver's output.
 - **Discovery approach**: Line-by-line regex scan over markdown content. For each match of an LLM-Glob trigger phrase, the analyzer inspects the next ≤5 lines for `python3 .plan/execute-script.py`. If absent, a `skill-resolver-gap` finding is emitted with the line of the prose match. Pure static analysis — no script execution, no imports.
 - **Fix**: Replace the LLM-Glob prose with a `python3 .plan/execute-script.py {bundle}:{skill}:{script}` invocation that delegates discovery to a canonical resolver. If no resolver exists yet, add one before relying on Glob from prose.
 - **Exemptions**: Place `<!-- doctor-ignore: resolver-gap -->` on the line immediately preceding the prose block to suppress the finding for that occurrence (use sparingly — only when prose deliberately documents an LLM-driven discovery for which no resolver is appropriate, e.g., debugging instructions or single-shot diagnostics).
@@ -76,7 +76,7 @@ Four detection modes:
 
 **argparse_safety** (severity: error): Flags every `argparse.ArgumentParser(...)` constructor call and every `subparsers.add_parser(...)` call in marketplace Python scripts that does not pass `allow_abbrev=False`. Scope: files under `marketplace/bundles/*/skills/*/scripts/` and `marketplace/targets/**/*.py`. Tests are exempt (files under `test/`/`tests/` directories or named `test_*.py` / `*_test.py`).
 
-- **Rationale**: Without `allow_abbrev=False`, argparse matches unknown long options by unique prefix. When a flag is renamed or retired, old callers keep working silently via prefix binding — the contract rot is invisible until something behaves wrong under a rename. See driving lesson 2026-04-17-012 (argparse prefix-matching silently binds retired flags).
+- **Rationale**: Without `allow_abbrev=False`, argparse matches unknown long options by unique prefix. When a flag is renamed or retired, old callers keep working silently via prefix binding — the contract rot is invisible until something behaves wrong under a rename.
 - **Fix**: Add `allow_abbrev=False` to the constructor or `add_parser(...)` call. The rule is a lightweight AST walk (no parser execution); it flags the exact line and call name (`ArgumentParser` or `add_parser`).
 - **Exemptions**: Test files may intentionally exercise argparse default behavior and are excluded from the scan.
 
@@ -209,9 +209,9 @@ Detection lives in `_analyze_markdown.py::check_mark_step_done_violations`; find
 
 **pm-contract-non-compliance** (PM-006): Contract specification violations.
 
-## Rule Pack: Plugin-doctor lint guards (lesson 2026-05-05-18-001)
+## Rule Pack: Plugin-doctor lint guards
 
-Seven forward-looking lint rules added as part of the lesson-2026-05-05-18-001 plan.
+Seven forward-looking lint rules.
 
 | Rule ID | Intent | False-positive policy | Suppression |
 |---------|--------|-----------------------|-------------|
@@ -223,7 +223,7 @@ Seven forward-looking lint rules added as part of the lesson-2026-05-05-18-001 p
 | `orphan-argparse-flag` | Flag argparse flags declared but never read in their handler | Conservative: `vars(args)`, `**kwargs`, or `getattr` usage suppresses the check | Read the flag in the handler, or remove the declaration |
 | `cmd-root-anchoring-missing` | Require `cmd_*` dispatcher functions to call `find_marketplace_root(...)` and declare `--marketplace-root` | Dispatcher-heuristic gated: only fires for scripts with `set_defaults(func=cmd_*)` | Add both the prelude call and the `--marketplace-root` flag to the subparser |
 
-## Rule Pack: Shell-substitution invariant (lesson 2026-05-15-13-001)
+## Rule Pack: Shell-substitution invariant
 
 | Rule ID | Intent | False-positive policy | Suppression |
 |---------|--------|-----------------------|-------------|
@@ -237,7 +237,7 @@ Seven forward-looking lint rules added as part of the lesson-2026-05-05-18-001 p
 
 **Scope**: All `*.md` files under `marketplace/bundles/plan-marshall/skills/`.
 
-**Intent**: Enforce the dev-general-practices "Bash: no shell constructs" hard rule (`general-development-rules.md` § "Bash: One command per call", `tool-usage-patterns.md` § "Bash safety rules") at the skill-documentation layer. A `$(` in a workflow doc gets interpreted by subagents that copy the snippet into a Bash call literally — the host platform's permission UI then either pops a security prompt or rejects the dispatch outright. The rule prevents regressions of the lesson-2026-05-15-13-001 sweep that removed all such patterns.
+**Intent**: Enforce the dev-general-practices "Bash: no shell constructs" hard rule (`general-development-rules.md` § "Bash: One command per call", `tool-usage-patterns.md` § "Bash safety rules") at the skill-documentation layer. A `$(` in a workflow doc gets interpreted by subagents that copy the snippet into a Bash call literally — the host platform's permission UI then either pops a security prompt or rejects the dispatch outright. The rule prevents regressions of the sweep that removed all such patterns.
 
 **Detection logic**: Scans every line of every markdown file under `marketplace/bundles/plan-marshall/skills/`. Each `$(` two-character occurrence is a candidate finding unless it falls into one of the two exempt documentary contexts below.
 
@@ -250,6 +250,44 @@ Seven forward-looking lint rules added as part of the lesson-2026-05-05-18-001 p
 **Recommended fix**: Replace `target=$(python3 .plan/execute-script.py …)` with the bare `python3 .plan/execute-script.py …` invocation followed by a one-sentence narrative ("Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below."). Replace `$var` references in subsequent bash blocks with `{var}` placeholders.
 
 **Suppression mechanism**: None — convert the substitution to the documented safe alternative. If the occurrence is genuinely documentary (a standards doc that names the forbidden pattern), wrap it in an inline-code span (`` `…` ``) so the structural exemption applies.
+
+---
+
+## Rule Pack: Lesson-ID prose hygiene
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `no-lesson-id-in-skill-prose` | Forbid narrative lesson-ID citations in skill prose — strip the ID and trivia, keep the rule content | Five structural exemptions: allowlisted skill paths (manage-lessons/**, phase-6-finalize/workflow/lessons-*.md, phase-6-finalize/standards/lessons-*.md, plugin-doctor/references/rule-provenance.md), YAML frontmatter, fenced code blocks, `Source:` provenance lines, and inline-code spans | Inline marker `<!-- doctor-ignore: lesson-id-prose -->` (same line or immediately preceding line) suppresses the finding on the marked line only |
+
+### no-lesson-id-in-skill-prose
+
+**Rule ID**: `no-lesson-id-in-skill-prose`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_lesson_id_in_skill_prose.py`
+
+**Scope**: All `*.md` files under `marketplace/bundles/*/{skills,agents,commands}/**`.
+
+**Intent**: Strip narrative lesson-ID citations and recurrence trivia from skill prose so the surface documents present-tense rules rather than the historical incidents that motivated them. The rule recognises two lesson-ID format families — `YYYY-MM-DD-NNN` and `YYYY-MM-DD-HH-NNN` — and the prose-prefixed forms `lesson XXX` and `lesson-XXX`.
+
+**Detection logic**: Scans every line of every in-scope markdown file. Each lesson-ID token occurrence is a candidate finding unless it falls into one of the five structural exemptions listed below.
+
+**Allowlist** (file-level skip — the entire file is exempt because it operates ON lessons as domain content):
+
+- `marketplace/bundles/plan-marshall/skills/manage-lessons/**`
+- `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/lessons-*.md`
+- `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/lessons-*.md`
+- `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-provenance.md` — the canonical citation home for plugin-doctor rules.
+
+**Per-line structural exemptions** (skip the match, not the file):
+
+1. **YAML frontmatter** — between the leading `---` fences at the start of a markdown file.
+2. **Fenced code block** — any line inside a ``` ``` ``` fence regardless of info-string.
+3. **`Source:` line** — provenance citation marker (e.g., `Source: lesson-XXX`).
+4. **Inline-code span** — a lesson-ID inside backticks (`` `…` `` ). Token references are not narrative prose.
+
+**Suppression mechanism**: Place `<!-- doctor-ignore: lesson-id-prose -->` on the same line as the match, or on the immediately preceding line, to suppress the finding on the marked line only. Use sparingly — the marker is for genuinely structural citations whose context the analyzer cannot detect (extremely rare; nearly every legitimate citation already qualifies as `Source:` or inline-code).
+
+**Recommended fix**: Locate the line cited by the finding. If the lesson-ID + trivia is parenthetical or sits in its own sentence whose only payload is the citation, remove the entire sentence/parenthetical. Otherwise, strip the lesson-ID, the bracketed citation form (`(lesson XXX)`, `lesson-XXX`, `see lesson XXX`), and the recurrence-trivia phrases (`three recurrences in ~3 days`, `within ~3 days`, `N recurrences in M days`, etc.) while preserving the surrounding rule/decision content. The rule remains; the citation goes.
 
 ---
 

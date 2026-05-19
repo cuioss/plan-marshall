@@ -127,7 +127,7 @@ Each category references a standard from `plugin-script-architecture`. The check
 
 ### 10. Argparse Safety (`allow_abbrev=False`)
 
-**Standard reference**: `plugin-script-architecture:standards/python-implementation.md` (Argument Conventions section) and driving lesson 2026-04-17-012.
+**Standard reference**: `plugin-script-architecture:standards/python-implementation.md` (Argument Conventions section).
 
 **Required parameter**: Every `argparse.ArgumentParser(...)` constructor and every `subparsers.add_parser(...)` call in a marketplace Python script with a user-facing CLI MUST pass `allow_abbrev=False`.
 
