@@ -98,6 +98,50 @@ The `Skill` tool is in the agent's `tools:` frontmatter, which is what makes ste
 
 For *why* every dispatch routes through one canonical agent with six emitted level variants, see xref:execution-context.adoc[Execution Context]. This page covers *what loads into that agent's context*.
 
+== Profiles
+
+The profile is the *category of work* a task represents — production code vs test code vs integration test vs quality / docs. It drives two things:
+
+1. Which skills enter the dispatched context (the Tier-2 selection from `skills_by_profile`).
+2. Which workflow skill executes the task (the phase-5 `resolve-workflow-skill` lookup — see below).
+
+The profile slots, as declared in `ExtensionBase.APPLICABLE_PROFILES`:
+
+[cols="1,2,2", options="header"]
+|===
+| Profile | Purpose | Detection signal
+
+| `implementation` | Create / modify production code | Always included
+| `module_testing` | Create / modify test code (unit / module level) | Always included
+| `integration_testing` | Integration tests with containers or external services | Signal-based — e.g. Failsafe plugin, testcontainers dependency
+| `quality` | Documentation standards, code-quality checks | Always included
+| `documentation` | Documentation-specific tasks (AsciiDoc, ADRs) | Signal-based — module contains `doc/*.adoc` files
+|===
+
+A sixth slot, `core`, is special: it carries foundation patterns and standards that *always* merge into every other profile. It is not selected per-task — it loads alongside whichever profile the task names.
+
+=== Profile-driven workflow-skill override
+
+The system default workflow body for every task is link:../../marketplace/bundles/plan-marshall/skills/execute-task/SKILL.md[`plan-marshall:execute-task`]. A domain can replace it per profile via `skill_domains.{domain}.workflow_skills.{profile}` in `marshal.json`:
+
+[source,json]
+----
+"skill_domains": {
+  "java": {
+    "workflow_skills": {
+      "implementation": "pm-dev-java:java-implementation",
+      "module_testing": "pm-dev-java:java-module-testing"
+    }
+  }
+}
+----
+
+At dispatch time `manage-config resolve-workflow-skill --domain {domain} --phase {profile}` checks the override first and falls back to the system default. The TOON return includes a `fallback: true|false` field so the caller knows which path resolved.
+
+When *should* a domain override? When the work genuinely differs from the generic shape — different verification commands, different test-framework idioms, different coding patterns it must enforce. Minor style differences should stay in domain skills loaded as Tier-2, not in a forked workflow body.
+
+Full contract — required input parameters, return-structure invariants, validation rules — in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/profiles.md[`extension-api/standards/profiles.md`].
+
 == Skill domains in `marshal.json`
 
 The `skill_domains` block is the project-level registry that maps detected domains (`java`, `javascript`, `oci`, …) to skill lists per profile. Two parts:

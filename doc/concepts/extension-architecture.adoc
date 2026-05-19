@@ -1,0 +1,147 @@
+= Extension Architecture
+:nofooter:
+:toc: left
+:toclevels: 2
+
+How Plan Marshall is built as a small core plus a set of domain bundles that plug in through eight named hooks. The contract every bundle satisfies, the discovery mechanism, and how to add a new domain.
+
+== Overview
+
+The Plan Marshall *core* — the orchestrator, the six phase skills, the `execution-context` dispatcher, the `manage-*` services — never decides what `Java` or `documentation` or `OCI containers` means. Every domain-specific behaviour lives in a separate *bundle* that the core discovers, registers, and calls through a fixed set of hooks.
+
+image::../resources/diagrams/extension-topology.svg[Extension topology. The Plan Marshall core (orchestrator + phase-1-init through phase-6-finalize + execution-context dispatcher + manage-* services + the `extension_discovery.py` scanner) sits on the left. The right column shows the eight named extension hooks the core exposes: build, triage, recipe, outline, provider, execution-context-workflow, verify-steps, and finalize-steps. Each hook is annotated with its `ExtensionBase` method name and a current implementation count. Two hooks are placeholders today (verify-steps, finalize-steps). All ten production bundles implement `get_skill_domains()`; the other hooks are optional., align=center]
+
+The seam between core and bundle is intentionally narrow — eight hook methods on a Python base class, plus one filesystem convention for discovery. Once you know the seam, every domain bundle ships exactly the same way.
+
+== The seam — `ExtensionBase`
+
+Every bundle that wants to extend the core ships exactly one file:
+
+[source]
+----
+marketplace/bundles/{bundle}/skills/plan-marshall-plugin/extension.py
+----
+
+The directory name `plan-marshall-plugin` is hardcoded into the discovery scanner — `find_extension_path()` in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/extension-contract.md[`extension-contract.md`] looks for that exact path in every installed bundle. The file declares a single class:
+
+[source,python]
+----
+from extension_base import ExtensionBase
+
+class Extension(ExtensionBase):
+    def get_skill_domains(self) -> list[dict]:
+        ...
+----
+
+`ExtensionBase` declares one abstract method (`get_skill_domains`) and seven optional hooks with default no-op implementations. A bundle only overrides the hooks it actually needs.
+
+== The eight hooks
+
+[cols="2,2,1,3", options="header"]
+|===
+| Extension point | Hook method | Status | What it lets a bundle do
+
+| link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/extension-contract.md[`get_skill_domains`] (core)
+| `get_skill_domains()`
+| Required
+| Declare the bundle's domain identity (key, name, description) and organise its skills by profile (`core`, `implementation`, `module_testing`, `integration_testing`, `quality`). The only abstract method.
+
+| link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-build.md[`ext-point-build`]
+| `discover_modules()` + `ExecuteConfig`
+| Active · 4 impls
+| Add a build-system family (Maven, Gradle, npm, Python). Plug in module discovery and a per-tool `ExecuteConfig` that maps canonical commands (`verify`, `quality-gate`, `module-tests` …) onto the tool's actual invocation.
+
+| link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-triage.md[`ext-point-triage`]
+| `provides_triage()`
+| Active · 7 impls
+| Provide per-domain decision-making for `pr-comment` and `sonar-issue` findings — what to FIX vs SUPPRESS vs ACCEPT, with domain-specific suppression syntax and disposition templates.
+
+| link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-recipe.md[`ext-point-recipe`]
+| `provides_recipes()`
+| Active · 4 impls
+| Register repeatable transformations whose plan shape is known — see xref:recipes.adoc[Recipes]. The recipe skill produces `solution_outline.md` directly instead of going through outline discovery.
+
+| link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-outline.md[`ext-point-outline`]
+| `provides_outline_skill()`
+| Active · 1 impl
+| Replace the generic outline workflow with a domain-specific outline skill that ships its own `standards/change-{type}.md` per supported change type.
+
+| link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-provider.md[`ext-point-provider`]
+| `provides_providers()`
+| Active · 3 impls
+| Register credential providers for external HTTPS integrations (GitHub, GitLab, Sonar). Credentials live under `~/.plan-marshall-credentials/` and never enter LLM context — see xref:tools-and-scripts.adoc[Tools and Scripts].
+
+| link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-execution-context-workflow.md[`ext-point-execution-context-workflow`]
+| `implements:` in a workflow `.md`
+| Active · many
+| Declare a new LLM-judgement workflow body and pin it to a role key. Every phase skill, every Q-Gate, every shared workflow under `plan-marshall/workflow/` rides this extension point.
+
+| link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-verify-steps.md[`ext-point-verify-steps`]
+| `provides_verify_steps()`
+| Placeholder · 0 impls
+| Add domain-specific holistic verification steps that run inside phase-5-execute after implementation. Contract is declared; awaiting a real use case.
+
+| link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-steps.md[`ext-point-finalize-steps`]
+| `provides_finalize_steps()`
+| Placeholder · 0 impls
+| Add domain-specific steps to the phase-6-finalize pipeline. Same shape as verify-steps — contract present, no domain consumers yet. Project-level finalize steps (under `.claude/skills/finalize-step-*`) cover today's needs.
+|===
+
+A bundle doesn't have to fill every slot. A frontend bundle might only override `get_skill_domains`, `provides_triage`, and ship a profile-overriding workflow body — three hooks of eight. The unfilled hooks return the default no-op and the core uses its generic behaviour.
+
+== Discovery
+
+At install time, the executor's `extension_discovery.py` scans every bundle under `marketplace/bundles/` (or the equivalent plugin-cache path) and asks "does `skills/plan-marshall-plugin/extension.py` exist?" If yes, it imports the file, instantiates the `Extension` class, and calls `get_skill_domains()` to learn the domain identity.
+
+The returned domain key (e.g. `java`, `javascript`, `oci`) is registered in `marshal.json` under `skill_domains.{key}`, with a `bundle` field added by `skill-domains configure` that reverse-maps from the domain key back to the source bundle. From that point on every other hook is invoked through the same `Extension` instance whenever its host workflow needs it.
+
+The full marshal.json schema — every path each hook writes, every consumer that reads it — is catalogued in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/marshal-json-reference.md[`marshal-json-reference.md`].
+
+== Current bundles
+
+Ten production bundles, all of which implement `get_skill_domains`. The non-required hooks they each fill:
+
+[cols="1,2,3", options="header"]
+|===
+| Bundle | Domain | Non-required hooks implemented
+
+| link:../../marketplace/bundles/plan-marshall/[`plan-marshall`] | `build`, multi-domain | `ext-point-build` (×4 subskills), `ext-point-recipe` (refactor-to-profile)
+| link:../../marketplace/bundles/pm-dev-java/[`pm-dev-java`] | `java` | `ext-point-triage` (ext-triage-java), `ext-point-outline`
+| link:../../marketplace/bundles/pm-dev-java-cui/[`pm-dev-java-cui`] | `java-cui` | `ext-point-recipe` (cui-logging-enforce)
+| link:../../marketplace/bundles/pm-dev-frontend/[`pm-dev-frontend`] | `javascript` | `ext-point-triage` (ext-triage-js)
+| link:../../marketplace/bundles/pm-dev-frontend-cui/[`pm-dev-frontend-cui`] | `javascript-cui` | —
+| link:../../marketplace/bundles/pm-dev-python/[`pm-dev-python`] | `python` | `ext-point-triage` (ext-triage-python)
+| link:../../marketplace/bundles/pm-dev-oci/[`pm-dev-oci`] | `oci-containers` | `ext-point-triage` (ext-triage-oci)
+| link:../../marketplace/bundles/pm-documents/[`pm-documents`] | `documentation` | `ext-point-triage` (ext-triage-docs), `ext-point-recipe` (×2: doc-verify, verify-architecture-diagrams)
+| link:../../marketplace/bundles/pm-plugin-development/[`pm-plugin-development`] | `plan-marshall-plugin-dev` | `ext-point-triage` (ext-triage-plugin)
+| link:../../marketplace/bundles/pm-requirements/[`pm-requirements`] | `requirements` | `ext-point-triage` (ext-triage-reqs)
+|===
+
+Two of the ten (`pm-dev-frontend-cui`, `pm-dev-java-cui`) are *additive* — they ride on top of the base domain (`pm-dev-frontend`, `pm-dev-java`) without replacing it.
+
+== Adding a new domain
+
+Three steps:
+
+1. **Create the directory** `marketplace/bundles/{bundle}/skills/plan-marshall-plugin/` and add an `extension.py` that subclasses `ExtensionBase` and implements `get_skill_domains()`.
+2. **Add `skills/`** for the domain knowledge the bundle provides (`{bundle}/skills/{skill}/SKILL.md` per skill). At minimum a `core` profile skill set so something loads during dispatches.
+3. **Run `/marshall-steward`** in the consuming project. The wizard discovers the new bundle, calls `get_skill_domains`, writes the registration into `marshal.json`, and prompts for any optional configuration (credentials, profile overrides, finalize steps).
+
+Adding a hook to an existing bundle is even smaller — override the relevant method on the existing `Extension` class. The wizard picks the new declarations up on re-run.
+
+The reference implementation of "what minimum looks like" is link:../../marketplace/bundles/pm-dev-frontend-cui/skills/plan-marshall-plugin/[`pm-dev-frontend-cui`] — `get_skill_domains` only, no other overrides, useful as a starting skeleton.
+
+== Where this fits
+
+Extension Architecture is the *plumbing* answer to "what is Plan Marshall." The xref:planning-workflow.adoc[Planning Workflow] is the *user-visible* answer. The eight hooks are the contact points between the two: every domain decision a plan makes — which build skill to dispatch (xref:build-management.adoc[Build Management]), which triage skill loads for a Sonar issue (xref:automatic-reviews.adoc[Automatic Reviews]), which skills enter the subagent context for a Java testing task (xref:skill-handling.adoc[Skill Handling]) — flows through one of the eight hooks.
+
+== Related
+
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/extension-contract.md[`extension-api/standards/extension-contract.md`] — the canonical `ExtensionBase` Python contract: every method, every return shape, every validation rule.
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/marshal-json-reference.md[`extension-api/standards/marshal-json-reference.md`] — every marshal.json path each hook writes, with cross-refs to the relevant ext-point.
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/SKILL.md[`extension-api/SKILL.md`] — extension-points overview index.
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/profiles.md[`extension-api/standards/profiles.md`] — the profile-override mechanism (see also xref:skill-handling.adoc#_profiles[Skill Handling › Profiles]).
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/module-discovery.md[`extension-api/standards/module-discovery.md`] — the build-side discovery method contract.
+* xref:build-management.adoc[Concepts › Build Management] — the `ext-point-build` implementation surface.
+* xref:recipes.adoc[Concepts › Recipes] — the `ext-point-recipe` implementation surface.
+* xref:automatic-reviews.adoc[Concepts › Automatic Reviews] — where `ext-point-triage` plugs in.
