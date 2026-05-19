@@ -20,7 +20,7 @@ Recipes are the extension point for that case. A recipe declares "I know what th
 A recipe-driven plan still passes through every phase, but the work inside three phases shortcuts:
 
 * **phase-2-refine** — the recipe shortcut: `confidence=100, track=complex` returned immediately. No iteration on intent.
-* **phase-3-outline** — recipe detection routes to the recipe skill (link:../../marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md[`phase-3-outline`] Step 2.5). The recipe skill produces `solution_outline.md` via its own discovery + deliverable pattern instead of the Simple/Complex Track LLM analysis.
+* **phase-3-outline** — recipe detection routes to the recipe skill (link:../../marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md[`phase-3-outline`] Step 3). The recipe skill produces `solution_outline.md` via its own discovery + deliverable pattern instead of the Simple/Complex Track LLM analysis.
 * **phase-3-outline Q-Gate** — bypassed when the recipe yields surgical scope with a single-deliverable shape; pays the Q-Gate cost otherwise.
 
 The cost saving is real: a Complex Track outline on a 30-module codebase is a multi-thousand-token LLM exercise. A recipe-driven outline producing the same N deliverables is mostly script invocations (`architecture modules`, `architecture module --full`, `manage-files discover`) plus a templated write.
@@ -41,7 +41,7 @@ A recipe is a skill whose `SKILL.md` declares `implements: plan-marshall:extensi
 * **Extension-provided** — a domain bundle implements `provides_recipes()` and returns a list of recipe dicts (`key`, `name`, `description`, `skill`, `default_change_type`, `scope`).
 * **Project-local** — the project ships its own recipe under `.claude/skills/recipe-*` (mirrors the finalize-step pattern).
 
-At runtime the recipe skill is invoked under phase-3-outline with `plan_id`, optional `recipe_domain`, optional `recipe_profile`, and optional `recipe_package_source`. It is responsible for:
+At runtime the recipe skill is invoked under phase-3-outline Step 3 with `plan_id`, optional `recipe_domain`, optional `recipe_profile`, and optional `recipe_package_source`. It is responsible for:
 
 1. Resolving the applicable skills for the recipe's profile (e.g. via `manage-config resolve-domain-skills`).
 2. Querying the architecture for the input set (modules, packages, diagrams, ADRs, …).
@@ -81,7 +81,7 @@ Recipes are the workflow's *known-shape escape hatch*. The standard pipeline is 
 
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-recipe.md[`extension-api/standards/ext-point-recipe.md`] — full extension-point contract: hook signature, return dict shape, lifecycle, resolution.
 * link:../../marketplace/bundles/plan-marshall/skills/recipe-refactor-to-profile-standards/SKILL.md[`recipe-refactor-to-profile-standards/SKILL.md`] — reference implementation: input parameters, the 4-step discovery → write flow.
-* link:../../marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md[`phase-3-outline/SKILL.md`] — Step 2.5 (recipe detection, recipe-skill load).
+* link:../../marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md[`phase-3-outline/SKILL.md`] — Step 3 (recipe detection, recipe-skill load).
 * link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/recipe.md[`plan-marshall/workflow/recipe.md`] — the orchestrator workflow body for `action=recipe`.
 * link:../../marketplace/bundles/plan-marshall/skills/manage-config/SKILL.md[`manage-config/SKILL.md`] — the `list-recipes` and `resolve-recipe` subcommands (recipe discovery API).
 * xref:planning-workflow.adoc[Concepts › Planning Workflow] — the standard six-phase pipeline recipes shortcut into.

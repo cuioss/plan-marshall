@@ -16,9 +16,8 @@ This page is for contributors working **on** Plan Marshall. If you are using Pla
 plan-marshall/
 ├── marketplace/
 │   ├── .claude-plugin/marketplace.json   # master marketplace configuration
-│   ├── adapters/                         # multi-assistant export adapters
 │   ├── bundles/                          # 10 production bundles (source of truth)
-│   └── targets/                          # per-target emitters (claude, opencode, …)
+│   └── targets/                          # per-target emitters + per-target subdirs (claude, opencode, …)
 ├── target/                               # build output, per target (gitignored)
 │   └── claude/                           # populated by marketplace/targets/generate.py
 ├── test/                                 # pytest tests for marketplace scripts
@@ -46,8 +45,7 @@ The marketplace is the source of truth — everything else is built from here.
 
 | `marketplace/.claude-plugin/marketplace.json` | The master marketplace manifest listing every bundle.
 | `marketplace/bundles/` | The ten production bundles. Each bundle is a self-contained Claude Code plugin (`.claude-plugin/plugin.json` manifest + `skills/` + optional `agents/` and `commands/`).
-| `marketplace/adapters/` | Multi-assistant export adapters. Currently host the Claude and OpenCode target generators.
-| `marketplace/targets/` | Per-target emitters (`generate.py` + per-target subdirectories). See xref:marketplace-build.adoc[Marketplace Build] for the variant-emission pipeline.
+| `marketplace/targets/` | Per-target emitters and per-target subdirectories. Hosts `generate.py` (the multi-target dispatcher) plus `claude/` and `opencode/` subdirectories with the per-target emission logic and adapters. See xref:marketplace-build.adoc[Marketplace Build] for the variant-emission pipeline.
 |===
 
 Each bundle under `marketplace/bundles/` follows the same internal layout: `.claude-plugin/plugin.json`, optional `agents/`, optional `commands/`, and a `skills/` tree where each skill is a `SKILL.md` accompanied by `standards/`, `scripts/`, `references/`, `templates/`, or `workflow/` subdirectories as needed.
@@ -105,8 +103,8 @@ All access to `.plan/` from inside a workflow goes through `python3 .plan/execut
 Project-level Claude Code configuration committed to the repository:
 
 * `.claude/settings.json` — team-shared permission allow-list. Narrow by design (see xref:../concepts/security.adoc[Security]).
-* `.claude/skills/` — project-local skills (the meta-project only — `finalize-step-deploy-target/`, `finalize-step-sync-plugin-cache/`, `sync-plugin-cache/`). Consumer projects of Plan Marshall do not get these.
-* `.claude/commands/` — project-local slash commands.
+* `.claude/skills/` — project-local skills (the meta-project only — `finalize-step-deploy-target/`, `finalize-step-plugin-doctor/`, `finalize-step-pre-submission-self-review/`, `finalize-step-regenerate-executor/`, `finalize-step-self-host-fence/`, `finalize-step-sync-plugin-cache/`, `recipe-plugin-compliance/`, `sync-plugin-cache/`). Consumer projects of Plan Marshall do not get these.
+* `.claude/commands/` — project-local slash commands (today: `build-fix-commit.md`).
 
 `.claude/settings.local.json` (per-developer, gitignored) sits alongside but is never committed.
 

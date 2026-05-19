@@ -130,7 +130,7 @@ The two together mean any run can be replayed from the logs and re-evaluated fro
 
 The design has two layers:
 
-* **12 aspect scripts** produce deterministic TOON *fragments* under `{plan_id}/work/` — pure facts derived from the audit trail. Examples seen in archived plans:
+* **A set of aspect scripts** produces deterministic TOON *fragments* under `{plan_id}/work/` — pure facts derived from the audit trail. The exact aspect list (and which are conditional vs always-on) is canonical in link:../../marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md[`plan-retrospective/SKILL.md`] § Aspects. Representative fragments observed in archived plans:
 +
 [source]
 ----
@@ -175,7 +175,7 @@ This is by design: the audit trail records local LLM behaviour, model usage, dec
 
 == Related
 
-* link:../../marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md[`plan-retrospective/SKILL.md`] — canonical retrospective skill (12 aspects, fragments, report shape)
+* link:../../marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md[`plan-retrospective/SKILL.md`] — canonical retrospective skill (aspect list, fragments, report shape)
 * link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/artifacts.md[`ref-workflow-architecture/standards/artifacts.md`] — canonical artifact inventory
 * link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/dispatch-logging.md[`ref-workflow-architecture/standards/dispatch-logging.md`] — `[DISPATCH]` log line contract
 * link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/findings-pipeline.md[`ref-workflow-architecture/standards/findings-pipeline.md`] — findings storage + resolution lifecycle

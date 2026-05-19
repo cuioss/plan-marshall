@@ -149,7 +149,7 @@ Full contract — required input parameters, return-structure invariants, valida
 The `skill_domains` block is the project-level registry that maps detected domains (`java`, `javascript`, `oci`, …) to skill lists per profile. Two parts:
 
 * `skill_domains.system` — Tier 1 defaults plus workflow-skill mappings (`execute-task`, phase skills).
-* `skill_domains.{domain}` — per-domain skills organised by profile (`implementation`, `module_testing`, `verification`) plus extension points (`triage`, `outline`, `recipe`).
+* `skill_domains.{domain}` — per-domain skills organised by profile (`implementation`, `module_testing`, `integration_testing`, `quality`, `documentation`) plus extension points (`triage`, `outline`, `recipe`, `self-review`).
 
 The wizard seeds this from each installed bundle's `plan-marshall-plugin` manifest. Tuning lives in xref:../user/configuration.adoc#skill-domains[User Guide › Configuration › Skill domains]; canonical schema in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/skill-domains.md[`skill-domains.md`] / link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/skill-domains-operations.md[`skill-domains-operations.md`].
 

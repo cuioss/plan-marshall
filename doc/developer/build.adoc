@@ -70,7 +70,7 @@ Tool configuration is in `pyproject.toml`:
 * `[tool.pyprojectx.main]` — dev tool requirements (uv, pytest, ruff, mypy)
 * `[tool.pyprojectx.aliases]` — command shortcuts
 * `[tool.pytest.ini_options]` — pytest configuration
-* `[tool.coverage]` — coverage settings (output to `.plan/temp/htmlcov/`)
+* `[tool.coverage.run]` / `[tool.coverage.report]` — coverage data-collection + reporting settings. The HTML output directory (`.plan/temp/htmlcov/`) is wired in `build.py` via `--cov-report=html:…`, not in `pyproject.toml`.
 * `[tool.ruff]` — linter/formatter configuration
 * `[tool.mypy]` — type checker configuration
 

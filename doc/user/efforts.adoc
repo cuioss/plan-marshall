@@ -61,9 +61,9 @@ Don't tune individual sub-keys until you've tried a preset. Three are bundled an
 |===
 | Preset | Profile
 
-| `economic` | Cost-optimised. Default to Sonnet-medium, bump `verification-feedback` and `post-run-review` to Sonnet-high.
-| `balanced` | Sonnet-high for routine work, Opus-medium (`xhigh`) for outline/research, Sonnet-high for verification.
-| `high-end` | Opus-high (`xxhigh`) defaults, Opus-`xhigh` (`max`) for research and post-run review.
+| `economic` | Cost-optimised. Default `medium`. The three analytical phases (`phase-2-refine`, `phase-3-outline`, `phase-4-plan`) plus the `verification-feedback` workflow on phase-5-execute and phase-6-finalize are bumped to `high`. `post-run-review` stays `medium`.
+| `balanced` | Middle of the road. Default `high`. Lifts `phase-3-outline`, `phase-5-execute.default`, and `phase-6-finalize.post-run-review` to `xhigh`; `verification-feedback` stays at `high`.
+| `high-end` | Upper-tier. Default `high`. Every analytical / `verification-feedback` / `post-run-review` slot (including `phase-5-execute.default`) is `xhigh`. **No slot is `xxhigh` or `max`** — those tiers require explicit per-phase opt-in.
 |===
 
 Apply via the wizard:
@@ -152,7 +152,7 @@ After saving:
 [#research-tier]
 == Research-tier note
 
-The `research` workflow is bound under each phase's sub-key, not as its own group. It inherits the calling phase's `default` unless you set `<phase>.research` explicitly. To push research to the top tier across the most common research entry point (outline), pin `phase-3-outline.research = max` — that's the recipe the `high-end` preset uses.
+The `research` workflow is bound under each phase's sub-key, not as its own group. It inherits the calling phase's `default` unless you set `<phase>.research` explicitly. To push research to the top tier across the most common research entry point (outline), pin `phase-3-outline.research = max` — but note this is an explicit per-phase opt-in; none of the three presets does it for you.
 
 For *standalone* `/research` outside any plan (no `--phase` flag), the dispatch resolves via `--default` (`plan.effort` → `inherit`). Bump `plan.effort` to raise every standalone research run.
 

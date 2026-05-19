@@ -67,7 +67,9 @@ Two events trigger the `Claude Distribute` workflow:
 * A push to `main` updates the `dist-claude` snapshot branch (force-orphan).
 * A push of a `v{x.y.z}` tag updates `dist-claude` and creates the immutable dist tag `claude/v{x.y.z}` pointing at the new orphan commit.
 
-A maintainer pushes the source tag manually; the workflow does the rest. Force-pushes to `dist-claude` and pushes of `claude/v*` dist tags are performed by the organization-wide `cui-release-bot` identity, not by the maintainer who pushed the source tag.
+A maintainer pushes the source tag manually; the workflow does the rest. Force-pushes to `dist-claude` and pushes of `claude/v*` dist tags are performed by the organization-wide `cui-release-bot` identity (the workflow authenticates via the `cuioss-release-bot` GitHub App), not by the maintainer who pushed the source tag.
+
+The workflow sets `enable_jekyll: true` on `dist-claude` so a `.nojekyll` is not auto-injected — the published tree contains only the marketplace files the generator produced.
 
 == Source tag vs. dist tag
 

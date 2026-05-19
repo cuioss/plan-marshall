@@ -7,7 +7,7 @@ xref:../../README.md[Plan Marshall] » xref:index.adoc[Concepts]
 
 How Plan Marshall selects which model and effort level runs each LLM-judgement workflow.
 
-Project authors configure `models.roles.<phase>[.<subkey>]` (hierarchical kebab-case keys like `phase-3-outline.research`, `phase-6-finalize.verification-feedback`) in `.plan/marshal.json`. The Claude target emits six `execution-context[-{level}].md` agent variants for the sole role-eligible agent. Dispatch sites resolve the target via `manage-config effort resolve-target --phase <phase> [--role <subkey>]` and call the matching variant by name. End users get the right model per role at dispatch time without any user-side build step or Claude Code restart.
+Project authors configure `models.roles.<phase>[.<subkey>]` (hierarchical kebab-case keys like `phase-3-outline.research`, `phase-6-finalize.verification-feedback`) in `.plan/marshal.json`. The Claude target emits up to seven `execution-context[-{level}].md` agent files for the sole role-eligible agent — one canonical no-suffix file (used for the `inherit` sentinel) plus six level-suffixed variants (`-low`, `-medium`, `-high`, `-xhigh`, `-xxhigh`, `-max`). The `-max` variant is Opus-4.7-only and is skipped by the build emitter when the resolved alias does not accept `effort: xhigh`. Dispatch sites resolve the target via `manage-config effort resolve-target --phase <phase> [--role <subkey>]` and call the matching variant by name. End users get the right model per role at dispatch time without any user-side build step or Claude Code restart.
 
 == Three Layers
 
@@ -22,7 +22,7 @@ Project authors configure `models.roles.<phase>[.<subkey>]` (hierarchical kebab-
 |Phase-scoped registry of LLM-judgement workflows that may be pinned to a level. Six groups (`phase-1-init` … `phase-6-finalize`), each polymorphic with optional `default`, `research`, `verification-feedback`, `post-run-review` sub-keys per phase. Defined in `plan-marshall/standards/effort-roles.md`.
 
 |Variants
-|The build target emits one canonical + five suffixed agent files per role-eligible agent. The resolver picks which variant a dispatch calls. Emission rules in `extension-api/standards/ext-point-dynamic-level-executor.md`.
+|The build target emits one canonical no-suffix file plus up to six level-suffixed variants per role-eligible agent (the `-max` variant is build-time-guarded, Opus-4.7-only). The resolver picks which variant a dispatch calls. Emission rules in `extension-api/standards/ext-point-dynamic-level-executor.md`.
 |===
 
 == How to configure this

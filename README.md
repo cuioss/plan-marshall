@@ -24,7 +24,7 @@ Plan Marshall is an orchestration layer for AI coding assistants (currently Clau
 
 ## Installation (Claude Code)
 
-Plan Marshall is distributed via a `dist-claude` orphan branch (snapshot, tracks `main`) and immutable `claude/v{x.y.z}` dist tags (pinned releases).
+Plan Marshall is distributed via a `dist-claude` orphan branch that tracks `main`. For the pinned-release flow and full distribution contract see [Developer Documentation › Distribution](doc/developer/distribution.adoc).
 
 ### Snapshot (tracks main)
 

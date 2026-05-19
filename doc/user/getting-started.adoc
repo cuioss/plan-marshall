@@ -14,16 +14,22 @@ After installing Plan Marshall, run the setup wizard to wire it into your projec
 
 == First-run wizard
 
-When the executor (`​.plan/execute-script.py`) is missing, `/marshall-steward` runs in wizard mode and walks you through:
+When the executor (`​.plan/execute-script.py`) is missing, `/marshall-steward` runs in wizard mode and walks you through the full 17-step setup. The material prompts you will see:
 
 1. **Configure `.gitignore`** — adds a `.plan/*` block plus targeted re-includes (`!.plan/marshal.json`, `!.plan/project-architecture/`) so the shared configuration is tracked while your private working area under `.plan/local/` and the generated executor stay local. See <<_where_things_live>> for the full layout.
-2. **Generate the script executor** — emits `.plan/execute-script.py` with the script mappings embedded for every installed bundle.
-3. **Discover project modules** — walks the codebase via the extension API to identify build modules.
-4. **Initialise `marshal.json`** — seeds the per-project configuration file with sensible defaults.
-5. **Configure skill domains** — chooses which bundles' skill domains apply to which modules.
-6. **Detect CI provider and tools** — identifies GitHub vs. GitLab, Sonar/SonarCloud, and any other integrations.
+2. **Update project documentation** — appends idempotent guidance blocks (Temporary Files, Tool Usage, Build Commands) to `CLAUDE.md` and `agents.md`. See xref:#_what_the_wizard_writes_to_claude_md[What the wizard writes to `CLAUDE.md`] below.
+3. **Ensure executor permission** — verifies (and adds if missing) the `Bash(python3 .plan/execute-script.py *)` allow entry in `.claude/settings.json`.
+4. **Generate the script executor** — emits `.plan/execute-script.py` with the script mappings embedded for every installed bundle.
+5. **Discover project modules** — walks the codebase via the extension API to identify build modules.
+6. **Initialise `marshal.json`** — seeds the per-project configuration file with sensible defaults.
+7. **Configure skill domains** — chooses which bundles' skill domains apply to which modules.
+8. **Set review gates** — interactive prompts for the four review-gate booleans (`init_without_asking`, `plan_without_asking`, `execute_without_asking`, `finalize_without_asking` + the asymmetric `loop_back_without_asking`). See xref:configuration.adoc#review-gates[Configuration › Review gates].
+9. **Detect CI provider and tools** — identifies GitHub vs. GitLab, Sonar/SonarCloud, and any other integrations.
+10. **Configure architecture-refresh tier knobs** — sets `tier_0` (deterministic discover) and `tier_1` (LLM re-enrichment) policies in `run-configuration.json`.
+11. **Credential setup** — interactively prompts for credentials for each registered provider (GitHub, GitLab, Sonar, Git) and stores them under `~/.plan-marshall-credentials/`. The credentials never enter the LLM's context.
+12. **Permission setup** — applies any marketplace-recommended permission updates from `tools-permission-fix`.
 
-The wizard is idempotent — re-running it on a fresh checkout produces the same setup.
+Plus several smaller steps (configuration validation, terminal-title opt-in, etc.). The wizard is idempotent — re-running it on a fresh checkout produces the same setup.
 
 == Interactive menu (returning users)
 

@@ -47,7 +47,7 @@ Three properties make the 8-step shape worth pinning:
 
 * **Step 2's level resolution reads `marshal.json` fresh.** A configuration edit takes effect on the *next* dispatch — no Claude Code restart needed. The variant target string returned by the resolver is what `Task:` is called with.
 * **Step 4's prompt body has exactly five required fields.** `name`, `plan_id`, `skills[]`, exactly one of `workflow`/`instructions`, and `WORKTREE`. Workflow-specific runtime inputs (`producer`, `track`, `module`, …) layer on top per the workflow doc's contract.
-* **Step 6's skill loads are deterministic.** `dev-general-practices` is implicit-first, then each `skills[]` entry in caller-declared order, then `Read` on the workflow doc. The order is part of the contract — see xref:skill-handling.adoc[Skill Handling].
+* **Step 5's skill loads are deterministic.** `dev-general-practices` is implicit-first, then each `skills[]` entry in caller-declared order, then `Read` on the workflow doc. The order is part of the contract — see xref:skill-handling.adoc[Skill Handling].
 
 Three worked end-to-end traces (a single-workflow phase entry, a `verification-feedback` sub-dispatch by reference, and a parallel `enrich-module` fan-out) live in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/dispatch-walkthrough.md[`ref-workflow-architecture/standards/dispatch-walkthrough.md`].
 

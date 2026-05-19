@@ -82,9 +82,9 @@ When `manage-findings query` reports a non-zero pending count, phase-5-execute d
 
 == Structural review — pre-submission self-review (phase-6-finalize, pre-PR)
 
-`finalize-step-pre-submission-self-review` — order 10 in the default phase-6 step list, runs **before** the PR is created. A structural review of the diff itself. Two-phase by design:
+`finalize-step-pre-submission-self-review` — order 7 in the default phase-6 step list, runs **before** the PR is created. A structural review of the diff itself. Two-phase by design:
 
-* **Deterministic phase** — `tools-self-review:self_review surface --plan-id {plan_id}` walks the diff and emits six candidate lists in a TOON envelope: regex literals, user-facing strings, markdown sections, symmetric-pair function names, contract source files, schema-bearing files.
+* **Deterministic phase** — the per-domain link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md[`ext-self-review-{domain}`] implementer (today: link:../../marketplace/bundles/plan-marshall/skills/ext-self-review-plan-marshall/SKILL.md[`plan-marshall:ext-self-review-plan-marshall`]) is invoked via `self_review surface --plan-id {plan_id}`. It walks the diff and emits six candidate lists in a TOON envelope: regex literals, user-facing strings, markdown sections, symmetric-pair function names, contract source files, schema-bearing files.
 * **LLM-judgement phase** — link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md[`pre-submission-self-review.md`] workflow body (dispatched under `--phase phase-6-finalize`, no `--role`, tracking `phase-6-finalize.default`) reads only the candidates the surface helper produced and applies five checks:
   1. **Symmetric pair test coverage** — `save`/`load`, `init`/`restore`, `push`/`pop`, `acquire`/`release`, `open`/`close`, `start`/`stop` — does a test exercise both halves?
   2. **Regex over-fit** — does the regex match what it should AND not match what it shouldn't?
@@ -98,7 +98,7 @@ Canonical workflow: link:../../marketplace/bundles/plan-marshall/skills/phase-6-
 
 == External reviews — phase-6-finalize, post-CI
 
-All three external roundtrips declare `requires: [ci-complete]` in their workflow-doc frontmatter; the phase-6-finalize dispatcher resolves the precondition before each body runs. The default order is `ci-verify` → `automated-review` → `sonar-roundtrip`, with `ci-verify` placed immediately after `create-pr` so the CI verdict is already triaged before the reviewer-bot and Sonar consumers run. Two precondition modes are in use: `ci-verify` runs in **`consume-failures`** mode (failing checks become structured findings, no short-circuit); `automated-review` and `sonar-roundtrip` keep the default **`strict`** mode (a non-success CI marks the step `failed` and the dispatcher continues). Triage budgets are independent of CI queue depth.
+All three external roundtrips declare `requires: [ci-complete]` in their workflow-doc frontmatter; the phase-6-finalize dispatcher resolves the precondition before each body runs. The default order is `ci-verify` → `automated-review` → `sonar-roundtrip`, with `ci-verify` placed immediately after `create-pr` so the CI verdict is already triaged before the reviewer-bot and Sonar consumers run. Two precondition modes are in use: `ci-verify` runs in **`consume-failures`** mode (failing checks become structured findings, no short-circuit); `automated-review` and `sonar-roundtrip` keep the default **`strict`** mode (a non-success CI short-circuits the step itself — the consumer body is skipped and the dispatcher records the precondition outcome before moving on). Triage budgets are independent of CI queue depth.
 
 === CI verify (`producer=ci-verify-*`)
 
@@ -148,14 +148,14 @@ The producer side calls `workflow-integration-sonar:sonar fetch-and-store` (Sona
 The consumer side dispatches `verification-feedback` with `producer=sonar` under the same 15-minute budget. Per-finding decisions:
 
 * **FIX** — create a fix-task; loop back to phase-5-execute.
-* **SUPPRESS** — write an inline annotation (`// NOSONAR ...` for Java, `# noqa: ...` for Python, etc. — exact syntax per `ext-triage-{domain}/standards/suppression.md`). Suppressions require an inline rationale comment.
+* **SUPPRESS** — write an inline annotation (`// NOSONAR ...` for Java, `# NOSONAR ...` for Python, etc. — exact syntax per `ext-triage-{domain}/standards/suppression.md`). Suppressions require an inline rationale comment.
 * **ACCEPT** — documented in the finding record; no source change.
 
 When Sonar isn't configured for the project (no project key, no credentials), the workflow short-circuits to `done` with `display_detail: "Sonar not configured"` and the pipeline continues.
 
 == The unified triage envelope — `verification-feedback`
 
-Workflow: link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/verification-feedback.md[`plan-marshall/workflow/verification-feedback.md`]. **One workflow, twelve producer modes** — five base (`build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`) plus the seven `ci-verify-{build,policy,timeout,cancelled,action-required,stale,missing}` subtypes.
+Workflow: link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/verification-feedback.md[`plan-marshall/workflow/verification-feedback.md`]. **One workflow, five base producer modes** — `build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state` (canonical enum in the workflow's Step 1 branch table). The seven `ci-verify-{build,policy,timeout,cancelled,action-required,stale,missing}` dispatch keys ride the same envelope through the store-only-query branch shape `pr-comment`/`sonar` use, but are surfaced as distinct producer strings so retrospectives can grep by subtype.
 
 The `producer` runtime input selects only Step 1's branch — the producer-specific fetch/parse work. Steps 2-6 are identical across producers:
 
@@ -227,7 +227,7 @@ Canonical contract: link:../../marketplace/bundles/plan-marshall/skills/extensio
 
 Two properties together give the review pipeline its reproducibility:
 
-* **Producers are scripts, not LLM judgements.** Build logs parsed by regex. Sonar issues fetched via REST. PR comments via `gh` API. The Q-Gate candidate surface produced by `q-gate-validation`'s deterministic validators. No "the LLM decided this comment doesn't need attention today" — every signal makes it to the store unless an explicit pre-filter pattern excludes it. See xref:tools-and-scripts.adoc[Tools and Scripts] for the script-based-integration rationale.
+* **Producers are scripts, not LLM judgements.** Build logs parsed by regex. Sonar issues fetched via REST through `workflow-integration-sonar`. PR comments fetched via the `workflow-integration-github` / `workflow-integration-gitlab` provider abstraction (the underlying `gh` / `glab` CLIs are wrapped — `dev-general-practices` forbids direct invocation). The Q-Gate candidate surface produced by `q-gate-validation`'s deterministic validators. No "the LLM decided this comment doesn't need attention today" — every signal makes it to the store unless an explicit pre-filter pattern excludes it. See xref:tools-and-scripts.adoc[Tools and Scripts] for the script-based-integration rationale.
 * **The triage envelope is one shape.** A reviewer comparing two runs sees five producer branches in Step 1 and the *same* five-step decision loop after. Per-domain knowledge enters via skill loading (xref:skill-handling.adoc[Skill Handling]) — explicit, traceable, not LLM-discovered.
 
 Combined with the audit trail (xref:audit-trail.adoc[Audit Trail]), every review decision is reconstructable: which finding fired, which domain's standards were loaded, what the LLM decided, and why.

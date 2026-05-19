@@ -69,7 +69,7 @@ The conditionals on the bottom arrows are the per-call-site predicates that gove
 * `phase-6-finalize` `automated-review`, `sonar-roundtrip`, and the `pr-doctor` slash command all use the same `verification-feedback` shape, parameterised by `producer`.
 * `phase-6-finalize` `architecture-refresh` Tier-1 is the only per-iteration parallel dispatch in the contract — one envelope per affected module, fanned out in parallel.
 
-The full graph (every conditional, every shared workflow, every inline-script step) is canonical in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/call-graph.md[`ref-workflow-architecture/standards/call-graph.md`]. The 8-step anatomy of one dispatch (resolve → construct → dispatch → load → execute → return → record) is in xref:execution-context.adoc[Execution Context].
+The full graph (every conditional, every shared workflow, every inline-script step) is canonical in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/call-graph.md[`ref-workflow-architecture/standards/call-graph.md`]. The 8-step anatomy of one dispatch (pick role → resolve level → construct prompt → dispatch → load skills → read workflow → execute → return TOON → record outcome) is in xref:execution-context.adoc[Execution Context].
 
 == Phase Boundaries
 

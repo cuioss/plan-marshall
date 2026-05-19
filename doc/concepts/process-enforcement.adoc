@@ -67,25 +67,28 @@ The mechanical gate. Every phase boundary captures a fingerprint of key invarian
 
 image::../resources/diagrams/handshake-protocol.svg[Sequence diagram of the phase-handshake protocol. At phase N completion the orchestrator runs phase_handshake capture, which evaluates an invariant registry (main_sha, dirty count, task_state_hash, qgate_open_count, config_hash, pending_findings_blocking_count, phase_steps_complete) and writes a row to handshakes.toon. At phase N+1 entry the orchestrator runs phase_handshake verify with strict mode; the script reads the captured row, re-runs the invariants against live state, diffs, and returns either ok (continue), drift (surface diffs, exit 1, refuse to advance), or skipped (log warning, continue)., align=center]
 
-The invariant registry lives in `_invariants.py` as `(name, applies_fn, capture_fn)` tuples. Today's registry:
+The invariant registry lives in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_invariants.py[`_invariants.py`] (column order canonical in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_handshake_store.py[`_handshake_store.py`] § `HANDSHAKE_FIELDS`). Today's columns:
 
 [cols="1,3", options="header"]
 |===
 | Invariant | What it catches
 
 | `main_sha` | Any commit change on the main checkout since the prior snapshot.
-| `main_dirty` | Uncommitted drift on main between phases.
-| `worktree_sha` / `worktree_dirty` | Worktree/main confusion or uncommitted drift inside the worktree.
+| `main_dirty` | Count of uncommitted files on the main checkout — the scalar signal.
+| `main_dirty_files` | The sorted, `.plan/`-filtered list of uncommitted main-checkout paths. Drift here raises `main_checkout_dirtied_during_plan` when the path set is a proper superset of the prior capture.
+| `worktree_sha` | HEAD inside the worktree (when one exists) — guards against worktree/main confusion.
+| `worktree_dirty` | Uncommitted drift inside the worktree between phases.
+| `worktree_orphan` | A worktree that should exist but has been detached/removed.
 | `task_state_hash` | Silent mutation of `TASK-*.json` between phases (number, status, step outcomes, dependencies).
 | `qgate_open_count` | Q-Gate findings still pending — the integer counterpart to Layer 3's structural check.
 | `config_hash` | `marshal.json` config swapped mid-run.
 | `pending_tasks_count` | A premature transition while fix tasks are still pending.
-| `phase_steps_complete` | Required intra-phase steps silently skipped — reads each phase's static `standards/required-steps.md` and refuses capture when any required step is missing or recorded as anything other than `done`.
-| `pending_findings_by_type` | Per-type retrospective count of pending findings across the 12-type taxonomy.
-| `pending_findings_blocking_count` | **Guarded.** Sum of pending counts across the per-phase `blocking_finding_types` partition. On guarded boundaries (`5-execute → 6-finalize`) capture *refuses* when non-zero.
+| `phase_steps_complete` | **Raises.** Required intra-phase steps silently skipped — reads each phase's static `standards/required-steps.md` and refuses capture when any required step is missing or recorded as anything other than `done`.
+| `pending_findings_by_type` | Per-type retrospective count of pending findings across the finding-type taxonomy.
+| `pending_findings_blocking_count` | **Raises (on guarded boundaries).** Sum of pending counts across the per-phase `blocking_finding_types` partition. On guarded boundaries (`5-execute → 6-finalize`) capture refuses when non-zero.
 |===
 
-Two of those invariants — `phase_steps_complete` and `pending_findings_blocking_count` — *raise* at capture rather than recording a value, so the boundary protocol cannot just dismiss them. The full contract (storage format, drift envelope, override path, "adding a new invariant" extension contract) lives in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/references/phase-handshake.md[`phase-handshake.md`].
+Three of those — `main_dirty_files`, `phase_steps_complete`, and `pending_findings_blocking_count` — *raise* at capture rather than recording a value, so the boundary protocol cannot just dismiss them. The full contract (storage format, drift envelope, override path, "adding a new invariant" extension contract) lives in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/references/phase-handshake.md[`phase-handshake.md`].
 
 **Strength**: a *mechanical gate*. On drift the script returns `status: drift` with a `diffs[invariant, captured, observed]` table; `--strict` makes the exit non-zero. For the guarded `5-execute → 6-finalize` boundary, `manage-status transition --completed 5-execute` *inlines* the strict verify so refusal and advance are one atomic call — the transition refuses to write the new phase state when drift is present.
 

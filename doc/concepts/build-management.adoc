@@ -54,15 +54,14 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   resolve --command verify --module my-module
 
 # Returns TOON (real example from a Python module):
-#   status:           success
-#   module:           my-module
-#   command:          verify
-#   executable:       "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify my-module\""
-#   resolution_level: module
+#   module:     my-module
+#   command:    verify
+#   executable: python3 .plan/execute-script.py plan-marshall:build-python:python_build run --module my-module --targets verify
 #
 # For a Maven module the executable would be:
-#   "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit -pl my-module\""
+#   python3 .plan/execute-script.py plan-marshall:build-maven:maven run --module my-module --targets verify
 # — same shape, same script-executor proxy, just routed to a different build skill.
+# Hybrid modules (e.g. Maven + npm in one directory) return `executables[N]{build_system,command}:` instead.
 
 # 2. Execute the returned `executable` string verbatim
 {the executable string returned in step 1}
@@ -84,7 +83,7 @@ status              success
 exit_code           0
 duration_seconds    45
 log_file            .plan/temp/build-output/default/maven-2026-05-18T10-23-15.log
-command             ./mvnw verify -Ppre-commit -pl my-module
+command             ./mvnw -l .plan/temp/build-output/default/maven-2026-05-18T10-23-15.log clean verify
 ----
 
 Failure shape (the same skill auto-parses the log into structured errors on non-zero exit):
@@ -95,7 +94,7 @@ status              error
 exit_code           1
 duration_seconds    23
 log_file            .plan/temp/build-output/default/maven-2026-05-18T10-23-15.log
-command             ./mvnw verify -Ppre-commit -pl my-module
+command             ./mvnw -l .plan/temp/build-output/default/maven-2026-05-18T10-23-15.log clean verify
 error               build_failed
 
 errors[N]{file,line,message,category}:
@@ -107,6 +106,8 @@ tests:
   failed: 2
   skipped: 1
 ----
+
+The `command` field carries the *actual* shell invocation the build skill ran — including the `-l {log_file}` redirect that captures stdout/stderr to the named log. It is not the canonical command string; it is the real, fully-flagged invocation as executed.
 
 Warnings are partially filtered by default (`mode: actionable` — accepted-warning patterns are dropped, only actionable items remain). The `--mode structured` mode keeps all warnings and flags accepted ones with `[accepted]`; `--mode errors` drops warnings entirely. The LLM picks the mode based on what it's investigating.
 

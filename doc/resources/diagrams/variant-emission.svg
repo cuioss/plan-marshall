@@ -83,11 +83,11 @@
   <text x="834" y="318" class="item">opus</text>
   <text x="834" y="336" class="col-sub">effort: high</text>
 
-  <!-- Box 7: max (Opus-4.7-only) -->
+  <!-- Box 7: max (Opus-4.7-only build guard) -->
   <rect class="stroke" x="911" y="230" width="130" height="115" rx="6" ry="6"/>
   <text x="976" y="252" class="item-bold">…-max.md</text>
   <text x="976" y="295" class="col-sub">max</text>
-  <text x="976" y="318" class="item">opus-4.7</text>
+  <text x="976" y="318" class="item">opus</text>
   <text x="976" y="336" class="col-sub">effort: xhigh</text>
 
   <!-- Fan-out lines from emitter arrow base to each box top -->

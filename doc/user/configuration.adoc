@@ -63,7 +63,7 @@ Boolean fields under each phase that decide whether the next-phase transition pa
 | `plan.phase-3-outline.plan_without_asking` | `false` | …from the outline review checkpoint to task creation.
 | `plan.phase-4-plan.execute_without_asking` | `true` | …from `phase-4-plan` to `phase-5-execute`.
 | `plan.phase-5-execute.finalize_without_asking` | `true` | …from `phase-5-execute` to `phase-6-finalize` (forward direction).
-| `plan.phase-5-execute.loop_back_without_asking` | `false` | …from a `phase-6-finalize` `loop_back` outcome back into `phase-5-execute` (reverse direction). Defaults differ from `finalize_without_asking` to prevent silent unattended loops.
+| `plan.phase-6-finalize.loop_back_without_asking` | `false` | …from a `phase-6-finalize` `loop_back` outcome back into `phase-5-execute` (reverse direction). Defaults differ from `finalize_without_asking` to prevent silent unattended loops.
 |===
 
 Set via `/marshall-steward` → Configuration → Review Gates, or directly:
@@ -84,7 +84,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 | Step kind | Example
 
 | **Built-in** (prefix `default:`)
-| `default:quality_check`, `default:build_verify`, `default:coverage_check` (phase-5); `commit_push`, `create_pr`, `automated_review`, `sonar_roundtrip`, `lessons_capture`, `branch_cleanup`, `archive` (phase-6).
+| `default:quality-check`, `default:build-verify`, `default:coverage-check` (phase-5); `default:pre-push-quality-gate`, `default:commit-push`, `default:create-pr`, `default:ci-verify`, `default:automated-review`, `default:sonar-roundtrip`, `default:lessons-capture`, `default:branch-cleanup`, `default:record-metrics`, `default:archive-plan` (phase-6, canonical default order).
 
 | **Project-local** (prefix `project:`)
 | Loaded from `.claude/skills/finalize-step-<step>/` — a project-specific finalize step (e.g. a custom deploy or notification).

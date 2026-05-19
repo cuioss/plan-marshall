@@ -5,7 +5,7 @@
      role="img" aria-labelledby="title desc"
      font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
   <title id="title">Findings pipeline — producer / store / consumer flow</title>
-  <desc id="desc">Plan-marshall findings pipeline. The producer column lists the workflow bodies that drive writes to the manage-findings store, each annotated with the underlying script they call. The consumer column lists the entities that read findings and decide their resolution: the in-phase qgate-resolve steps that handle Q-Gate findings inline, the unified verification-feedback envelope (twelve producer modes — five base plus seven ci-verify subtypes) that handles every other finding type, and the per-domain ext-triage skill loaded per finding by verification-feedback.</desc>
+  <desc id="desc">Plan-marshall findings pipeline. The producer column lists the workflow bodies that drive writes to the manage-findings store, each annotated with the underlying script they call. The consumer column lists the entities that read findings and decide their resolution: the in-phase qgate-resolve steps that handle Q-Gate findings inline, the unified verification-feedback envelope (five base producer modes — build-runner, sonar, pr-comment, plugin-doctor, pr-state) that handles every other finding type, plus the seven ci-verify-* dispatch keys that ride the same envelope, and the per-domain ext-triage skill loaded per finding by verification-feedback.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
@@ -105,14 +105,14 @@
 
   <text x="636" y="195" class="item-bold">verification-feedback</text>
   <text x="636" y="213" class="item">one workflow,</text>
-  <text x="636" y="229" class="item">twelve producer modes:</text>
+  <text x="636" y="229" class="item">five base producer modes:</text>
   <text x="650" y="247" class="item">build-runner · sonar</text>
   <text x="650" y="263" class="item">pr-comment · plugin-doctor</text>
   <text x="650" y="279" class="item">pr-state</text>
-  <text x="650" y="297" class="item">ci-verify-{build,policy,</text>
-  <text x="650" y="313" class="item">  timeout,cancelled,</text>
-  <text x="650" y="329" class="item">  action-required,stale,</text>
-  <text x="650" y="345" class="item">  missing}</text>
+  <text x="636" y="305" class="item">plus seven ci-verify-*</text>
+  <text x="636" y="321" class="item">dispatch keys (build, policy,</text>
+  <text x="636" y="337" class="item">timeout, cancelled, action-</text>
+  <text x="636" y="353" class="item">required, stale, missing)</text>
 
   <line class="sep" x1="636" y1="370" x2="864" y2="370"/>
 
