@@ -208,10 +208,13 @@ def test_get_context_empty():
 
 
 def test_get_context_not_found():
-    """Test get-context returns None for missing plan (TOON error already output)."""
+    """get-context returns an error dict for a missing plan (caller propagates to dispatcher)."""
     with PlanContext():
         result = cmd_get_context(_get_context_ns(plan_id='nonexistent'))
-        assert result is None
+        assert result is not None
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_not_found'
+        assert result['plan_id'] == 'nonexistent'
 
 
 # =============================================================================
@@ -294,10 +297,13 @@ def test_set_list_empty_clears():
 
 
 def test_set_list_nonexistent_plan():
-    """Test set-list returns None for non-existent plan (TOON error already output)."""
+    """set-list returns an error dict for a missing plan (caller propagates to dispatcher)."""
     with PlanContext():
         result = cmd_set_list(_set_list_ns(plan_id='nonexistent'))
-        assert result is None
+        assert result is not None
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_not_found'
+        assert result['plan_id'] == 'nonexistent'
 
 
 def test_set_list_returns_previous_count():
@@ -404,21 +410,22 @@ def test_cli_create_roundtrip():
 
 
 # =============================================================================
-# Regression Tests: Not-found conditions exit 0 with TOON error
+# Regression Tests: Not-found conditions exit non-zero with TOON error
 # =============================================================================
 
 
-def test_cli_get_not_found_exits_zero():
-    """Regression: get with missing references.json exits 0 with TOON error output."""
+def test_cli_get_not_found_exits_nonzero():
+    """get with missing references.json exits non-zero with TOON error output."""
     with PlanContext():
         result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'nonexistent', '--field', 'branch')
-        assert result.success, f'Should exit 0, got: {result.stderr}'
+        assert not result.success, f'Should exit non-zero, stdout: {result.stdout}'
+        assert result.returncode == 1
         assert 'status: error' in result.stdout
         assert 'file_not_found' in result.stdout
 
 
-def test_cli_read_not_found_exits_zero(tmp_path, monkeypatch):
-    """Regression: read with missing references.json exits 0 with TOON error output.
+def test_cli_read_not_found_exits_nonzero(tmp_path, monkeypatch):
+    """read with missing references.json exits non-zero with TOON error output.
 
     PlanContext pins PLAN_BASE_DIR to its fixture_dir, but the spawned
     subprocess can still write to ``~/.plan-marshall-credentials`` during
@@ -430,13 +437,14 @@ def test_cli_read_not_found_exits_zero(tmp_path, monkeypatch):
     monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
     monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds')
     result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'nonexistent')
-    assert result.success, f'Should exit 0, got: {result.stderr}'
+    assert not result.success, f'Should exit non-zero, stdout: {result.stdout}'
+    assert result.returncode == 1
     assert 'status: error' in result.stdout
     assert 'file_not_found' in result.stdout
 
 
-def test_cli_get_context_not_found_exits_zero(tmp_path, monkeypatch):
-    """Regression: get-context with missing references.json exits 0 with TOON error output.
+def test_cli_get_context_not_found_exits_nonzero(tmp_path, monkeypatch):
+    """get-context with missing references.json exits non-zero with TOON error output.
 
     PlanContext pins PLAN_BASE_DIR to its fixture_dir, but the spawned
     subprocess can still write to ``~/.plan-marshall-credentials`` during
@@ -448,9 +456,76 @@ def test_cli_get_context_not_found_exits_zero(tmp_path, monkeypatch):
     monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
     monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds')
     result = run_script(SCRIPT_PATH, 'get-context', '--plan-id', 'nonexistent')
-    assert result.success, f'Should exit 0, got: {result.stderr}'
+    assert not result.success, f'Should exit non-zero, stdout: {result.stdout}'
+    assert result.returncode == 1
     assert 'status: error' in result.stdout
     assert 'file_not_found' in result.stdout
+
+
+def test_cli_set_list_not_found_exits_nonzero(tmp_path, monkeypatch):
+    """set-list with missing references.json exits non-zero with TOON error output."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
+    monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds')
+    result = run_script(
+        SCRIPT_PATH,
+        'set-list',
+        '--plan-id',
+        'nonexistent',
+        '--field',
+        'domains',
+        '--values',
+        'foo,bar',
+    )
+    assert not result.success, f'Should exit non-zero, stdout: {result.stdout}'
+    assert result.returncode == 1
+    assert 'status: error' in result.stdout
+    assert 'file_not_found' in result.stdout
+
+
+# =============================================================================
+# Exhaustive coverage: every non-success exit path emits (exit_code != 0)
+# AND (status: error) TOON. Subcommands that touch require_references() must
+# propagate the file-not-found dict; argparse rejections surface as
+# exit_code == 2 via parse_args_with_toon_errors.
+# =============================================================================
+
+
+_FILE_NOT_FOUND_INVOCATIONS = [
+    ('get', ['get', '--plan-id', 'nonexistent', '--field', 'branch']),
+    ('read', ['read', '--plan-id', 'nonexistent']),
+    ('get-context', ['get-context', '--plan-id', 'nonexistent']),
+    ('set-list', ['set-list', '--plan-id', 'nonexistent', '--field', 'domains', '--values', 'a']),
+]
+
+
+def test_cli_every_file_not_found_path_exits_nonzero_with_toon_error(tmp_path, monkeypatch):
+    """Every require_references() consumer surfaces exit_code != 0 + status: error TOON.
+
+    This is the exhaustive coverage gate: any subcommand that reads
+    references.json via ``require_references()`` MUST propagate the
+    file-not-found error dict so the main dispatcher emits TOON and exits 1.
+    A future caller added without the ``if refs.get('status') == 'error':
+    return refs`` propagation guard fails this test.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
+    monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds')
+
+    failures: list[str] = []
+    for label, argv in _FILE_NOT_FOUND_INVOCATIONS:
+        result = run_script(SCRIPT_PATH, *argv)
+        if result.returncode == 0:
+            failures.append(f'{label}: exit_code=0 (expected != 0); stdout={result.stdout!r}')
+            continue
+        if 'status: error' not in result.stdout:
+            failures.append(f'{label}: missing "status: error" in stdout; stdout={result.stdout!r}')
+        if 'file_not_found' not in result.stdout:
+            failures.append(f'{label}: missing "file_not_found" in stdout; stdout={result.stdout!r}')
+
+    assert not failures, 'File-not-found exit-code regressions:\n' + '\n'.join(failures)
 
 
 # =============================================================================

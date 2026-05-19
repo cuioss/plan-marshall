@@ -48,13 +48,13 @@ def cmd_create(args) -> dict:
     }
 
 
-def cmd_read(args) -> dict | None:
+def cmd_read(args) -> dict:
     """Read entire references.json."""
     require_valid_plan_id(args)
 
     refs = require_references(args.plan_id)
-    if refs is None:
-        return None
+    if refs.get('status') == 'error':
+        return refs
 
     # Summarize lists
     summary = {}
@@ -67,13 +67,13 @@ def cmd_read(args) -> dict | None:
     return {'status': 'success', 'plan_id': args.plan_id, 'references': summary}
 
 
-def cmd_get(args) -> dict | None:
+def cmd_get(args) -> dict:
     """Get a specific field value."""
     require_valid_plan_id(args)
 
     refs = require_references(args.plan_id)
-    if refs is None:
-        return None
+    if refs.get('status') == 'error':
+        return refs
 
     value = refs.get(args.field)
     if value is None:
