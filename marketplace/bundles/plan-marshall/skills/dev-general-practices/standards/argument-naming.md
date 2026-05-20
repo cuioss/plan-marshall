@@ -208,6 +208,6 @@ Together, these rules close the loop between this standard and the implementatio
 
 ## Related
 
-- `general-development-rules.md` — Boy Scout rule and overall development discipline.
+- `agent-behavior-rules.md` — Boy Scout rule and overall development discipline.
 - `tool-usage-patterns.md` — Tool selection and Bash safety rules that govern how these scripts are invoked.
 - `pm-plugin-development:plugin-doctor` rule catalog — automated enforcement of this standard's canonical forms.

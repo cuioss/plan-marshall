@@ -52,7 +52,7 @@ Across the typical Plan Marshall return surface (findings queries, task lists, a
 
 A stock LLM faced with a new task will explore: `ls`, `find`, `grep`, `cat`, `head` to learn the codebase shape. Each step costs tokens *and* fills the context with noise. Plan Marshall pre-loads the skills that map to the task — `dev-general-practices` first (always), then task-declared `skills[]` — so the LLM enters the workflow already knowing where things are and which API to call.
 
-The link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/general-development-rules.md[hard rules] explicitly forbid the exploratory pattern: "Structured queries first — consult `architecture files --module X` before `Glob` / `Grep`." Architecture queries return TOON; ad-hoc `find` calls return free-form text. The skill set is the *prior* that prevents the exploration loop from starting.
+The link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/agent-behavior-rules.md[hard rules] explicitly forbid the exploratory pattern: "Structured queries first — consult `architecture files --module X` before `Glob` / `Grep`." Architecture queries return TOON; ad-hoc `find` calls return free-form text. The skill set is the *prior* that prevents the exploration loop from starting.
 
 === 5. Persisted knowledge — enrich once, read many
 

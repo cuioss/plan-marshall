@@ -17,7 +17,7 @@ Foundational development practices applicable across all technology stacks and d
 **Important**: Load this standard at the start of any development work.
 
 ```
-Read: standards/general-development-rules.md
+Read: standards/agent-behavior-rules.md
 ```
 
 Covers Boy Scout Rule, decision tree for when to ask users, research patterns, tool selection guide, document proliferation guidelines, and dependency approval.
@@ -58,7 +58,7 @@ Execute ONLY the commands documented in the loaded skill's workflow. Never add d
 
 ### Structured queries first
 
-Before reaching for `Glob` or `Grep` for codebase navigation (file discovery, module identification, path resolution), consult the structured architecture inventory via `architecture files --module X`, `architecture which-module --path P`, or `architecture find --pattern P`. `Glob`/`Grep` are the fallback for sub-module component lookup, content searches inside an already-known file, or when the architecture verb returns elision — not the routine first choice. See [`general-development-rules.md` § Structured queries first](standards/general-development-rules.md#structured-queries-first) for the full rule and a worked example.
+Before reaching for `Glob` or `Grep` for codebase navigation (file discovery, module identification, path resolution), consult the structured architecture inventory via `architecture files --module X`, `architecture which-module --path P`, or `architecture find --pattern P`. `Glob`/`Grep` are the fallback for sub-module component lookup, content searches inside an already-known file, or when the architecture verb returns elision — not the routine first choice. See [`agent-behavior-rules.md` § Structured queries first](standards/agent-behavior-rules.md#structured-queries-first) for the full rule and a worked example.
 
 ### Never invent script subcommands
 
@@ -88,7 +88,7 @@ When a plan runs in an isolated worktree, the canonical `{path}` is the worktree
 
 | Standard | Purpose |
 |----------|---------|
-| general-development-rules.md | Boy Scout Rule, ask users, research, tool usage, dependencies |
+| agent-behavior-rules.md | Boy Scout Rule, ask users, research, tool usage, dependencies |
 | tool-usage-patterns.md | Tool selection, file operations, content search, Bash safety, build resolution |
 | argument-naming.md | Typed-ID flags, read-verb canonicalization, `--module` over `--name`, stdlib log-level names for `manage-*` scripts |
 

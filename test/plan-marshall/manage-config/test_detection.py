@@ -132,7 +132,7 @@ def create_mixed_multi_module_project(fixture_dir: Path) -> None:
 def create_minimal_marshal_json(fixture_dir: Path) -> Path:
     """Create minimal marshal.json in fixture directory."""
     config = {
-        'skill_domains': {'system': {'defaults': ['plan-marshall:general-development-rules'], 'optionals': []}},
+        'skill_domains': {'system': {'defaults': ['plan-marshall:agent-behavior-rules'], 'optionals': []}},
         'system': {'retention': {'logs_days': 1}},
         'plan': {'defaults': {}},
     }

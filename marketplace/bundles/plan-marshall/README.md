@@ -32,7 +32,7 @@ This bundle provides **core infrastructure** organized into functional areas:
 | **Permissions** | `tools-permission-doctor`, `tools-permission-fix`, `workflow-permission-web` |
 | **Extension API** | `extension-api`, `manage-architecture` |
 | **Utilities** | `logging`, `script-executor`, `file-operations-base` |
-| **Standards** | `general-development-rules`, `diagnostic-patterns`, `toon-usage` |
+| **Standards** | `agent-behavior-rules`, `diagnostic-patterns`, `toon-usage` |
 | **Lessons** | `manage-lessons` |
 | **CI** | `tools-integration-ci` |
 

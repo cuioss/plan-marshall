@@ -1,4 +1,4 @@
-# General Development Rules
+# Agent Behavior Rules
 
 Core principles that guide all development work.
 
