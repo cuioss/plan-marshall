@@ -4,9 +4,12 @@
 Tier 2 (direct import) tests with 2-3 subprocess tests for CLI plumbing.
 """
 
+import json
 import subprocess
 from argparse import Namespace
 from pathlib import Path
+
+import pytest
 
 from conftest import PlanContext, get_script_path, run_script
 
@@ -38,6 +41,10 @@ _crud = _load_module('_refs_cmd_crud', '_references_crud.py')
 _list = _load_module('_refs_cmd_list', '_cmd_list.py')
 _ctx = _load_module('_refs_cmd_context', '_cmd_context.py')
 _diff = _load_module('_refs_cmd_diff_files', '_cmd_diff_files.py')
+_core = _load_module('_refs_core', '_references_core.py')
+
+require_references = _core.require_references
+get_references_path = _core.get_references_path
 
 cmd_create, cmd_get, cmd_read, cmd_set = _crud.cmd_create, _crud.cmd_get, _crud.cmd_read, _crud.cmd_set
 cmd_add_file, cmd_add_list, cmd_remove_file, cmd_set_list = (
@@ -208,10 +215,13 @@ def test_get_context_empty():
 
 
 def test_get_context_not_found():
-    """Test get-context returns None for missing plan (TOON error already output)."""
+    """get-context returns an error dict for a missing plan (caller propagates to dispatcher)."""
     with PlanContext():
         result = cmd_get_context(_get_context_ns(plan_id='nonexistent'))
-        assert result is None
+        assert result is not None
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_not_found'
+        assert result['plan_id'] == 'nonexistent'
 
 
 # =============================================================================
@@ -294,10 +304,13 @@ def test_set_list_empty_clears():
 
 
 def test_set_list_nonexistent_plan():
-    """Test set-list returns None for non-existent plan (TOON error already output)."""
+    """set-list returns an error dict for a missing plan (caller propagates to dispatcher)."""
     with PlanContext():
         result = cmd_set_list(_set_list_ns(plan_id='nonexistent'))
-        assert result is None
+        assert result is not None
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_not_found'
+        assert result['plan_id'] == 'nonexistent'
 
 
 def test_set_list_returns_previous_count():
@@ -404,21 +417,22 @@ def test_cli_create_roundtrip():
 
 
 # =============================================================================
-# Regression Tests: Not-found conditions exit 0 with TOON error
+# Regression Tests: Not-found conditions exit non-zero with TOON error
 # =============================================================================
 
 
-def test_cli_get_not_found_exits_zero():
-    """Regression: get with missing references.json exits 0 with TOON error output."""
+def test_cli_get_not_found_exits_nonzero():
+    """get with missing references.json exits non-zero with TOON error output."""
     with PlanContext():
         result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'nonexistent', '--field', 'branch')
-        assert result.success, f'Should exit 0, got: {result.stderr}'
+        assert not result.success, f'Should exit non-zero, stdout: {result.stdout}'
+        assert result.returncode == 1
         assert 'status: error' in result.stdout
         assert 'file_not_found' in result.stdout
 
 
-def test_cli_read_not_found_exits_zero(tmp_path, monkeypatch):
-    """Regression: read with missing references.json exits 0 with TOON error output.
+def test_cli_read_not_found_exits_nonzero(tmp_path, monkeypatch):
+    """read with missing references.json exits non-zero with TOON error output.
 
     PlanContext pins PLAN_BASE_DIR to its fixture_dir, but the spawned
     subprocess can still write to ``~/.plan-marshall-credentials`` during
@@ -430,13 +444,14 @@ def test_cli_read_not_found_exits_zero(tmp_path, monkeypatch):
     monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
     monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds')
     result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'nonexistent')
-    assert result.success, f'Should exit 0, got: {result.stderr}'
+    assert not result.success, f'Should exit non-zero, stdout: {result.stdout}'
+    assert result.returncode == 1
     assert 'status: error' in result.stdout
     assert 'file_not_found' in result.stdout
 
 
-def test_cli_get_context_not_found_exits_zero(tmp_path, monkeypatch):
-    """Regression: get-context with missing references.json exits 0 with TOON error output.
+def test_cli_get_context_not_found_exits_nonzero(tmp_path, monkeypatch):
+    """get-context with missing references.json exits non-zero with TOON error output.
 
     PlanContext pins PLAN_BASE_DIR to its fixture_dir, but the spawned
     subprocess can still write to ``~/.plan-marshall-credentials`` during
@@ -448,9 +463,76 @@ def test_cli_get_context_not_found_exits_zero(tmp_path, monkeypatch):
     monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
     monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds')
     result = run_script(SCRIPT_PATH, 'get-context', '--plan-id', 'nonexistent')
-    assert result.success, f'Should exit 0, got: {result.stderr}'
+    assert not result.success, f'Should exit non-zero, stdout: {result.stdout}'
+    assert result.returncode == 1
     assert 'status: error' in result.stdout
     assert 'file_not_found' in result.stdout
+
+
+def test_cli_set_list_not_found_exits_nonzero(tmp_path, monkeypatch):
+    """set-list with missing references.json exits non-zero with TOON error output."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
+    monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds')
+    result = run_script(
+        SCRIPT_PATH,
+        'set-list',
+        '--plan-id',
+        'nonexistent',
+        '--field',
+        'domains',
+        '--values',
+        'foo,bar',
+    )
+    assert not result.success, f'Should exit non-zero, stdout: {result.stdout}'
+    assert result.returncode == 1
+    assert 'status: error' in result.stdout
+    assert 'file_not_found' in result.stdout
+
+
+# =============================================================================
+# Exhaustive coverage: every non-success exit path emits (exit_code != 0)
+# AND (status: error) TOON. Subcommands that touch require_references() must
+# propagate the file-not-found dict; argparse rejections surface as
+# exit_code == 2 via parse_args_with_toon_errors.
+# =============================================================================
+
+
+_FILE_NOT_FOUND_INVOCATIONS = [
+    ('get', ['get', '--plan-id', 'nonexistent', '--field', 'branch']),
+    ('read', ['read', '--plan-id', 'nonexistent']),
+    ('get-context', ['get-context', '--plan-id', 'nonexistent']),
+    ('set-list', ['set-list', '--plan-id', 'nonexistent', '--field', 'domains', '--values', 'a']),
+]
+
+
+def test_cli_every_file_not_found_path_exits_nonzero_with_toon_error(tmp_path, monkeypatch):
+    """Every require_references() consumer surfaces exit_code != 0 + status: error TOON.
+
+    This is the exhaustive coverage gate: any subcommand that reads
+    references.json via ``require_references()`` MUST propagate the
+    file-not-found error dict so the main dispatcher emits TOON and exits 1.
+    A future caller added without the ``if refs.get('status') == 'error':
+    return refs`` propagation guard fails this test.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
+    monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds')
+
+    failures: list[str] = []
+    for label, argv in _FILE_NOT_FOUND_INVOCATIONS:
+        result = run_script(SCRIPT_PATH, *argv)
+        if result.returncode == 0:
+            failures.append(f'{label}: exit_code=0 (expected != 0); stdout={result.stdout!r}')
+            continue
+        if 'status: error' not in result.stdout:
+            failures.append(f'{label}: missing "status: error" in stdout; stdout={result.stdout!r}')
+        if 'file_not_found' not in result.stdout:
+            failures.append(f'{label}: missing "file_not_found" in stdout; stdout={result.stdout!r}')
+
+    assert not failures, 'File-not-found exit-code regressions:\n' + '\n'.join(failures)
 
 
 # =============================================================================
@@ -637,3 +719,147 @@ class TestDiffFiles:
             assert phantom_path not in result['files']
             assert phantom_path in result['phantom']
             assert result['dropped'] == []
+
+
+# =============================================================================
+# Test: require_references rejects non-dict top-level JSON values
+# =============================================================================
+# Regression coverage for the gemini-code-assist review on PR #426:
+# require_references() must raise ValueError when references.json exists but
+# its top-level JSON value is not a JSON object. Without the isinstance check,
+# non-dict values (list, string, number, bool, null) silently pass through
+# the `if not refs:` truthiness gate and trigger AttributeError downstream
+# when callers invoke ``.get()`` on the parsed value.
+
+
+def _write_raw_references(plan_id: str, payload: str) -> None:
+    """Write raw JSON text to references.json for a plan, bypassing schema."""
+    refs_path = get_references_path(plan_id)
+    refs_path.parent.mkdir(parents=True, exist_ok=True)
+    refs_path.write_text(payload, encoding='utf-8')
+
+
+@pytest.mark.parametrize(
+    ('payload', 'expected_type_name'),
+    [
+        ('[1, 2, 3]', 'list'),
+        ('"a string"', 'str'),
+        ('42', 'int'),
+        ('3.14', 'float'),
+        ('true', 'bool'),
+    ],
+)
+def test_require_references_raises_on_non_dict_json(payload, expected_type_name):
+    """Truthy non-dict top-level JSON values raise a clear ValueError.
+
+    Covers list, string, integer, float, and boolean payloads. JSON ``null``
+    is falsy and therefore caught earlier by the ``if not refs:`` gate (see
+    ``test_require_references_treats_null_as_file_not_found`` below), so it
+    is intentionally absent from this parametrization.
+    """
+    with PlanContext() as ctx:
+        plan_id = ctx.plan_id
+        _write_raw_references(plan_id, payload)
+
+        with pytest.raises(ValueError, match='invalid format') as excinfo:
+            require_references(plan_id)
+
+        message = str(excinfo.value)
+        assert expected_type_name in message
+        assert plan_id in message
+
+
+def test_require_references_treats_null_as_file_not_found():
+    """JSON ``null`` is falsy and falls through the not-found gate.
+
+    ``read_json`` returns ``None`` for a file whose top-level value is ``null``,
+    which means ``if not refs:`` triggers BEFORE the isinstance check. Surface
+    the existing file_not_found error envelope rather than a ValueError.
+    """
+    with PlanContext() as ctx:
+        plan_id = ctx.plan_id
+        _write_raw_references(plan_id, 'null')
+
+        result = require_references(plan_id)
+
+        assert isinstance(result, dict)
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_not_found'
+
+
+def test_require_references_accepts_dict_payload():
+    """Sanity check: a valid JSON object payload still returns the dict."""
+    with PlanContext() as ctx:
+        plan_id = ctx.plan_id
+        _write_raw_references(plan_id, '{"branch": "feature/test"}')
+
+        result = require_references(plan_id)
+
+        assert isinstance(result, dict)
+        assert result['branch'] == 'feature/test'
+
+
+def test_require_references_returns_error_dict_when_missing():
+    """Sanity check: a missing references.json still returns the file_not_found
+    error dict — the new isinstance guard does NOT change the not-found path.
+    """
+    with PlanContext():
+        result = require_references('nonexistent-plan')
+
+        assert isinstance(result, dict)
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_not_found'
+        assert result['plan_id'] == 'nonexistent-plan'
+
+
+def test_require_references_returns_error_dict_on_empty_object():
+    """An empty JSON object ``{}`` is falsy and still maps to file_not_found
+    via the existing ``if not refs:`` check (unchanged by this fix).
+    """
+    with PlanContext() as ctx:
+        plan_id = ctx.plan_id
+        _write_raw_references(plan_id, '{}')
+
+        result = require_references(plan_id)
+
+        assert isinstance(result, dict)
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_not_found'
+
+
+@pytest.mark.parametrize(
+    'payload',
+    [
+        '[1, 2, 3]',
+        '"a string"',
+        '42',
+        'true',
+        'null',
+    ],
+)
+def test_cli_non_dict_references_surfaces_nonzero_exit(payload, tmp_path, monkeypatch):
+    """CLI subcommands that hit require_references() surface non-zero exit
+    codes when references.json contains a non-dict top-level JSON value.
+
+    A raised ValueError bypasses the normal TOON error envelope, so this test
+    only asserts the exit-code contract — corrupt-file states must NOT exit 0.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
+    monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds')
+
+    plan_id = 'corrupt-plan'
+    refs_path = tmp_path / 'plans' / plan_id / 'references.json'
+    refs_path.parent.mkdir(parents=True, exist_ok=True)
+    refs_path.write_text(payload, encoding='utf-8')
+
+    # Sanity check: the file is parseable JSON but NOT a dict.
+    parsed = json.loads(refs_path.read_text())
+    assert not isinstance(parsed, dict)
+
+    result = run_script(SCRIPT_PATH, 'read', '--plan-id', plan_id)
+    assert result.returncode != 0, (
+        f'Expected non-zero exit for non-dict references payload {payload!r}; '
+        f'stdout={result.stdout!r} stderr={result.stderr!r}'
+    )
