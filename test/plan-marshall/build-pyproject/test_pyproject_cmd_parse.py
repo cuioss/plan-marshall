@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Tests for _python_cmd_parse.py (direct parser API).
+"""Tests for _pyproject_cmd_parse.py (direct parser API).
 
-Tests the Python build log parser directly (not through python_build.py).
+Tests the pyproject build log parser directly (not through pyproject_build.py).
 
-Note: test_python_build.py also tests parse_log() but through the build script
-module loader with mocked dependencies. This file tests the parser in isolation
-for detailed coverage of mypy/ruff/pytest output patterns.
+Note: test_pyproject_build.py also tests parse_log() but through the build
+script module loader with mocked dependencies. This file tests the parser in
+isolation for detailed coverage of mypy/ruff/pytest output patterns.
 """
 
 # Tier 2 direct imports via importlib for uniform import style
@@ -22,7 +22,7 @@ _SCRIPTS_DIR = (
     / 'bundles'
     / 'plan-marshall'
     / 'skills'
-    / 'build-python'
+    / 'build-pyproject'
     / 'scripts'
 )
 
@@ -34,9 +34,9 @@ def _load_module(name, filename):
     return mod
 
 
-_python_cmd_parse_mod = _load_module('_python_cmd_parse', '_python_cmd_parse.py')
+_pyproject_cmd_parse_mod = _load_module('_pyproject_cmd_parse', '_pyproject_cmd_parse.py')
 
-parse_log = _python_cmd_parse_mod.parse_log
+parse_log = _pyproject_cmd_parse_mod.parse_log
 
 # =============================================================================
 # mypy error parsing

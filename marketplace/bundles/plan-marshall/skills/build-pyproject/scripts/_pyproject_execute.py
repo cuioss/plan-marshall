@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Python/pyprojectx command execution — config-driven via execute handler factory.
+"""Pyproject (Python/pyprojectx) command execution — config-driven via execute handler factory.
 
 Provides:
 - execute_direct(): Foundation API for pyprojectx command execution
@@ -14,7 +14,7 @@ self-heal is skipped when ``.pyprojectx.broken`` already exists so a prior
 broken cache is never clobbered.
 
 Usage:
-    from _python_execute import execute_direct, cmd_run
+    from _pyproject_execute import execute_direct, cmd_run
 """
 
 import logging
@@ -30,7 +30,7 @@ from _build_execute_factory import (
 )
 from _build_result import DirectCommandResult
 from _build_shared import DEFAULT_BUILD_TIMEOUT, cmd_run_common
-from _python_cmd_parse import parse_log
+from _pyproject_cmd_parse import parse_log
 
 logger = logging.getLogger(__name__)
 

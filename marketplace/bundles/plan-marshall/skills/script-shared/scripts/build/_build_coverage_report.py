@@ -2,7 +2,7 @@
 """Shared coverage-report subcommand logic for all build skills.
 
 Extracts the common cmd_coverage_report() flow that was duplicated across
-build-maven, build-gradle, build-npm, and build-python. Each skill provides
+build-maven, build-gradle, build-npm, and build-pyproject. Each skill provides
 its own search paths and error message; the logic is identical.
 
 Use create_subcommand_handler(cmd_coverage_report_base, ...) to build a

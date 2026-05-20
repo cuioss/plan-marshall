@@ -1058,3 +1058,232 @@ class TestBuildTitleDoneEmission(ScriptTestCase):
         )
         self.assertTrue(result.success, msg=result.stderr)
         self.assertEqual(result.stdout.strip(), '✓ claude')
+
+
+class TestSessionActivePlanFallback(ScriptTestCase):
+    """build_title tier 2: session active-plan cache fallback.
+
+    When the worktree-cwd resolution returns None (e.g., the main
+    orchestration session runs from the repo root), build_title falls back
+    to reading ``~/.cache/plan-marshall/sessions/{session_id}/active-plan``
+    and uses its plan_id when the referenced plan's status.json is alive
+    and non-terminal. The cache is keyed by session_id so concurrent tabs
+    render independent titles.
+    """
+
+    bundle = 'plan-marshall'
+    skill = 'plan-marshall'
+    script = 'set_terminal_title.py'
+
+    def _write_active_plan_file(self, session_id: str, plan_id: str) -> Path:
+        """Write the cache file under self.temp_dir-as-HOME."""
+        cache_path = (
+            self.temp_dir
+            / '.cache'
+            / 'plan-marshall'
+            / 'sessions'
+            / session_id
+            / 'active-plan'
+        )
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(plan_id, encoding='utf-8')
+        return cache_path
+
+    def test_repo_root_cwd_with_session_active_plan_renders_pm_phase(self):
+        """Repo-root cwd + session active-plan + alive status.json →
+        ``{icon} pm:{phase}[:{short_description}]``.
+
+        This is the core scenario the plan fixes: the main /plan-marshall
+        orchestration session whose cwd is the repo root (never matches
+        the worktree regex) now renders its plan title via the cache.
+        """
+        plan_id = 'orchestrator-plan'
+        plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / plan_id
+        _write_status(plan_dir, '5-execute', short_description='Main_orchestrator')
+        self._write_active_plan_file('sess-main', plan_id)
+
+        with (
+            mock.patch.dict(os.environ, {'HOME': str(self.temp_dir)}, clear=False),
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+        ):
+            title = set_terminal_title.build_title('running', str(self.temp_dir), 'sess-main')
+
+        self.assertEqual(title, '▶ pm:5-execute:Main_orchestrator')
+
+    def test_two_session_ids_render_independent_titles(self):
+        """Cross-tab isolation: two distinct session_ids pointing at
+        different plan_ids each render their own title from the cache.
+        """
+        plan_a = 'plan-alpha'
+        plan_b = 'plan-beta'
+        _write_status(
+            self.temp_dir / '.plan' / 'local' / 'plans' / plan_a,
+            '3-outline',
+            short_description='Alpha_work',
+        )
+        _write_status(
+            self.temp_dir / '.plan' / 'local' / 'plans' / plan_b,
+            '4-plan',
+            short_description='Beta_work',
+        )
+        self._write_active_plan_file('sess-a', plan_a)
+        self._write_active_plan_file('sess-b', plan_b)
+
+        with (
+            mock.patch.dict(os.environ, {'HOME': str(self.temp_dir)}, clear=False),
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+        ):
+            title_a = set_terminal_title.build_title('running', str(self.temp_dir), 'sess-a')
+            title_b = set_terminal_title.build_title('running', str(self.temp_dir), 'sess-b')
+
+        self.assertEqual(title_a, '▶ pm:3-outline:Alpha_work')
+        self.assertEqual(title_b, '▶ pm:4-plan:Beta_work')
+
+    def test_terminal_phase_in_cached_plan_falls_through(self):
+        """When the cached active-plan refers to a plan whose
+        current_phase is in _TERMINAL_PHASE_VALUES (complete / archived),
+        build_title falls through to the active-command / claude chain.
+        """
+        plan_id = 'archived-plan'
+        _write_status(
+            self.temp_dir / '.plan' / 'local' / 'plans' / plan_id,
+            'complete',
+            short_description='Old_label',
+        )
+        self._write_active_plan_file('sess-arch', plan_id)
+
+        env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
+        env['HOME'] = str(self.temp_dir)
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+        ):
+            title = set_terminal_title.build_title('idle', str(self.temp_dir), 'sess-arch')
+
+        self.assertEqual(title, '◯ claude')
+
+    def test_cached_plan_with_missing_status_falls_through(self):
+        """Active-plan file present but status.json missing — fall through
+        to fallback chain.
+        """
+        # Note: no _write_status call, so status.json does not exist.
+        self._write_active_plan_file('sess-orphan', 'ghost-plan')
+
+        env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
+        env['HOME'] = str(self.temp_dir)
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+        ):
+            title = set_terminal_title.build_title('idle', str(self.temp_dir), 'sess-orphan')
+
+        self.assertEqual(title, '◯ claude')
+
+    def test_malformed_cached_plan_id_is_rejected(self):
+        """Cache contents failing shape validation (path separators, ``..``,
+        oversize) are rejected silently — falls through to fallback chain.
+        """
+        # Write a path-traversal value.
+        cache_path = (
+            self.temp_dir / '.cache' / 'plan-marshall' / 'sessions' / 'sess-evil' / 'active-plan'
+        )
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text('../escape', encoding='utf-8')
+
+        env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
+        env['HOME'] = str(self.temp_dir)
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+        ):
+            title = set_terminal_title.build_title('idle', str(self.temp_dir), 'sess-evil')
+
+        self.assertEqual(title, '◯ claude')
+
+    def test_oversize_cached_plan_id_is_rejected(self):
+        """Cache contents exceeding the length cap are silently rejected."""
+        cache_path = (
+            self.temp_dir / '.cache' / 'plan-marshall' / 'sessions' / 'sess-big' / 'active-plan'
+        )
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text('x' * 200, encoding='utf-8')
+
+        env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
+        env['HOME'] = str(self.temp_dir)
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+        ):
+            title = set_terminal_title.build_title('idle', str(self.temp_dir), 'sess-big')
+
+        self.assertEqual(title, '◯ claude')
+
+    def test_worktree_cwd_takes_precedence_over_session_cache(self):
+        """When both signals are present, the worktree-cwd resolution wins.
+
+        Tier 1 (worktree-cwd) is consulted first; tier 2 (session cache)
+        fires only when tier 1 yields no plan/phase pair.
+        """
+        worktree_plan = 'from-worktree'
+        cached_plan = 'from-cache'
+        _write_status(
+            self.temp_dir / '.plan' / 'local' / 'plans' / worktree_plan,
+            '3-outline',
+            short_description='Worktree_wins',
+        )
+        _write_status(
+            self.temp_dir / '.plan' / 'local' / 'plans' / cached_plan,
+            '5-execute',
+            short_description='Cache_loses',
+        )
+        worktree_cwd = self.temp_dir / '.plan' / 'local' / 'worktrees' / worktree_plan
+        worktree_cwd.mkdir(parents=True)
+        self._write_active_plan_file('sess-both', cached_plan)
+
+        with (
+            mock.patch.dict(os.environ, {'HOME': str(self.temp_dir)}, clear=False),
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+        ):
+            title = set_terminal_title.build_title('running', str(worktree_cwd), 'sess-both')
+
+        self.assertEqual(title, '▶ pm:3-outline:Worktree_wins')
+
+    def test_active_plan_file_with_whitespace_padding_is_stripped(self):
+        """The cache reader strips surrounding whitespace before validation."""
+        plan_id = 'padded-plan'
+        _write_status(
+            self.temp_dir / '.plan' / 'local' / 'plans' / plan_id,
+            '2-refine',
+            short_description='Padded',
+        )
+        cache_path = (
+            self.temp_dir / '.cache' / 'plan-marshall' / 'sessions' / 'sess-pad' / 'active-plan'
+        )
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(f'  \n{plan_id}\n  ', encoding='utf-8')
+
+        with (
+            mock.patch.dict(os.environ, {'HOME': str(self.temp_dir)}, clear=False),
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+        ):
+            title = set_terminal_title.build_title('running', str(self.temp_dir), 'sess-pad')
+
+        self.assertEqual(title, '▶ pm:2-refine:Padded')
+
+    def test_empty_active_plan_file_falls_through(self):
+        """A cache file containing only whitespace / empty content is rejected."""
+        cache_path = (
+            self.temp_dir / '.cache' / 'plan-marshall' / 'sessions' / 'sess-empty' / 'active-plan'
+        )
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text('   \n  ', encoding='utf-8')
+
+        env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
+        env['HOME'] = str(self.temp_dir)
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None),
+        ):
+            title = set_terminal_title.build_title('idle', str(self.temp_dir), 'sess-empty')
+
+        self.assertEqual(title, '◯ claude')

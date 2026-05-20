@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for plan-marshall build-python python_build.py.
+"""Tests for plan-marshall build-pyproject pyproject_build.py.
 
 Tests the Python build operations including:
 - parse_log() - Log parsing for errors
@@ -21,22 +21,22 @@ BUILD_SCRIPT = (
     / 'bundles'
     / 'plan-marshall'
     / 'skills'
-    / 'build-python'
+    / 'build-pyproject'
     / 'scripts'
-    / 'python_build.py'
+    / 'pyproject_build.py'
 )
 
 # Tier 2 direct imports via importlib for uniform import style
 import importlib.util  # noqa: E402
 
 
-def _load_python_build():
-    """Load python_build module with minimal mocking.
+def _load_pyproject_build():
+    """Load pyproject_build module with minimal mocking.
 
     Only mocks plan_logging and run_config which are provided by the executor
     at runtime but not available in test PYTHONPATH.
     """
-    spec = importlib.util.spec_from_file_location('python_build', BUILD_SCRIPT)
+    spec = importlib.util.spec_from_file_location('pyproject_build', BUILD_SCRIPT)
     module = importlib.util.module_from_spec(spec)
 
     import sys
@@ -63,7 +63,7 @@ def _load_python_build():
     return module
 
 
-python_build = _load_python_build()
+pyproject_build = _load_pyproject_build()
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
@@ -71,7 +71,7 @@ _SCRIPTS_DIR = (
     / 'bundles'
     / 'plan-marshall'
     / 'skills'
-    / 'build-python'
+    / 'build-pyproject'
     / 'scripts'
 )
 
@@ -83,20 +83,20 @@ def _load_module(name, filename):
     return mod
 
 
-_python_cmd_parse_mod = _load_module('_python_cmd_parse', '_python_cmd_parse.py')
-_python_execute_mod = _load_module('_python_execute', '_python_execute.py')
+_pyproject_cmd_parse_mod = _load_module('_pyproject_cmd_parse', '_pyproject_cmd_parse.py')
+_pyproject_execute_mod = _load_module('_pyproject_execute', '_pyproject_execute.py')
 
-parse_log = _python_cmd_parse_mod.parse_log
-execute_direct = _python_execute_mod.execute_direct
+parse_log = _pyproject_cmd_parse_mod.parse_log
+execute_direct = _pyproject_execute_mod.execute_direct
 
 # =============================================================================
-# Test: Wrapper resolution (via _python_execute)
+# Test: Wrapper resolution (via _pyproject_execute)
 # =============================================================================
 
 
 def test_wrapper_resolution_finds_local_pw():
     """Wrapper resolution finds ./pw when pw exists in project root."""
-    from _python_execute import _python_wrapper_resolve_fn
+    from _pyproject_execute import _python_wrapper_resolve_fn
 
     with BuildContext() as ctx:
         pw = ctx.temp_dir / 'pw'
@@ -109,7 +109,7 @@ def test_wrapper_resolution_finds_local_pw():
 
 def test_wrapper_resolution_falls_back_to_system_pwx():
     """Wrapper resolution returns pwx when no local pw but pwx is in PATH."""
-    from _python_execute import _python_wrapper_resolve_fn
+    from _pyproject_execute import _python_wrapper_resolve_fn
 
     with BuildContext() as ctx:
         with patch('shutil.which', return_value='/usr/local/bin/pwx'):
@@ -119,7 +119,7 @@ def test_wrapper_resolution_falls_back_to_system_pwx():
 
 def test_wrapper_resolution_raises_when_no_wrapper():
     """Wrapper resolution raises FileNotFoundError when no wrapper available."""
-    from _python_execute import _python_wrapper_resolve_fn
+    from _pyproject_execute import _python_wrapper_resolve_fn
 
     with BuildContext() as ctx:
         with patch('shutil.which', return_value=None):
@@ -329,7 +329,7 @@ def test_execute_direct_returns_timeout_on_timeout():
 
 def test_default_timeout_is_reasonable():
     """Default timeout in execute config is set to a reasonable value."""
-    from _python_execute import _CONFIG
+    from _pyproject_execute import _CONFIG
 
     assert _CONFIG.default_timeout == 300  # 5 minutes, unified across all build skills
 
@@ -429,7 +429,7 @@ def test_quality_gate_module_scoped_skips_plugin_doctor():
 # Test: Two-state ``--plan-id`` / ``--project-dir`` routing contract
 # =============================================================================
 #
-# python_build.py uses the shared ``build_main()`` from ``_build_cli.py``,
+# pyproject_build.py uses the shared ``build_main()`` from ``_build_cli.py``,
 # which delegates to ``resolve_project_dir`` for the four-state contract.
 # The Bucket B build CLI is the canonical caller, so these tests both
 # assert the parser surface and pin the resolver behaviour at the unit
@@ -457,8 +457,8 @@ def _python_run_args(*extra: str) -> list[str]:
 def _build_python_parser():
     """Materialise python_build's argparse parser via build_main wiring.
 
-    Importing the module directly would auto-load it via _load_python_build
-    above, but python_build.py builds its parser inside main(). To avoid
+    Importing the module directly would auto-load it via _load_pyproject_build
+    above, but pyproject_build.py builds its parser inside main(). To avoid
     side effects we register the same subparsers using ``_build_cli`` and
     add the project-dir/plan-id flag pair the same way python_build does.
     """

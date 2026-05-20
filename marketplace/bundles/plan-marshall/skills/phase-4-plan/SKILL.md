@@ -44,7 +44,7 @@ When persisting the multi-task batch (Step 6 → 6a/6b), the following shell sho
 
 ## Dispatched workflows vs inline steps
 
-This phase dispatches under one role key: **`phase-4-plan`** (resolves through `phase-4-plan.default`). The bundled task-creation activity (Steps 5+6+7 — per-deliverable task creation, anchoring/breaking-refactor split, holistic verification tasks) iterates *inside* one `phase-4-plan` envelope; the per-deliverable loop never spawns per-iteration subagents. Mechanical sub-procedures stay inline as scripts: Step 3 deliverable load, Step 4 dependency graph, Step 8 topological sort, Step 8b execution manifest composition, and Step 9 Q-Gate mechanical checks (via `manage-tasks:qgate-mechanical-checks` — coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Step 9b LLM Q-Gate dispatches under `--phase phase-4-plan` (no `--role` — q-gate-validation tracks the phase default; the workflow is shared with phase-2-refine and phase-3-outline) unconditionally after every successful phase-4-plan invocation — the validator agent runs `module-mapping-validator` and `scope-criterion-validator` against live ground truth regardless of `plan_source`. The mechanical script's `ambiguous=true` signal is informational only (it means `solution_outline.md` was missing or unparseable, in which case the LLM dispatch is the *only* authoritative pass). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2–4.
+This phase dispatches under one role key: **`phase-4-plan`** (resolves through `phase-4-plan.default`). The bundled task-creation activity (Steps 5+6+7 — per-deliverable task creation, anchoring/breaking-refactor split, holistic verification tasks) iterates *inside* one `phase-4-plan` envelope; the per-deliverable loop never spawns per-iteration subagents. Mechanical sub-procedures stay inline as scripts: Step 3 deliverable load, Step 4 dependency graph, Step 8 topological sort, Step 8b execution manifest composition, and Step 9 Q-Gate mechanical checks (via `manage-tasks:qgate-mechanical-checks` — coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Step 9b LLM Q-Gate activation is *signaled* by setting `qgate_validation_required: true` in the phase return TOON (unconditionally after every successful phase-4-plan invocation — both `module-mapping-validator` and `scope-criterion-validator` apply to every plan regardless of `plan_source`); the orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads that flag and issues q-gate-validation as a sibling top-level `Task: plan-marshall:{target}` dispatch — the phase body cannot spawn it directly because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. The mechanical script's `ambiguous=true` signal is informational only (it means `solution_outline.md` was missing or unparseable, in which case the orchestrator-dispatched LLM run is the *only* authoritative pass). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2–4.
 
 ## cwd for `.plan/execute-script.py` calls
 
@@ -100,7 +100,7 @@ The Glob fallback covers the case where the new test file lives in a recipe / ex
 | Module under test | Existing collision | Disambiguated basename |
 |-------------------|--------------------|------------------------|
 | `manage-findings` | `test/.../test_findings_store.py` | `test_findings_findings_store.py` (or `test_findings_store_manage.py` — match the existing naming style of the target directory) |
-| `build-python` (findings module) | `test/.../test_findings_store.py` | `test_build_findings_store.py` |
+| `build-pyproject` (findings module) | `test/.../test_findings_store.py` | `test_build_findings_store.py` |
 | `recipe-lesson-cleanup` (parser) | `test/.../test_parser.py` | `test_lesson_cleanup_parser.py` |
 
 The disambiguation prefix MUST be a substring of the module path (kebab-case stem, joined by `_`) so the basename remains greppable from the module name. Numeric suffixes (`test_findings_store_2.py`) and copy-cat ordinals are forbidden — they preserve the collision risk for the next addition and lose the module-under-test signal entirely.
@@ -442,7 +442,7 @@ The `--tasks-file PATH` form is the canonical entrypoint for phase-4-plan (and a
 > ```
 > verification:
 >   commands:
->     - python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests plan-marshall"
+>     - python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests plan-marshall"
 >   criteria: module-tests plan-marshall succeeds
 > ```
 >
@@ -450,7 +450,7 @@ The `--tasks-file PATH` form is the canonical entrypoint for phase-4-plan (and a
 > ```
 > verification:
 >   commands:
->     - "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests plan-marshall\""
+>     - "python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args \"module-tests plan-marshall\""
 >   criteria: module-tests plan-marshall succeeds
 > ```
 
@@ -614,8 +614,9 @@ The six checks correspond to:
 Parse the return TOON: `total_failed` is the aggregate finding count for the
 inline checks (added to `qgate_pending_count` returned in Step 11), and
 `ambiguous` is `true` when `solution_outline.md` was missing or unparseable —
-in that case the LLM q-gate-validation dispatch in Step 9b is the
-only authoritative pass and the orchestrator MUST still fire it.
+in that case the orchestrator-dispatched q-gate-validation (signaled by
+Step 9b via `qgate_validation_required: true`) is the only authoritative pass
+and the orchestrator MUST still fire it.
 
 ### Log Q-Gate Result
 
@@ -654,70 +655,23 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Purpose**: Run the `module-mapping-validator` and `scope-criterion-validator` from `plan-marshall:plan-marshall/workflow/q-gate-validation.md` (§§ 2.11, 2.12) over the just-created tasks and the parent deliverables. Both validators reconcile LLM-authored task/deliverable shape against live ground truth (architecture which-module, architecture find/marketplace grep) and emit findings that the orchestrator's existing 3-iteration auto-loop consumes.
 
-**Activation guard**: Unconditional — runs after every successful phase-4-plan invocation, regardless of `plan_source`. Both validators apply to every plan (lesson-derived, issue-derived, recipe-derived, free-form). Skip only when the Q-Gate inline checks above (Step 9) have already exhausted the orchestrator's `verification_max_iterations` budget — in that case the orchestrator will already be aborting the auto-loop.
+**Activation guard**: Unconditional — runs after every successful phase-4-plan invocation, regardless of `plan_source`. Both validators apply to every plan (lesson-derived, issue-derived, recipe-derived, free-form). The phase sets `qgate_validation_required: true` in its return TOON on every successful completion; the orchestrator's existing `verification_max_iterations` budget gates re-entry on its side. Skipping the signal is reserved for the unrecoverable error path (the phase has aborted with `status: error` before reaching the return-results step).
 
-**Cross-reference (lesson-ID validation)**: The lesson-id-validator that was originally part of the umbrella lesson `2026-05-03-21-002` is intentionally NOT spawned here. PR #323 ships lesson-ID validation at **write time** in `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_tasks_crud.py` (via `tools-input-validation/scripts/input_validation.py`). Every `TASK-*.json` write hits the validator before disk and **hard-fails** with `validation_error: lesson_id_not_found` when a phantom ID is cited — distinct from this Step 9b's q-gate auto-loop placement. Future maintainers extending phase-4-plan validation should preserve the placement split: write-time hard-fail for lesson-ID lookup against `manage-lessons list`; q-gate auto-loop for structural cross-checks (module mapping, scope criterion).
+**Cross-reference (lesson-ID validation)**: The lesson-id-validator that was originally part of the umbrella lesson `2026-05-03-21-002` is intentionally NOT signaled here. PR #323 ships lesson-ID validation at **write time** in `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_tasks_crud.py` (via `tools-input-validation/scripts/input_validation.py`). Every `TASK-*.json` write hits the validator before disk and **hard-fails** with `validation_error: lesson_id_not_found` when a phantom ID is cited — distinct from this Step 9b's orchestrator-side q-gate auto-loop placement. Future maintainers extending phase-4-plan validation should preserve the placement split: write-time hard-fail for lesson-ID lookup against `manage-lessons list`; orchestrator-dispatched q-gate auto-loop for structural cross-checks (module mapping, scope criterion).
 
-**Dispatch the validator agent**.
+**Signal the validator requirement**.
 
-Compute the dispatch target via the role resolver:
+When phase-4-plan completes successfully, the phase records the requirement by setting `qgate_validation_required: true` in the return TOON (see Step 11 § Output below). The orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads that flag after the phase returns and dispatches `plan-marshall:plan-marshall/workflow/q-gate-validation.md` as a sibling top-level `Task: plan-marshall:{target}` invocation — the phase body cannot dispatch it directly because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. The orchestrator-dispatched validator agent reads `solution_outline.md` (for the deliverables and their `success_criterion`/`affected_files` blocks) and the just-written `TASK-*.json` files (for `module_testing` task targets), runs the `module-mapping-validator` and `scope-criterion-validator` detection logic, and emits findings using `--source qgate-module-mapping` / `--source qgate-scope-criterion`. Aggregation of the validator's `qgate_pending_count` into the phase aggregate also moves to the orchestrator; this step only signals intent. See `plan-marshall/workflow/q-gate-validation.md` for the canonical detection logic and finding emission templates.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase phase-4-plan
-```
-
-Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
-
-Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+Log the intent so the run record shows the activation:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:phase-4-plan) target={target} level={level} role=phase-4-plan workflow=plan-marshall:plan-marshall/workflow/q-gate-validation.md plan_id={plan_id}"
+  --message "[STATUS] (plan-marshall:phase-4-plan) qgate_validation_required=true — orchestrator will dispatch q-gate-validation (module-mapping + scope-criterion validators) after phase return"
 ```
 
-Dispatch:
-
-```
-Task: plan-marshall:{target}
-  prompt: |
-    name: q-gate-validation
-    plan_id: {plan_id}
-    skills[6]:
-    - plan-marshall:manage-solution-outline
-    - plan-marshall:manage-findings
-    - plan-marshall:manage-plan-documents
-    - plan-marshall:manage-status
-    - plan-marshall:manage-architecture
-    - plan-marshall:manage-logging
-    workflow: plan-marshall:plan-marshall/workflow/q-gate-validation.md
-    WORKTREE: {worktree_path}
-
-    activation_context: 4-plan
-    validators: [module-mapping-validator, scope-criterion-validator]
-```
-
-The agent reads `solution_outline.md` (for the deliverables and their `success_criterion`/`affected_files` blocks) and the just-written `TASK-*.json` files (for `module_testing` task targets), runs the module-mapping and scope-criterion validator detection logic, and emits findings using `--source qgate-module-mapping` / `--source qgate-scope-criterion`. See the q-gate validation workflow for the canonical detection logic and finding emission templates.
-
-**Aggregate the findings** — read pending findings to update the running count returned in Step 11:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  qgate query --plan-id {plan_id} --phase 4-plan --resolution pending
-```
-
-Parse `filtered_count` from the output and ADD it to the `qgate_pending_count` already aggregated by Step 9's inline checks. Both finding sources flow into the same aggregate, so the orchestrator's existing 3-iteration auto-loop handles re-entry uniformly.
-
-**Log dispatch outcome**:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-4-plan:qgate) Dispatched q-gate-validation for module-mapping + scope-criterion validators; pending findings now {qgate_pending_count}"
-```
-
-This step runs AFTER the inline Q-Gate checks of Step 9 and BEFORE Step 10 (Record Issues as Lessons) / Step 11 (Transition Phase and Return Results). The placement is load-bearing: inline checks first means cheap structural findings are recorded before the more expensive cross-bundle queries; validator second ensures architecture-anchored findings can re-enter phase-4-plan alongside the inline ones.
+This signaling step runs AFTER the inline Q-Gate checks of Step 9 and BEFORE Step 10 (Record Issues as Lessons) / Step 11 (Transition Phase and Return Results). The placement is load-bearing: inline checks first means cheap structural findings are recorded before the phase return; the orchestrator-side validator dispatch ensures architecture-anchored findings can re-enter phase-4-plan alongside the inline ones via the existing auto-loop predicate.
 
 ### Step 10: Record Issues as Lessons
 
@@ -784,7 +738,10 @@ execution_order:
 
 lessons_recorded: {count}
 qgate_pending_count: {0 if no findings}
+qgate_validation_required: {true|false}
 ```
+
+`qgate_validation_required` is `true` on every successful phase-4-plan completion (Step 9b signals unconditionally — both module-mapping and scope-criterion validators apply to every plan) and `false` only on the unrecoverable error path. The orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads this flag after the phase returns and dispatches `q-gate-validation` as a sibling top-level Task when it is `true`.
 
 ## Integration Deliverable Narrative Constraint
 

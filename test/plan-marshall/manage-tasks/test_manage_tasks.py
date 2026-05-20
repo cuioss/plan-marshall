@@ -1636,7 +1636,7 @@ def test_parse_stdin_task_accepts_inner_double_quotes_in_verification_command():
     """
     # Arrange
     canonical_command = (
-        'python3 .plan/execute-script.py plan-marshall:build-python:python_build '
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
         'run --command-args "module-tests plan-marshall"'
     )
     toon = (
@@ -1672,7 +1672,7 @@ def test_parse_stdin_task_rejects_outer_double_quoted_verification_command():
     """
     # Arrange
     offending_item = (
-        r'"python3 .plan/execute-script.py plan-marshall:build-python:python_build '
+        r'"python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
         r'run --command-args \"module-tests plan-marshall\""'
     )
     toon = (
@@ -1711,7 +1711,7 @@ def test_parse_stdin_task_rejects_outer_double_quoted_verification_profile_step(
     """
     # Arrange
     offending_step = (
-        r'"python3 .plan/execute-script.py plan-marshall:build-python:python_build '
+        r'"python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
         r'run --command-args \"quality-gate plan-marshall\""'
     )
     toon = (

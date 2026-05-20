@@ -56,7 +56,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 # Returns TOON (real example from a Python module):
 #   module:     my-module
 #   command:    verify
-#   executable: python3 .plan/execute-script.py plan-marshall:build-python:python_build run --module my-module --targets verify
+#   executable: python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --module my-module --targets verify
 #
 # For a Maven module the executable would be:
 #   python3 .plan/execute-script.py plan-marshall:build-maven:maven run --module my-module --targets verify
@@ -67,9 +67,9 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 {the executable string returned in step 1}
 ----
 
-The resolver reads `.plan/project-architecture/{module}/enriched.json` (per-module, persisted) and looks up the requested canonical command in the module's `commands` map. The stored value is **the full executor invocation, already pre-composed at architecture-discover time** — the LLM never has to know which build skill (`build-maven` / `build-gradle` / `build-npm` / `build-python`) owns this module, nor how to format the underlying tool's flags. The lookup is deterministic — no LLM judgement, no probabilistic match. If `verify` doesn't resolve, the module legitimately doesn't have it (e.g. pom-only aggregator modules have only `quality-gate`); the LLM gets an error TOON, not a hallucinated guess.
+The resolver reads `.plan/project-architecture/{module}/enriched.json` (per-module, persisted) and looks up the requested canonical command in the module's `commands` map. The stored value is **the full executor invocation, already pre-composed at architecture-discover time** — the LLM never has to know which build skill (`build-maven` / `build-gradle` / `build-npm` / `build-pyproject`) owns this module, nor how to format the underlying tool's flags. The lookup is deterministic — no LLM judgement, no probabilistic match. If `verify` doesn't resolve, the module legitimately doesn't have it (e.g. pom-only aggregator modules have only `quality-gate`); the LLM gets an error TOON, not a hallucinated guess.
 
-Behind the scenes the executor proxy routes to one of four link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-build.md[`ext-point-build`] implementations (`build-maven`, `build-gradle`, `build-npm`, `build-python`). All four expose the same `run --command-args …` subcommand and the same return TOON, so the LLM's interaction with the build is uniform regardless of which tool sits behind the wrapper.
+Behind the scenes the executor proxy routes to one of four link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-build.md[`ext-point-build`] implementations (`build-maven`, `build-gradle`, `build-npm`, `build-pyproject`). All four expose the same `run --command-args …` subcommand and the same return TOON, so the LLM's interaction with the build is uniform regardless of which tool sits behind the wrapper.
 
 == The return TOON — what the LLM gets back
 
@@ -153,7 +153,7 @@ The CLAUDE.md `### Build Commands` block (written by the wizard's Step 9b, see x
 | link:../../marketplace/bundles/plan-marshall/skills/build-maven/SKILL.md[`build-maven`] | Maven (mvnw + system mvn) | Java/Kotlin builds with JaCoCo coverage, OpenRewrite markers, multi-module profile management.
 | link:../../marketplace/bundles/plan-marshall/skills/build-gradle/SKILL.md[`build-gradle`] | Gradle (gradlew + system gradle) | Java/Kotlin builds with JaCoCo coverage, quality task detection, multi-project discovery, OpenRewrite markers.
 | link:../../marketplace/bundles/plan-marshall/skills/build-npm/SKILL.md[`build-npm`] | npm / npx | TypeScript, Jest, ESLint, TAP parsing with workspace discovery, per-file JS coverage analysis, automatic npm/npx routing.
-| link:../../marketplace/bundles/plan-marshall/skills/build-python/SKILL.md[`build-python`] | Pyprojectx (`./pw`) | mypy type-checking, ruff linting, pytest with Cobertura coverage, test-directory-based module discovery.
+| link:../../marketplace/bundles/plan-marshall/skills/build-pyproject/SKILL.md[`build-pyproject`] | Pyprojectx (`./pw`) | mypy type-checking, ruff linting, pytest with Cobertura coverage, test-directory-based module discovery.
 |===
 
 All four expose the same subcommand set (`run`, `parse`, `coverage-report`, `check-warnings`, `discover`, plus a few tool-specific extras like `search-markers` for OpenRewrite TODO scans). All four return the same TOON shape on success and the same auto-parsed structured errors on failure. The shared contract lives in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/build-api-reference.md[`build-api-reference.md`] and link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/build-execution.md[`build-execution.md`].

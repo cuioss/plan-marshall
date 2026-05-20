@@ -30,7 +30,7 @@ python3 .plan/execute-script.py {bundle}:{skill}:{script} [subcommand] [args...]
 ```
 
 Examples:
-- `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "verify"`
+- `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "verify"`
 - `python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add --plan-id my-plan --file task.md`
 
 **Regenerate executor** after bundle changes: `/marshall-steward`

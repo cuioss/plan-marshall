@@ -39,7 +39,7 @@ BUCKET_B_NOTATIONS = [
     'plan-marshall:build-maven:maven',
     'plan-marshall:build-gradle:gradle',
     'plan-marshall:build-npm:npm',
-    'plan-marshall:build-python:python_build',
+    'plan-marshall:build-pyproject:pyproject_build',
     'plan-marshall:tools-integration-ci:ci',
     'plan-marshall:workflow-integration-git:git',
     'plan-marshall:workflow-integration-sonar:sonar',
@@ -86,7 +86,7 @@ def test_no_double_injection_when_project_dir_already_present():
     """A command that already carries --project-dir is returned unchanged."""
     # Arrange
     command = (
-        'python3 .plan/execute-script.py plan-marshall:build-python:python_build '
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
         f'run --project-dir {WORKTREE} --command-args "module-tests"'
     )
 
@@ -202,7 +202,7 @@ def test_command_args_payload_preserved_on_injection():
     """The payload after --command-args must survive injection untouched."""
     # Arrange — multi-token payload with spaces
     command = (
-        'python3 .plan/execute-script.py plan-marshall:build-python:python_build '
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
         'run --command-args "module-tests plan-marshall"'
     )
 
@@ -261,7 +261,7 @@ def test_whitespace_only_command_returns_false():
 def test_malformed_quoting_returns_false():
     """A command with unbalanced quotes passes through without raising."""
     # Arrange — unbalanced single quote trips shlex.split
-    command = "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args 'module-tests"
+    command = "python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args 'module-tests"
 
     # Act — must NOT raise
     rewritten, injected = inject_project_dir(command, WORKTREE)
@@ -287,7 +287,7 @@ def test_executor_without_notation_returns_false():
 def test_executor_with_notation_but_no_run_subcommand_passes_through():
     """Bucket B notation without `run` subcommand is not rewritten."""
     # Arrange — `help` instead of `run`
-    command = 'python3 .plan/execute-script.py plan-marshall:build-python:python_build help'
+    command = 'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build help'
 
     # Act
     rewritten, injected = inject_project_dir(command, WORKTREE)
@@ -317,7 +317,7 @@ def test_cli_entrypoint_emits_toon_on_injection(tmp_path):
     """CLI emits TOON with injected=true and the rewritten command on injection."""
     # Arrange
     command = (
-        'python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests"'
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests"'
     )
     expected_rewritten, injected = inject_project_dir(command, WORKTREE)
     assert injected is True  # sanity — the scenario should trigger injection
@@ -428,7 +428,7 @@ def test_skips_injection_with_plan_id_equals_form():
     """``--plan-id=ID`` (equals form) must also be detected as routing intent."""
     # Arrange — equals-form router-level --plan-id.
     command = (
-        'python3 .plan/execute-script.py plan-marshall:build-python:python_build '
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
         'run --plan-id=task-routing-canonical --command-args "verify"'
     )
 
@@ -445,7 +445,7 @@ def test_injects_when_neither_plan_id_nor_project_dir_present():
     """Sanity: the only path that triggers injection is "neither flag present"."""
     # Arrange — Bucket B command without either routing flag.
     command = (
-        'python3 .plan/execute-script.py plan-marshall:build-python:python_build '
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
         'run --command-args "module-tests"'
     )
 
@@ -461,7 +461,7 @@ def test_cli_entrypoint_emits_toon_on_plan_id_present_passthrough(tmp_path):
     """CLI surfaces injected=false + original command when --plan-id is present."""
     # Arrange
     command = (
-        'python3 .plan/execute-script.py plan-marshall:build-python:python_build '
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
         'run --plan-id task-routing-canonical --command-args "module-tests"'
     )
     expected_rewritten, injected = inject_project_dir(command, WORKTREE)

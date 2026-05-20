@@ -77,7 +77,7 @@ Python script for cache key generation, storage, restore, and cleanup operations
 **Change per file:** Create `manage-cache.py` with subcommands: `key` (generate cache key from pom.xml, src/**, tool version, env vars), `store` (archive build output under the key), `restore` (extract cached output if key matches), and `clean` (remove entries older than a configurable TTL). Create test file covering key stability, key sensitivity, store/restore round-trip, and expiration.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests builder"`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests builder"`
 - Criteria: All tests pass
 
 **Success Criteria:**
@@ -106,7 +106,7 @@ Define the skill interface, workflows, and script notation for the build-cache s
 **Change per file:** Create SKILL.md with frontmatter (name, description, user-invocable: false), workflow sections for pre-build cache check/restore, post-build cache store, and maintenance/clean, with explicit `python3 .plan/execute-script.py` invocations using the correct notation.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "quality-gate builder"`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate builder"`
 - Criteria: Plugin doctor reports no violations for the new skill
 
 **Success Criteria:**
@@ -134,7 +134,7 @@ Register the new build-cache skill in the bundle manifest.
 **Change per file:** Add the `build-cache` skill entry to the `skills` array in the plugin manifest. Skill is context-loaded (not user-invocable), so it must be registered for `Skill:` directive resolution.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "quality-gate builder"`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate builder"`
 - Criteria: Marketplace inventory shows build-cache as a registered skill
 
 **Success Criteria:**
@@ -162,7 +162,7 @@ Add cache hooks to the Maven build workflow in the existing builder-maven-rules 
 **Change per file:** Insert two cache integration points into the Maven workflow: before `mvn compile`, invoke `manage-cache restore` and skip the build step on cache hit; after a successful build, invoke `manage-cache store` to persist outputs.
 
 **Verification:**
-- Command: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "quality-gate builder"`
+- Command: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate builder"`
 - Criteria: Plugin doctor reports no violations for the modified skill
 
 **Success Criteria:**

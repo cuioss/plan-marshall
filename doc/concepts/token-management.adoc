@@ -27,7 +27,7 @@ The dispatch-vs-script verdict is decided per call site by the heuristics in lin
 
 === 2. Build management — long waits at zero token cost
 
-Build invocations are the most token-toxic LLM tool calls in stock workflows: a 10-minute Maven run can stream tens of thousands of log lines back into the chat. Plan Marshall's link:../../marketplace/bundles/plan-marshall/skills/build-maven/SKILL.md[`build-maven`] / link:../../marketplace/bundles/plan-marshall/skills/build-gradle/SKILL.md[`build-gradle`] / link:../../marketplace/bundles/plan-marshall/skills/build-npm/SKILL.md[`build-npm`] / link:../../marketplace/bundles/plan-marshall/skills/build-python/SKILL.md[`build-python`] skills route every build through one script call that:
+Build invocations are the most token-toxic LLM tool calls in stock workflows: a 10-minute Maven run can stream tens of thousands of log lines back into the chat. Plan Marshall's link:../../marketplace/bundles/plan-marshall/skills/build-maven/SKILL.md[`build-maven`] / link:../../marketplace/bundles/plan-marshall/skills/build-gradle/SKILL.md[`build-gradle`] / link:../../marketplace/bundles/plan-marshall/skills/build-npm/SKILL.md[`build-npm`] / link:../../marketplace/bundles/plan-marshall/skills/build-pyproject/SKILL.md[`build-pyproject`] skills route every build through one script call that:
 
 * Spawns the build as a subprocess.
 * Suspends the LLM on the tool call (orchestrator pays *zero* tokens during the wait).

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for Python coverage-report subcommand.
+"""Tests for pyproject coverage-report subcommand.
 
 Uses shared build_test_helpers for common coverage test patterns.
 """
@@ -16,7 +16,7 @@ from build_test_helpers import (
 
 from conftest import get_script_path
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'build-python', 'python_build.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'build-pyproject', 'pyproject_build.py')
 FIXTURES_DIR = Path(__file__).parent / 'fixtures' / 'coverage'
 
 

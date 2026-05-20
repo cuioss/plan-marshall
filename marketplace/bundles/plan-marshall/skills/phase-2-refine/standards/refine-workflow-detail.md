@@ -809,68 +809,21 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metada
   --plan-id {plan_id} --get --field plan_source
 ```
 
-If `status: not_found`, or if `value` equals `recipe`, skip Step 13.5 — log nothing and continue to Step 14. Any other non-empty value (notably a lesson id such as `2026-05-11-08-004`) activates the step.
+If `status: not_found`, or if `value` equals `recipe`, the phase sets `qgate_validation_required: false` in its return TOON and continues to Step 14 — log nothing. Any other non-empty value (notably a lesson id such as `2026-05-11-08-004`) activates the step.
 
-**Dispatch the validator agent** (lesson-derived plans only):
+**Signal the validator requirement** (lesson-derived plans only):
 
-Compute the dispatch target via the role resolver:
+When the activation guard fires, the phase records its intent by setting `qgate_validation_required: true` in the return TOON (see `SKILL.md` § Return Results). The orchestrator (`plan-marshall:plan-marshall/workflow/planning.md`) reads that flag after the phase returns and dispatches `q-gate-validation` as a sibling top-level `Task: plan-marshall:{target}` invocation — the phase body does NOT spawn `q-gate-validation` itself because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. Aggregation of the validator's `qgate_pending_count` into the phase aggregate also moves to the orchestrator; this step only signals intent.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase phase-2-refine
-```
-
-Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
-
-Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+Log the intent so the run record shows the activation:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:phase-2-refine) target={target} level={level} role=phase-2-refine workflow=plan-marshall:plan-marshall/workflow/q-gate-validation.md plan_id={plan_id}"
+  --message "[STATUS] (plan-marshall:phase-2-refine) qgate_validation_required=true — orchestrator will dispatch q-gate-validation (narrative-vs-code-validator) after phase return"
 ```
 
-Dispatch:
-
-```
-Task: plan-marshall:{target}
-  prompt: |
-    name: q-gate-validation
-    plan_id: {plan_id}
-    skills[6]:
-    - plan-marshall:manage-solution-outline
-    - plan-marshall:manage-findings
-    - plan-marshall:manage-plan-documents
-    - plan-marshall:manage-status
-    - plan-marshall:manage-architecture
-    - plan-marshall:manage-logging
-    workflow: plan-marshall:plan-marshall/workflow/q-gate-validation.md
-    WORKTREE: {worktree_path}
-
-    activation_context: 2-refine
-    validators: [narrative-vs-code-validator]
-```
-
-The agent reads the source lesson body from the plan directory (`lesson-{id}.md` archived alongside `request.md`), extracts concrete code claims, probes the current code state for each, and emits a finding per `stale` or `invalid` claim using `--source qgate-narrative-vs-code`. See the q-gate validation workflow for the canonical detection logic and finding emission template.
-
-**Aggregate the findings** — read pending findings to update the running count returned in Step 13:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  qgate query --plan-id {plan_id} --phase 2-refine --resolution pending
-```
-
-Parse `filtered_count` from the output and ADD it to the `qgate_pending_count` already aggregated in the inline-checks step above. Both finding sources (inline lightweight checks and the validator agent) flow into the same `qgate_pending_count` aggregate that is returned in the phase TOON, so the orchestrator's existing 3-iteration auto-loop handles re-entry uniformly.
-
-**Log dispatch outcome**:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-2-refine:qgate) Dispatched q-gate-validation for narrative-vs-code-validator (lesson plan); pending findings now {qgate_pending_count}"
-```
-
-This step runs AFTER the inline lightweight Q-Gate checks (above) and BEFORE Step 14 (Transition Phase). The placement is load-bearing: inline checks first means cheap structural findings are recorded before the more expensive narrative cross-check; validator second ensures lesson-driven findings can re-enter refine alongside the inline ones.
+This step runs AFTER the inline lightweight Q-Gate checks (above) and BEFORE Step 14 (Transition Phase). The placement is load-bearing: inline checks first means cheap structural findings are recorded before the phase return; the orchestrator-side validator dispatch ensures lesson-driven findings can re-enter refine alongside the inline ones via the existing auto-loop predicate.
 
 ---
 

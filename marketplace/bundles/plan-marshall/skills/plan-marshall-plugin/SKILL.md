@@ -22,7 +22,7 @@ user-invocable: false
 
 ---
 
-Consolidates module discovery for all build systems (Maven, Gradle, npm, Python) into a single extension point. Also provides the `general-dev` domain with cross-cutting development skills. Build execution scripts live in sibling skill directories (`build-maven`, `build-gradle`, `build-npm`, `build-python`).
+Consolidates module discovery for all build systems (Maven, Gradle, npm, Python) into a single extension point. Also provides the `general-dev` domain with cross-cutting development skills. Build execution scripts live in sibling skill directories (`build-maven`, `build-gradle`, `build-npm`, `build-pyproject`).
 
 See [extension-contract.md](../extension-api/standards/extension-contract.md) for the complete ExtensionBase contract.
 
@@ -53,4 +53,4 @@ Each detected build system delegates to its corresponding discovery script. Resu
 - Maven: `build-maven/scripts/_maven_cmd_discover.py`
 - Gradle: `build-gradle/scripts/_gradle_cmd_discover.py`
 - npm: `build-npm/scripts/_npm_cmd_discover.py`
-- Python: `build-python/scripts/_python_cmd_discover.py`
+- Python: `build-pyproject/scripts/_pyproject_cmd_discover.py`

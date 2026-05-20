@@ -20,6 +20,7 @@ Examples:
     python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory --audit-plan-id EXAMPLE-PLAN --include-descriptions
 """
 
+import hashlib
 import os
 import subprocess
 import sys
@@ -102,6 +103,122 @@ _PYTHONPATH = ':'.join(_SCRIPT_DIRS)
 # CONFIGURATION
 # ============================================================================
 VALIDATE_TOON = False  # Set True for strict TOON output validation
+
+# Session active-plan cache: best-effort writer ----------------------------
+# The terminal-title hook (set_terminal_title.py) consults
+# ~/.cache/plan-marshall/sessions/{session_id}/active-plan as a second-tier
+# fallback when the worktree-cwd resolution does not yield a plan id. The
+# executor populates that cache on every invocation carrying --plan-id /
+# --audit-plan-id so the main orchestration tab (cwd = repo root) can still
+# render pm:{phase}[:{short_description}] in the terminal title.
+#
+# The write is fire-and-forget: any OSError / ValueError / RuntimeError is
+# silently swallowed; the executor's exit code, stdout, and stderr are
+# unaffected by cache-write outcomes.
+_ACTIVE_PLAN_ID_MAX_LEN = 120
+
+
+def _resolve_session_id_from_cache() -> str | None:
+    """Resolve the active Claude Code session_id from the on-disk cache.
+
+    Reads (in order) ``~/.cache/plan-marshall/sessions/by-cwd/{sha256(cwd)}``
+    then ``~/.cache/plan-marshall/sessions/current``. Returns the stripped
+    session id when present and non-empty; ``None`` otherwise. Mirrors the
+    disk-read logic in ``manage_session.cmd_current`` to avoid a cross-script
+    subprocess on every executor invocation.
+
+    All I/O errors are silently swallowed.
+    """
+    try:
+        home = Path.home()
+    except (OSError, RuntimeError):
+        return None
+    base = home / '.cache' / 'plan-marshall' / 'sessions'
+
+    # Resolve cwd via git rev-parse --show-toplevel (matches manage_session).
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--show-toplevel'],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        cwd = result.stdout.strip() if result.returncode == 0 else ''
+    except (OSError, subprocess.SubprocessError):
+        cwd = ''
+    if not cwd:
+        try:
+            cwd = str(Path.cwd())
+        except (OSError, RuntimeError):
+            return None
+
+    try:
+        cwd_hash = hashlib.sha256(cwd.encode('utf-8')).hexdigest()
+    except (ValueError, TypeError):
+        return None
+
+    for candidate in (base / 'by-cwd' / cwd_hash, base / 'current'):
+        try:
+            if not candidate.is_file():
+                continue
+            raw = candidate.read_text(encoding='utf-8').strip()
+        except (OSError, ValueError):
+            continue
+        if raw:
+            return raw
+    return None
+
+
+def _validate_active_plan_id(plan_id: str) -> bool:
+    """Return True when ``plan_id`` is a safe single-segment cache value.
+
+    The cache key is a path segment, so any value containing ``/`` or ``\\``,
+    matching the path-traversal sentinels, exceeding the length cap, or empty
+    is rejected.
+    """
+    if not isinstance(plan_id, str):
+        return False
+    if not plan_id or len(plan_id) > _ACTIVE_PLAN_ID_MAX_LEN:
+        return False
+    if '/' in plan_id or '\\' in plan_id:
+        return False
+    if plan_id in ('..', '.'):
+        return False
+    return True
+
+
+def _write_active_plan(plan_id: str | None) -> None:
+    """Write ``plan_id`` to the per-session active-plan cache (fire-and-forget).
+
+    The cache path is
+    ``~/.cache/plan-marshall/sessions/{session_id}/active-plan`` where
+    ``session_id`` is resolved from the on-disk session cache. The helper is a
+    no-op when:
+
+    * ``plan_id`` is falsy or fails :func:`_validate_active_plan_id`,
+    * no ``session_id`` is resolvable from the cache,
+    * the session id itself fails the same shape validation,
+    * any I/O operation raises.
+
+    Every error path returns silently — the calling script is never disrupted.
+    """
+    try:
+        if not plan_id or not _validate_active_plan_id(plan_id):
+            return
+        session_id = _resolve_session_id_from_cache()
+        if not session_id or not _validate_active_plan_id(session_id):
+            return
+        try:
+            home = Path.home()
+        except (OSError, RuntimeError):
+            return
+        target = home / '.cache' / 'plan-marshall' / 'sessions' / session_id / 'active-plan'
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(plan_id, encoding='utf-8')
+    except (OSError, ValueError):
+        return
+
 
 # ============================================================================
 # EXECUTION LOGIC
@@ -360,6 +477,15 @@ def main():
 
     # Subcommand is first arg after stripping audit-plan-id
     subcommand = script_args[0] if script_args else ''
+
+    # Best-effort: write the resolved plan_id to the per-session active-plan
+    # cache so the terminal-title hook can render pm:{phase}[:{short_desc}]
+    # from the main orchestration tab (cwd = repo root). The write is
+    # fully exception-swallowing; the executor's exit code, stdout, and
+    # stderr are unaffected by cache-write outcomes.
+    _active_plan_id = extract_plan_id(script_args) or audit_plan_id
+    if _active_plan_id:
+        _write_active_plan(_active_plan_id)
 
     script_path = resolve_notation(notation)
     if not script_path:

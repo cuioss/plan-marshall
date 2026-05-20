@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Python module discovery command.
+"""Pyproject module discovery command.
 
 Discovers Python modules with metadata from pyprojectx project structure
 and file system analysis. Implements the discover_modules() contract
@@ -12,7 +12,7 @@ Data Sources:
         - pyproject.toml / setup.cfg for metadata (if present)
 
 Usage:
-    python3 _python_cmd_discover.py discover --root /path/to/project [--format json]
+    python3 _pyproject_cmd_discover.py discover --root /path/to/project [--format json]
 
 Output:
     JSON array of module objects conforming to module-discovery.md contract.
@@ -333,7 +333,7 @@ def _build_commands(module_name: str, relative_path: str, has_tests: bool) -> di
         relative_path: Path relative to project root.
         has_tests: Whether module has test files.
     """
-    skill = 'plan-marshall:build-python:python_build'
+    skill = 'plan-marshall:build-pyproject:pyproject_build'
     is_root = not relative_path or relative_path == '.'
     module_arg = '' if is_root else f' {module_name}'
 

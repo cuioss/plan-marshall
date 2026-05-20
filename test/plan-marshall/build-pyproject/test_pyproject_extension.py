@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Tests for plan-marshall extension.py (Python discovery).
+"""Tests for plan-marshall extension.py (pyproject discovery).
 
-Tests the Python domain extension including:
+Tests the pyproject domain extension including:
 - get_skill_domains() - Domain metadata
-- discover_modules() - Delegated to _python_cmd_discover.discover_python_modules()
+- discover_modules() - Delegated to _pyproject_cmd_discover.discover_python_modules()
 
-Note: The extension.py delegates to build-python/scripts/_python_cmd_discover.py
+Note: The extension.py delegates to build-pyproject/scripts/_pyproject_cmd_discover.py
 which discovers modules based on directory structure (test/ or tests/ subdirs),
 not pyprojectx alias detection.
 """
@@ -22,15 +22,15 @@ EXTENSION_FILE = (
 )
 
 
-def _load_python_extension():
-    """Load Python Extension class avoiding conflicts."""
-    spec = importlib.util.spec_from_file_location('python_extension', EXTENSION_FILE)
-    python_ext = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(python_ext)
-    return python_ext.Extension
+def _load_pyproject_extension():
+    """Load pyproject Extension class avoiding conflicts."""
+    spec = importlib.util.spec_from_file_location('pyproject_extension', EXTENSION_FILE)
+    pyproject_ext = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pyproject_ext)
+    return pyproject_ext.Extension
 
 
-Extension = _load_python_extension()
+Extension = _load_pyproject_extension()
 
 
 # =============================================================================
@@ -139,7 +139,7 @@ version = "1.0.0"
         assert 'quality-gate' in commands
 
         # Check command format
-        assert 'python3 .plan/execute-script.py plan-marshall:build-python:python_build run' in commands['verify']
+        assert 'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run' in commands['verify']
 
 
 def test_discover_modules_maps_only_existing_aliases():
