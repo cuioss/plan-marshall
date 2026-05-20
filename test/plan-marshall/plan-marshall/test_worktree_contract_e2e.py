@@ -57,15 +57,6 @@ if str(SCRIPTS_DIR) not in sys.path:
 import _invariants as inv  # noqa: E402
 
 _SYNC_PY = PROJECT_ROOT / '.claude' / 'skills' / 'sync-plugin-cache' / 'scripts' / 'sync.py'
-_PHASE_6_SKILL = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'SKILL.md'
-)
 
 
 # =============================================================================
@@ -348,50 +339,3 @@ def test_c_staleness_guard_trips_on_tracked_source_drift(tmp_path: Path) -> None
     )
 
 
-# =============================================================================
-# D. phase-6-finalize Step 6 done-title path routing
-# =============================================================================
-#
-# The deliverable replaced the hard-coded source-tree path with the
-# canonical executor notation. We assert the SKILL.md no longer
-# references the old path and DOES reference the new one.
-
-
-def test_d_phase_6_step_6_uses_executor_notation_for_done_title() -> None:
-    """phase-6-finalize Step 6 invokes set_terminal_title via executor notation.
-
-    The previous form ``python3 ~/.claude/plugins/cache/.../set_terminal_title.py``
-    referenced the source-tree layout that does not exist in the deployed
-    cache and silently failed with ``Errno 2``. The fix routes the call
-    through ``.plan/execute-script.py
-    plan-marshall:plan-marshall:set_terminal_title`` so the executor mapping
-    resolves the deployed cache path at generation time.
-    """
-    body = _PHASE_6_SKILL.read_text(encoding='utf-8')
-
-    canonical = (
-        'python3 .plan/execute-script.py plan-marshall:plan-marshall:set_terminal_title '
-        'done --plan-label'
-    )
-    assert canonical in body, (
-        f'Expected canonical executor notation for set_terminal_title in '
-        f'{_PHASE_6_SKILL.relative_to(PROJECT_ROOT)} but did not find it. '
-        f'Step 6 must route through .plan/execute-script.py, not a hard-coded '
-        f'source-tree path.'
-    )
-
-    # The defunct source-tree path MUST NOT appear in skill prose. The
-    # cache-relative form (``~/.claude/plugins/cache/...``) is still
-    # legitimate inside settings.json hook configuration written by
-    # /marshall-steward — we narrow the assertion to the source-tree
-    # ``marketplace/bundles/...`` shape which never resolved in the
-    # deployed cache.
-    forbidden = (
-        '~/.claude/plugins/cache/plan-marshall/marketplace/bundles/'
-        'plan-marshall/skills/plan-marshall/scripts/set_terminal_title.py'
-    )
-    assert forbidden not in body, (
-        f'Defunct source-tree path still present in '
-        f'{_PHASE_6_SKILL.relative_to(PROJECT_ROOT)}: {forbidden!r}. '
-        f'Replace with the canonical executor notation.'
-    )

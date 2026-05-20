@@ -714,8 +714,6 @@ Capture the following values:
 4. **Repository state** — branch via `git -C {main_checkout} branch --show-current`, porcelain via `git -C {main_checkout} status --porcelain`.
 5. **PR state + number** — via `ci pr view --plan-id {plan_id}` (preferred) or `ci pr view --project-dir {main_checkout}` (escape hatch). Treat error (no PR for branch) as `state=n/a, number=n/a`.
 6. **Solution outline Summary** — the 2-3 sentence Summary body that feeds the Goal block. Fetch via `manage-solution-outline read --plan-id {plan_id} --section summary` and extract the `content` field. On `section_not_found` or empty content, store the sentinel value `None`; the emission procedure substitutes the defensive placeholder `(no summary recorded)`.
-7. **Plan `short_description`** — the compact label used by Step 6's terminal `done` emission. Extract `plan.short_description` from `manage-status read --plan-id {plan_id}` (already fetched in item 1). Store the raw string, or `None` when the field is absent/empty. This value is captured **before** archive so it remains available after `status.json` is moved.
-
 See [standards/output-template.md#snapshot-procedure](standards/output-template.md#snapshot-procedure) for exact commands and field extraction.
 
 After the snapshot is captured, dispatch `default:archive-plan` normally (step 5 in the FOR body above) and capture its returned `archive_path` (step 6). Both the snapshot and `archive_path` flow into Step 4 "Render Final Output Template".
@@ -774,31 +772,6 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ```
 
 **Note**: `manage-logging` operates on log files, not the plan directory, so these calls remain valid after `default:archive-plan` has moved the plan state.
-
-### Step 6: Emit Done Terminal Title
-
-**This step ALWAYS runs** when a `short_description` was captured in the pre-archive snapshot — it is NOT configurable via the `steps` list.
-
-Emit a one-shot `✓ pm:done:{short_description}` OSC escape to the terminal so the session tab reflects plan completion. The emission is stateless: the OSC write sticks until the next terminal-title hook fires and overwrites it (the host platform's hook lifecycle owns that — see [`../plan-marshall/references/terminal-title.md`](../plan-marshall/references/terminal-title.md) for the underlying mechanism). No session state file, clearing hook, or TTL is required.
-
-**Why this runs AFTER `default:archive-plan`**: archive has already moved the live plan directory, so the normal cwd/status.json resolution chain would return `◯ claude`. The `--plan-label` argument bypasses that chain by accepting the label directly from the caller. The label value comes from item 7 of the pre-archive snapshot, captured while `status.json` was still live.
-
-**If `short_description` is `None` or empty**: skip this step (log at INFO and continue to return). A plan created before the `short_description` field existed, or one whose derivation produced an empty string, cannot produce a meaningful `pm:done:` label; in that case the title stays at whatever the last hook emitted (typically `◯ claude` via Stop).
-
-**If `short_description` is set**: invoke the terminal-title script via the canonical executor notation, passing the captured label. The executor mapping resolves the deployed cache path at generation time, so future bundle-version bumps flow through automatically and the invocation matches every other phase-6-finalize step:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall:set_terminal_title done --plan-label "{short_description}"
-```
-
-The user-side hook entries in `./.claude/settings.json` (written by `/marshall-steward`) are unaffected — they continue to invoke the script via absolute path because the host-platform hook runner does not load the marketplace executor; that absolute-path duplication is required by external constraint and `/marshall-steward` remains the single source of truth for it.
-
-**Advisory**: this step is best-effort. On any error (script missing, non-zero exit, `/dev/tty` unavailable), log a WARNING and continue. A missing terminal emission is cosmetic and MUST NOT block finalize from returning success — the plan has already archived, all state transitions are committed, and the user can still read the Step 4 output template in their scrollback:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Terminal done-title emission failed: {error}"
-```
 
 ---
 

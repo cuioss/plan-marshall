@@ -62,7 +62,7 @@ Router specification: how `runtime.target` in `marshal.json` is read and dispatc
 
 ## API Surface
 
-Thirteen operations, each invoked via the executor and returning TOON.
+Fourteen operations, each invoked via the executor and returning TOON.
 
 **Invocation pattern** (following the `tools-integration-ci` convention):
 ```bash
@@ -311,6 +311,89 @@ summary:
 
 **Claude:** Write `claude_pre_prompt.js` hook.
 **OpenCode:** No-op (no hook mechanism).
+
+### `session render-title`
+
+**Goal:** Render the current plan title in the terminal by composing a platform-specific icon with a writer-published body. Slim per-target reader: NO resolver chain.
+
+| Argument | Description |
+|----------|-------------|
+| _(none)_ | Operation takes no parameters. The reader resolves session and plan internally — see "Input Contract" below. |
+
+#### Input Contract (TOON)
+
+```toon
+operation: session render-title
+arguments: {}
+```
+
+The operation accepts no caller arguments. Resolution is fully internal:
+
+1. Read `$CLAUDE_CODE_SESSION_ID` from the platform-runtime session-capture surface (populated by `session capture`'s `SessionStart` hook on Claude).
+2. Resolve `session_id` → `plan_id` by reading `~/.cache/plan-marshall/sessions/{session_id}/active-plan` (the existing executor-managed session cache).
+3. Resolve `plan_id` → body by reading `.plan/local/plans/{plan_id}/title-body.txt` (the writer artifact published by `manage-status` — see Cross-Reference below).
+4. If `title-body.txt` is absent, this means there is no plan to render — no fallback, no derivation, return `no-op`.
+
+This is the **only** conditional the reader carries. There is no regex resolver, no cwd-walk plan discovery, no phase-enum mapping, no terminal-phase guard. The writer's "file absent → no plan to render" semantic is load-bearing and is the sole branch on the read path.
+
+#### Per-Target Implementation Contract
+
+| Target | Behavior |
+|--------|----------|
+| Claude | 5-step read + OSC emit (see below) |
+| OpenCode | No-op returning documented `reason` + `alternative`, matching the `session configure-display` no-op policy |
+
+**Claude (5-step read + OSC emit):**
+
+1. Read `$CLAUDE_CODE_SESSION_ID` from the environment. If unset → `no-op` (reason: `session capture` has not run; alternative: run `marshall-steward` to install the `SessionStart` hook).
+2. Read `~/.cache/plan-marshall/sessions/{session_id}/active-plan` to obtain `plan_id`. If absent → `no-op` (reason: no active plan registered for this session).
+3. Read `.plan/local/plans/{plan_id}/title-body.txt`. If absent → `no-op` (reason: no plan-title to render — writer has determined the plan is in a terminal/archived state or has not yet emitted its first body).
+4. Pick the platform-appropriate icon from the active-command state (Claude-Code-specific palette; lives entirely in `claude_runtime.py`, not in plan-marshall core).
+5. Emit the OSC sequence `\x1b]0;{icon} {body}\x07` to stdout.
+
+**OpenCode (no-op):**
+
+```toon
+status: no-op
+operation: session render-title
+reason: OpenCode has no plugin-driven terminal-title hook (issue anomalyco/opencode#8619)
+alternative: Use OpenCode's built-in TUI status surface for plan visibility
+```
+
+The no-op contract mirrors `session configure-display` exactly — returns `reason` and `alternative`, never `error`. The calling skill must continue.
+
+#### Cross-Reference: Writer Artifact (`title-body.txt`)
+
+The reader's sole input is `.plan/local/plans/{plan_id}/title-body.txt`, published by `manage-status` on every state mutation. Its lifecycle is:
+
+| Lifecycle Event | Effect on `title-body.txt` |
+|-----------------|----------------------------|
+| `manage-status create` | Created with `pm:{phase}` or `pm:{phase}:{short_description}` body |
+| `manage-status set-phase` | Overwritten with recomputed body |
+| `manage-status transition` | Overwritten with recomputed body |
+| `manage-status read` (cold-bootstrap, non-terminal plan, file absent) | Created from in-memory `status.json` |
+| `manage-status archive` | Deleted |
+| Plan reaches terminal phase (`complete`, `archived`) | Deleted |
+
+Body format: exactly `pm:{phase}` or `pm:{phase}:{short_description}`, single trailing `\n`. No platform-specific prefixes, icons, or escape sequences — those are the reader's responsibility, target-by-target.
+
+#### Non-Goals (explicit)
+
+The `session render-title` reader MUST NOT implement any of the following. These were defects in the legacy fused resolver+renderer and are eliminated structurally by the writer/reader inversion:
+
+- **No regex resolver.** No pattern matching against plan-id-shaped paths or worktree directories.
+- **No walk-up plan discovery.** No cwd-traversal to find the "nearest" `.plan/` directory.
+- **No phase-enum mapping.** The reader does not know which phases are terminal — that is the writer's responsibility, expressed as file absence.
+- **No terminal-phase guard.** The reader does not check `status.json` for terminal phases; absent `title-body.txt` is the only signal.
+
+#### Defect Classes Eliminated by the Inversion
+
+The writer/reader inversion structurally eliminates four defect classes that recurred across five plans in the legacy fused-resolver design:
+
+1. **Main-session/worktree mismatch** — reader can no longer pick up the wrong worktree's plan because the writer publishes per-plan, indexed by the session cache's `active-plan` mapping.
+2. **Cross-tab leak** — a fresh terminal tab reading another tab's `title-body.txt` is structurally impossible: the session cache scopes by `$CLAUDE_CODE_SESSION_ID`, and the cold-bootstrap branch in `manage-status read` self-heals tabs that opened after the last writer fire.
+3. **Archived-plan staleness** — archive deletes `title-body.txt`; the reader's "file absent → no-op" branch makes stale titles impossible by construction.
+4. **Phase-enum coupling** — the reader carries no phase enumeration. Adding a new phase or renaming an existing one cannot break the reader because the reader treats the body as an opaque string.
 
 ### `metrics capture`
 
@@ -651,7 +734,7 @@ Ask: "Would this operation work identically on both Claude and OpenCode?"
 ## Verification
 
 This cluster is complete when:
-1. API contract document exists and covers all 13 operations
+1. API contract document exists and covers all 14 operations
 2. TOON schemas defined for success, error, and no-op paths
 3. Router specification documented
 4. Boundary rules clear enough that a new skill author knows where to put things

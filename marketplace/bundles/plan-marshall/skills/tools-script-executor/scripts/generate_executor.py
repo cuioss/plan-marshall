@@ -37,10 +37,11 @@ Runtime Side-effects:
     The generated executor writes the resolved plan_id (from ``--plan-id`` or
     ``--audit-plan-id``) to the per-session active-plan cache at
     ``~/.cache/plan-marshall/sessions/{session_id}/active-plan`` on every
-    invocation carrying one of those flags. The cache feeds the terminal-title
-    hook (``set_terminal_title.py``) so the main orchestration tab (cwd = repo
-    root) renders ``pm:{phase}[:{short_description}]`` instead of falling
-    through to the active-command segment. The write is fire-and-forget — any
+    invocation carrying one of those flags. The cache feeds the per-target
+    terminal-title reader (cluster-01 ``session render-title``) so the main
+    orchestration tab (cwd = repo root) renders ``pm:{phase}[:{short_description}]``
+    instead of falling through to the active-command segment. The write is
+    fire-and-forget — any
     I/O error is silently swallowed and the executor's exit code, stdout, and
     stderr are unaffected. The helper (``_write_active_plan``) lives entirely
     in the template; no generator-time substitution is required.
