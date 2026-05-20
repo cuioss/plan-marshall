@@ -12,8 +12,10 @@ Two rules guard against the resolver-gap anti-pattern from driving lesson
   Honors ``<!-- doctor-ignore: resolver-gap -->`` exemption marker.
 
 - ``agent-glob-resolver-workaround`` (error): flags ``agents/*.md`` whose
-  YAML frontmatter ``tools:`` field includes ``Glob`` unless the agent body
-  contains a ``# resolver-glob-exempt: <justification>`` marker.
+  YAML frontmatter ``tools:`` field includes ``Glob`` unless the same
+  frontmatter declares ``forwards_tool_capabilities: true`` as a typed
+  boolean flag. The legacy ``# resolver-glob-exempt:`` body-marker
+  exemption has been removed in favor of the structured frontmatter flag.
 
 Tests exercise both scanners via direct import (Tier 2 — fast, isolated).
 """
@@ -41,6 +43,9 @@ _analyze_shared = _load_module('_analyze_shared', '_analyze_shared.py')
 check_resolver_gap = _analyze_markdown.check_resolver_gap
 check_agent_glob_resolver_workaround = _analyze_shared.check_agent_glob_resolver_workaround
 _frontmatter_declares_glob_tool = _analyze_shared._frontmatter_declares_glob_tool
+_frontmatter_declares_forwards_tool_capabilities = (
+    _analyze_shared._frontmatter_declares_forwards_tool_capabilities
+)
 
 
 # =============================================================================
@@ -181,8 +186,31 @@ def test_glob_in_inline_tools_without_exemption_flagged():
     assert len(findings) == 1
 
 
-def test_glob_in_inline_tools_with_exemption_not_flagged():
-    """Inline `tools: ..., Glob` with `# resolver-glob-exempt: <justification>` is exempt."""
+def test_glob_in_inline_tools_with_frontmatter_flag_not_flagged():
+    """Inline `tools: ..., Glob` with `forwards_tool_capabilities: true` in frontmatter is exempt."""
+    content = (
+        '---\n'
+        'name: my-agent\n'
+        'description: Test agent\n'
+        'tools: Read, Write, Glob\n'
+        'forwards_tool_capabilities: true\n'
+        '---\n'
+        '\n'
+        '# My Agent\n'
+        '\n'
+        'Body content.\n'
+    )
+    findings = check_agent_glob_resolver_workaround('/path/agents/my.md', content)
+    assert findings == []
+
+
+def test_glob_in_inline_tools_with_legacy_body_marker_still_flagged():
+    """Legacy body marker `# resolver-glob-exempt: ...` is no longer authoritative.
+
+    The body-comment marker exemption was removed in favor of the structured
+    frontmatter flag `forwards_tool_capabilities: true`. An agent that still
+    carries the legacy marker but lacks the frontmatter flag MUST be flagged.
+    """
     content = (
         '---\n'
         'name: my-agent\n'
@@ -195,6 +223,57 @@ def test_glob_in_inline_tools_with_exemption_not_flagged():
         '# resolver-glob-exempt: diagnostic-only agent — no resolver applies\n'
         '\n'
         'Body content.\n'
+    )
+    findings = check_agent_glob_resolver_workaround('/path/agents/my.md', content)
+    assert len(findings) == 1
+
+
+def test_frontmatter_flag_false_value_does_not_exempt():
+    """`forwards_tool_capabilities: false` does NOT suppress the finding."""
+    content = (
+        '---\n'
+        'name: my-agent\n'
+        'description: Test agent\n'
+        'tools: Read, Write, Glob\n'
+        'forwards_tool_capabilities: false\n'
+        '---\n'
+        '\n'
+        'Body.\n'
+    )
+    findings = check_agent_glob_resolver_workaround('/path/agents/my.md', content)
+    assert len(findings) == 1
+
+
+def test_frontmatter_flag_quoted_true_does_not_exempt():
+    """Quoted `"true"` is NOT the canonical YAML boolean and does NOT exempt."""
+    content = (
+        '---\n'
+        'name: my-agent\n'
+        'description: Test agent\n'
+        'tools: Read, Write, Glob\n'
+        'forwards_tool_capabilities: "true"\n'
+        '---\n'
+        '\n'
+        'Body.\n'
+    )
+    findings = check_agent_glob_resolver_workaround('/path/agents/my.md', content)
+    assert len(findings) == 1
+
+
+def test_glob_in_block_list_tools_with_frontmatter_flag_not_flagged():
+    """Block-list `tools` form combined with `forwards_tool_capabilities: true` is exempt."""
+    content = (
+        '---\n'
+        'name: my-agent\n'
+        'description: Test agent\n'
+        'tools:\n'
+        '  - Read\n'
+        '  - Write\n'
+        '  - Glob\n'
+        'forwards_tool_capabilities: true\n'
+        '---\n'
+        '\n'
+        'Body.\n'
     )
     findings = check_agent_glob_resolver_workaround('/path/agents/my.md', content)
     assert findings == []
@@ -214,9 +293,30 @@ def test_no_glob_in_tools_not_flagged():
     assert findings == []
 
 
-def test_empty_exemption_marker_does_not_suppress():
-    """`# resolver-glob-exempt:` with no justification does NOT suppress the finding."""
-    content = '---\nname: my-agent\ndescription: Test\ntools: Read, Glob\n---\n\n# resolver-glob-exempt:\n\nBody.\n'
+def test_frontmatter_flag_missing_does_not_suppress():
+    """Frontmatter without `forwards_tool_capabilities` key emits the finding."""
+    content = '---\nname: my-agent\ndescription: Test\ntools: Read, Glob\n---\n\nBody.\n'
+    findings = check_agent_glob_resolver_workaround('/path/agents/my.md', content)
+    assert len(findings) == 1
+
+
+def test_body_marker_outside_frontmatter_does_not_exempt():
+    """Standalone `# resolver-glob-exempt:` body marker is no longer scoped as an exemption.
+
+    Regression guard for the breaking refactor: even when the body contains
+    the legacy marker on its own line (no surrounding context), the analyzer
+    MUST NOT treat it as an exemption — the frontmatter flag is the sole
+    authoritative signal.
+    """
+    content = (
+        '---\n'
+        'name: my-agent\n'
+        'description: Test\n'
+        'tools: Read, Glob\n'
+        '---\n'
+        '\n'
+        '# resolver-glob-exempt: standalone marker\n'
+    )
     findings = check_agent_glob_resolver_workaround('/path/agents/my.md', content)
     assert len(findings) == 1
 
@@ -251,3 +351,27 @@ def test_frontmatter_no_glob():
     """Helper returns False when Glob absent."""
     fm = 'name: x\ntools: Read, Write'
     assert _frontmatter_declares_glob_tool(fm) is False
+
+
+def test_frontmatter_declares_forwards_tool_capabilities_true():
+    """Helper detects `forwards_tool_capabilities: true` as a top-level YAML flag."""
+    fm = 'name: x\ntools: Read, Glob\nforwards_tool_capabilities: true'
+    assert _frontmatter_declares_forwards_tool_capabilities(fm) is True
+
+
+def test_frontmatter_declares_forwards_tool_capabilities_false():
+    """Helper returns False when the flag is `false`."""
+    fm = 'name: x\ntools: Read, Glob\nforwards_tool_capabilities: false'
+    assert _frontmatter_declares_forwards_tool_capabilities(fm) is False
+
+
+def test_frontmatter_declares_forwards_tool_capabilities_missing():
+    """Helper returns False when the flag is absent."""
+    fm = 'name: x\ntools: Read, Glob'
+    assert _frontmatter_declares_forwards_tool_capabilities(fm) is False
+
+
+def test_frontmatter_declares_forwards_tool_capabilities_quoted_rejected():
+    """Helper rejects quoted `"true"` — only the lowercase YAML boolean is canonical."""
+    fm = 'name: x\ntools: Read, Glob\nforwards_tool_capabilities: "true"'
+    assert _frontmatter_declares_forwards_tool_capabilities(fm) is False

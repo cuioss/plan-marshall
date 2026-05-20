@@ -145,8 +145,8 @@ def analyze_component(component: dict, active_rules: frozenset[str] | None = Non
                     issues.extend(extract_issues_from_coverage_analysis(coverage, str(path), component_type))
 
                 # agent-glob-resolver-workaround: agents that declare Glob in
-                # tools without an explicit `# resolver-glob-exempt:` marker.
-                # Driving lesson 2026-04-27-18-005.
+                # tools without `forwards_tool_capabilities: true` in their
+                # YAML frontmatter. Driving lesson 2026-04-27-18-005.
                 if component_type == 'agent':
                     try:
                         agent_content = file_path.read_text(encoding='utf-8', errors='replace')
@@ -163,8 +163,8 @@ def analyze_component(component: dict, active_rules: frozenset[str] | None = Non
                                 'fixable': False,
                                 'description': finding.get(
                                     'message',
-                                    'Agent declares Glob without resolver exemption marker '
-                                    '(agent-glob-resolver-workaround)',
+                                    'Agent declares Glob without `forwards_tool_capabilities: true` '
+                                    'frontmatter flag (agent-glob-resolver-workaround)',
                                 ),
                                 'details': finding,
                             }

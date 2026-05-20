@@ -92,12 +92,29 @@ def _frontmatter_declares_glob_tool(frontmatter: str) -> bool:
     return False
 
 
+def _frontmatter_declares_forwards_tool_capabilities(frontmatter: str) -> bool:
+    """Return True if YAML frontmatter declares ``forwards_tool_capabilities: true``.
+
+    Matches a top-level key on its own line, case-sensitive value ``true``
+    (unquoted, as per YAML boolean convention). Quoted forms (``"true"`` or
+    ``'true'``) and ``True``/``yes`` are NOT accepted — the canonical form
+    enforced by plugin-doctor is the lowercase YAML boolean.
+    """
+    return bool(
+        re.search(
+            r'^forwards_tool_capabilities\s*:\s*true\s*$',
+            frontmatter,
+            re.MULTILINE,
+        )
+    )
+
+
 def check_agent_glob_resolver_workaround(file_path: str, content: str) -> list:
-    """Check agent-glob-resolver-workaround: agent declares Glob without exemption marker.
+    """Check agent-glob-resolver-workaround: agent declares Glob without exemption flag.
 
     Returns a list of finding dicts ``{line, message}``. Empty when the agent
-    does not declare ``Glob`` or declares it together with a non-empty
-    ``# resolver-glob-exempt: <justification>`` marker in the body.
+    does not declare ``Glob`` or declares it together with
+    ``forwards_tool_capabilities: true`` in the YAML frontmatter.
 
     Detection scope is enforced by the caller (only ``agents/*.md`` files);
     this function inspects content unconditionally so it can be unit tested
@@ -113,30 +130,18 @@ def check_agent_glob_resolver_workaround(file_path: str, content: str) -> list:
     if not _frontmatter_declares_glob_tool(frontmatter):
         return findings
 
-    # Body = content after the closing frontmatter delimiter
-    body_match = re.match(r'^---\s*\n.*?\n---\s*\n?(.*)$', content, re.DOTALL)
-    body = body_match.group(1) if body_match else ''
-
-    # Look for `# resolver-glob-exempt: <non-empty>` on a single line.
-    # Use [^\S\n] for "horizontal whitespace only" so `\s*` cannot eat newlines
-    # and let an empty marker on one line accidentally bind to body text on
-    # subsequent lines.
-    exempt_match = re.search(
-        r'^#[^\S\n]*resolver-glob-exempt[^\S\n]*:[^\S\n]*(\S[^\n]*)?$',
-        body,
-        re.MULTILINE,
-    )
-    if exempt_match and exempt_match.group(1):
-        justification = exempt_match.group(1).strip()
-        if justification:
-            return findings
+    # Exemption is declared in the frontmatter as a typed boolean flag
+    # `forwards_tool_capabilities: true`. No body scanning — the structural
+    # intent is captured by the typed field, not by free-form prose.
+    if _frontmatter_declares_forwards_tool_capabilities(frontmatter):
+        return findings
 
     findings.append(
         {
             'line': 1,  # Frontmatter declaration is the offense; anchor at top of file
             'message': (
-                'Agent declares `Glob` in tools without `# resolver-glob-exempt: <justification>` '
-                'marker in body (agent-glob-resolver-workaround)'
+                'Agent declares `Glob` in tools without `forwards_tool_capabilities: true` '
+                'in frontmatter (agent-glob-resolver-workaround)'
             ),
         }
     )
