@@ -219,6 +219,7 @@ Seven forward-looking lint rules.
 | `metadata-field-undefined` | Flag backtick snake_case tokens near metadata prose that reference field names not written by any `set-metadata --key` invocation | Heuristic proximity (±3 lines); builtin fields always exempt | Add `set-metadata --key <field>` write anywhere in the marketplace |
 | `resolution-branch-side-effect-undocumented` | Require `## Resolution` branches in standards to document at least one observable side effect | Allowlist-gated branch names; non-allowlist headings ignored | Add a log/metadata/status/artifact mention to the branch body |
 | `executor-path-in-production` | Detect `.plan/execute-script.py` in production Python scripts outside whitelisted categories | Whitelist covers generator, lint analyzers, permission tooling | Add path to whitelist in `_analyze_executor_path_in_production.py` |
+| `plan-path-in-scripts` | Detect code-literal `.plan/plans/` occurrences in marketplace Python scripts outside whitelisted categories — the canonical path is `.plan/local/plans/` (resolved via `tools-file-ops:file_ops.get_plan_dir`) | Whitelist covers only the analyzer's own self-referential occurrence; docstring-only hits (inside `"""..."""` / `'''...'''`) are structurally exempt | Add path to whitelist in `_analyze_plan_path_in_scripts.py` with a rationale comment, or route the call site through `get_plan_dir(plan_id)` |
 | `file-bloat-ack` | Allow explicitly acknowledged bloated files to suppress the `file-bloat` finding | Ack tag must match `^ack-[a-z0-9_-]+$`; bare `ack-` or generic values do not suppress | Add `quality.file-bloat: ack-<rationale>` to the file's YAML frontmatter |
 | `orphan-argparse-flag` | Flag argparse flags declared but never read in their handler | Conservative: `vars(args)`, `**kwargs`, or `getattr` usage suppresses the check | Read the flag in the handler, or remove the declaration |
 | `cmd-root-anchoring-missing` | Require `cmd_*` dispatcher functions to call `find_marketplace_root(...)` and declare `--marketplace-root` | Dispatcher-heuristic gated: only fires for scripts with `set_defaults(func=cmd_*)` | Add both the prelude call and the `--marketplace-root` flag to the subparser |
@@ -371,6 +372,30 @@ Seven forward-looking lint rules.
 **Recommended fix**: Remove the executor path literal. Replace with a direct module import or a documented interface contract.
 
 **Suppression mechanism**: Add the file to the whitelist inside `_analyze_executor_path_in_production.py` with a comment explaining the rationale.
+
+---
+
+### plan-path-in-scripts
+
+**Rule ID**: `plan-path-in-scripts`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_plan_path_in_scripts.py`
+
+**Scope**: `marketplace/bundles/**/scripts/**/*.py`.
+
+**Intent**: Production Python scripts must not embed the `.plan/plans/` literal path. The canonical plan-directory helper is `get_plan_dir(plan_id)` from `tools-file-ops:file_ops`, which resolves to `<repo>/.plan/local/plans/{plan_id}`. Any script that joins `plans/{plan_id}` against `cwd/.plan` directly resolves to the wrong path and produces a "ghost" `.plan/plans/{plan_id}/` tree at the repo root on every invocation. The originating failure mode is documented under the ghost-plan-dir bug, where two CI-completion scripts (`ci_complete_precondition.py` and `manage_ci_artifacts.py`) shipped hand-rolled `_resolve_plan_base_dir()` helpers that drifted from the canonical layout.
+
+**Whitelist categories** (path-component-anchored, not substring):
+
+- `_analyze_plan_path_in_scripts.py` — the analyzer's own file, which contains the marker literal as its detection target (self-referential).
+
+**Docstring exemption**: The scanner deliberately ignores occurrences that fall entirely inside a `"""..."""` or `'''...'''` block. Many legacy docstring examples still cite the shorter shorthand; sweeping those is out of scope for this rule. Only code-literal hits in module-level or function-body source produce findings.
+
+**Finding categories**: `production_script` or `test_assertion` (test files categorised separately by directory or `test_*` filename heuristic).
+
+**Recommended fix**: Replace the hand-rolled resolver with `from file_ops import get_plan_dir` and use `get_plan_dir(plan_id)` directly. The helper returns `<repo>/.plan/local/plans/{plan_id}` and is the single source of truth for plan-directory resolution.
+
+**Suppression mechanism**: Add the file to the whitelist inside `_analyze_plan_path_in_scripts.py` with a comment explaining the rationale. Suppression should be rare; the canonical alternative (`get_plan_dir`) covers nearly every legitimate use case.
 
 ---
 

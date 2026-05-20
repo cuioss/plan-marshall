@@ -4,7 +4,7 @@
 
 Backs the ``ci-verify`` finalize step from lesson-2026-05-18-16-001
 deliverable 7. Persists per-job CI logs plus a ``manifest.toon`` under
-``.plan/plans/{plan_id}/artifacts/ci-runs/{run_id}/`` so retrospectives
+``.plan/local/plans/{plan_id}/artifacts/ci-runs/{run_id}/`` so retrospectives
 that run after GitHub's 90-day log retention window can still consult
 the evidence.
 
@@ -24,7 +24,7 @@ calls in this script).
 
 Storage layout (canonical):
 
-    .plan/plans/{plan_id}/artifacts/ci-runs/{run_id}/
+    .plan/local/plans/{plan_id}/artifacts/ci-runs/{run_id}/
         manifest.toon
         {job_name}.log
         ...
@@ -38,12 +38,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from file_ops import get_base_dir, get_plan_dir  # type: ignore[import-not-found]
 from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 
 # ---------------------------------------------------------------------------
@@ -77,27 +77,29 @@ def _safe_job_filename(job_name: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_plan_base_dir() -> Path:
-    """Resolve the on-disk plan base directory.
+def _relative_anchor() -> Path:
+    """Return the anchor used to express artifact paths as repo-relative.
 
-    Honours ``PLAN_BASE_DIR`` (used by tests). Otherwise walks up from
-    the current working directory to find a ``.plan`` directory — the
-    same pattern other marketplace scripts use.
+    Resolves to the parent of ``get_base_dir()`` — i.e. the ``.plan``
+    directory when ``get_base_dir()`` is the canonical ``.plan/local``
+    tree, or the parent of ``PLAN_BASE_DIR`` in fixture mode. Used solely
+    for the ``.relative_to`` calls in the persist return payload; never
+    used to construct on-disk paths (those go through ``get_plan_dir``).
     """
-    override = os.environ.get('PLAN_BASE_DIR')
-    if override:
-        return Path(override)
-    cwd = Path.cwd()
-    for candidate in (cwd, *cwd.parents):
-        executor = candidate / '.plan' / 'execute-script.py'
-        if executor.is_file():
-            return candidate / '.plan'
-    return cwd / '.plan'
+    return get_base_dir().parent
 
 
 def _run_dir(plan_id: str, run_id: str) -> Path:
-    """Return the absolute path of the per-run artifact directory."""
-    return _resolve_plan_base_dir() / 'plans' / plan_id / _ARTIFACTS_SUBDIR / run_id
+    """Return the absolute path of the per-run artifact directory.
+
+    Resolved via the canonical ``file_ops.get_plan_dir`` helper, so
+    artifacts land under ``<repo>/.plan/local/plans/{plan_id}/...`` in
+    production and under the fixture tree in tests. The previous
+    ``_resolve_plan_base_dir`` helper resolved relative to the agent cwd
+    when ``PLAN_BASE_DIR`` was unset and produced a ghost ``.plan/plans/``
+    tree — see the fix-ghost-plan-dir lesson.
+    """
+    return get_plan_dir(plan_id) / _ARTIFACTS_SUBDIR / run_id
 
 
 def _manifest_path(plan_id: str, run_id: str) -> Path:
@@ -105,7 +107,7 @@ def _manifest_path(plan_id: str, run_id: str) -> Path:
 
 
 def _runs_root(plan_id: str) -> Path:
-    return _resolve_plan_base_dir() / 'plans' / plan_id / _ARTIFACTS_SUBDIR
+    return get_plan_dir(plan_id) / _ARTIFACTS_SUBDIR
 
 
 # ---------------------------------------------------------------------------
@@ -234,12 +236,12 @@ def persist(
             'status': 'success',
             'plan_id': plan_id,
             'run_id': run_id,
-            'run_dir': str(run_dir.relative_to(_resolve_plan_base_dir().parent))
+            'run_dir': str(run_dir.relative_to(_relative_anchor()))
             if run_dir.is_absolute()
             else str(run_dir),
             'already_persisted': True,
             'job_count': len(existing_jobs),
-            'manifest_path': str(manifest_path.relative_to(_resolve_plan_base_dir().parent))
+            'manifest_path': str(manifest_path.relative_to(_relative_anchor()))
             if manifest_path.is_absolute()
             else str(manifest_path),
             'log_paths': existing_log_paths,
@@ -262,7 +264,7 @@ def persist(
             content = f'[fetch-failed] {exc}\n'
         log_target.write_text(content or '', encoding='utf-8')
         relative_log = (
-            log_target.relative_to(_resolve_plan_base_dir().parent)
+            log_target.relative_to(_relative_anchor())
             if log_target.is_absolute()
             else log_target
         )
@@ -285,12 +287,12 @@ def persist(
         'status': 'success',
         'plan_id': plan_id,
         'run_id': run_id,
-        'run_dir': str(run_dir.relative_to(_resolve_plan_base_dir().parent))
+        'run_dir': str(run_dir.relative_to(_relative_anchor()))
         if run_dir.is_absolute()
         else str(run_dir),
         'already_persisted': False,
         'job_count': len(jobs),
-        'manifest_path': str(manifest_path.relative_to(_resolve_plan_base_dir().parent))
+        'manifest_path': str(manifest_path.relative_to(_relative_anchor()))
         if manifest_path.is_absolute()
         else str(manifest_path),
         'log_paths': sorted(log_paths.values()),
