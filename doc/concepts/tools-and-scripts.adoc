@@ -53,7 +53,7 @@ Skill authors get a uniform API to compose against (build skills, triage workflo
 |===
 | Skill | Target | Role
 
-| link:../../marketplace/bundles/plan-marshall/skills/tools-integration-ci/SKILL.md[`tools-integration-ci`] | GitHub + GitLab | Unified CI abstraction. One script per provider; config stores the full provider-specific command. Consumers call `ci pr view`, `ci pr merge`, `ci ci status`, … and the abstraction routes to `gh` or `glab` per project config. **Direct `gh`/`glab` calls are forbidden by `dev-general-practices`** — every CI operation goes here.
+| link:../../marketplace/bundles/plan-marshall/skills/tools-integration-ci/SKILL.md[`tools-integration-ci`] | GitHub + GitLab | Unified CI abstraction. One script per provider; config stores the full provider-specific command. Consumers call `ci pr view`, `ci pr merge`, `ci ci status`, … and the abstraction routes to `gh` or `glab` per project config. **Direct `gh`/`glab` calls are forbidden by `dev-agent-behavior-rules`** — every CI operation goes here.
 
 | link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-github/SKILL.md[`workflow-integration-github`] | GitHub | GitHub-specific PR review-comment producer for the findings pipeline. Fetches PR review comments, pre-filters via `comment-patterns.json`, writes findings via `manage-findings add`. Consumer is the phase-6-finalize `automated-review` step.
 

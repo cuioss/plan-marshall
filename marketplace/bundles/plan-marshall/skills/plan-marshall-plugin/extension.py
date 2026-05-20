@@ -52,8 +52,8 @@ class Extension(ExtensionBase):
                 'core': {
                     'defaults': [
                         {
-                            'skill': 'plan-marshall:dev-general-practices',
-                            'description': 'Foundational development practices (user interaction, tool usage, research, dependency management)',
+                            'skill': 'plan-marshall:dev-agent-behavior-rules',
+                            'description': 'Foundational agent behavior rules (user interaction, tool usage, research, dependency management)',
                         },
                     ],
                     'optionals': [],

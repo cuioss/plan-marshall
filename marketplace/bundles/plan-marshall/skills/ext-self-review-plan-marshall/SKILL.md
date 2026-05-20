@@ -15,7 +15,7 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 
 **Prohibited actions:**
 - Do not modify any source files; the helper is read-only against the worktree
-- Do not invoke `git` without `git -C {project_dir}` (per dev-general-practices)
+- Do not invoke `git` without `git -C {project_dir}` (per dev-agent-behavior-rules)
 - Do not write to `/tmp/` or any path outside `.plan/temp/` when staging intermediate state (lesson `2026-04-27-23-001`)
 
 **Constraints:**

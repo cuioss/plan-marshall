@@ -17,7 +17,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 │  │   ═════════════════════                                              │  │
 │  │   • Loaded by agent (Step 0)                                         │  │
 │  │   • Source: skill_domains.system.defaults                            │  │
-│  │   • Example: plan-marshall:dev-general-practices                 │  │
+│  │   • Example: plan-marshall:dev-agent-behavior-rules                 │  │
 │  │   • Applies to ALL tasks regardless of domain                        │  │
 │  │                                                                      │  │
 │  │   ─────────────────────────────────────────────────────────────────  │  │
@@ -149,7 +149,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 │  │   ┌────────────────────────────────────────────────────────────┐    │  │
 │  │   │  Step 0: Load System Skills (Tier 1)                       │    │  │
 │  │   │                                                            │    │  │
-│  │   │  Skill: plan-marshall:dev-general-practices            │    │  │
+│  │   │  Skill: plan-marshall:dev-agent-behavior-rules            │    │  │
 │  │   │                                                            │    │  │
 │  │   │  • Always loaded                                           │    │  │
 │  │   │  • Agent's skills: field in frontmatter                    │    │  │

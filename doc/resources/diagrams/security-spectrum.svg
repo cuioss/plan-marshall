@@ -56,7 +56,7 @@
 
   <text x="500" y="225" class="label-bold">plan-marshall</text>
   <text x="500" y="245" class="col-sub">script-executor proxy +</text>
-  <text x="500" y="261" class="col-sub">dev-general-practices hard rules</text>
+  <text x="500" y="261" class="col-sub">dev-agent-behavior-rules hard rules</text>
 
   <text x="500" y="365" class="col-sub">blast radius</text>
   <text x="500" y="382" class="item">BOUNDED</text>
@@ -82,6 +82,6 @@
   <text x="500" y="60"  class="col-sub">prompt rate ≈ YOLO,   safety properties ≈ accept-edits</text>
 
   <!-- ============= Footer caveat ============= -->
-  <text x="500" y="520" class="col-sub">Caveat: dev-general-practices is skill-loaded guidance, not kernel enforcement. The LLM CAN ignore it; the narrow allow-list bounds the damage when it does.</text>
+  <text x="500" y="520" class="col-sub">Caveat: dev-agent-behavior-rules is skill-loaded guidance, not kernel enforcement. The LLM CAN ignore it; the narrow allow-list bounds the damage when it does.</text>
 
 </svg>

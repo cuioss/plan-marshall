@@ -1,7 +1,7 @@
 ---
 name: execution-context
 description: |
-  Generic dispatcher for every plan-marshall Task: invocation. Loads plan-marshall:dev-general-practices and any caller-specified skills, then reads and executes the workflow doc (or inline instructions) named in the prompt body. Required prompt-body fields: name, plan_id, skills[], exactly one of workflow/instructions, WORKTREE. Model and effort pinned by which execution-context-{level} variant is dispatched.
+  Generic dispatcher for every plan-marshall Task: invocation. Loads plan-marshall:dev-agent-behavior-rules and any caller-specified skills, then reads and executes the workflow doc (or inline instructions) named in the prompt body. Required prompt-body fields: name, plan_id, skills[], exactly one of workflow/instructions, WORKTREE. Model and effort pinned by which execution-context-{level} variant is dispatched.
 
   Examples:
   - Input: name=commit-push, plan_id=EXAMPLE-PLAN, skills=[workflow-integration-git], workflow=plan-marshall:phase-6-finalize/standards/commit-push.md, WORKTREE=.plan/local/worktrees/EXAMPLE-PLAN
@@ -21,7 +21,7 @@ Single generic dispatcher for every `Task:` invocation in the plan-marshall work
 |-------|:--------:|-------------|
 | `name` | Yes | Human label for logging, `mark-step-done`, metrics. Used in `[STATUS] (plan-marshall:execution-context.{name})` lines. |
 | `plan_id` | Yes | Plan identifier. Sentinel `none` is permitted for free-standing dispatches outside any plan, but every plan-bound dispatch MUST pass the real id. Every script call inside this envelope forwards `--plan-id {plan_id}`. |
-| `skills[]` | Yes | Skill notations to load after `dev-general-practices`, in order. MAY be empty `[]`. `plan-marshall:dev-general-practices` MUST NOT appear in this list — it is loaded implicitly. |
+| `skills[]` | Yes | Skill notations to load after `dev-agent-behavior-rules`, in order. MAY be empty `[]`. `plan-marshall:dev-agent-behavior-rules` MUST NOT appear in this list — it is loaded implicitly. |
 | `workflow` | Conditional | Bundle-prefixed notation for the workflow doc to follow (e.g., `plan-marshall:plan-marshall/workflow/triage.md` or `plan-marshall:phase-1-init/SKILL.md`). Implementor lives under `workflow/` or SKILL.md per `ext-point-execution-context-workflow`. **Exactly one** of `workflow` or `instructions` must be present. |
 | `instructions` | Conditional | Inline imperative description of the task. Treated as the workflow content verbatim. **Exactly one** of `workflow` or `instructions` must be present. |
 | `WORKTREE` | Yes | Repo-relative working-directory path — the active worktree path when a worktree is in use, or the literal `.` for the main checkout. NEVER absolute. The orchestrator resolved this once; this agent uses it verbatim for every `git -C {WORKTREE} …` and as the root for every Edit/Write/Read. No internal re-resolution. |
@@ -31,7 +31,7 @@ Model and effort are NOT prompt-body fields. They are pinned by the variant file
 
 ## Enforcement
 
-The hard rules from `plan-marshall:dev-general-practices` (Workflow Discipline: one Bash command per call, no shell constructs, `.plan/` access only through manage-* scripts, no direct `gh`/`glab`, no hard-coded build commands, no multi-line content through the shell, etc.) apply unconditionally to every action this agent takes. They are loaded by Step 2 below and are NOT re-stated here — see that skill for the canonical list. Two dispatcher-specific constraints layered on top:
+The hard rules from `plan-marshall:dev-agent-behavior-rules` (Workflow Discipline: one Bash command per call, no shell constructs, `.plan/` access only through manage-* scripts, no direct `gh`/`glab`, no hard-coded build commands, no multi-line content through the shell, etc.) apply unconditionally to every action this agent takes. They are loaded by Step 2 below and are NOT re-stated here — see that skill for the canonical list. Two dispatcher-specific constraints layered on top:
 
 - **No raw `Task:` spawn.** Every nested `Task:` dispatch MUST target `plan-marshall:execution-context` (canonical inherit) or `plan-marshall:execution-context-{level}` (variant) and carry the same five-field prompt body (`name`, `plan_id`, `skills[]`, `workflow`/`instructions`, `WORKTREE`). Banned: `Task: general-purpose`, raw `Task: <any-other-agent>`, host built-in plan-mode tools.
 - **`WORKTREE` is authoritative.** Bind every Edit/Write/Read tool call against the `WORKTREE` value verbatim; use `git -C {WORKTREE} <subcommand>` for every git call. Do NOT re-resolve via `manage-status get-worktree-path` — the orchestrator did that once before dispatch.
@@ -60,12 +60,12 @@ missing_field: "<field>"
 ## Step 2: Load Foundational Practices (IMPLICIT)
 
 ```
-Skill: plan-marshall:dev-general-practices
+Skill: plan-marshall:dev-agent-behavior-rules
 ```
 
 **Constraints:**
-- Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline.
-- This load is unconditional and is NOT named in the caller's `skills[]` list. If a caller passes `plan-marshall:dev-general-practices` inside `skills[]`, ignore the duplicate — do not load it twice.
+- Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline.
+- This load is unconditional and is NOT named in the caller's `skills[]` list. If a caller passes `plan-marshall:dev-agent-behavior-rules` inside `skills[]`, ignore the duplicate — do not load it twice.
 
 ## Step 3: Load Caller-Specified Skills
 

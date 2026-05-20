@@ -5,7 +5,7 @@
      role="img" aria-labelledby="title desc"
      font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
   <title id="title">Dispatch walkthrough — the eight-step lifecycle of one execution-context dispatch</title>
-  <desc  id="desc">Sequence diagram of one execution-context dispatch. The plan-marshall orchestrator first resolves the level via manage-config (effort resolve-target), then dispatches Task: execution-context-{level} with a prompt body. The subagent loads dev-general-practices plus caller-named skills, reads the workflow doc, executes it inside one envelope, and returns a TOON record. The orchestrator records the outcome via manage-status mark-step-done. The dispatch is synchronous; the orchestrator is suspended on the Task call for the duration of the subagent's execution.</desc>
+  <desc  id="desc">Sequence diagram of one execution-context dispatch. The plan-marshall orchestrator first resolves the level via manage-config (effort resolve-target), then dispatches Task: execution-context-{level} with a prompt body. The subagent loads dev-agent-behavior-rules plus caller-named skills, reads the workflow doc, executes it inside one envelope, and returns a TOON record. The orchestrator records the outcome via manage-status mark-step-done. The dispatch is synchronous; the orchestrator is suspended on the Task call for the duration of the subagent's execution.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
@@ -84,7 +84,7 @@
   <text x="355" y="257" class="arrow-lbl">Step 5 — Task: execution-context-{level} with prompt body</text>
 
   <!-- Step 6 — subagent runs inside the envelope (annotations on the activation bar) -->
-  <text x="600" y="295" class="arrow-lbl">Step 6a — load dev-general-practices (implicit)</text>
+  <text x="600" y="295" class="arrow-lbl">Step 6a — load dev-agent-behavior-rules (implicit)</text>
   <text x="600" y="310" class="arrow-lbl">Step 6b — load each skills[] entry in order</text>
   <text x="600" y="325" class="arrow-lbl">Step 6c — Read workflow doc</text>
   <text x="600" y="340" class="arrow-lbl">Step 6d — execute the workflow</text>

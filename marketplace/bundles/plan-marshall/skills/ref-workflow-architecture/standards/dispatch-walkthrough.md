@@ -10,7 +10,7 @@ Every dispatched phase or step follows the same shape:
 2. **Orchestrator: resolve the level** via `python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort resolve-target --role <role_key>`. Returns the variant target name (`execution-context-{level}` or canonical `execution-context` for `inherit`).
 3. **Orchestrator: construct prompt body** — five required fields (`name`, `plan_id`, `skills[]`, exactly one of `workflow`/`instructions`, `WORKTREE`) plus any workflow-specific runtime inputs.
 4. **Orchestrator: dispatch** — `Task: plan-marshall:execution-context-{level}` with the prompt body.
-5. **Subagent: load skills + read workflow** — `dev-general-practices` first (implicit), then each `skills[]` entry in order, then `Read` the resolved workflow path.
+5. **Subagent: load skills + read workflow** — `dev-agent-behavior-rules` first (implicit), then each `skills[]` entry in order, then `Read` the resolved workflow path.
 6. **Subagent: execute the workflow** — runtime inputs substitute into the doc's `{placeholder}` tokens.
 7. **Subagent: return TOON** — minimum shape `status` + `display_detail`; workflow-specific fields per its return contract.
 8. **Orchestrator: record outcome** via `manage-status mark-step-done` and accumulate usage via `manage-metrics accumulate-agent-usage`.
@@ -77,7 +77,7 @@ Task: plan-marshall:execution-context-high
 
 **Step 6 (subagent body):**
 
-1. `Skill: plan-marshall:dev-general-practices` (implicit)
+1. `Skill: plan-marshall:dev-agent-behavior-rules` (implicit)
 2. `Skill: plan-marshall:manage-architecture`
 3. `Skill: plan-marshall:manage-references`
 4. `Skill: plan-marshall:manage-plan-documents`
@@ -174,7 +174,7 @@ WORKTREE: .plan/local/worktrees/feature-jwt-auth
 
 **Step 6 (subagent body — smart-grouping algorithm):**
 
-1. `Skill: plan-marshall:dev-general-practices` (implicit)
+1. `Skill: plan-marshall:dev-agent-behavior-rules` (implicit)
 2. `Skill: plan-marshall:manage-findings`
 3. `Read plan-marshall:plan-marshall/workflow/triage.md`
 4. **Fetch findings from the store** (NOT from the prompt body):
@@ -275,7 +275,7 @@ The orchestrator issues all three `Task: plan-marshall:execution-context-medium`
 
 **Step 6 (per subagent — same workflow, different `module` input):**
 
-1. `Skill: plan-marshall:dev-general-practices` (implicit)
+1. `Skill: plan-marshall:dev-agent-behavior-rules` (implicit)
 2. `Skill: plan-marshall:manage-architecture`
 3. `Read plan-marshall:plan-marshall/workflow/enrich-module.md`
 4. Execute the enrichment workflow for the named module — the original `manage-architecture` Steps 5–8 (responsibility / key_packages / summary) run *inside* this subagent, in order, against the single module the prompt named. Intra-module ordering is preserved because the workflow doc declares it.

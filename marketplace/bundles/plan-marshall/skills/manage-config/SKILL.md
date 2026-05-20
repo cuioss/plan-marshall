@@ -255,8 +255,8 @@ The defaults template contains only `system` domain. Technical domains (java, ja
 {
   "skill_domains": {
     "system": {
-      "defaults": ["plan-marshall:dev-general-practices"],
-      "optionals": ["plan-marshall:dev-general-practices"],
+      "defaults": ["plan-marshall:dev-agent-behavior-rules"],
+      "optionals": ["plan-marshall:dev-agent-behavior-rules"],
       "execute_task_skills": {
         "implementation": "plan-marshall:execute-task",
         "module_testing": "plan-marshall:execute-task",
@@ -318,7 +318,7 @@ The `system` domain contains execute-task skills and base skills applied to all 
 
 | Field | Purpose |
 |-------|---------|
-| `defaults` | Base skills loaded for all tasks (`plan-marshall:dev-general-practices`) |
+| `defaults` | Base skills loaded for all tasks (`plan-marshall:dev-agent-behavior-rules`) |
 | `optionals` | Optional base skills available for selection |
 | `execute_task_skills` | Maps profiles to execute-task skills (convention: profile X -> `plan-marshall:execute-task-X`) |
 

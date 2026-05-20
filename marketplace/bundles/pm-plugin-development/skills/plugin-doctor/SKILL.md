@@ -102,7 +102,7 @@ All 9 workflows follow the same pattern:
 
    Load these skills before proceeding:
    ```
-   Skill: plan-marshall:dev-general-practices
+   Skill: plan-marshall:dev-agent-behavior-rules
    Skill: pm-plugin-development:plugin-architecture
    Skill: pm-plugin-development:tools-marketplace-inventory
    ```

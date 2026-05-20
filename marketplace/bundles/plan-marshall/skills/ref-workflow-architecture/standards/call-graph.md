@@ -368,7 +368,7 @@ The phase-scoped resolver bubbles every dispatch up from the caller phase's sub-
 │                                                          calling phase's      │
 │                                                          default — no --role) │
 │                                                                               │
-│   any phase loading dev-general-practices         ═══►  [research]            │
+│   any phase loading dev-agent-behavior-rules         ═══►  [research]            │
 │   (when external research is needed; ad-hoc)            (resolves under the   │
 │   /research outside any plan                            calling phase's       │
 │                                                         `research` sub-key,   │

@@ -52,7 +52,7 @@ Not registered in plugin.json (script-only extension discovered by the Extension
 
 ## Dependencies
 
-- **Inter-Bundle Dependencies**: `plan-marshall` — workflow skills use manage-tasks, manage-lessons, manage-logging, manage-config, and dev-general-practices
+- **Inter-Bundle Dependencies**: `plan-marshall` — workflow skills use manage-tasks, manage-lessons, manage-logging, manage-config, and dev-agent-behavior-rules
 - **External Dependencies**: None - works with filesystem access only
 
 ## Standards Enforced

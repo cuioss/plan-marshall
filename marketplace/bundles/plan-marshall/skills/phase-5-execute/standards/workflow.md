@@ -89,7 +89,7 @@ After all steps of a task are complete and verification has passed, but **before
 git -C {worktree_path} rev-parse HEAD
 ```
 
-(Or `git -C . rev-parse HEAD` when no worktree is active — the `cd && git` compound is prohibited; see `dev-general-practices` Hard Rules.)
+(Or `git -C . rev-parse HEAD` when no worktree is active — the `cd && git` compound is prohibited; see `dev-agent-behavior-rules` Hard Rules.)
 
 **Diff computation**: At task completion, compute the name-status diff from the recorded baseline to the current HEAD:
 

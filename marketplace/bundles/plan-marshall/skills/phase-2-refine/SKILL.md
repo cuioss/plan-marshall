@@ -14,7 +14,7 @@ For detailed step-by-step procedures, see `standards/refine-workflow-detail.md`.
 ## Foundational Practices
 
 ```
-Skill: plan-marshall:dev-general-practices
+Skill: plan-marshall:dev-agent-behavior-rules
 ```
 
 ## Enforcement
@@ -36,7 +36,7 @@ Skill: plan-marshall:dev-general-practices
 Every other path is forbidden. The orchestrator's post-dispatch main-checkout assertion (see `plan-marshall:plan-marshall:planning.md` § "2-Refine Phase" → "Post-dispatch contract assertion") detects violations structurally; the plugin-doctor `REFINE_CONTRACT_VIOLATION` analyzer detects them at edit time.
 
 **Constraints:**
-- Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
+- Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
 
 ## cwd for `.plan/execute-script.py` calls
 

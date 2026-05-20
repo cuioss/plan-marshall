@@ -13,7 +13,7 @@ user-invocable: false
 ## Step 1: Load Foundational Practices
 
 ```
-Skill: plan-marshall:dev-general-practices
+Skill: plan-marshall:dev-agent-behavior-rules
 ```
 
 ## Scripts

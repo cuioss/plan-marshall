@@ -51,8 +51,8 @@ JSON structure and field definitions for project configuration.
   },
   "skill_domains": {
     "system": {
-      "defaults": ["plan-marshall:dev-general-practices"],
-      "optionals": ["plan-marshall:dev-general-practices"],
+      "defaults": ["plan-marshall:dev-agent-behavior-rules"],
+      "optionals": ["plan-marshall:dev-agent-behavior-rules"],
       "execute_task_skills": {
         "implementation": "plan-marshall:execute-task",
         "module_testing": "plan-marshall:execute-task",
