@@ -31,7 +31,7 @@ import importlib.util  # noqa: E402
 
 
 def _load_pyproject_build():
-    """Load python_build module with minimal mocking.
+    """Load pyproject_build module with minimal mocking.
 
     Only mocks plan_logging and run_config which are provided by the executor
     at runtime but not available in test PYTHONPATH.

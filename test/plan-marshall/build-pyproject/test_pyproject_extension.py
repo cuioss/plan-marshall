@@ -3,7 +3,7 @@
 
 Tests the pyproject domain extension including:
 - get_skill_domains() - Domain metadata
-- discover_modules() - Delegated to _pyproject_cmd_discover.discover_pyproject_modules()
+- discover_modules() - Delegated to _pyproject_cmd_discover.discover_python_modules()
 
 Note: The extension.py delegates to build-pyproject/scripts/_pyproject_cmd_discover.py
 which discovers modules based on directory structure (test/ or tests/ subdirs),
