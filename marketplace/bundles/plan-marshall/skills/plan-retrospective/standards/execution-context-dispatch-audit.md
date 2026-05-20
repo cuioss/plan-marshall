@@ -8,13 +8,13 @@ Verify that every execution-context spawn observed in a completed plan's `logs/w
 
 The plan-marshall workflow forbids unconstrained generic subagents inside phase work because subagent enforcement rules propagate through the agent definition rather than through the caller's prompt. A `Task: general-purpose` spawn loses the plan-marshall hard rules — `.plan/`-via-scripts-only, one-command-per-Bash, no-direct-`gh`/`glab`, structured-queries-first, build-via-architecture-resolve — that the canonical `execution-context-{level}` envelope carries by construction.
 
-This rule has two authoritative anchors in [`../../dev-general-practices/standards/general-development-rules.md`](../../dev-general-practices/standards/general-development-rules.md), quoted verbatim here so report consumers see the rule provenance:
+This rule has two authoritative anchors in [`../../dev-general-practices/standards/agent-behavior-rules.md`](../../dev-general-practices/standards/agent-behavior-rules.md), quoted verbatim here so report consumers see the rule provenance:
 
-> **Line 196** (Workflow Discipline → Hard Rules):
+> § "Workflow Discipline → Hard Rules" (Unconstrained generic subagents):
 >
 > > **No unconstrained generic subagents inside plan-marshall phase work** — Never spawn an unconstrained generic subagent (e.g. `Task: general-purpose`) for any work inside a phase (1-init through 6-finalize). Use `plan-marshall:execution-context-{level}` with a `workflow:` notation pointing at the workflow doc, or inline main-context execution. A generic subagent has no plan-marshall enforcement context, inherits broad tool access, and will violate workflow hard rules. Subagent rules propagate through the agent definition, not through the caller's prompt. (Lesson: `2026-04-24-12-001`.)
 
-> **Line 241** (Quick Reference → Decision Matrix):
+> § "Quick Reference → Decision Matrix":
 >
 > > | About to spawn an unconstrained generic subagent for phase work | Use `plan-marshall:execution-context-{level}` with a `workflow:` notation, or inline main-context execution |
 
@@ -114,7 +114,7 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
 
 ## Cross-references
 
-- [`../../dev-general-practices/standards/general-development-rules.md`](../../dev-general-practices/standards/general-development-rules.md) **lines 196 and 241** — the authoritative rule prohibiting unconstrained generic subagents inside plan-marshall phase work, and the Quick Reference decision-matrix row that directs callers to `plan-marshall:execution-context-{level}` instead.
+- [`../../dev-general-practices/standards/agent-behavior-rules.md`](../../dev-general-practices/standards/agent-behavior-rules.md) § "Unconstrained generic subagents" and "Quick Reference decision-matrix" — the authoritative rule prohibiting unconstrained generic subagents inside plan-marshall phase work, and the Quick Reference decision-matrix row that directs callers to `plan-marshall:execution-context-{level}` instead.
 - [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) — the standardized `[DISPATCH]` emission contract this audit consumes as evidence. See § "Emission contract" for the literal log-line shape (prefix marker, field order, field semantics, placement contract) — do NOT inline-copy the literal log shape here; enforcement-critical content lives in the central standard only.
 - [`../SKILL.md`](../SKILL.md) — the orchestrator that dispatches this aspect at position 11 in the aspect order table.
 - [`../references/lessons-proposal.md`](../references/lessons-proposal.md) — the lessons-proposal contract that consumes non-zero `counts.total` to seed bug-category lessons.

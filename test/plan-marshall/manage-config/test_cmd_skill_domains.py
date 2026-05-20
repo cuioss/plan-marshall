@@ -260,7 +260,7 @@ def test_skill_domains_get_system_has_execute_task_skills(monkeypatch):
 
         assert result['status'] == 'success'
         assert 'defaults' in result
-        assert 'plan-marshall:general-development-rules' in result['defaults']
+        assert 'plan-marshall:dev-general-practices' in result['defaults']
         assert 'execute_task_skills' in result
 
 

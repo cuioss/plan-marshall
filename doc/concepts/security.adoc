@@ -45,7 +45,7 @@ Plan Marshall operates inside interactive mode, but the prompt rate stays low be
 
 == Layer 1 — `dev-general-practices` as the normative baseline
 
-Every plan-marshall subagent loads link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/SKILL.md[`plan-marshall:dev-general-practices`] as Tier-1 *before* anything else (see xref:skill-handling.adoc[Skill Handling]). Its `Workflow Discipline (Hard Rules)` section in `standards/general-development-rules.md` narrows what the subagent is allowed to *try*:
+Every plan-marshall subagent loads link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/SKILL.md[`plan-marshall:dev-general-practices`] as Tier-1 *before* anything else (see xref:skill-handling.adoc[Skill Handling]). Its `Workflow Discipline (Hard Rules)` section in `standards/agent-behavior-rules.md` narrows what the subagent is allowed to *try*:
 
 * **No unconstrained generic subagents** — every phase-1 through phase-6 dispatch routes through `execution-context-{level}`. No raw `Task: general-purpose`.
 * **`.plan/` access through scripts only** — never direct Read/Write/Edit on `.plan/` files (except via documented workflow exceptions).
@@ -132,7 +132,7 @@ Because every action routes through the script-executor proxy, every script invo
 
 == Related
 
-* link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/general-development-rules.md[`dev-general-practices/general-development-rules.md`] § Workflow Discipline (Hard Rules) — the normative baseline
+* link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/agent-behavior-rules.md[`dev-general-practices/agent-behavior-rules.md`] § Workflow Discipline (Hard Rules) — the normative baseline
 * link:../../marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md[`tools-script-executor/SKILL.md`] — the script-executor proxy contract
 * link:../../marketplace/bundles/plan-marshall/skills/tools-permission-doctor/SKILL.md[`tools-permission-doctor/SKILL.md`] — read-only permission analysis
 * link:../../marketplace/bundles/plan-marshall/skills/tools-permission-fix/SKILL.md[`tools-permission-fix/SKILL.md`] — permission write operations

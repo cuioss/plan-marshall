@@ -19,7 +19,7 @@ Each layer assumes the layer above it can be bypassed. The four together are sma
 
 == Layer 1 · Hard rules in `dev-general-practices`
 
-Every plan-marshall subagent loads link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/SKILL.md[`plan-marshall:dev-general-practices`] as Tier-1 before anything else (see xref:skill-handling.adoc[Skill Handling]). Its `Workflow Discipline (Hard Rules)` section in link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/general-development-rules.md[`standards/general-development-rules.md`] is the closest thing the marketplace has to "rules in the LLM's context window every time it dispatches." Representative rules:
+Every plan-marshall subagent loads link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/SKILL.md[`plan-marshall:dev-general-practices`] as Tier-1 before anything else (see xref:skill-handling.adoc[Skill Handling]). Its `Workflow Discipline (Hard Rules)` section in link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/agent-behavior-rules.md[`standards/agent-behavior-rules.md`] is the closest thing the marketplace has to "rules in the LLM's context window every time it dispatches." Representative rules:
 
 * `.plan/` access goes through `python3 .plan/execute-script.py` — never direct Read/Write/Edit on `.plan/` files.
 * One Bash command per call — no `&&`, `;`, `&`, or newlines.
@@ -117,7 +117,7 @@ The point is not "the LLM can't break the process." The point is that breaking t
 * xref:audit-trail.adoc[Concepts › Audit Trail] — what the layers *record* (in addition to what they enforce).
 * xref:skill-handling.adoc[Concepts › Skill Handling] — why `dev-general-practices` loads Tier-1 on every dispatch.
 * xref:automatic-reviews.adoc[Concepts › Automatic Reviews] — the findings-pipeline architecture Layer 3 sits on top of.
-* link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/general-development-rules.md[`dev-general-practices/general-development-rules.md`] — the hard-rules file loaded at every dispatch.
+* link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/agent-behavior-rules.md[`dev-general-practices/agent-behavior-rules.md`] — the hard-rules file loaded at every dispatch.
 * link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/phase-lifecycle.md[`ref-workflow-architecture/standards/phase-lifecycle.md`] — Phase Entry / Completion Protocols that wire Q-Gate + handshake into every boundary.
 * link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/references/phase-handshake.md[`plan-marshall/references/phase-handshake.md`] — handshake script contract, invariant registry, drift envelope.
 * link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/manage-contract.md[`ref-workflow-architecture/standards/manage-contract.md`] — the manage-* TOON-in / TOON-out contract that the script funnel routes through.
