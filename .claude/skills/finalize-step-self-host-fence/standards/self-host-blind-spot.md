@@ -47,15 +47,19 @@ This section codifies the structural contract that any session-restart-gating fi
 A session-restart-gating predicate MUST combine **both** of the following clauses joined by logical AND:
 
 1. **State-input clause** — the condition that signals the gate is needed (e.g., `references.modified_files` intersects `marketplace/bundles/plan-marshall/` for the self-host fence). This clause answers "is the gate relevant to this plan at all?".
-2. **Cache-freshness clause** — the anchor that falsifies after the prescribed session restart (e.g., absent `head_at_completion` OR worktree `HEAD` diverged from the recorded value). This clause answers "has the remediation actually been performed since the gate last fired?".
+2. **Cache-freshness clause** — the anchor that falsifies after the prescribed remediation (e.g., for loop-back-detection gates: worktree `HEAD` diverged from the recorded `head_at_completion`; for session-restart gates: current session_id differs from the recorded `plan_marshall_modifier_session_id`). This clause answers "has the remediation actually been performed since the gate last fired?". See § Canonical freshness anchor for the per-category anchor.
 
 The loop trap that motivates the contract: a single-input predicate keyed only on plan-state inputs evaluates `true` identically across session restarts because plan-state survives the restart unchanged. Without a freshness signal the same `true` that halted the first run halts every re-entry forever — the gate never releases. The two-clause AND is the structural escape: clause (1) stays `true` across restarts, but clause (2) flips to `false` after the user performs the prescribed remediation, and the AND collapses.
 
 ### Canonical freshness anchor
 
-The canonical anchor is `head_at_completion`, persisted on `mark-step-done --outcome done` by the dispatcher's per-step completion metadata. The anchor's lifecycle requirement verbatim: **"survives crash, falsifies on clean re-entry against unchanged worktree."** See [`marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md`](../../../../marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md) for the persistence semantics.
+Two canonical anchors exist, one per gate category. Both satisfy the same lifecycle requirement verbatim: **"survives crash, falsifies on clean re-entry against unchanged worktree."** The choice between them follows from the gate category, not from author preference.
 
-Authors who need a different anchor (e.g., a registry digest, a config-file hash) MUST document why `head_at_completion` is insufficient and confirm the substitute satisfies the same lifecycle requirement.
+**Loop-back-detection gate category** (anchor: `head_at_completion`). Used by gates that retrigger when HEAD advances mid-finalize, forcing a re-run of HEAD-dependent steps in the same session. The anchor is persisted on `mark-step-done --outcome done` by the dispatcher's per-step completion metadata and falsifies when the current worktree HEAD diverges from the recorded value. See [`marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md`](../../../../marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md) for the persistence semantics. Current implementors persist this anchor for HEAD-advance detection, not session-restart gating (see § Audit result inline for the inventory).
+
+**Session-restart gate category** (anchor: `plan_marshall_modifier_session_id`). Used by gates that halt the dispatcher behind a Claude Code session restart so the in-process skill registry is rebuilt from the synced cache. The anchor is persisted on `manage-status transition --completed 5-execute` by `_cmd_lifecycle._capture_modifier_session_id`, which writes `status.metadata.plan_marshall_modifier_session_id` when `references.modified_files` intersects `marketplace/bundles/plan-marshall/`. The cache-freshness clause compares the active session_id (resolved via `plan-marshall:plan-marshall:manage_session current`) against the stored anchor — equal fires the halt, differs releases the gate, absent / unavailable falls back to first-dispatch-fires-once safe default. The current sole implementor is `project:finalize-step-self-host-fence` (see § Current implementors).
+
+Authors who need a different anchor (e.g., a registry digest, a config-file hash) MUST document why neither canonical anchor fits the gate's lifecycle requirement, and confirm the substitute satisfies the verbatim "survives crash, falsifies on clean re-entry against unchanged worktree" rule.
 
 ### Outcome-recording requirement on halt
 
@@ -87,6 +91,7 @@ Zero other implementors of the session-restart-gate pattern exist in the marketp
 - [`## The Invariant`](#the-invariant) — the structural mismatch that session-restart gates exist to enforce.
 - [`## The Three Failure Surfaces`](#the-three-failure-surfaces) — the three resolution boundaries (skill, workflow-notation, manifest content) that motivate the cache-sync + session-restart two-part remediation.
 - [`## Scope`](#scope) — the narrowing rule that restricts session-restart-gate applicability to plans modifying `marketplace/bundles/plan-marshall/`.
+- `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py` § `_capture_modifier_session_id` — the persistence site for `plan_marshall_modifier_session_id`, invoked from `cmd_transition` on phase-5-execute completion when `references.modified_files` intersects `marketplace/bundles/plan-marshall/`.
 
 ## Cross-References
 

@@ -52,35 +52,50 @@ The fence fires iff **both** of the following hold:
    those bundles' modified skills become visible to the next session
    naturally, and the running finalize dispatch is unaffected because its
    own hot path is unchanged.
-2. **Cache-freshness guard**: the in-process Claude Code session is the
-   same one that produced the modifications — i.e. the prior dispatcher
-   state for this step is either absent (first dispatch in this plan) or
-   `outcome=failed` from a fence trigger that has not yet been cleared by
-   a session restart. The dispatcher distinguishes these two cases via the
-   `manifest.phase_6.steps[project:finalize-step-self-host-fence]` record:
+2. **Cache-freshness guard (session_id comparison)**: the in-process
+   Claude Code session is the same one that produced the modifications.
+   The dispatcher resolves the current session_id (see § Reading the
+   current session_id below) and compares it against the modifier
+   session_id anchor persisted at phase-5-execute completion in
+   `status.metadata.plan_marshall_modifier_session_id`. Three branches:
 
-   - **No record** → first dispatch in this plan. The session that called
-     `phase-5-execute` is the one whose in-process skill registry holds
-     the pre-change skill bodies; the fence MUST fire so the user
-     restarts before any downstream agent loads stale skills.
-   - **`outcome=failed`** → retry-once after the prescribed session
-     restart. The session is fresh by construction (the `[BLOCKED]` halt
-     prevented in-session continuation), so the in-process skill registry
-     was rebuilt from the synced cache during session boot. The
-     cache-freshness guard is satisfied; the fence records `outcome=done`
-     and the dispatcher advances. See § Resumable re-entry semantics
-     below.
-   - **`outcome=done`** → unreachable inside the predicate (the
-     dispatcher's `done → skip` rule short-circuits before the predicate
-     evaluates).
+   | `plan_marshall_modifier_session_id` | Current session_id | Branch |
+   |-------------------------------------|--------------------|--------|
+   | absent / empty                      | any (or unavailable) | **fire** — unknown provenance, safe default: first-dispatch-fires-once. Record `outcome=failed`; retry-once on re-entry records `outcome=done`. |
+   | populated                           | equals stored value | **fire** — same session as modifications; in-process registry holds pre-change skill bodies. Record `outcome=failed`; demand session restart. |
+   | populated                           | differs from stored value | **record done** — fresh session by construction (the stored anchor is the prior session's id, the current id is different). Cache-freshness guard satisfied; the dispatcher advances. |
+   | populated                           | resolver returns `session_id_unavailable` | **fire** — treated as `absent` per safe default. |
 
-The two-clause predicate is the source of truth for the apparent
-inconsistency between this section and § Resumable re-entry: the fence
-re-evaluates on every dispatch, but clause (2) flips between sessions
-even though clause (1) does not. `modified_files` alone is not enough —
-without the cache-freshness guard the dispatcher would loop on the fence
-forever, because the modified-files set is plan-scoped and survives
-session restarts unchanged.
+The session_id anchor is the source of truth for the cache-freshness
+question. `modified_files` alone is not enough — the modified-files set is
+plan-scoped and survives session restarts unchanged, so the fence would
+loop without the session_id comparison. Conversely, the session_id anchor
+without the modified-files filter would fire on every plan-marshall
+finalize, including consumer-project plans that touch no bundle files;
+clause (1) bounds the fence to genuine self-host modifications.
+
+## Reading the current session_id
+
+The dispatcher resolves the active Claude Code session_id at predicate
+evaluation time via:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:manage_session current
+```
+
+The TOON response is either `status: success` with a `session_id` field, or
+`status: error` with `error: session_id_unavailable` (no hook cache exists
+for this cwd or singleton — typical in CI runners that have not bootstrapped
+the per-target terminal-title hook). The dispatcher treats
+`session_id_unavailable` as if the current session_id field were absent —
+clause (2) falls into the **fire** branch under the safe default (record
+`outcome=failed`; the retry-once rule clears the fence on re-entry).
+
+The modifier session_id anchor is read from
+`status.metadata.plan_marshall_modifier_session_id`, written at
+phase-5-execute completion by `manage-status` `cmd_transition` (see
+`marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md`
+§ Modifier-session capture on transition).
 
 ## Halt protocol
 
@@ -163,9 +178,13 @@ recorded `outcome=done` in the prior session are skipped (including
 `project:finalize-step-sync-plugin-cache`). The fence step itself was
 recorded `outcome=failed`, so the dispatcher retries it once — and on the
 re-entry the predicate no longer trips the halt path: clause (2) of the
-predicate (the cache-freshness guard documented in § Predicate above) is
-satisfied because the fresh session's in-process skill registry was
-rebuilt from the synced cache during session boot. Clause (1) still
+predicate falsifies because the fresh session's `current session_id`
+differs from the stored `plan_marshall_modifier_session_id`. The
+plugin-cache sync that ran in the prior session is still a necessary
+precondition (the in-process skill registry the fresh session boots
+against MUST hold the post-modification skill bodies), but the anchor
+that detects "this is a different session" is the session_id comparison,
+not an inference from the dispatcher's own record. Clause (1) still
 matches (`modified_files` is plan-scoped and unchanged across sessions),
 but the two-clause AND requires both — so the fence records
 `outcome=done` and the dispatcher continues into `default:create-pr`.

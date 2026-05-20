@@ -889,6 +889,37 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transi
 
 This automatically updates status.json and moves to the next phase.
 
+### Modifier-session capture on transition
+
+`manage-status transition --completed 5-execute` performs two writer-side
+operations after marking the completed phase done:
+
+1. Collects the working-tree diff against `base_branch` and writes the
+   union of tracked modifications + untracked files into
+   `references.modified_files` (empty-diff guard preserves a prior
+   populated list — see `_cmd_lifecycle._collect_modified_files`).
+2. **Modifier-session capture**: when any entry in the just-written
+   `references.modified_files` starts with the prefix
+   `marketplace/bundles/plan-marshall/`, the script resolves the active
+   Claude Code session_id via the in-process helper
+   `manage_session.resolve_current_session_id()` and writes the value to
+   `status.metadata.plan_marshall_modifier_session_id`. The write is
+   idempotent — when the field is already populated, the original anchor
+   is preserved so a later re-transition in a different session cannot
+   overwrite it. When `resolve_current_session_id` returns `None` (no
+   hook cache for this cwd, no HOME), the script logs a WARNING and
+   proceeds without writing; the consuming fence's "absent → fire on
+   first dispatch" safe default preserves correctness.
+
+The anchor is consumed by `project:finalize-step-self-host-fence`
+§ Predicate clause (2) (cache-freshness guard via session_id comparison)
+— see
+`.claude/skills/finalize-step-self-host-fence/SKILL.md` for the fence
+predicate and § Reading the current session_id for the resolver call.
+Sibling-bundle-only modifications (e.g. `marketplace/bundles/pm-dev-java/`)
+do not trigger the capture; the fence is bounded to genuine plan-marshall
+self-modifications by clause (1).
+
 **After transition**, check `finalize_without_asking` config:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \

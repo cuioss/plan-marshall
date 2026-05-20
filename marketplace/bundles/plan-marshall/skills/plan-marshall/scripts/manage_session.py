@@ -69,11 +69,19 @@ def _read_text(path: Path) -> str | None:
     return raw or None
 
 
-def cmd_current(_args: argparse.Namespace) -> int:
+def resolve_current_session_id() -> str | None:
+    """Return the active Claude Code session_id from the hook cache, or ``None``.
+
+    Reads the same cache files as ``cmd_current`` (``by-cwd/{sha256(cwd)}`` then
+    ``current``) but returns a plain string so in-process callers can branch on
+    presence without parsing TOON. ``None`` covers both "home unresolvable" and
+    "no cached session" — callers that need to distinguish should use
+    ``cmd_current`` instead. See `manage-status` ``cmd_transition`` for the
+    canonical consumer.
+    """
     base = _cache_base()
     if base is None:
-        output_toon_error('session_id_unavailable', 'Home directory not resolvable')
-        return 0
+        return None
 
     cwd = _resolve_cwd()
     cwd_hash = hashlib.sha256(cwd.encode('utf-8')).hexdigest()
@@ -85,6 +93,11 @@ def cmd_current(_args: argparse.Namespace) -> int:
         current = base / 'current'
         session_id = _read_text(current)
 
+    return session_id
+
+
+def cmd_current(_args: argparse.Namespace) -> int:
+    session_id = resolve_current_session_id()
     if session_id is None:
         output_toon_error('session_id_unavailable', 'No session_id cached for this cwd or singleton')
         return 0

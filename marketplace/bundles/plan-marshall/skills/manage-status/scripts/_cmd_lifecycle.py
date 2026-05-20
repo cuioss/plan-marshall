@@ -41,6 +41,13 @@ VERIFY_REFUSAL_ERRORS = frozenset({
     'main_checkout_dirtied_during_plan',
 })
 
+# Prefix of plan-marshall bundle source paths. When any entry of
+# ``references.modified_files`` starts with this prefix at 5-execute
+# completion, ``_capture_modifier_session_id`` records the active session_id
+# so the self-host fence can detect fresh-session re-entries directly. See
+# lesson 2026-05-20-08-002 for the full rationale.
+_PLAN_MARSHALL_BUNDLE_PREFIX = 'marketplace/bundles/plan-marshall/'
+
 
 def verify_blocks_transition(verify_result: dict) -> bool:
     """Return True when a cmd_verify result MUST block the transition.
@@ -205,6 +212,57 @@ def _collect_modified_files(plan_id: str, status: dict, base_branch: str) -> lis
     return sorted(collected)
 
 
+def _capture_modifier_session_id(plan_id: str, status: dict, modified_files: list[str]) -> None:
+    """Persist the active session_id when modifications touch plan-marshall.
+
+    Idempotent: only writes ``status.metadata.plan_marshall_modifier_session_id``
+    when the field is absent or empty, so re-transitions in a later session do
+    NOT overwrite the original modifier-session anchor. When
+    ``manage_session.resolve_current_session_id`` returns ``None`` (no hook
+    cache for this cwd, no HOME), logs a WARNING and proceeds without writing
+    — the self-host fence's ``absent → fire on first dispatch`` branch
+    preserves correctness.
+
+    Mutates ``status`` in place and calls ``write_status`` when a new value is
+    captured. No-op when the modified files do not intersect the plan-marshall
+    bundle prefix.
+    """
+    if not any(entry.startswith(_PLAN_MARSHALL_BUNDLE_PREFIX) for entry in modified_files):
+        return
+
+    metadata = status.setdefault('metadata', {})
+    if metadata.get('plan_marshall_modifier_session_id'):
+        return  # idempotence — preserve the original modifier-session anchor
+
+    try:
+        from manage_session import resolve_current_session_id  # type: ignore[import-not-found]
+    except ImportError:
+        log_entry(
+            'work',
+            plan_id,
+            'WARNING',
+            '[STATUS] (plan-marshall:manage-status:cmd_transition) '
+            'manage_session helper not importable — skipping '
+            'plan_marshall_modifier_session_id capture (fence safe default applies).',
+        )
+        return
+
+    session_id = resolve_current_session_id()
+    if not session_id:
+        log_entry(
+            'work',
+            plan_id,
+            'WARNING',
+            '[STATUS] (plan-marshall:manage-status:cmd_transition) '
+            'session_id_unavailable — skipping plan_marshall_modifier_session_id '
+            'capture (fence safe default applies).',
+        )
+        return
+
+    metadata['plan_marshall_modifier_session_id'] = session_id
+    write_status(plan_id, status)
+
+
 def cmd_transition(args: argparse.Namespace) -> dict | None:
     """Transition to next phase."""
     status = require_status(args)
@@ -276,6 +334,20 @@ def cmd_transition(args: argparse.Namespace) -> dict | None:
                 if modified or not existing:
                     refs['modified_files'] = modified
                     write_references(args.plan_id, refs)
+
+            # Capture modifier session_id when modifications intersect the
+            # plan-marshall bundle source — the canonical anchor consumed by
+            # ``project:finalize-step-self-host-fence`` § Predicate clause (2)
+            # to detect a fresh-session re-entry without relying on the
+            # brittle "no fence record" proxy. The capture is idempotent:
+            # only writes when the field is absent or empty, so a later
+            # re-transition in a different session does not overwrite the
+            # original modifier-session anchor. When
+            # ``manage_session current`` cannot resolve the session_id
+            # (no hook cache, no HOME), we log a WARNING and proceed — the
+            # fence's ``absent → fire on first dispatch`` safe default
+            # preserves correctness. See lesson 2026-05-20-08-002.
+            _capture_modifier_session_id(args.plan_id, status, refs.get('modified_files') or [])
 
     # Apply the next-phase mutation. ``next_phase`` was resolved earlier so
     # the inline strict-verify guard could decide whether to fire — here we
