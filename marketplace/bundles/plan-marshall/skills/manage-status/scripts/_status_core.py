@@ -152,8 +152,7 @@ def _publish_title_body(plan_dir: Path, status_data: dict[Any, Any]) -> None:
     rendered = _render_title_body(status_data)
     try:
         if rendered is None:
-            if title_body_path.exists():
-                title_body_path.unlink()
+            title_body_path.unlink(missing_ok=True)
             return
         # ``atomic_write_file`` appends exactly one terminating ``\n`` when
         # the supplied content does not already end in one — pass ``rendered``

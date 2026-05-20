@@ -37,7 +37,7 @@ def cmd_read(args: argparse.Namespace) -> dict | None:
     if current_phase and current_phase not in TITLE_BODY_TERMINAL_PHASES:
         plan_dir = get_plan_dir(args.plan_id)
         title_body_path = plan_dir / TITLE_BODY_FILENAME
-        if not title_body_path.exists():
+        if not title_body_path.is_file():
             _publish_title_body(plan_dir, status)
 
     return {'status': 'success', 'plan_id': args.plan_id, 'plan': status}
