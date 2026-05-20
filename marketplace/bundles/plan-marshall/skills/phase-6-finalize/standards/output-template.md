@@ -268,7 +268,7 @@ Icon resolution:
 
 Deliverable numbering starts at `1.` and pads width to accommodate up to 99 deliverables (`" 1."` vs `"10."`).
 
-### 5. Build finalize steps block (or Phase Breakdown override)
+### 5. Build finalize steps block (with optional `Phase Breakdown` override)
 
 Header: `Finalize steps ({N_done}/{N_total} done)` where `N_total` = count of steps in `manifest.phase_6.steps` and `N_done` = count with `outcome == done`.
 
@@ -282,7 +282,7 @@ Iterate the manifest `phase_6.steps` list in order. For each step, emit:
 - `{display_detail}` = the verbatim detail string authored by the step. If `display_detail` is missing or empty, emit the literal placeholder `<missing display_detail>` (this is a contract violation and should be surfaced).
 - Two spaces separate the icon from the step name; two spaces separate the padded name from the detail.
 
-**Per-row Phase Breakdown override**: during the iteration, when the current step's `step_id == 'record-metrics'` AND the Phase Breakdown override toggle is active (`finalize-step-print-phase-breakdown` present in `manifest.phase_6.steps` AND `phase_breakdown_override_content` from Snapshot Procedure step 7 is non-`None`), substitute that single row's `[OK]` emission with the literal header `Phase Breakdown` + blank line + `{phase_breakdown_override_content}`. The substituted row content is:
+**Per-row `Phase Breakdown` override**: during the iteration, when the current step's `step_id` == `'record-metrics'` AND the `Phase Breakdown` override toggle is active (`finalize-step-print-phase-breakdown` present in `manifest.phase_6.steps` AND `phase_breakdown_override_content` from Snapshot Procedure step 7 is non-`None`), substitute that single row's `[OK]` emission with the literal header `Phase Breakdown` + blank line + `{phase_breakdown_override_content}`. The substituted row content is:
 
 ```
 Phase Breakdown
