@@ -313,8 +313,6 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # Phase breakdown table
     lines.append('## Phase Breakdown')
     lines.append('')
-    lines.append('| Phase | Duration | Tokens | Tool Uses |')
-    lines.append('|-------|----------|--------|-----------|')
 
     # Collect breakdown rows (phases that exist) preserving canonical phase order.
     breakdown_rows = [(name, phases[name]) for name in PHASE_NAMES if name in phases]
@@ -353,6 +351,10 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     tokens_values: list[int] = []
     tool_uses_values: list[int] = []
 
+    # Two-pass build: first collect all rows as tuples, then pad to uniform per-column width.
+    header_row: tuple[str, str, str, str] = ('Phase', 'Duration', 'Tokens', 'Tool Uses')
+    data_rows: list[tuple[str, str, str, str]] = []
+
     for phase_name, phase in breakdown_rows:
         duration_str, duration_val = _duration_cell(phase)
         if duration_val is not None:
@@ -368,7 +370,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         if tool_uses is not None:
             tool_uses_values.append(int(tool_uses))
 
-        lines.append(f'| {phase_name} | {duration_str} | {tokens_str} | {tool_uses_str} |')
+        data_rows.append((phase_name, duration_str, tokens_str, tool_uses_str))
 
     def _total_str(values: list, formatter, *, is_duration: bool = False) -> str:
         """Apply the symmetric Total aggregation rule.
@@ -394,9 +396,27 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     total_tokens_str = _total_str(tokens_values, lambda n: f'{n:,}')
     total_tool_uses_str = _total_str(tool_uses_values, str)
 
-    lines.append(
-        f'| **Total** | **{total_duration_str}** | **{total_tokens_str}** | **{total_tool_uses_str}** |'
+    total_row: tuple[str, str, str, str] = (
+        '**Total**',
+        f'**{total_duration_str}**',
+        f'**{total_tokens_str}**',
+        f'**{total_tool_uses_str}**',
     )
+
+    # Compute per-column widths across header, data rows, and the bold-marked Total row.
+    all_rows: list[tuple[str, str, str, str]] = [header_row, *data_rows, total_row]
+    widths = [max(len(row[c]) for row in all_rows) for c in range(4)]
+
+    def _format_row(row: tuple[str, str, str, str]) -> str:
+        return '| ' + ' | '.join(cell.ljust(widths[i]) for i, cell in enumerate(row)) + ' |'
+
+    separator_line = '|' + '|'.join('-' * (widths[i] + 2) for i in range(4)) + '|'
+
+    lines.append(_format_row(header_row))
+    lines.append(separator_line)
+    for row in data_rows:
+        lines.append(_format_row(row))
+    lines.append(_format_row(total_row))
     lines.append('')
 
     # Phase details
