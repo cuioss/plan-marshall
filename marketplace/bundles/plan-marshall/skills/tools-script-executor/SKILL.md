@@ -55,7 +55,13 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read --plan-id EXAMPLE-PLAN
 
 # File operations (generic files)
-python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write --plan-id EXAMPLE-PLAN --file notes.md --content "..."
+# Inline --content is reserved for single-line scalar values with no leading "#".
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write --plan-id EXAMPLE-PLAN --file notes-tag.txt --content "single line value with no newlines and no leading hash"
+
+# For multi-line content (markdown, TOON, JSON) OR any payload whose first line begins with "#",
+# stage the body to .plan/temp/{plan_id}/ via the Write tool first, then pass --content-file. See manage-files/SKILL.md § Enforcement for the binding rule.
+# Write(.plan/temp/EXAMPLE-PLAN/notes.md) with the multi-line markdown body
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write --plan-id EXAMPLE-PLAN --file notes.md --content-file .plan/temp/EXAMPLE-PLAN/notes.md
 
 # Build operations
 python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets clean,verify
