@@ -1763,3 +1763,200 @@ class TestOrphanCanonicalBypass:
                 f'use_worktree={use_worktree_value!r} and no orphan dir; '
                 f'the orphan-absent gate must return None unconditionally.'
             )
+
+
+# =============================================================================
+# references_valid invariant
+# =============================================================================
+#
+# ``_capture_references_valid`` emits a deterministic hash over the structural
+# health of references.json:
+#
+#   {present: bool, top_level_is_dict: bool, required_field_set: sorted list}
+#
+# Four failure modes must produce a hash that differs from the valid-baseline
+# hash so drift surfaces at every phase boundary:
+#
+# 1. present + valid (all required keys) → stable hash across capture/verify.
+# 2. missing file → present=False → different hash.
+# 3. non-dict content (file_not_found error or non-dict references) → different hash.
+# 4. missing required field → required_field_set shrinks → different hash.
+#
+# The invariant is passive (never raises). Tests drive ``_capture_references_valid``
+# directly by stubbing ``_run_script`` so no executor hop is needed.
+
+
+def _make_refs_toon_success(fields: dict) -> str:
+    """Build a TOON string that ``manage-references read`` would emit on success.
+
+    ``cmd_read`` summarizes list fields as ``"N items"`` strings — this helper
+    mirrors that output so the nested ``references`` object can be parsed as a
+    plain dict of scalar key-value pairs with no TOON list syntax to trip the
+    parser.
+    """
+    lines = ['status: success', 'plan_id: test-plan']
+    # Emit the ``references`` sub-key with each field on its own line.
+    # Keys are present if and only if they appear in ``fields``.
+    lines.append('references:')
+    for k, v in fields.items():
+        if isinstance(v, list):
+            # Mirror cmd_read's list-summary behaviour.
+            lines.append(f'  {k}: {len(v)} items')
+        else:
+            lines.append(f'  {k}: {v}')
+    return '\n'.join(lines) + '\n'
+
+
+def _make_refs_toon_error() -> str:
+    """Build a TOON string that ``manage-references read`` would emit when the file is missing."""
+    return 'status: error\nerror: file_not_found\nmessage: references.json not found\n'
+
+
+# --- (a) present + valid: hash is stable across two independent captures ---
+
+
+def test_references_valid_hash_stable_for_valid_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Capture of a present, valid references.json produces the same hash twice.
+
+    Pins the "hash stable across capture/verify" contract: two independent
+    calls with the same manage-references read output must emit equal hashes
+    so verify reports ``ok`` rather than drift.
+    """
+    valid_toon = _make_refs_toon_success({
+        'branch': 'feature/my-plan',
+        'base_branch': 'main',
+        'modified_files': [],
+    })
+    monkeypatch.setattr(inv, '_run_script', lambda _args: valid_toon)
+
+    hash_a = inv._capture_references_valid('any', {}, '2-refine')
+    hash_b = inv._capture_references_valid('any', {}, '2-refine')
+
+    assert hash_a is not None
+    assert isinstance(hash_a, str)
+    assert len(hash_a) == 16  # _hash_dict returns first 16 hex chars
+    assert hash_a == hash_b, (
+        'Hash is not stable: two captures of the same valid references.json '
+        f'produced different values: {hash_a!r} vs {hash_b!r}.'
+    )
+
+
+# --- (b) missing file: hash differs from valid baseline ---
+
+
+def test_references_valid_hash_differs_for_missing_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A missing references.json produces a hash that differs from the valid baseline.
+
+    The hash payload has ``present=False`` for the missing-file case, so even
+    when the hash function itself is deterministic the two payloads diverge and
+    drift detection fires on verify.
+    """
+    valid_toon = _make_refs_toon_success({
+        'branch': 'feature/my-plan',
+        'base_branch': 'main',
+        'modified_files': [],
+    })
+    error_toon = _make_refs_toon_error()
+
+    monkeypatch.setattr(inv, '_run_script', lambda _args: valid_toon)
+    hash_valid = inv._capture_references_valid('any', {}, '2-refine')
+
+    monkeypatch.setattr(inv, '_run_script', lambda _args: error_toon)
+    hash_missing = inv._capture_references_valid('any', {}, '2-refine')
+
+    assert hash_valid is not None
+    assert hash_missing is not None
+    assert hash_valid != hash_missing, (
+        'Hash did not change when references.json was reported as missing: '
+        f'valid={hash_valid!r}, missing={hash_missing!r}. '
+        'Drift detection would silently pass a deleted references.json.'
+    )
+
+
+# --- (c) non-dict content: hash differs from valid baseline ---
+
+
+def test_references_valid_hash_differs_for_non_dict_content(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An error response from manage-references read produces a hash that differs from the valid baseline.
+
+    Covers the ``present=False`` branch of the hash payload: when
+    ``manage-references read`` reports ``status: error`` (file deleted,
+    corrupted JSON, or any other read failure), ``_capture_references_valid``
+    must emit a hash that diverges from the well-formed-file baseline so drift
+    detection fires on verify.
+    """
+    valid_toon = _make_refs_toon_success({
+        'branch': 'feature/my-plan',
+        'base_branch': 'main',
+        'modified_files': [],
+    })
+
+    # ``manage-references read`` translates corruption / unreadable JSON into a
+    # top-level ``status: error`` TOON response, which routes through the
+    # ``present=False`` branch of ``_capture_references_valid``. The
+    # ``present=True, top_level_is_dict=False`` branch (references sub-key
+    # present but not a dict) is structurally unreachable through the
+    # manage-references read surface, so it is not exercised here.
+    error_toon = _make_refs_toon_error()
+
+    monkeypatch.setattr(inv, '_run_script', lambda _args: valid_toon)
+    hash_valid = inv._capture_references_valid('any', {}, '2-refine')
+
+    monkeypatch.setattr(inv, '_run_script', lambda _args: error_toon)
+    hash_error = inv._capture_references_valid('any', {}, '2-refine')
+
+    assert hash_valid is not None
+    assert hash_error is not None
+    assert hash_valid != hash_error, (
+        'Hash did not change for error-response content: '
+        f'valid={hash_valid!r}, error={hash_error!r}. '
+        'Drift detection would silently accept a corrupted references.json.'
+    )
+
+
+# --- (d) missing required field: hash differs from valid baseline ---
+
+
+def test_references_valid_hash_differs_for_missing_required_field(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Removing a required field from references.json produces a different hash.
+
+    Phase-1-init promises ``branch``, ``base_branch``, and ``modified_files``.
+    Dropping any one of them shrinks ``required_field_set`` in the hash payload
+    and the drift detection fires on verify. This test drops ``modified_files``.
+    """
+    full_toon = _make_refs_toon_success({
+        'branch': 'feature/my-plan',
+        'base_branch': 'main',
+        'modified_files': [],
+    })
+    partial_toon = _make_refs_toon_success({
+        'branch': 'feature/my-plan',
+        'base_branch': 'main',
+        # modified_files intentionally absent — simulates silent deletion of the field
+    })
+
+    monkeypatch.setattr(inv, '_run_script', lambda _args: full_toon)
+    hash_full = inv._capture_references_valid('any', {}, '2-refine')
+
+    monkeypatch.setattr(inv, '_run_script', lambda _args: partial_toon)
+    hash_partial = inv._capture_references_valid('any', {}, '2-refine')
+
+    assert hash_full is not None
+    assert hash_partial is not None
+    assert hash_full != hash_partial, (
+        'Hash did not change when a required field (modified_files) was removed: '
+        f'full={hash_full!r}, partial={hash_partial!r}. '
+        'Drift detection would silently accept references.json with missing keys.'
+    )
+
+
+# --- (e) HANDSHAKE_FIELDS schema includes references_valid ----------------
+
+
+def test_handshake_fields_includes_references_valid() -> None:
+    """The TOON column schema must include ``references_valid``.
+
+    Without this column the row writer would silently drop the invariant value
+    at persistence time, defeating the drift guard at every phase boundary.
+    """
+    assert 'references_valid' in store.HANDSHAKE_FIELDS

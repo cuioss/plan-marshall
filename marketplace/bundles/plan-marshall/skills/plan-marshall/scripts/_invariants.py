@@ -541,6 +541,82 @@ def _capture_worktree_orphan(plan_id: str, metadata: dict[str, Any], phase: str)
     )
 
 
+# Required top-level keys that phase-1-init promises to write into
+# references.json (branch, base_branch, modified_files). The list is sorted
+# so the hash payload is deterministic regardless of insertion order.
+_REFERENCES_REQUIRED_KEYS: tuple[str, ...] = ('base_branch', 'branch', 'modified_files')
+
+
+def _capture_references_valid(plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
+    """Drift-detection hash over the structural health of references.json.
+
+    Phase-1-init is the sole writer of ``references.json``; every downstream
+    phase depends on the file existing and having the structural fields that
+    phase-1-init promises (``branch``, ``base_branch``, ``modified_files``).
+    Silent deletion, corruption to a non-dict, or a missing required field
+    survives all current invariants and only surfaces at random call sites.
+
+    This invariant caps that gap by emitting a deterministic hash over:
+
+    .. code-block:: python
+
+        {
+            'present': bool,               # file exists and is non-empty
+            'top_level_is_dict': bool,     # parsed value is a dict
+            'required_field_set': [...],   # sorted list of required keys
+                                           # that are present in the file
+        }
+
+    On success the hash is stable across successive capture/verify calls as
+    long as the file remains unchanged. Any of the four failure modes (missing
+    file, non-dict content, removed required field, corrupted file) changes
+    the hash, surfacing as drift.
+
+    The invariant is passive (never raises) — the runtime :func:`require_references`
+    safety net handles the downstream error; the invariant is the upstream
+    guard that makes drift visible at every phase boundary.
+
+    Returns ``None`` only when the plan directory itself cannot be resolved,
+    which matches the other capture functions' "not applicable" contract.
+    """
+    stdout = _run_script(
+        [
+            'plan-marshall:manage-references:manage-references',
+            'read',
+            '--plan-id',
+            plan_id,
+        ]
+    )
+    if stdout is None:
+        # Executor unreachable — treat as "file absent / unknown" so the hash
+        # captures a deterministic absent-state fingerprint rather than None
+        # (None would leave the column empty and skip the drift comparison).
+        return _hash_dict({'present': False, 'top_level_is_dict': False, 'required_field_set': []})
+    try:
+        parsed = parse_toon(stdout)
+    except Exception:
+        return _hash_dict({'present': False, 'top_level_is_dict': False, 'required_field_set': []})
+
+    # Distinguish between the three possible states:
+    # 1. File not found (manage-references read emits status: error / file_not_found)
+    # 2. File found and valid dict — check required keys (``references`` sub-key)
+    if parsed.get('status') == 'error':
+        return _hash_dict({'present': False, 'top_level_is_dict': False, 'required_field_set': []})
+
+    refs = parsed.get('references')
+    if not isinstance(refs, dict):
+        # ``read`` always wraps the payload under ``references``; a non-dict
+        # value here means the file was corrupted to a non-object JSON type.
+        return _hash_dict({'present': True, 'top_level_is_dict': False, 'required_field_set': []})
+
+    present_required = sorted(k for k in _REFERENCES_REQUIRED_KEYS if k in refs)
+    return _hash_dict({
+        'present': True,
+        'top_level_is_dict': True,
+        'required_field_set': present_required,
+    })
+
+
 def _capture_task_state_hash(plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
     """Drift-detection hash over every task's status, depends_on, and step outcomes.
 
@@ -1259,6 +1335,7 @@ INVARIANTS: list[tuple[str, AppliesFn, CaptureFn]] = [
     ('worktree_sha', _worktree_applicable, _capture_worktree_sha),
     ('worktree_dirty', _worktree_applicable, _capture_worktree_dirty),
     ('worktree_orphan', _always, _capture_worktree_orphan),
+    ('references_valid', _always, _capture_references_valid),
     ('task_state_hash', _always, _capture_task_state_hash),
     ('qgate_open_count', _always, _capture_qgate_open_count),
     ('config_hash', _always, _capture_config_hash),
