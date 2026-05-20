@@ -83,7 +83,7 @@ The confidence loop (Steps 3b/3c/8/9/10/11/12) re-evaluates classification, sour
 **Prohibited actions:**
 - Never re-read loop-invariant inputs inside the confidence-loop body — re-reading is the recurring envelope-cost waste documented in lesson `2026-05-20-15-007`.
 
-See [`extension-api/standards/dispatch-granularity.md`](../extension-api/standards/dispatch-granularity.md) § 3 (Heuristic 2 — bundle when steps share context) for the granularity rationale.
+See [`extension-api/standards/dispatch-granularity.md`](../extension-api/standards/dispatch-granularity.md) § 5.1 (Heuristic 2 — bundle when steps share context) for the granularity rationale.
 
 ---
 

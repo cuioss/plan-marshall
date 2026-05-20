@@ -52,13 +52,13 @@ The task-creation loop (Steps 5 + 6 + 7) iterates per deliverable — but the *i
 
 - The deliverable set (read via Step 3 deliverable-load from `solution_outline.md`).
 - The architecture topology (read via `manage-architecture topology` at phase entry).
-- The per-deliverable skill resolutions (resolved once during Step 5; not re-resolved per iteration).
+- The per-deliverable skill resolutions (resolved via `architecture module --module {D.module}` for each distinct module before the per-deliverable iteration begins — one query per unique module, cached; not re-queried per deliverable or per profile).
 - The execution manifest composition inputs (the manifest is composed once at Step 8b — not per-deliverable).
 
 **Prohibited actions:**
 - Never re-read loop-invariant inputs inside the task-creation loop body — re-reading is the recurring envelope-cost waste documented in lesson `2026-05-20-15-007`.
 
-See [`extension-api/standards/dispatch-granularity.md`](../extension-api/standards/dispatch-granularity.md) § 3 (Heuristic 2 — bundle when steps share context) for the granularity rationale.
+See [`extension-api/standards/dispatch-granularity.md`](../extension-api/standards/dispatch-granularity.md) § 5.1 (Heuristic 2 — bundle when steps share context) for the granularity rationale.
 
 ## cwd for `.plan/execute-script.py` calls
 
@@ -249,13 +249,18 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ```
 
 ```
+# Pre-fetch: resolve architecture data for every distinct module referenced across deliverables.
+# Do this ONCE before the per-deliverable loop — use cached values inside the loop body.
+For each unique D.module in deliverables:
+  Pre-fetch: architecture module --module {D.module}  → cache as arch_cache[D.module]
+
 For each deliverable D:
   IF (D.change_type == verification OR D.affected_files is empty) AND "implementation" NOT IN D.profiles:
     IF D.profiles != [verification]:
       Log warning (see above)
     D.profiles = [verification]
   # else: explicit Profiles list wins — guard is a no-op
-  1. Query architecture: module --module {D.module}
+  1. Use cached architecture: arch_cache[D.module]  (do NOT re-query)
   For each profile P in D.profiles:
     IF P = verification:
       2v. Skip skill resolution (no architecture query needed)

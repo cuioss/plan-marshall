@@ -51,7 +51,7 @@ The Complex Track per-deliverable loop (Steps 9c + 10 + 10b) iterates over the d
 **Prohibited actions:**
 - Never re-read loop-invariant inputs inside the per-deliverable loop body — re-reading is the recurring envelope-cost waste documented in lesson `2026-05-20-15-007`.
 
-See [`extension-api/standards/dispatch-granularity.md`](../extension-api/standards/dispatch-granularity.md) § 3 (Heuristic 2 — bundle when steps share context) for the granularity rationale.
+See [`extension-api/standards/dispatch-granularity.md`](../extension-api/standards/dispatch-granularity.md) § 5.1 (Heuristic 2 — bundle when steps share context) for the granularity rationale.
 
 ## cwd for `.plan/execute-script.py` calls
 
