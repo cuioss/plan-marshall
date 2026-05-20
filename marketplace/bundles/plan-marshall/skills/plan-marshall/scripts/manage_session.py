@@ -75,9 +75,9 @@ def resolve_current_session_id() -> str | None:
     Reads the same cache files as ``cmd_current`` (``by-cwd/{sha256(cwd)}`` then
     ``current``) but returns a plain string so in-process callers can branch on
     presence without parsing TOON. ``None`` covers both "home unresolvable" and
-    "no cached session" — callers that need to distinguish should use
-    ``cmd_current`` instead. See `manage-status` ``cmd_transition`` for the
-    canonical consumer.
+    "no cached session" — callers that need to distinguish these two cases should
+    check ``_cache_base()`` separately before calling this function. See
+    `manage-status` ``cmd_transition`` for the canonical consumer.
     """
     base = _cache_base()
     if base is None:

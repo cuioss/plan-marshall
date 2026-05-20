@@ -61,10 +61,10 @@ The fence fires iff **both** of the following hold:
 
    | `plan_marshall_modifier_session_id` | Current session_id | Branch |
    |-------------------------------------|--------------------|--------|
-   | absent / empty                      | any (or unavailable) | **fire** — unknown provenance, safe default: first-dispatch-fires-once. Record `outcome=failed`; retry-once on re-entry records `outcome=done`. |
+   | absent / empty                      | any                | **fire** — unknown provenance, safe default: first-dispatch-fires-once. Record `outcome=failed`; retry-once on re-entry records `outcome=done`. |
+   | populated                           | unavailable        | **fire** — treated as `absent` per safe default. |
    | populated                           | equals stored value | **fire** — same session as modifications; in-process registry holds pre-change skill bodies. Record `outcome=failed`; demand session restart. |
    | populated                           | differs from stored value | **record done** — fresh session by construction (the stored anchor is the prior session's id, the current id is different). Cache-freshness guard satisfied; the dispatcher advances. |
-   | populated                           | resolver returns `session_id_unavailable` | **fire** — treated as `absent` per safe default. |
 
 The session_id anchor is the source of truth for the cache-freshness
 question. `modified_files` alone is not enough — the modified-files set is
