@@ -398,15 +398,13 @@ def build_title(
     if not (plan_id and phase) and session_id:
         candidate = _read_active_plan(session_id)
         if candidate:
-            walk_root = _walk_up_for_plan(Path(cwd))
-            if walk_root is not None:
-                status_file = _resolve_status_file(str(walk_root), candidate)
-                if status_file is not None:
-                    cand_phase, cand_short = _read_plan_meta(status_file)
-                    if cand_phase and cand_phase not in _TERMINAL_PHASE_VALUES:
-                        plan_id = candidate
-                        phase = cand_phase
-                        short_description = cand_short
+            status_file = _resolve_status_file(cwd, candidate)
+            if status_file and status_file.is_file():
+                cand_phase, cand_short = _read_plan_meta(status_file)
+                if cand_phase and cand_phase not in _TERMINAL_PHASE_VALUES:
+                    plan_id = candidate
+                    phase = cand_phase
+                    short_description = cand_short
     active_command: str | None = None
     if not (plan_id and phase):
         active_command = _read_active_command(session_id)
