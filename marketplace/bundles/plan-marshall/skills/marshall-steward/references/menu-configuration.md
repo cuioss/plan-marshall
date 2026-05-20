@@ -645,7 +645,7 @@ Non-secret field updates via CLI args. For secret changes, user edits the creden
 
 ## Configuration: Terminal Title
 
-Configure the dynamic terminal-title + statusline integration so each terminal tab shows the active plan-marshall phase and live status (running / waiting / idle / done) for the Claude Code session running in it. See [Terminal title integration](../../plan-marshall/SKILL.md#terminal-title-integration) in the plan-marshall skill for the runtime contract.
+Configure the dynamic terminal-title integration so each terminal tab shows the active plan-marshall phase and live status (running / waiting / idle / done) for the Claude Code session running in it. The writer side publishes `{plan_dir}/title-body.txt` on every status mutation; the reader side is implemented by `plan-marshall:platform-runtime` (`session render-title`). See [Terminal title integration](../../plan-marshall/SKILL.md#terminal-title-integration) in the plan-marshall skill for the runtime contract.
 
 Load and execute the dedicated reference:
 

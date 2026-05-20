@@ -172,11 +172,11 @@ If you discover issues or improvements during execution, record them:
 
 ## Terminal Title Integration
 
-The plan-marshall hooks can drive a live session-tab title (plan + phase + status icon). Mechanism details — hook events, fallback precedence, configuration entry point — live in [`references/terminal-title.md`](references/terminal-title.md).
+The plan-marshall hooks can drive a live session-tab title (plan + phase + status icon). The writer side publishes `{plan_dir}/title-body.txt` on every status mutation — no user configuration is required. The reader side is implemented per-target by the platform runtime (`session render-title` operation); see `plan-marshall:platform-runtime` for the reader contract.
 
 ## Session ID Resolver
 
-Main-context skill calls that need the current session ID (e.g., `phase-6-finalize` forwarding it to `manage-metrics enrich`) call `manage_session current` via the standard executor. Mechanism details — cache layout, hook source, error contract — live in [`references/session-id-resolver.md`](references/session-id-resolver.md).
+Main-context skill calls that need the current session ID (e.g., `phase-6-finalize` forwarding it to `manage-metrics enrich`) capture it via the platform-runtime `session capture` operation, which stores it in `status.json` at plan-init time. Retrieval: `manage-status metadata --get --field session_id`.
 
 ## Phase Handshake & Blocking-Finding Invariant
 

@@ -296,19 +296,20 @@ Forbidden forms (all trigger the sandbox):
 
 For host-platform runtime state (session id, conversation id, plan id from main
 context) the shell is **not** the source — the skill input contract plus the
-domain-specific resolver is. For `session_id` specifically, use:
+domain-specific resolver is. For `session_id` specifically, it is captured at
+plan-init time by the platform-runtime `SessionStart` hook and stored in
+`status.json`. Read it back via:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall:manage_session current
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+  --plan-id {plan_id} --get --field session_id
 ```
 
-The resolver reads a cache populated by the terminal-title hook on every
-`UserPromptSubmit`. It never shells out beyond `git rev-parse`, never reads
-env vars, and never prompts. See `plan-marshall/SKILL.md` → "Session ID
-Resolver" for the cache contract. The same pattern (dedicated resolver script,
-no env-var reach) applies when new runtime identifiers emerge — do not
-generalize the `TERM_PROGRAM` read into "this is how env vars work" and invent
-a variable name.
+It never shells out, never reads env vars, and never prompts. See
+`plan-marshall/SKILL.md` → "Session ID Resolver" for the contract.
+The same pattern (dedicated resolver script, no env-var reach) applies
+when new runtime identifiers emerge — do not generalize the `TERM_PROGRAM`
+read into "this is how env vars work" and invent a variable name.
 
 ## Performance Tips
 

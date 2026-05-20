@@ -647,15 +647,15 @@ class TestEnrichSubagentTranscriptWalk:
         metrics_path.write_text(self._METRICS_FIXTURE.format(plan_id=plan_id))
 
     def _patch_session_paths(self, monkeypatch, tmp_path) -> str:
-        """Monkeypatch Path.home and manage_session._resolve_cwd to a controlled root.
+        """Monkeypatch Path.home and manage_metrics._resolve_cwd to a controlled root.
 
-        Returns the fixed cwd used by manage_session for slug derivation.
+        Returns the fixed cwd used by manage_metrics for slug derivation.
         """
-        import manage_session  # type: ignore[import-not-found]
+        import manage_metrics  # type: ignore[import-not-found]
 
         fake_cwd = '/fake/repo'
         monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
-        monkeypatch.setattr(manage_session, '_resolve_cwd', lambda: fake_cwd)
+        monkeypatch.setattr(manage_metrics, '_resolve_cwd', lambda: fake_cwd)
         return fake_cwd
 
     def test_two_subagent_files_counted(self, monkeypatch, tmp_path):
