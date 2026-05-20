@@ -126,6 +126,6 @@
   <text x="750" y="572" class="col-sub">Long task → orchestrator stays small; recall stays high; no overflow.</text>
 
   <!-- ============= Footer caption ============= -->
-  <text x="500" y="605" class="col-sub">Side-effect: every execution-context dispatch is a fresh context that re-loads `dev-general-practices` and caller-named skills — process rules cannot decay.</text>
+  <text x="500" y="605" class="col-sub">Side-effect: every execution-context dispatch is a fresh context that re-loads `dev-agent-behavior-rules` and caller-named skills — process rules cannot decay.</text>
 
 </svg>

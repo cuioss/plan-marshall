@@ -23,7 +23,7 @@ enriched.total_tokens (manage-architecture enrichment cycle): ~485 K
 |------------------------------|------------|
 | Anthropic system prompt | Loaded once per subagent invocation; not shared with the parent's prompt cache. |
 | Agent body | `execution-context.md` body (~50–100 LOC). |
-| Implicit foundational skill load | `dev-general-practices` is loaded as the first step inside every dispatch — the entire skill body in the subagent's context. |
+| Implicit foundational skill load | `dev-agent-behavior-rules` is loaded as the first step inside every dispatch — the entire skill body in the subagent's context. |
 | Caller-specified `skills[]` loads | Each skill in `skills[]` is loaded inside the subagent at start (multi-KB each). |
 | Workflow doc load | The standards doc the subagent follows — read fully into context. |
 | Prompt envelope | The five required prompt-body fields (`name`, `plan_id`, `skills[]`, exactly one of `workflow`/`instructions`, `WORKTREE`) plus any workflow-specific runtime inputs and return-shape instructions. |

@@ -14,7 +14,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 ## Foundational Practices
 
 ```
-Skill: plan-marshall:dev-general-practices
+Skill: plan-marshall:dev-agent-behavior-rules
 ```
 
 ## Enforcement
@@ -32,7 +32,7 @@ Skill: plan-marshall:dev-general-practices
 - **Never invoke any `*-doctor` tool (e.g., `plugin-doctor`, `plan-doctor`) carrying `fix`, `apply`, `--apply`, or `--fix`** during outline. Doctor tools may only be invoked in their read-only modes (`verify`, `check`, no flags) to surface findings. The `apply`/`fix`/`--fix`/`--apply` surfaces mutate source files and bypass the per-plan workspace boundary above — they are reserved for phase-5-execute task bodies that the planner explicitly authorized via a deliverable. This applies equally to `Bash`, `Skill:`, and `SlashCommand:` invocation shapes.
 
 **Constraints:**
-- Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
+- Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
 
 ## Dispatched workflows vs inline steps
 

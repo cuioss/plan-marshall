@@ -16,7 +16,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 ## Foundational Practices
 
 ```
-Skill: plan-marshall:dev-general-practices
+Skill: plan-marshall:dev-agent-behavior-rules
 ```
 
 ## Enforcement
@@ -32,7 +32,7 @@ Skill: plan-marshall:dev-general-practices
 - Never target file paths outside the active git worktree.
 
 **Constraints:**
-- Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
+- Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
 - On phase entry (Step 4), resolve the active worktree absolute path and surface it as a `[STATUS]` work-log line so it stays visible in model context throughout the run.
 - Every subagent dispatch (Task / Skill / execution-context invocation) MUST embed the Worktree Header in the dispatch prompt when a worktree is active (see **Dispatch Protocol** below) AND MUST pass `plan_id` as an input parameter to satisfy the subagent's Input Contract (e.g., `execute-task`, `execution-context`). Prompt embedding and parameter passing are both required — the former propagates the constraint through free-form delegation, the latter satisfies the structured interface.
 
@@ -61,7 +61,7 @@ This applies to every dispatch in the execution loop, including (but not limited
 
 See `standards/operations.md` for the complete set of dispatch pattern templates and `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule.
 
-### Common anti-patterns to avoid (mirrored from dev-general-practices)
+### Common anti-patterns to avoid (mirrored from dev-agent-behavior-rules)
 
 Each Bash tool call dispatched during execute must contain exactly ONE command. Never combine with newlines, `&`, `&&`, `;`, or inline env-var assignment of the form `VAR=val cmd`. The `VAR=val cmd` shape combines the assignment and the command into one shell argument, which trips the host platform's permission UI and obscures the env-var contract by hiding the variable inside the command line rather than declaring it explicitly.
 
@@ -73,7 +73,7 @@ Each Bash tool call dispatched during execute must contain exactly ONE command. 
 
 **Safe alternative (option B)** — Set the env var in the command's invocation header (e.g., a separate `env MY_VAR=…` line, NOT inline) before launching the bash command, or define the value as a Python module-level constant lookup inside the script itself.
 
-See [`dev-general-practices` Hard Rules](../dev-general-practices/SKILL.md#bash-one-command-per-call) for the authoritative source.
+See [`dev-agent-behavior-rules` Hard Rules](../dev-agent-behavior-rules/SKILL.md#bash-one-command-per-call) for the authoritative source.
 
 ## cwd for `.plan/execute-script.py` calls
 

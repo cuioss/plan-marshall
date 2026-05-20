@@ -71,7 +71,7 @@ SCRIPT_DIR = Path(__file__).parent
 # matching the prior env-var-off default and avoiding noise on every run.
 #
 # This replaces the prior env-var gate (removed per lesson
-# ``2026-05-08-19-003``) which violated the ``dev-general-practices`` hard
+# ``2026-05-08-19-003``) which violated the ``dev-agent-behavior-rules`` hard
 # rule against ``VAR=val cmd`` invocations.
 
 _OPTIN_RULE_NAMES = frozenset({'argument_naming', 'verb_chain'})
@@ -340,7 +340,7 @@ def cmd_analyze(args) -> dict:
 
     # Marketplace-wide shell-substitution-in-skills rule. Unconditionally
     # active (not gated by --rules) because it enforces a hard rule from
-    # dev-general-practices and the analyzer is cheap (regex over markdown).
+    # dev-agent-behavior-rules and the analyzer is cheap (regex over markdown).
     shell_substitution_issues = analyze_shell_substitution_in_skills(marketplace_root)
     all_issues.extend(shell_substitution_issues)
     total_issues += len(shell_substitution_issues)
@@ -454,7 +454,7 @@ def cmd_quality_gate(args) -> dict:
                                     subcommand)
       - analyze_shell_substitution_in_skills (forbidden ``$(`` patterns in
                                     plan-marshall skill markdown — enforces
-                                    the dev-general-practices "no shell
+                                    the dev-agent-behavior-rules "no shell
                                     constructs" hard rule per lesson
                                     ``2026-05-15-13-001``)
     """

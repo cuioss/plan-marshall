@@ -430,7 +430,7 @@ def test_validate_domain_invariants_no_overlap():
 
 def test_validate_domain_invariants_overlap_raises():
     """Validation raises ValueError when defaults and optionals overlap."""
-    domain = {'defaults': ['plan-marshall:dev-general-practices'], 'optionals': ['plan-marshall:dev-general-practices']}
+    domain = {'defaults': ['plan-marshall:dev-agent-behavior-rules'], 'optionals': ['plan-marshall:dev-agent-behavior-rules']}
     import pytest
 
     with pytest.raises(ValueError, match='must not appear in both defaults and optionals'):
@@ -451,16 +451,16 @@ def test_get_default_config_validates_invariants():
     assert not (defaults & optionals), 'defaults and optionals must not overlap'
 
 
-def test_dev_general_practices_not_in_system_domain():
-    """dev-general-practices must not be in system defaults or optionals.
+def test_dev_agent_behavior_rules_not_in_system_domain():
+    """dev-agent-behavior-rules must not be in system defaults or optionals.
 
     Each phase skill and agent loads it explicitly via Skill: directive,
     so the global system domain entry is redundant.
     """
     system = _config_defaults.DEFAULT_SYSTEM_DOMAIN
     all_skills = system.get('defaults', []) + system.get('optionals', [])
-    assert 'plan-marshall:dev-general-practices' not in all_skills, (
-        'dev-general-practices should not be in system domain — loaded explicitly by each phase skill and agent'
+    assert 'plan-marshall:dev-agent-behavior-rules' not in all_skills, (
+        'dev-agent-behavior-rules should not be in system domain — loaded explicitly by each phase skill and agent'
     )
 
 

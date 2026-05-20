@@ -10,7 +10,7 @@
 
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:dev-general-practices
+Skill: plan-marshall:dev-agent-behavior-rules
 ```
 
 These provide architecture principles and non-prompting tool usage patterns.

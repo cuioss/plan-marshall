@@ -17,12 +17,12 @@ Skills with workflows load foundation skills.
 **Required foundation skills**:
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:dev-general-practices
+Skill: plan-marshall:dev-agent-behavior-rules
 ```
 
 **Check criteria**:
 1. Search SKILL.md for `Skill: pm-plugin-development:plugin-architecture`
-2. Search SKILL.md for `Skill: plan-marshall:dev-general-practices`
+2. Search SKILL.md for `Skill: plan-marshall:dev-agent-behavior-rules`
 3. **Exempt skills** (skip check):
    - `plugin-architecture` (is itself the architecture skill)
    - `marketplace-inventory` (pure Pattern 1 script automation, no component operations)
@@ -145,7 +145,7 @@ All `.md` files in `references/`, `standards/`, `workflow/`, and `templates/` ar
 
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:dev-general-practices
+Skill: plan-marshall:dev-agent-behavior-rules
 ```
 
 These provide architecture principles and non-prompting tool usage patterns.

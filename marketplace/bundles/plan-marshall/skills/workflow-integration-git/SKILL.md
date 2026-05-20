@@ -135,7 +135,7 @@ Then commit using `-F` to read the message from the file — this is one Bash ca
 git -C {worktree_path} commit -F .plan/temp/{plan_id}-commit-msg.txt
 ```
 
-The `git commit -m "$(cat <<'EOF' … EOF)"` form is forbidden — it combines `$(…)` substitution with a heredoc, both of which trip the Bash safety harness. See `dev-general-practices/standards/tool-usage-patterns.md` for the chain-shape and Bash-write rules.
+The `git commit -m "$(cat <<'EOF' … EOF)"` form is forbidden — it combines `$(…)` substitution with a heredoc, both of which trip the Bash safety harness. See `dev-agent-behavior-rules/standards/tool-usage-patterns.md` for the chain-shape and Bash-write rules.
 
 **Step 6: Push (Optional)**
 

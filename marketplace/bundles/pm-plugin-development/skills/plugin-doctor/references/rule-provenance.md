@@ -9,7 +9,7 @@ Every rule emitted by `plugin-doctor` must have a documented provenance — the 
 | **structural** | Validates file / component / argparse / metadata structure. Failure means the artifact does not match its declared schema. |
 | **content** | Validates the textual content of a marketplace artifact — bloat thresholds, prose drift, hard-coded paths, checklist patterns. |
 | **style** | Naming conventions, ordering, formatting conventions that do not affect runtime behaviour but degrade authoring experience when drifted. |
-| **safety** | Enforces a `dev-general-practices` hard rule. Violations are runtime hazards (security prompts, shell-construct rejection, prefix-binding silent failures). |
+| **safety** | Enforces a `dev-agent-behavior-rules` hard rule. Violations are runtime hazards (security prompts, shell-construct rejection, prefix-binding silent failures). |
 
 ## Rule Provenance Table
 
@@ -86,7 +86,7 @@ Activated unconditionally per lesson `2026-04-29-23-002`. Cross-checks marketpla
 | `ARGUMENT_NAMING_NOTATION_INVALID` | structural | `_analyze_argument_naming.py` | Lesson `2026-04-29-23-002` — three recurrences of stale-notation drift in ~3 days. |
 | `ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN` | structural | `_analyze_argument_naming.py` | Lesson `2026-04-29-23-002`. |
 | `ARGUMENT_NAMING_FLAG_UNKNOWN` | structural | `_analyze_argument_naming.py` | Lesson `2026-04-29-23-002`. |
-| `ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT` | structural | `_analyze_argument_naming.py` | Lesson `2026-04-29-23-002` — the Canonical Forms table at `plan-marshall:dev-general-practices/standards/argument-naming.md` is the documented contract; if it drifts from argparse, every author who consults it writes broken prose. |
+| `ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT` | structural | `_analyze_argument_naming.py` | Lesson `2026-04-29-23-002` — the Canonical Forms table at `plan-marshall:dev-agent-behavior-rules/standards/argument-naming.md` is the documented contract; if it drifts from argparse, every author who consults it writes broken prose. |
 
 ### manage-* invocation rules
 
@@ -131,7 +131,7 @@ Seven forward-looking lint rules added by the lesson-2026-05-05-18-001 remediati
 
 | Rule ID | Class | Emitter | Source |
 |---------|-------|---------|--------|
-| `shell-substitution-in-skills` | safety | `_analyze_shell_substitution_in_skills.py` | Lesson `2026-05-15-13-001` — `$(` command substitution in plan-marshall skill markdown violates the dev-general-practices "Bash: no shell constructs" hard rule. Structural exemptions: inline-code spans and fenced blocks with `markdown`/`text` info-string. |
+| `shell-substitution-in-skills` | safety | `_analyze_shell_substitution_in_skills.py` | Lesson `2026-05-15-13-001` — `$(` command substitution in plan-marshall skill markdown violates the dev-agent-behavior-rules "Bash: no shell constructs" hard rule. Structural exemptions: inline-code spans and fenced blocks with `markdown`/`text` info-string. |
 
 ### Lesson-ID prose hygiene
 

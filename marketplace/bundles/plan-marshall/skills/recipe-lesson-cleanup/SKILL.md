@@ -14,7 +14,7 @@ Generic, domain-invariant recipe for turning a single lesson-learned into a dete
 ## Foundational Practices
 
 ```
-Skill: plan-marshall:dev-general-practices
+Skill: plan-marshall:dev-agent-behavior-rules
 ```
 
 ## Enforcement
@@ -28,7 +28,7 @@ Skill: plan-marshall:dev-general-practices
 - Never override the `change_type` derived from lesson kind. The mapping (`bug → bug_fix`, `improvement → enhancement`, `anti-pattern → tech_debt`) is fixed.
 
 **Constraints:**
-- Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline.
+- Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline.
 - One deliverable per lesson directive — never merge or split.
 
 ## Input

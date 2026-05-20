@@ -783,7 +783,7 @@ def test_pm_marketplace_root_env_var_anchors_discovery(tmp_path, monkeypatch):
     Equivalent to the flag, but sourced from the environment per the
     documented resolution order in find_marketplace_path. Set via
     monkeypatch.setenv to avoid the inline ``VAR=val cmd`` shell shape that
-    dev-general-practices forbids.
+    dev-agent-behavior-rules forbids.
     """
     fake_ws = _build_fake_marketplace(tmp_path)
 

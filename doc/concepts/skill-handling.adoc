@@ -26,7 +26,7 @@ Every dispatch's context is built from up to three tiers, stacked in order:
 |===
 | Tier | Source | Examples
 
-| **Tier 1 — System** | `skill_domains.system.defaults` in `marshal.json`. Loaded by the dispatcher unconditionally; never in the caller's `skills[]` array. | link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/SKILL.md[`plan-marshall:dev-general-practices`]
+| **Tier 1 — System** | `skill_domains.system.defaults` in `marshal.json`. Loaded by the dispatcher unconditionally; never in the caller's `skills[]` array. | link:../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/SKILL.md[`plan-marshall:dev-agent-behavior-rules`]
 | **Tier 2 — Domain** | `skill_domains.{domain}` in `marshal.json`, materialized into `task.skills` via per-module `skills_by_profile`. Loaded per task. | link:../../marketplace/bundles/pm-dev-java/skills/java-core/SKILL.md[`pm-dev-java:java-core`], link:../../marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md[`pm-dev-java:junit-core`], link:../../marketplace/bundles/plan-marshall/skills/dev-general-module-testing/SKILL.md[`plan-marshall:dev-general-module-testing`]
 | **Workflow + Extensions** | Profile-routed (link:../../marketplace/bundles/plan-marshall/skills/execute-task/SKILL.md[`execute-task`] for phase-5 tasks) or finding-routed (`ext-triage-{domain}` during finalize). Resolved via `manage-config` lookups, passed through `skills[]`. | link:../../marketplace/bundles/plan-marshall/skills/execute-task/SKILL.md[`plan-marshall:execute-task`], link:../../marketplace/bundles/pm-dev-java/skills/ext-triage-java/SKILL.md[`pm-dev-java:ext-triage-java`]
 |===
@@ -37,11 +37,11 @@ Tier 1 always loads first. Tier 2 and the workflow / extension entries load in t
 
 Skills travel through the planning pipeline as a deterministic data flow. Nothing about "which skills load" is decided by the model.
 
-image::../resources/diagrams/skill-loading-flow.svg[Skill loading data flow — architecture's skills_by_profile becomes task.skills at plan time, travels through the dispatch verbatim, and is loaded by execution-context as Tier 2 on top of the implicit Tier 1 dev-general-practices, align=center]
+image::../resources/diagrams/skill-loading-flow.svg[Skill loading data flow — architecture's skills_by_profile becomes task.skills at plan time, travels through the dispatch verbatim, and is loaded by execution-context as Tier 2 on top of the implicit Tier 1 dev-agent-behavior-rules, align=center]
 
 Each transition is a manage-* script call or a workflow-driven assignment. The canonical step-by-step is link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/skill-loading.md[`ref-workflow-architecture/standards/skill-loading.md`].
 
-== `dev-general-practices` — the implicit Tier-1 skill
+== `dev-agent-behavior-rules` — the implicit Tier-1 skill
 
 The one skill every subagent loads regardless of what the dispatch site says. It carries the workflow-discipline hard rules: one Bash command per call, no shell loops or `$()`, `.plan/` access only through `manage-*` scripts, no direct `gh` / `glab`, no hard-coded build commands.
 
@@ -49,12 +49,12 @@ How it loads: the `execution-context` agent's Step 2 — before any caller-named
 
 [source]
 ----
-Skill: plan-marshall:dev-general-practices
+Skill: plan-marshall:dev-agent-behavior-rules
 ----
 
-Step 3 then walks `skills[]` for caller-named loads. If a caller accidentally passes `plan-marshall:dev-general-practices` in `skills[]`, the dispatcher de-dupes.
+Step 3 then walks `skills[]` for caller-named loads. If a caller accidentally passes `plan-marshall:dev-agent-behavior-rules` in `skills[]`, the dispatcher de-dupes.
 
-The skill itself follows **reference-mode** loading — it doesn't execute logic; it pulls in link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/agent-behavior-rules.md[`standards/agent-behavior-rules.md`] and (on demand) related standards files. The hard rules live there; the skill is the loader.
+The skill itself follows **reference-mode** loading — it doesn't execute logic; it pulls in link:../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/agent-behavior-rules.md[`standards/agent-behavior-rules.md`] and (on demand) related standards files. The hard rules live there; the skill is the loader.
 
 == `dev-general-module-testing` — a profile-driven Tier-2 skill
 
@@ -76,7 +76,7 @@ Concretely: a Java module's `enriched.json` will carry roughly
 }
 ----
 
-At plan time, task-plan reads that and writes `task.skills` accordingly. At dispatch, the execution-context agent loads them in order — and because `dev-general-practices` already loaded first, the testing skill's reference-mode standards layer on top of the foundational rules.
+At plan time, task-plan reads that and writes `task.skills` accordingly. At dispatch, the execution-context agent loads them in order — and because `dev-agent-behavior-rules` already loaded first, the testing skill's reference-mode standards layer on top of the foundational rules.
 
 This is what "loaded in the context with profile" means: the skill's presence is a deterministic function of `(module, profile)`, not an LLM judgment.
 
@@ -89,7 +89,7 @@ When a `Task:` dispatch fires (e.g., from `phase-5-execute` to execute one task)
 | Step | Action
 
 | 1 | **Validate the prompt-body contract** — `name`, `plan_id`, `skills[]`, exactly one of `workflow` / `instructions`, `WORKTREE`. Missing fields → return error TOON, abort.
-| 2 | **Load Tier 1 implicitly** — `Skill: plan-marshall:dev-general-practices`. Unconditional. Not in `skills[]`.
+| 2 | **Load Tier 1 implicitly** — `Skill: plan-marshall:dev-agent-behavior-rules`. Unconditional. Not in `skills[]`.
 | 3 | **Load `skills[]` in order** — for each entry, `Skill: <entry>`. Each load is logged with the work-log notation `[SKILL] (plan-marshall:execution-context.{name}) Loaded {skill}`. A failed load returns `error_type: skill_load_failure` and aborts.
 | 4 | **Acquire the workflow body** — resolve the `workflow:` notation to a marketplace path and `Read` it, or treat `instructions:` text as the body verbatim.
 | 5 | **Execute the workflow body** — the loaded skills are now in the subagent's context. The body may issue further `Skill:` calls inline for additional reference loads (in-context, not subagent dispatch).
@@ -171,7 +171,7 @@ Grep the work log to answer "what did task N actually load." If a skill is missi
 * link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/skill-loading.md[`skill-loading.md`] — canonical step-by-step of the two-tier loading + extensions
 * link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/agents.md[`agents.md`] — agent inventory and the dispatch-vs-context-load distinction
 * link:../../marketplace/bundles/plan-marshall/agents/execution-context.md[`execution-context.md`] — the dispatcher agent body (Steps 1-6)
-* link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/SKILL.md[`dev-general-practices/SKILL.md`] — the Tier-1 skill
+* link:../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/SKILL.md[`dev-agent-behavior-rules/SKILL.md`] — the Tier-1 skill
 * link:../../marketplace/bundles/plan-marshall/skills/dev-general-module-testing/SKILL.md[`dev-general-module-testing/SKILL.md`] — the profile-driven Tier-2 example
 * link:../../marketplace/bundles/plan-marshall/skills/execute-task/SKILL.md[`execute-task/SKILL.md`] — the profile-routed workflow skill
 * link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/skill-domains.md[`skill-domains.md`] — the `marshal.json` schema for skill domains

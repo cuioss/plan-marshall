@@ -82,11 +82,11 @@ Four detection modes:
 
 ## Argument Naming Rules
 
-The `ARGUMENT_NAMING_*` rule cluster cross-checks marketplace prose against the actual argparse declarations of the scripts that prose references. The cluster also cross-checks the Canonical Forms table in `marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/argument-naming.md` against the same argparse declarations. All four rules emit findings with `severity: error` and `fixable: false`, mirroring the `DISPLAY_DETAIL_*` finding shape used elsewhere in plugin-doctor.
+The `ARGUMENT_NAMING_*` rule cluster cross-checks marketplace prose against the actual argparse declarations of the scripts that prose references. The cluster also cross-checks the Canonical Forms table in `marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/argument-naming.md` against the same argparse declarations. All four rules emit findings with `severity: error` and `fixable: false`, mirroring the `DISPLAY_DETAIL_*` finding shape used elsewhere in plugin-doctor.
 
 **Activation**: This cluster is unconditionally active. See lesson `2026-04-29-23-002` for the rationale (three recurrences of stale-flag drift in skill workflows within ~3 days drove the move from a gated transitional period to default-on enforcement). Tests exercise the cluster directly against synthetic fixtures.
 
-**Scope**: every `python3 .plan/execute-script.py {notation} ...` token across SKILL.md, agents/*.md, commands/*.md, skills/*/standards/*.md, skills/*/references/*.md, skills/*/recipes/*.md within `marketplace/bundles/*/`. The Canonical Forms cross-check additionally reads the table at `marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/argument-naming.md`.
+**Scope**: every `python3 .plan/execute-script.py {notation} ...` token across SKILL.md, agents/*.md, commands/*.md, skills/*/standards/*.md, skills/*/references/*.md, skills/*/recipes/*.md within `marketplace/bundles/*/`. The Canonical Forms cross-check additionally reads the table at `marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/argument-naming.md`.
 
 **Discovery approach**: Pure static analysis — line-by-line regex extraction of executor invocations, plus AST walks of the referenced scripts to enumerate argparse subparsers and `add_argument` flag declarations. Mirrors the existing `argparse_safety` and `prose-verb-chain-consistency` patterns. No subprocess execution, no module imports.
 
@@ -108,7 +108,7 @@ The `ARGUMENT_NAMING_*` rule cluster cross-checks marketplace prose against the 
 - **Fix**: Update the prose to use a declared flag, or add the missing flag to the script's `add_argument` declarations.
 - **Exemptions**: Short flags (`-f`) are not subject to canonical-forms convention and are excluded from the scan. Flags whose script has no resolvable AST entry (missing file, parse error) are skipped silently — the notation rule reports the missing script.
 
-**ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT** (severity: error): Cross-checks every row of the Canonical Forms table at `marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/argument-naming.md` against the argparse declarations of the script the row prescribes. The cluster parses each row's `{script} {sub} --{flag1} {value1} --{flag2} ...` shape, resolves the `{script}` shorthand to a registered notation (matching on either the third segment of the notation or the second when the script shares its skill name), and confirms that `{sub}` is a declared subcommand and every `--{flag}` is declared on that subparser. Failure modes carried in `details.reason`: `shorthand_unresolved`, `subcommand_drift`, `flag_drift`.
+**ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT** (severity: error): Cross-checks every row of the Canonical Forms table at `marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/argument-naming.md` against the argparse declarations of the script the row prescribes. The cluster parses each row's `{script} {sub} --{flag1} {value1} --{flag2} ...` shape, resolves the `{script}` shorthand to a registered notation (matching on either the third segment of the notation or the second when the script shares its skill name), and confirms that `{sub}` is a declared subcommand and every `--{flag}` is declared on that subparser. Failure modes carried in `details.reason`: `shorthand_unresolved`, `subcommand_drift`, `flag_drift`.
 
 - **Rationale**: The Canonical Forms table is the documented contract for argument naming across `manage-*` scripts. If the table prescribes a spelling the argparse declarations no longer honor, every author who consults the table for guidance writes broken prose. The cross-check guarantees the table stays in sync with the implementations it governs.
 - **Fix**: Update either the Canonical Forms row or the argparse declaration so the two agree. When the table is correct and the script lags, rename the argparse flag; when the script is correct and the table lags, update the row.
@@ -228,7 +228,7 @@ Seven forward-looking lint rules.
 
 | Rule ID | Intent | False-positive policy | Suppression |
 |---------|--------|-----------------------|-------------|
-| `shell-substitution-in-skills` | Forbid `$(` command substitution in plan-marshall skill markdown — violates the dev-general-practices "Bash: no shell constructs" hard rule | Two structural exemptions: any occurrence inside a markdown inline-code span (`` `…` ``), or any occurrence inside a fenced block with `markdown`/`text` info-string. Subagents do not execute either context | None — convert to the documented two-call + text-substitution pattern |
+| `shell-substitution-in-skills` | Forbid `$(` command substitution in plan-marshall skill markdown — violates the dev-agent-behavior-rules "Bash: no shell constructs" hard rule | Two structural exemptions: any occurrence inside a markdown inline-code span (`` `…` ``), or any occurrence inside a fenced block with `markdown`/`text` info-string. Subagents do not execute either context | None — convert to the documented two-call + text-substitution pattern |
 
 ### shell-substitution-in-skills
 
@@ -238,7 +238,7 @@ Seven forward-looking lint rules.
 
 **Scope**: All `*.md` files under `marketplace/bundles/plan-marshall/skills/`.
 
-**Intent**: Enforce the dev-general-practices "Bash: no shell constructs" hard rule (`dev-general-practices/SKILL.md` § "Bash: One command per call", `tool-usage-patterns.md` § "Bash safety rules") at the skill-documentation layer. A `$(` in a workflow doc gets interpreted by subagents that copy the snippet into a Bash call literally — the host platform's permission UI then either pops a security prompt or rejects the dispatch outright. The rule prevents regressions of the sweep that removed all such patterns.
+**Intent**: Enforce the dev-agent-behavior-rules "Bash: no shell constructs" hard rule (`dev-agent-behavior-rules/SKILL.md` § "Bash: One command per call", `tool-usage-patterns.md` § "Bash safety rules") at the skill-documentation layer. A `$(` in a workflow doc gets interpreted by subagents that copy the snippet into a Bash call literally — the host platform's permission UI then either pops a security prompt or rejects the dispatch outright. The rule prevents regressions of the sweep that removed all such patterns.
 
 **Detection logic**: Scans every line of every markdown file under `marketplace/bundles/plan-marshall/skills/`. Each `$(` two-character occurrence is a candidate finding unless it falls into one of the two exempt documentary contexts below.
 
@@ -246,7 +246,7 @@ Seven forward-looking lint rules.
 1. **Inline-code span** — A `$(` inside a markdown inline-code span (`` `…` ``). Subagents do not execute inline-code tokens; these are structural token references (e.g., when a standards doc says "the `$(...)` form is forbidden"), not runnable commands.
 2. **Verbatim-source fenced block** — A `$(` inside a fenced block whose info-string is `markdown` or `text`. These fences hold verbatim source examples (before/after illustrations) that subagents do not interpret as instructions.
 
-**Rationale**: The two-call + text-substitution pattern (run the script as a bare command, then use a `{placeholder}` slot in the next command's narrative substitution) is the documented safe alternative — see `dev-general-practices/SKILL.md` § "Bash: One command per call" and the request body for lesson `2026-05-15-13-001`. The exemption logic is purely structural (inline-code span or `markdown`/`text` fence) so the rule does not depend on a fragile keyword heuristic in the surrounding prose.
+**Rationale**: The two-call + text-substitution pattern (run the script as a bare command, then use a `{placeholder}` slot in the next command's narrative substitution) is the documented safe alternative — see `dev-agent-behavior-rules/SKILL.md` § "Bash: One command per call" and the request body for lesson `2026-05-15-13-001`. The exemption logic is purely structural (inline-code span or `markdown`/`text` fence) so the rule does not depend on a fragile keyword heuristic in the surrounding prose.
 
 **Recommended fix**: Replace `target=$(python3 .plan/execute-script.py …)` with the bare `python3 .plan/execute-script.py …` invocation followed by a one-sentence narrative ("Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below."). Replace `$var` references in subsequent bash blocks with `{var}` placeholders.
 

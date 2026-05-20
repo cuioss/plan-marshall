@@ -1,6 +1,6 @@
 ---
-name: dev-general-practices
-description: Foundational development practices covering user interaction, tool usage, research, dependency management, and document proliferation
+name: dev-agent-behavior-rules
+description: Foundational agent behavior rules covering user interaction, tool usage, research, dependency management, and document proliferation
 user-invocable: false
 ---
 
