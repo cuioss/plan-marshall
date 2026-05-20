@@ -851,9 +851,13 @@ The motivating gap: lesson `2026-05-08-14-001` documents that agent-initiated re
 
 ### Deterministic exit clause (token-budget sentinel)
 
-The loop's continue-vs-yield decision is governed by exactly one deterministic clause — no per-task heuristics, no "this task feels expensive" intuition, no "context is filling up" sense-checks. The clause is:
+The loop's continue-vs-yield decision is governed by exactly one deterministic clause — no per-task heuristics, no "this task feels expensive" intuition, no "context is filling up" sense-checks. The clause is evaluated in canonical order:
 
-> **If `remaining_budget > N`: continue to the next task. Else: yield.**
+> **Small-plan short-circuit**: If `tasks_total <= 2` (read from `phase_5.tasks_total` in the execution manifest cached at Step 2), the sentinel is disabled for the dispatch lifetime — continue to the next task until the queue is empty or a terminal outcome fires.
+>
+> **Budget-vs-N comparison** (applies only when `tasks_total > 2`): **If `remaining_budget > N`: continue to the next task. Else: yield.**
+
+The small-plan short-circuit drops the orchestrator/task ratio from 3-5x to 1.0x for 1-task plans by suppressing the inter-task yield boundary that the budget-vs-N clause would otherwise impose. The threshold of `2` is deliberately conservative: a plan with at most two tasks completes well inside any reasonable per-dispatch budget, and the inter-task yield is pure overhead. The cross-phase analogue — per-phase caching of loop-invariant inputs — is documented in the phase-2/3/4 "Loop-invariant inputs (cached at phase entry)" subsections (see `phase-2-refine/SKILL.md`, `phase-3-outline/SKILL.md`, and `phase-4-plan/SKILL.md`) and in `extension-api/standards/dispatch-granularity.md` § 5.1 (Heuristic 2 — bundle when steps share context).
 
 Where `N` is the per-task budget reserve (the minimum context window that must be available before the loop is allowed to start another task). The clause runs once after each task completes — between `manage-tasks finalize-step` of the closing step (which fires the canonical `[OUTCOME]`) and the next `manage-tasks next` call. There is no intermediate decision point.
 
