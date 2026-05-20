@@ -32,6 +32,18 @@ Context Detection:
     when both are supplied. Use this when invoking the script from a worktree
     or alternate checkout where Path.cwd() would otherwise resolve to the
     wrong marketplace tree.
+
+Runtime Side-effects:
+    The generated executor writes the resolved plan_id (from ``--plan-id`` or
+    ``--audit-plan-id``) to the per-session active-plan cache at
+    ``~/.cache/plan-marshall/sessions/{session_id}/active-plan`` on every
+    invocation carrying one of those flags. The cache feeds the terminal-title
+    hook (``set_terminal_title.py``) so the main orchestration tab (cwd = repo
+    root) renders ``pm:{phase}[:{short_description}]`` instead of falling
+    through to the active-command segment. The write is fire-and-forget — any
+    I/O error is silently swallowed and the executor's exit code, stdout, and
+    stderr are unaffected. The helper (``_write_active_plan``) lives entirely
+    in the template; no generator-time substitution is required.
 """
 
 import argparse

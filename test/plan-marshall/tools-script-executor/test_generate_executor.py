@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Unit tests for generate_executor.py script."""
 
+import hashlib
 import os
 import shutil
 import subprocess
@@ -805,3 +806,261 @@ def test_pm_marketplace_root_env_var_anchors_discovery(tmp_path, monkeypatch):
             f'{notation} leaked through to real marketplace {path} despite '
             f'PM_MARKETPLACE_ROOT={fake_ws}'
         )
+
+
+# =============================================================================
+# TESTS: _write_active_plan helper in execute-script.py.template
+# =============================================================================
+# These tests exercise the session active-plan cache writer that the executor
+# template emits in main() on every invocation carrying --plan-id or
+# --audit-plan-id. The helper feeds the terminal-title hook
+# (set_terminal_title.py) so the main orchestration tab (cwd = repo root)
+# renders pm:{phase}[:{short_description}] instead of falling through to the
+# active-command segment.
+
+TEMPLATE_PATH = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template'
+)
+
+
+def _load_template_module():
+    """Load the executor template as a Python module with stub placeholders.
+
+    The template contains ``{{...}}`` substitution tokens that are filled in by
+    generate_executor.py at generation time. For unit testing helper functions
+    we replace those tokens with inert stand-ins and exec the resulting source
+    as a fresh module — no subprocess, no real PYTHONPATH writes.
+    """
+    import types
+
+    source = TEMPLATE_PATH.read_text(encoding='utf-8')
+    # Inert substitutions: empty mappings, no shared dirs, a temp logging
+    # placeholder pointing at the real logging scripts so `from plan_logging
+    # import ...` succeeds at module load.
+    logging_dir = str(
+        Path(__file__).parent.parent.parent.parent
+        / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts'
+    )
+    source = source.replace('{{SCRIPT_MAPPINGS}}', '')
+    source = source.replace('{{LOGGING_DIR}}', logging_dir)
+    source = source.replace('{{SHARED_MODULE_DIRS}}', '# (none)')
+    source = source.replace('{{EXTRA_SCRIPT_DIRS}}', '')
+    source = source.replace('{{PLAN_DIR_NAME}}', '.plan')
+
+    # Ensure shared dirs are importable for plan_logging's transitive imports.
+    for extra in _MARKETPLACE_SCRIPT_DIRS:
+        if extra not in sys.path:
+            sys.path.insert(0, extra)
+
+    module = types.ModuleType('executor_template_under_test')
+    module.__dict__['__file__'] = str(TEMPLATE_PATH)
+    exec(compile(source, str(TEMPLATE_PATH), 'exec'), module.__dict__)
+    return module
+
+
+def _seed_session_cache(home_dir: Path, session_id: str, cwd: str) -> None:
+    """Seed the ~/.cache/plan-marshall/sessions/by-cwd/<sha256(cwd)> file.
+
+    Mirrors what set_terminal_title.py writes on UserPromptSubmit. The
+    template's session-id resolver reads exactly this layout.
+    """
+    cache_base = home_dir / '.cache' / 'plan-marshall' / 'sessions' / 'by-cwd'
+    cache_base.mkdir(parents=True, exist_ok=True)
+    cwd_hash = hashlib.sha256(cwd.encode('utf-8')).hexdigest()
+    (cache_base / cwd_hash).write_text(session_id, encoding='utf-8')
+
+
+def test_template_contains_write_active_plan_helper():
+    """Generated executor source string must contain the _write_active_plan
+    helper definition and the main() call site so the runtime executor
+    actually populates the cache."""
+    source = TEMPLATE_PATH.read_text(encoding='utf-8')
+    assert 'def _write_active_plan(' in source, '_write_active_plan helper missing from template'
+    assert '_write_active_plan(_active_plan_id)' in source, (
+        'main() must invoke _write_active_plan after extracting plan_id'
+    )
+    # The helper depends on hashlib + Path.home() to resolve the cache path.
+    assert 'import hashlib' in source, 'template must import hashlib for session-id resolution'
+
+
+def test_write_active_plan_writes_cache_when_session_resolvable(tmp_path, monkeypatch):
+    """When a session_id is resolvable from ~/.cache/.../by-cwd/<hash>, the
+    helper writes plan_id to ~/.cache/.../sessions/<session_id>/active-plan."""
+    module = _load_template_module()
+
+    monkeypatch.setenv('HOME', str(tmp_path))
+    # The helper resolves cwd via `git rev-parse --show-toplevel` then falls
+    # back to Path.cwd(). Stub the subprocess so cwd resolution is deterministic.
+    fake_cwd = '/Users/test/project'
+    _seed_session_cache(tmp_path, 'sess-abc', fake_cwd)
+
+    class _FakeResult:
+        def __init__(self, returncode, stdout):
+            self.returncode = returncode
+            self.stdout = stdout
+
+    def _fake_run(*_args, **_kwargs):
+        return _FakeResult(0, fake_cwd + '\n')
+
+    monkeypatch.setattr(module.subprocess, 'run', _fake_run)
+
+    module._write_active_plan('my-plan-id')
+
+    cache_file = tmp_path / '.cache' / 'plan-marshall' / 'sessions' / 'sess-abc' / 'active-plan'
+    assert cache_file.is_file(), f'Expected cache file at {cache_file}'
+    assert cache_file.read_text(encoding='utf-8') == 'my-plan-id'
+
+
+def test_write_active_plan_noop_when_no_session_resolvable(tmp_path, monkeypatch):
+    """When no session_id is resolvable (no by-cwd/, no current), the helper
+    is a no-op and writes no file."""
+    module = _load_template_module()
+
+    monkeypatch.setenv('HOME', str(tmp_path))
+    # No cache seeding — by-cwd/ and current both absent.
+
+    class _FakeResult:
+        def __init__(self, returncode, stdout):
+            self.returncode = returncode
+            self.stdout = stdout
+
+    def _fake_run(*_args, **_kwargs):
+        return _FakeResult(0, '/no/such/cwd\n')
+
+    monkeypatch.setattr(module.subprocess, 'run', _fake_run)
+
+    module._write_active_plan('my-plan-id')
+
+    # Nothing should have been written under sessions/.
+    sessions_dir = tmp_path / '.cache' / 'plan-marshall' / 'sessions'
+    if sessions_dir.exists():
+        # by-cwd dir may exist as a side-effect of an earlier test; assert
+        # no per-session subdirectories were created.
+        children = [p.name for p in sessions_dir.iterdir() if p.is_dir() and p.name != 'by-cwd']
+        assert children == [], f'No per-session dirs should be created, got {children}'
+
+
+def test_write_active_plan_noop_on_invalid_plan_id(tmp_path, monkeypatch):
+    """Plan ids containing path separators / ../. / oversize / empty must be
+    rejected silently — no file written."""
+    module = _load_template_module()
+
+    monkeypatch.setenv('HOME', str(tmp_path))
+    fake_cwd = '/Users/test/project'
+    _seed_session_cache(tmp_path, 'sess-eval', fake_cwd)
+
+    class _FakeResult:
+        def __init__(self, returncode, stdout):
+            self.returncode = returncode
+            self.stdout = stdout
+
+    def _fake_run(*_args, **_kwargs):
+        return _FakeResult(0, fake_cwd + '\n')
+
+    monkeypatch.setattr(module.subprocess, 'run', _fake_run)
+
+    bad_values = [
+        '',  # empty
+        None,  # falsy non-string
+        '../escape',  # path traversal
+        'with/slash',  # path separator
+        'with\\backslash',  # win-style path separator
+        '..',  # traversal sentinel
+        '.',  # traversal sentinel
+        'a' * 200,  # oversize (>120)
+    ]
+    for value in bad_values:
+        module._write_active_plan(value)
+
+    cache_file = tmp_path / '.cache' / 'plan-marshall' / 'sessions' / 'sess-eval' / 'active-plan'
+    assert not cache_file.exists(), f'No file should be written for invalid plan_ids; found {cache_file}'
+
+
+def test_write_active_plan_swallows_oserror(tmp_path, monkeypatch):
+    """Any OSError raised during the write path is silently swallowed; the
+    helper never propagates exceptions to the calling script."""
+    module = _load_template_module()
+
+    monkeypatch.setenv('HOME', str(tmp_path))
+    fake_cwd = '/Users/test/project'
+    _seed_session_cache(tmp_path, 'sess-oserr', fake_cwd)
+
+    class _FakeResult:
+        def __init__(self, returncode, stdout):
+            self.returncode = returncode
+            self.stdout = stdout
+
+    def _fake_run(*_args, **_kwargs):
+        return _FakeResult(0, fake_cwd + '\n')
+
+    monkeypatch.setattr(module.subprocess, 'run', _fake_run)
+
+    # Patch Path.write_text on the helper's Path import to raise.
+    real_write_text = module.Path.write_text
+
+    def _raise(*_args, **_kwargs):
+        raise OSError('disk full simulation')
+
+    monkeypatch.setattr(module.Path, 'write_text', _raise)
+    try:
+        # Must not raise.
+        module._write_active_plan('plan-x')
+    finally:
+        monkeypatch.setattr(module.Path, 'write_text', real_write_text)
+
+
+def test_write_active_plan_overwrites_on_subsequent_calls(tmp_path, monkeypatch):
+    """Successive calls with different plan ids overwrite the same cache file
+    (no append, no per-call file). This matches the contract the
+    terminal-title reader expects: a single source of truth per session."""
+    module = _load_template_module()
+
+    monkeypatch.setenv('HOME', str(tmp_path))
+    fake_cwd = '/Users/test/project'
+    _seed_session_cache(tmp_path, 'sess-overwrite', fake_cwd)
+
+    class _FakeResult:
+        def __init__(self, returncode, stdout):
+            self.returncode = returncode
+            self.stdout = stdout
+
+    def _fake_run(*_args, **_kwargs):
+        return _FakeResult(0, fake_cwd + '\n')
+
+    monkeypatch.setattr(module.subprocess, 'run', _fake_run)
+
+    module._write_active_plan('first-plan')
+    module._write_active_plan('second-plan')
+    module._write_active_plan('third-plan')
+
+    cache_file = tmp_path / '.cache' / 'plan-marshall' / 'sessions' / 'sess-overwrite' / 'active-plan'
+    assert cache_file.read_text(encoding='utf-8') == 'third-plan'
+
+
+def test_write_active_plan_validate_helper_rejects_unsafe_session_id(tmp_path, monkeypatch):
+    """Even when by-cwd cache contains a malformed session id (e.g.
+    ``../etc``), the helper must reject it via _validate_active_plan_id and
+    never traverse out of the sessions directory."""
+    module = _load_template_module()
+
+    monkeypatch.setenv('HOME', str(tmp_path))
+    fake_cwd = '/Users/test/project'
+    # Seed a path-traversal session id — the validator must reject it.
+    _seed_session_cache(tmp_path, '../etc', fake_cwd)
+
+    class _FakeResult:
+        def __init__(self, returncode, stdout):
+            self.returncode = returncode
+            self.stdout = stdout
+
+    def _fake_run(*_args, **_kwargs):
+        return _FakeResult(0, fake_cwd + '\n')
+
+    monkeypatch.setattr(module.subprocess, 'run', _fake_run)
+
+    module._write_active_plan('my-plan-id')
+
+    # No file under ~/.cache/plan-marshall/etc or similar.
+    escape_dir = tmp_path / '.cache' / 'plan-marshall' / 'etc'
+    assert not escape_dir.exists(), 'Helper must not traverse out of sessions/ via malformed session id'
