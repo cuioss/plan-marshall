@@ -36,7 +36,7 @@ def test_resolve_triage_extension_java():
             {
                 'skill_domains': {
                     'system': {
-                        'defaults': ['plan-marshall:agent-behavior-rules'],
+                        'defaults': ['plan-marshall:dev-general-practices'],
                         'workflow_skills': {
                             '1-init': 'plan-marshall:phase-1-init',
                             '2-refine': 'plan-marshall:phase-2-refine',
@@ -74,7 +74,7 @@ def test_resolve_triage_extension_javascript():
             {
                 'skill_domains': {
                     'system': {
-                        'defaults': ['plan-marshall:agent-behavior-rules'],
+                        'defaults': ['plan-marshall:dev-general-practices'],
                         'workflow_skills': {
                             '1-init': 'plan-marshall:phase-1-init',
                             '2-refine': 'plan-marshall:phase-2-refine',
@@ -112,7 +112,7 @@ def test_resolve_triage_extension_plugin_dev():
             {
                 'skill_domains': {
                     'system': {
-                        'defaults': ['plan-marshall:agent-behavior-rules'],
+                        'defaults': ['plan-marshall:dev-general-practices'],
                         'workflow_skills': {
                             '1-init': 'plan-marshall:phase-1-init',
                             '2-refine': 'plan-marshall:phase-2-refine',
@@ -148,7 +148,7 @@ def test_resolve_triage_extension_null_for_missing():
             {
                 'skill_domains': {
                     'system': {
-                        'defaults': ['plan-marshall:agent-behavior-rules'],
+                        'defaults': ['plan-marshall:dev-general-practices'],
                         'workflow_skills': {
                             '1-init': 'plan-marshall:phase-1-init',
                             '2-refine': 'plan-marshall:phase-2-refine',
@@ -191,7 +191,7 @@ def test_resolve_triage_extension_null_for_unknown_domain():
             {
                 'skill_domains': {
                     'system': {
-                        'defaults': ['plan-marshall:agent-behavior-rules'],
+                        'defaults': ['plan-marshall:dev-general-practices'],
                         'workflow_skills': {
                             '1-init': 'plan-marshall:phase-1-init',
                             '2-refine': 'plan-marshall:phase-2-refine',
