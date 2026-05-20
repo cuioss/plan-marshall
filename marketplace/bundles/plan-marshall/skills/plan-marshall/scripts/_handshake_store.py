@@ -34,6 +34,7 @@ HANDSHAKE_FIELDS = [
     'worktree_sha',
     'worktree_dirty',
     'worktree_orphan',
+    'references_valid',
     'task_state_hash',
     'qgate_open_count',
     'config_hash',
