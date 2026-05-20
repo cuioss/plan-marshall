@@ -65,7 +65,6 @@ The classification certainty `CERTAIN_EXCLUDE` was assigned during phase-3-outli
 | `plan-marshall/skills/manage-logging/scripts/` | `plan_logging.py` | Shared logging library — imports `is_valid_plan_id`, no argparse main |
 | `plan-marshall/skills/manage-providers/scripts/` | `credentials.py` | Provider credentials handler — only `--skill`/`--scope`/`--auth-type`/`--extra` |
 | `plan-marshall/skills/marshall-steward/scripts/` | `bootstrap_plugin.py`, `determine_mode.py`, `gitignore_setup.py` | Interactive setup wizards — no in-scope flags |
-| `plan-marshall/skills/plan-marshall/scripts/` | `set_terminal_title.py` | Status-line helper — only `--statusline`/`--plan-label` |
 | `plan-marshall/skills/ref-toon-format/scripts/` | `toon_parser.py` | Pure parser library — no main entry |
 | `plan-marshall/skills/script-shared/scripts/` | `extension_base.py`, `marketplace_bundles.py`, `marketplace_paths.py`, `triage_helpers.py` | Shared utilities — no main entry |
 | `plan-marshall/skills/script-shared/scripts/query/` | `query-architecture.py`, `query-config.py` | Query utilities — only `--bundle`/`--path`/`--refresh`/`--project-dir`/`--plan-id` (the `--plan-id` flag is the routing escape from the two-state contract documented in `tools-script-executor/standards/cwd-policy.md`; it is NOT used for plan-state lookup here) |

@@ -813,10 +813,10 @@ def test_pm_marketplace_root_env_var_anchors_discovery(tmp_path, monkeypatch):
 # =============================================================================
 # These tests exercise the session active-plan cache writer that the executor
 # template emits in main() on every invocation carrying --plan-id or
-# --audit-plan-id. The helper feeds the terminal-title hook
-# (set_terminal_title.py) so the main orchestration tab (cwd = repo root)
-# renders pm:{phase}[:{short_description}] instead of falling through to the
-# active-command segment.
+# --audit-plan-id. The helper feeds the per-target terminal-title reader
+# (cluster-01 `session render-title`) so the main orchestration tab
+# (cwd = repo root) renders pm:{phase}[:{short_description}] instead of
+# falling through to the active-command segment.
 
 TEMPLATE_PATH = (
     Path(__file__).parent.parent.parent.parent
@@ -862,8 +862,9 @@ def _load_template_module():
 def _seed_session_cache(home_dir: Path, session_id: str, cwd: str) -> None:
     """Seed the ~/.cache/plan-marshall/sessions/by-cwd/<sha256(cwd)> file.
 
-    Mirrors what set_terminal_title.py writes on UserPromptSubmit. The
-    template's session-id resolver reads exactly this layout.
+    Mirrors what the per-target terminal-title hook writes on
+    UserPromptSubmit. The template's session-id resolver reads exactly
+    this layout.
     """
     cache_base = home_dir / '.cache' / 'plan-marshall' / 'sessions' / 'by-cwd'
     cache_base.mkdir(parents=True, exist_ok=True)

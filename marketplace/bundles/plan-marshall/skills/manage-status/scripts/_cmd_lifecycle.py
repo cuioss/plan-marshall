@@ -13,6 +13,7 @@ from _invariants import _BLOCKING_BOUNDARIES  # type: ignore[import-not-found]
 from _references_core import read_references, write_references  # type: ignore[import-not-found]
 from _short_description import derive_short_description  # type: ignore[import-not-found]
 from _status_core import (
+    _publish_title_body,
     get_archive_dir,
     get_status_path,
     log_entry,
@@ -130,6 +131,12 @@ def cmd_create(args: argparse.Namespace) -> dict:
         status['metadata'] = {'use_worktree': False}
 
     write_status(args.plan_id, status)
+    # Title-body publication hook — recompute pm:{phase}[:{short_description}]
+    # from the just-written status and persist to ``{plan_dir}/title-body.txt``
+    # so per-target session renderers can read it without re-deriving plan
+    # state. Writer-side publication; reader is cluster-01 ``session
+    # render-title``.
+    _publish_title_body(get_plan_dir(args.plan_id), status)
 
     result: dict[str, Any] = {
         'status': 'success',
@@ -285,6 +292,10 @@ def cmd_transition(args: argparse.Namespace) -> dict | None:
         status['current_phase'] = 'complete'
 
     write_status(args.plan_id, status)
+    # Title-body publication hook — covers the in_progress advance and the
+    # all-phases-done sentinel branch (where ``current_phase`` becomes
+    # ``complete`` and the helper deletes the file instead of writing it).
+    _publish_title_body(get_plan_dir(args.plan_id), status)
 
     result: dict[str, Any] = {'status': 'success', 'plan_id': args.plan_id, 'completed_phase': args.completed}
     if next_phase:
@@ -341,6 +352,14 @@ def cmd_archive(args: argparse.Namespace) -> dict | None:
     if all(p.get('status') == PHASE_STATUS_DONE for p in phases):
         status['current_phase'] = 'complete'
     write_status(args.plan_id, status)
+    # Title-body publication hook — archive always pushes ``current_phase``
+    # towards a terminal state, so the helper deletes ``title-body.txt`` from
+    # the live plan-dir BEFORE ``shutil.move`` carries the directory into the
+    # archive. Skipping this would archive a stale title-body file alongside
+    # the closed plan; the per-target reader would still find no live plan
+    # (no session-active-plan handle), but cleaning at the writer keeps the
+    # artifact's lifecycle symmetric with the rest of the mutation paths.
+    _publish_title_body(plan_dir, status)
 
     archive_dir.mkdir(parents=True, exist_ok=True)
     shutil.move(str(plan_dir), str(archive_path))

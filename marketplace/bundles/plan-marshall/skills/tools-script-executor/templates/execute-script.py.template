@@ -105,12 +105,12 @@ _PYTHONPATH = ':'.join(_SCRIPT_DIRS)
 VALIDATE_TOON = False  # Set True for strict TOON output validation
 
 # Session active-plan cache: best-effort writer ----------------------------
-# The terminal-title hook (set_terminal_title.py) consults
-# ~/.cache/plan-marshall/sessions/{session_id}/active-plan as a second-tier
-# fallback when the worktree-cwd resolution does not yield a plan id. The
-# executor populates that cache on every invocation carrying --plan-id /
-# --audit-plan-id so the main orchestration tab (cwd = repo root) can still
-# render pm:{phase}[:{short_description}] in the terminal title.
+# The per-target terminal-title reader (cluster-01 `session render-title`)
+# consults ~/.cache/plan-marshall/sessions/{session_id}/active-plan as a
+# second-tier fallback when the worktree-cwd resolution does not yield a
+# plan id. The executor populates that cache on every invocation carrying
+# --plan-id / --audit-plan-id so the main orchestration tab (cwd = repo
+# root) can still render pm:{phase}[:{short_description}] in the terminal title.
 #
 # The write is fire-and-forget: any OSError / ValueError / RuntimeError is
 # silently swallowed; the executor's exit code, stdout, and stderr are

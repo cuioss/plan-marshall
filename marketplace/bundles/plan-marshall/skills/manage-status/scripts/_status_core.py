@@ -9,6 +9,7 @@ from typing import Any, NotRequired, TypedDict, cast
 
 from constants import DIR_ARCHIVED, DIR_PLANS, FILE_STATUS  # type: ignore[import-not-found]
 from file_ops import (  # type: ignore[import-not-found]
+    atomic_write_file,
     base_path,
     get_plan_dir,
     now_utc_iso,
@@ -97,6 +98,70 @@ def _try_read_status_json(plan_dir: Path) -> dict[Any, Any] | None:
         except (ValueError, OSError):
             return None
     return None
+
+
+# =============================================================================
+# Title-Body Publication
+# =============================================================================
+
+# Terminal phases — when ``status['current_phase']`` is one of these, the
+# title-body file is deleted rather than written. "file absent → no plan-title
+# to render" is the only conditional carried by the per-target reader (see
+# cluster-01 ``session render-title`` operation spec).
+TITLE_BODY_TERMINAL_PHASES = frozenset({'complete', 'archived'})
+
+# Filename of the writer-side title-body artifact published into the plan
+# directory on every state mutation. Platform-agnostic plaintext (no JSON,
+# no OSC); the per-target reader composes ``{icon} {body}`` from this file
+# plus active-command state.
+TITLE_BODY_FILENAME = 'title-body.txt'
+
+
+def _render_title_body(status_data: dict[Any, Any]) -> str | None:
+    """Render the title-body string from an in-memory status dict.
+
+    Returns ``"pm:{phase}"`` when no ``short_description`` is present, or
+    ``"pm:{phase}:{short_description}"`` when it is. Returns ``None`` when
+    ``current_phase`` is terminal (``complete`` / ``archived``) — callers
+    treat ``None`` as the delete-the-file signal.
+    """
+    current_phase = status_data.get('current_phase')
+    if not current_phase or current_phase in TITLE_BODY_TERMINAL_PHASES:
+        return None
+    short_description = status_data.get('short_description')
+    if short_description:
+        return f'pm:{current_phase}:{short_description}'
+    return f'pm:{current_phase}'
+
+
+def _publish_title_body(plan_dir: Path, status_data: dict[Any, Any]) -> None:
+    """Publish the title-body artifact for a plan.
+
+    Recomputes ``pm:{phase}[:{short_description}]`` from the supplied
+    in-memory ``status_data`` (no re-read of ``status.json``) and writes
+    it atomically to ``{plan_dir}/title-body.txt``. When the plan is in a
+    terminal phase (``current_phase`` in ``TITLE_BODY_TERMINAL_PHASES``),
+    the file is deleted instead of written — "file absent → no plan-title
+    to render" is the reader's only conditional.
+
+    Failures are swallowed silently to preserve the existing
+    terminal-title hook semantics: the next successful mutation
+    self-heals, and a missing file is harmless on the read path.
+    """
+    title_body_path = plan_dir / TITLE_BODY_FILENAME
+    rendered = _render_title_body(status_data)
+    try:
+        if rendered is None:
+            if title_body_path.exists():
+                title_body_path.unlink()
+            return
+        # ``atomic_write_file`` appends exactly one terminating ``\n`` when
+        # the supplied content does not already end in one — pass ``rendered``
+        # unterminated so the artifact ends with exactly one ``\n``.
+        atomic_write_file(title_body_path, rendered)
+    except OSError:
+        # Silent no-op — consistent with the legacy terminal-title hook.
+        return
 
 
 def require_status(args) -> dict[Any, Any] | None:

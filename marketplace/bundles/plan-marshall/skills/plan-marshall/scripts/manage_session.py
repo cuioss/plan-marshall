@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Resolve the active Claude Code session_id and transcript path from disk.
 
-The terminal-title hook (`set_terminal_title.py`) writes the session_id into
+The per-target terminal-title hook writes the session_id into
 `~/.cache/plan-marshall/sessions/{by-cwd/{sha256(cwd)},current}` on every
 UserPromptSubmit. This script reads those caches back so main-context skill
 calls can obtain the id without reaching for an environment variable.

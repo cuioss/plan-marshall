@@ -7,6 +7,9 @@ import argparse
 from typing import Any
 
 from _status_core import (
+    TITLE_BODY_FILENAME,
+    TITLE_BODY_TERMINAL_PHASES,
+    _publish_title_body,
     _try_read_status_json,
     get_plans_dir,
     log_entry,
@@ -14,13 +17,29 @@ from _status_core import (
     write_status,
 )
 from constants import PHASE_STATUS_DONE, PHASE_STATUS_IN_PROGRESS  # type: ignore[import-not-found]
+from file_ops import get_plan_dir  # type: ignore[import-not-found]
 
 
 def cmd_read(args: argparse.Namespace) -> dict | None:
-    """Read plan status."""
+    """Read plan status.
+
+    Cold-bootstrap branch: when ``title-body.txt`` is absent for an active
+    (non-terminal) plan, the read handler republishes it from the in-memory
+    status dict. This covers fresh tabs / processes that opened after the
+    writer's last successful publish — the next read self-heals the
+    artifact without requiring a state mutation.
+    """
     status = require_status(args)
     if status is None:
         return None
+
+    current_phase = status.get('current_phase')
+    if current_phase and current_phase not in TITLE_BODY_TERMINAL_PHASES:
+        plan_dir = get_plan_dir(args.plan_id)
+        title_body_path = plan_dir / TITLE_BODY_FILENAME
+        if not title_body_path.exists():
+            _publish_title_body(plan_dir, status)
+
     return {'status': 'success', 'plan_id': args.plan_id, 'plan': status}
 
 
@@ -49,6 +68,10 @@ def cmd_set_phase(args: argparse.Namespace) -> dict | None:
             phase['status'] = PHASE_STATUS_IN_PROGRESS
 
     write_status(args.plan_id, status)
+    # Title-body publication hook — set-phase is a phase mutator and must
+    # republish the writer-side title-body artifact so per-target session
+    # renderers see the new phase without re-reading status.json.
+    _publish_title_body(get_plan_dir(args.plan_id), status)
     log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Phase: {previous} -> {args.phase}')
 
     return {'status': 'success', 'plan_id': args.plan_id, 'current_phase': args.phase, 'previous_phase': previous}
