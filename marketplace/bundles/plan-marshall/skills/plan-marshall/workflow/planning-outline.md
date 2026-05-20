@@ -106,7 +106,7 @@ Extract the `target` field. Emit the standardized post-resolve dispatch log line
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=q-gate-validation workflow=plan-marshall:plan-marshall/workflow/q-gate-validation.md plan_id={plan_id}"
+  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-3-outline workflow=plan-marshall:plan-marshall/workflow/q-gate-validation.md plan_id={plan_id}"
 ```
 
 Dispatch:
@@ -315,7 +315,7 @@ Task: plan-marshall:{target}
 
 The agent returns the task creation summary (`tasks` array with `domain`, `profile`, `skills`) plus `qgate_pending_count` and `qgate_validation_required` in its TOON.
 
-**Post-return q-gate-validation dispatch (conditional)**: Read `qgate_validation_required` from the phase return TOON captured above. When `true` (the default — phase-4-plan signals unconditionally on successful completion per Step 9b), dispatch q-gate-validation as a sibling top-level Task at the orchestrator layer — the phase body cannot spawn it because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. When `false` (unrecoverable error path), skip this block and continue directly to the Metrics fused-call below.
+**Post-return q-gate-validation dispatch (conditional)**: Read `qgate_validation_required` from the phase return TOON captured above. When `true` (the default — phase-4-plan signals unconditionally on successful completion per Step 9b), dispatch q-gate-validation as a sibling top-level Task at the orchestrator layer — the phase body cannot spawn it because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. When `false` or absent (unrecoverable error path), skip this block and continue directly to the Metrics fused-call below.
 
 Resolve the dispatch target via the same role used for phase-4-plan (q-gate-validation tracks the calling phase's default):
 
