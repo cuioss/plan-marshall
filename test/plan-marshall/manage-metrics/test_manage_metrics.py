@@ -213,7 +213,10 @@ def test_generate_creates_metrics_md():
         md_content = md_path.read_text()
         assert '# Metrics: metrics-gen-01' in md_content
         assert '## Phase Breakdown' in md_content
-        assert '| Phase | Duration | Tokens | Tool Uses |' in md_content
+        # Header is padded to uniform per-column width; check for the column names rather
+        # than the exact unpadded string.
+        assert '| Phase' in md_content and '| Duration' in md_content
+        assert '| Tokens' in md_content and '| Tool Uses' in md_content
         assert '1-init' in md_content
         assert '2-refine' in md_content
         assert '25,000' in md_content
