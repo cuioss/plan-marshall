@@ -119,7 +119,7 @@ Understanding when to use `Skill:` vs `Task:` is critical for proper context man
 │  ├──────────────────────┼────────────────────────────────────────────────┤ │
 │  │                      │                                                │ │
 │  │ execution-context    │ Generic dispatcher                             │ │
-│  │                      │ • Loads dev-agent-behavior-rules implicitly       │ │
+│  │                      │ • Loads dev-agent-behavior-rules implicitly    │ │
 │  │                      │ • Loads caller-specified skills[] in order     │ │
 │  │                      │ • Reads + executes the prompt-body `workflow`  │ │
 │  │                      │   doc (or `instructions`) to completion        │ │

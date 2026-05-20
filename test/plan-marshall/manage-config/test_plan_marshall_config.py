@@ -451,7 +451,7 @@ def test_get_default_config_validates_invariants():
     assert not (defaults & optionals), 'defaults and optionals must not overlap'
 
 
-def test_dev_general_practices_not_in_system_domain():
+def test_dev_agent_behavior_rules_not_in_system_domain():
     """dev-agent-behavior-rules must not be in system defaults or optionals.
 
     Each phase skill and agent loads it explicitly via Skill: directive,
