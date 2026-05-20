@@ -30,12 +30,12 @@ def _load_module(name, filename, skill):
 _gradle_execute_mod = _load_module('_gradle_execute', '_gradle_execute.py', 'build-gradle')
 _maven_execute_mod = _load_module('_maven_execute', '_maven_execute.py', 'build-maven')
 _npm_execute_mod = _load_module('_npm_execute', '_npm_execute.py', 'build-npm')
-_python_execute_mod = _load_module('_python_execute', '_python_execute.py', 'build-python')
+_pyproject_execute_mod = _load_module('_pyproject_execute', '_pyproject_execute.py', 'build-pyproject')
 
 GRADLE_CONFIG = _gradle_execute_mod._CONFIG
 MAVEN_CONFIG = _maven_execute_mod._CONFIG
 NPM_CONFIG = _npm_execute_mod._CONFIG
-PYTHON_CONFIG = _python_execute_mod._CONFIG
+PYTHON_CONFIG = _pyproject_execute_mod._CONFIG
 
 ALL_CONFIGS = {
     'maven': MAVEN_CONFIG,

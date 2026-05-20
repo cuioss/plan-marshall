@@ -67,7 +67,7 @@ Decline the suggestion with the corresponding template. Always reply before reso
 |---------|----------------|
 | Bot flags a `.pyi` stub file with a runtime-only rule | `Out of domain: file is a `.pyi` stub; `{rule_id}` applies to runtime modules only.` |
 | Bot suggests JS/TS-style pattern (`async/await` chaining as `.then`) on Python code | `Out of domain: suggestion is JavaScript pattern. Python equivalent (`asyncio.gather`, `await`) is already in use at line {N}.` |
-| Bot flags `pyproject.toml` issue inside a Python code review thread | `Out of domain for this thread (Python code review). Build configuration findings are triaged via `plan-marshall:build-python` workflow.` |
+| Bot flags `pyproject.toml` issue inside a Python code review thread | `Out of domain for this thread (Python code review). Build configuration findings are triaged via `plan-marshall:build-pyproject` workflow.` |
 | Bot complains about indentation/formatting that ruff-format owns | `Out of domain: formatting is owned by ruff-format; bot rule overlaps. Formatter output is the source of truth; suggestion would diverge from `ruff format` baseline.` |
 
 ## Escalation Triggers

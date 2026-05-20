@@ -50,7 +50,7 @@ Each bundle in `marketplace/bundles/` becomes one such module with:
 
 ### Canonical Commands
 
-Each bundle module gets the full set of canonical Python build commands via `plan-marshall:build-python:python_build`:
+Each bundle module gets the full set of canonical Python build commands via `plan-marshall:build-pyproject:pyproject_build`:
 
 | Command | Execution |
 |---------|-----------|
@@ -96,6 +96,6 @@ This extension is discovered by:
 ## References
 
 - `plan-marshall:extension-api` - Extension API contract
-- `pm-dev-python:plan-marshall-plugin` - Python build execution via python_build.py
+- `pm-dev-python:plan-marshall-plugin` - Python build execution via pyproject_build.py
 - `pm-plugin-development:ext-triage-plugin` - Plugin triage extension
 - `pm-plugin-development:ext-outline-workflow` - Plugin outline workflow

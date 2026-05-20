@@ -241,7 +241,7 @@ On any plan abort or failure path, do NOT auto-remove the worktree — leave it 
 
 ## The `--plan-id` Three-State Contract
 
-Build wrappers (`build-maven`, `build-python`, `build-npm`, `build-gradle`), CI scripts (`tools-integration-ci`), the Sonar wrapper (`workflow-integration-sonar`), and any other Bucket B script that touches a working tree accept `--plan-id` as their working-tree binding flag, with `--project-dir` retained as an explicit override.
+Build wrappers (`build-maven`, `build-pyproject`, `build-npm`, `build-gradle`), CI scripts (`tools-integration-ci`), the Sonar wrapper (`workflow-integration-sonar`), and any other Bucket B script that touches a working tree accept `--plan-id` as their working-tree binding flag, with `--project-dir` retained as an explicit override.
 
 The contract has three states:
 

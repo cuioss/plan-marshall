@@ -20,7 +20,7 @@ Usage (programmatic)::
 Usage (CLI)::
 
     python3 inject_project_dir.py run \\
-        --command "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args 'module-tests'" \\
+        --command "python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args 'module-tests'" \\
         --worktree-path /path/to/worktree
 """
 
@@ -35,7 +35,7 @@ _BUCKET_B_NOTATIONS: frozenset[str] = frozenset(
         'plan-marshall:build-maven:maven',
         'plan-marshall:build-gradle:gradle',
         'plan-marshall:build-npm:npm',
-        'plan-marshall:build-python:python_build',
+        'plan-marshall:build-pyproject:pyproject_build',
         'plan-marshall:tools-integration-ci:ci',
         'plan-marshall:workflow-integration-git:git',
         'plan-marshall:workflow-integration-sonar:sonar',

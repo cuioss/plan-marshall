@@ -56,11 +56,11 @@ Collect the resulting bundle names into a sorted, de-duplicated list `bundles`. 
 For each `bundle` in `bundles` (in sorted order):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:build-python:python_build \
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build \
   run --command-args "quality-gate {bundle}" --project-dir {worktree_path}
 ```
 
-Inspect the TOON output. On `status: error`, halt: stop iterating, record the failing bundle, and proceed to **Mark Step Complete (Failure)** below. The underlying `python_build` TOON output already carries `errors[N]{file,line,message,category}` — surface the offending file/line via the standard finalize TOON.
+Inspect the TOON output. On `status: error`, halt: stop iterating, record the failing bundle, and proceed to **Mark Step Complete (Failure)** below. The underlying `pyproject_build` TOON output already carries `errors[N]{file,line,message,category}` — surface the offending file/line via the standard finalize TOON.
 
 If every bundle succeeds (`status: success` for all `N` invocations), proceed to **Mark Step Complete (Success)**.
 

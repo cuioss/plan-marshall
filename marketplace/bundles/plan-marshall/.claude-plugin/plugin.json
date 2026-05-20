@@ -32,7 +32,7 @@
     "./skills/build-gradle",
     "./skills/build-maven",
     "./skills/build-npm",
-    "./skills/build-python",
+    "./skills/build-pyproject",
     "./skills/dev-general-code-quality",
     "./skills/dev-general-module-testing",
     "./skills/dev-general-practices",

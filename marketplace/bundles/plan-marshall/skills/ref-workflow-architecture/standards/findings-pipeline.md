@@ -18,7 +18,7 @@ The plan-marshall findings pipeline routes every quality signal — PR review co
 │  │  gitlab (MR review)  │       │   ├─ pr-comment-     │         │ alize: │ │
 │  │ workflow-integration-│       │   │  overflow.jsonl  │         │  auto- │ │
 │  │  sonar (issues)      │       │   ├─ sonar-issue     │         │  matedR│ │
-│  │ build-python /       │       │   │     .jsonl       │         │  view, │ │
+│  │ build-pyproject /    │       │   │     .jsonl       │         │  view, │ │
 │  │ build-maven /        │       │   ├─ build-error     │         │  sonar-│ │
 │  │ build-gradle /       │       │   │     .jsonl       │         │  round-│ │
 │  │ build-npm            │       │   ├─ test-failure    │         │  trip  │ │
@@ -98,13 +98,13 @@ Each producer fetches findings from its upstream source, applies any pre-filter 
 | `workflow-integration-github` | `comments-stage --pr-number N --plan-id P` | `pr-comment` | Pre-filter: `comment-patterns.json` drops automated/acknowledgment noise. Source-specific metadata (thread_id, author, kind=inline\|review_body) lives in `detail`. |
 | `workflow-integration-gitlab` | `comments-stage --pr-number N --plan-id P` | `pr-comment` | Mirror of GitHub; provider-agnostic schema. |
 | `workflow-integration-sonar` | `fetch-and-store --plan-id P --project K` | `sonar-issue` | Pre-filter: `sonar-rules.json` drops issues already suppressed via NOSONAR. Severity from issue severity; rule from issue rule. |
-| `build-python` / `build-maven` / `build-gradle` / `build-npm` | `run --command-args "…" --plan-id P` (always-on when `--plan-id` is set) | `build-error` / `test-failure` / `lint-issue` | Each parsed log entry becomes one finding. Build tool is the `module` field; issue category becomes `rule`. |
+| `build-pyproject` / `build-maven` / `build-gradle` / `build-npm` | `run --command-args "…" --plan-id P` (always-on when `--plan-id` is set) | `build-error` / `test-failure` / `lint-issue` | Each parsed log entry becomes one finding. Build tool is the `module` field; issue category becomes `rule`. |
 
 For per-producer CLI specifics see each skill's SKILL.md:
 - [`workflow-integration-github/SKILL.md`](../../workflow-integration-github/SKILL.md)
 - [`workflow-integration-gitlab/SKILL.md`](../../workflow-integration-gitlab/SKILL.md)
 - [`workflow-integration-sonar/SKILL.md`](../../workflow-integration-sonar/SKILL.md)
-- [`build-python/SKILL.md`](../../build-python/SKILL.md), [`build-maven/SKILL.md`](../../build-maven/SKILL.md), [`build-gradle/SKILL.md`](../../build-gradle/SKILL.md), [`build-npm/SKILL.md`](../../build-npm/SKILL.md)
+- [`build-pyproject/SKILL.md`](../../build-pyproject/SKILL.md), [`build-maven/SKILL.md`](../../build-maven/SKILL.md), [`build-gradle/SKILL.md`](../../build-gradle/SKILL.md), [`build-npm/SKILL.md`](../../build-npm/SKILL.md)
 
 ### Producer-fidelity contract
 
@@ -235,7 +235,7 @@ For the formal extension contract, the resolver path, and the implementation pat
 |---|---|
 | Storage tree, CLI surface, dedup semantics | [`manage-findings/SKILL.md`](../../manage-findings/SKILL.md) |
 | JSONL schema, type taxonomy, severity values, resolution model | [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) |
-| Per-producer CLI surface | [`workflow-integration-github/SKILL.md`](../../workflow-integration-github/SKILL.md), [`workflow-integration-gitlab/SKILL.md`](../../workflow-integration-gitlab/SKILL.md), [`workflow-integration-sonar/SKILL.md`](../../workflow-integration-sonar/SKILL.md), [`build-python/SKILL.md`](../../build-python/SKILL.md), [`build-maven/SKILL.md`](../../build-maven/SKILL.md), [`build-gradle/SKILL.md`](../../build-gradle/SKILL.md), [`build-npm/SKILL.md`](../../build-npm/SKILL.md) |
+| Per-producer CLI surface | [`workflow-integration-github/SKILL.md`](../../workflow-integration-github/SKILL.md), [`workflow-integration-gitlab/SKILL.md`](../../workflow-integration-gitlab/SKILL.md), [`workflow-integration-sonar/SKILL.md`](../../workflow-integration-sonar/SKILL.md), [`build-pyproject/SKILL.md`](../../build-pyproject/SKILL.md), [`build-maven/SKILL.md`](../../build-maven/SKILL.md), [`build-gradle/SKILL.md`](../../build-gradle/SKILL.md), [`build-npm/SKILL.md`](../../build-npm/SKILL.md) |
 | Per-consumer step list | [`phase-6-finalize/workflow/automated-review.md`](../../phase-6-finalize/workflow/automated-review.md), [`phase-6-finalize/workflow/sonar-roundtrip.md`](../../phase-6-finalize/workflow/sonar-roundtrip.md), [`workflow-pr-doctor/standards/automated-review-lifecycle.md`](../../workflow-pr-doctor/standards/automated-review-lifecycle.md) |
 | Invariant capture / verify plumbing, row schema, structured error envelope | [`plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md) |
 | Extension contract, implementor list, resolver | [`extension-api/standards/ext-point-triage.md`](../../extension-api/standards/ext-point-triage.md) |

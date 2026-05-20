@@ -3,7 +3,7 @@
 
 Consolidates module discovery for Maven, Gradle, npm, and Python build systems.
 Delegates to build-system-specific discovery scripts in sibling skill directories
-(build-maven, build-gradle, build-npm, build-python).
+(build-maven, build-gradle, build-npm, build-pyproject).
 """
 
 from pathlib import Path
@@ -139,7 +139,7 @@ class Extension(ExtensionBase):
         - Maven: build-maven/scripts/_maven_cmd_discover.py
         - Gradle: build-gradle/scripts/_gradle_cmd_discover.py
         - npm: build-npm/scripts/_npm_cmd_discover.py
-        - Python: build-python/scripts/_python_cmd_discover.py
+        - Python: build-pyproject/scripts/_pyproject_cmd_discover.py
         """
         modules = []
 
@@ -286,19 +286,19 @@ class Extension(ExtensionBase):
         return nested
 
     # =========================================================================
-    # Python Discovery (delegated to build-python)
+    # Python Discovery (delegated to build-pyproject)
     # =========================================================================
 
     def _discover_python(self, project_root: str) -> list:
         """Discover Python modules via pyprojectx project analysis.
 
-        Delegates to build-python/scripts/_python_cmd_discover.py which handles
+        Delegates to build-pyproject/scripts/_pyproject_cmd_discover.py which handles
         module detection, metadata extraction, and canonical command generation.
         """
         root = Path(project_root)
         if not (root / PYPROJECT_TOML).exists():
             return []
 
-        from _python_cmd_discover import discover_python_modules
+        from _pyproject_cmd_discover import discover_python_modules
 
         return discover_python_modules(project_root)

@@ -78,8 +78,8 @@ The architecture-resolved equivalents are:
 
 [source,bash]
 ----
-python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests"
-python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "quality-gate"
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests"
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate"
 ----
 
 == Related

@@ -48,7 +48,7 @@ The shared helper `script_shared/scripts/resolve_project_dir.py` (`resolve_proje
 
 See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (path convention, dispatch protocol).
 
-**Examples**: `build-maven`, `build-gradle`, `build-npm`, `build-python`, `tools-integration-ci`, `workflow-integration-git`, `workflow-integration-sonar`, `workflow-pr-doctor`.
+**Examples**: `build-maven`, `build-gradle`, `build-npm`, `build-pyproject`, `tools-integration-ci`, `workflow-integration-git`, `workflow-integration-sonar`, `workflow-pr-doctor`.
 
 ### Bucket C — Meta-Tools (always main checkout)
 
@@ -68,7 +68,7 @@ A small set of tools operate on the marketplace itself rather than on plan state
 |--------|----------|----------|-----------|
 | A | Plan metadata | `manage-*` scripts, logging, findings | `get_plan_dir()` → `git rev-parse --git-common-dir` |
 | B | Worktree-scoped git | Commit, status, diff, checkout | `git -C {worktree_path} <cmd>` |
-| B | Build / test / lint | `build-maven`, `build-python`, `build-npm`, `build-gradle` | `--plan-id {plan_id}` (preferred) or `--project-dir {worktree_path}` (escape hatch) |
+| B | Build / test / lint | `build-maven`, `build-pyproject`, `build-npm`, `build-gradle` | `--plan-id {plan_id}` (preferred) or `--project-dir {worktree_path}` (escape hatch) |
 | B | CI / Sonar / PR tooling | `tools-integration-ci`, `workflow-integration-sonar`, `workflow-pr-doctor` | `--plan-id {plan_id}` (preferred) or `--project-dir {worktree_path}` (escape hatch) |
 | C | Marketplace meta-tools | `plugin-doctor`, `tools-marketplace-inventory`, `marshall-steward`, `generate_executor` | Always main checkout; reject worktree paths |
 

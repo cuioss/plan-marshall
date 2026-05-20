@@ -80,13 +80,13 @@ Read standards/testing-pytest.md
 
 ```bash
 # Via build system
-python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests"
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests"
 
 # Specific module
-python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests pm-dev-python"
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests pm-dev-python"
 
 # With coverage
-python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "coverage"
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "coverage"
 ```
 
 ## Related Skills

@@ -169,11 +169,11 @@ Tests use pytest via the `pw` (Pyprojectx) wrapper. Only Python 3 is required on
 ### Build Commands
 
 - Never hard-code build commands (./pw, mvn, npm, gradle) — use these resolved commands instead:
-  - Compile: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "compile"`
-  - Quality gate: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "quality-gate"`
-  - Tests: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests"`
-  - Full verify: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "verify"`
-  - Coverage: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "coverage"`
+  - Compile: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "compile"`
+  - Quality gate: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate"`
+  - Tests: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests"`
+  - Full verify: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "verify"`
+  - Coverage: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "coverage"`
   - Append a module name (e.g. `"verify plan-marshall"`) to scope the command to a single bundle module.
   - Always call build commands with a Bash timeout of at least 10 minutes (600000ms)
   - After each build call, analyze the result TOON: check `status` for success/error/timeout, review `errors[N]{file,line,message,category}` for failures, and consult `log_file` for full output if deeper investigation is needed.
