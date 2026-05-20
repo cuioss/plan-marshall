@@ -259,7 +259,7 @@ def base_path(*parts: str) -> Path:
 
     Example:
         >>> base_path('plans', 'my-task', 'plan.md')
-        PosixPath('.plan/plans/my-task/plan.md')
+        PosixPath('.plan/local/plans/my-task/plan.md')
     """
     return get_base_dir().joinpath(*parts)
 

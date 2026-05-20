@@ -24,6 +24,7 @@ from _analyze_manage_findings_invocation import analyze_manage_findings_invocati
 from _analyze_markdown import analyze_markdown_file, cmd_markdown
 from _analyze_metadata_field_validity import analyze_metadata_field_validity
 from _analyze_orphan_argparse_flags import analyze_orphan_argparse_flags
+from _analyze_plan_path_in_scripts import analyze_plan_path_in_scripts
 from _analyze_resolution_branch_markers import analyze_resolution_branch_markers
 from _analyze_shared import detect_component_type, extract_frontmatter
 from _analyze_shell_active_tokens import analyze_shell_active_tokens
@@ -41,6 +42,7 @@ __all__ = [
     'analyze_markdown_file',
     'analyze_metadata_field_validity',
     'analyze_orphan_argparse_flags',
+    'analyze_plan_path_in_scripts',
     'analyze_resolution_branch_markers',
     'analyze_shell_active_tokens',
     'analyze_shell_substitution_in_skills',
