@@ -4,7 +4,7 @@ Defines how `phase-6-finalize` renders its final user-facing output. The default
 
 The renderer is a pure assembler: it never invents per-step content. Each finalize step authors its own one-line `display_detail` string at `mark-step-done` time; the renderer only concatenates those strings against the configured step order.
 
-When `finalize-step-print-phase-breakdown` is present in `manifest.phase_6.steps` AND its outcome is `done`, the renderer enters **Phase Breakdown override mode**: the Finalize-steps block is suppressed and the captured Phase Breakdown table is emitted in its place. All other blocks (Headline, Goal, Deliverables, Repository trailer) emit unchanged. See `## Phase Breakdown Override` below for the full toggle, snapshot read, and emission swap.
+When `finalize-step-print-phase-breakdown` is present in `manifest.phase_6.steps` AND its outcome is `done`, the renderer enters **Phase Breakdown override mode**: during the per-step iteration of the Finalize-steps block, the `record-metrics` row is replaced by the captured Phase Breakdown table content; every other step row (commit-push, create-pr, automated-review, sonar-roundtrip, lessons-capture, branch-cleanup, archive-plan, etc.) emits unchanged. All other blocks (Headline, Goal, Deliverables, Repository trailer) emit unchanged as well. See `## Phase Breakdown Override` below for the full toggle, snapshot read, and per-row emission swap.
 
 ## Template Skeleton
 
@@ -33,7 +33,7 @@ Repository: main up-to-date | worktree removed | working tree clean
 
 ### Phase Breakdown override skeleton
 
-When the override is active (see `## Phase Breakdown Override` below), the Finalize-steps block above is replaced by the verbatim Phase Breakdown table content captured from `metrics.md`. The other blocks emit unchanged.
+When the override is active (see `## Phase Breakdown Override` below), the `record-metrics` row in the Finalize-steps block is replaced by the verbatim Phase Breakdown table content captured from `metrics.md`; every other step row emits unchanged. The other blocks emit unchanged as well.
 
 ```
 [TOKEN] PR #{n} -- {N} deliverable(s) shipped, {state summary}
@@ -44,16 +44,24 @@ Goal
 Deliverables ({N_done}/{N_total})
   [OK]  1. {deliverable 1 title}
 
-Phase Breakdown
+Finalize steps ({N_done}/{N_total} done)
+  [OK]  commit-push                       -> {commit_hash}
+  [OK]  create-pr                         #{pr_number}
+  [OK]  automated-review                  {N} comment(s) resolved (no loop-back)
+  [OK]  sonar-roundtrip                   quality gate passed
+  [OK]  lessons-capture                   {N} lesson(s) recorded ({lesson_ids})
+  [OK]  branch-cleanup                    main pulled, branch deleted (local+remote), worktree removed
+  Phase Breakdown
 
-## Phase Breakdown
+  ## Phase Breakdown
 
-| Phase | Duration | Tokens | Input | Output | Tool Uses |
-|-------|----------|--------|-------|--------|-----------|
-| 1-init | 2m41s | 53,719 | - | - | 29 |
-| 2-refine | 8m41s | - | - | - | - |
-| ... | ... | ... | ... | ... | ... |
-| **Total** | **1h46m** | **599,089** | **...** | **...** | **...** |
+  | Phase | Duration | Tokens | Input | Output | Tool Uses |
+  |-------|----------|--------|-------|--------|-----------|
+  | 1-init | 2m41s | 53,719 | - | - | 29 |
+  | 2-refine | 8m41s | - | - | - | - |
+  | ... | ... | ... | ... | ... | ... |
+  | **Total** | **1h46m** | **599,089** | **...** | **...** | **...** |
+  [OK]  archive-plan                      -> {archive_path}
 
 Repository: main up-to-date | worktree removed | working tree clean
 ```
@@ -186,7 +194,7 @@ Keep this snapshot in model context. It is passed to the emission procedure AFTE
 
 ## Phase Breakdown Override
 
-The renderer supports an opt-in **Phase Breakdown override mode** that replaces the per-step `[OK]` Finalize-steps block with the captured Phase Breakdown table from `metrics.md`. The override is intended for users who prefer the compact per-phase metrics breakdown over the redundant `[OK]` step list.
+The renderer supports an opt-in **Phase Breakdown override mode** that replaces the `record-metrics` row in the per-step `[OK]` Finalize-steps block with the captured Phase Breakdown table from `metrics.md`. The override is intended for users who prefer the compact per-phase metrics breakdown over the redundant `{duration} / {tokens}` summary that the default `record-metrics` row carries.
 
 **Toggle activation**: the override activates when BOTH conditions hold:
 
@@ -195,9 +203,9 @@ The renderer supports an opt-in **Phase Breakdown override mode** that replaces 
 
 When EITHER condition fails, the override is inactive and emission proceeds with the default Finalize-steps block. There is no error path for "step configured but no content captured" — the renderer fails open to the default block so the finalize summary always emits.
 
-**Emission swap**: when the toggle is active, Emission Procedure step 5 (`Build finalize steps block`) is skipped entirely. In its place, the renderer emits a one-line literal header `Phase Breakdown` followed by a blank line, then the verbatim captured content (which already begins with `## Phase Breakdown` and ends with a single trailing newline).
+**Emission swap**: when the toggle is active, during the per-step iteration in Emission Procedure step 5 the renderer detects the row whose `step_id == 'record-metrics'` and substitutes that single row's `[OK]` emission with a literal one-line header `Phase Breakdown` followed by a blank line, then the verbatim captured content (which already begins with `## Phase Breakdown` and ends with a single trailing newline). The iteration then continues with the next configured step; no other step row is affected.
 
-**Unchanged blocks**: the override mode affects ONLY the Finalize-steps block. The Headline (step 1-2), Goal (step 3), Deliverables (step 4), and Repository trailer (step 6) emit identically in both modes.
+**Unchanged blocks**: the override mode affects ONLY the `record-metrics` row within the Finalize-steps block. All other step rows (`commit-push`, `create-pr`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `branch-cleanup`, `archive-plan`, etc.) emit identically to default mode. The Headline (step 1-2), Goal (step 3), Deliverables (step 4), and Repository trailer (step 6) blocks emit identically in both modes.
 
 ## Emission Procedure
 
@@ -260,19 +268,7 @@ Icon resolution:
 
 Deliverable numbering starts at `1.` and pads width to accommodate up to 99 deliverables (`" 1."` vs `"10."`).
 
-### 5. Build finalize steps block (or Phase Breakdown override)
-
-**Override-mode short-circuit**: BEFORE building the default block, check the Phase Breakdown override toggle (see `## Phase Breakdown Override` above). When the toggle is active (`finalize-step-print-phase-breakdown` present in `manifest.phase_6.steps` AND `phase_breakdown_override_content` from Snapshot Procedure step 7 is non-`None`), SKIP the default block construction below and emit the override block instead:
-
-```
-Phase Breakdown
-
-{phase_breakdown_override_content}
-```
-
-`{phase_breakdown_override_content}` is the verbatim file content captured from `work/phase-breakdown-output.txt`. It already begins with `## Phase Breakdown` and ends with a single trailing newline; the renderer prepends one blank line between the literal `Phase Breakdown` header and the content, and inserts the standard inter-block blank lines around it. After emitting the override block, jump to step 6 (Repository trailer).
-
-**Default block** (when the toggle is inactive):
+### 5. Build finalize steps block (with optional `Phase Breakdown` override)
 
 Header: `Finalize steps ({N_done}/{N_total} done)` where `N_total` = count of steps in `manifest.phase_6.steps` and `N_done` = count with `outcome == done`.
 
@@ -285,6 +281,16 @@ Iterate the manifest `phase_6.steps` list in order. For each step, emit:
 - `{step_name_padded}` = step name left-justified to a fixed column width of **33 characters** (pad with spaces, no truncation). Long step names overflow and push the detail column one space to the right — accepted.
 - `{display_detail}` = the verbatim detail string authored by the step. If `display_detail` is missing or empty, emit the literal placeholder `<missing display_detail>` (this is a contract violation and should be surfaced).
 - Two spaces separate the icon from the step name; two spaces separate the padded name from the detail.
+
+**Per-row `Phase Breakdown` override**: during the iteration, when the current step's `step_id` == `'record-metrics'` AND the `Phase Breakdown` override toggle is active (`finalize-step-print-phase-breakdown` present in `manifest.phase_6.steps` AND `phase_breakdown_override_content` from Snapshot Procedure step 7 is non-`None`), substitute that single row's `[OK]` emission with the literal header `Phase Breakdown` + blank line + `{phase_breakdown_override_content}`. The substituted row content is:
+
+```
+Phase Breakdown
+
+{phase_breakdown_override_content}
+```
+
+`{phase_breakdown_override_content}` is the verbatim file content captured from `work/phase-breakdown-output.txt`. It already begins with `## Phase Breakdown` and ends with a single trailing newline; the renderer prepends one blank line between the literal `Phase Breakdown` header and the content. This block occupies the position of the `record-metrics` row only — the iteration then resumes with the next configured step, and the surrounding `Finalize steps (N/M done)` header and all other step rows emit as documented above. No jump-to-step-6 is required.
 
 ### 6. Build repository trailer
 

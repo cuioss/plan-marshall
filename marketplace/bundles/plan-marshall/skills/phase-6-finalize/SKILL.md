@@ -751,7 +751,7 @@ Skill: plan-marshall:phase-6-finalize
 2. Build the headline.
 3. Build the Goal block (literal `Goal` header, blank line, Summary text wrapped to ~78 chars with 2-space indent; defensive `(no summary recorded)` fallback when Summary is `None` or empty).
 4. Build the Deliverables block (one row per deliverable, icon by outcome).
-5. Build the Finalize steps block (one row per configured step, padded 33-char name + `display_detail`).
+5. Build the Finalize steps block (one row per configured step, padded 33-char name + `display_detail`). When the Phase Breakdown override is active (see `standards/output-template.md § ## Phase Breakdown Override`), the per-step iteration substitutes the `record-metrics` row with the literal `Phase Breakdown` header + blank line + verbatim `phase_breakdown_override_content`. Every other step row emits unchanged.
 6. Build the Repository trailer (main state | worktree token | working tree state).
 7. Emit the five blocks separated by blank lines as a plain-text, user-facing output.
 
