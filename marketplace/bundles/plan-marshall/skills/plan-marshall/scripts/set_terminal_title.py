@@ -44,6 +44,12 @@ _COMMAND_MAX_LEN = 40
 # legitimate labels always pass while still rejecting pathological input.
 _PLAN_LABEL_MAX_LEN = 60
 
+# Upper bound for the plan_id read from the session active-plan cache. Plan
+# ids are kebab-case slugs derived from the request title; this cap keeps the
+# session-cache fallback from passing pathological values into status-file
+# resolution while staying comfortably above any realistic plan-id length.
+_ACTIVE_PLAN_ID_MAX_LEN = 120
+
 # Slash-command alias map: verbose tokens collapse to short display labels.
 # Applied at read time, so captured state is verbatim but rendering is aliased.
 _COMMAND_ALIASES: dict[str, str] = {
@@ -136,6 +142,45 @@ def _read_plan_meta(status_file: Path) -> tuple[str | None, str | None]:
     phase_value = phase if isinstance(phase, str) and phase else None
     short_value = short_description if isinstance(short_description, str) and short_description else None
     return phase_value, short_value
+
+
+def _active_plan_path(session_id: str) -> Path | None:
+    """Return the per-session active-plan cache path.
+
+    Mirrors ``_command_state_path`` shape. Returns ``None`` for empty
+    session ids or values containing path separators, ``..`` or ``.`` — the
+    cache layout assumes ``session_id`` is a single safe directory segment.
+    """
+    if not session_id or '/' in session_id or '\\' in session_id or session_id in ('..', '.'):
+        return None
+    try:
+        home = Path.home()
+    except (OSError, RuntimeError):
+        return None
+    return home / '.cache' / 'plan-marshall' / 'sessions' / session_id / 'active-plan'
+
+
+def _read_active_plan(session_id: str | None) -> str | None:
+    """Read the cached active plan_id for ``session_id``.
+
+    Returns ``None`` on missing session id, missing file, I/O error, empty
+    content, or when the cached value fails shape validation (oversize,
+    contains path separators, or matches the path-traversal sentinels).
+    """
+    if not session_id:
+        return None
+    path = _active_plan_path(session_id)
+    if path is None or not path.is_file():
+        return None
+    try:
+        raw = path.read_text(encoding='utf-8').strip()
+    except (OSError, ValueError):
+        return None
+    if not raw or len(raw) > _ACTIVE_PLAN_ID_MAX_LEN:
+        return None
+    if '/' in raw or '\\' in raw or raw in ('..', '.'):
+        return None
+    return raw
 
 
 def _command_state_path(session_id: str) -> Path | None:
@@ -344,6 +389,24 @@ def build_title(
         plan_id = None
         phase = None
         short_description = None
+    # Tier 2: session active-plan cache. Consulted only when the worktree-cwd
+    # resolution above failed to yield a (plan_id, phase) pair — e.g., the
+    # main orchestration session runs from the repo root whose cwd never
+    # matches the worktree regex. The cache is keyed by session_id so
+    # concurrent tabs render independent titles. Terminal phases fall
+    # through identically to the worktree-cwd path above.
+    if not (plan_id and phase) and session_id:
+        candidate = _read_active_plan(session_id)
+        if candidate:
+            walk_root = _walk_up_for_plan(Path(cwd))
+            if walk_root is not None:
+                status_file = _resolve_status_file(str(walk_root), candidate)
+                if status_file is not None:
+                    cand_phase, cand_short = _read_plan_meta(status_file)
+                    if cand_phase and cand_phase not in _TERMINAL_PHASE_VALUES:
+                        plan_id = candidate
+                        phase = cand_phase
+                        short_description = cand_short
     active_command: str | None = None
     if not (plan_id and phase):
         active_command = _read_active_command(session_id)
