@@ -4,9 +4,12 @@
 Tier 2 (direct import) tests with 2-3 subprocess tests for CLI plumbing.
 """
 
+import json
 import subprocess
 from argparse import Namespace
 from pathlib import Path
+
+import pytest
 
 from conftest import PlanContext, get_script_path, run_script
 
@@ -38,6 +41,10 @@ _crud = _load_module('_refs_cmd_crud', '_references_crud.py')
 _list = _load_module('_refs_cmd_list', '_cmd_list.py')
 _ctx = _load_module('_refs_cmd_context', '_cmd_context.py')
 _diff = _load_module('_refs_cmd_diff_files', '_cmd_diff_files.py')
+_core = _load_module('_refs_core', '_references_core.py')
+
+require_references = _core.require_references
+get_references_path = _core.get_references_path
 
 cmd_create, cmd_get, cmd_read, cmd_set = _crud.cmd_create, _crud.cmd_get, _crud.cmd_read, _crud.cmd_set
 cmd_add_file, cmd_add_list, cmd_remove_file, cmd_set_list = (
@@ -712,3 +719,147 @@ class TestDiffFiles:
             assert phantom_path not in result['files']
             assert phantom_path in result['phantom']
             assert result['dropped'] == []
+
+
+# =============================================================================
+# Test: require_references rejects non-dict top-level JSON values
+# =============================================================================
+# Regression coverage for the gemini-code-assist review on PR #426:
+# require_references() must raise ValueError when references.json exists but
+# its top-level JSON value is not a JSON object. Without the isinstance check,
+# non-dict values (list, string, number, bool, null) silently pass through
+# the `if not refs:` truthiness gate and trigger AttributeError downstream
+# when callers invoke ``.get()`` on the parsed value.
+
+
+def _write_raw_references(plan_id: str, payload: str) -> None:
+    """Write raw JSON text to references.json for a plan, bypassing schema."""
+    refs_path = get_references_path(plan_id)
+    refs_path.parent.mkdir(parents=True, exist_ok=True)
+    refs_path.write_text(payload, encoding='utf-8')
+
+
+@pytest.mark.parametrize(
+    ('payload', 'expected_type_name'),
+    [
+        ('[1, 2, 3]', 'list'),
+        ('"a string"', 'str'),
+        ('42', 'int'),
+        ('3.14', 'float'),
+        ('true', 'bool'),
+    ],
+)
+def test_require_references_raises_on_non_dict_json(payload, expected_type_name):
+    """Truthy non-dict top-level JSON values raise a clear ValueError.
+
+    Covers list, string, integer, float, and boolean payloads. JSON ``null``
+    is falsy and therefore caught earlier by the ``if not refs:`` gate (see
+    ``test_require_references_treats_null_as_file_not_found`` below), so it
+    is intentionally absent from this parametrization.
+    """
+    with PlanContext() as ctx:
+        plan_id = ctx.plan_id
+        _write_raw_references(plan_id, payload)
+
+        with pytest.raises(ValueError, match='invalid format') as excinfo:
+            require_references(plan_id)
+
+        message = str(excinfo.value)
+        assert expected_type_name in message
+        assert plan_id in message
+
+
+def test_require_references_treats_null_as_file_not_found():
+    """JSON ``null`` is falsy and falls through the not-found gate.
+
+    ``read_json`` returns ``None`` for a file whose top-level value is ``null``,
+    which means ``if not refs:`` triggers BEFORE the isinstance check. Surface
+    the existing file_not_found error envelope rather than a ValueError.
+    """
+    with PlanContext() as ctx:
+        plan_id = ctx.plan_id
+        _write_raw_references(plan_id, 'null')
+
+        result = require_references(plan_id)
+
+        assert isinstance(result, dict)
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_not_found'
+
+
+def test_require_references_accepts_dict_payload():
+    """Sanity check: a valid JSON object payload still returns the dict."""
+    with PlanContext() as ctx:
+        plan_id = ctx.plan_id
+        _write_raw_references(plan_id, '{"branch": "feature/test"}')
+
+        result = require_references(plan_id)
+
+        assert isinstance(result, dict)
+        assert result['branch'] == 'feature/test'
+
+
+def test_require_references_returns_error_dict_when_missing():
+    """Sanity check: a missing references.json still returns the file_not_found
+    error dict — the new isinstance guard does NOT change the not-found path.
+    """
+    with PlanContext():
+        result = require_references('nonexistent-plan')
+
+        assert isinstance(result, dict)
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_not_found'
+        assert result['plan_id'] == 'nonexistent-plan'
+
+
+def test_require_references_returns_error_dict_on_empty_object():
+    """An empty JSON object ``{}`` is falsy and still maps to file_not_found
+    via the existing ``if not refs:`` check (unchanged by this fix).
+    """
+    with PlanContext() as ctx:
+        plan_id = ctx.plan_id
+        _write_raw_references(plan_id, '{}')
+
+        result = require_references(plan_id)
+
+        assert isinstance(result, dict)
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_not_found'
+
+
+@pytest.mark.parametrize(
+    'payload',
+    [
+        '[1, 2, 3]',
+        '"a string"',
+        '42',
+        'true',
+        'null',
+    ],
+)
+def test_cli_non_dict_references_surfaces_nonzero_exit(payload, tmp_path, monkeypatch):
+    """CLI subcommands that hit require_references() surface non-zero exit
+    codes when references.json contains a non-dict top-level JSON value.
+
+    A raised ValueError bypasses the normal TOON error envelope, so this test
+    only asserts the exit-code contract — corrupt-file states must NOT exit 0.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
+    monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds')
+
+    plan_id = 'corrupt-plan'
+    refs_path = tmp_path / 'plans' / plan_id / 'references.json'
+    refs_path.parent.mkdir(parents=True, exist_ok=True)
+    refs_path.write_text(payload, encoding='utf-8')
+
+    # Sanity check: the file is parseable JSON but NOT a dict.
+    parsed = json.loads(refs_path.read_text())
+    assert not isinstance(parsed, dict)
+
+    result = run_script(SCRIPT_PATH, 'read', '--plan-id', plan_id)
+    assert result.returncode != 0, (
+        f'Expected non-zero exit for non-dict references payload {payload!r}; '
+        f'stdout={result.stdout!r} stderr={result.stderr!r}'
+    )
