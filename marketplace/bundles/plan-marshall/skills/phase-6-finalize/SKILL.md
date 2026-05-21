@@ -110,7 +110,7 @@ A step is active if and only if it appears in `manifest.phase_6.steps`. Absent s
 
 ## Dispatched workflows vs inline steps
 
-Of the 17 default + project finalize steps, **7 dispatch** and **10 run inline**. Every dispatched step resolves under the phase-scoped registry — `manage-config effort resolve-target --phase phase-6-finalize [--role <subkey>]`. Step → resolved role: `pre-submission-self-review` → `phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`); `create-pr` → `phase-6-finalize` (no `--role`); `lessons-capture` → `phase-6-finalize --role post-run-review`; `automated-review` + `sonar-roundtrip` → `phase-6-finalize --role verification-feedback` (`producer=pr-comment` / `sonar` runtime input); `architecture-refresh` is hybrid (Tier 0 inline scripts; Tier 1 fans out under `phase-6-finalize` per affected module — the only per-iteration parallel dispatch in the contract); `project:finalize-step-plugin-doctor` (meta-project only) → `phase-6-finalize --role verification-feedback` (`producer=plugin-doctor` runtime input). Two opt-in dispatched steps exist outside the default set: **retrospective** → `phase-6-finalize --role post-run-review` (8 LLM aspects iterate inside one envelope); `/workflow-pr-doctor` (slash-command surface) → `phase-6-finalize --role verification-feedback` (`producer=pr-state` runtime input). The 10 inline steps (`commit-push`, `branch-cleanup`, `pre-push-quality-gate`, `record-metrics`, `archive-plan`, `finalize-step-print-phase-breakdown`, `architecture-refresh` Tier 0, `project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`, `project:finalize-step-regenerate-executor`) are pure scripts or trivial orchestration that earn no envelope. CI completion is no longer a sibling step in this roster — it is a dispatcher-resolved precondition (`requires: [ci-complete]`) checked inline before any consumer step runs; see Step 3 § "Precondition resolution" below. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 5 (find the LLM core, not the wrapping step).
+Of the 16 default + project finalize steps, **6 dispatch** and **10 run inline**. Every dispatched step resolves under the phase-scoped registry — `manage-config effort resolve-target --phase phase-6-finalize [--role <subkey>]`. Step → resolved role: `pre-submission-self-review` → `phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`); `create-pr` → `phase-6-finalize` (no `--role`); `lessons-capture` → `phase-6-finalize --role post-run-review`; `automated-review` + `sonar-roundtrip` → `phase-6-finalize --role verification-feedback` (`producer=pr-comment` / `sonar` runtime input); `architecture-refresh` is hybrid (Tier 0 inline scripts; Tier 1 fans out under `phase-6-finalize` per affected module — the only per-iteration parallel dispatch in the contract); `project:finalize-step-plugin-doctor` (meta-project only) → `phase-6-finalize --role verification-feedback` (`producer=plugin-doctor` runtime input). Two opt-in dispatched steps exist outside the default set: **retrospective** → `phase-6-finalize --role post-run-review` (8 LLM aspects iterate inside one envelope); `/workflow-pr-doctor` (slash-command surface) → `phase-6-finalize --role verification-feedback` (`producer=pr-state` runtime input). The 10 inline steps (`commit-push`, `branch-cleanup`, `pre-push-quality-gate`, `record-metrics`, `archive-plan`, `finalize-step-print-phase-breakdown`, `architecture-refresh` Tier 0, `project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`, `project:finalize-step-regenerate-executor`) are pure scripts or trivial orchestration that earn no envelope. CI completion is no longer a sibling step in this roster — it is a dispatcher-resolved precondition (`requires: [ci-complete]`) checked inline before any consumer step runs; see Step 3 § "Precondition resolution" below. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 5 (find the LLM core, not the wrapping step).
 
 ## Step Types
 
@@ -364,13 +364,25 @@ Iterate over `manifest.phase_6.steps` (read in Step 2). The list is the manifest
 #### Plugin cache freshness
 
 In meta-projects that own marketplace bundles (notably the
-plan-marshall repo itself), the project-local Phase 6 ordering
-typically pairs `project:finalize-step-deploy-target` (order 12) with
-`project:finalize-step-sync-plugin-cache` (order 14), placing both
-immediately before any agent-dispatched step. The cache is therefore
-always refreshed from the just-generated `target/claude/` output before
-the in-flight finalize dispatches any agent loaded from the cache — no
-stacked rule is required.
+plan-marshall repo itself), the project-local Phase 6 ordering pairs
+`project:finalize-step-deploy-target` (order 80) with
+`project:finalize-step-sync-plugin-cache` (order 85), placing both
+**after** `default:branch-cleanup` and **before**
+`project:finalize-step-regenerate-executor` (order 90),
+against the main checkout post-merge. The cache mirrors the
+just-regenerated `target/claude/` content from the merged source tree,
+so the next session-boot re-derivation reads the same authoritative
+tree the dispatcher just wrote to. `project:finalize-step-regenerate-executor`
+runs last so it scans a plugin cache already refreshed by the sync step.
+
+Meta-project finalize agents dispatched between `create-pr` and
+`branch-cleanup` see pre-plan skill bodies in the host cache (the cache
+sync now runs later, post-merge). This is acceptable — see the
+`what_this_gives_up` analysis in the originating lesson for the
+deliberate-trade-off rationale: tool calls resolve against worktree
+absolute paths and the executor reads notation paths fresh per
+subprocess, so only `Skill:` dispatches consume the in-process
+registry, and the meta-project case is explicitly accepted.
 
 Consumer projects do not own bundle sources, so they do not register
 either step. Their finalize dispatches load whatever the host plugin
@@ -433,15 +445,6 @@ The precondition resolver is dispatcher-internal — it produces no `phase_steps
 | no record OR any other value | n/a | DISPATCH (unchanged — same as the general rule) |
 
 `HEAD_DEPENDENT_STEPS = {"pre-push-quality-gate", "automated-review", "sonar-roundtrip", "commit-push", "ci-verify"}`. All four steps MUST persist `head_at_completion` on their terminal `--outcome done` `mark-step-done` call so the comparison above is meaningful. The standards docs for each step (`pre-push-quality-gate.md`, `automated-review.md`, `sonar-roundtrip.md`, `commit-push.md`) carry the per-step instructions for capturing `git rev-parse HEAD` immediately before the `mark-step-done` invocation and forwarding it via `--head-at-completion {sha}`. Branches that mark `loop_back` or `failed` do not need to persist the SHA — the dispatcher's general resumability handling for those outcomes does not consult it. CI completion is a separate dispatcher-resolved precondition (`requires: [ci-complete]`) — its cache key is the same `git rev-parse HEAD` SHA, so the same HEAD-advance signal that invalidates a stale `done` record also invalidates the precondition cache.
-
-**Conditional HEAD-dependent steps**: `CONDITIONAL_HEAD_DEPENDENT_STEPS = {"project:finalize-step-deploy-target", "project:finalize-step-sync-plugin-cache"}` carries the same HEAD-dependency semantics as `HEAD_DEPENDENT_STEPS` but membership is re-evaluated per loop iteration via the predicate:
-
-```
-modified_files_intersects_marketplace_bundles(references.modified_files at step's previous done mark)
-  := any(path.startswith("marketplace/bundles/") for path in modified_files)
-```
-
-A step in this set is treated as HEAD-dependent IFF the predicate evaluates `true` against the `references.modified_files` snapshot at the step's previous `done` mark. Both steps MUST persist `head_at_completion` on `outcome=done` (same contract as the unconditional set) so the comparison is always available; the predicate decides whether to consult it. Loop-back commits that touch only test or doc paths leave the existing `done` record valid (predicate false → SKIP under the general rule); loop-back commits that touch any `marketplace/bundles/**` path invalidate the `done` record (predicate true → consult `head_at_completion` and RE-FIRE when HEAD has advanced). The rationale: both steps deploy generated marketplace artifacts (`target/claude/` + plugin cache) from the source bundles; a loop-back fix task that touches no source bundle leaves the prior deploy/sync output still valid.
 
 Resolve the comparison HEAD inside the dispatcher block at the moment of the per-step check:
 
@@ -545,7 +548,7 @@ FOR each step_id in manifest.phase_6.steps:
            - IF no record OR any other value: dispatch normally
      Log skip/retry/re-fire decisions at INFO level so the work.log reflects the re-entry path.
 
-     **HEAD-dependent step set**: `HEAD_DEPENDENT_STEPS = {"pre-push-quality-gate", "automated-review", "sonar-roundtrip", "commit-push", "ci-verify"}`. The first three validate the live worktree tree via local quality-gate, PR-comment, and Sonar infrastructure respectively. A loop-back commit (typically produced by `automated-review` or `sonar-roundtrip` opening a fix task that produces a new commit) advances HEAD past the previously-validated SHA, and a stale `done` record on any of these three steps would produce a false-clean result on re-entry. `commit-push` enters the HEAD-dependent set because a loop-back fix task may produce a fresh commit *after* `commit-push` recorded `outcome=done` against the prior HEAD; without HEAD-comparison the dispatcher would skip `commit-push` on re-entry and leave the fix-task changes staged-but-uncommitted. The same `head_at_completion` comparison applies to all four. The companion `CONDITIONAL_HEAD_DEPENDENT_STEPS = {"project:finalize-step-deploy-target", "project:finalize-step-sync-plugin-cache"}` set carries the same HEAD-dependency semantics but membership is re-evaluated per iteration: a step in this set is HEAD-dependent IFF `references.modified_files` (at the step's previous `done` mark) intersects `marketplace/bundles/**`. Both deploy steps produce derived artifacts (`target/claude/`, plugin cache) from source bundles — loop-back fix tasks that touch only test/doc paths leave the prior derived output still valid; loop-back fix tasks that touch any `marketplace/bundles/**` path require a re-fire. Other inline-only steps (`architecture-refresh`, `branch-cleanup`, `record-metrics`, `archive-plan`) and pure-administrative agent steps (`create-pr`, `lessons-capture`) are NOT HEAD-dependent — their effect is captured by side-effect (a created PR, recorded lessons) and is idempotent against HEAD advances; the general rule above applies to them. CI completion is resolved as a separate dispatcher-side precondition (`requires: [ci-complete]`) — its cache key is the same `git rev-parse HEAD` SHA, so a HEAD advance also invalidates the precondition cache.
+     **HEAD-dependent step set**: `HEAD_DEPENDENT_STEPS = {"pre-push-quality-gate", "automated-review", "sonar-roundtrip", "commit-push", "ci-verify"}`. The first three validate the live worktree tree via local quality-gate, PR-comment, and Sonar infrastructure respectively. A loop-back commit (typically produced by `automated-review` or `sonar-roundtrip` opening a fix task that produces a new commit) advances HEAD past the previously-validated SHA, and a stale `done` record on any of these three steps would produce a false-clean result on re-entry. `commit-push` enters the HEAD-dependent set because a loop-back fix task may produce a fresh commit *after* `commit-push` recorded `outcome=done` against the prior HEAD; without HEAD-comparison the dispatcher would skip `commit-push` on re-entry and leave the fix-task changes staged-but-uncommitted. The same `head_at_completion` comparison applies to all four. Other inline-only steps (`architecture-refresh`, `branch-cleanup`, `record-metrics`, `archive-plan`, `project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`, `project:finalize-step-regenerate-executor`) and pure-administrative agent steps (`create-pr`, `lessons-capture`) are NOT HEAD-dependent — their effect is captured by side-effect (a created PR, recorded lessons, regenerated `target/claude/` from the post-merge source tree) and is idempotent against HEAD advances; the general rule above applies to them. CI completion is resolved as a separate dispatcher-side precondition (`requires: [ci-complete]`) — its cache key is the same `git rev-parse HEAD` SHA, so a HEAD advance also invalidates the precondition cache.
 
   2. Log step start:
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

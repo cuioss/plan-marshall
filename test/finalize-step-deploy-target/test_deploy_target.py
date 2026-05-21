@@ -6,10 +6,10 @@ The skill is a markdown executor playbook backed by the multi-target
 generator at ``marketplace/targets/generate.py``. These tests pin the
 contract from three angles:
 
-1. **Frontmatter and ordering** — the skill declares ``order: 12`` so
-   the dispatcher places it between ``default:commit-push`` (10) and
-   ``default:create-pr`` (20), and before
-   ``project:finalize-step-sync-plugin-cache`` (14).
+1. **Frontmatter and ordering** — the skill declares ``order: 80`` so
+   the dispatcher places it post-merge after ``default:branch-cleanup``
+   (70) and ``project:finalize-step-regenerate-executor`` (75), and
+   before ``project:finalize-step-sync-plugin-cache`` (85).
 2. **Project-local registration** — the skill lives at
    ``.claude/skills/finalize-step-deploy-target/SKILL.md`` (NOT in any
    marketplace bundle, NOT in ``BUILT_IN_FINALIZE_STEPS``).
@@ -70,9 +70,9 @@ def test_skill_frontmatter_has_canonical_fields():
     fm = _parse_frontmatter(_SKILL_MD)
     assert fm.get('name') == 'finalize-step-deploy-target'
     assert fm.get('description'), 'description must be non-empty'
-    assert fm.get('order') == '12', (
-        'deploy-target order must be 12 (between commit-push=10 and create-pr=20, '
-        'and before sync-plugin-cache=14)'
+    assert fm.get('order') == '80', (
+        'deploy-target order must be 80 (post-merge: after branch-cleanup=70 '
+        'and regenerate-executor=75, before sync-plugin-cache=85)'
     )
 
 

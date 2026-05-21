@@ -3,7 +3,7 @@ name: finalize-step-regenerate-executor
 description: Finalize-phase wrapper that regenerates .plan/execute-script.py whenever a plan touched marketplace script files, so newly added notations resolve after merge
 user-invocable: false
 allowed-tools: Bash
-order: 7
+order: 90
 ---
 
 # Finalize Step: regenerate-executor
@@ -104,6 +104,6 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ## Related
 
 - [.claude/skills/finalize-step-sync-plugin-cache/SKILL.md](../finalize-step-sync-plugin-cache/SKILL.md) — sibling pattern, must run before this step
-- [.claude/skills/finalize-step-plugin-doctor/SKILL.md](../finalize-step-plugin-doctor/SKILL.md) — earlier sibling (order 85) that validates skills before cache sync
+- [.claude/skills/finalize-step-plugin-doctor/SKILL.md](../finalize-step-plugin-doctor/SKILL.md) — earlier sibling (order 65) that validates skills before cache sync
 - `plan-marshall:tools-script-executor:generate_executor` — underlying generator with the `generate` subcommand
 - [marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md) — finalize phase that dispatches this wrapper
