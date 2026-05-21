@@ -665,7 +665,7 @@ class TestEnrichSubagentTranscriptWalk:
 
             fake_cwd = self._patch_session_paths(monkeypatch, tmp_path)
             slug = fake_cwd.replace('/', '-')
-            session_id = 'session-sub-01'
+            session_id = '11111111-1111-1111-1111-111111111101'
 
             # Parent transcript: at least one valid message to drive the walk.
             parent_root = tmp_path / 'home' / '.claude' / 'projects' / slug
@@ -703,7 +703,7 @@ class TestEnrichSubagentTranscriptWalk:
 
             fake_cwd = self._patch_session_paths(monkeypatch, tmp_path)
             slug = fake_cwd.replace('/', '-')
-            session_id = 'session-sub-02'
+            session_id = '11111111-1111-1111-1111-111111111102'
 
             parent_root = tmp_path / 'home' / '.claude' / 'projects' / slug
             parent_transcript = parent_root / f'{session_id}.jsonl'
@@ -724,7 +724,7 @@ class TestEnrichSubagentTranscriptWalk:
 
             fake_cwd = self._patch_session_paths(monkeypatch, tmp_path)
             slug = fake_cwd.replace('/', '-')
-            session_id = 'session-sub-04'
+            session_id = '11111111-1111-1111-1111-111111111104'
 
             parent_root = tmp_path / 'home' / '.claude' / 'projects' / slug
             parent_transcript = parent_root / f'{session_id}.jsonl'
