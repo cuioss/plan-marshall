@@ -314,14 +314,32 @@ def evaluate_tests_only(
 
 
 def evaluate_branch_cleanup(
-    manifest: dict[str, Any], filtered_files: list[str]
+    manifest: dict[str, Any],
+    filtered_files: list[str],
+    base_label: str,
+    raw_files_total: int,
 ) -> tuple[dict[str, str], dict[str, Any] | None]:
-    """Rule M4: branch-cleanup present in phase_6 → diff should not be empty."""
+    """Rule M4: branch-cleanup present in phase_6 → diff should not be empty.
+
+    The rule is skipped when no diff data is available — ``base_label`` is
+    ``"unknown"`` or the raw diff is empty (``raw_files_total == 0``). In those
+    cases the absence of changes is an artefact of missing diff input, not a
+    real defect, so emitting a fail would be a false positive. This mirrors the
+    skip-on-missing-data behaviour of the other diff evaluators
+    (``evaluate_docs_only``, ``evaluate_early_terminate``, etc.).
+    """
     phase_6 = manifest.get('phase_6', {}) if isinstance(manifest.get('phase_6'), dict) else {}
     steps = phase_6.get('steps', [])
     if not isinstance(steps, list) or 'branch-cleanup' not in steps:
         return _make_check(
             'branch_cleanup_changes', 'skip', 'rule M4 not applicable — branch-cleanup not in phase_6.steps'
+        ), None
+
+    if base_label == 'unknown' or raw_files_total == 0:
+        return _make_check(
+            'branch_cleanup_changes',
+            'skip',
+            'rule M4 skipped — no diff data available (base=unknown or empty diff)',
         ), None
 
     if filtered_files:
@@ -369,10 +387,10 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     checks: list[dict[str, str]] = []
     findings: list[dict[str, Any]] = []
 
-    # evaluate_manifest_version has a different signature (manifest only) and is
-    # called once outside the dispatch loop. The remaining evaluators share the
-    # (manifest, filtered_files) signature, which lets mypy infer a homogeneous
-    # callable type without per-call type-ignores.
+    # evaluate_manifest_version (manifest only) has a distinct signature and is
+    # called once outside the dispatch loop. The remaining evaluators share
+    # the (manifest, filtered_files) signature, which lets mypy infer a
+    # homogeneous callable type without per-call type-ignores.
     version_check, version_finding = evaluate_manifest_version(manifest)
     checks.append(version_check)
     if version_finding is not None:
@@ -385,13 +403,21 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         evaluate_docs_only,
         evaluate_early_terminate,
         evaluate_tests_only,
-        evaluate_branch_cleanup,
     )
     for evaluator in diff_evaluators:
         check, finding = evaluator(manifest, kept_files)
         checks.append(check)
         if finding is not None:
             findings.append(finding)
+
+    # evaluate_branch_cleanup needs the diff-availability signal so it can skip
+    # (instead of false-positive failing) when no diff data was resolved.
+    cleanup_check, cleanup_finding = evaluate_branch_cleanup(
+        manifest, kept_files, base_label, len(raw_files)
+    )
+    checks.append(cleanup_check)
+    if cleanup_finding is not None:
+        findings.append(cleanup_finding)
 
     summary = {
         'passed': sum(1 for c in checks if c['status'] == 'pass'),
