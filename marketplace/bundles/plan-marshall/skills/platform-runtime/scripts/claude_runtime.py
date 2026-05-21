@@ -110,7 +110,13 @@ def _install_session_start_hook(settings_path: Path) -> bool:
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         settings_data = _read_json(settings_path) or {}
         hooks_block = settings_data.setdefault("hooks", {})
+        if not isinstance(hooks_block, dict):
+            hooks_block = {}
+            settings_data["hooks"] = hooks_block
         session_start = hooks_block.setdefault("SessionStart", [])
+        if not isinstance(session_start, list):
+            session_start = []
+            hooks_block["SessionStart"] = session_start
 
         already_present = any(
             any(h.get("command") == _HOOK_COMMAND for h in entry.get("hooks", []))
@@ -1600,7 +1606,7 @@ class ClaudeRuntime(Runtime):
                 for entry in session_starts:
                     if isinstance(entry, dict):
                         for h in entry.get("hooks", []):
-                            if isinstance(h, dict) and _HOOK_COMMAND in h.get("command", ""):
+                            if isinstance(h, dict) and h.get("command") == _HOOK_COMMAND:
                                 return True
                 return False
 
