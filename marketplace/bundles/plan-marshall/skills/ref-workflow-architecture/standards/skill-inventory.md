@@ -82,7 +82,7 @@ Per the plugin.json registration convention documented in `frontmatter-standards
 |-------|-----------|---------|
 | dev-general-code-quality | yes | Language-agnostic code organization, error handling |
 | dev-general-module-testing | yes | Language-agnostic testing methodology, coverage |
-| dev-general-practices | yes | Foundational development rules, tool usage |
+| dev-agent-behavior-rules | yes | Foundational development rules, tool usage |
 | ref-toon-format | yes | TOON output format specification |
 | ref-workflow-architecture | yes | Central architecture documentation (this bundle) |
 | shared-workflow-helpers | script-only | Python library: triage_helpers.py |

@@ -82,11 +82,11 @@ Four detection modes:
 
 ## Argument Naming Rules
 
-The `ARGUMENT_NAMING_*` rule cluster cross-checks marketplace prose against the actual argparse declarations of the scripts that prose references. The cluster also cross-checks the Canonical Forms table in `marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/argument-naming.md` against the same argparse declarations. All four rules emit findings with `severity: error` and `fixable: false`, mirroring the `DISPLAY_DETAIL_*` finding shape used elsewhere in plugin-doctor.
+The `ARGUMENT_NAMING_*` rule cluster cross-checks marketplace prose against the actual argparse declarations of the scripts that prose references. The cluster also cross-checks the Canonical Forms table in `marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/argument-naming.md` against the same argparse declarations. All four rules emit findings with `severity: error` and `fixable: false`, mirroring the `DISPLAY_DETAIL_*` finding shape used elsewhere in plugin-doctor.
 
 **Activation**: This cluster is unconditionally active. See lesson `2026-04-29-23-002` for the rationale (three recurrences of stale-flag drift in skill workflows within ~3 days drove the move from a gated transitional period to default-on enforcement). Tests exercise the cluster directly against synthetic fixtures.
 
-**Scope**: every `python3 .plan/execute-script.py {notation} ...` token across SKILL.md, agents/*.md, commands/*.md, skills/*/standards/*.md, skills/*/references/*.md, skills/*/recipes/*.md within `marketplace/bundles/*/`. The Canonical Forms cross-check additionally reads the table at `marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/argument-naming.md`.
+**Scope**: every `python3 .plan/execute-script.py {notation} ...` token across SKILL.md, agents/*.md, commands/*.md, skills/*/standards/*.md, skills/*/references/*.md, skills/*/recipes/*.md within `marketplace/bundles/*/`. The Canonical Forms cross-check additionally reads the table at `marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/argument-naming.md`.
 
 **Discovery approach**: Pure static analysis — line-by-line regex extraction of executor invocations, plus AST walks of the referenced scripts to enumerate argparse subparsers and `add_argument` flag declarations. Mirrors the existing `argparse_safety` and `prose-verb-chain-consistency` patterns. No subprocess execution, no module imports.
 
@@ -108,7 +108,7 @@ The `ARGUMENT_NAMING_*` rule cluster cross-checks marketplace prose against the 
 - **Fix**: Update the prose to use a declared flag, or add the missing flag to the script's `add_argument` declarations.
 - **Exemptions**: Short flags (`-f`) are not subject to canonical-forms convention and are excluded from the scan. Flags whose script has no resolvable AST entry (missing file, parse error) are skipped silently — the notation rule reports the missing script.
 
-**ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT** (severity: error): Cross-checks every row of the Canonical Forms table at `marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/argument-naming.md` against the argparse declarations of the script the row prescribes. The cluster parses each row's `{script} {sub} --{flag1} {value1} --{flag2} ...` shape, resolves the `{script}` shorthand to a registered notation (matching on either the third segment of the notation or the second when the script shares its skill name), and confirms that `{sub}` is a declared subcommand and every `--{flag}` is declared on that subparser. Failure modes carried in `details.reason`: `shorthand_unresolved`, `subcommand_drift`, `flag_drift`.
+**ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT** (severity: error): Cross-checks every row of the Canonical Forms table at `marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/argument-naming.md` against the argparse declarations of the script the row prescribes. The cluster parses each row's `{script} {sub} --{flag1} {value1} --{flag2} ...` shape, resolves the `{script}` shorthand to a registered notation (matching on either the third segment of the notation or the second when the script shares its skill name), and confirms that `{sub}` is a declared subcommand and every `--{flag}` is declared on that subparser. Failure modes carried in `details.reason`: `shorthand_unresolved`, `subcommand_drift`, `flag_drift`.
 
 - **Rationale**: The Canonical Forms table is the documented contract for argument naming across `manage-*` scripts. If the table prescribes a spelling the argparse declarations no longer honor, every author who consults the table for guidance writes broken prose. The cross-check guarantees the table stays in sync with the implementations it governs.
 - **Fix**: Update either the Canonical Forms row or the argparse declaration so the two agree. When the table is correct and the script lags, rename the argparse flag; when the script is correct and the table lags, update the row.
@@ -219,6 +219,7 @@ Seven forward-looking lint rules.
 | `metadata-field-undefined` | Flag backtick snake_case tokens near metadata prose that reference field names not written by any `set-metadata --key` invocation | Heuristic proximity (±3 lines); builtin fields always exempt | Add `set-metadata --key <field>` write anywhere in the marketplace |
 | `resolution-branch-side-effect-undocumented` | Require `## Resolution` branches in standards to document at least one observable side effect | Allowlist-gated branch names; non-allowlist headings ignored | Add a log/metadata/status/artifact mention to the branch body |
 | `executor-path-in-production` | Detect `.plan/execute-script.py` in production Python scripts outside whitelisted categories | Whitelist covers generator, lint analyzers, permission tooling | Add path to whitelist in `_analyze_executor_path_in_production.py` |
+| `plan-path-in-scripts` | Detect code-literal `.plan/plans/` occurrences in marketplace Python scripts outside whitelisted categories — the canonical path is `.plan/local/plans/` (resolved via `tools-file-ops:file_ops.get_plan_dir`) | Whitelist covers only the analyzer's own self-referential occurrence; docstring-only hits (inside `"""..."""` / `'''...'''`) are structurally exempt | Add path to whitelist in `_analyze_plan_path_in_scripts.py` with a rationale comment, or route the call site through `get_plan_dir(plan_id)` |
 | `file-bloat-ack` | Allow explicitly acknowledged bloated files to suppress the `file-bloat` finding | Ack tag must match `^ack-[a-z0-9_-]+$`; bare `ack-` or generic values do not suppress | Add `quality.file-bloat: ack-<rationale>` to the file's YAML frontmatter |
 | `orphan-argparse-flag` | Flag argparse flags declared but never read in their handler | Conservative: `vars(args)`, `**kwargs`, or `getattr` usage suppresses the check | Read the flag in the handler, or remove the declaration |
 | `cmd-root-anchoring-missing` | Require `cmd_*` dispatcher functions to call `find_marketplace_root(...)` and declare `--marketplace-root` | Dispatcher-heuristic gated: only fires for scripts with `set_defaults(func=cmd_*)` | Add both the prelude call and the `--marketplace-root` flag to the subparser |
@@ -227,7 +228,7 @@ Seven forward-looking lint rules.
 
 | Rule ID | Intent | False-positive policy | Suppression |
 |---------|--------|-----------------------|-------------|
-| `shell-substitution-in-skills` | Forbid `$(` command substitution in plan-marshall skill markdown — violates the dev-general-practices "Bash: no shell constructs" hard rule | Two structural exemptions: any occurrence inside a markdown inline-code span (`` `…` ``), or any occurrence inside a fenced block with `markdown`/`text` info-string. Subagents do not execute either context | None — convert to the documented two-call + text-substitution pattern |
+| `shell-substitution-in-skills` | Forbid `$(` command substitution in plan-marshall skill markdown — violates the dev-agent-behavior-rules "Bash: no shell constructs" hard rule | Two structural exemptions: any occurrence inside a markdown inline-code span (`` `…` ``), or any occurrence inside a fenced block with `markdown`/`text` info-string. Subagents do not execute either context | None — convert to the documented two-call + text-substitution pattern |
 
 ### shell-substitution-in-skills
 
@@ -237,7 +238,7 @@ Seven forward-looking lint rules.
 
 **Scope**: All `*.md` files under `marketplace/bundles/plan-marshall/skills/`.
 
-**Intent**: Enforce the dev-general-practices "Bash: no shell constructs" hard rule (`dev-general-practices/SKILL.md` § "Bash: One command per call", `tool-usage-patterns.md` § "Bash safety rules") at the skill-documentation layer. A `$(` in a workflow doc gets interpreted by subagents that copy the snippet into a Bash call literally — the host platform's permission UI then either pops a security prompt or rejects the dispatch outright. The rule prevents regressions of the sweep that removed all such patterns.
+**Intent**: Enforce the dev-agent-behavior-rules "Bash: no shell constructs" hard rule (`dev-agent-behavior-rules/SKILL.md` § "Bash: One command per call", `tool-usage-patterns.md` § "Bash safety rules") at the skill-documentation layer. A `$(` in a workflow doc gets interpreted by subagents that copy the snippet into a Bash call literally — the host platform's permission UI then either pops a security prompt or rejects the dispatch outright. The rule prevents regressions of the sweep that removed all such patterns.
 
 **Detection logic**: Scans every line of every markdown file under `marketplace/bundles/plan-marshall/skills/`. Each `$(` two-character occurrence is a candidate finding unless it falls into one of the two exempt documentary contexts below.
 
@@ -245,7 +246,7 @@ Seven forward-looking lint rules.
 1. **Inline-code span** — A `$(` inside a markdown inline-code span (`` `…` ``). Subagents do not execute inline-code tokens; these are structural token references (e.g., when a standards doc says "the `$(...)` form is forbidden"), not runnable commands.
 2. **Verbatim-source fenced block** — A `$(` inside a fenced block whose info-string is `markdown` or `text`. These fences hold verbatim source examples (before/after illustrations) that subagents do not interpret as instructions.
 
-**Rationale**: The two-call + text-substitution pattern (run the script as a bare command, then use a `{placeholder}` slot in the next command's narrative substitution) is the documented safe alternative — see `dev-general-practices/SKILL.md` § "Bash: One command per call" and the request body for lesson `2026-05-15-13-001`. The exemption logic is purely structural (inline-code span or `markdown`/`text` fence) so the rule does not depend on a fragile keyword heuristic in the surrounding prose.
+**Rationale**: The two-call + text-substitution pattern (run the script as a bare command, then use a `{placeholder}` slot in the next command's narrative substitution) is the documented safe alternative — see `dev-agent-behavior-rules/SKILL.md` § "Bash: One command per call" and the request body for lesson `2026-05-15-13-001`. The exemption logic is purely structural (inline-code span or `markdown`/`text` fence) so the rule does not depend on a fragile keyword heuristic in the surrounding prose.
 
 **Recommended fix**: Replace `target=$(python3 .plan/execute-script.py …)` with the bare `python3 .plan/execute-script.py …` invocation followed by a one-sentence narrative ("Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below."). Replace `$var` references in subsequent bash blocks with `{var}` placeholders.
 
@@ -371,6 +372,30 @@ Seven forward-looking lint rules.
 **Recommended fix**: Remove the executor path literal. Replace with a direct module import or a documented interface contract.
 
 **Suppression mechanism**: Add the file to the whitelist inside `_analyze_executor_path_in_production.py` with a comment explaining the rationale.
+
+---
+
+### plan-path-in-scripts
+
+**Rule ID**: `plan-path-in-scripts`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_plan_path_in_scripts.py`
+
+**Scope**: `marketplace/bundles/**/scripts/**/*.py`.
+
+**Intent**: Production Python scripts must not embed the `.plan/plans/` literal path. The canonical plan-directory helper is `get_plan_dir(plan_id)` from `tools-file-ops:file_ops`, which resolves to `<repo>/.plan/local/plans/{plan_id}`. Any script that joins `plans/{plan_id}` against `cwd/.plan` directly resolves to the wrong path and produces a "ghost" `.plan/plans/{plan_id}/` tree at the repo root on every invocation. The originating failure mode is documented under the ghost-plan-dir bug, where two CI-completion scripts (`ci_complete_precondition.py` and `manage_ci_artifacts.py`) shipped hand-rolled `_resolve_plan_base_dir()` helpers that drifted from the canonical layout.
+
+**Whitelist categories** (path-component-anchored, not substring):
+
+- `_analyze_plan_path_in_scripts.py` — the analyzer's own file, which contains the marker literal as its detection target (self-referential).
+
+**Docstring exemption**: The scanner deliberately ignores occurrences that fall entirely inside a `"""..."""` or `'''...'''` block. Many legacy docstring examples still cite the shorter shorthand; sweeping those is out of scope for this rule. Only code-literal hits in module-level or function-body source produce findings.
+
+**Finding categories**: `production_script` or `test_assertion` (test files categorised separately by directory or `test_*` filename heuristic).
+
+**Recommended fix**: Replace the hand-rolled resolver with `from file_ops import get_plan_dir` and use `get_plan_dir(plan_id)` directly. The helper returns `<repo>/.plan/local/plans/{plan_id}` and is the single source of truth for plan-directory resolution.
+
+**Suppression mechanism**: Add the file to the whitelist inside `_analyze_plan_path_in_scripts.py` with a comment explaining the rationale. Suppression should be rare; the canonical alternative (`get_plan_dir`) covers nearly every legitimate use case.
 
 ---
 

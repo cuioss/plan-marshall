@@ -16,7 +16,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 ## Foundational Practices
 
 ```
-Skill: plan-marshall:dev-general-practices
+Skill: plan-marshall:dev-agent-behavior-rules
 ```
 
 ## Enforcement
@@ -31,7 +31,7 @@ Skill: plan-marshall:dev-general-practices
 - Never improvise script subcommands — use only those documented below
 
 **Constraints:**
-- Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
+- Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
 
 ## Dispatched workflows vs inline steps
 

@@ -14,18 +14,18 @@ Claude Code ships two extremes:
 * **Accept-edits / interactive mode** — every meaningful action prompts the developer. Safe, but flow-killing on any non-trivial task.
 * **YOLO (`--dangerously-skip-permissions`)** — no prompts. Fast, but a single misstep by the LLM can do anything within the user's shell.
 
-Plan Marshall sits between them with a different approach: **narrow what the LLM does at all**, so the permission surface is small enough to pre-approve with confidence. Two layers cooperate — a normative baseline (`dev-general-practices` hard rules) and a technical funnel (the script-executor proxy at `python3 .plan/execute-script.py`).
+Plan Marshall sits between them with a different approach: **narrow what the LLM does at all**, so the permission surface is small enough to pre-approve with confidence. Two layers cooperate — a normative baseline (`dev-agent-behavior-rules` hard rules) and a technical funnel (the script-executor proxy at `python3 .plan/execute-script.py`).
 
 [CAUTION]
 ====
 **Does this solve the problem completely? No.**
 
-`dev-general-practices` is skill-loaded *guidance*, not kernel-level enforcement. The LLM can still ignore the rules; nothing in Claude Code's runtime forces a subagent to honour a skill's `Prohibited actions` list. Plan Marshall lowers the probability of unsafe behaviour and bounds the blast radius via narrow allow-lists — it does not eliminate the risk.
+`dev-agent-behavior-rules` is skill-loaded *guidance*, not kernel-level enforcement. The LLM can still ignore the rules; nothing in Claude Code's runtime forces a subagent to honour a skill's `Prohibited actions` list. Plan Marshall lowers the probability of unsafe behaviour and bounds the blast radius via narrow allow-lists — it does not eliminate the risk.
 
 The model is **way fewer prompts than accept-edits, way more secure than YOLO**. For the remaining cases where Claude Code violates the rules anyway, you still get the prompt — just much less often than you would interactively, and the prompt itself is the safety net.
 ====
 
-image::../resources/diagrams/security-spectrum.svg[Plan Marshall on the Claude Code permission spectrum — three modes positioned along a prompt-frequency axis with blast-radius annotations underneath each. accept-edits sits at high prompts with small radius; YOLO at no prompts with unbounded radius; plan-marshall achieves YOLO's low prompt rate with bounded radius via the script-executor proxy plus dev-general-practices hard rules. Marked as the sweet spot., align=center]
+image::../resources/diagrams/security-spectrum.svg[Plan Marshall on the Claude Code permission spectrum — three modes positioned along a prompt-frequency axis with blast-radius annotations underneath each. accept-edits sits at high prompts with small radius; YOLO at no prompts with unbounded radius; plan-marshall achieves YOLO's low prompt rate with bounded radius via the script-executor proxy plus dev-agent-behavior-rules hard rules. Marked as the sweet spot., align=center]
 
 == Claude Code's stock modes — recap
 
@@ -43,9 +43,9 @@ For orientation:
 
 Plan Marshall operates inside interactive mode, but the prompt rate stays low because the permission lists pre-approve the patterns plan-marshall actually uses.
 
-== Layer 1 — `dev-general-practices` as the normative baseline
+== Layer 1 — `dev-agent-behavior-rules` as the normative baseline
 
-Every plan-marshall subagent loads link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/SKILL.md[`plan-marshall:dev-general-practices`] as Tier-1 *before* anything else (see xref:skill-handling.adoc[Skill Handling]). Its `Workflow Discipline (Hard Rules)` section in `standards/agent-behavior-rules.md` narrows what the subagent is allowed to *try*:
+Every plan-marshall subagent loads link:../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/SKILL.md[`plan-marshall:dev-agent-behavior-rules`] as Tier-1 *before* anything else (see xref:skill-handling.adoc[Skill Handling]). Its `Workflow Discipline (Hard Rules)` section in `standards/agent-behavior-rules.md` narrows what the subagent is allowed to *try*:
 
 * **No unconstrained generic subagents** — every phase-1 through phase-6 dispatch routes through `execution-context-{level}`. No raw `Task: general-purpose`.
 * **`.plan/` access through scripts only** — never direct Read/Write/Edit on `.plan/` files (except via documented workflow exceptions).
@@ -132,10 +132,10 @@ Because every action routes through the script-executor proxy, every script invo
 
 == Related
 
-* link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/agent-behavior-rules.md[`dev-general-practices/agent-behavior-rules.md`] § Workflow Discipline (Hard Rules) — the normative baseline
+* link:../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/agent-behavior-rules.md[`dev-agent-behavior-rules/agent-behavior-rules.md`] § Workflow Discipline (Hard Rules) — the normative baseline
 * link:../../marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md[`tools-script-executor/SKILL.md`] — the script-executor proxy contract
 * link:../../marketplace/bundles/plan-marshall/skills/tools-permission-doctor/SKILL.md[`tools-permission-doctor/SKILL.md`] — read-only permission analysis
 * link:../../marketplace/bundles/plan-marshall/skills/tools-permission-fix/SKILL.md[`tools-permission-fix/SKILL.md`] — permission write operations
-* xref:skill-handling.adoc[Concepts › Skill Handling] — why every subagent loads `dev-general-practices` as Tier-1
+* xref:skill-handling.adoc[Concepts › Skill Handling] — why every subagent loads `dev-agent-behavior-rules` as Tier-1
 * xref:execution-context.adoc[Concepts › Execution Context] — why every subagent dispatch routes through the same generic dispatcher
 * xref:../user/configuration.adoc[User Guide › Configuration] — surface map including `.claude/settings.local.json`

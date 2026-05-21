@@ -234,7 +234,7 @@ def test_pm_marketplace_root_set_rewrites_to_env_tree(two_marketplace_trees, mon
 
     Note: monkeypatch.setenv is the canonical way to set the env var — never
     use the inline ``VAR=val cmd`` shape, which is forbidden by
-    dev-general-practices Hard Rules.
+    dev-agent-behavior-rules Hard Rules.
     """
     monkeypatch.setenv('PM_MARKETPLACE_ROOT', str(two_marketplace_trees['tree_b_root']))
 

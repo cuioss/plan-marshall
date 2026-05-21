@@ -1,6 +1,6 @@
 # Documentation PR Comment Disposition
 
-Decision criteria for disposing of automated PR review comments (gemini-code-assist, Copilot, AsciiDoc-lint, markdownlint, link-checker, Sonar, etc.) on documentation files (AsciiDoc, ADRs, interface specifications, markdown). Comments reach this disposition step **after** the validity check from `dev-general-practices` (PR review hard rule): if a suggestion contradicts the plan's stated intent or driving lesson, reply-and-resolve immediately. Use this document when the suggestion is plan-compatible and you must decide between FIX, REPLY-AND-RESOLVE, or ESCALATE.
+Decision criteria for disposing of automated PR review comments (gemini-code-assist, Copilot, AsciiDoc-lint, markdownlint, link-checker, Sonar, etc.) on documentation files (AsciiDoc, ADRs, interface specifications, markdown). Comments reach this disposition step **after** the validity check from `dev-agent-behavior-rules` (PR review hard rule): if a suggestion contradicts the plan's stated intent or driving lesson, reply-and-resolve immediately. Use this document when the suggestion is plan-compatible and you must decide between FIX, REPLY-AND-RESOLVE, or ESCALATE.
 
 ## Disposition Outcomes
 
@@ -93,7 +93,7 @@ Use `AskUserQuestion` when the comment falls into any row below. Do NOT silently
 ```
 Bot comment received
   ↓
-Plan-intent check (dev-general-practices PR review rule)
+Plan-intent check (dev-agent-behavior-rules PR review rule)
   Contradicts plan? → REPLY-AND-RESOLVE (Plan-Intent Contradiction)
   ↓
 Match FIX category from table above?
@@ -125,4 +125,4 @@ Default → ESCALATE (do not silently fix or resolve unknown categories)
 - `pm-documents:ref-documentation` — Content quality, tone, and review standards
 - `pm-documents:manage-adr` — ADR format and lifecycle
 - `pm-documents:manage-interface` — Interface specification format
-- `plan-marshall:dev-general-practices` — PR review hard rule (validate bot suggestions against plan intent)
+- `plan-marshall:dev-agent-behavior-rules` — PR review hard rule (validate bot suggestions against plan intent)

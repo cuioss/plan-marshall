@@ -260,7 +260,7 @@ def test_skill_domains_get_system_has_execute_task_skills(monkeypatch):
 
         assert result['status'] == 'success'
         assert 'defaults' in result
-        assert 'plan-marshall:dev-general-practices' in result['defaults']
+        assert 'plan-marshall:dev-agent-behavior-rules' in result['defaults']
         assert 'execute_task_skills' in result
 
 
@@ -273,7 +273,7 @@ def test_skill_domains_detect_runs(monkeypatch):
     """Test skill-domains detect command runs successfully."""
     with PlanContext() as ctx:
         config = {
-            'skill_domains': {'system': {'defaults': ['plan-marshall:dev-general-practices'], 'optionals': []}},
+            'skill_domains': {'system': {'defaults': ['plan-marshall:dev-agent-behavior-rules'], 'optionals': []}},
             'system': {'retention': {}},
             'plan': {
                 'phase-1-init': {'branch_strategy': 'direct'},
@@ -843,7 +843,7 @@ def test_configure_preserves_project_skills(monkeypatch):
         config = {
             'skill_domains': {
                 'system': {
-                    'defaults': ['plan-marshall:dev-general-practices'],
+                    'defaults': ['plan-marshall:dev-agent-behavior-rules'],
                     'project_skills': ['project:system-skill'],
                     'execute_task_skills': {'implementation': 'plan-marshall:execute-task-implementation'},
                 },
@@ -942,7 +942,7 @@ def test_get_nested_includes_project_skills(monkeypatch):
         config = {
             'skill_domains': {
                 'system': {
-                    'defaults': ['plan-marshall:dev-general-practices'],
+                    'defaults': ['plan-marshall:dev-agent-behavior-rules'],
                     'project_skills': ['project:my-tool'],
                     'execute_task_skills': {},
                 },

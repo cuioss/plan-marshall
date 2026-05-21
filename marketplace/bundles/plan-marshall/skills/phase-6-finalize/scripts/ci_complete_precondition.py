@@ -49,7 +49,7 @@ finalize step.
 
 Cache lifecycle:
 
-* Storage: ``.plan/plans/{plan_id}/work/ci-precondition-cache.toon``.
+* Storage: ``.plan/local/plans/{plan_id}/work/ci-precondition-cache.toon``.
 * Key: the 40-character HEAD SHA captured via
   ``git -C {worktree_path} rev-parse HEAD`` at the start of each resolve
   call.
@@ -77,11 +77,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 
+from file_ops import get_plan_dir  # type: ignore[import-not-found]
 from marketplace_paths import git_main_checkout_root  # type: ignore[import-not-found]
 from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 
@@ -213,32 +213,18 @@ def _run_ci_wait(
 # ---------------------------------------------------------------------------
 
 
-def _resolve_plan_base_dir() -> Path:
-    """Resolve the on-disk plan base directory.
-
-    Honours the ``PLAN_BASE_DIR`` env override (used by tests). Otherwise
-    walks up from the current working directory to find a ``.plan``
-    directory — the same resolution pattern other marketplace scripts use
-    when ``manage-files`` is not in play.
-    """
-    override = os.environ.get('PLAN_BASE_DIR')
-    if override:
-        return Path(override)
-    # Default for in-tree calls: the executor lives at
-    # ``<repo>/.plan/execute-script.py`` and is the canonical anchor.
-    cwd = Path.cwd()
-    for candidate in (cwd, *cwd.parents):
-        executor = candidate / '.plan' / 'execute-script.py'
-        if executor.is_file():
-            return candidate / '.plan'
-    # Fall back to ``<cwd>/.plan`` even when the executor is missing —
-    # tests with a synthetic plan tree set PLAN_BASE_DIR directly.
-    return cwd / '.plan'
-
-
 def _cache_path(plan_id: str) -> Path:
-    """Return the absolute path of the per-plan precondition cache file."""
-    return _resolve_plan_base_dir() / 'plans' / plan_id / _CACHE_RELATIVE_PATH
+    """Return the absolute path of the per-plan precondition cache file.
+
+    Resolves the plan directory via the canonical ``file_ops.get_plan_dir``
+    helper, which anchors plan-scoped state at
+    ``<repo>/.plan/local/plans/{plan_id}/`` under normal operation and
+    honours ``PLAN_BASE_DIR`` for tests. Local resolution of the plan-base
+    directory was previously inlined here as ``_resolve_plan_base_dir`` and
+    produced a ghost ``.plan/plans/...`` tree relative to the agent cwd
+    whenever the env var was unset — see the fix-ghost-plan-dir lesson.
+    """
+    return get_plan_dir(plan_id) / _CACHE_RELATIVE_PATH
 
 
 def _read_cache(plan_id: str) -> dict | None:

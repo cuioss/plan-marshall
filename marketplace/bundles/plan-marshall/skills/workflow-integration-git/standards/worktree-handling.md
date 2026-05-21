@@ -111,7 +111,7 @@ Child agents MUST echo the same header verbatim into any further dispatches they
 
 **Applies in state 4 (post-materialization) only.** In states 1-2, `{worktree_path}` is empty and the universal rule already governs main-checkout invocations (`git -C {main_checkout} ...`); the worktree-specific application below activates the moment Step 2.5 materializes the worktree directory.
 
-The universal "no `cd <path> && <tool>`" prohibition is established in [`dev-general-practices/standards/tool-usage-patterns.md`](../../dev-general-practices/standards/tool-usage-patterns.md) — that document defines the rule for every tool with a native cwd flag.
+The universal "no `cd <path> && <tool>`" prohibition is established in [`dev-agent-behavior-rules/standards/tool-usage-patterns.md`](../../dev-agent-behavior-rules/standards/tool-usage-patterns.md) — that document defines the rule for every tool with a native cwd flag.
 
 **Worktree-specific application**: when a plan runs in an isolated worktree, every git command that targets the plan's working tree MUST use the form:
 
@@ -145,7 +145,7 @@ This invariant is enforced at four layers:
 
 - **Layer A — Bucket A / `manage-*` scripts** resolve `.plan/` via `git rev-parse --git-common-dir` and stay cwd-agnostic. The shared metadata directory belongs to the main checkout regardless of which worktree the agent runs in, so layer A is path-stable by construction.
 - **Layer B — Bucket B `--plan-id` auto-routing** binds build / CI / Sonar wrappers to the worktree path internally; the main checkout is not reachable from those subprocess trees.
-- **Layer C — Raw tool flags** (`git -C`, `mvn -f`, `pytest --rootdir`, etc.) target the worktree explicitly when the agent invokes external CLIs directly. This is the call-site rule documented in `dev-general-practices/standards/tool-usage-patterns.md`.
+- **Layer C — Raw tool flags** (`git -C`, `mvn -f`, `pytest --rootdir`, etc.) target the worktree explicitly when the agent invokes external CLIs directly. This is the call-site rule documented in `dev-agent-behavior-rules/standards/tool-usage-patterns.md`.
 - **Layer D — Phase-handshake strict-verify drift detection** catches free-form filesystem leaks that escape layers A/B/C. See the next section.
 
 ## Layer D: Phase-Handshake Drift Detection
@@ -305,7 +305,7 @@ Per the never-edit-main-checkout invariant above, `worktree-rebase-to` operates 
 
 ## Related
 
-- [`dev-general-practices/standards/tool-usage-patterns.md`](../../dev-general-practices/standards/tool-usage-patterns.md) — universal "no `cd && <tool>`" rule, native cwd flags for every tool.
+- [`dev-agent-behavior-rules/standards/tool-usage-patterns.md`](../../dev-agent-behavior-rules/standards/tool-usage-patterns.md) — universal "no `cd && <tool>`" rule, native cwd flags for every tool.
 - [`tools-script-executor/standards/cwd-policy.md`](../../tools-script-executor/standards/cwd-policy.md) — Bucket A/B/C policy for marketplace scripts.
 - [`phase-5-execute/SKILL.md`](../../phase-5-execute/SKILL.md) — Dispatch Protocol section anchors the Worktree Header at the orchestration layer.
 - [`execute-task/SKILL.md`](../../execute-task/SKILL.md) — execute-task input contract surfaces `plan_id` so the skill can resolve the worktree internally.

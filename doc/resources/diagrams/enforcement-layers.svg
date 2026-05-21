@@ -5,7 +5,7 @@
      role="img" aria-labelledby="title desc"
      font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
   <title id="title">Process enforcement — four layers, soft to hard</title>
-  <desc  id="desc">Four-layer stack of Plan Marshall process-enforcement mechanisms ordered from soft (skill-loaded text the LLM can still ignore) to hard (mechanical gate that exits non-zero). Layer 1 is the dev-general-practices hard rules loaded with every dispatch. Layer 2 is the script-executor proxy plus manage-* funnel through which all .plan/ access flows. Layer 3 is the per-phase Q-Gate findings checkpoint resolved before the next phase entry. Layer 4 is the phase-handshake invariant capture-and-verify protocol that refuses to advance the lifecycle on drift.</desc>
+  <desc  id="desc">Four-layer stack of Plan Marshall process-enforcement mechanisms ordered from soft (skill-loaded text the LLM can still ignore) to hard (mechanical gate that exits non-zero). Layer 1 is the dev-agent-behavior-rules hard rules loaded with every dispatch. Layer 2 is the script-executor proxy plus manage-* funnel through which all .plan/ access flows. Layer 3 is the per-phase Q-Gate findings checkpoint resolved before the next phase entry. Layer 4 is the phase-handshake invariant capture-and-verify protocol that refuses to advance the lifecycle on drift.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
@@ -33,9 +33,9 @@
   <text x="55" y="495" class="axis-lbl">hard</text>
   <text x="55" y="295" transform="rotate(-90 55 295)" class="axis-lbl">enforcement strength</text>
 
-  <!-- ============= Layer 1 — dev-general-practices hard rules (soft) ============= -->
+  <!-- ============= Layer 1 — dev-agent-behavior-rules hard rules (soft) ============= -->
   <rect class="stroke" x="120" y="90" width="760" height="80" rx="6" ry="6"/>
-  <text x="500" y="115" class="col-header">Layer 1 · Hard rules in dev-general-practices</text>
+  <text x="500" y="115" class="col-header">Layer 1 · Hard rules in dev-agent-behavior-rules</text>
   <text x="500" y="135" class="col-sub">Skill-loaded text on every dispatch — `.plan/` scripts-only · one Bash command · no shell constructs · architecture-resolve</text>
   <text x="500" y="155" class="col-sub">Strength: <tspan class="mono">guidance</tspan> · the LLM can violate it (and sometimes does)</text>
 

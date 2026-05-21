@@ -173,7 +173,7 @@ Skill: bundle-name:skill-name  # For bundled skills
 PASS Skill: cui-java-core
 PASS Skill: cui-java-unit-testing
 PASS Skill: cui-javadoc
-PASS Skill: plan-marshall:dev-general-practices
+PASS Skill: plan-marshall:dev-agent-behavior-rules
 PASS Skill: pm-plugin-development:plugin-architecture
 ```
 
@@ -327,7 +327,7 @@ allowed-tools: [Read, Bash, Skill]
 
 ## Step 1: Load Prerequisites
 
-Skill: plan-marshall:dev-general-practices  # Pattern 5
+Skill: plan-marshall:dev-agent-behavior-rules  # Pattern 5
 
 ## Step 2: Load Reference Documentation
 

@@ -51,8 +51,8 @@ The `system` domain is required and contains:
 {
   "skill_domains": {
     "system": {
-      "defaults": ["plan-marshall:dev-general-practices"],
-      "optionals": ["plan-marshall:dev-general-practices"],
+      "defaults": ["plan-marshall:dev-agent-behavior-rules"],
+      "optionals": ["plan-marshall:dev-agent-behavior-rules"],
       "workflow_skills": {
         "1-init": "plan-marshall:phase-1-init",
         "2-refine": "plan-marshall:phase-2-refine",
@@ -196,8 +196,8 @@ Applied to all agents and skills. Contains workflow skills for the 6-phase model
 
 | Field | Content |
 |-------|---------|
-| defaults | `plan-marshall:dev-general-practices` |
-| optionals | `plan-marshall:dev-general-practices` |
+| defaults | `plan-marshall:dev-agent-behavior-rules` |
+| optionals | `plan-marshall:dev-agent-behavior-rules` |
 | workflow_skills | 6 phases: init, refine, outline, plan, execute, finalize |
 
 ## Technical Domains

@@ -116,7 +116,7 @@ Never hard-code build commands (`./pw`, `./mvnw`, `mvn`, `npm`, `gradle`). The a
 
 ## Bash Safety Rules
 
-The foundational "Bash: One command per call" rule lives in [`dev-general-practices` SKILL.md → Hard Rules](../SKILL.md#bash-one-command-per-call). The subsections below extend that anchor with the structural patterns most often violated in practice — chain shape vs chain content, `cd && X` for any tool, and Bash file-authoring impersonation. This document references the foundational rule rather than duplicating it.
+The foundational "Bash: One command per call" rule lives in [`dev-agent-behavior-rules` SKILL.md → Hard Rules](../SKILL.md#bash-one-command-per-call). The subsections below extend that anchor with the structural patterns most often violated in practice — chain shape vs chain content, `cd && X` for any tool, and Bash file-authoring impersonation. This document references the foundational rule rather than duplicating it.
 
 ### One command per call
 

@@ -14,7 +14,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 ## Foundational Practices
 
 ```
-Skill: plan-marshall:dev-general-practices
+Skill: plan-marshall:dev-agent-behavior-rules
 ```
 
 ## Enforcement
@@ -39,12 +39,26 @@ When persisting the multi-task batch (Step 6 → 6a/6b), the following shell sho
 **Rule-compliant alternative**: Use the `--tasks-file` path-allocate flow documented in Step 6a/6b. Stage the batch JSON via `manage-files write --file work/tasks-batch.json` (so the payload is written through a structured tool, not a shell argument), then call `manage-tasks batch-add --tasks-file .plan/local/plans/{plan_id}/work/tasks-batch.json`. This is the only sanctioned path for multi-task creation in this phase.
 
 **Constraints:**
-- Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
+- Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
 - Batch JSON staging files MUST live under `.plan/local/plans/{plan_id}/work/`. Never use `Write` to `/tmp/`, `/var/`, or any path outside the plan's `work/` directory. (Cross-reference: see anti-pattern callout at SKILL.md:30 for the shell-substitution shortcut prohibition; both rules apply together.)
 
 ## Dispatched workflows vs inline steps
 
 This phase dispatches under one role key: **`phase-4-plan`** (resolves through `phase-4-plan.default`). The bundled task-creation activity (Steps 5+6+7 — per-deliverable task creation, anchoring/breaking-refactor split, holistic verification tasks) iterates *inside* one `phase-4-plan` envelope; the per-deliverable loop never spawns per-iteration subagents. Mechanical sub-procedures stay inline as scripts: Step 3 deliverable load, Step 4 dependency graph, Step 8 topological sort, Step 8b execution manifest composition, and Step 9 Q-Gate mechanical checks (via `manage-tasks:qgate-mechanical-checks` — coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Step 9b LLM Q-Gate activation is *signaled* by setting `qgate_validation_required: true` in the phase return TOON (unconditionally after every successful phase-4-plan invocation — both `module-mapping-validator` and `scope-criterion-validator` apply to every plan regardless of `plan_source`); the orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads that flag and issues q-gate-validation as a sibling top-level `Task: plan-marshall:{target}` dispatch — the phase body cannot spawn it directly because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. The mechanical script's `ambiguous=true` signal is informational only (it means `solution_outline.md` was missing or unparseable, in which case the orchestrator-dispatched LLM run is the *only* authoritative pass). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2–4.
+
+### Loop-invariant inputs (cached at phase entry)
+
+The task-creation loop (Steps 5 + 6 + 7) iterates per deliverable — but the *inputs* feeding the per-deliverable task creation are loop-invariant: they are read once during phase entry / Step 3 deliverable load and Step 4 dependency-graph construction, and are not mutated by the loop body. The dispatched agent MUST read each of the following inputs ONCE at phase entry and reference the cached values throughout every per-deliverable iteration:
+
+- The deliverable set (read via Step 3 deliverable-load from `solution_outline.md`).
+- The architecture topology (read via `manage-architecture topology` at phase entry).
+- The per-deliverable skill resolutions (resolved via `architecture module --module {D.module}` for each distinct module before the per-deliverable iteration begins — one query per unique module, cached; not re-queried per deliverable or per profile).
+- The execution manifest composition inputs (the manifest is composed once at Step 8b — not per-deliverable).
+
+**Prohibited actions:**
+- Never re-read loop-invariant inputs inside the task-creation loop body — re-reading is the recurring envelope-cost waste documented in lesson `2026-05-20-15-007`.
+
+See [`extension-api/standards/dispatch-granularity.md`](../extension-api/standards/dispatch-granularity.md) § 5.1 (Heuristic 2 — bundle when steps share context) for the granularity rationale.
 
 ## cwd for `.plan/execute-script.py` calls
 
@@ -235,13 +249,18 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ```
 
 ```
+# Pre-fetch: resolve architecture data for every distinct module referenced across deliverables.
+# Do this ONCE before the per-deliverable loop — use cached values inside the loop body.
+For each unique D.module in deliverables:
+  Pre-fetch: architecture module --module {D.module}  → cache as arch_cache[D.module]
+
 For each deliverable D:
   IF (D.change_type == verification OR D.affected_files is empty) AND "implementation" NOT IN D.profiles:
     IF D.profiles != [verification]:
       Log warning (see above)
     D.profiles = [verification]
   # else: explicit Profiles list wins — guard is a no-op
-  1. Query architecture: module --module {D.module}
+  1. Use cached architecture: arch_cache[D.module]  (do NOT re-query)
   For each profile P in D.profiles:
     IF P = verification:
       2v. Skip skill resolution (no architecture query needed)

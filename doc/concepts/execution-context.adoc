@@ -9,7 +9,7 @@ Why Plan Marshall ships exactly one role-eligible agent (link:../../marketplace/
 
 == One Generic Dispatcher
 
-`plan-marshall:execution-context` is the sole role-eligible canonical agent in the marketplace. It owns the dispatcher boilerplate (load `dev-general-practices`, load caller-specified skills, locate the workflow doc, execute, emit return TOON) exactly once, and parameterises the workflow body at dispatch time. The caller passes five prompt-body fields:
+`plan-marshall:execution-context` is the sole role-eligible canonical agent in the marketplace. It owns the dispatcher boilerplate (load `dev-agent-behavior-rules`, load caller-specified skills, locate the workflow doc, execute, emit return TOON) exactly once, and parameterises the workflow body at dispatch time. The caller passes five prompt-body fields:
 
 * `name` — human label for logging and `mark-step-done`
 * `plan_id` — plan identifier (or the sentinel `none` for free-standing dispatches)
@@ -17,7 +17,7 @@ Why Plan Marshall ships exactly one role-eligible agent (link:../../marketplace/
 * `workflow` — bundle-prefixed notation for the workflow doc to run (e.g. `plan-marshall:phase-1-init/SKILL.md`, `plan-marshall:plan-marshall/workflow/triage.md`)
 * `WORKTREE` — repo-relative working directory (`.` for main checkout)
 
-The dispatcher loads `dev-general-practices` implicitly, then the caller-specified `skills[]`, then reads the resolved workflow path and follows it. Workflow-specific runtime inputs (`finding_type`, `track`, `scope`, etc.) flow through additional prompt-body fields the workflow doc declares.
+The dispatcher loads `dev-agent-behavior-rules` implicitly, then the caller-specified `skills[]`, then reads the resolved workflow path and follows it. Workflow-specific runtime inputs (`finding_type`, `track`, `scope`, etc.) flow through additional prompt-body fields the workflow doc declares.
 
 A new LLM-judgement workflow worth pinning its own model is added by writing a new workflow doc that declares `implements: ext-point-execution-context-workflow` and registering a new role key. No new agent file, no new emitted variants.
 
@@ -58,7 +58,7 @@ Not every step belongs in its own dispatch. The granularity heuristics in link:.
 
 == Dispatch Lifecycle
 
-image::../resources/diagrams/dispatch-walkthrough.svg[Sequence diagram of one execution-context dispatch — the orchestrator resolves the level via manage-config, constructs a five-field prompt body, dispatches Task: execution-context-{level}, suspends while the subagent loads dev-general-practices plus caller-named skills and reads/executes the workflow doc, then records the TOON return via manage-status mark-step-done, align=center]
+image::../resources/diagrams/dispatch-walkthrough.svg[Sequence diagram of one execution-context dispatch — the orchestrator resolves the level via manage-config, constructs a five-field prompt body, dispatches Task: execution-context-{level}, suspends while the subagent loads dev-agent-behavior-rules plus caller-named skills and reads/executes the workflow doc, then records the TOON return via manage-status mark-step-done, align=center]
 
 The dispatch is synchronous. The orchestrator suspends on the `Task:` call for the entire duration of the subagent's run (skill loads, workflow read, internal loops, AskUserQuestion gates) and resumes only when the subagent returns its TOON record. No tokens are billed to the orchestrator during the suspension — only the subagent's `<usage>` is counted.
 
@@ -66,7 +66,7 @@ Three properties make the 8-step shape worth pinning (step numbers refer to the 
 
 * **Step 2's level resolution reads `marshal.json` fresh.** A configuration edit takes effect on the *next* dispatch — no Claude Code restart needed. The variant target string returned by the resolver is what `Task:` is called with.
 * **Step 3's prompt body has exactly five required fields.** `name`, `plan_id`, `skills[]`, exactly one of `workflow`/`instructions`, and `WORKTREE`. Workflow-specific runtime inputs (`producer`, `track`, `module`, …) layer on top per the workflow doc's contract.
-* **Step 5's skill loads are deterministic.** `dev-general-practices` is implicit-first, then each `skills[]` entry in caller-declared order, then `Read` on the workflow doc. The order is part of the contract — see xref:skill-handling.adoc[Skill Handling].
+* **Step 5's skill loads are deterministic.** `dev-agent-behavior-rules` is implicit-first, then each `skills[]` entry in caller-declared order, then `Read` on the workflow doc. The order is part of the contract — see xref:skill-handling.adoc[Skill Handling].
 
 Three worked end-to-end traces (a single-workflow phase entry, a `verification-feedback` sub-dispatch by reference, and a parallel `enrich-module` fan-out) live in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/dispatch-walkthrough.md[`ref-workflow-architecture/standards/dispatch-walkthrough.md`].
 

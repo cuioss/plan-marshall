@@ -35,7 +35,7 @@
     "./skills/build-pyproject",
     "./skills/dev-general-code-quality",
     "./skills/dev-general-module-testing",
-    "./skills/dev-general-practices",
+    "./skills/dev-agent-behavior-rules",
     "./skills/execute-task",
     "./skills/extension-api",
     "./skills/manage-architecture",

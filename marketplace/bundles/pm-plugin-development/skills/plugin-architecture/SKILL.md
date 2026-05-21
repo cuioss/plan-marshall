@@ -139,5 +139,5 @@ Follow guidance in loaded references, then verify:
 - Claude Code Plugin Documentation: https://docs.claude.com/en/docs/claude-code/plugins
 
 ### Related Skills
-- plan-marshall:dev-general-practices - Core development principles and tool usage patterns
+- plan-marshall:dev-agent-behavior-rules - Core development principles and tool usage patterns
 - pm-plugin-development:plugin-script-architecture - Python implementation, testing, output contracts

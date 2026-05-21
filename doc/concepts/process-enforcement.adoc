@@ -13,13 +13,13 @@ LLMs are not reliable process followers. They sidestep documented steps, invent 
 
 Plan Marshall responds with four cooperating mechanisms ordered from soft (skill-loaded text) to hard (mechanical refusal). Each layer assumes the layers above it can be bypassed; the stack is designed so a drift terminates as high up as possible, and so the deeper a violation tries to reach, the more mechanical the resistance becomes.
 
-image::../resources/diagrams/enforcement-layers.svg[Process enforcement — four layers stacked from soft (skill-loaded text) to hard (mechanical gate). Layer 1 is the dev-general-practices hard rules. Layer 2 is the script-executor proxy plus manage-* funnel for all .plan/ access. Layer 3 is the Q-Gate findings checkpoint resolved at the next phase's entry. Layer 4 is the phase-handshake invariant registry that captures fingerprints at completion and verifies them at entry, refusing to advance on drift., align=center]
+image::../resources/diagrams/enforcement-layers.svg[Process enforcement — four layers stacked from soft (skill-loaded text) to hard (mechanical gate). Layer 1 is the dev-agent-behavior-rules hard rules. Layer 2 is the script-executor proxy plus manage-* funnel for all .plan/ access. Layer 3 is the Q-Gate findings checkpoint resolved at the next phase's entry. Layer 4 is the phase-handshake invariant registry that captures fingerprints at completion and verifies them at entry, refusing to advance on drift., align=center]
 
 Each layer assumes the layer above it can be bypassed. The four together are small in surface area — one hard-rules file, one script proxy, one Q-Gate gate, one handshake registry — but load-bearing at every phase boundary.
 
-== Layer 1 · Hard rules in `dev-general-practices`
+== Layer 1 · Hard rules in `dev-agent-behavior-rules`
 
-Every plan-marshall subagent loads link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/SKILL.md[`plan-marshall:dev-general-practices`] as Tier-1 before anything else (see xref:skill-handling.adoc[Skill Handling]). Its `Workflow Discipline (Hard Rules)` section in link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/agent-behavior-rules.md[`standards/agent-behavior-rules.md`] is the closest thing the marketplace has to "rules in the LLM's context window every time it dispatches." Representative rules:
+Every plan-marshall subagent loads link:../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/SKILL.md[`plan-marshall:dev-agent-behavior-rules`] as Tier-1 before anything else (see xref:skill-handling.adoc[Skill Handling]). Its `Workflow Discipline (Hard Rules)` section in link:../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/agent-behavior-rules.md[`standards/agent-behavior-rules.md`] is the closest thing the marketplace has to "rules in the LLM's context window every time it dispatches." Representative rules:
 
 * `.plan/` access goes through `python3 .plan/execute-script.py` — never direct Read/Write/Edit on `.plan/` files.
 * One Bash command per call — no `&&`, `;`, `&`, or newlines.
@@ -115,9 +115,9 @@ The point is not "the LLM can't break the process." The point is that breaking t
 * xref:planning-workflow.adoc[Concepts › Planning Workflow] — the six phases the enforcement protects.
 * xref:security.adoc[Concepts › Security] — the broader runtime-surface-narrowing thesis Layer 2 is part of.
 * xref:audit-trail.adoc[Concepts › Audit Trail] — what the layers *record* (in addition to what they enforce).
-* xref:skill-handling.adoc[Concepts › Skill Handling] — why `dev-general-practices` loads Tier-1 on every dispatch.
+* xref:skill-handling.adoc[Concepts › Skill Handling] — why `dev-agent-behavior-rules` loads Tier-1 on every dispatch.
 * xref:automatic-reviews.adoc[Concepts › Automatic Reviews] — the findings-pipeline architecture Layer 3 sits on top of.
-* link:../../marketplace/bundles/plan-marshall/skills/dev-general-practices/standards/agent-behavior-rules.md[`dev-general-practices/agent-behavior-rules.md`] — the hard-rules file loaded at every dispatch.
+* link:../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/agent-behavior-rules.md[`dev-agent-behavior-rules/agent-behavior-rules.md`] — the hard-rules file loaded at every dispatch.
 * link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/phase-lifecycle.md[`ref-workflow-architecture/standards/phase-lifecycle.md`] — Phase Entry / Completion Protocols that wire Q-Gate + handshake into every boundary.
 * link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/references/phase-handshake.md[`plan-marshall/references/phase-handshake.md`] — handshake script contract, invariant registry, drift envelope.
 * link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/manage-contract.md[`ref-workflow-architecture/standards/manage-contract.md`] — the manage-* TOON-in / TOON-out contract that the script funnel routes through.

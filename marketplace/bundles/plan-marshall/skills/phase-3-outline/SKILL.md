@@ -14,7 +14,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 ## Foundational Practices
 
 ```
-Skill: plan-marshall:dev-general-practices
+Skill: plan-marshall:dev-agent-behavior-rules
 ```
 
 ## Enforcement
@@ -32,11 +32,26 @@ Skill: plan-marshall:dev-general-practices
 - **Never invoke any `*-doctor` tool (e.g., `plugin-doctor`, `plan-doctor`) carrying `fix`, `apply`, `--apply`, or `--fix`** during outline. Doctor tools may only be invoked in their read-only modes (`verify`, `check`, no flags) to surface findings. The `apply`/`fix`/`--fix`/`--apply` surfaces mutate source files and bypass the per-plan workspace boundary above — they are reserved for phase-5-execute task bodies that the planner explicitly authorized via a deliverable. This applies equally to `Bash`, `Skill:`, and `SlashCommand:` invocation shapes.
 
 **Constraints:**
-- Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
+- Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
 
 ## Dispatched workflows vs inline steps
 
 This phase dispatches under one role key: **`phase-3-outline`** (resolves through `phase-3-outline.default`; `track={simple|complex}` is a runtime input — both tracks share the envelope and resolver lookup). The Complex Track bundles Steps 9c (per-deliverable design-intent classification), 10 (the heavyweight design body), and 10b (self-modifying classification) into one `phase-3-outline` envelope — the per-deliverable loop iterates *inside* the dispatch. Mechanical sub-procedures stay inline: Step 4 detect-change-type uses `manage-status:change-type-heuristic` (heuristic-first, dispatches via `effort read --default` when ambiguous); Simple Track Step 6 target validation is a Bash one-liner; Complex Track Step 9 domain-resolution and Step 10b consumer-sweep run as scripts. Step 11 Q-Gate validation activation is *signaled* by setting `qgate_validation_required: true` in the phase return TOON; the orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads that flag and issues q-gate-validation as a sibling top-level `Task: plan-marshall:{target}` dispatch — the phase body cannot spawn it directly because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. The flag is set to `false` (no orchestrator dispatch) when the surgical-bypass predicate holds (`scope_estimate == surgical` AND `change_type ∈ {bug_fix, tech_debt, verification}` AND `deliverable_count == 1`). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 3–4 (bundle when steps share context; per-iteration only when models differ or parallel).
+
+### Loop-invariant inputs (cached at phase entry)
+
+The Complex Track per-deliverable loop (Steps 9c + 10 + 10b) iterates over the deliverable list — but the *inputs* feeding the per-deliverable design body are loop-invariant: they are written before the loop begins (phase-2-refine, phase-3-outline entry, Step 9 domain-resolution) and are not mutated by the loop body. The dispatched agent MUST read each of the following inputs ONCE at phase entry and reference the cached values throughout every per-deliverable iteration:
+
+- The clarified request narrative (read via `manage-plan-documents read --plan-id {plan_id} --document request`).
+- `domains` and `compatibility` (read via `manage-files read --plan-id {plan_id} --file references.json`).
+- `module_mapping.toon` if present at `.plan/local/plans/{plan_id}/module_mapping.toon`.
+- The architecture topology (read via `manage-architecture topology` at phase entry).
+- The resolved domain outline skill notation (resolved once via Step 9 domain-resolution).
+
+**Prohibited actions:**
+- Never re-read loop-invariant inputs inside the per-deliverable loop body — re-reading is the recurring envelope-cost waste documented in lesson `2026-05-20-15-007`.
+
+See [`extension-api/standards/dispatch-granularity.md`](../extension-api/standards/dispatch-granularity.md) § 5.1 (Heuristic 2 — bundle when steps share context) for the granularity rationale.
 
 ## cwd for `.plan/execute-script.py` calls
 

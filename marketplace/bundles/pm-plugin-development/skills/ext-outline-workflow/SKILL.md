@@ -12,7 +12,7 @@ Shared workflow steps for plugin development outline, loaded by the `phase-3-out
 ## Step 1: Load Foundational Practices
 
 ```
-Skill: plan-marshall:dev-general-practices
+Skill: plan-marshall:dev-agent-behavior-rules
 ```
 
 ## Context Loading

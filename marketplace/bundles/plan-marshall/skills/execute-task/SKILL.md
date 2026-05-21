@@ -15,7 +15,7 @@ user-invocable: false
 ## Foundational Practices
 
 ```
-Skill: plan-marshall:dev-general-practices
+Skill: plan-marshall:dev-agent-behavior-rules
 ```
 
 ## Enforcement
@@ -25,7 +25,7 @@ Skill: plan-marshall:dev-general-practices
 - Never run git as a `cd {worktree_path} && git ...` compound. All git commands during task execution MUST use the `git -C {resolved_worktree_path} <subcommand>` form, where `{resolved_worktree_path}` is the value returned by `manage-status get-worktree-path --plan-id {plan_id}`.
 
 **Constraints:**
-- Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
+- Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
 - Never bypass the manage-tasks next/finalize-step loop — if parallelization is needed, it must happen at the TASK level, not at the STEP level within a task
 - A task in `implementation` or `module_testing` profile MUST NOT be marked `done` until the resolved canonical command (`quality-gate` or `verify` respectively) exits cleanly. Module-tests passing alone is necessary but not sufficient — mypy and ruff must also pass.
 

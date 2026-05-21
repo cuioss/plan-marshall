@@ -9,7 +9,7 @@ Every rule emitted by `plugin-doctor` must have a documented provenance — the 
 | **structural** | Validates file / component / argparse / metadata structure. Failure means the artifact does not match its declared schema. |
 | **content** | Validates the textual content of a marketplace artifact — bloat thresholds, prose drift, hard-coded paths, checklist patterns. |
 | **style** | Naming conventions, ordering, formatting conventions that do not affect runtime behaviour but degrade authoring experience when drifted. |
-| **safety** | Enforces a `dev-general-practices` hard rule. Violations are runtime hazards (security prompts, shell-construct rejection, prefix-binding silent failures). |
+| **safety** | Enforces a `dev-agent-behavior-rules` hard rule. Violations are runtime hazards (security prompts, shell-construct rejection, prefix-binding silent failures). |
 
 ## Rule Provenance Table
 
@@ -86,7 +86,7 @@ Activated unconditionally per lesson `2026-04-29-23-002`. Cross-checks marketpla
 | `ARGUMENT_NAMING_NOTATION_INVALID` | structural | `_analyze_argument_naming.py` | Lesson `2026-04-29-23-002` — three recurrences of stale-notation drift in ~3 days. |
 | `ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN` | structural | `_analyze_argument_naming.py` | Lesson `2026-04-29-23-002`. |
 | `ARGUMENT_NAMING_FLAG_UNKNOWN` | structural | `_analyze_argument_naming.py` | Lesson `2026-04-29-23-002`. |
-| `ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT` | structural | `_analyze_argument_naming.py` | Lesson `2026-04-29-23-002` — the Canonical Forms table at `plan-marshall:dev-general-practices/standards/argument-naming.md` is the documented contract; if it drifts from argparse, every author who consults it writes broken prose. |
+| `ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT` | structural | `_analyze_argument_naming.py` | Lesson `2026-04-29-23-002` — the Canonical Forms table at `plan-marshall:dev-agent-behavior-rules/standards/argument-naming.md` is the documented contract; if it drifts from argparse, every author who consults it writes broken prose. |
 
 ### manage-* invocation rules
 
@@ -122,6 +122,7 @@ Seven forward-looking lint rules added by the lesson-2026-05-05-18-001 remediati
 | `metadata-field-undefined` | structural | `_analyze_metadata_field_validity.py` | Lesson `2026-05-05-18-001` — metadata field names referenced in prose without a corresponding `set-metadata --key` writer somewhere in the marketplace. |
 | `resolution-branch-side-effect-undocumented` | content | `_analyze_resolution_branch_markers.py` | Lesson `2026-05-05-18-001` — every named `## Resolution` branch must document at least one observable side effect (log / metadata / status / artifact write). |
 | `executor-path-in-production` | structural | `_analyze_executor_path_in_production.py` | Lesson `2026-05-05-18-001` — production Python scripts must not embed `.plan/execute-script.py`; the literal path creates a runtime coupling to `.plan/` that breaks when called from an unexpected location. |
+| `plan-path-in-scripts` | structural | `_analyze_plan_path_in_scripts.py` | Ghost-plan-dir bug — two CI-completion scripts (`ci_complete_precondition.py` and `manage_ci_artifacts.py`) shipped hand-rolled `_resolve_plan_base_dir()` helpers that returned `cwd/.plan` instead of the canonical `cwd/.plan/local`, producing a ghost `.plan/plans/{plan_id}/` tree on every invocation. Production scripts must use `get_plan_dir(plan_id)` from `tools-file-ops:file_ops`; code-literal `.plan/plans/` occurrences in marketplace `scripts/*.py` are runtime hazards. Docstring-only matches are out of scope. |
 | `orphan-argparse-flag` | structural | `_analyze_orphan_argparse_flags.py` | Lesson `2026-05-05-18-001` — argparse flags declared but never read in their handler accumulate when config keys are removed without also removing the declaration. |
 | `cmd-root-anchoring-missing` | structural | `_analyze_cmd_root_anchoring.py` | Lesson `2026-05-05-18-001` — every `cmd_*` dispatcher must call `find_marketplace_root(...)` and declare `--marketplace-root` to avoid hidden cwd coupling. |
 | `file-bloat-ack` (extension of `file-bloat` / `subdoc-bloat`) | content | `_doctor_analysis.py::_has_file_bloat_ack` | Lesson `2026-05-05-18-001` — allow explicitly acknowledged bloated files to suppress the `file-bloat` / `subdoc-bloat` findings via `quality.file-bloat: ack-<rationale>` frontmatter. |
@@ -130,7 +131,7 @@ Seven forward-looking lint rules added by the lesson-2026-05-05-18-001 remediati
 
 | Rule ID | Class | Emitter | Source |
 |---------|-------|---------|--------|
-| `shell-substitution-in-skills` | safety | `_analyze_shell_substitution_in_skills.py` | Lesson `2026-05-15-13-001` — `$(` command substitution in plan-marshall skill markdown violates the dev-general-practices "Bash: no shell constructs" hard rule. Structural exemptions: inline-code spans and fenced blocks with `markdown`/`text` info-string. |
+| `shell-substitution-in-skills` | safety | `_analyze_shell_substitution_in_skills.py` | Lesson `2026-05-15-13-001` — `$(` command substitution in plan-marshall skill markdown violates the dev-agent-behavior-rules "Bash: no shell constructs" hard rule. Structural exemptions: inline-code spans and fenced blocks with `markdown`/`text` info-string. |
 
 ### Lesson-ID prose hygiene
 

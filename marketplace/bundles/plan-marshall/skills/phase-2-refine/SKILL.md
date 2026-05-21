@@ -14,7 +14,7 @@ For detailed step-by-step procedures, see `standards/refine-workflow-detail.md`.
 ## Foundational Practices
 
 ```
-Skill: plan-marshall:dev-general-practices
+Skill: plan-marshall:dev-agent-behavior-rules
 ```
 
 ## Enforcement
@@ -36,7 +36,7 @@ Skill: plan-marshall:dev-general-practices
 Every other path is forbidden. The orchestrator's post-dispatch main-checkout assertion (see `plan-marshall:plan-marshall:planning.md` § "2-Refine Phase" → "Post-dispatch contract assertion") detects violations structurally; the plugin-doctor `REFINE_CONTRACT_VIOLATION` analyzer detects them at edit time.
 
 **Constraints:**
-- Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
+- Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
 
 ## cwd for `.plan/execute-script.py` calls
 
@@ -70,6 +70,20 @@ The Phase Entry Protocol's `phase_handshake verify --phase 1-init --strict` call
 ## Dispatched workflows vs inline steps
 
 This phase dispatches under one role key: **`phase-2-refine`** (resolves through `phase-2-refine.default`). The confidence loop (Steps 3b/3c/8/9/10/11/12) iterates *inside* one dispatch envelope; the orchestrator never spawns per-iteration subagents. Mechanical sub-procedures stay inline: Step 3d baseline reconciliation runs via the `workflow-integration-git:baseline-reconcile` script (LLM-bearing classification is bundled into `phase-2-refine`); Step 10 confidence aggregation runs via the `manage-status:aggregate-confidence` script. Step 13.5 q-gate-validation activation is signaled by setting `qgate_validation_required: true` in the phase return TOON; the orchestrator (`plan-marshall:plan-marshall/workflow/planning.md`) reads that flag and issues q-gate-validation as a sibling top-level `Task: plan-marshall:{target}` dispatch — the phase body cannot spawn it directly because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 3 (Heuristic 2 — bundle when steps share context).
+
+### Loop-invariant inputs (cached at phase entry)
+
+The confidence loop (Steps 3b/3c/8/9/10/11/12) re-evaluates classification, source-premise verification, and confidence aggregation across iterations — but the *inputs* feeding those re-evaluations are loop-invariant: they are written before the loop begins (phase-1-init, phase-2-refine entry) and are not mutated by the loop body. The dispatched agent MUST read each of the following inputs ONCE at phase entry and reference the cached values throughout every loop iteration:
+
+- `request.md` — both `clarified_request` and `original_input` sections (read via `manage-plan-documents read --plan-id {plan_id} --document request`).
+- `references.json` — `domains`, `base_branch`, `worktree_path`, `affected_files`, `change_type` (read via `manage-files read --plan-id {plan_id} --file references.json`).
+- `module_mapping.toon` if present at `.plan/local/plans/{plan_id}/module_mapping.toon` (read via `manage-files read`).
+- The architecture topology (read via `manage-architecture topology` at phase entry).
+
+**Prohibited actions:**
+- Never re-read loop-invariant inputs inside the confidence-loop body — re-reading is the recurring envelope-cost waste documented in lesson `2026-05-20-15-007`.
+
+See [`extension-api/standards/dispatch-granularity.md`](../extension-api/standards/dispatch-granularity.md) § 5.1 (Heuristic 2 — bundle when steps share context) for the granularity rationale.
 
 ---
 

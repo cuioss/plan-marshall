@@ -20,7 +20,7 @@ user-invocable: false
 
 **Required skill load** (before any operation):
 ```
-Skill: plan-marshall:dev-general-practices
+Skill: plan-marshall:dev-agent-behavior-rules
 Skill: plan-marshall:workflow-integration-git
 Skill: plan-marshall:tools-integration-ci
 ```
@@ -35,7 +35,7 @@ Skill: plan-marshall:tools-integration-ci
 - Never invoke a build, CI, Sonar, or GitHub/GitLab script (`ci`, `pyproject_build`, `sonar`, `workflow-integration-*`) without an explicit routing flag. Forward `--plan-id {plan_id}` (preferred — auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir {worktree_path}` / `--project-dir {main_checkout}` (escape hatch / explicit override after worktree removal). The two flags are mutually exclusive. The executor is cwd-pass-through; routing must be explicit at every call site.
 
 **Constraints:**
-- Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
+- Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
 
 ## When to Activate This Skill
 
@@ -417,7 +417,7 @@ The finding is NOT added to `plan.phase-6-finalize.blocking_finding_types`. The 
 
 This step fires ONLY on `wait_failed`. `satisfied` and `wait_succeeded` resolutions emit no finding (CI passed — nothing to triage).
 
-**Cache lifecycle**: The helper persists successful outcomes to `.plan/plans/{plan_id}/work/ci-precondition-cache.toon`, keyed by the current `git -C {worktree_path} rev-parse HEAD` SHA. The cache is alive for one dispatcher iteration; a loop-back commit that advances HEAD invalidates the entry implicitly (the next resolve sees a fresh SHA, the stored SHA no longer matches, and the resolver re-polls CI against the new tree). Failed outcomes are NOT cached — re-entry always re-polls so a transient CI failure resolves on the next attempt. Multiple consumer steps in the same dispatcher pass share the cache: the first `requires: [ci-complete]` lookup runs the wait, and subsequent lookups at the same HEAD return `satisfied` without re-polling.
+**Cache lifecycle**: The helper persists successful outcomes to `.plan/local/plans/{plan_id}/work/ci-precondition-cache.toon`, keyed by the current `git -C {worktree_path} rev-parse HEAD` SHA. The cache is alive for one dispatcher iteration; a loop-back commit that advances HEAD invalidates the entry implicitly (the next resolve sees a fresh SHA, the stored SHA no longer matches, and the resolver re-polls CI against the new tree). Failed outcomes are NOT cached — re-entry always re-polls so a transient CI failure resolves on the next attempt. Multiple consumer steps in the same dispatcher pass share the cache: the first `requires: [ci-complete]` lookup runs the wait, and subsequent lookups at the same HEAD return `satisfied` without re-polling.
 
 The precondition resolver is dispatcher-internal — it produces no `phase_steps["6-finalize"]` record of its own (the precondition is not itself a finalize step). The dispatcher bears responsibility for the `wait_failed → ci_failure (precondition)` outcome mapping on the consumer step. Consumer step bodies (under `workflow/`) MUST declare `requires: [ci-complete]` in their YAML frontmatter to opt into the precondition; absent the declaration, the dispatcher proceeds directly to the step body and does not invoke the resolver.
 
@@ -581,7 +581,7 @@ FOR each step_id in manifest.phase_6.steps:
          * default:sonar-roundtrip  -> workflow: workflow/sonar-roundtrip.md  | --phase phase-6-finalize                              (outer wrapper; inner verification-feedback dispatch uses --role verification-feedback) | timeout: 900s
          * default:lessons-capture  -> workflow: workflow/lessons-capture.md  | --phase phase-6-finalize --role post-run-review       | timeout: 300s
 
-       The subagent's body loads `dev-general-practices` + the prompt's `skills[]`, then `Read`s the workflow doc and executes its steps inside the dispatch envelope. Pass `--plan-id {plan_id}` and, when an `{iteration}` counter applies, `--iteration {iteration}` as workflow-specific runtime inputs in the prompt body. The Worktree Header is conveyed via the always-required `WORKTREE` prompt-body field; the subagent resolves the worktree path internally and propagates it into any further dispatches it issues.
+       The subagent's body loads `dev-agent-behavior-rules` + the prompt's `skills[]`, then `Read`s the workflow doc and executes its steps inside the dispatch envelope. Pass `--plan-id {plan_id}` and, when an `{iteration}` counter applies, `--iteration {iteration}` as workflow-specific runtime inputs in the prompt body. The Worktree Header is conveyed via the always-required `WORKTREE` prompt-body field; the subagent resolves the worktree path internally and propagates it into any further dispatches it issues.
 
        **On timeout** (the dispatch does not return within the budget):
          a. Log ERROR:
@@ -939,7 +939,7 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | Resource | Purpose |
 |----------|---------|
 | [references/workflow-overview.md](references/workflow-overview.md) | Visual diagrams: 6-Phase Model and Shipping Pipeline |
-| `plan-marshall:dev-general-practices` | Bash safety rules, tool usage patterns |
+| `plan-marshall:dev-agent-behavior-rules` | Bash safety rules, tool usage patterns |
 | `plan-marshall:workflow-integration-git` | Commit, push workflow |
 | `plan-marshall:tools-integration-ci` | PR operations, CI status |
 | `plan-marshall:workflow-integration-github` | CI monitoring, review handling (GitHub) |

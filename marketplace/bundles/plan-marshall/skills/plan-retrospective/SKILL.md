@@ -25,13 +25,13 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 - Do not modify any .plan/ files directly — all plan state access goes through `manage-*` scripts and the scripts in this skill.
 
 **Constraints**:
-- Strictly comply with all rules from `plan-marshall:dev-general-practices`.
+- Strictly comply with all rules from `plan-marshall:dev-agent-behavior-rules`.
 - Report filename is `quality-verification-report.md` in live modes (overwrite on repeat invocation) and `quality-verification-report-audit-{YYYYMMDDTHHMMSSZ}.md` in archived mode.
 
 ## Foundational Practices
 
 ```
-Skill: plan-marshall:dev-general-practices
+Skill: plan-marshall:dev-agent-behavior-rules
 ```
 
 ## Dispatch shape: 9 aspects iterate inside one envelope
@@ -69,7 +69,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
   --plan-id {plan_id}
 ```
 
-Do not extrapolate `status get`, `manage_status get`, or `manage-status:status` — none of those exist. The canonical script notation is the 3-part form `plan-marshall:manage-status:manage_status` (the third segment matches the on-disk script filename `manage_status.py`), and the only read verb is `read`. The full canonical-forms entry for `manage-status` (covering `read`, `metadata --get --field`, `transition`, `get-worktree-path`, `change-type-heuristic`, and friends) lives in [`dev-general-practices/standards/argument-naming.md`](../dev-general-practices/standards/argument-naming.md#manage--scripts) — that table is the regression guard against the invented-verb drift that motivated this entry (see lesson `2026-05-14-00-001`). Future maintainers editing this workflow MUST cross-check any new `manage-status` call against that table before committing.
+Do not extrapolate `status get`, `manage_status get`, or `manage-status:status` — none of those exist. The canonical script notation is the 3-part form `plan-marshall:manage-status:manage_status` (the third segment matches the on-disk script filename `manage_status.py`), and the only read verb is `read`. The full canonical-forms entry for `manage-status` (covering `read`, `metadata --get --field`, `transition`, `get-worktree-path`, `change-type-heuristic`, and friends) lives in [`dev-agent-behavior-rules/standards/argument-naming.md`](../dev-agent-behavior-rules/standards/argument-naming.md#manage--scripts) — that table is the regression guard against the invented-verb drift that motivated this entry (see lesson `2026-05-14-00-001`). Future maintainers editing this workflow MUST cross-check any new `manage-status` call against that table before committing.
 
 Log start:
 
