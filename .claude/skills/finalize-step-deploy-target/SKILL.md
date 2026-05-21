@@ -1,7 +1,7 @@
 ---
 name: finalize-step-deploy-target
 description: Generate Claude Code target output via the multi-target generator
-order: 12
+order: 80
 ---
 
 # Finalize Step — Deploy Target (project-local)
@@ -34,104 +34,62 @@ tree to generate from. The generator entry point
 at the repo root, outside `marketplace/bundles/`, so it never ships to
 consumers via plugin install.
 
+This step runs on the main checkout post-merge, after
+`default:branch-cleanup` has removed the plan's worktree. Regenerating
+`target/claude/` here means the next session boot re-derives a clean
+host plugin cache from the same authoritative merged source tree the
+dispatcher just wrote to.
+
 ## Ordering
 
 The canonical Phase 6 ordering surrounding this step is:
 
 ```
-default:commit-push (10) →
-project:finalize-step-deploy-target (12) →
-project:finalize-step-sync-plugin-cache (14) →
-default:create-pr (20)
+default:branch-cleanup (70) →
+project:finalize-step-deploy-target (80) →
+project:finalize-step-sync-plugin-cache (85) →
+project:finalize-step-regenerate-executor (90)
 ```
 
-`order: 12` places this step immediately before
-`project:finalize-step-sync-plugin-cache` and before
-`default:create-pr`. The generator must run before the cache sync (so
-the cache has fresh `target/claude/` content) and before the PR is
-created (so the diff visible to reviewers includes the target output
-that downstream steps pick up).
+`order: 80` places this step immediately after `default:branch-cleanup`
+and before `project:finalize-step-sync-plugin-cache`. The generator must
+run on the post-merge main checkout so the cache sync that follows mirrors
+the just-regenerated `target/claude/` content. `project:finalize-step-regenerate-executor`
+runs last (order 90) so it scans a cache already refreshed by the
+sync step.
 
 ## Inputs
 
-- `{plan_id}` — required. Used to resolve the worktree path and for logging.
-
-## cwd contract — why this step takes explicit absolute paths
-
-The Claude Code Bash sandbox does NOT `cd` into the worktree before
-invoking finalize steps. Every Bash call runs from the main checkout's
-cwd. Relying on `Path.cwd()` inside the generator (or any cwd-relative
-path in this SKILL) would therefore generate into the main checkout's
-`target/claude/`, not the worktree's — silently leaving the worktree
-unchanged and propagating stale content to the downstream
-`finalize-step-sync-plugin-cache` step.
-
-To avoid that failure mode, this step resolves `{worktree_path}`
-explicitly and passes absolute paths to both the script and its
-`--output` flag. Do NOT shorten the invocation to the cwd-relative form
-`python3 marketplace/targets/generate.py --target claude --output target/claude`
-— that variant only works when the caller cd's into the worktree first,
-which finalize steps do not.
+- `{plan_id}` — required. Used for logging.
 
 ## Execution
 
 Inline-only — this step does NOT delegate to a Task agent. The
 generator is a fast, deterministic Python script.
 
-### 1. Resolve worktree path
+### 1. Invoke the generator
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
-  get-worktree-path --plan-id {plan_id}
+python3 marketplace/targets/generate.py --target claude --output target/claude
 ```
-
-Parse `worktree_path` from the TOON output. When `metadata.use_worktree==false`
-the script returns the main checkout absolute path, so `{worktree_path}`
-is always set after this call.
-
-### 2. Invoke the generator
-
-```bash
-python3 "{worktree_path}/marketplace/targets/generate.py" \
-  --target claude --output "{worktree_path}/target/claude"
-```
-
-Quote both placeholders so the invocation survives a `{worktree_path}`
-that contains spaces (rare on CI runners, common in developer-machine
-checkouts under `Documents/` or similar).
 
 The script returns a TOON document on stdout describing the run.
 Capture exit code and stdout.
 
-### 3. Parse the result
+### 2. Parse the result
 
 | Field | Meaning |
 |-------|---------|
 | `status: success` | Generation completed; record `outcome=done` and use `emitted_count` for the display detail |
 | `status: error` | Generation failed; record `outcome=failed` and surface the `error` field in `display_detail` |
 
-### 4. Capture HEAD and mark step complete
-
-This step is a member of `CONDITIONAL_HEAD_DEPENDENT_STEPS` (see
-`marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md`
-§ Conditional HEAD-dependent steps). The dispatcher re-fires this step on
-loop-back IFF `references.modified_files` (at the prior `done` mark)
-intersects `marketplace/bundles/**` AND the live worktree HEAD has
-advanced past the persisted `head_at_completion`. To make that
-comparison meaningful, capture HEAD before `mark-step-done`:
-
-```bash
-git -C {worktree_path} rev-parse HEAD
-```
-
-Then forward the captured SHA to `mark-step-done` via
-`--head-at-completion`:
+### 3. Mark step complete
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
   mark-step-done --plan-id {plan_id} --phase 6-finalize \
   --step project:finalize-step-deploy-target \
-  --outcome {done|failed} --head-at-completion {sha} \
+  --outcome {done|failed} \
   --display-detail "{N} files emitted to target/claude/"
 ```
 
@@ -140,10 +98,6 @@ On `status: success`, `{N}` is the integer from `emitted_count` and the
 `status: error`, set `--outcome failed` and surface the generator's
 `error` field verbatim in `--display-detail` so the renderer shows the
 underlying failure.
-
-## Related
-
-- `marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md` § Conditional HEAD-dependent steps — defines `CONDITIONAL_HEAD_DEPENDENT_STEPS` membership and the `modified_files ∩ marketplace/bundles/**` re-fire predicate this step obeys.
 
 ## Why "always run" instead of a skip detector
 
@@ -154,5 +108,5 @@ second-guess this is duplicate logic that drifts. Even when the diff
 is empty for marketplace sources, the generator's output may be stale
 on disk (e.g. user ran `target/` cleanup manually). Always running
 guarantees the on-disk `target/claude/` state matches sources before
-the cache sync and PR steps consume it. The generator's idempotence is
+the cache sync step consumes it. The generator's idempotence is
 the contract that makes "always run" free.
