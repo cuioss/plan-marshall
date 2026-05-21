@@ -422,9 +422,12 @@ class TestBranchCleanupRule:
         assert check is not None
         assert check['status'] == 'pass'
 
-    def test_fail_when_branch_cleanup_without_changes(self, tmp_path, monkeypatch):
+    def test_fail_when_branch_cleanup_with_only_bookkeeping_changes(self, tmp_path, monkeypatch):
+        # The raw diff is non-empty but every path is bookkeeping, so the rule
+        # still has real diff data to evaluate and must fail on the empty
+        # filtered set.
         plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_default())
-        diff = _write_diff(tmp_path, [])
+        diff = _write_diff(tmp_path, ['.plan/local/plans/foo/status.json'])
         result = run_script(
             MANIFEST_SCRIPT,
             'run',
@@ -442,6 +445,49 @@ class TestBranchCleanupRule:
         finding = _finding_by_code(data['findings'], 'branch_cleanup_without_changes')
         assert finding is not None
         assert finding['severity'] == 'info'
+
+    def test_skip_when_diff_base_is_unknown(self, tmp_path, monkeypatch):
+        # No --diff-file and no --base-ref → load_diff_files returns base
+        # label "unknown" with an empty file list. Rule M4 must skip rather
+        # than emit a false-positive branch_cleanup_without_changes finding.
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_default())
+        result = run_script(
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+        )
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['diff']['base'] == 'unknown'
+        check = _check_by_name(data['checks'], 'branch_cleanup_changes')
+        assert check is not None
+        assert check['status'] == 'skip'
+        assert _finding_by_code(data['findings'], 'branch_cleanup_without_changes') is None
+
+    def test_skip_when_diff_is_empty(self, tmp_path, monkeypatch):
+        # An empty diff file resolves a base label but zero raw files — still
+        # "no diff data", so the rule skips instead of false-positive failing.
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_default())
+        diff = _write_diff(tmp_path, [])
+        result = run_script(
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
+        )
+        assert result.success, result.stderr
+        data = result.toon()
+        check = _check_by_name(data['checks'], 'branch_cleanup_changes')
+        assert check is not None
+        assert check['status'] == 'skip'
+        assert _finding_by_code(data['findings'], 'branch_cleanup_without_changes') is None
 
     def test_skip_when_branch_cleanup_absent(self, tmp_path, monkeypatch):
         plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_early_terminate())
