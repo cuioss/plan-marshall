@@ -325,7 +325,8 @@ def evaluate_branch_cleanup(
     ``"unknown"`` or the raw diff is empty (``raw_files_total == 0``). In those
     cases the absence of changes is an artefact of missing diff input, not a
     real defect, so emitting a fail would be a false positive. This mirrors the
-    skip-on-missing-data behaviour of ``evaluate_manifest_version``.
+    skip-on-missing-data behaviour of the other diff evaluators
+    (``evaluate_docs_only``, ``evaluate_early_terminate``, etc.).
     """
     phase_6 = manifest.get('phase_6', {}) if isinstance(manifest.get('phase_6'), dict) else {}
     steps = phase_6.get('steps', [])
@@ -386,9 +387,8 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     checks: list[dict[str, str]] = []
     findings: list[dict[str, Any]] = []
 
-    # evaluate_manifest_version (manifest only) and evaluate_branch_cleanup
-    # (manifest + diff-availability signal) have distinct signatures and are
-    # called once each outside the dispatch loop. The remaining evaluators share
+    # evaluate_manifest_version (manifest only) has a distinct signature and is
+    # called once outside the dispatch loop. The remaining evaluators share
     # the (manifest, filtered_files) signature, which lets mypy infer a
     # homogeneous callable type without per-call type-ignores.
     version_check, version_finding = evaluate_manifest_version(manifest)
