@@ -2,7 +2,7 @@
 
 This document is the single source of truth for the canonical identifier-validator sweep across the marketplace. The validator foundation provides regex constants, raising validators, `add_<id>_arg(parser)` builders, and the `parse_args_with_toon_errors()` helper. The cross-bundle sweep consumed those validators across 32 scripts in `plan-marshall`, `pm-dev-java`, and `pm-documents`. Every entry below reflects the post-sweep state: which scripts were migrated, which were excluded and why, and the breaking-compat decisions that fell out of the audit. New scripts and new identifier-shaped flags MUST be reflected in both this document and the SKILL.md adoption table.
 
-## Migrated Scripts (30)
+## Migrated Scripts (29)
 
 Grouped by sweep wave. Each row records the script under sweep, its bundle, the in-scope identifier flags adopted via `add_<id>_arg(parser)` builders, the identifier-handling families covered (argparse-only / parse-then-rebuild / post-parse-normalize), and the corresponding test directory.
 
@@ -25,12 +25,11 @@ Grouped by sweep wave. Each row records the script under sweep, its bundle, the 
 | `manage-status/scripts/manage_status.py` | plan-marshall | `--plan-id`, `--phase`, `--field` | argparse-only, parse-then-rebuild | `test/plan-marshall/manage-status/` |
 | `manage-tasks/scripts/manage-tasks.py` | plan-marshall | `--plan-id`, `--task-number` (int-coerced post-validation), `--domain` | argparse-only, post-parse-normalize | `test/plan-marshall/manage-tasks/` |
 
-### Wave B — plan-marshall workflow / tools / skill-namespaced (14)
+### Wave B — plan-marshall workflow / tools / skill-namespaced (13)
 
 | Script | Bundle | In-scope flags adopted | Families covered | Test directory |
 |--------|--------|------------------------|------------------|----------------|
 | `extension-api/scripts/extension_discovery.py` | plan-marshall | (audit-only — no in-scope flags after re-classification; uses `--bundle`/`--path`/`--refresh`) | n/a | `test/plan-marshall/extension-api/` |
-| `plan-marshall/scripts/manage_session.py` | plan-marshall | `--session-id` (canonical `SESSION_ID_RE` replaces inline regex) | argparse-only | `test/plan-marshall/plan-marshall/` |
 | `plan-marshall/scripts/phase_handshake.py` | plan-marshall | `--phase` (3 subcommands) | argparse-only, parse-then-rebuild | `test/plan-marshall/plan-marshall/` |
 | `plan-retrospective/scripts/analyze-logs.py` | plan-marshall | `--plan-id` | parse-then-rebuild | `test/plan-marshall/plan-retrospective/` |
 | `plan-retrospective/scripts/check-artifact-consistency.py` | plan-marshall | `--plan-id` | parse-then-rebuild | `test/plan-marshall/plan-retrospective/` |
@@ -88,7 +87,6 @@ The classification certainty `CERTAIN_EXCLUDE` was assigned during phase-3-outli
 
 These breaking-compat decisions fell out of the sweep and deviate from the strict pre-sweep contract. Each is intentional and documented here as the source of truth.
 
-- **`manage_session.py` — `SESSION_ID_RE` relaxed**: The inline `_SESSION_ID_RE` constant enforced the strict 8-4-4-4-12 UUID grouping. The canonical `SESSION_ID_RE` in `input_validation.py` is the permissive `^[A-Za-z0-9_-]{1,128}$` form, accepting any identifier shape produced by upstream session-id sources. Any caller previously emitting non-UUID session ids (e.g., test fixtures, IDE-supplied tokens) is now accepted.
 - **`sonar_rest.py` — canonical `COMPONENT_RE` rejects uppercase / path-shaped keys**: SonarQube allows component keys with uppercase letters and embedded path-like delimiters (e.g., `org:src/Main.java`). The canonical `COMPONENT_RE` `^[a-z0-9-]+(:[a-z0-9-]+)*$` is stricter and now rejects such keys at the CLI boundary. SonarCloud projects with non-canonical keys will receive `status: error / error: invalid_component`. This is the intended behaviour per the canonical-form contract.
 - **`manage-tasks.py` — `--task-number` int coercion after validation**: The canonical `TASK_NUMBER_RE` is `^[0-9]+$`. The script previously declared `type=int` directly and relied on argparse to reject non-integers. The migration validates the raw string against `TASK_NUMBER_RE` first, then coerces to int, preserving the int-typed `args.task_number` downstream while gaining the canonical rejection-path semantics.
 - **`manage-lessons.py` — `--lesson-id` with `action='append'` validates each element**: The flag is repeatable (`--lesson-id A --lesson-id B`). The validator is wired so each appended element passes through `validate_lesson_id` independently. A single malformed value in the list causes the entire invocation to fail with `error: invalid_lesson_id`.

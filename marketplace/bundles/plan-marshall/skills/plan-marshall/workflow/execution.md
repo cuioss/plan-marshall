@@ -281,15 +281,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:plan-marshall) Loading plan-marshall:phase-6-finalize"
 ```
 
-Resolve the current Claude Code `session_id` from the hook-populated cache before dispatching the skill. Pass it alongside `plan_id` so `default:record-metrics` can call `manage-metrics enrich` on the live plan directory before `default:archive-plan` moves it.
+Resolve the current Claude Code `session_id` from the plan's status metadata before dispatching the skill. The `session capture` operation (run at plan-init time by the platform-runtime `SessionStart` hook) stored it there. Pass it alongside `plan_id` so `default:record-metrics` can call `manage-metrics enrich` on the live plan directory before `default:archive-plan` moves it.
 
 **Resolve `session_id`:**
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall:manage_session current
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+  --plan-id {plan_id} --get --field session_id
 ```
 
-Parse `session_id` from the TOON output. On `status: error\nerror: session_id_unavailable`, abort the finalize phase with a clear message — do **not** invent a filler value and do **not** reach for any `$VAR` expansion. See `phase-6-finalize/SKILL.md` → "How to obtain session_id" for the full resolver contract and forbidden patterns.
+Parse `value` from the TOON output. On `status: error` or empty `value`, abort the finalize phase with a clear message — do **not** invent a filler value and do **not** reach for any `$VAR` expansion. See `phase-6-finalize/SKILL.md` → "How to obtain session_id" for the full resolver contract and forbidden patterns.
 
 **Dispatch the skill:**
 

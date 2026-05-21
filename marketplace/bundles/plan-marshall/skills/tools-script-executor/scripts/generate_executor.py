@@ -346,6 +346,200 @@ def discover_local_scripts(cwd: Path | None = None) -> dict[str, str]:
 
 
 # ============================================================================
+# TARGET-AWARE RESOLVER GENERATION
+# ============================================================================
+
+# Known OpenCode skill discovery roots in priority order (first match wins).
+# Each root is searched for ``{bundle}-{skill}/scripts/{script}.py`` because
+# the OpenCode dual-emit layout uses dash-namespaced directory names to avoid
+# hierarchy collisions in flat config directories.
+_OPENCODE_DISCOVERY_ROOTS = [
+    # Env-var override (highest priority; evaluated at runtime)
+    '$OPENCODE_CONFIG_DIR/skills',
+    # Project-local roots (checked relative to cwd)
+    '.opencode/skills',
+    '.claude/skills',
+    '.agents/skills',
+    # User-global roots
+    '~/.config/opencode/skills',
+    '~/.claude/skills',
+    '~/.agents/skills',
+]
+
+# Template for the Claude target-aware resolver.
+# Resolves ``{bundle}:{skill}:{script}`` by globbing the plugin cache.
+# The bundle component is intentionally ignored for Claude because the plugin
+# cache layout is ``~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts/{script}.py``
+# (single-bundle installation); the bundle in the notation is used to generate
+# suggestions only.
+_CLAUDE_RESOLVER_TEMPLATE = '''\
+def _resolve_notation_by_target(notation: str) -> str | None:
+    """Claude target: resolve notation via plugin-cache glob.
+
+    Walks ``~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts/{script}.py``
+    and returns the first match as an absolute path.  The ``bundle`` component of
+    the notation is not used for path construction (the Claude plugin cache is a
+    flat, single-bundle install) but may be useful for logging.
+
+    Args:
+        notation: Three-part notation ``{bundle}:{skill}:{script}``.
+
+    Returns:
+        Absolute path string, or ``None`` when no match is found.
+    """
+    parts = notation.split(':')
+    if len(parts) != 3:
+        return None
+    _bundle, skill, script = parts
+    try:
+        cache_root = Path.home() / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
+        if not cache_root.is_dir():
+            return None
+        for version_dir in cache_root.iterdir():
+            if not version_dir.is_dir() or version_dir.name.startswith('.'):
+                continue
+            candidate = version_dir / 'skills' / skill / 'scripts' / f'{script}.py'
+            if candidate.is_file():
+                return str(candidate.resolve())
+    except (OSError, ValueError):
+        pass
+    return None
+'''
+
+# Template for the OpenCode target-aware resolver.
+# Resolves ``{bundle}:{skill}:{script}`` by walking 7 standard OpenCode roots,
+# using the dash-namespaced ``{bundle}-{skill}`` directory layout emitted by the
+# OpenCode build target. Paths are always converted to absolute form before
+# return to sidestep cwd ambiguity (anomalyco/opencode#9077).
+_OPENCODE_RESOLVER_TEMPLATE = '''\
+def _resolve_notation_by_target(notation: str) -> str | None:
+    """OpenCode target: resolve notation via 7-root walk.
+
+    Searches each OpenCode skill discovery root in priority order for
+    ``{bundle}-{skill}/scripts/{script}.py`` (dash-namespaced layout per
+    OpenCode dual-emit convention).  The first match is returned as an
+    absolute path (anomalyco/opencode#9077).
+
+    Roots searched in order:
+      1. $OPENCODE_CONFIG_DIR/skills/     (env-var override)
+      2. .opencode/skills/               (project-local)
+      3. .claude/skills/                 (project-local cross-compat)
+      4. .agents/skills/                 (project-local)
+      5. ~/.config/opencode/skills/      (user-global)
+      6. ~/.claude/skills/               (user-global cross-compat)
+      7. ~/.agents/skills/               (user-global)
+
+    Args:
+        notation: Three-part notation ``{bundle}:{skill}:{script}``.
+
+    Returns:
+        Absolute path string, or ``None`` when no match is found.
+    """
+    parts = notation.split(':')
+    if len(parts) != 3:
+        return None
+    bundle, skill, script = parts
+    dir_name = f'{bundle}-{skill}'
+    script_file = f'{script}.py'
+
+    try:
+        home = Path.home()
+    except (OSError, RuntimeError):
+        return None
+
+    _env_config_dir = os.environ.get('OPENCODE_CONFIG_DIR', '')
+    roots = [
+        (str(Path(_env_config_dir) / 'skills') if _env_config_dir else ''),
+        '.opencode/skills',
+        '.claude/skills',
+        '.agents/skills',
+        str(home / '.config' / 'opencode' / 'skills'),
+        str(home / '.claude' / 'skills'),
+        str(home / '.agents' / 'skills'),
+    ]
+
+    for root in roots:
+        if not root:
+            continue
+        try:
+            candidate = Path(root) / dir_name / 'scripts' / script_file
+            if candidate.is_file():
+                return str(candidate.resolve())
+        except (OSError, ValueError):
+            continue
+
+    return None
+'''
+
+
+def read_marshal_target(cwd: Path | None = None) -> str:
+    """Read ``runtime.target`` from ``.plan/marshal.json``.
+
+    Walks up from ``cwd`` (or ``Path.cwd()``) to find the nearest
+    ``.plan/marshal.json``, then extracts ``runtime.target``.
+
+    Args:
+        cwd: Starting directory for the upward walk.  Defaults to
+            ``Path.cwd()``.
+
+    Returns:
+        Target string (e.g. ``"claude"`` or ``"opencode"``), or the
+        fallback ``"claude"`` when the file is absent, malformed, or the
+        ``runtime.target`` key is missing.
+    """
+    import json as _json
+
+    if cwd is None:
+        cwd = Path.cwd()
+
+    for parent in [cwd, *cwd.parents]:
+        candidate = parent / PLAN_DIR_NAME / 'marshal.json'
+        if candidate.is_file():
+            try:
+                data = _json.loads(candidate.read_text(encoding='utf-8'))
+                if isinstance(data, dict):
+                    runtime = data.get('runtime')
+                    if isinstance(runtime, dict):
+                        target = runtime.get('target')
+                        if isinstance(target, str) and target:
+                            return target
+            except (OSError, ValueError):
+                pass
+            # File found but unreadable / missing key — use default
+            return 'claude'
+
+    # No marshal.json found — default to claude
+    return 'claude'
+
+
+def generate_target_aware_resolver_code(target: str) -> str:
+    """Return the Python source for the ``_resolve_notation_by_target`` function.
+
+    The body of the generated executor's ``resolve_notation`` function calls
+    ``_resolve_notation_by_target`` as a dynamic fallback when a notation is
+    absent from the embedded SCRIPTS dict.  The implementation differs by
+    target:
+
+    - ``claude``:  glob-based resolver using the Claude plugin-cache
+      (``~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts/{script}.py``).
+    - ``opencode``:  7-root walk using the OpenCode dash-namespaced directory
+      layout (``{bundle}-{skill}/scripts/{script}.py``).
+
+    Unknown targets fall back to the Claude resolver.
+
+    Args:
+        target: Runtime target string (e.g. ``"claude"`` or ``"opencode"``).
+
+    Returns:
+        Python source code string (no leading/trailing blank lines).
+    """
+    if target == 'opencode':
+        return _OPENCODE_RESOLVER_TEMPLATE.strip()
+    # Default / unknown target → Claude resolver
+    return _CLAUDE_RESOLVER_TEMPLATE.strip()
+
+
+# ============================================================================
 # GENERATION
 # ============================================================================
 
@@ -358,7 +552,12 @@ def generate_mappings_code(mappings: dict[str, str]) -> str:
     return '\n'.join(lines)
 
 
-def generate_executor(mappings: dict[str, str], base_path: Path, dry_run: bool = False) -> bool:
+def generate_executor(
+    mappings: dict[str, str],
+    base_path: Path,
+    dry_run: bool = False,
+    target: str | None = None,
+) -> bool:
     """
     Generate execute-script.py with embedded mappings.
 
@@ -366,6 +565,9 @@ def generate_executor(mappings: dict[str, str], base_path: Path, dry_run: bool =
         mappings: Script notation to path mappings
         base_path: Path to bundles directory for resolving template/logging paths
         dry_run: If True, show what would be generated without writing
+        target: Platform target (e.g. ``"claude"`` or ``"opencode"``).  When
+            ``None``, the target is read from ``marshal.json`` via
+            :func:`read_marshal_target`.
 
     Returns:
         True if successful
@@ -379,6 +581,10 @@ def generate_executor(mappings: dict[str, str], base_path: Path, dry_run: bool =
 
     template = executor_template.read_text()
     mappings_code = generate_mappings_code(mappings)
+
+    # Resolve platform target for target-aware resolver injection.
+    resolved_target = target if target is not None else read_marshal_target()
+    resolver_code = generate_target_aware_resolver_code(resolved_target)
 
     # logging module location (unified logging skill)
     logging_scripts_dir = get_logging_scripts_dir(base_path)
@@ -402,6 +608,8 @@ def generate_executor(mappings: dict[str, str], base_path: Path, dry_run: bool =
     content = content.replace('{{SHARED_MODULE_DIRS}}', shared_module_lines)
     content = content.replace('{{EXTRA_SCRIPT_DIRS}}', extra_dirs_code)
     content = content.replace('{{PLAN_DIR_NAME}}', PLAN_DIR_NAME)
+    content = content.replace('{{TARGET_AWARE_RESOLVER}}', resolver_code)
+    content = content.replace('{{EXECUTOR_TARGET}}', resolved_target)
 
     if dry_run:
         print('=== execute-script.py ===')
@@ -606,6 +814,12 @@ def cmd_generate(args) -> dict:
     except FileNotFoundError as e:
         return {'status': 'error', 'error': str(e)}
 
+    # Resolve target for the target-aware resolver.
+    # Explicit --target flag takes precedence; fall back to marshal.json.
+    target: str | None = getattr(args, 'target', None)
+    resolved_target = target if target else read_marshal_target()
+    print(f'Target: {resolved_target}')
+
     # Discover marketplace scripts
     print('Discovering marketplace scripts...')
     try:
@@ -635,12 +849,17 @@ def cmd_generate(args) -> dict:
 
     # Generate executor (uses logging skill from plan-marshall/logging)
     print('Generating executor...')
-    if not generate_executor(mappings, base_path, dry_run=args.dry_run):
+    if not generate_executor(mappings, base_path, dry_run=args.dry_run, target=resolved_target):
         return {'status': 'error', 'error': 'Failed to generate executor'}
 
     if args.dry_run:
         print('\nDry run complete. No files written.')
-        return {'status': 'success', 'scripts_discovered': len(mappings), 'dry_run': True}
+        return {
+            'status': 'success',
+            'scripts_discovered': len(mappings),
+            'executor_target': resolved_target,
+            'dry_run': True,
+        }
 
     # Cleanup old logs
     logs_cleaned = cleanup_old_logs()
@@ -655,6 +874,7 @@ def cmd_generate(args) -> dict:
         'status': 'success',
         'scripts_discovered': len(mappings),
         'executor_generated': str(executor_path()),
+        'executor_target': resolved_target,
         'logs_cleaned': logs_cleaned,
     }
 
@@ -773,6 +993,17 @@ def main() -> int:
         help=(
             'Explicit marketplace anchor directory (must contain marketplace/bundles). '
             'Overrides PM_MARKETPLACE_ROOT, the script-relative walk, and cwd-based discovery.'
+        ),
+    )
+    gen_parser.add_argument(
+        '--target',
+        default=None,
+        choices=['claude', 'opencode'],
+        metavar='TARGET',
+        help=(
+            'Platform target for the embedded target-aware resolver (claude or opencode). '
+            'Overrides the value read from .plan/marshal.json. '
+            'When omitted, the target is read from marshal.json (defaulting to claude).'
         ),
     )
     gen_parser.set_defaults(func=cmd_generate)

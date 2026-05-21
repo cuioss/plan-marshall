@@ -847,6 +847,11 @@ def _load_template_module():
     source = source.replace('{{SHARED_MODULE_DIRS}}', '# (none)')
     source = source.replace('{{EXTRA_SCRIPT_DIRS}}', '')
     source = source.replace('{{PLAN_DIR_NAME}}', '.plan')
+    source = source.replace('{{EXECUTOR_TARGET}}', 'claude')
+    source = source.replace(
+        '{{TARGET_AWARE_RESOLVER}}',
+        'def _resolve_notation_by_target(notation):\n    return None\n',
+    )
 
     # Ensure shared dirs are importable for plan_logging's transitive imports.
     for extra in _MARKETPLACE_SCRIPT_DIRS:
@@ -881,30 +886,23 @@ def test_template_contains_write_active_plan_helper():
     assert '_write_active_plan(_active_plan_id)' in source, (
         'main() must invoke _write_active_plan after extracting plan_id'
     )
-    # The helper depends on hashlib + Path.home() to resolve the cache path.
-    assert 'import hashlib' in source, 'template must import hashlib for session-id resolution'
+    # The helper reads session_id from $CLAUDE_CODE_SESSION_ID (populated by the
+    # platform-runtime SessionStart hook).
+    assert 'CLAUDE_CODE_SESSION_ID' in source, (
+        'template must read session id from CLAUDE_CODE_SESSION_ID env var'
+    )
 
 
 def test_write_active_plan_writes_cache_when_session_resolvable(tmp_path, monkeypatch):
-    """When a session_id is resolvable from ~/.cache/.../by-cwd/<hash>, the
-    helper writes plan_id to ~/.cache/.../sessions/<session_id>/active-plan."""
+    """When $CLAUDE_CODE_SESSION_ID is set, the helper writes plan_id to
+    ~/.cache/.../sessions/<session_id>/active-plan."""
     module = _load_template_module()
 
     monkeypatch.setenv('HOME', str(tmp_path))
-    # The helper resolves cwd via `git rev-parse --show-toplevel` then falls
-    # back to Path.cwd(). Stub the subprocess so cwd resolution is deterministic.
-    fake_cwd = '/Users/test/project'
-    _seed_session_cache(tmp_path, 'sess-abc', fake_cwd)
-
-    class _FakeResult:
-        def __init__(self, returncode, stdout):
-            self.returncode = returncode
-            self.stdout = stdout
-
-    def _fake_run(*_args, **_kwargs):
-        return _FakeResult(0, fake_cwd + '\n')
-
-    monkeypatch.setattr(module.subprocess, 'run', _fake_run)
+    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-abc')
+    # Patch Path.home to honour the patched HOME under py3.14 where
+    # Path.home() consults os.path.expanduser via passwd db on some platforms.
+    monkeypatch.setattr(module.Path, 'home', staticmethod(lambda: tmp_path))
 
     module._write_active_plan('my-plan-id')
 
@@ -914,31 +912,20 @@ def test_write_active_plan_writes_cache_when_session_resolvable(tmp_path, monkey
 
 
 def test_write_active_plan_noop_when_no_session_resolvable(tmp_path, monkeypatch):
-    """When no session_id is resolvable (no by-cwd/, no current), the helper
-    is a no-op and writes no file."""
+    """When $CLAUDE_CODE_SESSION_ID is unset/empty, the helper is a no-op
+    and writes no file."""
     module = _load_template_module()
 
     monkeypatch.setenv('HOME', str(tmp_path))
-    # No cache seeding — by-cwd/ and current both absent.
-
-    class _FakeResult:
-        def __init__(self, returncode, stdout):
-            self.returncode = returncode
-            self.stdout = stdout
-
-    def _fake_run(*_args, **_kwargs):
-        return _FakeResult(0, '/no/such/cwd\n')
-
-    monkeypatch.setattr(module.subprocess, 'run', _fake_run)
+    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+    monkeypatch.setattr(module.Path, 'home', staticmethod(lambda: tmp_path))
 
     module._write_active_plan('my-plan-id')
 
     # Nothing should have been written under sessions/.
     sessions_dir = tmp_path / '.cache' / 'plan-marshall' / 'sessions'
     if sessions_dir.exists():
-        # by-cwd dir may exist as a side-effect of an earlier test; assert
-        # no per-session subdirectories were created.
-        children = [p.name for p in sessions_dir.iterdir() if p.is_dir() and p.name != 'by-cwd']
+        children = [p.name for p in sessions_dir.iterdir() if p.is_dir()]
         assert children == [], f'No per-session dirs should be created, got {children}'
 
 
@@ -1018,18 +1005,8 @@ def test_write_active_plan_overwrites_on_subsequent_calls(tmp_path, monkeypatch)
     module = _load_template_module()
 
     monkeypatch.setenv('HOME', str(tmp_path))
-    fake_cwd = '/Users/test/project'
-    _seed_session_cache(tmp_path, 'sess-overwrite', fake_cwd)
-
-    class _FakeResult:
-        def __init__(self, returncode, stdout):
-            self.returncode = returncode
-            self.stdout = stdout
-
-    def _fake_run(*_args, **_kwargs):
-        return _FakeResult(0, fake_cwd + '\n')
-
-    monkeypatch.setattr(module.subprocess, 'run', _fake_run)
+    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-overwrite')
+    monkeypatch.setattr(module.Path, 'home', staticmethod(lambda: tmp_path))
 
     module._write_active_plan('first-plan')
     module._write_active_plan('second-plan')

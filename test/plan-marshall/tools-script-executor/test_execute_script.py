@@ -47,6 +47,12 @@ def load_executor_module():
     code = code.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
     code = code.replace('{{SHARED_MODULE_DIRS}}', '# (none in test)')
     code = code.replace('{{EXTRA_SCRIPT_DIRS}}', '')
+    code = code.replace('{{PLAN_DIR_NAME}}', '.plan')
+    code = code.replace('{{EXECUTOR_TARGET}}', 'claude')
+    code = code.replace(
+        '{{TARGET_AWARE_RESOLVER}}',
+        'def _resolve_notation_by_target(notation):\n    return None\n',
+    )
 
     # Add logging dir to path so plan_logging can be imported
     sys.path.insert(0, str(LOGGING_DIR))

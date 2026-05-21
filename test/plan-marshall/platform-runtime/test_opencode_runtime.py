@@ -1,0 +1,568 @@
+#!/usr/bin/env python3
+"""Tests for opencode_runtime.py — OpenCode implementation of all 14 operations.
+
+Asserts the no-op contract for session/display operations that OpenCode does not
+support, success paths for permission and metrics operations, and error paths for
+invalid arguments across all 14 operations defined in the Runtime ABC.
+"""
+
+import json  # noqa: I001
+import pathlib
+
+import pytest
+
+# conftest.py sets up PYTHONPATH so imports resolve without manual sys.path work.
+from opencode_runtime import OpenCodeRuntime  # type: ignore[import-not-found]
+from toon_parser import parse_toon  # type: ignore[import-not-found]
+
+
+# =============================================================================
+# Shared fixture
+# =============================================================================
+
+
+@pytest.fixture()
+def runtime() -> OpenCodeRuntime:
+    """Return a fresh OpenCodeRuntime instance."""
+    return OpenCodeRuntime()
+
+
+# =============================================================================
+# Helper
+# =============================================================================
+
+
+def _parse(toon_str: str) -> dict:
+    """Parse a TOON string and assert it is non-empty."""
+    result = parse_toon(toon_str)
+    assert isinstance(result, dict), f"parse_toon returned non-dict: {toon_str!r}"
+    return result
+
+
+# =============================================================================
+# 1. project_initial_setup
+# =============================================================================
+
+
+def test_project_initial_setup_creates_plan_dir(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """project_initial_setup creates .plan/ and .plan/temp/ under project_dir."""
+    result = _parse(runtime.project_initial_setup(str(tmp_path), "opencode"))
+    assert result["status"] == "success"
+    assert result["operation"] == "project initial-setup"
+    assert result["target"] == "opencode"
+    assert result["marshal_written"] is True
+    assert result["hook_installed"] is False
+    assert (tmp_path / ".plan").is_dir()
+    assert (tmp_path / ".plan" / "temp").is_dir()
+
+
+def test_project_initial_setup_writes_marshal_json(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """project_initial_setup writes runtime.target into marshal.json."""
+    runtime.project_initial_setup(str(tmp_path), "opencode")
+    marshal_path = tmp_path / ".plan" / "marshal.json"
+    assert marshal_path.exists()
+    data = json.loads(marshal_path.read_text(encoding="utf-8"))
+    assert data["runtime"]["target"] == "opencode"
+
+
+def test_project_initial_setup_preserves_existing_marshal_fields(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+) -> None:
+    """project_initial_setup merges into an existing marshal.json without discarding other fields."""
+    plan_dir = tmp_path / ".plan"
+    plan_dir.mkdir()
+    marshal_path = plan_dir / "marshal.json"
+    marshal_path.write_text(json.dumps({"existing_key": "existing_value"}), encoding="utf-8")
+
+    runtime.project_initial_setup(str(tmp_path), "opencode")
+
+    data = json.loads(marshal_path.read_text(encoding="utf-8"))
+    assert data["existing_key"] == "existing_value"
+    assert data["runtime"]["target"] == "opencode"
+
+
+def test_project_initial_setup_hook_skip_reason_present(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+) -> None:
+    """project_initial_setup reports hook_skip_reason explaining no SessionStart hook."""
+    result = _parse(runtime.project_initial_setup(str(tmp_path), "opencode"))
+    assert "hook_skip_reason" in result
+    assert "OpenCode" in result["hook_skip_reason"]
+
+
+def test_project_initial_setup_invalid_dir_returns_error(runtime: OpenCodeRuntime) -> None:
+    """project_initial_setup returns error when project_dir is not writable."""
+    result = _parse(runtime.project_initial_setup("/nonexistent/path/that/cannot/be/created", "opencode"))
+    assert result["status"] == "error"
+    assert result["error"] == "io_error"
+
+
+# =============================================================================
+# 2. session_capture — always no-op
+# =============================================================================
+
+
+def test_session_capture_is_noop(runtime: OpenCodeRuntime) -> None:
+    """session_capture returns no-op because OpenCode does not expose a session id."""
+    result = _parse(runtime.session_capture("my-plan"))
+    assert result["status"] == "no-op"
+    assert result["operation"] == "session capture"
+
+
+def test_session_capture_noop_has_reason_and_alternative(runtime: OpenCodeRuntime) -> None:
+    """session_capture no-op includes reason and alternative fields."""
+    result = _parse(runtime.session_capture("my-plan"))
+    assert "reason" in result
+    assert "alternative" in result
+    assert "OpenCode" in result["reason"]
+
+
+# =============================================================================
+# 3. session_configure_display — always no-op
+# =============================================================================
+
+
+def test_session_configure_display_is_noop(runtime: OpenCodeRuntime) -> None:
+    """session_configure_display returns no-op for all display_type/style combinations."""
+    result = _parse(runtime.session_configure_display("terminal-title", "unicode"))
+    assert result["status"] == "no-op"
+    assert result["operation"] == "session configure-display"
+
+
+def test_session_configure_display_noop_references_opencode(runtime: OpenCodeRuntime) -> None:
+    """session_configure_display no-op reason mentions OpenCode limitation."""
+    result = _parse(runtime.session_configure_display("status-line", "ascii"))
+    assert "OpenCode" in result["reason"]
+    assert "alternative" in result
+
+
+# =============================================================================
+# 4. session_render_title — always no-op
+# =============================================================================
+
+
+def test_session_render_title_is_noop(runtime: OpenCodeRuntime) -> None:
+    """session_render_title returns no-op because OpenCode has no plugin-driven hook."""
+    result = _parse(runtime.session_render_title())
+    assert result["status"] == "no-op"
+    assert result["operation"] == "session render-title"
+
+
+def test_session_render_title_noop_fields(runtime: OpenCodeRuntime) -> None:
+    """session_render_title no-op includes reason and alternative."""
+    result = _parse(runtime.session_render_title())
+    assert "reason" in result
+    assert "alternative" in result
+
+
+# =============================================================================
+# 5. permission_configure
+# =============================================================================
+
+
+def test_permission_configure_project_scope(runtime: OpenCodeRuntime) -> None:
+    """permission_configure with project scope succeeds and targets .opencode/settings.json."""
+    result = _parse(runtime.permission_configure("project", ["Read(**)", "Write(**)"]))
+    assert result["status"] == "success"
+    assert result["scope"] == "project"
+    assert result["permissions_written"] == 2
+    assert ".opencode/settings.json" in result["target_file"]
+
+
+def test_permission_configure_global_scope(runtime: OpenCodeRuntime) -> None:
+    """permission_configure with global scope targets ~/.opencode/settings.json."""
+    result = _parse(runtime.permission_configure("global", ["Read(**)"]))
+    assert result["status"] == "success"
+    assert "~/.opencode/settings.json" in result["target_file"]
+
+
+def test_permission_configure_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
+    """permission_configure with invalid scope returns error."""
+    result = _parse(runtime.permission_configure("workspace", ["Read(**)"]))
+    assert result["status"] == "error"
+    assert result["error"] == "invalid_scope"
+
+
+def test_permission_configure_empty_permissions(runtime: OpenCodeRuntime) -> None:
+    """permission_configure with empty permissions list succeeds with count 0."""
+    result = _parse(runtime.permission_configure("project", []))
+    assert result["status"] == "success"
+    assert result["permissions_written"] == 0
+
+
+# =============================================================================
+# 6. permission_analyze
+# =============================================================================
+
+
+def test_permission_analyze_all_checks(runtime: OpenCodeRuntime) -> None:
+    """permission_analyze with scope=both and checks=[all] succeeds."""
+    result = _parse(runtime.permission_analyze("both", ["all"], None))
+    assert result["status"] == "success"
+    assert result["scope"] == "both"
+    assert result["total_findings"] == 0
+
+
+def test_permission_analyze_project_scope(runtime: OpenCodeRuntime) -> None:
+    """permission_analyze with project scope succeeds."""
+    result = _parse(runtime.permission_analyze("project", ["redundant"], None))
+    assert result["status"] == "success"
+    assert result["scope"] == "project"
+
+
+def test_permission_analyze_global_scope(runtime: OpenCodeRuntime) -> None:
+    """permission_analyze with global scope succeeds."""
+    result = _parse(runtime.permission_analyze("global", ["suspicious", "missing-steps"], None))
+    assert result["status"] == "success"
+
+
+def test_permission_analyze_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
+    """permission_analyze with invalid scope returns error."""
+    result = _parse(runtime.permission_analyze("workspace", ["all"], None))
+    assert result["status"] == "error"
+    assert result["error"] == "invalid_scope"
+
+
+def test_permission_analyze_invalid_check_returns_error(runtime: OpenCodeRuntime) -> None:
+    """permission_analyze with an unknown check name returns error."""
+    result = _parse(runtime.permission_analyze("global", ["nonexistent-check"], None))
+    assert result["status"] == "error"
+    assert result["error"] == "invalid_check"
+
+
+# =============================================================================
+# 7. permission_fix
+# =============================================================================
+
+
+def test_permission_fix_normalize_dry_run(runtime: OpenCodeRuntime) -> None:
+    """permission_fix normalize dry_run=True succeeds with changes_applied=0."""
+    result = _parse(runtime.permission_fix("project", "normalize", [], True))
+    assert result["status"] == "success"
+    assert result["dry_run"] is True
+    assert result["changes_applied"] == 0
+
+
+def test_permission_fix_add_not_dry_run(runtime: OpenCodeRuntime) -> None:
+    """permission_fix add with permissions applies the count when dry_run=False."""
+    perms = ["Read(**)", "Write(.plan/**)"]
+    result = _parse(runtime.permission_fix("project", "add", perms, False))
+    assert result["status"] == "success"
+    assert result["dry_run"] is False
+    assert result["changes_applied"] == len(perms)
+
+
+def test_permission_fix_all_valid_operations(runtime: OpenCodeRuntime) -> None:
+    """permission_fix accepts all documented operation names."""
+    for op in ("normalize", "add", "remove", "ensure", "consolidate"):
+        result = _parse(runtime.permission_fix("global", op, [], False))
+        assert result["status"] == "success", f"Expected success for operation {op!r}"
+
+
+def test_permission_fix_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
+    """permission_fix with invalid scope returns error."""
+    result = _parse(runtime.permission_fix("unknown", "normalize", [], False))
+    assert result["status"] == "error"
+    assert result["error"] == "invalid_scope"
+
+
+def test_permission_fix_invalid_operation_returns_error(runtime: OpenCodeRuntime) -> None:
+    """permission_fix with unknown operation name returns error."""
+    result = _parse(runtime.permission_fix("project", "delete-all", [], False))
+    assert result["status"] == "error"
+    assert result["error"] == "invalid_operation"
+
+
+# =============================================================================
+# 8. permission_ensure_wildcards
+# =============================================================================
+
+
+def test_permission_ensure_wildcards_project_scope(runtime: OpenCodeRuntime) -> None:
+    """permission_ensure_wildcards with project scope succeeds."""
+    result = _parse(runtime.permission_ensure_wildcards("project", "marketplace/", False))
+    assert result["status"] == "success"
+    assert result["scope"] == "project"
+    assert "bundles_scanned" in result
+    assert "wildcards_added" in result
+
+
+def test_permission_ensure_wildcards_dry_run(runtime: OpenCodeRuntime) -> None:
+    """permission_ensure_wildcards dry_run=True includes dry_run field."""
+    result = _parse(runtime.permission_ensure_wildcards("global", "marketplace/", True))
+    assert result["status"] == "success"
+    assert result["dry_run"] is True
+
+
+def test_permission_ensure_wildcards_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
+    """permission_ensure_wildcards with invalid scope returns error."""
+    result = _parse(runtime.permission_ensure_wildcards("workspace", "marketplace/", False))
+    assert result["status"] == "error"
+    assert result["error"] == "invalid_scope"
+
+
+# =============================================================================
+# 9. permission_ensure_steps
+# =============================================================================
+
+
+def test_permission_ensure_steps_success(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+) -> None:
+    """permission_ensure_steps succeeds when marshal.json exists."""
+    marshal_path = tmp_path / "marshal.json"
+    marshal_path.write_text(json.dumps({"runtime": {"target": "opencode"}}), encoding="utf-8")
+
+    result = _parse(runtime.permission_ensure_steps(str(marshal_path), "project", False))
+    assert result["status"] == "success"
+    assert result["scope"] == "project"
+    assert "steps_scanned" in result
+    assert "permissions_added" in result
+
+
+def test_permission_ensure_steps_missing_marshal_returns_error(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+) -> None:
+    """permission_ensure_steps returns error when marshal.json does not exist."""
+    missing_path = str(tmp_path / "nonexistent" / "marshal.json")
+    result = _parse(runtime.permission_ensure_steps(missing_path, "project", False))
+    assert result["status"] == "error"
+    assert result["error"] == "marshal_not_found"
+
+
+def test_permission_ensure_steps_invalid_scope_returns_error(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+) -> None:
+    """permission_ensure_steps with invalid scope returns error."""
+    marshal_path = tmp_path / "marshal.json"
+    marshal_path.write_text("{}", encoding="utf-8")
+
+    result = _parse(runtime.permission_ensure_steps(str(marshal_path), "workspace", False))
+    assert result["status"] == "error"
+    assert result["error"] == "invalid_scope"
+
+
+# =============================================================================
+# 10. permission_web_analyze
+# =============================================================================
+
+
+def test_permission_web_analyze_global_scope(runtime: OpenCodeRuntime) -> None:
+    """permission_web_analyze with global scope succeeds."""
+    result = _parse(runtime.permission_web_analyze("global"))
+    assert result["status"] == "success"
+    assert result["scope"] == "global"
+    assert "total_domains" in result
+
+
+def test_permission_web_analyze_project_scope(runtime: OpenCodeRuntime) -> None:
+    """permission_web_analyze with project scope succeeds."""
+    result = _parse(runtime.permission_web_analyze("project"))
+    assert result["status"] == "success"
+
+
+def test_permission_web_analyze_both_scope(runtime: OpenCodeRuntime) -> None:
+    """permission_web_analyze with scope=both succeeds."""
+    result = _parse(runtime.permission_web_analyze("both"))
+    assert result["status"] == "success"
+
+
+def test_permission_web_analyze_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
+    """permission_web_analyze with invalid scope returns error."""
+    result = _parse(runtime.permission_web_analyze("local"))
+    assert result["status"] == "error"
+    assert result["error"] == "invalid_scope"
+
+
+# =============================================================================
+# 11. permission_web_apply
+# =============================================================================
+
+
+def test_permission_web_apply_add_domains(runtime: OpenCodeRuntime) -> None:
+    """permission_web_apply add mode succeeds and reports domains_added count."""
+    domains = ["example.com", "api.github.com"]
+    result = _parse(runtime.permission_web_apply("project", add=domains, remove=[], dry_run=False))
+    assert result["status"] == "success"
+    assert result["domains_added"] == len(domains)
+    assert result["domains_removed"] == 0
+
+
+def test_permission_web_apply_remove_domains(runtime: OpenCodeRuntime) -> None:
+    """permission_web_apply remove mode succeeds and reports domains_removed count."""
+    result = _parse(runtime.permission_web_apply("global", add=[], remove=["old.example.com"], dry_run=False))
+    assert result["status"] == "success"
+    assert result["domains_removed"] == 1
+
+
+def test_permission_web_apply_dry_run_reports_zero(runtime: OpenCodeRuntime) -> None:
+    """permission_web_apply dry_run=True returns zero changes applied."""
+    result = _parse(
+        runtime.permission_web_apply("project", add=["example.com"], remove=[], dry_run=True)
+    )
+    assert result["status"] == "success"
+    assert result["dry_run"] is True
+    assert result["domains_added"] == 0
+    assert result["domains_removed"] == 0
+
+
+def test_permission_web_apply_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
+    """permission_web_apply with invalid scope returns error."""
+    result = _parse(runtime.permission_web_apply("workspace", add=[], remove=[], dry_run=False))
+    assert result["status"] == "error"
+    assert result["error"] == "invalid_scope"
+
+
+# =============================================================================
+# 12. metrics_capture
+# =============================================================================
+
+
+def test_metrics_capture_with_total_tokens_succeeds(runtime: OpenCodeRuntime) -> None:
+    """metrics_capture with total_tokens provided succeeds and stores the count."""
+    result = _parse(runtime.metrics_capture("my-plan", "phase-1-init", total_tokens=42000))
+    assert result["status"] == "success"
+    assert result["operation"] == "metrics capture"
+    assert result["plan_id"] == "my-plan"
+    assert result["phase"] == "phase-1-init"
+    assert result["tokens_captured"] == 42000
+    assert result["source"] == "manual"
+
+
+def test_metrics_capture_without_tokens_is_noop(runtime: OpenCodeRuntime) -> None:
+    """metrics_capture without total_tokens is no-op (no session transcript on OpenCode)."""
+    result = _parse(runtime.metrics_capture("my-plan", "phase-2-refine", total_tokens=None))
+    assert result["status"] == "no-op"
+    assert result["operation"] == "metrics capture"
+    assert "OpenCode" in result["reason"]
+    assert "alternative" in result
+
+
+def test_metrics_capture_zero_tokens_succeeds(runtime: OpenCodeRuntime) -> None:
+    """metrics_capture with total_tokens=0 is a valid success (zero tokens is a count)."""
+    result = _parse(runtime.metrics_capture("my-plan", "phase-3-outline", total_tokens=0))
+    assert result["status"] == "success"
+    assert result["tokens_captured"] == 0
+
+
+# =============================================================================
+# 13. subagent_dispatch
+# =============================================================================
+
+
+def test_subagent_dispatch_without_prompt_file(runtime: OpenCodeRuntime) -> None:
+    """subagent_dispatch without prompt_file succeeds and uses 'task' as OpenCode tool."""
+    result = _parse(runtime.subagent_dispatch("execution-context-high", None, None))
+    assert result["status"] == "success"
+    assert result["operation"] == "subagent dispatch"
+    assert result["invocation"]["tool"] == "task"
+    assert result["platform"] == "opencode"
+
+
+def test_subagent_dispatch_with_prompt_file(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+) -> None:
+    """subagent_dispatch with an existing prompt_file reads and uses its content."""
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("Execute the plan for {plan_id}", encoding="utf-8")
+
+    result = _parse(
+        runtime.subagent_dispatch(
+            "execution-context-high",
+            str(prompt_file),
+            {"plan_id": "my-plan"},
+        )
+    )
+    assert result["status"] == "success"
+    assert "my-plan" in result["invocation"]["prompt"]
+
+
+def test_subagent_dispatch_context_substitution(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+) -> None:
+    """subagent_dispatch substitutes context keys into prompt template."""
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("Plan: {plan_id}, Task: {task_number}", encoding="utf-8")
+
+    result = _parse(
+        runtime.subagent_dispatch(
+            "execution-context-high",
+            str(prompt_file),
+            {"plan_id": "my-plan", "task_number": "7"},
+        )
+    )
+    assert result["status"] == "success"
+    assert "my-plan" in result["invocation"]["prompt"]
+    assert "7" in result["invocation"]["prompt"]
+
+
+def test_subagent_dispatch_missing_prompt_file_returns_error(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+) -> None:
+    """subagent_dispatch with a non-existent prompt_file returns error."""
+    missing = str(tmp_path / "nonexistent_prompt.md")
+    result = _parse(runtime.subagent_dispatch("execution-context-high", missing, None))
+    assert result["status"] == "error"
+    assert result["error"] == "prompt_not_found"
+
+
+# =============================================================================
+# 14. health_check
+# =============================================================================
+
+
+def test_health_check_display_always_unhealthy(runtime: OpenCodeRuntime) -> None:
+    """health_check display check always reports unhealthy on OpenCode (no hook)."""
+    result = _parse(runtime.health_check("display"))
+    assert result["status"] == "success"
+    assert result["all_healthy"] is False
+    display_result = next(r for r in result["results"] if r["check"] == "display")
+    assert display_result["healthy"] is False
+
+
+def test_health_check_hook_always_unhealthy(runtime: OpenCodeRuntime) -> None:
+    """health_check hook check always reports unhealthy (no SessionStart hook on OpenCode)."""
+    result = _parse(runtime.health_check("hook"))
+    assert result["status"] == "success"
+    hook_result = next(r for r in result["results"] if r["check"] == "hook")
+    assert hook_result["healthy"] is False
+
+
+def test_health_check_all_includes_four_checks(runtime: OpenCodeRuntime) -> None:
+    """health_check with 'all' runs permissions, display, mcp-diagnostics, and hook."""
+    result = _parse(runtime.health_check("all"))
+    assert result["status"] == "success"
+    checks_run = result["checks_run"]
+    assert "permissions" in checks_run
+    assert "display" in checks_run
+    assert "mcp-diagnostics" in checks_run
+    assert "hook" in checks_run
+    assert len(result["results"]) == 4
+
+
+def test_health_check_permissions_check_present(runtime: OpenCodeRuntime) -> None:
+    """health_check permissions check returns a result dict with healthy and detail."""
+    result = _parse(runtime.health_check("permissions"))
+    assert result["status"] == "success"
+    perm_result = next(r for r in result["results"] if r["check"] == "permissions")
+    assert "healthy" in perm_result
+    assert "detail" in perm_result
+
+
+def test_health_check_comma_separated_checks(runtime: OpenCodeRuntime) -> None:
+    """health_check accepts comma-separated check names and processes each."""
+    result = _parse(runtime.health_check("display,hook"))
+    assert result["status"] == "success"
+    checks_run = result["checks_run"]
+    assert "display" in checks_run
+    assert "hook" in checks_run
+    assert len(result["results"]) == 2
+
+
+def test_health_check_all_healthy_false_when_display_or_hook(runtime: OpenCodeRuntime) -> None:
+    """health_check all_healthy is False whenever display or hook is included."""
+    result = _parse(runtime.health_check("display"))
+    assert result["all_healthy"] is False
+
+    result2 = _parse(runtime.health_check("hook"))
+    assert result2["all_healthy"] is False

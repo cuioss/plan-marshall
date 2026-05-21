@@ -105,6 +105,12 @@ class ExecutorTestEnvironment:
             f"sys.path.insert(0, '{input_validation_dir}')" if input_validation_dir.is_dir() else '# (none in test)',
         )
         executor_content = executor_content.replace('{{EXTRA_SCRIPT_DIRS}}', '')
+        executor_content = executor_content.replace('{{PLAN_DIR_NAME}}', '.plan')
+        executor_content = executor_content.replace('{{EXECUTOR_TARGET}}', 'claude')
+        executor_content = executor_content.replace(
+            '{{TARGET_AWARE_RESOLVER}}',
+            'def _resolve_notation_by_target(notation):\n    return None\n',
+        )
 
         self.executor_path = self.plan_dir / 'execute-script.py'
         self.executor_path.write_text(executor_content)

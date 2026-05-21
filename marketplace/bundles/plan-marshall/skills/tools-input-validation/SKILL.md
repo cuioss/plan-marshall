@@ -205,7 +205,7 @@ message: Plan ID contains invalid characters: bad!!id
 |------------|-------|---------|-----------------|
 | `plan_id` | `^[a-z][a-z0-9-]*$` | `add_plan_id_arg` | Adopted across all 32 swept scripts (Wave A/B/C) |
 | `lesson_id` | `^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]+$` | `add_lesson_id_arg` | Adopted: `manage-lessons` (with `action='append'`), `phase-1-init` |
-| `session_id` | `^[A-Za-z0-9_-]{1,128}$` | `add_session_id_arg` | Adopted: `manage_session`, `manage-metrics`, `compile-report` |
+| `session_id` | `^[A-Za-z0-9_-]{1,128}$` | `add_session_id_arg` | Adopted: `manage-metrics`, `compile-report` |
 | `task_number` | `^[0-9]+$` | `add_task_number_arg` | Adopted: `manage-tasks` (post-validate int coercion) |
 | `task_id` | `^TASK-[0-9]+$` | `add_task_id_arg` | Adopted: `manage-tasks` (legacy id form) |
 | `component` | `^[a-z0-9-]+(:[a-z0-9-]+)*$` | `add_component_arg` | Adopted: `manage-lessons`, `manage-findings`, `sonar_rest` |

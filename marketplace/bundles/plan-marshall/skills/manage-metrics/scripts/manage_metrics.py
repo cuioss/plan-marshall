@@ -28,6 +28,7 @@ Usage:
 import argparse
 import json
 import re
+import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -68,6 +69,46 @@ DISPATCH_TERMINATION_CAUSES = (
 )
 USAGE_TAG_RE = re.compile(r'<usage>([\s\S]*?)</usage>', re.MULTILINE)
 USAGE_FIELD_RE = re.compile(r'^\s*(total_tokens|tool_uses|duration_ms)\s*:\s*(\d+)', re.MULTILINE)
+
+
+def _resolve_cwd() -> str:
+    """Return the git repository root, falling back to os.getcwd()."""
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--show-toplevel'],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    import os
+    return os.getcwd()
+
+
+def _resolve_subagent_transcripts(session_id: str) -> list[Path]:
+    """Return absolute paths of subagent transcript JSONLs for the given parent session.
+
+    Subagent transcripts live under
+    ``~/.claude/projects/{cwd-slug}/{parent_session_id}/subagents/agent-*.jsonl``.
+    When the directory does not exist or contains no matches, returns an empty list.
+    """
+    try:
+        home = Path.home()
+    except (OSError, RuntimeError):
+        return []
+    projects = home / '.claude' / 'projects'
+    cwd = _resolve_cwd()
+    cwd_slug = cwd.replace('/', '-')
+    if not re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', session_id):
+        return []
+    subagents_dir = projects / cwd_slug / session_id / 'subagents'
+    if not subagents_dir.is_dir():
+        return []
+    return sorted(p for p in subagents_dir.glob('agent-*.jsonl') if p.is_file())
 
 
 def _accumulator_path(plan_id: str, phase: str) -> Path:
@@ -1259,9 +1300,7 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
     # broken input/output token representation).
     subagent_transcripts_walked = 0
     if windows:
-        from manage_session import resolve_subagent_transcripts  # type: ignore[import-not-found]
-
-        for _sub_path in resolve_subagent_transcripts(session_id):
+        for _sub_path in _resolve_subagent_transcripts(session_id):
             subagent_transcripts_walked += 1
 
     # Update metrics with enriched per-phase subagent totals.

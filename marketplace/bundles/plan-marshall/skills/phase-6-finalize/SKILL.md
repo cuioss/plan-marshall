@@ -63,7 +63,16 @@ See [references/workflow-overview.md](references/workflow-overview.md) for the v
 
 ### How to obtain session_id and transcript_path
 
-Both are resolved via `manage_session` (`current` + `transcript-path` subcommands). Resolver-pipeline mechanism — cache layout, hook source, error contract, forbidden Bash-sandbox patterns — lives in [`references/session-resolver.md`](references/session-resolver.md). Callers obtain `session_id` first, then `transcript_path` keyed by it.
+**session_id**: the platform-runtime `session capture` operation stores the session id in the plan's `status.json` at plan-init time. Read it back via:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+  --plan-id {plan_id} --get --field session_id
+```
+
+Parse `value` from the TOON output. On `status: error` or empty `value`, abort finalize with a clear message — do **not** invent a filler value.
+
+**transcript_path**: when a step needs the absolute path of the session transcript JSONL, the path follows the pattern `~/.claude/projects/{cwd-slug}/{session_id}.jsonl` where `{cwd-slug}` is the absolute project cwd with each `/` replaced by `-`. The `manage-metrics enrich` command resolves this internally given the `session_id`. On `transcript_not_found`, degrade gracefully (skip `enrich`).
 
 ## Phase-Entry Worktree Assertion
 

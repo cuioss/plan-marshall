@@ -2,8 +2,8 @@
 
 Terminal-title configuration is split across two surfaces:
 
-- **Writer** — `manage-status` mutation paths publish `{plan_dir}/title-body.txt` whenever phase, short_description, or archive lifecycle changes. This is built into the plan-marshall bundle; no user configuration is required to enable it. See [`../../plan-marshall/references/terminal-title.md`](../../plan-marshall/references/terminal-title.md) for the writer/reader split overview and [`../../manage-status/standards/status-lifecycle.md` § Title-Body Artifact](../../manage-status/standards/status-lifecycle.md) for the publication contract.
-- **Reader** — the per-target `session render-title` operation composes `{icon} {body}` from the active-command-state cache plus `title-body.txt` and forwards the resulting OSC sequence to the controlling terminal. The reader is specified in the cluster-01 platform-api design doc (`doc/refactor/01-design-platform-api/plan.md`) and is the responsibility of each target's platform runtime to implement.
+- **Writer** — `manage-status` mutation paths publish `{plan_dir}/title-body.txt` whenever phase, short_description, or archive lifecycle changes. This is built into the plan-marshall bundle; no user configuration is required to enable it. See [`../../manage-status/standards/status-lifecycle.md` § Title-Body Artifact](../../manage-status/standards/status-lifecycle.md) for the publication contract.
+- **Reader** — the per-target `session render-title` operation (implemented in `plan-marshall:platform-runtime`) composes `{icon} {body}` from the active-command-state cache plus `title-body.txt` and forwards the resulting OSC sequence to the controlling terminal.
 
 Until a per-target reader is available, `marshall-steward` does NOT install any terminal-title hooks; the writer publishes state, but no surface is configured to consume it. The wizard MUST surface this state to the user and otherwise no-op.
 

@@ -163,14 +163,7 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
 
 Skip the aspect entirely when the manifest file is absent.
 
-**Aspect 13 (chat-history, conditional)** — when `--session-id` is present, first resolve the absolute transcript path via the canonical resolver, then follow the LLM pattern above (Write fragment file, then `collect-fragments add`).
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall:manage_session \
-  transcript-path --session-id {session_id}
-```
-
-Parse `transcript_path` from the TOON output and pass it to the LLM analysis prompt as a concrete absolute file path — the LLM `Read`s by absolute path with no discovery step. On `status: error\nerror: transcript_not_found`, degrade gracefully: emit a fragment with `status: skipped` and `reason: transcript_unavailable` per `references/chat-history-analysis.md`. Never substitute Bash file discovery (`ls`, `find`, Glob) for the resolver — the resolver is the only sanctioned lookup mechanism for the session JSONL.
+**Aspect 13 (chat-history, conditional)** — when `--session-id` is present, resolve the absolute transcript path by constructing the canonical Claude Code path pattern `~/.claude/projects/{cwd-slug}/{session_id}.jsonl` (where `{cwd-slug}` is the absolute project cwd with each `/` replaced by `-`). Attempt to read the file directly; if absent, try a parent-directory glob under `~/.claude/projects/` for cross-cwd recovery. Pass the resolved `transcript_path` to the LLM analysis prompt as a concrete absolute file path — the LLM `Read`s by absolute path with no discovery step. On `transcript_not_found`, degrade gracefully: emit a fragment with `status: skipped` and `reason: transcript_unavailable` per `references/chat-history-analysis.md`. Never substitute Bash file discovery (`ls`, `find`, Glob) for this resolution — the canonical path derivation is the only sanctioned lookup mechanism for the session JSONL.
 
 ### Step 4: Compile Report
 

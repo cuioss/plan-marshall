@@ -116,6 +116,11 @@ def _render_executor(target_path: Path, embedded_script_path: Path) -> Path:
     )
     rendered = rendered.replace('{{EXTRA_SCRIPT_DIRS}}', '')
     rendered = rendered.replace('{{PLAN_DIR_NAME}}', '.plan')
+    rendered = rendered.replace('{{EXECUTOR_TARGET}}', 'claude')
+    rendered = rendered.replace(
+        '{{TARGET_AWARE_RESOLVER}}',
+        'def _resolve_notation_by_target(notation):\n    return None\n',
+    )
 
     target_path.write_text(rendered)
     return target_path

@@ -45,6 +45,8 @@ alternative: <what the user can do instead>
 
 The caller MUST handle `no-op` gracefully and continue. Never fail a workflow because a display hook is unsupported.
 
+See `marketplace/bundles/plan-marshall/skills/platform-runtime/standards/no-op-policy.md` for the full caller obligations, worked examples, and the `no-op` vs `error` distinction.
+
 ---
 
 ## 4. Single Source of Truth
