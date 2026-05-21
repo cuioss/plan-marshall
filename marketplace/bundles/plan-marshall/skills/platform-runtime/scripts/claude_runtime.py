@@ -54,6 +54,15 @@ _USAGE_FIELD_RE = re.compile(
     re.MULTILINE,
 )
 
+# Pattern: canonical UUID format for session identifiers. The session_id
+# originates from an external hook payload and is interpolated into file
+# paths and glob patterns, so it MUST be validated against this strict
+# format before any filesystem use to prevent path traversal and glob
+# injection.
+_SESSION_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
+
 # Hook command installed by project initial-setup.
 _HOOK_COMMAND = "python3 .plan/execute-script.py plan-marshall:platform-runtime:claude_hook"
 
@@ -121,8 +130,16 @@ def _cwd_to_slug(cwd: str) -> str:
 
 
 def _find_transcript(session_id: str) -> Path | None:
-    """Locate the JSONL transcript for a Claude Code session."""
-    if not _CLAUDE_PROJECTS_DIR.exists():
+    """Locate the JSONL transcript for a Claude Code session.
+
+    ``session_id`` originates from an external hook payload and is
+    interpolated into filesystem paths and glob patterns below.  It is
+    validated against the canonical UUID format first; any value that does
+    not match is rejected to prevent path traversal and glob injection.
+    """
+    if not _SESSION_ID_RE.match(session_id):
+        return None
+    if not _CLAUDE_PROJECTS_DIR.is_dir():
         return None
     # Try the canonical cwd-slug path first.
     cwd = _resolve_cwd()

@@ -103,6 +103,8 @@ def _resolve_subagent_transcripts(session_id: str) -> list[Path]:
     projects = home / '.claude' / 'projects'
     cwd = _resolve_cwd()
     cwd_slug = cwd.replace('/', '-')
+    if not re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', session_id):
+        return []
     subagents_dir = projects / cwd_slug / session_id / 'subagents'
     if not subagents_dir.is_dir():
         return []
