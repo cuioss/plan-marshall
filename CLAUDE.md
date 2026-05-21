@@ -6,6 +6,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 This is a **Claude Code Marketplace** repository providing development standards, automation tools, and AI-assisted workflows for CUI (Common User Interface) Open Source projects. It contains 10 production bundles with 94 components (skills, agents, and commands) that integrate with Claude Code's plugin system.
 
+## Branch Naming
+
+Working branches MUST use one of exactly three canonical prefixes. The set is closed — see the rationale below.
+
+| Prefix | Applies to |
+|--------|------------|
+| `feature/` | New capabilities. Plan-created branches are auto-generated as `feature/{plan_id}`. |
+| `fix/` | Bug fixes. |
+| `chore/` | Maintenance, refactoring, and documentation-only changes. |
+
+**Why the set is closed:** `.github/workflows/python-verify.yml` triggers CI on `push` only for the branch list `main`, `feature/*`, `fix/*`, `chore/*`, and `dependabot/**`. A branch whose prefix is outside that list silently receives no CI run, so its PR can never produce the `verify / verify` check that the branch-protection ruleset requires. An unlisted prefix (e.g. `docs/`) therefore makes the PR structurally unmergeable.
+
+The `docs/` prefix is explicitly retired: it was never an established remote prefix and is not CI-triggered. Use `chore/` for documentation-only changes.
+
 ## Architecture
 
 ### Directory Structure
