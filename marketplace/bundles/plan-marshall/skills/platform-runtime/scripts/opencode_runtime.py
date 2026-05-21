@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-OpenCode implementation of all 14 platform-runtime operations.
+OpenCode implementation of all 15 platform-runtime operations.
 
 OpenCode-specific behaviour:
 - Operations requiring a platform session id (session capture, session
@@ -93,6 +93,15 @@ class OpenCodeRuntime(Runtime):
                     "OpenCode does not support a SessionStart hook equivalent (issue #9292)"
                 ),
             },
+        )
+
+    def project_install_hook(self, target: str) -> str:
+        """No-op: OpenCode has no Claude-style SessionStart settings hook."""
+        return toon_noop(
+            "project install-hook",
+            "OpenCode has no Claude-style SessionStart settings hook to install"
+            " (issue anomalyco/opencode#8619)",
+            "Use OpenCode's built-in session mechanism for plan visibility",
         )
 
     # ------------------------------------------------------------------

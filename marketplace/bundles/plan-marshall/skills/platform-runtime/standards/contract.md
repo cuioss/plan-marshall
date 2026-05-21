@@ -1,6 +1,6 @@
 # Platform Runtime TOON Contract
 
-Per-operation TOON schemas for all 14 `platform-runtime` operations. Every operation returns one of three status variants: `success`, `error`, or `no-op`. Parser: `from toon_parser import parse_toon, serialize_toon` from `plan-marshall:ref-toon-format`.
+Per-operation TOON schemas for all 15 `platform-runtime` operations. Every operation returns one of three status variants: `success`, `error`, or `no-op`. Parser: `from toon_parser import parse_toon, serialize_toon` from `plan-marshall:ref-toon-format`.
 
 **Invocation pattern**:
 ```bash
@@ -85,6 +85,48 @@ status: error
 operation: project initial-setup
 error: unknown_target
 message: Target 'foobar' is not in the registry; valid targets are: claude, opencode
+```
+
+---
+
+### `project install-hook`
+
+Install only the SessionStart hook into a caller-specified settings file. Unlike `project initial-setup`, this does not create `.plan/` or seed `marshal.json` — it is the targeted hook-installation primitive. Idempotent: re-invocation when the hook is already present makes no change.
+
+**Arguments**: `--target <settings-file-path>` (required)
+
+**Success (Claude — hook installed)**:
+```toon
+status: success
+operation: project install-hook
+target: .claude/settings.local.json
+hook_installed: true
+already_present: false
+```
+
+**Success (Claude — hook already present)**:
+```toon
+status: success
+operation: project install-hook
+target: .claude/settings.local.json
+hook_installed: true
+already_present: true
+```
+
+**Error (Claude — write failure)**:
+```toon
+status: error
+operation: project install-hook
+error: io_error
+message: Failed to install SessionStart hook into .claude/settings.local.json
+```
+
+**No-op (OpenCode)**:
+```toon
+status: no-op
+operation: project install-hook
+reason: OpenCode has no Claude-style SessionStart settings hook to install (issue anomalyco/opencode#8619)
+alternative: Use OpenCode's built-in session mechanism for plan visibility
 ```
 
 ---

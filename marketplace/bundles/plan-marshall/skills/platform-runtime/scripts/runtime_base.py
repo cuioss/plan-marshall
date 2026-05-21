@@ -2,7 +2,7 @@
 """
 Abstract base class and shared TOON helpers for platform-runtime.
 
-Defines the Runtime ABC with all 14 platform operations. Concrete subclasses
+Defines the Runtime ABC with all 15 platform operations. Concrete subclasses
 (ClaudeRuntime, OpenCodeRuntime) implement each operation for their target.
 
 TOON helpers delegate to the canonical toon_parser from ref-toon-format — no
@@ -120,6 +120,28 @@ class Runtime(ABC):
 
         Returns:
             Serialized TOON string (success or error).
+        """
+
+    @abstractmethod
+    def project_install_hook(self, target: str) -> str:
+        """Install only the SessionStart hook into a named settings file.
+
+        Targeted hook-installation primitive: reads (or creates) the *target*
+        settings file, inserts the SessionStart hook entry when absent, and
+        writes it back.  Idempotent — re-invocation when the hook is already
+        present makes no change and reports ``already_present: true``.
+
+        Unlike ``project_initial_setup``, this operation touches only the hook
+        in the caller-specified file; it does not create ``.plan/`` or seed
+        ``marshal.json``.
+
+        Args:
+            target: Path to the settings file the hook is installed into
+                (e.g. ``.claude/settings.local.json``).
+
+        Returns:
+            Serialized TOON string (success, error, or no-op) carrying
+            ``target``, ``hook_installed``, and ``already_present`` fields.
         """
 
     # ------------------------------------------------------------------

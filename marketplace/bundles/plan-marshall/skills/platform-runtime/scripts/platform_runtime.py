@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Platform router for plan-marshall — dispatches 14 operations to the correct
+Platform router for plan-marshall — dispatches 15 operations to the correct
 target implementation based on ``runtime.target`` in ``.plan/marshal.json``.
 
 Usage:
@@ -9,6 +9,7 @@ Usage:
 
 Operations:
     project initial-setup   --project-dir <path>  --target claude|opencode
+    project install-hook    --target <settings-file-path>
     session capture         --plan-id <id>
     session configure-display  --type terminal-title|status-line|none  --style unicode|ascii
     session render-title    (no arguments)
@@ -240,6 +241,15 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         return runtime.project_initial_setup(ns.project_dir, ns.target)
 
     # ------------------------------------------------------------------
+    # project install-hook
+    # ------------------------------------------------------------------
+    if operation == "project install-hook":
+        p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime project install-hook")
+        p.add_argument("--target", required=True)
+        ns = p.parse_args(remaining)
+        return runtime.project_install_hook(ns.target)
+
+    # ------------------------------------------------------------------
     # session capture
     # ------------------------------------------------------------------
     if operation == "session capture":
@@ -401,7 +411,8 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         operation,
         "unknown_operation",
         f"Unknown operation {operation!r}; "
-        "valid operations: project initial-setup, session capture, "
+        "valid operations: project initial-setup, project install-hook, "
+        "session capture, "
         "session configure-display, session render-title, "
         "permission configure, permission analyze, permission fix, "
         "permission ensure-wildcards, permission ensure-steps, "

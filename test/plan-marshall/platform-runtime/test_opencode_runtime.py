@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Tests for opencode_runtime.py — OpenCode implementation of all 14 operations.
+"""Tests for opencode_runtime.py — OpenCode implementation of all 15 operations.
 
 Asserts the no-op contract for session/display operations that OpenCode does not
 support, success paths for permission and metrics operations, and error paths for
-invalid arguments across all 14 operations defined in the Runtime ABC.
+invalid arguments across all 15 operations defined in the Runtime ABC.
 """
 
 import json  # noqa: I001
@@ -95,6 +95,20 @@ def test_project_initial_setup_invalid_dir_returns_error(runtime: OpenCodeRuntim
     result = _parse(runtime.project_initial_setup("/nonexistent/path/that/cannot/be/created", "opencode"))
     assert result["status"] == "error"
     assert result["error"] == "io_error"
+
+
+# =============================================================================
+# 1b. project_install_hook — always no-op
+# =============================================================================
+
+
+def test_project_install_hook_is_noop(runtime: OpenCodeRuntime) -> None:
+    """project_install_hook returns no-op because OpenCode has no SessionStart hook."""
+    result = _parse(runtime.project_install_hook(".claude/settings.local.json"))
+    assert result["status"] == "no-op"
+    assert result["operation"] == "project install-hook"
+    assert "reason" in result
+    assert "alternative" in result
 
 
 # =============================================================================
