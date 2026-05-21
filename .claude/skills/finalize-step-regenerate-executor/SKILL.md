@@ -3,7 +3,7 @@ name: finalize-step-regenerate-executor
 description: Finalize-phase wrapper that regenerates .plan/execute-script.py whenever a plan touched marketplace script files, so newly added notations resolve after merge
 user-invocable: false
 allowed-tools: Bash
-order: 7
+order: 75
 ---
 
 # Finalize Step: regenerate-executor

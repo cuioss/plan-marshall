@@ -5,9 +5,9 @@
 The skill is a markdown executor playbook backed by the project-local
 ``sync.py`` engine. These tests pin the contract from three angles:
 
-1. **Frontmatter and ordering** — ``order: 14`` so it sits between
-   ``project:finalize-step-deploy-target`` (12) and
-   ``default:create-pr`` (20).
+1. **Frontmatter and ordering** — ``order: 85`` so it sits post-merge
+   immediately after ``project:finalize-step-deploy-target`` (80) and
+   before ``default:record-metrics`` (990).
 2. **Project-local registration** — the skill lives at
    ``.claude/skills/finalize-step-sync-plugin-cache/SKILL.md`` (NOT in
    any marketplace bundle, NOT in ``BUILT_IN_FINALIZE_STEPS``).
@@ -67,22 +67,26 @@ def test_skill_frontmatter_canonical_fields():
     fm = _parse_frontmatter(_SKILL_MD)
     assert fm.get('name') == 'finalize-step-sync-plugin-cache'
     assert fm.get('description'), 'description must be non-empty'
-    assert fm.get('order') == '14', (
-        'sync-plugin-cache order must be 14 (between deploy-target=12 and create-pr=20)'
+    assert fm.get('order') == '85', (
+        'sync-plugin-cache order must be 85 (post-merge: immediately after '
+        'deploy-target=80, before record-metrics=990)'
     )
 
 
-def test_order_between_deploy_target_and_create_pr():
+def test_order_after_deploy_target_post_merge():
+    """Post-merge, deploy-target and sync-plugin-cache run after branch-cleanup;
+    sync-plugin-cache immediately follows deploy-target."""
     deploy_target = _parse_frontmatter(_DEPLOY_TARGET_SKILL_MD)
     sync_step = _parse_frontmatter(_SKILL_MD)
 
     # Hard-coded create-pr order (20) — sourced from the bundled workflow doc.
+    # Post-merge, both deploy/sync steps sort AFTER create-pr.
     create_pr_md = (
         MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow' / 'create-pr.md'
     )
     create_pr = _parse_frontmatter(create_pr_md)
 
-    assert int(deploy_target['order']) < int(sync_step['order']) < int(create_pr['order'])
+    assert int(create_pr['order']) < int(deploy_target['order']) < int(sync_step['order'])
 
 
 def test_skill_body_documents_inline_and_engine_call():
