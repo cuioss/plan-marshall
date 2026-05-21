@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for claude_runtime.py — ClaudeRuntime implementation of all 14 operations.
+"""Tests for claude_runtime.py — ClaudeRuntime implementation of all 15 operations.
 
 Covers every method defined by the Runtime ABC:
   1.  project_initial_setup       — creates dirs, writes marshal.json, installs hook
@@ -193,6 +193,106 @@ class TestProjectInitialSetupFreshInit:
             if isinstance(h, dict)
         ]
         assert _HOOK_COMMAND in hook_commands
+
+
+# =============================================================================
+# 1b. project_install_hook
+# =============================================================================
+
+
+class TestProjectInstallHook:
+    """Tests for ClaudeRuntime.project_install_hook."""
+
+    def test_fresh_file_creation_installs_hook(self, rt, tmp_path):
+        """Installing into a non-existent settings file creates it with the hook."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        result = _parsed(rt.project_install_hook(str(target)))
+        assert result["status"] == "success"
+        assert result["hook_installed"] is True
+        assert result["already_present"] is False
+        assert result["target"] == str(target)
+        assert target.is_file()
+        settings = json.loads(target.read_text())
+        session_starts = settings.get("hooks", {}).get("SessionStart", [])
+        commands = [
+            h.get("command")
+            for entry in session_starts
+            if isinstance(entry, dict)
+            for h in entry.get("hooks", [])
+            if isinstance(h, dict)
+        ]
+        assert _HOOK_COMMAND in commands
+
+    def test_idempotent_reinstall_reports_already_present(self, rt, tmp_path):
+        """Re-invoking when the hook is present reports already_present and adds nothing."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        result = _parsed(rt.project_install_hook(str(target)))
+        assert result["status"] == "success"
+        assert result["hook_installed"] is True
+        assert result["already_present"] is True
+
+        settings = json.loads(target.read_text())
+        session_starts = settings.get("hooks", {}).get("SessionStart", [])
+        hook_count = sum(
+            sum(1 for h in entry.get("hooks", []) if h.get("command") == _HOOK_COMMAND)
+            for entry in session_starts
+            if isinstance(entry, dict)
+        )
+        assert hook_count == 1
+
+    def test_insertion_preserves_existing_unrelated_hooks_block(self, rt, tmp_path):
+        """Installing into a file with an unrelated hooks block keeps that block intact."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        target.parent.mkdir(parents=True)
+        existing = {
+            "permissions": {"allow": ["Read(**)"]},
+            "hooks": {
+                "UserPromptSubmit": [
+                    {"matcher": "", "hooks": [{"type": "command", "command": "echo hi"}]}
+                ]
+            },
+        }
+        target.write_text(json.dumps(existing), encoding="utf-8")
+
+        result = _parsed(rt.project_install_hook(str(target)))
+        assert result["status"] == "success"
+        assert result["already_present"] is False
+
+        settings = json.loads(target.read_text())
+        # Unrelated content preserved.
+        assert settings["permissions"]["allow"] == ["Read(**)"]
+        assert "UserPromptSubmit" in settings["hooks"]
+        # New SessionStart hook present.
+        session_starts = settings["hooks"].get("SessionStart", [])
+        commands = [
+            h.get("command")
+            for entry in session_starts
+            if isinstance(entry, dict)
+            for h in entry.get("hooks", [])
+            if isinstance(h, dict)
+        ]
+        assert _HOOK_COMMAND in commands
+
+    def test_shared_helper_parity_with_initial_setup(self, rt, tmp_path):
+        """project_install_hook installs the same hook entry as project_initial_setup."""
+        # project_initial_setup writes to .claude/settings.json.
+        setup_project = tmp_path / "setup-proj"
+        setup_project.mkdir()
+        rt.project_initial_setup(str(setup_project), "claude")
+        setup_settings = json.loads(
+            (setup_project / ".claude" / "settings.json").read_text()
+        )
+        setup_session_starts = setup_settings["hooks"]["SessionStart"]
+
+        # project_install_hook writes to an arbitrary target file.
+        install_target = tmp_path / "install" / "settings.local.json"
+        rt.project_install_hook(str(install_target))
+        install_settings = json.loads(install_target.read_text())
+        install_session_starts = install_settings["hooks"]["SessionStart"]
+
+        # Both code paths produce the identical SessionStart hook entry.
+        assert setup_session_starts == install_session_starts
 
 
 # =============================================================================
@@ -1050,6 +1150,60 @@ class TestHealthCheck:
         hook_result = next((r for r in result["results"] if r["check"] == "hook"), None)
         assert hook_result is not None
         assert hook_result["healthy"] is True
+
+    @staticmethod
+    def _write_hook_settings(path: Path) -> None:
+        """Write a settings file at *path* containing the SessionStart hook."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        settings_data = {
+            "hooks": {
+                "SessionStart": [
+                    {"matcher": "", "hooks": [{"type": "command", "command": _HOOK_COMMAND}]}
+                ]
+            }
+        }
+        path.write_text(json.dumps(settings_data), encoding="utf-8")
+
+    def test_hook_check_healthy_when_in_settings_json_only(self, rt, tmp_path, monkeypatch):
+        """hook check is healthy when the hook lives only in .claude/settings.json."""
+        self._write_hook_settings(tmp_path / ".claude" / "settings.json")
+        monkeypatch.chdir(tmp_path)
+
+        result = _parsed(rt.health_check("all"))
+        hook_result = next(r for r in result["results"] if r["check"] == "hook")
+        assert hook_result["healthy"] is True
+        assert "settings.json" in hook_result["detail"]
+
+    def test_hook_check_healthy_when_in_settings_local_json_only(self, rt, tmp_path, monkeypatch):
+        """hook check is healthy when the hook lives only in .claude/settings.local.json."""
+        self._write_hook_settings(tmp_path / ".claude" / "settings.local.json")
+        monkeypatch.chdir(tmp_path)
+
+        result = _parsed(rt.health_check("all"))
+        hook_result = next(r for r in result["results"] if r["check"] == "hook")
+        assert hook_result["healthy"] is True
+        assert "settings.local.json" in hook_result["detail"]
+
+    def test_hook_check_unhealthy_when_in_neither_file(self, rt, tmp_path, monkeypatch):
+        """hook check is unhealthy when the hook is absent from both settings files."""
+        monkeypatch.chdir(tmp_path)
+
+        result = _parsed(rt.health_check("all"))
+        hook_result = next(r for r in result["results"] if r["check"] == "hook")
+        assert hook_result["healthy"] is False
+        assert "missing" in hook_result["detail"]
+
+    def test_hook_check_healthy_when_in_both_files(self, rt, tmp_path, monkeypatch):
+        """hook check is healthy when the hook is present in both settings files."""
+        self._write_hook_settings(tmp_path / ".claude" / "settings.json")
+        self._write_hook_settings(tmp_path / ".claude" / "settings.local.json")
+        monkeypatch.chdir(tmp_path)
+
+        result = _parsed(rt.health_check("all"))
+        hook_result = next(r for r in result["results"] if r["check"] == "hook")
+        assert hook_result["healthy"] is True
+        assert "settings.json" in hook_result["detail"]
+        assert "settings.local.json" in hook_result["detail"]
 
     def test_all_healthy_reflects_individual_results(self, rt, tmp_path, monkeypatch):
         """all_healthy is False when any single check is unhealthy."""

@@ -7,7 +7,7 @@ Covers:
   - _resolve_target: runtime.target extraction from marshal data
   - _make_runtime: registry lookup and unknown target handling
   - _parse_json_list / _parse_context: JSON helpers
-  - _dispatch: correct routing and argparse for all 14 operations
+  - _dispatch: correct routing and argparse for all 15 operations
   - main: full integration — no args, missing marshal, unknown target, dispatch
 """
 from __future__ import annotations  # noqa: I001
@@ -58,6 +58,7 @@ def _mock_runtime() -> MagicMock:
     """Return a MagicMock that returns valid TOON for every Runtime method."""
     rt = MagicMock()
     rt.project_initial_setup.return_value = toon_success("project initial-setup")
+    rt.project_install_hook.return_value = toon_success("project install-hook")
     rt.session_capture.return_value = toon_success("session capture")
     rt.session_configure_display.return_value = toon_success("session configure-display")
     rt.session_render_title.return_value = toon_success("session render-title")
@@ -335,7 +336,7 @@ class TestParseContext:
 
 
 # =============================================================================
-# Test: _dispatch — all 14 operations
+# Test: _dispatch — all 15 operations
 # =============================================================================
 
 
@@ -358,6 +359,19 @@ class TestDispatch:
         """project initial-setup uses '.' and 'claude' as defaults."""
         _dispatch(rt, "project initial-setup", [])
         rt.project_initial_setup.assert_called_once_with(".", "claude")
+
+    # ---- project install-hook -------------------------------------------------
+
+    def test_dispatch_project_install_hook(self, rt):
+        """project install-hook forwards --target to runtime.project_install_hook."""
+        _dispatch(rt, "project install-hook", ["--target", ".claude/settings.local.json"])
+        rt.project_install_hook.assert_called_once_with(".claude/settings.local.json")
+
+    def test_dispatch_project_install_hook_missing_target_rejected(self, rt):
+        """project install-hook without --target is rejected by argparse (SystemExit)."""
+        with pytest.raises(SystemExit):
+            _dispatch(rt, "project install-hook", [])
+        rt.project_install_hook.assert_not_called()
 
     # ---- session capture ------------------------------------------------------
 

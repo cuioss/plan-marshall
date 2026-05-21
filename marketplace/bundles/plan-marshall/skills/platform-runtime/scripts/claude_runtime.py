@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClaudeRuntime — Claude Code implementation of all 14 platform-runtime operations.
+ClaudeRuntime — Claude Code implementation of all 15 platform-runtime operations.
 
 Implements every abstract method from Runtime (runtime_base.py) for the Claude Code
 target.  All responses are serialized TOON strings built via the toon_success,
@@ -79,6 +79,70 @@ try {{
   );
 }} catch (_) {{}}
 """
+
+
+def _install_session_start_hook(settings_path: Path) -> bool:
+    """Insert the SessionStart hook entry into a settings file if absent.
+
+    Reads (or creates) ``settings_path``, appends the SessionStart hook entry
+    when no entry with the canonical ``_HOOK_COMMAND`` is already present, and
+    writes the file back. The duplicate-detection scan over ``SessionStart``
+    makes the call idempotent.
+
+    Args:
+        settings_path: Path to the settings JSON file to install the hook into.
+
+    Returns:
+        ``True`` when the hook is present after the call (whether it was
+        already there or freshly inserted); ``False`` on an I/O failure.
+    """
+    hook_entry: dict[str, Any] = {
+        "matcher": "",
+        "hooks": [
+            {
+                "type": "command",
+                "command": _HOOK_COMMAND,
+                "timeout": 5000,
+            }
+        ],
+    }
+    try:
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_data = _read_json(settings_path) or {}
+        hooks_block = settings_data.setdefault("hooks", {})
+        if not isinstance(hooks_block, dict):
+            hooks_block = {}
+            settings_data["hooks"] = hooks_block
+        session_start = hooks_block.setdefault("SessionStart", [])
+        if not isinstance(session_start, list):
+            session_start = []
+            hooks_block["SessionStart"] = session_start
+
+        already_present = any(
+            any(h.get("command") == _HOOK_COMMAND for h in entry.get("hooks", []))
+            for entry in session_start
+            if isinstance(entry, dict)
+        )
+        if not already_present:
+            session_start.append(hook_entry)
+            _write_json(settings_path, settings_data)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def _session_start_hook_present(settings_path: Path) -> bool:
+    """Return True when the SessionStart hook entry exists in ``settings_path``."""
+    if not settings_path.is_file():
+        return False
+    settings_data = _read_json(settings_path) or {}
+    session_start = settings_data.get("hooks", {}).get("SessionStart", [])
+    for entry in session_start:
+        if isinstance(entry, dict):
+            for h in entry.get("hooks", []):
+                if isinstance(h, dict) and h.get("command") == _HOOK_COMMAND:
+                    return True
+    return False
 
 
 def _project_dir_path(project_dir: str) -> Path:
@@ -536,7 +600,7 @@ _UNMAPPED_TOOLS: frozenset[str] = frozenset({"SendMessage", "TaskCreate"})
 
 
 class ClaudeRuntime(Runtime):
-    """Claude Code implementation of all 14 platform-runtime operations."""
+    """Claude Code implementation of all 15 platform-runtime operations."""
 
     # ------------------------------------------------------------------
     # Project lifecycle
@@ -580,36 +644,7 @@ class ClaudeRuntime(Runtime):
             )
 
         # Install SessionStart hook in .claude/settings.json.
-        hook_installed = False
-        hook_entry: dict[str, Any] = {
-            "matcher": "",
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": _HOOK_COMMAND,
-                    "timeout": 5000,
-                }
-            ],
-        }
-        try:
-            settings_path.parent.mkdir(parents=True, exist_ok=True)
-            settings_data = _read_json(settings_path) or {}
-            hooks_block = settings_data.setdefault("hooks", {})
-            session_start = hooks_block.setdefault("SessionStart", [])
-
-            # Avoid duplicate hook entries.
-            already_present = any(
-                any(h.get("command") == _HOOK_COMMAND for h in entry.get("hooks", []))
-                for entry in session_start
-                if isinstance(entry, dict)
-            )
-            if not already_present:
-                session_start.append(hook_entry)
-                _write_json(settings_path, settings_data)
-
-            hook_installed = True
-        except (OSError, ValueError):
-            hook_installed = False
+        hook_installed = _install_session_start_hook(settings_path)
 
         return toon_success(
             "project initial-setup",
@@ -618,6 +653,36 @@ class ClaudeRuntime(Runtime):
                 "project_dir": str(pd),
                 "marshal_written": True,
                 "hook_installed": hook_installed,
+            },
+        )
+
+    def project_install_hook(self, target: str) -> str:
+        """Install only the SessionStart hook into the named settings file."""
+        settings_path = Path(target)
+        already_present = _session_start_hook_present(settings_path)
+        if already_present:
+            return toon_success(
+                "project install-hook",
+                {
+                    "target": target,
+                    "hook_installed": True,
+                    "already_present": True,
+                },
+            )
+
+        if not _install_session_start_hook(settings_path):
+            return toon_error(
+                "project install-hook",
+                "io_error",
+                f"Failed to install SessionStart hook into {target}",
+            )
+
+        return toon_success(
+            "project install-hook",
+            {
+                "target": target,
+                "hook_installed": True,
+                "already_present": False,
             },
         )
 
@@ -1532,19 +1597,37 @@ class ClaudeRuntime(Runtime):
                 all_healthy = False
 
         if "hook" in checks_to_run:
-            settings_path = Path(".claude") / "settings.json"
-            healthy = False
-            detail = "SessionStart hook entry missing from .claude/settings.json; run marshall-steward to install"
-            if settings_path.is_file():
-                sd = _read_json(settings_path) or {}
+            def _hook_in_settings_file(path: Path) -> bool:
+                """Return True when the SessionStart hook command is found in *path*."""
+                if not path.is_file():
+                    return False
+                sd = _read_json(path) or {}
                 session_starts = sd.get("hooks", {}).get("SessionStart", [])
                 for entry in session_starts:
                     if isinstance(entry, dict):
                         for h in entry.get("hooks", []):
-                            if isinstance(h, dict) and _HOOK_COMMAND in h.get("command", ""):
-                                healthy = True
-                                detail = "SessionStart hook entry present in .claude/settings.json"
-                                break
+                            if isinstance(h, dict) and h.get("command") == _HOOK_COMMAND:
+                                return True
+                return False
+
+            settings_json = Path(".claude") / "settings.json"
+            settings_local = Path(".claude") / "settings.local.json"
+            in_settings_json = _hook_in_settings_file(settings_json)
+            in_settings_local = _hook_in_settings_file(settings_local)
+            healthy = in_settings_json or in_settings_local
+
+            if in_settings_json and in_settings_local:
+                detail = "SessionStart hook entry present in .claude/settings.json and .claude/settings.local.json"
+            elif in_settings_json:
+                detail = "SessionStart hook entry present in .claude/settings.json"
+            elif in_settings_local:
+                detail = "SessionStart hook entry present in .claude/settings.local.json"
+            else:
+                detail = (
+                    "SessionStart hook entry missing from both .claude/settings.json and "
+                    ".claude/settings.local.json; run marshall-steward to install"
+                )
+
             results.append({"check": "hook", "healthy": healthy, "detail": detail})
             if not healthy:
                 all_healthy = False
