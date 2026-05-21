@@ -66,24 +66,22 @@ Read these documents in full **before touching anything**. Do not start the task
 - [ ] Implementation: extend the executor generator to read `runtime.target` from `marshal.json` and emit the matching resolver template (Claude-cache resolver or OpenCode-skill-roots resolver — see cluster 01 "Executor Resolution Per Target"). Notation `{bundle}:{skill}:{script}` unchanged.
 - [ ] Testing: per-target unit tests for the resolver tables; integration test that the generated executor resolves a sample notation correctly on each target
 
-### 11. `tools-file-ops` and `manage-worktree` — `marshal.json` `worktree.path`
-- [ ] Implementation: replace hardcoded `.claude/worktrees/{plan_id}/` with `marshal.json` `worktree.path` prefix (default `.claude/worktrees/` for Claude, `.opencode/worktrees/` for OpenCode). Both skills consult the same source.
-- [ ] Testing: per-target tests confirming worktree creation under the expected path
+> **Worktree handling is not a cluster 03 task.** It is superseded by lesson `2026-05-07-11-001` and lands as upfront, platform-invariant work: `manage-worktree` consolidates into `workflow-integration-git` and the canonical location moves to `.plan/local/worktrees/{plan_id}/` (platform-neutral, gitignored — no per-target default). See `plan.md` § "Skills Requiring Body Changes" worktree note.
 
-### 12. `tools-input-validation` — target-specific session_id validation
+### 11. `tools-input-validation` — target-specific session_id validation
 - [ ] Implementation: branch validation rule on `runtime.target`. Claude validates UUID-shape token; OpenCode validates whatever shape the upstream session-id format takes (or accepts opaque strings if no documented shape exists)
 - [ ] Testing: validation tests for both targets
 
-### 13. `tools-fix-intellij-diagnostics` (command) — `health-check`
+### 12. `tools-fix-intellij-diagnostics` (command) — `health-check`
 - [ ] Implementation: replace direct `mcp__ide__getDiagnostics` invocation with `platform-runtime health-check --checks mcp-diagnostics`
 - [ ] Testing: command runs on Claude (real MCP); on OpenCode the no-op response surfaces as a documented user-facing message
 
-### 14. `bootstrap_plugin.py` — multi-platform path resolution
+### 13. `bootstrap_plugin.py` — multi-platform path resolution
 - [ ] Implementation: extend `bootstrap_plugin.py` to walk the same target-aware root list documented in cluster 01 "Bootstrap Invocation". Convert matched location to absolute path. Default target = claude when no marshal.json exists.
 - [ ] Testing: per-target path-resolution tests including the OpenCode 7-root walk
 
-### 15. Final audit pass
-- [ ] Implementation: grep `marketplace/bundles/*/skills/*/SKILL.md` for any remaining behavioural Claude-specific reference (writes, reads, hook installation outside `platform-runtime` call sites). Each remaining occurrence must be a `platform-runtime` call site or a `references/{topic}.md` pointer.
+### 14. Final audit pass
+- [ ] Implementation: grep `marketplace/bundles/*/skills/*/SKILL.md` for any remaining behavioural Claude-specific reference (writes, reads, hook installation outside `platform-runtime` call sites). Each remaining occurrence must be a `platform-runtime` call site or a `references/{topic}.md` pointer. **Exclude `skills/platform-runtime/**` from the grep** — that skill is the sanctioned platform-code sink and its provider scripts (`claude_runtime.py`, `claude_hook.py`, `opencode_runtime.py`) contain `.claude/` paths and hook strings by design. See `plan.md` § "platform-runtime Skill — Sanctioned Platform-Code Sink".
 - [ ] Testing: `./pw verify` passes on all 10 bundles
 
 ## Quality Gate

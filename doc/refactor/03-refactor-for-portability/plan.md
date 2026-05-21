@@ -87,6 +87,39 @@ The 13 currently affected skills:
 
 Adding or removing `user-invocable: true` on a skill automatically changes the OpenCode emitter's output on the next build — no separate registration list to maintain.
 
+## platform-runtime Skill — Sanctioned Platform-Code Sink
+
+The behavioural audit above targets Claude-specifics that leak into **general skill bodies**. It does **not** apply to the `platform-runtime` skill itself, which is the deliberate, single concentration point for per-platform code — the implementation of the abstraction every other skill is rewritten to route through.
+
+`marketplace/bundles/plan-marshall/skills/platform-runtime/**` is therefore **out of scope** for the audit table and the behavioural-pattern grep. Its scripts contain `.claude/settings*.json` paths, `~/.claude/` references, SessionStart-hook command strings, `<usage>` transcript parsing, and raw `permissions.allow` manipulation **by design** — that code is the body of the abstraction, not leakage. The grep MUST exclude this skill, or every provider line registers as a false positive.
+
+The distinction is: platform code *behind* `platform-runtime` (correct — the designed home) versus platform code in a *general* skill body (a violation this cluster fixes).
+
+### Provider organization and emission contract
+
+Per-platform implementations co-locate in the one skill:
+
+- `runtime_base.py` — the `Runtime` ABC (operation signatures)
+- `claude_runtime.py`, `opencode_runtime.py` — per-target provider classes
+- `claude_hook.py` — the Claude-only SessionStart hook script
+- `platform_runtime.py` — the router; reads `runtime.target` from `marshal.json` and dispatches to the provider class
+
+This mirrors `tools-integration-ci`, which co-locates `github.py` and `gitlab.py` in one skill. Both target emitters (`marketplace/targets/claude/emitter.py`, `marketplace/targets/opencode/emitter.py`) copy a skill's `scripts/` directory verbatim, so **every emitted target carries every provider plus `claude_hook.py`** — `target/opencode/` includes `claude_runtime.py` / `claude_hook.py`; `target/claude/` includes `opencode_runtime.py`. This is intentional: static routing means the non-matching provider is never dispatched — it is inert, not broken, exactly as a GitLab project never invokes `github.py`.
+
+### Decision: no per-target emit filtering
+
+Stripping the non-matching provider at emit time is deliberately **not** done. Rationale:
+
+1. It would diverge from the established `tools-integration-ci` pattern, where all CI providers ship to every install.
+2. It would break the Claude target emitter's pure verbatim-mirror invariant and complicate `equality_check.py` drift detection.
+3. The dormant files are a few small scripts — the artifact-size saving is negligible.
+
+Per-target artifact leanness is a build-system concern ([02 — Build System](../02-build-system/plan.md)), not a portability defect this cluster needs to fix. A future plan may revisit it if lean per-target artifacts become a hard requirement.
+
+### Adding a new platform
+
+Add `{platform}_runtime.py` implementing the `Runtime` ABC and a registry entry in `platform_runtime.py`. No general skill changes are required — the routing layer absorbs the new target. The build emits the new provider to every target alongside the existing ones, under the same contract above.
+
 ## marshal.json Template
 
 Add `runtime.target` to the template used by `phase-1-init`:
@@ -176,7 +209,8 @@ This cluster is complete when:
 8. `tools-permission-doctor`, `tools-permission-fix`, and `workflow-permission-web` delegate all settings file I/O to `platform-runtime` permission operations
 9. `ensure-executor`, `cleanup-scripts`, and `migrate-executor` are implemented on both targets — each reads `runtime.target` and writes/cleans/migrates permissions in the appropriate target's permission shape
 10. `tools-script-executor` is target-aware: same notation `{bundle}:{skill}:{script}` resolves correctly via the Claude-cache resolver on Claude and the OpenCode-skill-roots resolver on OpenCode
-11. `./pw verify` passes
+11. The behavioural-pattern audit explicitly exempts the `platform-runtime` skill — its provider scripts (`claude_runtime.py`, `claude_hook.py`, `opencode_runtime.py`) are not flagged as leakage
+12. `./pw verify` passes
 
 ## Dependencies
 
