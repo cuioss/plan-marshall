@@ -28,17 +28,17 @@ The canonical Phase 6 ordering surrounding this step is:
 
 ```
 default:branch-cleanup (70) →
-project:finalize-step-regenerate-executor (75) →
 project:finalize-step-deploy-target (80) →
 project:finalize-step-sync-plugin-cache (85) →
+project:finalize-step-regenerate-executor (90) →
 default:record-metrics (990)
 ```
 
 `order: 85` places this step immediately after
 `project:finalize-step-deploy-target` (so the cache mirrors the
 just-regenerated `target/claude/` content) and before
-`default:record-metrics`, both post-`branch-cleanup` on the main
-checkout.
+`project:finalize-step-regenerate-executor` (which scans the freshly
+synced cache), both post-`branch-cleanup` on the main checkout.
 
 ## Inputs
 

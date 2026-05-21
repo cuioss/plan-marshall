@@ -358,11 +358,13 @@ In meta-projects that own marketplace bundles (notably the
 plan-marshall repo itself), the project-local Phase 6 ordering pairs
 `project:finalize-step-deploy-target` (order 80) with
 `project:finalize-step-sync-plugin-cache` (order 85), placing both
-**after** `default:branch-cleanup` and `project:finalize-step-regenerate-executor`,
+**after** `default:branch-cleanup` and **before**
+`project:finalize-step-regenerate-executor` (order 90),
 against the main checkout post-merge. The cache mirrors the
 just-regenerated `target/claude/` content from the merged source tree,
 so the next session-boot re-derivation reads the same authoritative
-tree the dispatcher just wrote to.
+tree the dispatcher just wrote to. `project:finalize-step-regenerate-executor`
+runs last so it scans a plugin cache already refreshed by the sync step.
 
 Meta-project finalize agents dispatched between `create-pr` and
 `branch-cleanup` see pre-plan skill bodies in the host cache (the cache
@@ -537,7 +539,7 @@ FOR each step_id in manifest.phase_6.steps:
            - IF no record OR any other value: dispatch normally
      Log skip/retry/re-fire decisions at INFO level so the work.log reflects the re-entry path.
 
-     **HEAD-dependent step set**: `HEAD_DEPENDENT_STEPS = {"pre-push-quality-gate", "automated-review", "sonar-roundtrip", "commit-push", "ci-verify"}`. The first three validate the live worktree tree via local quality-gate, PR-comment, and Sonar infrastructure respectively. A loop-back commit (typically produced by `automated-review` or `sonar-roundtrip` opening a fix task that produces a new commit) advances HEAD past the previously-validated SHA, and a stale `done` record on any of these three steps would produce a false-clean result on re-entry. `commit-push` enters the HEAD-dependent set because a loop-back fix task may produce a fresh commit *after* `commit-push` recorded `outcome=done` against the prior HEAD; without HEAD-comparison the dispatcher would skip `commit-push` on re-entry and leave the fix-task changes staged-but-uncommitted. The same `head_at_completion` comparison applies to all four. Other inline-only steps (`architecture-refresh`, `branch-cleanup`, `record-metrics`, `archive-plan`, `project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`) and pure-administrative agent steps (`create-pr`, `lessons-capture`) are NOT HEAD-dependent — their effect is captured by side-effect (a created PR, recorded lessons, regenerated `target/claude/` from the post-merge source tree) and is idempotent against HEAD advances; the general rule above applies to them. CI completion is resolved as a separate dispatcher-side precondition (`requires: [ci-complete]`) — its cache key is the same `git rev-parse HEAD` SHA, so a HEAD advance also invalidates the precondition cache.
+     **HEAD-dependent step set**: `HEAD_DEPENDENT_STEPS = {"pre-push-quality-gate", "automated-review", "sonar-roundtrip", "commit-push", "ci-verify"}`. The first three validate the live worktree tree via local quality-gate, PR-comment, and Sonar infrastructure respectively. A loop-back commit (typically produced by `automated-review` or `sonar-roundtrip` opening a fix task that produces a new commit) advances HEAD past the previously-validated SHA, and a stale `done` record on any of these three steps would produce a false-clean result on re-entry. `commit-push` enters the HEAD-dependent set because a loop-back fix task may produce a fresh commit *after* `commit-push` recorded `outcome=done` against the prior HEAD; without HEAD-comparison the dispatcher would skip `commit-push` on re-entry and leave the fix-task changes staged-but-uncommitted. The same `head_at_completion` comparison applies to all four. Other inline-only steps (`architecture-refresh`, `branch-cleanup`, `record-metrics`, `archive-plan`, `project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`, `project:finalize-step-regenerate-executor`) and pure-administrative agent steps (`create-pr`, `lessons-capture`) are NOT HEAD-dependent — their effect is captured by side-effect (a created PR, recorded lessons, regenerated `target/claude/` from the post-merge source tree) and is idempotent against HEAD advances; the general rule above applies to them. CI completion is resolved as a separate dispatcher-side precondition (`requires: [ci-complete]`) — its cache key is the same `git rev-parse HEAD` SHA, so a HEAD advance also invalidates the precondition cache.
 
   2. Log step start:
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
