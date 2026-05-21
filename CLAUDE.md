@@ -14,7 +14,7 @@ Working branches MUST use one of exactly three canonical prefixes. The set is cl
 |--------|------------|
 | `feature/` | New capabilities. Plan-created branches are auto-generated as `feature/{plan_id}`. |
 | `fix/` | Bug fixes. |
-| `chore/` | Maintenance and doc-only changes. |
+| `chore/` | Maintenance, refactoring, and documentation-only changes. |
 
 **Why the set is closed:** `.github/workflows/python-verify.yml` triggers CI on `push` only for the branch list `main`, `feature/*`, `fix/*`, `chore/*`, and `dependabot/**`. A branch whose prefix is outside that list silently receives no CI run, so its PR can never produce the `verify / verify` check that the branch-protection ruleset requires. An unlisted prefix (e.g. `docs/`) therefore makes the PR structurally unmergeable.
 
