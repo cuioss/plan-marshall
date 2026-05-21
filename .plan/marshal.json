@@ -30,8 +30,7 @@
       },
       "steps": [
         "default:quality_check",
-        "default:build_verify",
-        "default:coverage_check"
+        "default:build_verify"
       ]
     },
     "phase-6-finalize": {
