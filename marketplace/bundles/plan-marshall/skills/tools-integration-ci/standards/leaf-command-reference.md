@@ -31,7 +31,7 @@ Source: [pr-operations.md](pr-operations.md)
 
 **Worktree-isolated plans**: When invoking from the main checkout against a plan running
 in `.plan/local/worktrees/{plan_id}`, pass `--head {plan_branch}` on every branch-aware
-operation (`pr create`, `pr view`, `pr merge`, `pr auto-merge`, `ci status`). The
+operation (`pr create`, `pr view`, `pr merge`, `pr auto-merge`, `checks status`). The
 underlying gh/glab CLIs derive the source branch from cwd HEAD, which would otherwise
 resolve to `main`. Examples:
 
@@ -46,7 +46,7 @@ ci pr create --title "T" --plan-id EXAMPLE-PLAN --base main --head plan/jwt-auth
 ci pr view --head plan/jwt-auth
 
 # Check CI status by branch
-ci ci status --head plan/jwt-auth
+ci checks status --head plan/jwt-auth
 
 # Merge by branch
 ci pr merge --head plan/jwt-auth --strategy squash --delete-branch
@@ -72,16 +72,16 @@ Source: [pr-review-operations.md](pr-review-operations.md)
 
 ---
 
-## ci — CI Status & Logs
+## checks — CI Status & Logs
 
 Source: [ci-operations.md](ci-operations.md)
 
 | Subcommand | Required Flags | Optional Flags | Purpose |
 |------------|----------------|----------------|---------|
-| `ci status` | _exactly one of_ `--pr-number` _or_ `--head` | — | Check CI status for a PR. Use `--head {branch}` from the main checkout against a worktree branch |
-| `ci wait` | `--pr-number` | — | Poll CI until completion. Use Bash timeout ≥ 1800000 ms (30 min safety net) |
-| `ci rerun` | `--run-id` | — | Rerun a failed CI workflow run |
-| `ci logs` | `--run-id` | — | Get logs from a CI workflow run |
+| `checks status` | _exactly one of_ `--pr-number` _or_ `--head` | — | Check CI status for a PR. Use `--head {branch}` from the main checkout against a worktree branch |
+| `checks wait` | `--pr-number` | — | Poll CI until completion. Use Bash timeout ≥ 1800000 ms (30 min safety net) |
+| `checks rerun` | `--run-id` | — | Rerun a failed CI workflow run |
+| `checks logs` | `--run-id` | — | Get logs from a CI workflow run |
 
 ---
 
@@ -115,7 +115,7 @@ These specific mistakes have been observed when transferring `gh`/`glab` flag na
 | Wrong | Right | Why |
 |-------|-------|-----|
 | `ci pr-comments --branch X` | `ci pr comments --pr-number 123` | `pr-comments` is not a subcommand; `comments` lives under `pr`, and PR scoping is via `--pr-number` |
-| `ci ci status --branch X` | `ci ci status --head X` _or_ `ci ci status --pr-number 123` | The branch flag is `--head`, **not** `--branch` |
+| `ci checks status --branch X` | `ci checks status --head X` _or_ `ci checks status --pr-number 123` | The branch flag is `--head`, **not** `--branch` |
 | `ci pr merge --merge-method squash` | `ci pr merge --pr-number 123 --strategy squash` | Flag is `--strategy`, not `--merge-method` |
 
 When in doubt, load the relevant group standards file (`pr-operations.md`, `pr-review-operations.md`, `ci-operations.md`, `issue-operations.md`) for full examples and result schemas.

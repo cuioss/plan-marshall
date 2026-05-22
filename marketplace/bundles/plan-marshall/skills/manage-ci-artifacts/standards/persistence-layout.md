@@ -51,7 +51,7 @@ retrospective sweeping every `artifacts/ci-runs/*/manifest.toon` can
 correlate every CI run to the exact HEAD it ran against.
 
 The `wait_outcome` and `final_status` fields are forwarded verbatim
-from the `ci wait` envelope; they enable retrospectives to walk the
+from the `checks wait` envelope; they enable retrospectives to walk the
 deliverable-5 / deliverable-6 producer-string classification without
 re-fetching CI.
 
@@ -71,7 +71,7 @@ The `persist` subcommand is idempotent for the `(plan_id, run_id)`
 pair:
 
 1. First invocation: fetches every job's log via the
-   `tools-integration-ci ci fetch-logs` abstraction, writes one
+   `tools-integration-ci:ci checks logs` abstraction, writes one
    `.log` file per job, and emits `manifest.toon`. Returns
    `already_persisted: false` plus the per-job log paths.
 2. Second invocation for the same `(plan_id, run_id)`: a no-op that

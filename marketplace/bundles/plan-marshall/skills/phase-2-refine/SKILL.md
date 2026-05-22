@@ -93,7 +93,7 @@ The refine phase executes Steps 1-14 (with optional Steps 3b and 3c). Steps 8-12
 
 ### Step 1: Check for Unresolved Q-Gate Findings
 
-On re-entry, address pending Q-Gate findings before re-running analysis. Query with `manage-findings qgate query --phase 2-refine --resolution pending`, resolve each finding, then continue with Steps 4-14.
+On re-entry, address pending Q-Gate findings before re-running analysis. Query with `manage-findings qgate list --phase 2-refine --resolution pending`, resolve each finding, then continue with Steps 4-14.
 
 ### Step 2: Log Phase Start
 

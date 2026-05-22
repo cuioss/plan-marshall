@@ -341,7 +341,7 @@ Verify that every `python3 .plan/execute-script.py {notation} {subcommand} [args
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} --phase 3-outline \
-  --source qgate-argparse --type triage \
+  --source qgate --type triage \
   --title "Q-Gate: argparse_validator — undeclared {kind} '{token}' on {notation}" \
   --detail "solution_outline.md cites '{notation} {subcommand} {flag}' but live --help does not declare '{token}'. Either correct the cited shape, regenerate the executor (.plan/execute-script.py) if the notation was recently added, or fall back to a different verification command." \
   --audit-plan-id {plan_id}
@@ -349,7 +349,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 `{kind}` is one of `subcommand`, `flag`. `{token}` is the offending text.
 
-**Positive example**: Outline cites `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate filter --status pending`. Live help shows the subcommand list `{add,query,resolve,...}` — no `filter`. Validator emits one finding for the undeclared subcommand.
+**Positive example**: Outline cites `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate filter --status pending`. Live help shows the subcommand list `{add,list,resolve,...}` — no `filter`. Validator emits one finding for the undeclared subcommand.
 
 **Negative example**: Outline cites `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id X`. Live help shows `list` is a registered subcommand and `--plan-id` is a registered flag. Silent pass — no finding.
 
@@ -377,7 +377,7 @@ Verify that every `module_testing` profile task's declared test file lives in th
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} --phase 4-plan \
-  --source qgate-module-mapping --type triage \
+  --source qgate --type triage \
   --title "Q-Gate: module_mapping_validator — test/impl module mismatch for deliverable {N}" \
   --detail "module_testing task declares {test_file} (module: {test_module}) but sibling implementation task declares {impl_file} (module: {impl_module}). Test will pass without exercising the changed code path. Either re-target the test to the correct module's test directory, or document the mapping if the cross-module routing is intentional." \
   --audit-plan-id {plan_id}
@@ -413,7 +413,7 @@ Verify that every deliverable's `success_criterion` is operationalized by a stru
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} --phase {phase} \
-  --source qgate-scope-criterion --type triage \
+  --source qgate --type triage \
   --title "Q-Gate: scope_criterion_validator — {direction} for deliverable {N}" \
   --detail "Success criterion '{criterion_text}' operationalized as {query_type} returns {N_results} files. Affected files lists {N_affected}. {direction_detail}: {missing_or_extra_files}. Either expand affected_files to cover the query result, narrow the success criterion to the bundle/module actually in scope, or document the deliberate exclusion." \
   --audit-plan-id {plan_id}
@@ -448,7 +448,7 @@ Verify that any tiered or variant-based specification in `solution_outline.md` (
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} --phase 3-outline \
-  --source qgate-tier-delta --type triage \
+  --source qgate --type triage \
   --title "Q-Gate: tier_delta_validator — missing/incomplete delta table for tiered spec '{tier_label}'" \
   --detail "solution_outline.md introduces tiered specs ({tier_a} vs {tier_b}) but {missing_or_incomplete}. Cross-tier rationale drift survives outline → plan → execute → tests and is only caught by reviewers reading both sections side-by-side. Add a delta table listing every field that differs across tiers along with the rationale for each delta." \
   --audit-plan-id {plan_id}
@@ -485,7 +485,7 @@ Verify, for lesson-derived plans, that every concrete code claim in the source l
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} --phase 2-refine \
-  --source qgate-narrative-vs-code --type triage \
+  --source qgate --type triage \
   --title "Q-Gate: narrative_vs_code_validator — {classification} claim in lesson {lesson_id}" \
   --detail "Lesson narrative claims '{claim_text}' but current code shows '{actual_state}' at {file_path}:{line}. {classification_detail}. Discrepancies are scope-expansion signals, not blockers — surface both readings to the user and ask which represents the desired end state before treating the narrative as authoritative." \
   --audit-plan-id {plan_id}
@@ -550,7 +550,7 @@ For each unsuppressed match across patterns WL-A, WL-B, and WL-C:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} --phase {phase} \
-  --source qgate-worktree-linter --type triage \
+  --source qgate --type triage \
   --title "Q-Gate: worktree_linter — {pattern_letter} violation in {affected_path}" \
   --detail "{affected_path}:{line} contains a stale worktree-handling pattern that violates the centralized standard at marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md. {pattern_explanation}. Either rewrite the cited line per the centralized standard, or — if the pattern is genuinely required (e.g., a quoted anti-pattern in another standard) — wrap it in an explicit 'Anti-pattern' / 'Forbidden' / 'Do NOT' marker on the same line so the linter suppresses it." \
   --file-path "{affected_path}" \
@@ -605,7 +605,7 @@ For each triggered deliverable that lacks a complete Phasing Rationale block:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} --phase 3-outline \
-  --source qgate-self-modifying-rollout --type triage \
+  --source qgate --type triage \
   --title "Q-Gate: self-modifying-rollout — deliverable {N} ({title}) lacks phasing rationale" \
   --detail "Deliverable {N} matches the self-modifying path heuristic ({matched_paths}) AND the plan declares compatibility: breaking AND the deliverable describes a hard cutover ({cutover_phrase}). Without a documented phasing rationale, this combination historically descopes silently mid-execution (lesson 2026-05-08-09-004 / PR #346 reference). Add a **Phasing Rationale:** block to the deliverable addressing all three points from self-modifying-classification.md (cache-sync ordering, verification-gate target, narrative consistency), OR split the deletion portion into a follow-up plan per the PLAN A / PLAN B pattern, OR switch the plan-level compatibility from breaking to deprecation." \
   --audit-plan-id {plan_id}
@@ -660,14 +660,14 @@ For each triggered deliverable that fails the contract:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} --phase 3-outline \
-  --source qgate-architecture-mismatch --type triage \
-  --severity blocking \
+  --source qgate --type triage \
+  --severity error \
   --title "Q-Gate: architecture-mismatch — deliverable {N} ({title}) {missing|mismatched|generic} Design notes" \
   --detail "Deliverable {N} touches existing skill `{bundle}:{skill}` whose documented design model is {target_model}. {Specific defect — one of: 'Design notes block is absent', 'Design notes declares {declared_model} but target is {target_model}', 'Design notes rationale is generic — no specific extension point named', 'Design notes declares Diverges from but omits the documented-going-forward half'.} Follow the procedure in phase-3-outline/standards/outline-workflow-detail.md § Step 9c — read the target skill's SKILL.md / standards/design-intent.md, classify the design model, and record a Design notes block that either extends the existing model with a specific rationale OR documents the divergence with the matching skill-design-intent update task." \
   --audit-plan-id {plan_id}
 ```
 
-`{target_model}` is the classification computed in step 2. `{declared_model}` is the value parsed from the deliverable's `**Design notes:**` block (empty when the block is missing). `severity: blocking` so phase-3-outline auto-loops to address the finding before phase transition.
+`{target_model}` is the classification computed in step 2. `{declared_model}` is the value parsed from the deliverable's `**Design notes:**` block (empty when the block is missing). `severity: error` so phase-3-outline auto-loops to address the finding before phase transition.
 
 **Pass criteria** (silent — no finding emitted):
 - The deliverable does not touch an existing skill (no path under `marketplace/bundles/{bundle}/skills/{skill}/**` with a real directory at validation time), OR
@@ -767,7 +767,7 @@ Query the pending findings count for the return output:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  qgate query --plan-id {plan_id} --phase 3-outline --resolution pending
+  qgate list --plan-id {plan_id} --phase 3-outline --resolution pending
 ```
 
 Extract `filtered_count` from the output — this becomes `qgate_pending_count` in the return value.

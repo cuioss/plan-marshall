@@ -272,18 +272,18 @@ class TestPositiveCanonicalInvocations:
         """
         all_third_segments = {desc.notation.split(':')[-1] for desc in IN_SCOPE_SCRIPTS}
         expected = {
-            'manage_status',
+            'manage-status',
             'manage-tasks',
             'manage-logging',
             'manage-references',
             'manage-config',
-            'git_workflow',
+            'git-workflow',
             'github_ops',
             'architecture',
             'manage-execution-manifest',
             'manage-files',
             'manage-lessons',
-            'manage_metrics',
+            'manage-metrics',
             'manage-plan-documents',
             'manage-solution-outline',
         }

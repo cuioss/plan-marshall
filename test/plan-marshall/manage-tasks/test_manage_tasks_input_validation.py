@@ -50,16 +50,16 @@ def test_read_rejects_invalid_task_number(axis, bad_value):
 
 
 # =============================================================================
-# --domain (tasks-by-domain, update --domain)
+# --domain (list --domain, update --domain)
 # =============================================================================
 
 
 @pytest.mark.parametrize('axis,bad_value', MALFORMED_AXES['domain'])
-def test_tasks_by_domain_rejects_invalid_domain(axis, bad_value):
-    """``manage-tasks tasks-by-domain --plan-id <ok> --domain <bad>`` → invalid_domain TOON."""
+def test_list_by_domain_rejects_invalid_domain(axis, bad_value):
+    """``manage-tasks list --plan-id <ok> --domain <bad>`` → invalid_domain TOON."""
     result = run_script(
         SCRIPT_PATH,
-        'tasks-by-domain',
+        'list',
         '--plan-id',
         HAPPY_VALUES['plan_id'],
         '--domain',

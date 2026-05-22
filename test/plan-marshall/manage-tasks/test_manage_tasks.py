@@ -74,11 +74,7 @@ def cmd_add(ns):
 cmd_read, cmd_list, cmd_next = _query.cmd_read, _query.cmd_list, _query.cmd_next
 cmd_exists = _query.cmd_exists
 cmd_loop_exit_guard = _query.cmd_loop_exit_guard
-cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile = (
-    _query.cmd_next_tasks,
-    _query.cmd_tasks_by_domain,
-    _query.cmd_tasks_by_profile,
-)
+cmd_next_tasks = _query.cmd_next_tasks
 cmd_add_step, cmd_finalize_step, cmd_remove_step = _step.cmd_add_step, _step.cmd_finalize_step, _step.cmd_remove_step
 
 
@@ -192,9 +188,11 @@ def _exists_ns(plan_id='test-plan', number=1):
     return Namespace(plan_id=plan_id, task_number=number)
 
 
-def _list_ns(plan_id='test-plan', status='all', deliverable=None, ready=False):
+def _list_ns(plan_id='test-plan', status='all', deliverable=None, ready=False, domain=None, profile=None):
     """Build Namespace for cmd_list."""
-    return Namespace(plan_id=plan_id, status=status, deliverable=deliverable, ready=ready)
+    return Namespace(
+        plan_id=plan_id, status=status, deliverable=deliverable, ready=ready, domain=domain, profile=profile
+    )
 
 
 def _next_ns(plan_id='test-plan', include_context=False, ignore_deps=False):
@@ -247,16 +245,6 @@ def _add_step_ns(plan_id='test-plan', task=1, target='New Step', after=None):
 def _remove_step_ns(plan_id='test-plan', task=1, step=1):
     """Build Namespace for cmd_remove_step."""
     return Namespace(plan_id=plan_id, task_number=task, step=step)
-
-
-def _tasks_by_domain_ns(plan_id='test-plan', domain='java'):
-    """Build Namespace for cmd_tasks_by_domain."""
-    return Namespace(plan_id=plan_id, domain=domain)
-
-
-def _tasks_by_profile_ns(plan_id='test-plan', profile='implementation'):
-    """Build Namespace for cmd_tasks_by_profile."""
-    return Namespace(plan_id=plan_id, profile=profile)
 
 
 def _next_tasks_ns(plan_id='test-plan'):

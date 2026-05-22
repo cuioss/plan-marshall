@@ -89,9 +89,9 @@ RULE_MISSING_CANONICAL_BLOCK = 'missing-canonical-block'
 # family requires a deliberate edit so the cluster does not silently expand
 # its scope on every bundle restructure.
 #
-# Notation triples are kebab-case as the executor registry keys them;
-# script filenames may be either kebab- or snake-cased (manage-findings.py
-# vs manage_status.py) — that asymmetry is preserved verbatim.
+# Notation triples are kebab-case as the executor registry keys them, and
+# every entry-point script filename is kebab-case to match the third
+# notation segment one-to-one.
 
 @dataclass(frozen=True)
 class _ScriptDescriptor:
@@ -104,8 +104,8 @@ class _ScriptDescriptor:
 
 IN_SCOPE_SCRIPTS: tuple[_ScriptDescriptor, ...] = (
     _ScriptDescriptor(
-        notation='plan-marshall:manage-status:manage_status',
-        script_relpath='bundles/plan-marshall/skills/manage-status/scripts/manage_status.py',
+        notation='plan-marshall:manage-status:manage-status',
+        script_relpath='bundles/plan-marshall/skills/manage-status/scripts/manage-status.py',
         skill_dir_relpath='bundles/plan-marshall/skills/manage-status',
     ),
     _ScriptDescriptor(
@@ -129,8 +129,8 @@ IN_SCOPE_SCRIPTS: tuple[_ScriptDescriptor, ...] = (
         skill_dir_relpath='bundles/plan-marshall/skills/manage-config',
     ),
     _ScriptDescriptor(
-        notation='plan-marshall:workflow-integration-git:git_workflow',
-        script_relpath='bundles/plan-marshall/skills/workflow-integration-git/scripts/git_workflow.py',
+        notation='plan-marshall:workflow-integration-git:git-workflow',
+        script_relpath='bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py',
         skill_dir_relpath='bundles/plan-marshall/skills/workflow-integration-git',
     ),
     _ScriptDescriptor(
@@ -162,8 +162,8 @@ IN_SCOPE_SCRIPTS: tuple[_ScriptDescriptor, ...] = (
         skill_dir_relpath='bundles/plan-marshall/skills/manage-lessons',
     ),
     _ScriptDescriptor(
-        notation='plan-marshall:manage-metrics:manage_metrics',
-        script_relpath='bundles/plan-marshall/skills/manage-metrics/scripts/manage_metrics.py',
+        notation='plan-marshall:manage-metrics:manage-metrics',
+        script_relpath='bundles/plan-marshall/skills/manage-metrics/scripts/manage-metrics.py',
         skill_dir_relpath='bundles/plan-marshall/skills/manage-metrics',
     ),
     _ScriptDescriptor(

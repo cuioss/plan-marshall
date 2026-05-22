@@ -9,12 +9,22 @@ Covers:
   - boundary works even when the previous phase had no start_time
 """
 
+import importlib.util
 import json
 from argparse import Namespace
 
-from manage_metrics import cmd_phase_boundary, cmd_start_phase  # type: ignore[import-not-found]
+from conftest import PlanContext, get_script_path
 
-from conftest import PlanContext
+# The entrypoint filename is kebab-case (manage-metrics.py), which is not a
+# valid Python module identifier — load it via importlib instead of `import`.
+_spec = importlib.util.spec_from_file_location(
+    'manage_metrics', get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
+)
+assert _spec is not None and _spec.loader is not None
+manage_metrics = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(manage_metrics)
+cmd_phase_boundary = manage_metrics.cmd_phase_boundary
+cmd_start_phase = manage_metrics.cmd_start_phase
 
 
 def _ns_start_phase(plan_id, phase):

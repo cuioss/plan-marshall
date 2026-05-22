@@ -158,7 +158,7 @@ def cmd_comments_stage(args):
     ``pr-comment`` finding via ``add_finding``. ``count_fetched`` vs
     ``count_stored`` mismatches are recorded as a ``qgate`` finding with title
     prefix ``(producer-mismatch)`` so the LLM sees them in
-    ``manage-findings qgate query``.
+    ``manage-findings qgate list``.
     """
     from _findings_core import (  # type: ignore[import-not-found]
         add_finding,

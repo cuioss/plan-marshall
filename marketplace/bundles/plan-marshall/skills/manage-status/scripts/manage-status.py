@@ -8,20 +8,20 @@ Storage: JSON format (.plan/plans/{plan_id}/status.json)
 Output: TOON format for API responses
 
 Usage:
-    python3 manage_status.py create --plan-id EXAMPLE-PLAN --title "Title" --phases 1-init,2-refine,3-outline
-    python3 manage_status.py read --plan-id EXAMPLE-PLAN
-    python3 manage_status.py set-phase --plan-id EXAMPLE-PLAN --phase 2-refine
-    python3 manage_status.py update-phase --plan-id EXAMPLE-PLAN --phase 1-init --status done
-    python3 manage_status.py progress --plan-id EXAMPLE-PLAN
-    python3 manage_status.py metadata --plan-id EXAMPLE-PLAN --set --field change_type --value feature
-    python3 manage_status.py metadata --plan-id EXAMPLE-PLAN --get --field change_type
-    python3 manage_status.py get-context --plan-id EXAMPLE-PLAN
-    python3 manage_status.py list
-    python3 manage_status.py transition --plan-id EXAMPLE-PLAN --completed 1-init
-    python3 manage_status.py archive --plan-id EXAMPLE-PLAN
-    python3 manage_status.py route --phase 1-init
-    python3 manage_status.py get-routing-context --plan-id EXAMPLE-PLAN
-    python3 manage_status.py mark-step-done --plan-id EXAMPLE-PLAN --phase 5-execute --step discovery --outcome done
+    python3 manage-status.py create --plan-id EXAMPLE-PLAN --title "Title" --phases 1-init,2-refine,3-outline
+    python3 manage-status.py read --plan-id EXAMPLE-PLAN
+    python3 manage-status.py set-phase --plan-id EXAMPLE-PLAN --phase 2-refine
+    python3 manage-status.py update-phase --plan-id EXAMPLE-PLAN --phase 1-init --status done
+    python3 manage-status.py progress --plan-id EXAMPLE-PLAN
+    python3 manage-status.py metadata --plan-id EXAMPLE-PLAN --set --field change_type --value feature
+    python3 manage-status.py metadata --plan-id EXAMPLE-PLAN --get --field change_type
+    python3 manage-status.py get-context --plan-id EXAMPLE-PLAN
+    python3 manage-status.py list
+    python3 manage-status.py transition --plan-id EXAMPLE-PLAN --completed 1-init
+    python3 manage-status.py archive --plan-id EXAMPLE-PLAN
+    python3 manage-status.py route --phase 1-init
+    python3 manage-status.py get-routing-context --plan-id EXAMPLE-PLAN
+    python3 manage-status.py mark-step-done --plan-id EXAMPLE-PLAN --phase 5-execute --step discovery --outcome done
 """
 
 import argparse

@@ -660,7 +660,7 @@ def test_checklist_sections_extracted():
 def _canonical_mark_step_done_block(extra_args: str = '') -> str:
     """Build a canonical (correct) mark-step-done bash fence.
 
-    Uses the underscored notation ``manage-status:manage_status`` and always
+    Uses the kebab-case notation ``manage-status:manage-status`` and always
     supplies ``--phase`` and ``--outcome``. Callers can inject additional args
     via ``extra_args`` (appended after the required ones) for variants that
     should still be considered canonical.
@@ -671,7 +671,7 @@ def _canonical_mark_step_done_block(extra_args: str = '') -> str:
         '# Test Skill\n\n'
         '## Step: Mark Done\n\n'
         '```bash\n'
-        'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status '
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
         'mark-step-done --plan-id foo --phase 6-finalize --outcome done '
         '--step my-step --display-detail "ok"' + (f' {extra_args}' if extra_args else '') + '\n'
         '```\n'
@@ -684,14 +684,14 @@ def _mark_step_done_codes(violations: list) -> list:
     return [v.get('code') for v in violations]
 
 
-def test_mark_step_done_bad_notation_detected():
-    """Hyphenated `manage-status:manage-status` notation triggers BAD_NOTATION."""
+def test_mark_step_done_stale_notation_detected():
+    """Stale underscored `manage-status:manage_status` notation triggers STALE_NOTATION."""
     content = (
         '---\nname: test-skill\ndescription: Test\n---\n\n'
         '# Test Skill\n\n'
         '## Step: Mark Done\n\n'
         '```bash\n'
-        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status '
         'mark-step-done --plan-id foo --phase 6-finalize --outcome done '
         '--step s --display-detail "x"\n'
         '```\n'
@@ -702,8 +702,8 @@ def test_mark_step_done_bad_notation_detected():
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('mark_step_done_violations', [])
         codes = _mark_step_done_codes(violations)
-        assert codes.count('MARK_STEP_DONE_BAD_NOTATION') == 1, (
-            f'Expected exactly one BAD_NOTATION finding, got codes={codes}'
+        assert codes.count('MARK_STEP_DONE_STALE_NOTATION') == 1, (
+            f'Expected exactly one STALE_NOTATION finding, got codes={codes}'
         )
     finally:
         temp_file.unlink()
@@ -716,7 +716,7 @@ def test_mark_step_done_missing_phase_detected():
         '# Test Skill\n\n'
         '## Step: Mark Done\n\n'
         '```bash\n'
-        'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status '
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
         'mark-step-done --plan-id foo --outcome done '
         '--step s --display-detail "x"\n'
         '```\n'
@@ -731,7 +731,7 @@ def test_mark_step_done_missing_phase_detected():
             f'Expected exactly one MISSING_PHASE finding, got codes={codes}'
         )
         # Canonical notation + outcome present → no other defect codes expected.
-        assert 'MARK_STEP_DONE_BAD_NOTATION' not in codes
+        assert 'MARK_STEP_DONE_STALE_NOTATION' not in codes
         assert 'MARK_STEP_DONE_MISSING_OUTCOME' not in codes
     finally:
         temp_file.unlink()
@@ -744,7 +744,7 @@ def test_mark_step_done_missing_outcome_detected():
         '# Test Skill\n\n'
         '## Step: Mark Done\n\n'
         '```bash\n'
-        'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status '
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
         'mark-step-done --plan-id foo --phase 6-finalize '
         '--step s --display-detail "x"\n'
         '```\n'
@@ -758,7 +758,7 @@ def test_mark_step_done_missing_outcome_detected():
         assert codes.count('MARK_STEP_DONE_MISSING_OUTCOME') == 1, (
             f'Expected exactly one MISSING_OUTCOME finding, got codes={codes}'
         )
-        assert 'MARK_STEP_DONE_BAD_NOTATION' not in codes
+        assert 'MARK_STEP_DONE_STALE_NOTATION' not in codes
         assert 'MARK_STEP_DONE_MISSING_PHASE' not in codes
     finally:
         temp_file.unlink()
@@ -816,7 +816,7 @@ def test_mark_step_done_multiline_continuation_assembled():
         '# Test Skill\n\n'
         '## Step: Mark Done\n\n'
         '```bash\n'
-        'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \\\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \\\n'
         '  mark-step-done --plan-id foo \\\n'
         '  --phase 6-finalize \\\n'
         '  --outcome done --step s --display-detail "x"\n'
@@ -834,14 +834,14 @@ def test_mark_step_done_multiline_continuation_assembled():
         temp_file.unlink()
 
 
-def test_mark_step_done_multiline_continuation_detects_bad_notation():
-    """Bad notation on a continuation line after `mark-step-done` is still caught after assembly.
+def test_mark_step_done_multiline_continuation_detects_stale_notation():
+    """Stale notation on a continuation line after `mark-step-done` is still caught after assembly.
 
     The rule anchors on the line that contains ``mark-step-done`` and walks
     forward over trailing-backslash continuations to assemble the full
     invocation. This test pins that forward-assembly behaviour: the offending
-    hyphenated notation appears on a continuation line below the anchor line,
-    yet the rule must still flag BAD_NOTATION on the anchor line.
+    stale underscored notation appears on a continuation line below the anchor
+    line, yet the rule must still flag STALE_NOTATION on the anchor line.
     """
     content = (
         '---\nname: test-skill\ndescription: Test\n---\n\n'
@@ -849,7 +849,7 @@ def test_mark_step_done_multiline_continuation_detects_bad_notation():
         '## Step: Mark Done\n\n'
         '```bash\n'
         'python3 .plan/execute-script.py mark-step-done \\\n'
-        '  --notation plan-marshall:manage-status:manage-status \\\n'
+        '  --notation plan-marshall:manage-status:manage_status \\\n'
         '  --plan-id foo --phase 6-finalize --outcome done \\\n'
         '  --step s --display-detail "x"\n'
         '```\n'
@@ -860,8 +860,8 @@ def test_mark_step_done_multiline_continuation_detects_bad_notation():
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('mark_step_done_violations', [])
         codes = _mark_step_done_codes(violations)
-        assert codes.count('MARK_STEP_DONE_BAD_NOTATION') == 1, (
-            f'Expected exactly one BAD_NOTATION finding across continuation lines, got codes={codes}'
+        assert codes.count('MARK_STEP_DONE_STALE_NOTATION') == 1, (
+            f'Expected exactly one STALE_NOTATION finding across continuation lines, got codes={codes}'
         )
         # --phase and --outcome are present on the continuation → no MISSING_* codes.
         assert 'MARK_STEP_DONE_MISSING_PHASE' not in codes
@@ -870,25 +870,25 @@ def test_mark_step_done_multiline_continuation_detects_bad_notation():
         temp_file.unlink()
 
 
-def test_mark_step_done_bad_notation_on_line_before_anchor():
-    """Bad notation on a continuation line ABOVE `mark-step-done` is still caught.
+def test_mark_step_done_stale_notation_on_line_before_anchor():
+    """Stale notation on a continuation line ABOVE `mark-step-done` is still caught.
 
     A real-world pattern is:
 
-        python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \\
+        python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \\
           mark-step-done --plan-id foo --phase 6-finalize --outcome done
 
-    Here the offending hyphenated notation lives on the line that ends with a
-    trailing backslash, and ``mark-step-done`` is on the continuation line
-    below. The rule must assemble the full logical command (regardless of
-    which line anchors ``mark-step-done``) and still flag BAD_NOTATION.
+    Here the offending stale underscored notation lives on the line that ends
+    with a trailing backslash, and ``mark-step-done`` is on the continuation
+    line below. The rule must assemble the full logical command (regardless of
+    which line anchors ``mark-step-done``) and still flag STALE_NOTATION.
     """
     content = (
         '---\nname: test-skill\ndescription: Test\n---\n\n'
         '# Test Skill\n\n'
         '## Step: Mark Done\n\n'
         '```bash\n'
-        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \\\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \\\n'
         '  mark-step-done --plan-id foo --phase 6-finalize --outcome done \\\n'
         '  --step s --display-detail "x"\n'
         '```\n'
@@ -899,8 +899,8 @@ def test_mark_step_done_bad_notation_on_line_before_anchor():
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('mark_step_done_violations', [])
         codes = _mark_step_done_codes(violations)
-        assert codes.count('MARK_STEP_DONE_BAD_NOTATION') == 1, (
-            f'Expected BAD_NOTATION across a backward-referenced continuation, got codes={codes}'
+        assert codes.count('MARK_STEP_DONE_STALE_NOTATION') == 1, (
+            f'Expected STALE_NOTATION across a backward-referenced continuation, got codes={codes}'
         )
         assert 'MARK_STEP_DONE_MISSING_PHASE' not in codes
         assert 'MARK_STEP_DONE_MISSING_OUTCOME' not in codes
@@ -921,7 +921,7 @@ def test_mark_step_done_phase_prefix_does_not_spoof_missing_phase():
         '# Test Skill\n\n'
         '## Step: Mark Done\n\n'
         '```bash\n'
-        'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status '
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
         'mark-step-done --plan-id foo --phase-override "hack" --outcome done '
         '--step s --display-detail "x"\n'
         '```\n'
@@ -935,7 +935,7 @@ def test_mark_step_done_phase_prefix_does_not_spoof_missing_phase():
         assert codes.count('MARK_STEP_DONE_MISSING_PHASE') == 1, (
             f'Expected MISSING_PHASE even though --phase-override is present, got codes={codes}'
         )
-        assert 'MARK_STEP_DONE_BAD_NOTATION' not in codes
+        assert 'MARK_STEP_DONE_STALE_NOTATION' not in codes
         assert 'MARK_STEP_DONE_MISSING_OUTCOME' not in codes
     finally:
         temp_file.unlink()
@@ -959,7 +959,7 @@ def _display_detail_block(detail_value: str) -> str:
         '# Test Skill\n\n'
         '## Step: Mark Done\n\n'
         '```bash\n'
-        'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status '
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
         'mark-step-done --plan-id foo --phase 6-finalize --outcome done '
         f'--step my-step --display-detail "{detail_value}"\n'
         '```\n'
@@ -1021,7 +1021,7 @@ def test_display_detail_multiline_quoted_value_triggers_multiline():
         '# Test Skill\n\n'
         '## Step: Mark Done\n\n'
         '```bash\n'
-        'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status '
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
         'mark-step-done --plan-id foo --phase 6-finalize --outcome done '
         '--step my-step --display-detail "first line\n'
         'second line"\n'
@@ -1099,7 +1099,7 @@ def test_display_detail_non_bash_fence_no_false_positive():
         '# Test Skill\n\n'
         '## Background\n\n'
         '```text\n'
-        'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status '
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
         'mark-step-done --plan-id foo --phase 6-finalize --outcome done '
         '--step s --display-detail "no PR — nothing to clean up"\n'
         '```\n'
@@ -1132,7 +1132,7 @@ def test_display_detail_subdoc_em_dash_surfaces_in_subdoc_analysis():
         bad_doc.write_text(
             '# Branch Cleanup\n\n'
             '```bash\n'
-            'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status '
+            'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
             'mark-step-done --plan-id foo --phase 6-finalize --outcome done '
             '--step s --display-detail "no PR — nothing to clean up"\n'
             '```\n',

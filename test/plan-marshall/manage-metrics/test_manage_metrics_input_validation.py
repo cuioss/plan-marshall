@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""6-axis identifier-validation rejection-path tests for ``manage_metrics.py``.
+"""6-axis identifier-validation rejection-path tests for ``manage-metrics.py``.
 
 In-scope flags from TASK-1: ``--plan-id``, ``--phase``, ``--session-id``.
 """
@@ -15,7 +15,7 @@ from _input_validation_fixtures import (  # type: ignore[import-not-found]
 
 from conftest import get_script_path, run_script  # type: ignore[import-not-found]
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage_metrics.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
 
 
 # =============================================================================

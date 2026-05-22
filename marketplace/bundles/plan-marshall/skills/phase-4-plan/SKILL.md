@@ -178,7 +178,7 @@ message: {error message if status=error}
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  qgate query --plan-id {plan_id} --phase 4-plan --resolution pending
+  qgate list --plan-id {plan_id} --phase 4-plan --resolution pending
 ```
 
 ### Address Each Finding

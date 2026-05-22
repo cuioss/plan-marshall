@@ -95,11 +95,11 @@ Defined in `_invariants.py` as `(name, applies_fn, capture_fn)` tuples.
 | `worktree_dirty` | same as above | `git status --porcelain` line count inside worktree | uncommitted drift inside worktree |
 | `references_valid` | always | SHA256 of `{present, top_level_is_dict, required_field_set}` from `manage-references read` | references.json deleted, corrupted to non-dict, or missing a required key (`branch`, `base_branch`, `modified_files`) |
 | `task_state_hash` | always | SHA256 of sorted `(number, status, step_outcomes, depends_on)` from `manage-tasks list` | tasks silently mutated |
-| `qgate_open_count` | always | `filtered_count` from `manage-findings qgate query --resolution pending --phase P` | Q-Gate bypass |
+| `qgate_open_count` | always | `filtered_count` from `manage-findings qgate list --resolution pending --phase P` | Q-Gate bypass |
 | `config_hash` | always | SHA256 of stable-key JSON of `manage-config plan phase-P get` output | config swapped mid-run |
 | `pending_tasks_count` | always | row count from `manage-tasks list --status pending` | premature transition with fix tasks still pending |
 | `phase_steps_complete` | always (no-op when phase has no declaration) | See [resolution rule](#phase_steps_complete-resolution) | silently skipped intra-phase steps |
-| `pending_findings_by_type` | always | per-type breakdown from `manage-findings query --type T --resolution pending` for every known type, serialized as `"build-error=N,test-failure=N,..."` | retrospective view of the queue at every boundary |
+| `pending_findings_by_type` | always | per-type breakdown from `manage-findings list --type T --resolution pending` for every known type, serialized as `"build-error=N,test-failure=N,..."` | retrospective view of the queue at every boundary |
 | `pending_findings_blocking_count` | always | sum of pending counts across the **per-phase** `blocking_finding_types` partition (see [resolution rule](#pending_findings_blocking_count-resolution)) | phase advance with blocking-type findings still pending |
 
 ### `phase_steps_complete` resolution
@@ -158,7 +158,7 @@ The blocking-finding invariant is a **per-phase** partition: each phase decides 
 **Resolution rule:**
 
 1. Read `plan.phase-{phase}.blocking_finding_types` via `manage-config plan phase-{phase} get --field blocking_finding_types`. If the slot is unset, no types are considered blocking and the column captures `0`.
-2. For each configured blocking type `T`, query the count of `pending` findings via `manage-findings query --plan-id X --type T --resolution pending` and sum the per-type `filtered_count` values.
+2. For each configured blocking type `T`, query the count of `pending` findings via `manage-findings list --plan-id X --type T --resolution pending` and sum the per-type `filtered_count` values.
 3. The resolutions counted as **resolved** (and therefore non-blocking) are: `fixed`, `suppressed`, `accepted`, `taken_into_account`. Only `pending` contributes to the count.
 4. The companion `pending_findings_by_type` row captures the count for **every** known type — independent of the phase's blocking partition — so retrospective analysis sees the full queue regardless of what each phase chose to gate on.
 

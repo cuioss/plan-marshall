@@ -120,7 +120,7 @@ This phase dispatches under one role key: **`phase-5-execute`** (resolves throug
 Get current phase, skill routing, and progress in a single call:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-routing-context \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-routing-context \
   --plan-id {plan_id}
 ```
 
@@ -241,7 +241,7 @@ Phase 5 is the materialization phase for the worktree. Earlier phases only persi
 **Idempotence guard (must run first)**: read `metadata.worktree_path` and short-circuit when it is already populated — Step 2.5 has already executed on a prior phase-5 entry, the directory exists on disk, and no re-creation is needed.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {plan_id}
 ```
 
@@ -295,7 +295,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 2. Write to `status.metadata.worktree_path` via the metadata setter:
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
      --plan-id {plan_id} --set worktree_path={worktree_path}
    ```
 
@@ -376,7 +376,7 @@ Inlined flow:
 6. **Invoke `baseline-reconcile` to obtain a deterministic overlap predicate**. The script runs `git merge-tree` against `HEAD` and `origin/{base_branch}` and returns `conflict_count` — the number of files where the three-way merge would conflict. This is the structural "overlap" signal: `conflict_count == 0` means the upstream commits and the worktree's in-flight changes touch disjoint sets of files, so absorbing the upstream tip into the baseline metadata is safe without any working-tree mutation. `--no-emit` suppresses Q-Gate finding emission — phase-5-execute self-absorption is the wrong place to surface refine-time findings:
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow \
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow \
      baseline-reconcile --plan-id {plan_id} --no-emit
    ```
 
@@ -397,7 +397,7 @@ Inlined flow:
    Capture as `{main_sha}`. Then write both keys:
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
      --plan-id {plan_id} --set worktree_sha={worktree_sha} --set main_sha={main_sha}
    ```
 
@@ -456,7 +456,7 @@ Parse the row count from the returned `tasks_table` and substitute it as `{N}`.
 **Differentiate first entry from re-entry**: Read the persisted phase status from `manage-status read` to determine whether this is the first time phase-5-execute is being entered or a re-dispatch of an already-in-progress phase. The 5-execute phase row's `status` is `pending` on the very first entry and `in_progress` on every subsequent re-dispatch (the `manage-status transition --completed 4-plan` call sets it to `in_progress`).
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {plan_id}
 ```
 
@@ -481,7 +481,7 @@ Both forms emit exactly one `[STATUS]` line; the wording difference makes it pos
 **Surface the active worktree absolute path** so it remains visible in model context for every subsequent Edit/Write/Read call. Read the worktree path from status metadata:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {plan_id}
 ```
 
@@ -536,7 +536,7 @@ Immediately after the script-emitted `[OUTCOME]` line, emit one `[ARTIFACT]` wor
 Persist the agent's `<usage>` totals to the on-disk per-phase accumulator so `manage-metrics phase-boundary` can read them at end-of-phase, regardless of whether the model context survives until the next orchestrator turn:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics accumulate-agent-usage \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics accumulate-agent-usage \
   --plan-id {plan_id} --phase 5-execute \
   --total-tokens {total_tokens} --tool-uses {tool_uses} --duration-ms {duration_ms}
 ```
@@ -886,7 +886,7 @@ When `per_task_budget_reserve` is set, use its value as `N`. **Fallback when the
 When transitioning from execute phase to finalize:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
   --plan-id {plan_id} \
   --completed 5-execute
 ```

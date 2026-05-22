@@ -52,7 +52,7 @@ All commands must be invoked via `python3 .plan/execute-script.py plan-marshall:
 ### Step 4 — Status Consistency Check
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {plan_id}
 ```
 
@@ -90,7 +90,7 @@ Plan data must use the manage-* API. Prohibited operations and their correct alt
 
 | Tool | Prohibited Pattern | Correct Alternative |
 |------|--------------------|---------------------|
-| Read | `.plan/plans/{id}/status.toon` | `manage-status:manage_status read --plan-id {id}` |
+| Read | `.plan/plans/{id}/status.toon` | `manage-status:manage-status read --plan-id {id}` |
 | Read | `.plan/plans/{id}/references.json` | `manage-references:manage-references read --plan-id {id}` |
 | Read | `.plan/plans/{id}/work.log` | `manage-logging:manage-logging read --plan-id {id} --type work` |
 | Read | `.plan/plans/{id}/solution_outline.md` | `manage-solution-outline:manage-solution-outline read --plan-id {id}` |
@@ -116,7 +116,7 @@ After any planning operation completes, query `manage-logging:manage-logging rea
 
 ### Rule 3 — Status Consistency Verification
 
-After phase transitions or progress updates, read status via `manage-status:manage_status read --plan-id {id}` and confirm `current_phase` matches the expected phase, every phase entry has the correct status, and the `updated` timestamp is recent. Verification triggers: phase transitions (`current_phase` updated, previous phase marked `done`), task completion (phase progress reflects completed tasks), error states (status shows `error`/`blocked`), and plan completion (all phases `done`).
+After phase transitions or progress updates, read status via `manage-status:manage-status read --plan-id {id}` and confirm `current_phase` matches the expected phase, every phase entry has the correct status, and the `updated` timestamp is recent. Verification triggers: phase transitions (`current_phase` updated, previous phase marked `done`), task completion (phase progress reflects completed tasks), error states (status shows `error`/`blocked`), and plan completion (all phases `done`).
 
 ### Rule 4 — Script Execution via Executor (Mandatory)
 
@@ -129,7 +129,7 @@ All marketplace script execution MUST use `python3 .plan/execute-script.py {bund
 | `manage-plan-documents` | `manage-plan-document` | `plan-marshall:manage-plan-documents:manage-plan-documents` |
 | `manage-tasks` | `manage-task` | `plan-marshall:manage-tasks:manage-tasks` |
 | `manage-lessons` | `manage-lesson` | `plan-marshall:manage-lessons:manage-lessons` |
-| `manage-status` | `manage_status` | `plan-marshall:manage-status:manage_status` |
+| `manage-status` | `manage-status` | `plan-marshall:manage-status:manage-status` |
 | `manage-references` | `manage-references` | `plan-marshall:manage-references:manage-references` |
 | `manage-files` | `manage-files` | `plan-marshall:manage-files:manage-files` |
 | `manage-logging` | `manage-log` | `plan-marshall:manage-logging:manage-logging` |
@@ -213,7 +213,7 @@ When `/plan-marshall` runs phases 5-7, verify after each task: task started → 
 
 ## Common Violations
 
-1. **Direct status read** — `Read .plan/plans/EXAMPLE-PLAN/status.toon`. Use `manage-status:manage_status read --plan-id EXAMPLE-PLAN`. Direct reads bypass the managed parser, may see partial data during atomic writes, and skip script validation.
+1. **Direct status read** — `Read .plan/plans/EXAMPLE-PLAN/status.toon`. Use `manage-status:manage-status read --plan-id EXAMPLE-PLAN`. Direct reads bypass the managed parser, may see partial data during atomic writes, and skip script validation.
 2. **Missing work-log entry** — an artifact is created but no work-log entry exists. Breaks the audit trail and blocks debugging/progress tracking.
 3. **Stale status after transition** — all tasks are done but `current_phase` is still the old phase. Phase routing will execute the wrong phase and the plan lifecycle breaks.
 4. **Direct file creation** — `Write .plan/plans/EXAMPLE-PLAN/tasks/TASK-003.toon`. Use `manage-tasks add` (singular script name `manage-task`, full notation `plan-marshall:manage-tasks:manage-tasks`) with the task definition passed via stdin heredoc to avoid shell metacharacter issues. Bypassing this skips numbering, validation, and work-log entries.
@@ -232,7 +232,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read
   --plan-id {plan_id} --type work --limit 20
 
 # Verify status is consistent
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {plan_id}
 
 # Verify no orphaned files

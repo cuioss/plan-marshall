@@ -25,9 +25,9 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-findings', 'manage-findin
 
 
 @pytest.mark.parametrize('axis,bad_value', MALFORMED_AXES['plan_id'])
-def test_query_rejects_invalid_plan_id(axis, bad_value):
-    """``manage-findings query --plan-id <bad>`` → invalid_plan_id TOON."""
-    result = run_script(SCRIPT_PATH, 'query', '--plan-id', bad_value)
+def test_list_rejects_invalid_plan_id(axis, bad_value):
+    """``manage-findings list --plan-id <bad>`` → invalid_plan_id TOON."""
+    result = run_script(SCRIPT_PATH, 'list', '--plan-id', bad_value)
     assert_invalid_field(result, 'invalid_plan_id')
 
 
@@ -105,12 +105,12 @@ def test_get_rejects_invalid_hash_id(axis, bad_value):
 
 
 # =============================================================================
-# --phase (qgate add/query/resolve/clear)
+# --phase (qgate add/list/resolve/clear)
 # =============================================================================
 
 
-def test_qgate_query_rejects_invalid_phase():
-    """``manage-findings qgate query --plan-id <ok> --phase <bad>`` → invalid_phase TOON.
+def test_qgate_list_rejects_invalid_phase():
+    """``manage-findings qgate list --plan-id <ok> --phase <bad>`` → invalid_phase TOON.
 
     ``add_phase_arg`` uses argparse ``choices=`` (not a type validator),
     so the canonical message format is "argument --phase: invalid choice".
@@ -118,7 +118,7 @@ def test_qgate_query_rejects_invalid_phase():
     result = run_script(
         SCRIPT_PATH,
         'qgate',
-        'query',
+        'list',
         '--plan-id',
         HAPPY_VALUES['plan_id'],
         '--phase',
@@ -127,8 +127,8 @@ def test_qgate_query_rejects_invalid_phase():
     assert_invalid_field(result, 'invalid_phase')
 
 
-def test_query_accepts_canonical_plan_id():
-    result = run_script(SCRIPT_PATH, 'query', '--plan-id', HAPPY_VALUES['plan_id'])
+def test_list_accepts_canonical_plan_id():
+    result = run_script(SCRIPT_PATH, 'list', '--plan-id', HAPPY_VALUES['plan_id'])
     assert result.returncode == 0
     if result.stdout.strip():
         from toon_parser import parse_toon  # type: ignore[import-not-found]

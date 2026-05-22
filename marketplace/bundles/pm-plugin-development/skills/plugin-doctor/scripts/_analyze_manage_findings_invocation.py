@@ -11,12 +11,12 @@ tree:
    kebab-case (``manage-findings``). The executor uses the third segment as
    a literal dict key, so the underscored form does not resolve.
 2. **Invalid top-level subcommand.** The only registered top-level
-   subcommands are ``add, query, get, resolve, promote, qgate, assessment``.
+   subcommands are ``add, list, get, resolve, promote, qgate, assessment``.
    Any other token in the subcommand position is invalid; the historically
    recurring invented form is ``list-qgate``.
 3. **Invalid ``qgate`` sub-verb.** The only registered ``qgate`` sub-verbs
-   are ``add, query, resolve, clear``. The historically recurring invented
-   form is ``qgate list`` (no ``list`` sub-verb is registered).
+   are ``add, list, resolve, clear``. The historically recurring invented
+   form is ``qgate query`` (the legacy verb — the canonical verb is ``list``).
 
 Pattern alignment
 -----------------
@@ -60,10 +60,10 @@ RULE_ID = 'manage-findings-invocation-invalid'
 # Source of truth: marketplace/bundles/plan-marshall/skills/manage-findings/
 #                  scripts/manage-findings.py (top-level + qgate sub-parsers).
 VALID_TOP_LEVEL_SUBCOMMANDS: frozenset[str] = frozenset(
-    {'add', 'query', 'get', 'resolve', 'promote', 'qgate', 'assessment'}
+    {'add', 'list', 'get', 'resolve', 'promote', 'qgate', 'assessment'}
 )
-VALID_QGATE_SUBVERBS: frozenset[str] = frozenset({'add', 'query', 'resolve', 'clear'})
-VALID_ASSESSMENT_SUBVERBS: frozenset[str] = frozenset({'add', 'query', 'get', 'clear'})
+VALID_QGATE_SUBVERBS: frozenset[str] = frozenset({'add', 'list', 'resolve', 'clear'})
+VALID_ASSESSMENT_SUBVERBS: frozenset[str] = frozenset({'add', 'list', 'get', 'clear'})
 
 # =============================================================================
 # Regexes
@@ -135,14 +135,14 @@ def _build_canonical_hint(
         )
     if top_token == 'list-qgate':
         return (
-            'Use `qgate query --plan-id {plan_id} --phase {phase}` '
+            'Use `qgate list --plan-id {plan_id} --phase {phase}` '
             '(no `list-qgate` top-level subcommand is registered)'
         )
-    if top_token == 'qgate' and sub_token == 'list':
+    if top_token == 'qgate' and sub_token == 'query':
         return (
-            'Use `qgate query --plan-id {plan_id} --phase {phase}` '
-            '(no `list` sub-verb under `qgate`; registered sub-verbs: '
-            f'{sorted(VALID_QGATE_SUBVERBS)})'
+            'Use `qgate list --plan-id {plan_id} --phase {phase}` '
+            '(`query` is the legacy verb; the canonical sub-verb is `list`; '
+            f'registered sub-verbs: {sorted(VALID_QGATE_SUBVERBS)})'
         )
     if top_token and top_token not in VALID_TOP_LEVEL_SUBCOMMANDS:
         return (

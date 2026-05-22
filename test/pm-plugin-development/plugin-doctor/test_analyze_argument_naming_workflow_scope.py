@@ -10,6 +10,7 @@ were silently outside scope, which let invented subcommands such as
 
 These tests pin the extended scope: an invented subcommand inside a
 ``workflow/*.md`` file MUST surface as an ``ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN``
+finding, an invented flag MUST surface as an ``ARGUMENT_NAMING_FLAG_UNKNOWN``
 finding, and a canonical invocation in the same scope MUST NOT.
 """
 
@@ -190,4 +191,78 @@ def test_workflow_md_canonical_subcommand_no_finding(tmp_path):
     ]
     assert matching == [], (
         f'Canonical subcommand in workflow body should yield no findings, got {matching!r}'
+    )
+
+
+def test_workflow_md_invented_flag_emits_flag_unknown(tmp_path):
+    """Invented flag inside skills/*/workflow/*.md surfaces FLAG_UNKNOWN.
+
+    Complements the SUBCOMMAND_UNKNOWN workflow-scope test: a flag absent
+    from the resolved subparser's argparse declarations MUST surface as an
+    ``ARGUMENT_NAMING_FLAG_UNKNOWN`` finding when it appears inside a
+    ``workflow/*.md`` body. Regression guard for the workflow-doc argument
+    drift documented in lesson 2026-05-20-15-004.
+    """
+    marketplace_root = tmp_path / 'marketplace'
+    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-findings:manage-findings'])
+    _write_fake_script(
+        marketplace_root,
+        'plan-marshall:manage-findings:manage-findings',
+        subcommands={'add': ['plan-id', 'type', 'title', 'detail']},
+    )
+    workflow_md = _write_workflow_md(
+        marketplace_root,
+        'plan-marshall',
+        'plan-marshall',
+        'verification-feedback.md',
+        '# Verification feedback workflow\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings add '
+        '--plan-id foo --type triage --title bar --detail baz --finding-type triage\n'
+        '```\n',
+    )
+
+    findings = analyze_argument_naming(marketplace_root)
+    flag_findings = _findings_by_rule(findings, 'ARGUMENT_NAMING_FLAG_UNKNOWN')
+    matching = [f for f in flag_findings if f['file'] == str(workflow_md)]
+    assert len(matching) == 1, (
+        f'Expected one FLAG_UNKNOWN finding for the workflow body, got {findings!r}'
+    )
+    finding = matching[0]
+    assert finding['details']['notation'] == 'plan-marshall:manage-findings:manage-findings'
+    assert finding['details']['subcommand'] == 'add'
+    assert finding['details']['flag'] == 'finding-type'
+    assert sorted(finding['details']['known_flags']) == ['detail', 'plan-id', 'title', 'type']
+    assert finding['severity'] == 'error'
+
+
+def test_workflow_md_canonical_flag_no_finding(tmp_path):
+    """Canonical flags inside a workflow/*.md file yield no FLAG_UNKNOWN finding."""
+    marketplace_root = tmp_path / 'marketplace'
+    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-findings:manage-findings'])
+    _write_fake_script(
+        marketplace_root,
+        'plan-marshall:manage-findings:manage-findings',
+        subcommands={'add': ['plan-id', 'type', 'title', 'detail']},
+    )
+    workflow_md = _write_workflow_md(
+        marketplace_root,
+        'plan-marshall',
+        'plan-marshall',
+        'verification-feedback.md',
+        '# Verification feedback workflow\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings add '
+        '--plan-id foo --type triage --title bar --detail baz\n'
+        '```\n',
+    )
+
+    findings = analyze_argument_naming(marketplace_root)
+    matching = [
+        f
+        for f in _findings_by_rule(findings, 'ARGUMENT_NAMING_FLAG_UNKNOWN')
+        if f['file'] == str(workflow_md)
+    ]
+    assert matching == [], (
+        f'Canonical flags in workflow body should yield no findings, got {matching!r}'
     )

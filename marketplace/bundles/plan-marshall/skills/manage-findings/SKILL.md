@@ -60,7 +60,7 @@ All finding-related JSONL files live under a single `findings/` subdirectory. Pl
         └── qgate-6-finalize.jsonl
 ```
 
-Per-type files are created lazily — only types that have been added produce a file. The `query` command transparently merges across all per-type files (in canonical type order); `get`/`resolve`/`promote` locate the owning file by `hash_id`. The CLI surface is unaffected by the per-type split.
+Per-type files are created lazily — only types that have been added produce a file. The `list` command transparently merges across all per-type files (in canonical type order); `get`/`resolve`/`promote` locate the owning file by `hash_id`. The CLI surface is unaffected by the per-type split.
 
 See [standards/jsonl-format.md](standards/jsonl-format.md) for the complete storage layout and per-type file list.
 
@@ -76,7 +76,7 @@ See [standards/jsonl-format.md](standards/jsonl-format.md) for the complete type
 
 ## CLI Commands
 
-**Parser architecture**: This script uses a two-level subparser pattern. Top-level subcommands (`add`, `query`, `get`, `resolve`, `promote`) handle plan-scoped findings directly. The `qgate` subcommand introduces a second parser level with its own subcommands (`qgate add`, `qgate query`, `qgate resolve`, `qgate clear`). The `assessment` subcommand introduces a third command group (`assessment add`, `assessment query`, `assessment get`, `assessment clear`). This mirrors the three storage scopes in the CLI surface.
+**Parser architecture**: This script uses a two-level subparser pattern. Top-level subcommands (`add`, `list`, `get`, `resolve`, `promote`) handle plan-scoped findings directly. The `qgate` subcommand introduces a second parser level with its own subcommands (`qgate add`, `qgate list`, `qgate resolve`, `qgate clear`). The `assessment` subcommand introduces a third command group (`assessment add`, `assessment list`, `assessment get`, `assessment clear`). This mirrors the three storage scopes in the CLI surface.
 
 ### Plan-Scoped Finding Commands
 
@@ -87,9 +87,9 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   [--file-path PATH] [--line N] [--component C] \
   [--module M] [--rule R] [--severity S]
 
-# Query findings
+# List findings
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  query --plan-id {plan_id} [--type T] [--resolution R] \
+  list --plan-id {plan_id} [--type T] [--resolution R] \
   [--promoted BOOL] [--file-pattern PATTERN]
 
 # Get single finding
@@ -116,9 +116,9 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   --type {type} --title {title} --detail {detail} \
   [--file-path PATH] [--component C] [--severity S] [--iteration N]
 
-# Query Q-Gate findings
+# List Q-Gate findings
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  qgate query --plan-id {plan_id} --phase {phase} \
+  qgate list --plan-id {plan_id} --phase {phase} \
   [--resolution R] [--source S] [--iteration N]
 
 # Resolve Q-Gate finding
@@ -140,7 +140,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 - If a finding with the same title exists but is resolved → returns `status: reopened` (reactivated to `pending`)
 - Otherwise → creates new finding with `status: success`
 
-**Iteration**: The optional `--iteration N` parameter tracks which verification cycle produced the finding (e.g., iteration 1 = first build attempt, iteration 2 = after fixes). Useful for filtering findings from a specific cycle via `qgate query --iteration N`.
+**Iteration**: The optional `--iteration N` parameter tracks which verification cycle produced the finding (e.g., iteration 1 = first build attempt, iteration 2 = after fixes). Useful for filtering findings from a specific cycle via `qgate list --iteration N`.
 
 **Phase 1-init**: Not included in Q-Gate phases — init creates plan infrastructure and has no verification step that would produce findings.
 
@@ -154,9 +154,9 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   assessment add --plan-id {plan_id} --file-path {file_path} --certainty {certainty} --confidence {confidence} \
   [--agent AGENT] [--detail DETAIL] [--evidence EVIDENCE]
 
-# Query assessments
+# List assessments
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  assessment query --plan-id {plan_id} [--certainty C] [--min-confidence N] \
+  assessment list --plan-id {plan_id} [--certainty C] [--min-confidence N] \
   [--max-confidence N] [--file-pattern PATTERN]
 
 # Get single assessment
@@ -217,14 +217,14 @@ b4e3d2,sonar-issue,TODO comment,fixed
 
 | Client | Artifact | Operation |
 |--------|----------|-----------|
-| phase-6-finalize | finding | query, resolve, promote |
-| Phase agents (2-7) | qgate finding | query, resolve |
+| phase-6-finalize | finding | list, resolve, promote |
+| Phase agents (2-7) | qgate finding | list, resolve |
 
 ## Promotion Workflow
 
 At `6-finalize`:
 
-1. Query unpromoted findings: `query --plan-id {plan_id} --promoted false`
+1. List unpromoted findings: `list --plan-id {plan_id} --promoted false`
 2. For each finding to promote:
    - **To manage-lessons** (bug, improvement, anti-pattern, triage) — two-step path-allocate flow:
      ```bash
@@ -263,10 +263,10 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings ad
   [--rule RULE] [--severity SEVERITY]
 ```
 
-### query
+### list
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query \
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
   --plan-id PLAN_ID \
   [--type TYPE_CSV] [--resolution RESOLUTION] [--promoted {true|false}] \
   [--file-pattern PATTERN]
@@ -303,10 +303,10 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qg
   [--file-path PATH] [--component COMPONENT] [--severity SEVERITY] [--iteration N]
 ```
 
-### qgate query
+### qgate list
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate query \
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate list \
   --plan-id PLAN_ID --phase PHASE \
   [--resolution RESOLUTION] [--source SOURCE] [--iteration N]
 ```
@@ -334,10 +334,10 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings as
   [--agent AGENT] [--detail TEXT] [--evidence TEXT]
 ```
 
-### assessment query
+### assessment list
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment query \
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment list \
   --plan-id PLAN_ID \
   [--certainty CERTAINTY] [--min-confidence N] [--max-confidence N] \
   [--file-pattern PATTERN]

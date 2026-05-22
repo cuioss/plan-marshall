@@ -61,7 +61,7 @@ SUMMARIZE_SCRIPT = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'summarize-invariants.py'
 )
 
-STATUS_SCRIPT = get_script_path('plan-marshall', 'manage-status', 'manage_status.py')
+STATUS_SCRIPT = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
 
 # Phase order used for the lifecycle simulation.
 PHASES = ['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-finalize']

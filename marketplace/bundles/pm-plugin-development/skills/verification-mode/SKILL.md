@@ -394,7 +394,7 @@ Executing plan-init for EXAMPLE-PLAN...
 ## SCRIPT FAILURE Analysis Required
 
 ### Issue Detected
-Script plan-marshall:manage-status:manage_status returned non-zero exit code (1)
+Script plan-marshall:manage-status:manage-status returned non-zero exit code (1)
 
 ### Context
 - **Operation**: Create plan status

@@ -55,7 +55,7 @@ def _load_module(name: str, filename: str):
     return mod
 
 
-_mod = _load_module('manage_ci_artifacts', 'manage_ci_artifacts.py')
+_mod = _load_module('manage_ci_artifacts', 'manage-ci-artifacts.py')
 persist = _mod.persist
 read_manifest = _mod.read_manifest
 list_runs = _mod.list_runs

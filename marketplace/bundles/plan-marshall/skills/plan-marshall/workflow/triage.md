@@ -27,10 +27,10 @@ Skills the caller MUST forward in `skills[]`:
 
 Domain-triage extensions (`{bundle}:ext-triage-{domain}`) are loaded on demand inside this workflow — they are NOT pre-loaded by the caller.
 
-## Step 1: Query the findings store
+## Step 1: List the findings store
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query \
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
   --plan-id {plan_id} --type {finding_type} --resolution pending
 ```
 

@@ -42,7 +42,7 @@ def _noop_sleep(monkeypatch):
 def _build_handler_map():
     """Rebuild the GitLab dispatch map slice for the three new wait-for-* entries."""
     return {
-        ('ci', 'wait-for-status-flip'): gitlab_ops.cmd_ci_wait_for_status_flip,
+        ('checks', 'wait-for-status-flip'): gitlab_ops.cmd_ci_wait_for_status_flip,
         ('issue', 'wait-for-close'): gitlab_ops.cmd_issue_wait_for_close,
         ('issue', 'wait-for-label'): gitlab_ops.cmd_issue_wait_for_label,
     }
@@ -50,7 +50,7 @@ def _build_handler_map():
 
 def test_dispatch_ci_wait_for_status_flip_registered():
     handlers = _build_handler_map()
-    assert handlers[('ci', 'wait-for-status-flip')] is gitlab_ops.cmd_ci_wait_for_status_flip
+    assert handlers[('checks', 'wait-for-status-flip')] is gitlab_ops.cmd_ci_wait_for_status_flip
 
 
 def test_dispatch_issue_wait_for_close_registered():

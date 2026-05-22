@@ -9,7 +9,7 @@ The plan-marshall findings pipeline routes every quality signal — PR review co
 │                                                                             │
 │                      FINDINGS PIPELINE — END TO END                         │
 │                                                                             │
-│  ┌──────────────────────┐  add  ┌──────────────────────┐  query  ┌────────┐ │
+│  ┌──────────────────────┐  add  ┌──────────────────────┐  list   ┌────────┐ │
 │  │      PRODUCERS       │──────▶│    manage-findings   │◀────────│CONSUMER│ │
 │  │                      │       │                      │ resolve │   S    │ │
 │  │ workflow-integration-│       │  .plan/plans/{id}/   │────────▶│        │ │
@@ -31,11 +31,11 @@ The plan-marshall findings pipeline routes every quality signal — PR review co
 │  ┌──────────────────────┐       │   │     .jsonl       │             │      │
 │  │  qgate-{phase}.jsonl │       │   └─ … per-type      │             ▼      │
 │  │  (producer fidelity  │       │                      │   ┌──────────────┐ │
-│  │   contract surface)  │       │  CLI: add / query /  │   │ ext-triage-  │ │
+│  │   contract surface)  │       │  CLI: add / list /   │   │ ext-triage-  │ │
 │  └──────────────────────┘       │       resolve /      │   │   {domain}   │ │
 │                                 │       promote        │   │ (knowledge   │ │
 │                                 │       qgate {add,    │   │  skill)      │ │
-│                                 │              query,  │   │              │ │
+│                                 │              list,   │   │              │ │
 │                                 │              resolve}│   │ Severity,    │ │
 │                                 │       assessment {…} │   │ suppression, │ │
 │                                 └──────────┬───────────┘   │ pr-comment   │ │
@@ -112,7 +112,7 @@ Every producer reports `count_fetched` vs `count_stored` mismatches as a `qgate`
 
 ## Store
 
-`manage-findings` (`marketplace/bundles/plan-marshall/skills/manage-findings/`) is the unified plan-scoped store. The CLI surface (`add` / `query` / `get` / `resolve` / `promote` / `qgate {add,query,resolve,clear}` / `assessment {add,query,get,clear}`) is the only access path; direct file I/O on the JSONL files is never permitted.
+`manage-findings` (`marketplace/bundles/plan-marshall/skills/manage-findings/`) is the unified plan-scoped store. The CLI surface (`add` / `list` / `get` / `resolve` / `promote` / `qgate {add,list,resolve,clear}` / `assessment {add,list,get,clear}`) is the only access path; direct file I/O on the JSONL files is never permitted.
 
 Storage layout (under `.plan/plans/{plan_id}/artifacts/findings/`):
 
@@ -132,9 +132,9 @@ For the per-type file list, schema details, dedup semantics, and resolution mode
 
 Wherever a triage decision needs to be made, the consumer:
 
-1. **Query pending findings** for the relevant type:
+1. **List pending findings** for the relevant type:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query \
+   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
      --plan-id {plan_id} --type {type} --resolution pending
    ```
 2. **Detect the domain** from each finding's `file_path` (the same `architecture which-module` heuristic verification uses):
@@ -165,7 +165,7 @@ The orchestration is identical across consumers (PR review GitHub, PR review Git
 
 The per-finding LLM core (steps 4–5 above — load `ext-triage-{domain}`, decide FIX/SUPPRESS/ACCEPT/AskUserQuestion, act on the decision) factors out into one shared workflow doc, [`plan-marshall/workflow/triage.md`](../../plan-marshall/workflow/triage.md), invoked from [`verification-feedback.md`](../../plan-marshall/workflow/verification-feedback.md). The verification-feedback envelope is dispatched under `--phase phase-N --role verification-feedback` with a `producer` runtime input (`build-runner` from phase-5-execute Steps 11/11b, `sonar` / `pr-comment` / `plugin-doctor` / `pr-state` from phase-6-finalize finalize steps and slash commands).
 
-**The dispatch passes `producer` only — never the findings content.** The verification-feedback subagent's first workflow step is its own `manage-findings query --plan-id {plan_id} --resolution pending` call against the same store, which means:
+**The dispatch passes `producer` only — never the findings content.** The verification-feedback subagent's first workflow step is its own `manage-findings list --plan-id {plan_id} --resolution pending` call against the same store, which means:
 
 - the store stays the single source of truth (no double-serialization of multi-kilobyte findings into the prompt body),
 - loop-back re-entry sees only currently-pending findings (the orchestrator's earlier query result freezes in time; the subagent's own query is fresh), and
@@ -201,7 +201,7 @@ Every other phase capture reads the `pending_findings_blocking_count` row passiv
 
 ### qgate aggregation contract
 
-Q-Gate findings live in `qgate-{phase}.jsonl` rather than the canonical `findings/{type}.jsonl` layout — the `qgate` blocking type therefore cannot be reached via the canonical `manage-findings query --type qgate` path (`query_findings` iterates only `FINDING_TYPES`, which excludes `qgate`). The blocking-count helper routes the `qgate` partition entry through `_query_pending_qgate_count_aggregated` which loops `QGATE_PHASES` and sums each per-phase `qgate query --phase {p} --resolution pending` result. Producer-mismatch findings filed by `add_qgate_finding(...)` from `github_pr.py` / `gitlab_pr.py` / `sonar.py` / `_build_shared.py` therefore block the boundary regardless of which phase they were filed under.
+Q-Gate findings live in `qgate-{phase}.jsonl` rather than the canonical `findings/{type}.jsonl` layout — the `qgate` blocking type therefore cannot be reached via the canonical `manage-findings list --type qgate` path (`query_findings` iterates only `FINDING_TYPES`, which excludes `qgate`). The blocking-count helper routes the `qgate` partition entry through `_query_pending_qgate_count_aggregated` which loops `QGATE_PHASES` and sums each per-phase `qgate list --phase {p} --resolution pending` result. Producer-mismatch findings filed by `add_qgate_finding(...)` from `github_pr.py` / `gitlab_pr.py` / `sonar.py` / `_build_shared.py` therefore block the boundary regardless of which phase they were filed under.
 
 For the full invariant capture / verify mechanics, the row schema, and the structured error envelope: [`plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md).
 

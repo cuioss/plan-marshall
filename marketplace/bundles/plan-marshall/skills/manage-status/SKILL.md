@@ -15,7 +15,6 @@ Manage status.json files with phase tracking, metadata, and lifecycle operations
 
 **Skill-specific constraints:**
 - Only valid phase status values: `pending`, `in_progress`, `done`
-- Script uses underscore (`manage_status`) because it is imported as a Python module by other scripts
 - Phase transitions must use `set-phase`, `update-phase`, or `transition` commands
 - Metadata operations require explicit `--get` or `--set` flags
 
@@ -101,7 +100,7 @@ again, and it duplicates logic that `manage-status` already owns.
 
 ## Operations
 
-Script: `plan-marshall:manage-status:manage_status`
+Script: `plan-marshall:manage-status:manage-status`
 
 ### create
 
@@ -111,7 +110,7 @@ trio (`use_worktree`, `worktree_path`, `worktree_branch`) into
 worktree from the plan id alone.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status create \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create \
   --plan-id {plan_id} \
   --title {title} \
   --phases {comma-separated-phases} \
@@ -167,7 +166,7 @@ message: --use-worktree requires both --worktree-path and --worktree-branch
 Read entire status.json content.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {plan_id}
 ```
 
@@ -187,7 +186,7 @@ plan:
 Set current phase (marks phase as in_progress).
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-phase \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status set-phase \
   --plan-id {plan_id} \
   --phase {phase_name}
 ```
@@ -205,7 +204,7 @@ previous_phase: 1-init
 Update a specific phase's status.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status update-phase \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-phase \
   --plan-id {plan_id} \
   --phase {phase_name} \
   --status {pending|in_progress|done}
@@ -224,7 +223,7 @@ phase_status: done
 Calculate plan progress percentage.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status progress \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status progress \
   --plan-id {plan_id}
 ```
 
@@ -247,7 +246,7 @@ Get or set metadata fields.
 
 **Set metadata**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --set \
   --field {field_name} \
@@ -256,7 +255,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metada
 
 **Get metadata**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --get \
   --field {field_name}
@@ -284,7 +283,7 @@ value: feature
 Record the outcome of a phase step inside `status.metadata.phase_steps`. Phase skills use this to persist intra-phase progress (e.g., discovery, drift-detection) so that resuming a phase can skip completed steps. Outcomes are `done`, `skipped`, `loop_back`, or `failed`. An optional `--display-detail` one-line string is persisted alongside the outcome so downstream renderers (phase-6-finalize vertical-steps block, etc.) can surface user-facing step summaries. Loop-back outcomes carry a mandatory `--loop-back-target` granularity classifier (see "Loop-back target classification" below).
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} \
   --phase {phase_name} \
   --step {step_id} \
@@ -388,7 +387,7 @@ message: Step 'discovery' in phase '5-execute' has legacy bare-string storage ('
 Get combined status context (phase, progress, metadata) in one call.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-context \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-context \
   --plan-id {plan_id}
 ```
 
@@ -408,13 +407,13 @@ change_type: feature
 ### get-worktree-path
 
 Resolve the persisted worktree path for a plan from `status.metadata`.
-Allows callers (build wrappers, `git_workflow`, phase-entry assertions)
+Allows callers (build wrappers, `git-workflow`, phase-entry assertions)
 to look up the active worktree by `--plan-id` alone — without
 re-deriving the path from filesystem layout, and without taking a
 `--project-dir` argument.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-worktree-path \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-worktree-path \
   --plan-id {plan_id}
 ```
 
@@ -462,7 +461,7 @@ not_yet_materialized: true
 Discover all plans, optionally filtered by current phase.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status list \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status list \
   [--filter PHASE]
 ```
 
@@ -484,7 +483,7 @@ bugfix-123,5-execute,in_progress
 Mark a phase as done and advance to next phase. Validates phase ordering.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
   --plan-id {plan_id} \
   --completed {phase_name}
 ```
@@ -502,7 +501,7 @@ next_phase: 4-plan
 Archive a completed plan (moves to `.plan/archived-plans/YYYY-MM-DD-{plan_id}`).
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status archive \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status archive \
   --plan-id {plan_id} \
   [--dry-run]
 ```
@@ -519,7 +518,7 @@ archived_to: .plan/archived-plans/2026-04-02-my-feature
 Delete an entire plan directory. Used when user selects "Replace" for an existing plan during plan-init.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status delete-plan \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status delete-plan \
   --plan-id {plan_id}
 ```
 
@@ -551,7 +550,7 @@ message: Plan directory does not exist: /path/to/.plan/plans/my-feature
 Get skill name for a phase.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status route \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status route \
   --phase {phase_name}
 ```
 
@@ -568,7 +567,7 @@ description: Create solution outline with deliverables
 Get combined routing context (phase + skill + progress in one call).
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-routing-context \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-routing-context \
   --plan-id {plan_id}
 ```
 
@@ -589,7 +588,7 @@ completed_phases: 2
 Verify manage-status health (checks imports, phase routing table, directory access).
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status self-test
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status self-test
 ```
 
 **Output** (TOON):
@@ -609,7 +608,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 
 ## Scripts
 
-**Script**: `plan-marshall:manage-status:manage_status`
+**Script**: `plan-marshall:manage-status:manage-status`
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
@@ -636,7 +635,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 
 ## Canonical invocations
 
-The canonical argparse surface for `manage_status.py`. The D4 plugin-doctor analyzer
+The canonical argparse surface for `manage-status.py`. The D4 plugin-doctor analyzer
 (`_analyze_manage_invocation.py`) reads this section as source-of-truth for markdown
 notation occurrences across the marketplace. Consuming skills xref this section by
 name (e.g., "see `manage-status` Canonical invocations → `transition`") instead of
@@ -645,7 +644,7 @@ restating the command inline.
 ### create
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status create \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create \
   --plan-id PLAN_ID --title TEXT --phases CSV \
   [--force] \
   [--use-worktree --worktree-path ABS_PATH --worktree-branch BRANCH]
@@ -654,35 +653,35 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status create
 ### read
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id PLAN_ID
 ```
 
 ### set-phase
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-phase \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status set-phase \
   --plan-id PLAN_ID --phase PHASE
 ```
 
 ### update-phase
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status update-phase \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-phase \
   --plan-id PLAN_ID --phase PHASE --status {pending|in_progress|done}
 ```
 
 ### progress
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status progress \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status progress \
   --plan-id PLAN_ID
 ```
 
 ### metadata
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id PLAN_ID --field FIELD \
   (--get | --set --value VALUE)
 ```
@@ -690,63 +689,63 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metada
 ### get-context
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-context \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-context \
   --plan-id PLAN_ID
 ```
 
 ### get-worktree-path
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-worktree-path \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-worktree-path \
   --plan-id PLAN_ID
 ```
 
 ### list
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status list \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status list \
   [--filter PHASES_CSV]
 ```
 
 ### transition
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
   --plan-id PLAN_ID --completed PHASE
 ```
 
 ### archive
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status archive \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status archive \
   --plan-id PLAN_ID [--dry-run]
 ```
 
 ### route
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status route \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status route \
   --phase PHASE
 ```
 
 ### get-routing-context
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-routing-context \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-routing-context \
   --plan-id PLAN_ID
 ```
 
 ### delete-plan
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status delete-plan \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status delete-plan \
   --plan-id PLAN_ID
 ```
 
 ### mark-step-done
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id PLAN_ID --phase PHASE --step STEP_ID \
   --outcome {done|skipped|loop_back|failed} \
   [--force] [--display-detail TEXT] [--head-at-completion SHA]
@@ -755,14 +754,14 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 ### change-type-heuristic
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status change-type-heuristic \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status change-type-heuristic \
   --plan-id PLAN_ID [--persist]
 ```
 
 ### aggregate-confidence
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status aggregate-confidence \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status aggregate-confidence \
   --plan-id PLAN_ID \
   [--scores-file PATH] \
   [--correctness N] [--completeness N] [--consistency N] \
@@ -773,7 +772,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status aggreg
 ### self-test
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status self-test
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status self-test
 ```
 
 ---

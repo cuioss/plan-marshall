@@ -323,7 +323,7 @@ def test_cli_assessment_add_and_query_roundtrip():
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
 
-        query_result = run_script(SCRIPT_PATH, 'assessment', 'query', '--plan-id', 'test-plan')
+        query_result = run_script(SCRIPT_PATH, 'assessment', 'list', '--plan-id', 'test-plan')
         assert query_result.success
         query_data = parse_toon(query_result.stdout)
         assert query_data['total_count'] == 1

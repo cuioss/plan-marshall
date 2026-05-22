@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for lifecycle commands in manage_status.py script.
+"""Tests for lifecycle commands in manage-status.py script.
 
 Tests plan discovery, transitions, archiving, and routing (formerly manage-lifecycle).
 """
@@ -13,8 +13,8 @@ from pathlib import Path
 from conftest import PlanContext, get_script_path, run_script
 
 # Get script paths
-LIFECYCLE_SCRIPT = get_script_path('plan-marshall', 'manage-status', 'manage_status.py')
-STATUS_SCRIPT = get_script_path('plan-marshall', 'manage-status', 'manage_status.py')
+LIFECYCLE_SCRIPT = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
+STATUS_SCRIPT = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
 
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402

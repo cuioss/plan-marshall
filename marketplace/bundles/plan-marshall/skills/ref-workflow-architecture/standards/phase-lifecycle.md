@@ -34,7 +34,7 @@ Before starting phase work, check for unresolved Q-Gate findings from the previo
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  qgate query --plan-id {plan_id} --phase {current_phase} --resolution pending
+  qgate list --plan-id {plan_id} --phase {current_phase} --resolution pending
 ```
 
 **If pending findings exist:**

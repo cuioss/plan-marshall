@@ -619,7 +619,7 @@ def build_parser(
     """Build the 4-tier argparse tree shared by all CI providers.
 
     Returns:
-        ``(parser, pr_subparsers, ci_subparsers, issue_subparsers, branch_subparsers)``
+        ``(parser, pr_subparsers, checks_subparsers, issue_subparsers, branch_subparsers)``
         so that providers can customise individual sub-parsers if needed.
     """
     parser = argparse.ArgumentParser(description=description, allow_abbrev=False)
@@ -741,31 +741,31 @@ def build_parser(
     pr_edit.add_argument('--title', help='New PR title')
     add_body_consumer_args(pr_edit)
 
-    # -- ci -----------------------------------------------------------
-    ci_parser = subparsers.add_parser('ci', help='CI operations', allow_abbrev=False)
-    ci_sub = ci_parser.add_subparsers(dest='ci_command', required=True)
+    # -- checks -------------------------------------------------------
+    checks_parser = subparsers.add_parser('checks', help='CI check operations', allow_abbrev=False)
+    checks_sub = checks_parser.add_subparsers(dest='checks_command', required=True)
 
-    # ci status — accepts either --pr-number or --head (validated by handler)
-    ci_status = ci_sub.add_parser('status', help='Check CI status', allow_abbrev=False)
+    # checks status — accepts either --pr-number or --head (validated by handler)
+    ci_status = checks_sub.add_parser('status', help='Check CI status', allow_abbrev=False)
     ci_status.add_argument('--pr-number', type=int, help='PR number')
     add_head_arg(ci_status)
 
-    # ci wait
-    ci_wait = ci_sub.add_parser('wait', help='Wait for CI to complete', allow_abbrev=False)
+    # checks wait
+    ci_wait = checks_sub.add_parser('wait', help='Wait for CI to complete', allow_abbrev=False)
     ci_wait.add_argument('--pr-number', required=True, type=int, help='PR number')
     ci_wait.add_argument('--timeout', type=int, default=300, help='Max wait time in seconds (default: 300)')
     ci_wait.add_argument('--interval', type=int, default=30, help='Poll interval in seconds (default: 30)')
 
-    # ci rerun
-    ci_rerun = ci_sub.add_parser('rerun', help='Rerun a workflow/pipeline', allow_abbrev=False)
+    # checks rerun
+    ci_rerun = checks_sub.add_parser('rerun', help='Rerun a workflow/pipeline', allow_abbrev=False)
     ci_rerun.add_argument('--run-id', required=True, help='Run/pipeline ID')
 
-    # ci logs
-    ci_logs = ci_sub.add_parser('logs', help='Get failed run/job logs', allow_abbrev=False)
+    # checks logs
+    ci_logs = checks_sub.add_parser('logs', help='Get failed run/job logs', allow_abbrev=False)
     ci_logs.add_argument('--run-id', required=True, help='Run/job ID')
 
-    # ci wait-for-status-flip — poll until PR CI status flips from pending or timeout
-    ci_wait_status_flip = ci_sub.add_parser(
+    # checks wait-for-status-flip — poll until PR CI status flips from pending or timeout
+    ci_wait_status_flip = checks_sub.add_parser(
         'wait-for-status-flip',
         help='Wait for PR CI status to flip from pending (replaces blocking shell sleep)',
         allow_abbrev=False,
@@ -921,7 +921,7 @@ def build_parser(
         help='Branch name to delete from the remote',
     )
 
-    return parser, pr_sub, ci_sub, issue_sub, branch_sub
+    return parser, pr_sub, checks_sub, issue_sub, branch_sub
 
 
 def add_pr_create_args(
@@ -953,7 +953,7 @@ def add_head_arg(subparser: argparse.ArgumentParser) -> None:
 
     Used by provider scripts on operations that identify a PR by branch when no
     explicit ``--pr-number`` is supplied: ``pr view``, ``pr merge``, ``pr auto-merge``,
-    and ``ci status``. Provider handlers MUST treat ``--head`` as a branch-as-identifier
+    and ``checks status``. Provider handlers MUST treat ``--head`` as a branch-as-identifier
     substitute and validate that exactly one of ``--pr-number`` / ``--head`` is supplied.
 
     The flag is purely additive — operations behave as before when ``--head`` is omitted.
@@ -1250,8 +1250,8 @@ def dispatch(args: argparse.Namespace, handlers: HandlerMap, parser: argparse.Ar
 
     if command == 'pr':
         key = ('pr', args.pr_command)
-    elif command == 'ci':
-        key = ('ci', args.ci_command)
+    elif command == 'checks':
+        key = ('checks', args.checks_command)
     elif command == 'issue':
         key = ('issue', args.issue_command)
     elif command == 'branch':

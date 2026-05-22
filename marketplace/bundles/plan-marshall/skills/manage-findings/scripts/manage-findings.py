@@ -4,18 +4,18 @@ CLI for unified finding, Q-Gate, and assessment storage.
 
 Usage:
     python3 manage-findings.py add --plan-id <plan_id> --type <type> --title <title> --detail <detail> [options]
-    python3 manage-findings.py query --plan-id <plan_id> [options]
+    python3 manage-findings.py list --plan-id <plan_id> [options]
     python3 manage-findings.py get --plan-id <plan_id> --hash-id <hash_id>
     python3 manage-findings.py resolve --plan-id <plan_id> --hash-id <hash_id> --resolution <resolution> [options]
     python3 manage-findings.py promote --plan-id <plan_id> --hash-id <hash_id> --promoted-to <promoted_to>
 
     python3 manage-findings.py qgate add --plan-id <plan_id> --phase <phase> --source <source> --type <type> --title <title> --detail <detail> [options]
-    python3 manage-findings.py qgate query --plan-id <plan_id> --phase <phase> [options]
+    python3 manage-findings.py qgate list --plan-id <plan_id> --phase <phase> [options]
     python3 manage-findings.py qgate resolve --plan-id <plan_id> --hash-id <hash_id> --resolution <resolution> --phase <phase> [options]
     python3 manage-findings.py qgate clear --plan-id <plan_id> --phase <phase>
 
     python3 manage-findings.py assessment add --plan-id <plan_id> --file-path <path> --certainty <certainty> --confidence <confidence> [options]
-    python3 manage-findings.py assessment query --plan-id <plan_id> [options]
+    python3 manage-findings.py assessment list --plan-id <plan_id> [options]
     python3 manage-findings.py assessment get --plan-id <plan_id> --hash-id <hash_id>
     python3 manage-findings.py assessment clear --plan-id <plan_id> [--agent AGENT]
 
@@ -228,7 +228,7 @@ def main() -> int:
     add_parser.set_defaults(func=cmd_add)
 
     # query
-    query_parser = subparsers.add_parser('query', help='Query findings', allow_abbrev=False)
+    query_parser = subparsers.add_parser('list', help='List findings', allow_abbrev=False)
     add_plan_id_arg(query_parser)
     query_parser.add_argument('--type', help='Filter by type (comma-separated)')
     query_parser.add_argument('--resolution', choices=RESOLUTIONS, help='Filter by resolution')
@@ -278,7 +278,7 @@ def main() -> int:
     q_add_parser.set_defaults(func=cmd_qgate_add)
 
     # qgate query
-    q_query_parser = qgate_sub.add_parser('query', help='Query Q-Gate findings', allow_abbrev=False)
+    q_query_parser = qgate_sub.add_parser('list', help='List Q-Gate findings', allow_abbrev=False)
     add_plan_id_arg(q_query_parser)
     add_phase_arg(q_query_parser, choices=QGATE_PHASES)
     q_query_parser.add_argument('--resolution', choices=RESOLUTIONS, help='Filter by resolution')
@@ -318,8 +318,8 @@ def main() -> int:
     a_add_parser.add_argument('--evidence', help='Supporting evidence')
     a_add_parser.set_defaults(func=cmd_assessment_add)
 
-    # assessment query
-    a_query_parser = assessment_sub.add_parser('query', help='Query assessments', allow_abbrev=False)
+    # assessment list
+    a_query_parser = assessment_sub.add_parser('list', help='List assessments', allow_abbrev=False)
     add_plan_id_arg(a_query_parser)
     a_query_parser.add_argument('--certainty', choices=CERTAINTY_VALUES, help='Filter by certainty')
     a_query_parser.add_argument('--min-confidence', type=int, help='Minimum confidence')

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for git_workflow.py baseline-reconcile subcommand.
+"""Tests for git-workflow.py baseline-reconcile subcommand.
 
 The subcommand is the mechanical predicate for phase-2-refine Step 3d:
 fetches origin/{base_branch}, lists upstream commits since the plan's
@@ -438,7 +438,7 @@ def test_baseline_reconcile_registered_in_git_workflow_cli():
     """argparse subparser routes 'baseline-reconcile' to cmd_baseline_reconcile."""
     import argparse  # noqa: PLC0415
 
-    git_workflow = _load_module('_git_workflow_dispatch_check', 'git_workflow.py')
+    git_workflow = _load_module('_git_workflow_dispatch_check', 'git-workflow.py')
     assert git_workflow.cmd_baseline_reconcile is cmd_baseline_reconcile or callable(
         git_workflow.cmd_baseline_reconcile
     )
