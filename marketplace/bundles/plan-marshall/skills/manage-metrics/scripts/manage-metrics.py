@@ -186,6 +186,14 @@ def write_metrics(plan_id: str, data: dict) -> None:
     lines.append(f'plan_id: {plan_id}')
     if 'updated' in data:
         lines.append(f'updated: {data["updated"]}')
+    # Preserve any other top-level keys round-tripped from read_metrics_raw.
+    # read_metrics_raw accepts arbitrary top-level keys (lines before the first
+    # [phase] block); write_metrics must emit them back so cmd_generate's
+    # read -> mutate -> write loop stays lossless over the full key set.
+    for extra_key, extra_val in data.items():
+        if extra_key in ('plan_id', 'updated', 'phases'):
+            continue
+        lines.append(f'{extra_key}: {extra_val}')
     lines.append('')
 
     phases = data.get('phases', {})
@@ -349,8 +357,8 @@ def _wall_clock_ms(phase: dict) -> int | None:
     end_str = phase.get('end_time')
     if start_str and end_str:
         try:
-            start_dt = datetime.fromisoformat(str(start_str))
-            end_dt = datetime.fromisoformat(str(end_str))
+            start_dt = datetime.fromisoformat(str(start_str).strip().replace('Z', '+00:00'))
+            end_dt = datetime.fromisoformat(str(end_str).strip().replace('Z', '+00:00'))
         except (ValueError, TypeError):
             return None
         return int(round((end_dt - start_dt).total_seconds() * 1000.0))
