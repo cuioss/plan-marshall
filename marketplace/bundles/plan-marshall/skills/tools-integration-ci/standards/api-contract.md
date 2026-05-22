@@ -156,13 +156,13 @@ The PR operations normalize responses from `gh` (JSON) and `glab` (JSON) into th
 
 ## CI Operations (github.py / gitlab.py)
 
-### ci status
+### checks status
 
 Check CI status for a pull request.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks status \
     --pr-number 123
 ```
 
@@ -193,13 +193,13 @@ lint	completed	failure	30	https://github.com/org/repo/actions/runs/113	Lint
 
 ---
 
-### ci wait
+### checks wait
 
 Wait for CI checks to complete.
 
 **Command**:
 ```bash
-timeout 600s python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
+timeout 600s python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wait \
     --pr-number 123 \
     [--timeout 300] \
     [--interval 30]
@@ -338,8 +338,8 @@ The following subcommands all return the standard success shape (`status: succes
 | `pr close --pr-number N` | `--pr-number` | — | Closes without merging. |
 | `pr ready --pr-number N` | `--pr-number` | — | Marks a draft as ready for review. |
 | `pr edit --pr-number N` | `--pr-number` | `--title`, `--body` | Edits title and/or body. |
-| `ci rerun --run-id ID` | `--run-id` | — | Re-runs a failed workflow. |
-| `ci logs --run-id ID` | `--run-id` | — | Success adds `log_lines` and `content` with the log output. |
+| `checks rerun --run-id ID` | `--run-id` | — | Re-runs a failed workflow. |
+| `checks logs --run-id ID` | `--run-id` | — | Success adds `log_lines` and `content` with the log output. |
 | `issue close --issue N` | `--issue` | — | Closes the issue. |
 
 ---

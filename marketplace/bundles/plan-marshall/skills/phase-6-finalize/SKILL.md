@@ -66,7 +66,7 @@ See [references/workflow-overview.md](references/workflow-overview.md) for the v
 **session_id**: the platform-runtime `session capture` operation stores the session id in the plan's `status.json` at plan-init time. Read it back via:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} --get --field session_id
 ```
 
@@ -180,7 +180,7 @@ The orchestrator is responsible for resolving `session_id` (see "How to obtain s
 The full command template (use verbatim, substituting the placeholders):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step {step_name} --outcome {done|skipped|failed} \
   --display-detail "{one-line summary}"
 ```
@@ -188,11 +188,11 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 MANDATORY annotations for every argument:
 
 - `--phase` — MANDATORY. Always the literal string `6-finalize` for steps dispatched under this operation. This anchors the step record to the finalize phase; any other value routes the record into the wrong phase bucket and breaks the Step 4 renderer grouping.
-- `--outcome` — MANDATORY. Must be exactly one of `done`, `skipped`, or `failed`. Any other value (including misspellings or capitalized variants) is rejected by `manage_status`. The choice determines the headline classification and CANNOT be inferred from `display_detail` alone.
+- `--outcome` — MANDATORY. Must be exactly one of `done`, `skipped`, or `failed`. Any other value (including misspellings or capitalized variants) is rejected by `manage-status`. The choice determines the headline classification and CANNOT be inferred from `display_detail` alone.
 - `--step` — MANDATORY. Must match the fully-qualified step name as listed in `marshal.json` (e.g. `default:commit-push`, `project:foo`, or `plan-marshall:some-skill:some-script`). Mismatches here create orphan status records that the renderer cannot pair with the dispatched step.
 - `--display-detail` — MANDATORY. Single-line summary of what the step actually did, authored by the step itself. Subject to the constraints listed below. A missing, empty, or whitespace-only value triggers the `<missing display_detail>` placeholder and contributes a `[FAILED]` headline regardless of the `--outcome` value.
 
-**Notation:** the third segment is `manage_status` (with an UNDERSCORE). The hyphenated form `manage-status` is the subcommand name, not the script name. Using `plan-marshall:manage-status:manage-status` triggers an executor lookup failure.
+**Notation:** the canonical 3-part notation is `plan-marshall:manage-status:manage-status` — every segment is kebab-case.
 
 **`display_detail` constraints:**
 
@@ -217,7 +217,7 @@ See [standards/output-template.md](standards/output-template.md#display_detail-c
 Read the plan status and extract the worktree path from metadata:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {plan_id}
 ```
 
@@ -259,7 +259,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  qgate query --plan-id {plan_id} --phase 6-finalize --resolution pending
+  qgate list --plan-id {plan_id} --phase 6-finalize --resolution pending
 ```
 
 If unresolved findings exist from a previous iteration (filtered_count > 0):
@@ -411,21 +411,23 @@ The helper returns a TOON envelope with `status`, `head_sha`, `ci_final_status`,
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings add \
-  --plan-id {plan_id} --finding-type triage --severity warning \
+  --plan-id {plan_id} --type triage --severity warning \
+  --title "CI failure (precondition) at HEAD {head_sha}" \
   --component "plan-marshall:phase-6-finalize" \
-  --message "ci_failure (precondition) at HEAD {head_sha}: failing=[{comma-joined failing check names}] / reason={failure|timeout|no_checks}" \
-  --source-path "marketplace/bundles/plan-marshall/skills/workflow-integration-{github|gitlab}/scripts/{github|gitlab}_ops.py"
+  --detail "ci_failure (precondition) at HEAD {head_sha}: failing=[{comma-joined failing check names}] / reason={failure|timeout|no_checks}" \
+  --file-path "marketplace/bundles/plan-marshall/skills/workflow-integration-{github|gitlab}/scripts/{github|gitlab}_ops.py"
 ```
 
 Field-by-field:
 
-- `--finding-type triage` — the precondition decision is a triage event (the operator decides between retry / suppress / accept / taken_into_account between finalize boundaries). Re-using the existing `triage` finding-type keeps the 12-type taxonomy stable; no new type is introduced.
+- `--type triage` — the precondition decision is a triage event (the operator decides between retry / suppress / accept / taken_into_account between finalize boundaries). Re-using the existing `triage` finding-type keeps the 12-type taxonomy stable; no new type is introduced.
+- `--title "..."` — a one-line summary anchored to the failing HEAD; `add` requires it. Substitute `{head_sha}` from the resolver's return envelope.
 - `--severity warning` — a CI failure that blocks the dispatcher is not itself a code defect; the underlying failing checks are the defect. `warning` matches the `[WARNING]` work-log convention this finding complements.
 - `--component "plan-marshall:phase-6-finalize"` — the precondition resolver belongs to phase-6-finalize even though it consults `workflow-integration-{github,gitlab}`.
-- `--message "..."` — substitute `{head_sha}` from the resolver's return envelope, `{comma-joined failing check names}` from `failing_checks[].name` (use the empty string when `failing_checks` is empty; this occurs, for example, when `ci_final_status` is `no_checks`), and `{failure|timeout|no_checks}` from the `ci_final_status` value. The message body carries enough context for `manage-findings query --type triage` to reproduce the verdict without re-fetching CI.
-- `--source-path` — resolve to the provider script that produced the verdict: `github_ops.py` when the active CI integration is GitHub, `gitlab_ops.py` when GitLab. The dispatcher already knows the active provider via the `tools-integration-ci` abstraction.
+- `--detail "..."` — substitute `{head_sha}` from the resolver's return envelope, `{comma-joined failing check names}` from `failing_checks[].name` (use the empty string when `failing_checks` is empty; this occurs, for example, when `ci_final_status` is `no_checks`), and `{failure|timeout|no_checks}` from the `ci_final_status` value. The detail body carries enough context for `manage-findings list --type triage` to reproduce the verdict without re-fetching CI.
+- `--file-path` — resolve to the provider script that produced the verdict: `github_ops.py` when the active CI integration is GitHub, `gitlab_ops.py` when GitLab. The dispatcher already knows the active provider via the `tools-integration-ci` abstraction.
 
-The finding is NOT added to `plan.phase-6-finalize.blocking_finding_types`. The ci_failure precondition already blocks the consumer step (the step records `failed` outcome and the dispatcher honours `failed_outcome_strategy`); adding it to the blocking list would double-block the phase transition and prevent the operator from explicitly resolving the finding as `accepted` between runs. The finding surfaces in retrospectives via `manage-findings query --type triage`; existing blocking infrastructure does not need to know about it.
+The finding is NOT added to `plan.phase-6-finalize.blocking_finding_types`. The ci_failure precondition already blocks the consumer step (the step records `failed` outcome and the dispatcher honours `failed_outcome_strategy`); adding it to the blocking list would double-block the phase transition and prevent the operator from explicitly resolving the finding as `accepted` between runs. The finding surfaces in retrospectives via `manage-findings list --type triage`; existing blocking infrastructure does not need to know about it.
 
 This step fires ONLY on `wait_failed`. `satisfied` and `wait_succeeded` resolutions emit no finding (CI passed — nothing to triage).
 
@@ -591,7 +593,7 @@ FOR each step_id in manifest.phase_6.steps:
             python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
               work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Step {step_ref} timed out after {budget}s — marking failed and continuing"
          b. Mark step failed:
-            python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+            python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
               --plan-id {plan_id} --phase 6-finalize --step {step_id} --outcome failed \
               --display-detail "timed out after {budget}s"
          c. Continue to the next step in the loop — DO NOT abort the pipeline.
@@ -614,7 +616,7 @@ FOR each step_id in manifest.phase_6.steps:
   5b. Accumulate agent usage (only when the dispatched step ran as a Task agent and did NOT time out):
       Extract total_tokens, tool_uses, duration_ms from the agent's <usage> tag, then persist them on disk via:
 
-         python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics accumulate-agent-usage \
+         python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics accumulate-agent-usage \
            --plan-id {plan_id} --phase 6-finalize \
            --total-tokens {total_tokens} --tool-uses {tool_uses} --duration-ms {duration_ms}
 
@@ -680,7 +682,7 @@ FOR each step_id in manifest.phase_6.steps:
       - IF `loop_back_target == "5-execute"` (full-phase rollback for fix-task-required dispositions): the calling step issued `manage-status set-phase --phase 5-execute` before its terminal `mark-step-done`, so the persisted `current_phase` is `5-execute`. Dispatch the inline execute pipeline. The inline re-entry mirrors the forward `phase-5-execute.finalize_without_asking` path (`workflow/execution.md` § Execute Phase Completion) — it runs the execute pipeline against the freshly-allocated fix tasks, transitions back to `6-finalize`, and re-enters this FOR loop:
 
              1. Set the plan back to phase-5-execute (the loop-back-emitting step typically did this already via `manage-status set-phase`; idempotent re-issue is safe):
-                python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-phase \
+                python3 .plan/execute-script.py plan-marshall:manage-status:manage-status set-phase \
                   --plan-id {plan_id} --phase 5-execute
 
              2. Dispatch the execute pipeline inline by re-loading `phase-5-execute`:

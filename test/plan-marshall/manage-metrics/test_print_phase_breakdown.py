@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for manage_metrics.py `print-phase-breakdown` subcommand.
+"""Tests for manage-metrics.py `print-phase-breakdown` subcommand.
 
 Covers:
 - Successful extraction of the `## Phase Breakdown` section from metrics.md.
@@ -10,23 +10,28 @@ Covers:
 """
 
 # ruff: noqa: I001
+import importlib.util
 import io
 from argparse import Namespace
 from contextlib import redirect_stdout
 
-from manage_metrics import (  # type: ignore[import-not-found]
-    _extract_phase_breakdown_section,
-    cmd_end_phase,
-    cmd_generate,
-    cmd_print_phase_breakdown,
-    cmd_start_phase,
-    write_metrics,
-)
-
 from conftest import PlanContext, get_script_path, run_script
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage_metrics.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
+
+# The entrypoint filename is kebab-case (manage-metrics.py), which is not a
+# valid Python module identifier — load it via importlib instead of `import`.
+_spec = importlib.util.spec_from_file_location('manage_metrics', SCRIPT_PATH)
+assert _spec is not None and _spec.loader is not None
+manage_metrics = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(manage_metrics)
+_extract_phase_breakdown_section = manage_metrics._extract_phase_breakdown_section
+cmd_end_phase = manage_metrics.cmd_end_phase
+cmd_generate = manage_metrics.cmd_generate
+cmd_print_phase_breakdown = manage_metrics.cmd_print_phase_breakdown
+cmd_start_phase = manage_metrics.cmd_start_phase
+write_metrics = manage_metrics.write_metrics
 
 
 def _ns_print_breakdown(plan_id: str) -> Namespace:

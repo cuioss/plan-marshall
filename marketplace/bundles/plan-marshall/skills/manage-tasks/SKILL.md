@@ -64,12 +64,10 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `batch-add` | `--plan-id (--tasks-file PATH \| --tasks-json JSON \| stdin)` | Atomically create N tasks from a JSON array. Preferred form is `--tasks-file PATH` pointing at a staged plan-relative file (e.g. `work/tasks-batch.json`); `--tasks-json` and stdin remain available for trivial payloads. The two flags are mutually exclusive. All-or-nothing semantics: if any entry fails validation, no `TASK-NNN.json` is written. |
 | `update` | `--plan-id --task-number [--title] [--description] [--depends-on] [--status] [--domain] [--profile] [--skills] [--deliverable]` | Update task metadata |
 | `remove` | `--plan-id --task-number` | Remove a task |
-| `list` | `--plan-id [--status] [--deliverable] [--ready]` | List all tasks |
+| `list` | `--plan-id [--status] [--deliverable] [--ready] [--domain] [--profile]` | List all tasks; `--domain` / `--profile` filter the result set |
 | `read` | `--plan-id --task-number` | Read single task details |
 | `exists` | `--plan-id --task-number` | Boolean presence probe — returns `status: success exists: true\|false`, never errors on absence (use instead of `read` for existence checks) |
 | `next` | `--plan-id [--include-context] [--ignore-deps]` | Get next pending task/step |
-| `tasks-by-domain` | `--plan-id --domain` | List tasks filtered by domain |
-| `tasks-by-profile` | `--plan-id --profile` | List tasks filtered by profile |
 | `next-tasks` | `--plan-id` | Get all tasks ready for parallel execution |
 | `finalize-step` | `--plan-id --task-number --step --outcome [--reason] [--outcome-task-title] [--outcome-step-count] [--outcome-caller]` | Complete step with outcome (done/skipped/failed). When the call closes a task as `done`, the script emits one canonical `[OUTCOME] ({caller}) Completed TASK-NNN: {title} ({M} steps)` work-log line — see "Script-Level [OUTCOME] Emission" below for the contract and overrides. |
 | `add-step` | `--plan-id --task-number --target [--after]` | Add step to task |
@@ -580,8 +578,11 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks remove \
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list \
   --plan-id PLAN_ID \
   [--status {pending|in_progress|done|blocked|all}] \
-  [--deliverable N] [--ready]
+  [--deliverable N] [--ready] [--domain DOMAIN] [--profile PROFILE]
 ```
+
+`--domain` and `--profile` are filter dimensions on `list` — there is no separate
+`tasks-by-domain` / `tasks-by-profile` subcommand.
 
 ### read
 
@@ -603,20 +604,6 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks exists \
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks next \
   --plan-id PLAN_ID \
   [--include-context] [--ignore-deps]
-```
-
-### tasks-by-domain
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks tasks-by-domain \
-  --plan-id PLAN_ID --domain DOMAIN
-```
-
-### tasks-by-profile
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks tasks-by-profile \
-  --plan-id PLAN_ID --profile PROFILE
 ```
 
 ### next-tasks

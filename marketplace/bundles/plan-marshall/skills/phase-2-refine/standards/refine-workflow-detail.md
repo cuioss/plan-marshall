@@ -12,7 +12,7 @@ Detailed step-by-step procedures for the phase-2-refine workflow. For overview a
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  qgate query --plan-id {plan_id} --phase 2-refine --resolution pending
+  qgate list --plan-id {plan_id} --phase 2-refine --resolution pending
 ```
 
 ### Address Each Finding

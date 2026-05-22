@@ -169,7 +169,7 @@ def cmd_comments_stage(args):
     Always-on storage: every surviving comment becomes a ``pr-comment`` finding
     via ``add_finding``. ``count_fetched`` vs ``count_stored`` mismatches are
     recorded as a ``qgate`` finding with title prefix ``(producer-mismatch)``
-    so the LLM sees them in ``manage-findings qgate query``.
+    so the LLM sees them in ``manage-findings qgate list``.
     """
     from _findings_core import (  # type: ignore[import-not-found]
         add_finding,

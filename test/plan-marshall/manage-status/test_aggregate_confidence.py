@@ -280,7 +280,7 @@ def test_aggregate_confidence_registered_in_manage_status_dispatch():
     """argparse routes 'aggregate-confidence' to cmd_aggregate_confidence."""
     import argparse  # noqa: PLC0415
 
-    manage_status = _load_module('_manage_status_dispatch_check_ac', 'manage_status.py')
+    manage_status = _load_module('_manage_status_dispatch_check_ac', 'manage-status.py')
     assert manage_status.cmd_aggregate_confidence is cmd_aggregate_confidence or callable(
         manage_status.cmd_aggregate_confidence
     )

@@ -903,7 +903,7 @@ def _capture_qgate_open_count(plan_id: str, _metadata: dict[str, Any], phase: st
         [
             'plan-marshall:manage-findings:manage-findings',
             'qgate',
-            'query',
+            'list',
             '--plan-id',
             plan_id,
             '--phase',
@@ -970,7 +970,7 @@ def _query_pending_count_for_type(plan_id: str, finding_type: str) -> int | None
     stdout = _run_script(
         [
             'plan-marshall:manage-findings:manage-findings',
-            'query',
+            'list',
             '--plan-id',
             plan_id,
             '--type',
@@ -1013,7 +1013,7 @@ def _query_pending_qgate_count_aggregated(plan_id: str) -> int | None:
     ``2026-05-05-11-001`` follow-up plan ``findings-pipeline-blocking-fixes``.
 
     Loops :data:`QGATE_PHASES` and sums each per-phase
-    ``manage-findings qgate query --phase {p} --resolution pending`` result's
+    ``manage-findings qgate list --phase {p} --resolution pending`` result's
     ``filtered_count``. The aggregation makes the blocking gate phase-agnostic
     with respect to where producers chose to file their Q-Gate rows: a
     ``5-execute`` row produced during the ``6-finalize`` step still blocks
@@ -1031,7 +1031,7 @@ def _query_pending_qgate_count_aggregated(plan_id: str) -> int | None:
             [
                 'plan-marshall:manage-findings:manage-findings',
                 'qgate',
-                'query',
+                'list',
                 '--plan-id',
                 plan_id,
                 '--phase',

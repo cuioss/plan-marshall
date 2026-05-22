@@ -63,6 +63,19 @@ Do not abbreviate (`WARN`), do not invent new level names, and do not rename exi
 
 **Why**: every Python author muscle-memories `logging.WARNING`. Accepting the stdlib spelling eliminates an entire class of caller-facing failure at zero semantic cost.
 
+### Rule 5 — List-verb canonicalization
+
+For the operation-class "return a collection of records", use the verb `list`. Filter dimensions are expressed as flags on `list`, not as distinct subcommand verbs.
+
+- Canonical verb: `list` (e.g., `manage-findings list`, `manage-tasks list`).
+- Filter dimensions are `--{dimension}` flags: `manage-tasks list --domain {d}`, `manage-tasks list --profile {p}`.
+- Domain-qualified verbs (`tasks-by-domain`, `tasks-by-profile`) and operation-specific synonyms (`query` for a collection read) are drift — rename them to `list` plus a filter flag.
+- A qualified list verb is kept ONLY where one script has multiple distinct list targets and the qualifier disambiguates which collection is listed; record the keep-decision rationale at the call site.
+
+This rule is distinct from Rule 2: Rule 2's `read` / `get` / `exists` tiers cover single-record and scalar reads and are NOT affected. Rule 5 governs only the collection-listing operation-class.
+
+**Why**: an LLM pattern-matching from one `manage-*` script to another guesses the verb for "list the records". When one script spells it `query`, another `list`, and a third `tasks-by-domain`, the guess is wrong more often than right, producing silent `exit_code: 2` argparse rejections. One verb per operation-class makes the guess correct by construction.
+
 ## Canonical Forms
 
 The table below records the canonical argument form for each in-scope script after this convention lands. Future scripts in scope MUST follow these conventions; existing scripts that diverge are renamed to match.
@@ -82,42 +95,52 @@ The cross-cutting `--plan-id` and `--audit-plan-id` flags are accepted by virtua
 | `manage-config` | Set a phase config field | `manage-config plan {phase} set --field {name} --value {v} --audit-plan-id {id}` |
 | `manage-config` | Read an effort target | `manage-config effort read [--role {role} \| --phase {phase} --role {subkey} \| --default]` |
 | `manage-config` | Resolve a recipe definition | `manage-config resolve-recipe --recipe {key}` |
+| `manage-findings` | Add a plan-scoped finding | `manage-findings add --plan-id {id} --type {type} --title "{t}" --detail "{d}" [--file-path {p}] [--line {n}] [--component {c}] [--module {m}] [--rule {r}] [--severity error\|warning\|info]` |
+| `manage-findings` | List plan-scoped findings | `manage-findings list --plan-id {id} [--type {csv}] [--resolution {res}] [--promoted {bool}] [--file-pattern {glob}]` |
+| `manage-findings` | Get a single finding | `manage-findings get --plan-id {id} --hash-id {hash}` |
+| `manage-findings` | Resolve a finding | `manage-findings resolve --plan-id {id} --hash-id {hash} --resolution {res} [--detail "{d}"]` |
+| `manage-findings` | Add a Q-Gate finding | `manage-findings qgate add --plan-id {id} --phase {phase} --source qgate\|user_review --type {type} --title "{t}" --detail "{d}" [--file-path {p}] [--component {c}] [--severity error\|warning\|info] [--iteration {n}]` |
+| `manage-findings` | List Q-Gate findings | `manage-findings qgate list --plan-id {id} --phase {phase} [--resolution {res}] [--source qgate\|user_review] [--iteration {n}]` |
+| `manage-findings` | Resolve a Q-Gate finding | `manage-findings qgate resolve --plan-id {id} --hash-id {hash} --resolution {res} --phase {phase} [--detail "{d}"]` |
+| `manage-findings` | Clear Q-Gate findings for a phase | `manage-findings qgate clear --plan-id {id} --phase {phase}` |
+| `manage-findings` | List component assessments | `manage-findings assessment list --plan-id {id} [--certainty {c}] [--min-confidence {n}] [--max-confidence {n}] [--file-pattern {glob}]` |
+| `manage-tasks` | List tasks (optionally filtered) | `manage-tasks list --plan-id {id} [--status {s}] [--deliverable {n}] [--ready] [--domain {d}] [--profile {p}]` |
 | `manage-lessons` | Read a lesson by id | `manage-lessons get --lesson-id {id}` |
 | `manage-logging` | Emit a warning-level log entry | `manage-logging work --plan-id {id} --level WARNING --message "{msg}"` |
 | `manage-references` | Read the entire references body | `manage-references read --plan-id {id}` |
 | `manage-references` | Get one field from references | `manage-references get --plan-id {id} --field {name}` |
 | `manage-references` | Set one field in references | `manage-references set --plan-id {id} --field {name} --value {v}` |
-| `manage-status` | Read plan status | `manage_status read --plan-id {id}` |
-| `manage-status` | Get a metadata field | `manage_status metadata --get --plan-id {id} --field {name}` |
-| `manage-status` | Set a metadata field | `manage_status metadata --set --plan-id {id} --field {name} --value {v}` |
-| `manage-status` | Transition to next phase | `manage_status transition --plan-id {id} --completed {phase}` |
-| `manage-status` | Resolve the worktree path for a plan | `manage_status get-worktree-path --plan-id {id}` |
-| `manage-status` | Classify a change type heuristically | `manage_status change-type-heuristic --plan-id {id}` |
+| `manage-status` | Read plan status | `manage-status read --plan-id {id}` |
+| `manage-status` | Get a metadata field | `manage-status metadata --get --plan-id {id} --field {name}` |
+| `manage-status` | Set a metadata field | `manage-status metadata --set --plan-id {id} --field {name} --value {v}` |
+| `manage-status` | Transition to next phase | `manage-status transition --plan-id {id} --completed {phase}` |
+| `manage-status` | Resolve the worktree path for a plan | `manage-status get-worktree-path --plan-id {id}` |
+| `manage-status` | Classify a change type heuristically | `manage-status change-type-heuristic --plan-id {id}` |
 | `manage-tasks` | Read a task body | `manage-tasks read --plan-id {id} --task-number {n}` |
 | `manage-tasks` | Update a task | `manage-tasks update --plan-id {id} --task-number {n}` |
 | `manage-tasks` | Finalize a step | `manage-tasks finalize-step --plan-id {id} --task-number {n} --step {s} --outcome {done|failed|skipped}` |
 
-The script name for `manage-status` rows is spelled `manage_status` (underscore) because the on-disk filename is `manage_status.py` and the executor's 3-part notation MUST match the filename; the skill directory is still `manage-status` (kebab-case) per bundle convention. See [`tools-script-executor/standards/notation.md`](../../../tools-script-executor/standards/notation.md) for the notation-to-path resolution rule.
+The script notation third segment for `manage-status` rows is `manage-status` — every `manage-*` entrypoint filename is kebab-case, matching the skill directory and the executor's 3-part notation. See [`tools-script-executor/standards/notation.md`](../../../tools-script-executor/standards/notation.md) for the notation-to-path resolution rule.
 
-### `workflow-integration-git:git_workflow`
+### `workflow-integration-git:git-workflow`
 
-The git workflow script provides commit-message formatting, diff analysis, artifact detection, and the full worktree CRUD surface (`worktree-path`, `worktree-create`, `worktree-remove`, `worktree-list`, `worktree-rebase-to`) plus the `baseline-reconcile` mechanical reconciliation verb. There is no `commit`, `push`, or `branch-create` subcommand — those operations go through provider-neutral `git` calls in skill workflows (`git -C {path} commit ...`, `git -C {path} push ...`, `git -C {path} switch -c ...`) or through `tools-integration-ci:ci` for PR-level branch creation. The 3-part script notation is `plan-marshall:workflow-integration-git:git_workflow` (the third segment matches the on-disk filename `git_workflow.py`).
+The git workflow script provides commit-message formatting, diff analysis, artifact detection, and the full worktree CRUD surface (`worktree-path`, `worktree-create`, `worktree-remove`, `worktree-list`, `worktree-rebase-to`) plus the `baseline-reconcile` mechanical reconciliation verb. There is no `commit`, `push`, or `branch-create` subcommand — those operations go through provider-neutral `git` calls in skill workflows (`git -C {path} commit ...`, `git -C {path} push ...`, `git -C {path} switch -c ...`) or through `tools-integration-ci:ci` for PR-level branch creation. The 3-part script notation is `plan-marshall:workflow-integration-git:git-workflow` (the third segment matches the on-disk filename `git-workflow.py`).
 
 | Operation | Canonical form |
 |---|---|
-| Format a conventional commit message | `git_workflow format-commit --type {type} [--scope {s}] --subject "{subject}" [--body "{b}"] [--breaking "{desc}"] [--footer "{f}"]` |
-| Capture and analyze a worktree diff | `git_workflow analyze-diff --worktree-path {path} [--cached]` |
-| Scan for committable artifacts | `git_workflow detect-artifacts [--root {path}] [--no-gitignore]` |
-| Resolve the worktree path for a plan | `git_workflow worktree-path --plan-id {id}` |
-| Create a worktree + feature branch + .plan symlink | `git_workflow worktree-create --plan-id {id} --branch {name} [--base {ref}]` |
-| Remove a worktree | `git_workflow worktree-remove --plan-id {id} [--force]` |
-| Enumerate plans that declare a worktree | `git_workflow worktree-list` |
-| Rebase a worktree onto a base ref | `git_workflow worktree-rebase-to --plan-id {id} --base {ref}` |
-| Baseline reconcile (phase-2-refine Step 3d) | `git_workflow baseline-reconcile --plan-id {id} [--base-branch {ref}] [--worktree-path {path}] [--skip-fetch] [--no-emit]` |
+| Format a conventional commit message | `git-workflow format-commit --type {type} [--scope {s}] --subject "{subject}" [--body "{b}"] [--breaking "{desc}"] [--footer "{f}"]` |
+| Capture and analyze a worktree diff | `git-workflow analyze-diff --worktree-path {path} [--cached]` |
+| Scan for committable artifacts | `git-workflow detect-artifacts [--root {path}] [--no-gitignore]` |
+| Resolve the worktree path for a plan | `git-workflow worktree-path --plan-id {id}` |
+| Create a worktree + feature branch + .plan symlink | `git-workflow worktree-create --plan-id {id} --branch {name} [--base {ref}]` |
+| Remove a worktree | `git-workflow worktree-remove --plan-id {id} [--force]` |
+| Enumerate plans that declare a worktree | `git-workflow worktree-list` |
+| Rebase a worktree onto a base ref | `git-workflow worktree-rebase-to --plan-id {id} --base {ref}` |
+| Baseline reconcile (phase-2-refine Step 3d) | `git-workflow baseline-reconcile --plan-id {id} [--base-branch {ref}] [--worktree-path {path}] [--skip-fetch] [--no-emit]` |
 
 ### `tools-integration-ci:ci` (provider-agnostic CI router)
 
-The `pr`, `ci`, `issue`, and `branch` subcommand surfaces are common across providers; provider-specific extensions (e.g., `pr submit-review` on GitHub) follow the same flag conventions. The router consumes the routing pair `--plan-id {id}` (preferred — auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir {path}` (escape hatch / legacy) before delegating to the provider script. The two flags are mutually exclusive — see `tools-script-executor/standards/cwd-policy.md` § "Bucket B" for the canonical two-state contract.
+The `pr`, `checks`, `issue`, and `branch` subcommand surfaces are common across providers; provider-specific extensions (e.g., `pr submit-review` on GitHub) follow the same flag conventions. The router consumes the routing pair `--plan-id {id}` (preferred — auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir {path}` (escape hatch / legacy) before delegating to the provider script. The two flags are mutually exclusive — see `tools-script-executor/standards/cwd-policy.md` § "Bucket B" for the canonical two-state contract.
 
 | Operation | Canonical form |
 |---|---|
@@ -132,11 +155,11 @@ The `pr`, `ci`, `issue`, and `branch` subcommand surfaces are common across prov
 | Wait for new bot comments | `ci pr wait-for-comments --pr-number {n} [--timeout {s}] [--interval {s}]` |
 | Merge a pull request | `ci pr merge {--pr-number {n} \| --head {branch}} [--strategy merge\|squash\|rebase] [--delete-branch]` |
 | Edit PR title or body | `ci pr edit --pr-number {n} [--title "{title}"] [--body-file {path}]` |
-| Check CI status | `ci ci status {--pr-number {n} \| --head {branch}}` |
-| Wait for CI to complete | `ci ci wait --pr-number {n} [--timeout {s}] [--interval {s}]` |
-| Wait for CI status flip | `ci ci wait-for-status-flip --pr-number {n} [--timeout {s}] [--interval {s}] [--expected success\|failure\|any]` |
-| Rerun a workflow | `ci ci rerun --run-id {id}` |
-| Get failed run logs | `ci ci logs --run-id {id}` |
+| Check CI status | `ci checks status {--pr-number {n} \| --head {branch}}` |
+| Wait for CI to complete | `ci checks wait --pr-number {n} [--timeout {s}] [--interval {s}]` |
+| Wait for CI status flip | `ci checks wait-for-status-flip --pr-number {n} [--timeout {s}] [--interval {s}] [--expected success\|failure\|any]` |
+| Rerun a workflow | `ci checks rerun --run-id {id}` |
+| Get failed run logs | `ci checks logs --run-id {id}` |
 | Create an issue | `ci issue create --title "{title}" [--labels {csv}] --body-file {path}` |
 | View an issue | `ci issue view --issue {id}` |
 | Close an issue | `ci issue close --issue {id}` |
@@ -197,7 +220,7 @@ assert result.returncode == 0, result.stderr  # The alias path reaches the handl
 
 ## Enforcement
 
-The canonical forms above are enforced automatically by the `ARGUMENT_NAMING_*` rule cluster in `pm-plugin-development:plugin-doctor:doctor-marketplace` (see [`plugin-doctor/references/rule-catalog.md`](../../../../pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md) → "Argument Naming Rules"). The cluster scans `SKILL.md`, agent prose, recipes, and standards under `marketplace/bundles/*/` for `python3 .plan/execute-script.py {notation} ...` invocations and validates each token against the executor's `SCRIPTS` mapping and the target script's argparse declarations:
+The canonical forms above are enforced automatically by the `ARGUMENT_NAMING_*` rule cluster in `pm-plugin-development:plugin-doctor:doctor-marketplace` (see [`plugin-doctor/references/rule-catalog.md`](../../../../pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md) → "Argument Naming Rules"). The cluster scans `SKILL.md`, agent prose, recipes, standards, and workflow docs under `marketplace/bundles/*/` for `python3 .plan/execute-script.py {notation} ...` invocations and validates each token against the executor's `SCRIPTS` mapping and the target script's argparse declarations:
 
 - `ARGUMENT_NAMING_NOTATION_INVALID` — flags 3-part notations that do not resolve in the executor mapping (snake_case bundles, self-referential repetition, unregistered skills).
 - `ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN` — flags subcommands not declared in the resolved script's `subparsers.choices`.

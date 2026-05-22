@@ -4,25 +4,25 @@ CLI script for plan metrics collection and reporting.
 
 Usage:
     Start phase timing:
-        python3 manage_metrics.py start-phase --plan-id <id> --phase <phase>
+        python3 manage-metrics.py start-phase --plan-id <id> --phase <phase>
 
     End phase timing:
-        python3 manage_metrics.py end-phase --plan-id <id> --phase <phase> [--total-tokens N] [--duration-ms N] [--tool-uses N]
+        python3 manage-metrics.py end-phase --plan-id <id> --phase <phase> [--total-tokens N] [--duration-ms N] [--tool-uses N]
 
     Generate metrics.md:
-        python3 manage_metrics.py generate --plan-id <id>
+        python3 manage-metrics.py generate --plan-id <id>
 
     Atomic phase boundary (end-phase + start-phase + generate):
-        python3 manage_metrics.py phase-boundary --plan-id <id> \
+        python3 manage-metrics.py phase-boundary --plan-id <id> \
             --prev-phase <prev> --next-phase <next> \
             [--total-tokens N] [--duration-ms N] [--tool-uses N]
 
     Accumulate per-phase subagent usage on disk:
-        python3 manage_metrics.py accumulate-agent-usage --plan-id <id> --phase <phase> \
+        python3 manage-metrics.py accumulate-agent-usage --plan-id <id> --phase <phase> \
             [--total-tokens N] [--tool-uses N] [--duration-ms N]
 
     Enrich from JSONL transcript (per-phase subagent <usage>):
-        python3 manage_metrics.py enrich --plan-id <id> --session-id <sid>
+        python3 manage-metrics.py enrich --plan-id <id> --session-id <sid>
 """
 
 import argparse

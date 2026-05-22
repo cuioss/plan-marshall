@@ -75,10 +75,11 @@ File exactly ONE finding with producer `ci-verify-missing`, subtype
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings add \
-  --plan-id {plan_id} --finding-type triage --severity warning \
+  --plan-id {plan_id} --type triage --severity warning \
   --component "plan-marshall:phase-6-finalize" \
-  --message "[ci_no_checks] CI run produced zero checks for PR {pr_number} at HEAD {head_sha}" \
-  --source-path "artifacts/ci-runs/{run_id}/manifest.toon"
+  --title "[ci_no_checks] CI run produced zero checks" \
+  --detail "[ci_no_checks] CI run produced zero checks for PR {pr_number} at HEAD {head_sha}" \
+  --file-path "artifacts/ci-runs/{run_id}/manifest.toon"
 ```
 
 Then dispatch `verification-feedback` ONCE with `producer=ci-verify-missing`.
@@ -111,10 +112,11 @@ For each classified check, file ONE finding:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings add \
-  --plan-id {plan_id} --finding-type triage --severity warning \
+  --plan-id {plan_id} --type triage --severity warning \
   --component "plan-marshall:phase-6-finalize" \
-  --message "[{subtype}] {check_name} failed on PR {pr_number} at HEAD {head_sha}" \
-  --source-path "artifacts/ci-runs/{run_id}/{job_name}.log"
+  --title "[{subtype}] {check_name} failed" \
+  --detail "[{subtype}] {check_name} failed on PR {pr_number} at HEAD {head_sha}" \
+  --file-path "artifacts/ci-runs/{run_id}/{job_name}.log"
 ```
 
 The `{subtype}` token is the second column of the taxonomy table

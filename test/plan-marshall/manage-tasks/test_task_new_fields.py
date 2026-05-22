@@ -64,11 +64,7 @@ def cmd_add(ns):
 
 
 cmd_read, cmd_list, cmd_next = _query.cmd_read, _query.cmd_list, _query.cmd_next
-cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile = (
-    _query.cmd_next_tasks,
-    _query.cmd_tasks_by_domain,
-    _query.cmd_tasks_by_profile,
-)
+cmd_next_tasks = _query.cmd_next_tasks
 cmd_finalize_step = _step.cmd_finalize_step
 
 
@@ -126,9 +122,11 @@ def _read_ns(plan_id='test-plan', number=1):
     return Namespace(plan_id=plan_id, task_number=number)
 
 
-def _list_ns(plan_id='test-plan', status='all', deliverable=None, ready=False):
+def _list_ns(plan_id='test-plan', status='all', deliverable=None, ready=False, domain=None, profile=None):
     """Build Namespace for cmd_list."""
-    return Namespace(plan_id=plan_id, status=status, deliverable=deliverable, ready=ready)
+    return Namespace(
+        plan_id=plan_id, status=status, deliverable=deliverable, ready=ready, domain=domain, profile=profile
+    )
 
 
 def _next_ns(plan_id='test-plan', include_context=False, ignore_deps=False):
@@ -166,16 +164,6 @@ def _update_ns(
 def _finalize_step_ns(plan_id='test-plan', task=1, step=1, outcome='done', reason=None):
     """Build Namespace for cmd_finalize_step."""
     return Namespace(plan_id=plan_id, task_number=task, step=step, outcome=outcome, reason=reason)
-
-
-def _tasks_by_domain_ns(plan_id='test-plan', domain='java'):
-    """Build Namespace for cmd_tasks_by_domain."""
-    return Namespace(plan_id=plan_id, domain=domain)
-
-
-def _tasks_by_profile_ns(plan_id='test-plan', profile='implementation'):
-    """Build Namespace for cmd_tasks_by_profile."""
-    return Namespace(plan_id=plan_id, profile=profile)
 
 
 def _next_tasks_ns(plan_id='test-plan'):
@@ -540,18 +528,18 @@ def test_update_fails_with_invalid_skills():
 
 
 # =============================================================================
-# Tests: tasks-by-domain query
+# Tests: list --domain filter
 # =============================================================================
 
 
-def test_tasks_by_domain_filters():
-    """tasks-by-domain filters by domain."""
+def test_list_domain_filter():
+    """list --domain filters by domain."""
     with PlanContext(plan_id='nf-by-dom'):
         add_task_with_fields(plan_id='nf-by-dom', title='Java task 1', domain='java')
         add_task_with_fields(plan_id='nf-by-dom', title='JS task', domain='javascript')
         add_task_with_fields(plan_id='nf-by-dom', title='Java task 2', domain='java')
 
-        result = cmd_tasks_by_domain(_tasks_by_domain_ns(plan_id='nf-by-dom', domain='java'))
+        result = cmd_list(_list_ns(plan_id='nf-by-dom', domain='java'))
 
         assert result['status'] == 'success'
         assert result['counts']['total'] == 2
@@ -561,30 +549,30 @@ def test_tasks_by_domain_filters():
         assert 'JS task' not in titles
 
 
-def test_tasks_by_domain_empty_result():
-    """tasks-by-domain returns empty when no matches."""
+def test_list_domain_filter_empty_result():
+    """list --domain returns empty when no matches."""
     with PlanContext(plan_id='nf-by-dom-empty'):
         add_task_with_fields(plan_id='nf-by-dom-empty', title='Java task', domain='java')
 
-        result = cmd_tasks_by_domain(_tasks_by_domain_ns(plan_id='nf-by-dom-empty', domain='javascript'))
+        result = cmd_list(_list_ns(plan_id='nf-by-dom-empty', domain='javascript'))
 
         assert result['status'] == 'success'
         assert result['counts']['total'] == 0
 
 
 # =============================================================================
-# Tests: tasks-by-profile query
+# Tests: list --profile filter
 # =============================================================================
 
 
-def test_tasks_by_profile_filters():
-    """tasks-by-profile filters by profile."""
+def test_list_profile_filter():
+    """list --profile filters by profile."""
     with PlanContext(plan_id='nf-by-prof'):
         add_task_with_fields(plan_id='nf-by-prof', title='Impl task 1', profile='implementation')
         add_task_with_fields(plan_id='nf-by-prof', title='Test task', profile='testing')
         add_task_with_fields(plan_id='nf-by-prof', title='Impl task 2', profile='implementation')
 
-        result = cmd_tasks_by_profile(_tasks_by_profile_ns(plan_id='nf-by-prof', profile='implementation'))
+        result = cmd_list(_list_ns(plan_id='nf-by-prof', profile='implementation'))
 
         assert result['status'] == 'success'
         assert result['counts']['total'] == 2
@@ -594,14 +582,14 @@ def test_tasks_by_profile_filters():
         assert 'Test task' not in titles
 
 
-def test_tasks_by_profile_testing():
-    """tasks-by-profile filters testing profile."""
+def test_list_profile_filter_testing():
+    """list --profile filters testing profile."""
     with PlanContext(plan_id='nf-by-prof-test'):
         add_task_with_fields(plan_id='nf-by-prof-test', title='Impl task', profile='implementation')
         add_task_with_fields(plan_id='nf-by-prof-test', title='Test task 1', profile='testing')
         add_task_with_fields(plan_id='nf-by-prof-test', title='Test task 2', profile='testing')
 
-        result = cmd_tasks_by_profile(_tasks_by_profile_ns(plan_id='nf-by-prof-test', profile='testing'))
+        result = cmd_list(_list_ns(plan_id='nf-by-prof-test', profile='testing'))
 
         assert result['status'] == 'success'
         assert result['counts']['total'] == 2
@@ -894,13 +882,13 @@ steps:
 # =============================================================================
 
 
-def test_cli_tasks_by_domain_missing_domain_exits_2():
-    """tasks-by-domain without --domain exits with code 2 (argparse error)."""
+def test_cli_tasks_by_domain_subcommand_removed_exits_2():
+    """The removed `tasks-by-domain` subcommand exits with code 2 (argparse error)."""
     result = run_script(SCRIPT_PATH, 'tasks-by-domain', '--plan-id', 'test-plan')
     assert result.returncode == 2
 
 
-def test_cli_tasks_by_profile_missing_profile_exits_2():
-    """tasks-by-profile without --profile exits with code 2 (argparse error)."""
+def test_cli_tasks_by_profile_subcommand_removed_exits_2():
+    """The removed `tasks-by-profile` subcommand exits with code 2 (argparse error)."""
     result = run_script(SCRIPT_PATH, 'tasks-by-profile', '--plan-id', 'test-plan')
     assert result.returncode == 2

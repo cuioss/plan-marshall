@@ -178,7 +178,7 @@ The router:
 ### With run-config
 
 - CI operations use `run_config timeout get/set` for adaptive timeouts
-- Particularly important for `ci wait` operations
+- Particularly important for `checks wait` operations
 
 ### With plan-finalize
 

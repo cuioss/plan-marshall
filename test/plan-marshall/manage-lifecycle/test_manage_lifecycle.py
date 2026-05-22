@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for lifecycle commands in manage_status.py script.
+"""Tests for lifecycle commands in manage-status.py script.
 
 Tier 2 (direct import) tests with 3 subprocess tests for CLI plumbing.
 """
@@ -11,7 +11,7 @@ from pathlib import Path
 from conftest import PlanContext, get_script_path, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage_status.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
 
 # Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime)
 import importlib.util  # noqa: E402

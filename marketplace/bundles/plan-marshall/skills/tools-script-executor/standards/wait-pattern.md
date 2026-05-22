@@ -241,14 +241,14 @@ The CLI provides two modes: **explicit** (manual timeout/interval) and **adaptiv
 # ADAPTIVE MODE (recommended): timeout/interval managed internally via run-config
 # Outer shell timeout (600s) is safety net; inner adaptive timeout controls polling
 timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await_until \
-    --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status --pr-number 123" \
+    --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks status --pr-number 123" \
     --success-field "status=success" \
     --failure-field "status=failure" \
     --command-key "ci:pr_checks"
 
 # EXPLICIT MODE: manual timeout/interval (useful for one-off operations)
 timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await_until \
-    --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status --pr-number 123" \
+    --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks status --pr-number 123" \
     --success-field "status=success" \
     --timeout 300 \
     --interval 30

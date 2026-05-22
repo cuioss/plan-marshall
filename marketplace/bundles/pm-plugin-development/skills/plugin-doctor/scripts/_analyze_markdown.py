@@ -520,11 +520,11 @@ def check_mark_step_done_violations(content: str) -> list:
     finalize step termination). For every invocation, emits up to three distinct
     findings:
 
-    - ``MARK_STEP_DONE_BAD_NOTATION``: the line contains the hyphenated notation
-      ``manage-status:manage-status`` instead of the canonical underscored form
-      ``manage-status:manage_status``. The hyphenated form does not resolve via
-      the script executor and silently fails — see driving lesson that motivated
-      this rule family.
+    - ``MARK_STEP_DONE_STALE_NOTATION``: the line contains the stale underscored
+      notation ``manage-status:manage_status`` instead of the canonical kebab-case
+      form ``manage-status:manage-status``. The underscored form no longer resolves
+      via the script executor after the entrypoint-rename cutover and silently
+      fails — see driving lesson that motivated this rule family.
     - ``MARK_STEP_DONE_MISSING_PHASE``: the full invocation (single line or
       backslash-continued multi-line) does not contain ``--phase``. Phase-6 step
       termination requires ``--phase`` to route the finalize status update.
@@ -551,7 +551,7 @@ def check_mark_step_done_violations(content: str) -> list:
 
         # Group lines into logical commands first, so that mark-step-done can
         # live on ANY line of a backslash-continued command (including a
-        # continuation line below a `manage-status:manage-status \` prefix).
+        # continuation line below a `manage-status:manage_status \` prefix).
         # The previous line-walker anchored on the mark-step-done line and only
         # looked forward, which missed notation appearing on lines before it.
         logical_commands: list[list[tuple[int, str]]] = []
@@ -574,10 +574,11 @@ def check_mark_step_done_violations(content: str) -> list:
             invocation_line = block_start_line + mark_done_indices[0]
             invocation_text = '\n'.join(cmd_line for _idx, cmd_line in cmd)
 
-            # MARK_STEP_DONE_BAD_NOTATION: hyphenated notation anywhere in the
-            # assembled logical command (word-bounded to avoid partial matches).
-            if re.search(r'\bmanage-status:manage-status\b', invocation_text):
-                violations.append({'line': invocation_line, 'code': 'MARK_STEP_DONE_BAD_NOTATION'})
+            # MARK_STEP_DONE_STALE_NOTATION: stale underscored notation anywhere
+            # in the assembled logical command (word-bounded to avoid partial
+            # matches).
+            if re.search(r'\bmanage-status:manage_status\b', invocation_text):
+                violations.append({'line': invocation_line, 'code': 'MARK_STEP_DONE_STALE_NOTATION'})
 
             # MARK_STEP_DONE_MISSING_PHASE — anchored matching prevents
             # `--phase-override` (or similar) from spoofing a present `--phase`.

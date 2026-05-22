@@ -1085,8 +1085,8 @@ def test_qgate_aggregated_helper_loops_every_qgate_phase(
     """``_query_pending_qgate_count_aggregated`` issues one query per phase.
 
     Pins the contract that the helper enumerates every value in
-    ``QGATE_PHASES`` and routes through the ``qgate query --phase {p}
-    --resolution pending`` subcommand (NOT the canonical ``query --type
+    ``QGATE_PHASES`` and routes through the ``qgate list --phase {p}
+    --resolution pending`` subcommand (NOT the canonical ``list --type
     qgate`` path that returns 0 for the qgate type). Without this
     enumeration a producer-mismatch row filed under ``5-execute`` would
     fail to block the ``5-execute → 6-finalize`` boundary even though
@@ -1122,7 +1122,7 @@ def test_qgate_aggregated_helper_loops_every_qgate_phase(
         # Every call MUST hit the qgate subcommand surface, not the
         # canonical query path that misses qgate findings entirely.
         assert args[1] == 'qgate'
-        assert args[2] == 'query'
+        assert args[2] == 'list'
         # And every call MUST filter by ``--resolution pending`` — the same
         # contract the per-type query enforces for the other blocking types.
         resolution_idx = args.index('--resolution')

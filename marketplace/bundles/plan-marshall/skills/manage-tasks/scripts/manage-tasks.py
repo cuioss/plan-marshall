@@ -13,12 +13,10 @@ Subcommands:
   batch-add        - Atomically create multiple tasks from a JSON array
   update           - Update an existing task
   remove           - Remove a task
-  list             - List all tasks (summary)
+  list             - List all tasks (summary; supports --domain / --profile filters)
   read             - Read a single task by number
   exists           - Boolean probe: does a task exist? (never errors on absence)
   next             - Get next pending task/step for execution
-  tasks-by-domain  - List tasks filtered by domain
-  tasks-by-profile - List tasks filtered by profile
   next-tasks       - Get all tasks ready for parallel execution
   finalize-step    - Complete a step with outcome (done/skipped)
   add-step         - Add a new step to a task
@@ -77,8 +75,6 @@ from _tasks_query import (
     cmd_next,
     cmd_next_tasks,
     cmd_read,
-    cmd_tasks_by_domain,
-    cmd_tasks_by_profile,
 )
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 from input_validation import (  # type: ignore[import-not-found]
@@ -203,6 +199,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_list.add_argument('--deliverable', type=int, help='Filter by deliverable number')
     p_list.add_argument('--ready', action='store_true', help='Only show tasks with no unmet dependencies')
+    add_domain_arg(p_list, required=False)
+    p_list.add_argument('--profile', help='Filter by profile (e.g., implementation, module_testing)')
     p_read = subparsers.add_parser('read', help='Read a single task', allow_abbrev=False)
     add_plan_id_arg(p_read)
     add_task_number_arg(p_read)
@@ -229,18 +227,6 @@ def build_parser() -> argparse.ArgumentParser:
     add_plan_id_arg(p_next)
     p_next.add_argument('--include-context', action='store_true', help='Include deliverable details in output')
     p_next.add_argument('--ignore-deps', action='store_true', help='Ignore dependency constraints')
-
-    # tasks-by-domain
-    p_by_domain = subparsers.add_parser('tasks-by-domain', help='List tasks filtered by domain', allow_abbrev=False)
-    add_plan_id_arg(p_by_domain)
-    add_domain_arg(p_by_domain)
-
-    # tasks-by-profile
-    p_by_profile = subparsers.add_parser('tasks-by-profile', help='List tasks filtered by profile', allow_abbrev=False)
-    add_plan_id_arg(p_by_profile)
-    p_by_profile.add_argument(
-        '--profile', required=True, help='Profile to filter by (e.g., implementation, module_testing)'
-    )
 
     # next-tasks
     p_next_tasks = subparsers.add_parser(
@@ -361,8 +347,6 @@ COMMANDS = {
     'read': cmd_read,
     'exists': cmd_exists,
     'next': cmd_next,
-    'tasks-by-domain': cmd_tasks_by_domain,
-    'tasks-by-profile': cmd_tasks_by_profile,
     'next-tasks': cmd_next_tasks,
     'finalize-step': cmd_finalize_step,
     'add-step': cmd_add_step,

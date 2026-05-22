@@ -70,12 +70,12 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 
 (For GitLab projects the equivalent producer is `plan-marshall:workflow-integration-gitlab:gitlab_pr comments-stage`. Provider selection is whichever matches `manage-providers` for the plan's host; only one of the two is invoked per finalize run.)
 
-The producer is the ONLY surface that fetches and stores `pr-comment` findings. This document does not classify, decide, or act on comments inline — every consumer-side action below reads from the findings store via `manage-findings query`.
+The producer is the ONLY surface that fetches and stores `pr-comment` findings. This document does not classify, decide, or act on comments inline — every consumer-side action below reads from the findings store via `manage-findings list`.
 
 ### Consumer: enumerate pending pr-comment findings
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query \
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
   --plan-id {plan_id} --type pr-comment --resolution pending
 ```
 
@@ -85,7 +85,7 @@ If the result's `findings` list is empty, there is nothing to process — procee
 
 When the query above returns one or more pending `pr-comment` findings, dispatch the unified feedback workflow [`verification-feedback.md`](../../plan-marshall/workflow/verification-feedback.md) with `producer=pr-comment`. That workflow's Step 1 verifies the store-only query, then delegates the per-finding LLM-judgement core to [`triage.md`](../../plan-marshall/workflow/triage.md) Steps 1-6 — single source of truth for the smart-grouping algorithm, the per-outcome action bodies (FIX / SUPPRESS / ACCEPT / AskUserQuestion), the overflow / timeout handling, and the Scope-Deviation Escalation guard.
 
-The dispatch is **by reference** — the prompt carries `producer=pr-comment` and `pr_number={pr_number}` only; the subagent issues its own `manage-findings query` against the same store as its first workflow step, so the orchestrator's query above is purely a gate-keeping count (skip dispatch when empty).
+The dispatch is **by reference** — the prompt carries `producer=pr-comment` and `pr_number={pr_number}` only; the subagent issues its own `manage-findings list` against the same store as its first workflow step, so the orchestrator's query above is purely a gate-keeping count (skip dispatch when empty).
 
 Compute the target variant via the role resolver, then dispatch:
 
@@ -189,7 +189,7 @@ message: "pending_findings_blocking_count failed for phase '6-finalize': …"
 
 The capture is the structural enforcer of "no unresolved pr-comment findings at branch-cleanup". Loop-back guidance:
 
-1. Read the offending findings via `manage-findings query --type pr-comment --resolution pending` (or whichever type the `per_type` map names).
+1. Read the offending findings via `manage-findings list --type pr-comment --resolution pending` (or whichever type the `per_type` map names).
 2. For each pending finding, run the per-finding consumer dispatch defined above (load `ext-triage-{domain}`, decide FIX / SUPPRESS / ACCEPT / `AskUserQuestion`, act, then `manage-findings resolve`). FIX outcomes set `loop_back_needed = true` and re-enter phase-5-execute via the loop-back block in this document; SUPPRESS / ACCEPT / `taken_into_account` resolve in-place without loop-back.
 3. After every pending finding is resolved, **re-issue the same `phase_handshake capture --phase 6-finalize`** call. The boundary is satisfied only when capture returns `status: success`.
 4. Bound the iterations by the existing `automated-review` iteration cap (3); on cap exhaustion mark the step `failed` per the dispatcher contract — the boundary remains gated and `branch-cleanup` does not run.

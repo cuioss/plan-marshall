@@ -485,9 +485,9 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
 
     # mark-step-done argument validation (phase-6-finalize finalize step termination)
     _mark_step_done_descriptions = {
-        'MARK_STEP_DONE_BAD_NOTATION': (
-            'mark-step-done invocation uses hyphenated notation '
-            '`manage-status:manage-status` instead of `manage-status:manage_status`'
+        'MARK_STEP_DONE_STALE_NOTATION': (
+            'mark-step-done invocation uses stale underscored notation '
+            '`manage-status:manage_status` instead of `manage-status:manage-status`'
         ),
         'MARK_STEP_DONE_MISSING_PHASE': 'mark-step-done invocation is missing required `--phase` argument',
         'MARK_STEP_DONE_MISSING_OUTCOME': 'mark-step-done invocation is missing required `--outcome` argument',

@@ -1,8 +1,9 @@
-"""Tests for git_workflow.py - consolidated git workflow script.
+"""Tests for git-workflow.py - consolidated git workflow script.
 
 Tier 2 (direct import) tests with 3 subprocess tests for CLI plumbing.
 """
 
+import importlib.util
 import tempfile
 import unittest
 from argparse import Namespace
@@ -13,21 +14,24 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]
 from conftest import get_script_path, run_script
 
 # Script under test (for subprocess CLI plumbing tests)
-SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git_workflow.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git-workflow.py')
 
-# Tier 2 direct imports — conftest sets up PYTHONPATH for cross-skill imports
-from git_workflow import (  # type: ignore[import-not-found]  # noqa: E402
-    _SKIP_DIRS,
-    SAFE_ARTIFACT_PATTERNS,
-    UNCERTAIN_ARTIFACT_PATTERNS,
-    VALID_TYPES,
-    analyze_diff,
-    cmd_detect_artifacts,
-    cmd_format_commit,
-    get_tracked_files,
-    scan_artifacts,
-    wrap_text,
-)
+# The entrypoint filename is kebab-case (git-workflow.py), which is not a
+# valid Python module identifier — load it via importlib instead of `import`.
+_spec = importlib.util.spec_from_file_location('git_workflow', SCRIPT_PATH)
+assert _spec is not None and _spec.loader is not None
+git_workflow = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(git_workflow)
+_SKIP_DIRS = git_workflow._SKIP_DIRS
+SAFE_ARTIFACT_PATTERNS = git_workflow.SAFE_ARTIFACT_PATTERNS
+UNCERTAIN_ARTIFACT_PATTERNS = git_workflow.UNCERTAIN_ARTIFACT_PATTERNS
+VALID_TYPES = git_workflow.VALID_TYPES
+analyze_diff = git_workflow.analyze_diff
+cmd_detect_artifacts = git_workflow.cmd_detect_artifacts
+cmd_format_commit = git_workflow.cmd_format_commit
+get_tracked_files = git_workflow.get_tracked_files
+scan_artifacts = git_workflow.scan_artifacts
+wrap_text = git_workflow.wrap_text
 
 
 def run_git_script(args: list) -> tuple:

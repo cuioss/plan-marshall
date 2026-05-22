@@ -161,12 +161,12 @@ The plan-marshall bundle uses manage-* skills as the data access layer for all p
 │  │                                                                      │  │
 │  │  # Create status                                                     │  │
 │  │  python3 .plan/execute-script.py \                                   │  │
-│  │    plan-marshall:manage-status:manage_status \                         │  │
+│  │    plan-marshall:manage-status:manage-status \                         │  │
 │  │    create --plan-id my-feature --title "Title" --phases 1-init,...   │  │
 │  │                                                                      │  │
 │  │  # Transition phase                                                  │  │
 │  │  python3 .plan/execute-script.py \                                   │  │
-│  │    plan-marshall:manage-status:manage_status \                            │  │
+│  │    plan-marshall:manage-status:manage-status \                            │  │
 │  │    transition --plan-id my-feature --completed 1-init                │  │
 │  │                                                                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │

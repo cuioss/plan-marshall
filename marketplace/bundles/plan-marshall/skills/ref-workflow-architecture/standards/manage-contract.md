@@ -19,7 +19,7 @@ python3 .plan/execute-script.py plan-marshall:{skill}:{script} {command} {args}
 
 **Constraints:**
 - Scripts are invoked only through `python3 .plan/execute-script.py` with 3-part notation
-- Entry-point scripts use either hyphens (e.g., `manage-files.py`) or underscores (e.g., `manage_status.py`) — the filename must match the 3-part executor notation
+- Entry-point scripts use kebab-case filenames (e.g., `manage-files.py`, `manage-status.py`) — the filename must match the 3-part executor notation
 - Scripts imported as Python modules by other scripts use underscores (e.g., `run_config.py`, `plan_logging.py`)
 - Internal modules use underscore prefix with `{skill}_{role}.py` convention (e.g., `_tasks_core.py`, `_tasks_crud.py`)
 - All script output uses TOON format (see `plan-marshall:ref-toon-format` for full specification)
@@ -161,7 +161,7 @@ All manage-* scripts follow the noun-verb CLI pattern:
 python3 .plan/execute-script.py plan-marshall:{skill}:{script} {noun} {verb} [options]
 ```
 
-Some skills use flat commands (single-level `{verb}`) when only one noun exists. Skills with multiple resource types use two-level subparsers (e.g., `manage-findings`: `qgate add`, `assessment query`).
+Some skills use flat commands (single-level `{verb}`) when only one noun exists. Skills with multiple resource types use two-level subparsers (e.g., `manage-findings`: `qgate add`, `assessment list`).
 
 Common flags:
 - `--plan-id {id}` — Plan identifier (kebab-case, required for plan-scoped operations)

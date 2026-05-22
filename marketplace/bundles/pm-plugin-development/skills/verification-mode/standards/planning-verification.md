@@ -35,7 +35,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read
 
 **Step 4 Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read --plan-id {plan_id}
 ```
 
 **Step 3 Contract Verification Details**:
@@ -141,12 +141,12 @@ Direct .plan file access bypassing manage-* API
 ### Context
 - **Operation**: Read
 - **Target**: .plan/plans/jwt-auth/status.toon
-- **Expected**: Use `python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read --plan-id jwt-auth`
+- **Expected**: Use `python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read --plan-id jwt-auth`
 - **Actual**: Direct file read attempted
 
 ### Root Cause Analysis
 Command is reading status.toon directly instead of using
-`python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read`.
+`python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read`.
 This bypasses audit trail and validation.
 
 ### Impact Assessment
@@ -158,11 +158,11 @@ This bypasses audit trail and validation.
 | Maintainability | Poor - mixed access patterns |
 
 ### Options
-1. **Use plan-marshall:manage-status:manage_status**: Consistent abstraction layer
+1. **Use plan-marshall:manage-status:manage-status**: Consistent abstraction layer
 2. **Proceed with warning**: Log deviation but continue
 
 ### Recommendation
-Use `python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read` for all status access
+Use `python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read` for all status access
 
 ---
 **Verification Mode Active** - Awaiting user decision before proceeding.
@@ -171,7 +171,7 @@ Use `python3 .plan/execute-script.py plan-marshall:manage-status:manage_status r
 ## Example Post-Operation Audit
 
 ```
-User: (approved using plan-marshall:manage-status:manage_status)
+User: (approved using plan-marshall:manage-status:manage-status)
 
 Claude: Task TASK-001 completed successfully.
 

@@ -200,7 +200,7 @@ Run the deterministic classifier first; only dispatch the LLM workflow on the am
 **Step 4a — Heuristic classifier (deterministic, no envelope):**
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   change-type-heuristic --plan-id {plan_id} --persist
 ```
 
@@ -403,7 +403,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ### Transition Phase
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
   --plan-id {plan_id} \
   --completed 3-outline
 ```
@@ -469,7 +469,7 @@ All other fields (`plan_id`, `track`, `deliverable_count`, `qgate_passed`, `qgat
 - `plan-marshall:manage-references:manage-references` - Read domains
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Write solution document
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
-- `plan-marshall:manage-status:manage_status` - Read/write change_type metadata
+- `plan-marshall:manage-status:manage-status` - Read/write change_type metadata
 - `plan-marshall:manage-logging:manage-logging` - Decision and work logging
 - `plan-marshall:manage-config:manage-config` - Resolve outline skill, read compatibility
 - `plan-marshall:manage-architecture:architecture` - Resolve verification commands

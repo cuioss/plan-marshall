@@ -46,7 +46,7 @@ def _build_handler_map():
     on the three new wait-for-* entries here.
     """
     return {
-        ('ci', 'wait-for-status-flip'): github_ops.cmd_ci_wait_for_status_flip,
+        ('checks', 'wait-for-status-flip'): github_ops.cmd_ci_wait_for_status_flip,
         ('issue', 'wait-for-close'): github_ops.cmd_issue_wait_for_close,
         ('issue', 'wait-for-label'): github_ops.cmd_issue_wait_for_label,
     }
@@ -54,7 +54,7 @@ def _build_handler_map():
 
 def test_dispatch_ci_wait_for_status_flip_registered():
     handlers = _build_handler_map()
-    assert handlers[('ci', 'wait-for-status-flip')] is github_ops.cmd_ci_wait_for_status_flip
+    assert handlers[('checks', 'wait-for-status-flip')] is github_ops.cmd_ci_wait_for_status_flip
 
 
 def test_dispatch_issue_wait_for_close_registered():
