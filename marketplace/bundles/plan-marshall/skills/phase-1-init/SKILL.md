@@ -70,12 +70,68 @@ Ensure exactly one input source is provided (description, lesson_id, issue, or r
 
 ### Step 2: Derive Plan ID
 
-If `plan_id` not provided, derive from input:
-- From description: first 3-5 meaningful words
-- From lesson: lesson_id slug (e.g., `2025-12-02-001` → `lesson-2025-12-02-001`)
-- From issue: issue number (e.g., `#123` → `issue-123`)
-- From recipe: `recipe-{recipe_key}` (e.g., `recipe-refactor-to-standards`)
-- Always: kebab-case, max 50 chars
+If `plan_id` not provided, derive from input. The non-lesson sources keep their
+existing rules; the lesson source uses a deterministic title-based derivation
+documented in **Step 2a** below.
+
+- From description: first 3-5 meaningful words, kebab-cased, max 50 chars.
+- From lesson: derived from the lesson **title** — see **Step 2a** below.
+- From issue: issue number (e.g., `#123` → `issue-123`).
+- From recipe: `recipe-{recipe_key}` (e.g., `recipe-refactor-to-standards`).
+- Description, issue, and recipe rules: always kebab-case, max 50 chars.
+
+#### Step 2a: Lesson-Source Plan ID Derivation
+
+**Applicability**: This sub-step runs **only when `source == lesson`** and no
+explicit `plan_id` was provided. For an explicit `--plan-id` override, skip
+derivation entirely.
+
+The lesson plan_id is a human-readable kebab-case slug of the lesson **title**,
+not the timestamp slug. The derivation is fully deterministic — no LLM inference
+is used to produce the slug.
+
+**Sub-step 2a.1 — Fetch the lesson title early**:
+
+Fetch the lesson record so the `title` field is available before derivation:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons get \
+  --lesson-id {lesson_id}
+```
+
+Extract the `title` field from the TOON output. Retain the full lesson record
+(title, category, component, detail, related) in context — Step 4 ("From Lesson")
+reuses this same result and does NOT re-fetch the lesson.
+
+**Sub-step 2a.2 — Derive the kebab-case slug**:
+
+Apply the following deterministic transform to the lesson `title`:
+
+1. Lowercase the title.
+2. Replace every run of non-alphanumeric characters with a single `-`.
+3. Strip any leading and trailing `-`.
+4. Truncate to 50 characters.
+5. Strip any trailing `-` produced by the truncation in step 4.
+
+The result is the candidate slug.
+
+**Sub-step 2a.3 — Collision avoidance**:
+
+Before continuing to Step 3, check whether the candidate slug already corresponds
+to an existing plan directory:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status list
+```
+
+Compare the candidate slug against the `plan_id` values in the returned list.
+
+- If the candidate slug is **not** present, it is the final `plan_id`.
+- If the candidate slug **is** present, append `-2`; if `{slug}-2` is also taken,
+  append `-3`, and so on, incrementing the numeric suffix until a free slug is
+  found. The first free suffixed form is the final `plan_id`. The suffix is
+  appended after truncation, so a suffixed `plan_id` may slightly exceed 50
+  characters — this is expected and acceptable.
 
 ### Step 3: Create or Reference Plan
 
@@ -130,12 +186,20 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **From Lesson**:
 
+The lesson record was already fetched in **Step 2a.1** (`manage-lessons get
+--lesson-id {lesson_id}`) so that the `title` field was available for plan_id
+derivation. Do NOT re-fetch the lesson here — reuse the record retained in context
+from Step 2a.1.
+
+Use the already-retrieved fields: title, category, component, detail, related.
+
+If an explicit `--plan-id` was provided (so Step 2a was skipped and the lesson was
+never fetched), fetch it now:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons get \
   --lesson-id {lesson_id}
 ```
-
-Extract: title, category, component, detail, related
 
 **From Issue**:
 
