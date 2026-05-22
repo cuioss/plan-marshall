@@ -48,7 +48,7 @@ For GitLab projects use `plan-marshall:workflow-integration-gitlab:gitlab_pr com
 ### Step 3: Enumerate pending pr-comment findings
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query \
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
   --plan-id {plan_id} --type pr-comment --resolution pending
 ```
 
@@ -111,7 +111,7 @@ The two paths are not mutually exclusive — a single iteration can both allocat
 | Failure | Action |
 |---------|--------|
 | `comments-stage` returns empty | Report "No unresolved comments" via the Step 3 query (which will also return empty) and return success |
-| `manage-findings query` fails | Log error, return error to caller |
+| `manage-findings list` fails | Log error, return error to caller |
 | Per-finding triage step (resolve, reply, thread-resolve) fails | Log warning, continue with the next finding — best-effort processing; the failed finding remains `pending` and is retried on the next finalize entry |
 
 CI-readiness failures are handled by the dispatcher's `ci-complete` precondition resolver before this lifecycle runs — see the architectural-context note at the top of this document.

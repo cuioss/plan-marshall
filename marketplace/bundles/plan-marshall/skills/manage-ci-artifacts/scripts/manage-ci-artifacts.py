@@ -129,8 +129,8 @@ def _build_manifest(
 ) -> dict:
     """Build the manifest TOON payload.
 
-    ``jobs`` are the per-job dicts taken from the ``ci wait`` envelope
-    (or an equivalent ``ci status`` envelope). ``log_paths`` maps each
+    ``jobs`` are the per-job dicts taken from the ``checks wait`` envelope
+    (or an equivalent ``checks status`` envelope). ``log_paths`` maps each
     job's canonical filename to its plan-dir-relative path.
     """
     fetched_at = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -189,7 +189,7 @@ def persist(
             the manifest so the loop-back ↔ commit linkage is auditable.
         pr_number: PR / MR number to record in the manifest.
         provider: ``github`` or ``gitlab``.
-        jobs: List of job dicts from the ``ci wait`` envelope. Each
+        jobs: List of job dicts from the ``checks wait`` envelope. Each
             dict carries ``name``, ``job_name``, ``conclusion``,
             ``run_id`` etc. (See ``_build_failing_check_entry`` in the
             provider scripts for the canonical shape — non-failing
@@ -312,7 +312,7 @@ def _default_log_fetcher(provider: str, run_id: str, job: dict) -> str:
     """
     return (
         f'[manage-ci-artifacts] log fetch deferred to '
-        f'tools-integration-ci ci fetch-logs (provider={provider}, '
+        f'tools-integration-ci:ci checks logs (provider={provider}, '
         f'run_id={run_id}, job={job.get("name", "")})\n'
     )
 

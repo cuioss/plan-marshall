@@ -454,8 +454,7 @@ def scan_notation(
     A notation is invalid when any of:
     1. A segment uses snake_case (underscores) where kebab-case is canonical
        AND the snake_case form is not present in ``registered_notations``.
-       (Some scripts have legitimate snake_case names like ``manage_status`` —
-       the registry is the source of truth.)
+       The registry is the source of truth.
     2. The third segment exactly repeats the second (``foo:foo`` shape).
     3. The notation is not present in ``registered_notations``.
     """

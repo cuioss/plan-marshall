@@ -1772,7 +1772,7 @@ def main() -> int:
     if project_dir is not None:
         set_default_cwd(project_dir)
 
-    parser, pr_sub, ci_sub, issue_sub, branch_sub = build_parser('GitHub operations via gh CLI')
+    parser, pr_sub, checks_sub, issue_sub, branch_sub = build_parser('GitHub operations via gh CLI')
 
     # GitHub-specific parser additions
     add_pr_create_args(pr_sub)
@@ -1804,11 +1804,11 @@ def main() -> int:
         ('pr', 'close'): cmd_pr_close,
         ('pr', 'ready'): cmd_pr_ready,
         ('pr', 'edit'): cmd_pr_edit,
-        ('ci', 'status'): cmd_ci_status,
-        ('ci', 'wait'): cmd_ci_wait,
-        ('ci', 'wait-for-status-flip'): cmd_ci_wait_for_status_flip,
-        ('ci', 'rerun'): cmd_ci_rerun,
-        ('ci', 'logs'): cmd_ci_logs,
+        ('checks', 'status'): cmd_ci_status,
+        ('checks', 'wait'): cmd_ci_wait,
+        ('checks', 'wait-for-status-flip'): cmd_ci_wait_for_status_flip,
+        ('checks', 'rerun'): cmd_ci_rerun,
+        ('checks', 'logs'): cmd_ci_logs,
         ('issue', 'create'): cmd_issue_create,
         ('issue', 'view'): cmd_issue_view,
         ('issue', 'close'): cmd_issue_close,

@@ -45,14 +45,14 @@ workflow-integration-git (git commit workflow)
 
 ```bash
 # Format a commit message
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow format-commit \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow format-commit \
   --type feat --scope auth --subject "add login flow"
 
 # Analyze a worktree diff for commit suggestions
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow analyze-diff --worktree-path {worktree_path}
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff --worktree-path {worktree_path}
 
 # Detect artifacts before committing
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow detect-artifacts
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts
 ```
 
 ## Workflow: Commit Changes
@@ -70,7 +70,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workf
 Read the active worktree path from plan status metadata. Every subsequent git call binds to this path via `git -C`.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} --get --field worktree_path
 ```
 
@@ -91,7 +91,7 @@ If no changes → Report "No changes to commit"
 Detect artifacts using the script:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow detect-artifacts [--root <repo-root>]
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts [--root <repo-root>]
 ```
 
 The script returns `safe` (auto-deletable) and `uncertain` (needs confirmation) lists. Pattern definitions are in `standards/artifact-patterns.json`. The script respects `.gitignore` by default — gitignored files are excluded since they cannot be accidentally committed. Tracked files never appear in `safe`; they are always routed to `uncertain` so the caller must confirm before deletion. For safe artifacts, delete them. For uncertain artifacts, ask user via `AskUserQuestion`.
@@ -106,7 +106,7 @@ If no message:
 - Capture and analyze the diff in a single call (the script runs `git -C {worktree_path} diff [--cached]` internally — no temp file required):
 
   ```bash
-  python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow analyze-diff \
+  python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff \
     --worktree-path {worktree_path} [--cached]
   ```
 - The script suggests `type` and `scope` but NOT the subject line — compose the subject yourself based on the diff content and the detected type
@@ -157,7 +157,7 @@ pushed: true
 
 ## Scripts
 
-**Script**: `plan-marshall:workflow-integration-git:git_workflow`
+**Script**: `plan-marshall:workflow-integration-git:git-workflow`
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
@@ -177,7 +177,7 @@ The `worktree-*` subcommands implement the §9 two-state contract: `--plan-id` i
 Format commit message following conventional commits.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow format-commit \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow format-commit \
   --type feat \
   --scope http \
   --subject "add retry config" \
@@ -211,7 +211,7 @@ status: success
 Capture the worktree diff via `git -C {worktree_path} diff [--cached]` and analyze it to suggest commit message parameters. The script captures the diff in-process; callers no longer need to materialize a temp file.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow analyze-diff \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff \
   --worktree-path /path/to/worktree [--cached]
 ```
 
@@ -238,7 +238,7 @@ Scan a directory for build artifacts and temporary files that should not be comm
 Files already covered by `.gitignore` are excluded by default since they cannot be accidentally committed.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow detect-artifacts \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts \
   [--root /path/to/repo] [--no-gitignore]
 ```
 
@@ -263,7 +263,7 @@ status: success
 Resolve the persisted worktree path for a plan via `manage-status get-worktree-path`. Returns the absolute path plus an `exists` flag indicating whether the directory is currently materialized. The path is the value of `status.metadata.worktree_path` — set when the plan was created with `--use-worktree` or by a prior `worktree-create` invocation.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-path \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-path \
   --plan-id EXAMPLE-PLAN
 ```
 
@@ -283,7 +283,7 @@ exists: true
 Run `git worktree add <resolved-path> <branch>` against the main checkout, set up `.plan/local` and `.plan/execute-script.py` symlinks, best-effort bootstrap pyprojectx, and persist the resolved path/branch via `manage-status metadata --set` so subsequent verbs can resolve through the canonical channel. The path is computed from `get_worktree_root() / <plan-id>`.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-create \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create \
   --plan-id EXAMPLE-PLAN --branch feature/EXAMPLE-PLAN [--base main]
 ```
 
@@ -307,7 +307,7 @@ bootstrap: ok
 Remove the worktree (`git worktree remove`) first, then delete the branch ref read from status metadata. Order matters: `git worktree remove` refuses to drop a branch ref that is still checked out, so cleanup is always worktree-first. Branch deletion failures surface as `branch_warning` rather than failing the command — the worktree is gone, branch cleanup is recoverable.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-remove \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-remove \
   --plan-id EXAMPLE-PLAN [--force]
 ```
 
@@ -329,7 +329,7 @@ branch: feature/EXAMPLE-PLAN
 Enumerate plans whose `status.metadata.use_worktree == true`. Reads from `manage-status list`, then resolves each plan's worktree path via `manage-status get-worktree-path`; plans without a configured worktree are silently skipped.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-list
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-list
 ```
 
 **Parameters**: _(none)_
@@ -346,7 +346,7 @@ worktrees[2]{plan_id,path,branch}:
 
 ## Canonical invocations
 
-The canonical argparse surface for `git_workflow.py`. The D4 plugin-doctor analyzer
+The canonical argparse surface for `git-workflow.py`. The D4 plugin-doctor analyzer
 (`_analyze_manage_invocation.py`) reads this section as source-of-truth for markdown
 notation occurrences across the marketplace. Consuming skills xref this section by
 name (e.g., "see `workflow-integration-git` Canonical invocations →
@@ -357,7 +357,7 @@ and has no CLI surface — it is not invoked directly.
 ### format-commit
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow format-commit \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow format-commit \
   --type TYPE --subject TEXT \
   [--scope SCOPE] [--body TEXT] [--breaking TEXT] [--footer TEXT]
 ```
@@ -365,28 +365,28 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workf
 ### analyze-diff
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow analyze-diff \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff \
   --worktree-path ABS_PATH [--cached]
 ```
 
 ### detect-artifacts
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow detect-artifacts \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts \
   [--root DIR] [--no-gitignore]
 ```
 
 ### worktree-path
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-path \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-path \
   --plan-id PLAN_ID
 ```
 
 ### worktree-create
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-create \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create \
   --plan-id PLAN_ID --branch BRANCH \
   [--base BASE_REF]
 ```
@@ -394,27 +394,27 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workf
 ### worktree-remove
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-remove \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-remove \
   --plan-id PLAN_ID [--force]
 ```
 
 ### worktree-list
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-list
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-list
 ```
 
 ### worktree-rebase-to
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree-rebase-to \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-rebase-to \
   --plan-id PLAN_ID --base BASE_REF
 ```
 
 ### baseline-reconcile
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow baseline-reconcile \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow baseline-reconcile \
   --plan-id PLAN_ID \
   [--base-branch BRANCH] [--worktree-path ABS_PATH] \
   [--skip-fetch] [--no-emit]

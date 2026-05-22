@@ -282,14 +282,14 @@ Read standards/wait-pattern.md
 # Adaptive mode (timeout managed via run-config)
 # Outer shell timeout (600s) prevents the host platform from canceling
 timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await_until \
-  --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status --pr-number 123" \
+  --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks status --pr-number 123" \
   --success-field "status=success" \
   --failure-field "status=failure" \
   --command-key "ci:pr_checks"
 
 # Explicit mode (custom interval)
 timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await_until \
-  --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status --pr-number 123" \
+  --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks status --pr-number 123" \
   --success-field "status=success" \
   --failure-field "status=failure" \
   --command-key "ci:custom_check" \

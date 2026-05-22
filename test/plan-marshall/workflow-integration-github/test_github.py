@@ -18,7 +18,7 @@ def test_help_flag():
     result = run_script(SCRIPT_PATH, '--help')
     assert result.success, f'--help failed: {result.stderr}'
     assert 'pr' in result.stdout
-    assert 'ci' in result.stdout
+    assert 'checks' in result.stdout
     assert 'issue' in result.stdout
 
 
@@ -50,9 +50,9 @@ def test_issue_subcommand_help():
 
 
 def test_ci_subcommand_help():
-    """Test ci subcommand help."""
-    result = run_script(SCRIPT_PATH, 'ci', '--help')
-    assert result.success, f'ci --help failed: {result.stderr}'
+    """Test checks subcommand help."""
+    result = run_script(SCRIPT_PATH, 'checks', '--help')
+    assert result.success, f'checks --help failed: {result.stderr}'
     assert 'status' in result.stdout
     assert 'wait' in result.stdout
     assert 'rerun' in result.stdout
@@ -82,8 +82,8 @@ def test_pr_reviews_missing_required():
 
 
 def test_ci_status_missing_required():
-    """Test ci status emits a structured error when neither --pr-number nor --head is supplied."""
-    result = run_script(SCRIPT_PATH, 'ci', 'status')
+    """Test checks status emits a structured error when neither --pr-number nor --head is supplied."""
+    result = run_script(SCRIPT_PATH, 'checks', 'status')
     # Now both flags are optional; the handler validates that exactly one is given.
     # Auth check runs first, so we accept either the auth error or the validation error.
     combined = (result.stdout + result.stderr).lower()
@@ -93,8 +93,8 @@ def test_ci_status_missing_required():
 
 
 def test_ci_wait_missing_required():
-    """Test ci wait fails without pr-number."""
-    result = run_script(SCRIPT_PATH, 'ci', 'wait')
+    """Test checks wait fails without pr-number."""
+    result = run_script(SCRIPT_PATH, 'checks', 'wait')
     assert not result.success, 'Expected failure without --pr-number'
 
 
@@ -207,22 +207,22 @@ def test_pr_edit_help():
 
 
 def test_ci_rerun_help():
-    """Test ci rerun help shows required arguments."""
-    result = run_script(SCRIPT_PATH, 'ci', 'rerun', '--help')
-    assert result.success, f'ci rerun --help failed: {result.stderr}'
+    """Test checks rerun help shows required arguments."""
+    result = run_script(SCRIPT_PATH, 'checks', 'rerun', '--help')
+    assert result.success, f'checks rerun --help failed: {result.stderr}'
     assert '--run-id' in result.stdout
 
 
 def test_ci_rerun_missing_required():
-    """Test ci rerun fails without required arguments."""
-    result = run_script(SCRIPT_PATH, 'ci', 'rerun')
+    """Test checks rerun fails without required arguments."""
+    result = run_script(SCRIPT_PATH, 'checks', 'rerun')
     assert not result.success, 'Expected failure without --run-id'
 
 
 def test_ci_logs_help():
-    """Test ci logs help shows required arguments."""
-    result = run_script(SCRIPT_PATH, 'ci', 'logs', '--help')
-    assert result.success, f'ci logs --help failed: {result.stderr}'
+    """Test checks logs help shows required arguments."""
+    result = run_script(SCRIPT_PATH, 'checks', 'logs', '--help')
+    assert result.success, f'checks logs --help failed: {result.stderr}'
     assert '--run-id' in result.stdout
 
 

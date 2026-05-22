@@ -274,12 +274,12 @@ def test_plan_dir_not_found_errors():
 
 
 def test_change_type_heuristic_registered_in_manage_status_dispatch():
-    """The subcommand is wired into manage_status.py argparse."""
+    """The subcommand is wired into manage-status.py argparse."""
     import argparse  # noqa: PLC0415
 
-    manage_status = _load_module('_manage_status_dispatch_check', 'manage_status.py')
+    manage_status = _load_module('_manage_status_dispatch_check', 'manage-status.py')
 
-    # The cmd module exports cmd_change_type_heuristic; manage_status.py
+    # The cmd module exports cmd_change_type_heuristic; manage-status.py
     # imports the same callable. Confirm both halves of the wiring.
     assert manage_status.cmd_change_type_heuristic is cmd_change_type_heuristic or callable(
         manage_status.cmd_change_type_heuristic

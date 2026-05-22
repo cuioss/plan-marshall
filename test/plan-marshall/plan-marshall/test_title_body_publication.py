@@ -25,7 +25,7 @@ from pathlib import Path
 
 from conftest import PlanContext, get_script_path, run_script
 
-STATUS_SCRIPT = get_script_path('plan-marshall', 'manage-status', 'manage_status.py')
+STATUS_SCRIPT = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
 
 TITLE_BODY_FILENAME = 'title-body.txt'
 

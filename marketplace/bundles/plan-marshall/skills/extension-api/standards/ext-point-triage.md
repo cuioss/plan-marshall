@@ -64,7 +64,7 @@ class Extension(ExtensionBase):
 ```
 1. Producer stage: fetch upstream items, pre-filter, store as pr-comment / sonar-issue
    findings via manage-findings add (workflow-integration-{github,gitlab,sonar})
-2. Consumer dispatch: manage-findings query --type {pr-comment|sonar-issue} --resolution pending
+2. Consumer dispatch: manage-findings list --type {pr-comment|sonar-issue} --resolution pending
 3. For each finding:
    a. Determine domain from the file_path (architecture which-module heuristic)
    b. resolve-workflow-skill-extension --domain {domain} --type triage

@@ -30,27 +30,26 @@ project convention.
 
 from __future__ import annotations
 
+import importlib.util
 import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
 from argparse import Namespace
 from pathlib import Path
 
-# Mirror the pattern in test_git_workflow.py: anchor a sentinel so the
-# cross-skill direct import below sits in its own ruff-isort block.
-_GIT_WORKFLOW_MODULE_NAME = 'git_workflow'
+from conftest import get_script_path  # type: ignore[import-not-found]
 
-from git_workflow import (  # type: ignore[import-not-found]  # noqa: E402
-    _detect_worktree_state,
-    cmd_worktree_rebase_to,
+# The entrypoint filename is kebab-case (git-workflow.py), which is not a
+# valid Python module identifier — load it via importlib instead of `import`.
+_spec = importlib.util.spec_from_file_location(
+    'git_workflow', get_script_path('plan-marshall', 'workflow-integration-git', 'git-workflow.py')
 )
-
-# Reference the live module object via sys.modules so monkeypatch-style
-# attribute swaps inside the test methods affect the same instance the
-# imported names were bound from.
-git_workflow = sys.modules[_GIT_WORKFLOW_MODULE_NAME]
+assert _spec is not None and _spec.loader is not None
+git_workflow = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(git_workflow)
+_detect_worktree_state = git_workflow._detect_worktree_state
+cmd_worktree_rebase_to = git_workflow.cmd_worktree_rebase_to
 
 
 # ---------------------------------------------------------------------------

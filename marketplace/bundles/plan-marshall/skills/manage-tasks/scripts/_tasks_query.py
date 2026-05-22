@@ -48,6 +48,14 @@ def cmd_list(args) -> dict:
     if args.ready:
         all_tasks = [(p, t) for p, t in all_tasks if all(dep in done_tasks for dep in t.get('depends_on', []))]
 
+    # Filter by domain if specified
+    if getattr(args, 'domain', None):
+        all_tasks = [(p, t) for p, t in all_tasks if t.get('domain') == args.domain]
+
+    # Filter by profile if specified
+    if getattr(args, 'profile', None):
+        all_tasks = [(p, t) for p, t in all_tasks if t.get('profile') == args.profile]
+
     # Get filtered list for status filtering
     filtered_tasks = all_tasks
     if args.status and args.status != 'all':
@@ -274,106 +282,6 @@ def cmd_next(args) -> dict:
             result['next'].update(deliverable_context)
 
     return result
-
-
-def cmd_tasks_by_domain(args) -> dict:
-    """Handle 'tasks-by-domain' subcommand.
-
-    Returns tasks filtered by domain.
-    """
-    task_dir = get_tasks_dir(args.plan_id)
-    all_tasks = get_all_tasks(task_dir)
-
-    # Filter by domain
-    domain = args.domain
-    filtered_tasks = [(p, t) for p, t in all_tasks if t.get('domain') == domain]
-
-    # Build table data
-    table = []
-    for _path, task in filtered_tasks:
-        completed, total = calculate_progress(task)
-        table.append(
-            {
-                'number': task['number'],
-                'title': task['title'],
-                'domain': task.get('domain'),
-                'profile': task.get('profile'),
-                'status': task['status'],
-                'progress': f'{completed}/{total}',
-            }
-        )
-
-    # Compute counts
-    pending = sum(1 for _, t in filtered_tasks if t.get('status') == 'pending')
-    in_progress = sum(1 for _, t in filtered_tasks if t.get('status') == 'in_progress')
-    done_count = sum(1 for _, t in filtered_tasks if t.get('status') == 'done')
-    failed_count = sum(1 for _, t in filtered_tasks if t.get('status') == 'failed')
-    blocked = sum(1 for _, t in filtered_tasks if t.get('status') == 'blocked')
-
-    return {
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'domain_filter': domain,
-        'counts': {
-            'total': len(filtered_tasks),
-            'pending': pending,
-            'in_progress': in_progress,
-            'done': done_count,
-            'failed': failed_count,
-            'blocked': blocked,
-        },
-        'tasks_table': table,
-    }
-
-
-def cmd_tasks_by_profile(args) -> dict:
-    """Handle 'tasks-by-profile' subcommand.
-
-    Returns tasks filtered by profile.
-    """
-    task_dir = get_tasks_dir(args.plan_id)
-    all_tasks = get_all_tasks(task_dir)
-
-    # Filter by profile
-    profile = args.profile
-    filtered_tasks = [(p, t) for p, t in all_tasks if t.get('profile') == profile]
-
-    # Build table data
-    table = []
-    for _path, task in filtered_tasks:
-        completed, total = calculate_progress(task)
-        table.append(
-            {
-                'number': task['number'],
-                'title': task['title'],
-                'domain': task.get('domain'),
-                'profile': task.get('profile'),
-                'status': task['status'],
-                'progress': f'{completed}/{total}',
-            }
-        )
-
-    # Compute counts
-    pending = sum(1 for _, t in filtered_tasks if t.get('status') == 'pending')
-    in_progress = sum(1 for _, t in filtered_tasks if t.get('status') == 'in_progress')
-    done_count = sum(1 for _, t in filtered_tasks if t.get('status') == 'done')
-    failed_count = sum(1 for _, t in filtered_tasks if t.get('status') == 'failed')
-    blocked = sum(1 for _, t in filtered_tasks if t.get('status') == 'blocked')
-
-    return {
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'profile_filter': profile,
-        'counts': {
-            'total': len(filtered_tasks),
-            'pending': pending,
-            'in_progress': in_progress,
-            'done': done_count,
-            'failed': failed_count,
-            'blocked': blocked,
-        },
-        'tasks_table': table,
-    }
 
 
 def cmd_loop_exit_guard(args) -> dict:

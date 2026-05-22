@@ -3,15 +3,15 @@
 Git workflow operations - format commits, analyze diffs, manage worktrees.
 
 Usage:
-    git_workflow.py format-commit --type <type> --subject <subject> [options]
-    git_workflow.py analyze-diff --worktree-path <worktree-path> [--cached]
-    git_workflow.py detect-artifacts [--root <dir>]
-    git_workflow.py worktree-path --plan-id <plan-id>
-    git_workflow.py worktree-create --plan-id <plan-id> --branch <branch> [--base <ref>]
-    git_workflow.py worktree-remove --plan-id <plan-id> [--force]
-    git_workflow.py worktree-list
-    git_workflow.py worktree-rebase-to --plan-id <plan-id> --base <branch>
-    git_workflow.py --help
+    git-workflow.py format-commit --type <type> --subject <subject> [options]
+    git-workflow.py analyze-diff --worktree-path <worktree-path> [--cached]
+    git-workflow.py detect-artifacts [--root <dir>]
+    git-workflow.py worktree-path --plan-id <plan-id>
+    git-workflow.py worktree-create --plan-id <plan-id> --branch <branch> [--base <ref>]
+    git-workflow.py worktree-remove --plan-id <plan-id> [--force]
+    git-workflow.py worktree-list
+    git-workflow.py worktree-rebase-to --plan-id <plan-id> --base <branch>
+    git-workflow.py --help
 
 Subcommands:
     format-commit      Format commit message following conventional commits
@@ -26,20 +26,20 @@ Subcommands:
 
 Examples:
     # Format a commit message
-    git_workflow.py format-commit --type feat --scope auth --subject "add login flow"
+    git-workflow.py format-commit --type feat --scope auth --subject "add login flow"
 
     # Analyze a worktree diff for commit suggestions
-    git_workflow.py analyze-diff --worktree-path /path/to/worktree [--cached]
+    git-workflow.py analyze-diff --worktree-path /path/to/worktree [--cached]
 
     # Detect artifacts before committing
-    git_workflow.py detect-artifacts --root /path/to/repo
+    git-workflow.py detect-artifacts --root /path/to/repo
 
     # Worktree CRUD verbs
-    git_workflow.py worktree-path --plan-id EXAMPLE-PLAN
-    git_workflow.py worktree-create --plan-id EXAMPLE-PLAN --branch feature/EXAMPLE-PLAN
-    git_workflow.py worktree-remove --plan-id EXAMPLE-PLAN
-    git_workflow.py worktree-list
-    git_workflow.py worktree-rebase-to --plan-id EXAMPLE-PLAN --base main
+    git-workflow.py worktree-path --plan-id EXAMPLE-PLAN
+    git-workflow.py worktree-create --plan-id EXAMPLE-PLAN --branch feature/EXAMPLE-PLAN
+    git-workflow.py worktree-remove --plan-id EXAMPLE-PLAN
+    git-workflow.py worktree-list
+    git-workflow.py worktree-rebase-to --plan-id EXAMPLE-PLAN --base main
 """
 
 import fnmatch
@@ -640,7 +640,7 @@ def _manage_status_call(
     *extra_args: str,
     timeout: int = 30,
 ) -> tuple[int, str, str]:
-    """Invoke ``plan-marshall:manage-status:manage_status`` via the executor.
+    """Invoke ``plan-marshall:manage-status:manage-status`` via the executor.
 
     Returns ``(returncode, stdout, stderr)`` (raw, not stripped). When the
     executor cannot be located, returns ``(127, '', '<reason>')`` so the
@@ -654,7 +654,7 @@ def _manage_status_call(
             [
                 'python3',
                 str(executor),
-                'plan-marshall:manage-status:manage_status',
+                'plan-marshall:manage-status:manage-status',
                 subcommand,
                 *extra_args,
             ],
@@ -1296,14 +1296,14 @@ def main():
         description='Git workflow operations',
         epilog="""
 Examples:
-  git_workflow.py format-commit --type feat --scope auth --subject "add login"
-  git_workflow.py analyze-diff --worktree-path /path/to/worktree [--cached]
-  git_workflow.py detect-artifacts --root /path/to/repo
-  git_workflow.py worktree-path --plan-id EXAMPLE-PLAN
-  git_workflow.py worktree-create --plan-id EXAMPLE-PLAN --branch feature/EXAMPLE-PLAN
-  git_workflow.py worktree-remove --plan-id EXAMPLE-PLAN [--force]
-  git_workflow.py worktree-list
-  git_workflow.py worktree-rebase-to --plan-id EXAMPLE-PLAN --base main
+  git-workflow.py format-commit --type feat --scope auth --subject "add login"
+  git-workflow.py analyze-diff --worktree-path /path/to/worktree [--cached]
+  git-workflow.py detect-artifacts --root /path/to/repo
+  git-workflow.py worktree-path --plan-id EXAMPLE-PLAN
+  git-workflow.py worktree-create --plan-id EXAMPLE-PLAN --branch feature/EXAMPLE-PLAN
+  git-workflow.py worktree-remove --plan-id EXAMPLE-PLAN [--force]
+  git-workflow.py worktree-list
+  git-workflow.py worktree-rebase-to --plan-id EXAMPLE-PLAN --base main
 """,
         subcommands=[
             {

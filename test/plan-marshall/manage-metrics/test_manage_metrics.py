@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for manage_metrics.py CLI script.
+"""Tests for manage-metrics.py CLI script.
 
 Covers: start-phase, end-phase, generate, enrich, accumulate-agent-usage subcommands.
 
@@ -7,22 +7,28 @@ Tier 2 (direct import) tests for cmd_* functions, with 2 subprocess
 tests retained for CLI plumbing verification.
 """
 
+import importlib.util
 import json
 from argparse import Namespace
 from pathlib import Path
 
 import pytest
-from manage_metrics import (  # type: ignore[import-not-found]
-    cmd_accumulate_agent_usage,
-    cmd_end_phase,
-    cmd_enrich,
-    cmd_generate,
-    cmd_start_phase,
-)
 
 from conftest import PlanContext, get_script_path, run_script  # noqa: I001
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage_metrics.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
+
+# The entrypoint filename is kebab-case (manage-metrics.py), which is not a
+# valid Python module identifier — load it via importlib instead of `import`.
+_spec = importlib.util.spec_from_file_location('manage_metrics', SCRIPT_PATH)
+assert _spec is not None and _spec.loader is not None
+manage_metrics = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(manage_metrics)
+cmd_accumulate_agent_usage = manage_metrics.cmd_accumulate_agent_usage
+cmd_end_phase = manage_metrics.cmd_end_phase
+cmd_enrich = manage_metrics.cmd_enrich
+cmd_generate = manage_metrics.cmd_generate
+cmd_start_phase = manage_metrics.cmd_start_phase
 
 
 # =============================================================================
@@ -651,8 +657,6 @@ class TestEnrichSubagentTranscriptWalk:
 
         Returns the fixed cwd used by manage_metrics for slug derivation.
         """
-        import manage_metrics  # type: ignore[import-not-found]
-
         fake_cwd = '/fake/repo'
         monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
         monkeypatch.setattr(manage_metrics, '_resolve_cwd', lambda: fake_cwd)

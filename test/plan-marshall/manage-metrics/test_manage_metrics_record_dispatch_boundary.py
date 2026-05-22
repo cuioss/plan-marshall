@@ -15,20 +15,26 @@ new subcommand. These six tests pin the contract:
 
 from __future__ import annotations
 
+import importlib.util
 import time
 from argparse import Namespace
 from pathlib import Path
 
 import pytest
-from manage_metrics import (  # type: ignore[import-not-found]
-    DISPATCH_TERMINATION_CAUSES,
-    cmd_record_dispatch_boundary,
-)
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 from conftest import PlanContext, get_script_path, run_script  # type: ignore[import-not-found]
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage_metrics.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
+
+# The entrypoint filename is kebab-case (manage-metrics.py), which is not a
+# valid Python module identifier — load it via importlib instead of `import`.
+_spec = importlib.util.spec_from_file_location('manage_metrics', SCRIPT_PATH)
+assert _spec is not None and _spec.loader is not None
+manage_metrics = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(manage_metrics)
+DISPATCH_TERMINATION_CAUSES = manage_metrics.DISPATCH_TERMINATION_CAUSES
+cmd_record_dispatch_boundary = manage_metrics.cmd_record_dispatch_boundary
 
 
 def _ns(

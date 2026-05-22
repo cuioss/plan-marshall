@@ -51,7 +51,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab
 python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab_pr fetch-comments --pr 123
 
 # LLM consumer reads stored findings via manage-findings
-python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query --plan-id EXAMPLE-PLAN --type pr-comment
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list --plan-id EXAMPLE-PLAN --type pr-comment
 ```
 
 ## Scripts
@@ -77,7 +77,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qu
 
 2. **Query Stored Findings**:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query --plan-id {plan_id} --type pr-comment
+   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list --plan-id {plan_id} --type pr-comment
    ```
 
 3. **Process by Action Type** — the LLM reads each finding's `detail` (which carries the full body, kind, thread_id, author, path:line, comment_id) and decides code_change / explain / ignore. After acting on each finding, call `manage-findings resolve --hash-id {hash} --resolution fixed|suppressed|accepted`.

@@ -12,7 +12,7 @@ import pytest
 from conftest import PlanContext, get_script_path, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage_status.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
 
 # Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime)
 import importlib.util  # noqa: E402
@@ -1160,7 +1160,7 @@ def test_cli_create_with_worktree_flags():
         assert 'status: success' in read_result.stdout
         assert f'worktree_path: {abs_path}' in read_result.stdout, (
             f'Expected worktree_path={abs_path!r} in stdout, got: {read_result.stdout!r}. '
-            f'CLI roundtrip regressed — manage_status.py is not wiring the '
+            f'CLI roundtrip regressed — manage-status.py is not wiring the '
             f'create flags into cmd_create OR the get-worktree-path subparser '
             f'is not registered.'
         )
@@ -1172,7 +1172,7 @@ def test_cli_get_worktree_path_help():
         result = run_script(SCRIPT_PATH, 'get-worktree-path', '--help')
         assert result.success, (
             f'get-worktree-path --help failed: {result.stderr!r}. '
-            f'Subparser is missing from manage_status.py.'
+            f'Subparser is missing from manage-status.py.'
         )
 
 

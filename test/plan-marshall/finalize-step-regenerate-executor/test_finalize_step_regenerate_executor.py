@@ -122,10 +122,10 @@ class TestInvokeGeneratorWhenScriptsModified:
         """Any change (add or modify) under the pattern qualifies; the
         generator is idempotent so false positives are harmless."""
         modified_files = [
-            'marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage_status.py',
+            'marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py',
         ]
         assert filter_marketplace_scripts(modified_files) == [
-            'marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage_status.py',
+            'marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py',
         ]
 
 

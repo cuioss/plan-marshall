@@ -235,20 +235,21 @@ def test_section_documents_suppression_rule(section_2_15_text: str) -> None:
 
 def test_section_documents_finding_emission_template(section_2_15_text: str) -> None:
     """Section 2.15 must contain a finding emission template that calls
-    ``manage-findings qgate add`` with ``--source qgate-worktree-linter``.
+    ``manage-findings qgate add`` with the canonical ``--source qgate``.
 
     The exact subcommand + source value are the structural contract that
     downstream consumers (manage-findings dedup, retrospective scrapers)
-    rely on. Drift here silently breaks the Q-Gate ingest path.
+    rely on. Drift here silently breaks the Q-Gate ingest path. The
+    ``--source`` argparse enum accepts only ``qgate`` / ``user_review``.
     """
     assert 'qgate add' in section_2_15_text, (
         'Section 2.15 finding-emission template must call "qgate add" '
         '(not bare "add") so dedup-by-title-within-phase applies.'
     )
-    assert 'qgate-worktree-linter' in section_2_15_text, (
-        'Section 2.15 finding-emission template must use --source '
-        'qgate-worktree-linter so retrospective scrapers can filter by '
-        'origin.'
+    assert '--source qgate' in section_2_15_text, (
+        'Section 2.15 finding-emission template must use the canonical '
+        '--source qgate value (the argparse enum accepts only '
+        'qgate / user_review).'
     )
 
 

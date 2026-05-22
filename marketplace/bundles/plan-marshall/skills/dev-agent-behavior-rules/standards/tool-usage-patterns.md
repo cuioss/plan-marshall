@@ -100,7 +100,7 @@ Bash(command="gh pr create --title ...")
 
 # GOOD - CI integration scripts
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --title ...
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wait
 ```
 
 If a needed operation is missing from the CI abstraction, extend the scripts — do not bypass them.
@@ -250,8 +250,8 @@ structured TOON output:
 
 - `pr wait-for-comments --pr-number N --timeout SECS` — block until new bot
   review comments land (or timeout)
-- `ci wait-for-status-flip --ref REF --timeout SECS` — block until the CI
-  status on a ref transitions (queued → running → success/failure)
+- `checks wait-for-status-flip --pr-number N --timeout SECS` — block until the
+  CI status for a PR transitions (queued → running → success/failure)
 - `issue wait-for-close --issue-number N --timeout SECS` — block until an
   issue is closed
 - `issue wait-for-label --issue-number N --label L --timeout SECS` — block

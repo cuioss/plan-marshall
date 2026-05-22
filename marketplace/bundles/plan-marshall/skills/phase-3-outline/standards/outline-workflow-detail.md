@@ -10,11 +10,11 @@ For the high-level overview, input/output contract, and track routing logic, see
 
 **Purpose**: On re-entry (after Q-Gate or user review flagged issues), address unresolved findings before re-running the outline.
 
-### Query Unresolved Findings
+### List Unresolved Findings
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  qgate query --plan-id {plan_id} --phase 3-outline --resolution pending
+  qgate list --plan-id {plan_id} --phase 3-outline --resolution pending
 ```
 
 ### Address Each Finding

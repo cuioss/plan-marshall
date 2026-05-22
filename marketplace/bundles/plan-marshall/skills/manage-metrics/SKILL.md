@@ -16,7 +16,7 @@ Collects wall-clock duration and token usage data per phase, generates increment
 > **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
 **Skill-specific constraints:**
-- Script-only skill — all access via the script API; script uses underscore (`manage_metrics`) for Python module compatibility
+- Script-only skill — all access via the script API
 - Never hard-code token values — only use data from Task agent `<usage>` tags
 - Metrics data stored in `.plan/plans/{plan_id}/work/metrics.toon`; human-readable output in `.plan/plans/{plan_id}/metrics.md`
 - Phase names must be one of: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize` (must match `manage-status` phases exactly)
@@ -28,7 +28,7 @@ Collects wall-clock duration and token usage data per phase, generates increment
 Record phase start timestamp.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics start-phase \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics start-phase \
   --plan-id {plan_id} --phase {phase}
 ```
 
@@ -51,7 +51,7 @@ Record phase end timestamp with optional token data from Task agent notification
 **Accumulator fallback**: When any of `--total-tokens`, `--tool-uses`, or `--duration-ms` is omitted, `end-phase` reads `work/metrics-accumulator-{phase}.toon` (written by `accumulate-agent-usage`) and uses its running totals for the missing fields. Explicitly passed flags always win over accumulator values. Phases that ran without any agent dispatch (no accumulator file, no flags) are recorded with timestamps only — same behaviour as before.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics end-phase \
   --plan-id {plan_id} --phase {phase} \
   [--total-tokens N] [--duration-ms N] [--tool-uses N]
 ```
@@ -78,7 +78,7 @@ total_tokens: 25514
 Generate or update metrics.md from collected phase data. The generated markdown contains a table with per-phase rows showing duration (formatted as `Xm Ys`), token counts, and tool uses, plus totals.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics generate \
   --plan-id {plan_id}
 ```
 
@@ -103,7 +103,7 @@ Returns `status: error, error: no_data` if no metrics have been collected yet (n
 Read `metrics.md` from the live plan directory, extract only the `## Phase Breakdown` section (table content from the heading to the next `## ` heading or end-of-file), and print it verbatim to stdout. On success, TOON status output is suppressed so stdout contains only the section content — the `finalize-step-print-phase-breakdown` skill captures stdout and writes it to `work/phase-breakdown-output.txt` for the renderer.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics print-phase-breakdown \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics print-phase-breakdown \
   --plan-id {plan_id}
 ```
 
@@ -135,7 +135,7 @@ caller), then `start-phase {next}`, then `generate`. Persisted output
 shape.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
   --plan-id {plan_id} \
   --prev-phase {prev} --next-phase {next} \
   [--total-tokens N] [--duration-ms N] [--tool-uses N]
@@ -180,7 +180,7 @@ fragile model-context-only `agent_usage_totals` discipline that lost data
 across context compactions and inline-only step runs.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics accumulate-agent-usage \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics accumulate-agent-usage \
   --plan-id {plan_id} --phase {phase} \
   [--total-tokens N] [--tool-uses N] [--duration-ms N]
 ```
@@ -222,7 +222,7 @@ file is the audit trail that `plan-retrospective` correlates with
 (lesson `2026-05-08-14-001`).
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics record-dispatch-boundary \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
   --plan-id {plan_id} --phase {phase} \
   --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|harness_cancellation|error|clean_exit_queue_empty} \
   [--total-tokens N] [--tool-uses N] [--duration-ms N]
@@ -263,7 +263,7 @@ dispatch_boundary_file: work/metrics-dispatch-boundaries-5-execute.toon
 Compare the live plan's per-phase `total_tokens` against anchor data captured before the agents → execution-context refactor. Drives the Phase 4d dispatch-cost regression gate documented in `.plan/local/refactor-agents-reviewed/07-rollout.md` § 4.4.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics compare-anchor \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics compare-anchor \
   --plan-id {plan_id} --anchor-plan {anchor_plan_id} \
   [--anchor-file PATH] [--threshold-percent N]
 ```
@@ -315,7 +315,7 @@ recorded in `work/metrics.toon`. Subagent calls outside any recorded phase
 window are ignored.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics enrich \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics enrich \
   --plan-id {plan_id} --session-id {session_id}
 ```
 
@@ -373,7 +373,7 @@ The `generate` command produces a markdown report with:
 
 ## Canonical invocations
 
-The canonical argparse surface for `manage_metrics.py`. The D4 plugin-doctor analyzer
+The canonical argparse surface for `manage-metrics.py`. The D4 plugin-doctor analyzer
 (`_analyze_manage_invocation.py`) reads this section as source-of-truth for markdown
 notation occurrences across the marketplace. Consuming skills xref this section by
 name (e.g., "see `manage-metrics` Canonical invocations → `phase-boundary`") instead
@@ -382,14 +382,14 @@ of restating the command inline.
 ### start-phase
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics start-phase \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics start-phase \
   --plan-id PLAN_ID --phase PHASE
 ```
 
 ### end-phase
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics end-phase \
   --plan-id PLAN_ID --phase PHASE \
   [--total-tokens N] [--duration-ms N] [--tool-uses N]
 ```
@@ -397,21 +397,21 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-
 ### generate
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics generate \
   --plan-id PLAN_ID
 ```
 
 ### print-phase-breakdown
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics print-phase-breakdown \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics print-phase-breakdown \
   --plan-id PLAN_ID
 ```
 
 ### phase-boundary
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
   --plan-id PLAN_ID --prev-phase PHASE --next-phase PHASE \
   [--total-tokens N] [--duration-ms N] [--tool-uses N]
 ```
@@ -419,7 +419,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phas
 ### accumulate-agent-usage
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics accumulate-agent-usage \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics accumulate-agent-usage \
   --plan-id PLAN_ID --phase PHASE \
   [--total-tokens N] [--tool-uses N] [--duration-ms N]
 ```
@@ -427,7 +427,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics accu
 ### record-dispatch-boundary
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics record-dispatch-boundary \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
   --plan-id PLAN_ID --phase PHASE \
   --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|harness_cancellation|error|clean_exit_queue_empty} \
   [--total-tokens N] [--tool-uses N] [--duration-ms N]
@@ -436,14 +436,14 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics reco
 ### enrich
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics enrich \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics enrich \
   --plan-id PLAN_ID --session-id SESSION_ID
 ```
 
 ### compare-anchor
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics compare-anchor \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics compare-anchor \
   --plan-id PLAN_ID --anchor-plan ANCHOR_PLAN_ID \
   [--anchor-file PATH] [--threshold-percent N]
 ```

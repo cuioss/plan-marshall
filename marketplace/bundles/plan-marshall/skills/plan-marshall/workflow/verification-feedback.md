@@ -12,7 +12,7 @@ Dispatched under the **phase-scoped** `verification-feedback` role key — the r
 
 | `producer` | Caller surface | Producer-side work (Step 1) | Pre-flight gate |
 |------------|----------------|-----------------------------|-----------------|
-| `build-runner` | phase-5-execute Step 11 + Step 11b | Build-runner / quality-gate log parse → findings store. **Mechanical, pre-flight** — the orchestrator runs the build, captures findings via `manage-findings add`, dispatches this workflow only when `manage-findings query | count > 0`. Step 1 here is a store-only query. | Count > 0 |
+| `build-runner` | phase-5-execute Step 11 + Step 11b | Build-runner / quality-gate log parse → findings store. **Mechanical, pre-flight** — the orchestrator runs the build, captures findings via `manage-findings add`, dispatches this workflow only when `manage-findings list | count > 0`. Step 1 here is a store-only query. | Count > 0 |
 | `sonar` | phase-6-finalize `sonar-roundtrip` | `workflow-integration-sonar:sonar fetch-and-store`. **Mechanical, pre-flight.** Step 1 here is a store-only query. | Count > 0 |
 | `pr-comment` | phase-6-finalize `automated-review` | `workflow-integration-github:github_pr comments-stage` (or GitLab equivalent). **Mechanical, pre-flight.** Step 1 here is a store-only query. | Count > 0 |
 | `plugin-doctor` | `project:finalize-step-plugin-doctor` + `/plugin-doctor` slash command | Marketplace static analysis — **LLM-heavy**, runs inside this envelope as Step 1: iterate the plugin-doctor rule catalog in-context, scope-filter, emit one finding per violation to the store. | None — analysis IS the producer step. |
@@ -51,7 +51,7 @@ Domain-triage extensions (`{bundle}:ext-triage-{domain}`) are loaded on demand i
 The orchestrator has already populated the store via the mechanical producer (log parse, Sonar fetch, PR comments fetch). Verify the gate count and continue:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query \
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
   --plan-id {plan_id} --type {finding_type} --resolution pending
 ```
 
@@ -78,10 +78,10 @@ Read the runtime `scope` input (one of `agents`, `commands`, `skills`, `scripts`
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings add \
-  --plan-id {plan_id} --type plugin-doctor-finding \
+  --plan-id {plan_id} --type triage \
   --title "{rule_id}: {component_path}" \
   --severity {warning|error} \
-  --rule-id {rule_id} \
+  --rule {rule_id} \
   --file-path {component_path} \
   --detail "{rule prose + per-violation context}"
 ```
@@ -142,7 +142,7 @@ Walk the producer surfaces sequentially, emitting findings of each type to the s
 After all three producer surfaces have run, query the store for the union:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query \
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
   --plan-id {plan_id} --resolution pending
 ```
 

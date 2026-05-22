@@ -98,7 +98,7 @@ The `ARGUMENT_NAMING_*` rule cluster cross-checks marketplace prose against the 
 
 **ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN** (severity: error): Flags `python3 .plan/execute-script.py {notation} {sub}` tokens where `{sub}` is not a registered subcommand on the resolved script. The cluster AST-walks the referenced script's argparse tree (`add_subparsers` → `add_parser('name', ...)`) and reports any `{sub}` that is not in the resulting set. The `details.known_subcommands` field lists the registered subcommands, and `details.subcommand` carries the offending token.
 
-- **Rationale**: Prose drift lets workflow instructions reference subcommands the script never exposed (e.g., the historical `manage-references list` and `manage_status get-plan-dir` patterns). A reader who copies the command hits an argparse error at runtime; the cluster catches the drift statically.
+- **Rationale**: Prose drift lets workflow instructions reference subcommands the script never exposed (e.g., the historical `manage-references list` and `manage-status get-plan-dir` patterns). A reader who copies the command hits an argparse error at runtime; the cluster catches the drift statically.
 - **Fix**: Update the prose to use a registered subcommand, or add the missing subcommand to the script's argparse tree.
 - **Exemptions**: Scripts that declare no subparsers are skipped — any token following the notation is a positional argument, not a subcommand. Scripts whose argparse declarations cannot be parsed (syntax error, missing file) are skipped silently; the notation rule reports the missing script when applicable.
 
@@ -114,14 +114,14 @@ The `ARGUMENT_NAMING_*` rule cluster cross-checks marketplace prose against the 
 - **Fix**: Update either the Canonical Forms row or the argparse declaration so the two agree. When the table is correct and the script lags, rename the argparse flag; when the script is correct and the table lags, update the row.
 - **Exemptions**: None within the table's scope. Rows whose `{script}` shorthand resolves to multiple registered notations are reported with `reason: shorthand_unresolved` so the table can be tightened to use the full bundle:skill:script form when ambiguity arises.
 
-**manage-findings-invocation-invalid** (severity: error): Catches three canonical invalid spellings of the `plan-marshall:manage-findings:manage-findings` notation and its argparse tree that have surfaced as LLM hallucinations at runtime: (1) **script-position underscore** — `plan-marshall:manage-findings:manage_findings` (snake_case where the executor registry uses kebab-case); (2) **invalid top-level subcommand** — any token other than the registered `add, query, get, resolve, promote, qgate, assessment`; the historically recurring invented form is `list-qgate`; (3) **invalid `qgate` sub-verb** — any sub-verb other than the registered `add, query, resolve, clear`; the historically recurring invented form is `qgate list`. The rule also catches invalid `assessment` sub-verbs as defence in depth. Findings carry `details.canonical_hint` with the closest correct spelling.
+**manage-findings-invocation-invalid** (severity: error): Catches three canonical invalid spellings of the `plan-marshall:manage-findings:manage-findings` notation and its argparse tree that have surfaced as LLM hallucinations at runtime: (1) **script-position underscore** — `plan-marshall:manage-findings:manage_findings` (snake_case where the executor registry uses kebab-case); (2) **invalid top-level subcommand** — any token other than the registered `add, list, get, resolve, promote, qgate, assessment`; the historically recurring invented form is `list-qgate`; (3) **invalid `qgate` sub-verb** — any sub-verb other than the registered `add, list, resolve, clear`; the recurring legacy form is `qgate query` (the canonical verb is `list`). The rule also catches invalid `assessment` sub-verbs as defence in depth. Findings carry `details.canonical_hint` with the closest correct spelling.
 
-- **Discovery approach**: Pure static analysis — line-anchored regex extraction of `plan-marshall:manage-findings:*` notation tokens from skill markdown bodies (`SKILL.md`, `standards/*.md`, `references/*.md`, `workflow/*.md`, `recipes/*.md`). The registered argparse tree (`add, query, get, resolve, promote, qgate, assessment` top-level; `add, query, resolve, clear` under `qgate`; `add, query, get, clear` under `assessment`) is baked into the analyzer as the source-of-truth constant; the rule does not import `manage-findings.py` or subprocess-execute the script. Mirrors `_analyze_argument_naming.py` and `_analyze_verb_chains.py` patterns. No `did-you-mean` runtime changes to `manage-findings.py`.
-- **Fix**: Update the prose to use the canonical-form hint emitted in the finding payload. For `list-qgate`, use `qgate query --plan-id {plan_id} --phase {phase}`. For `qgate list`, use `qgate query --plan-id {plan_id} --phase {phase}`. For snake_case script position, replace `manage_findings` with `manage-findings` in the third notation segment.
+- **Discovery approach**: Pure static analysis — line-anchored regex extraction of `plan-marshall:manage-findings:*` notation tokens from skill markdown bodies (`SKILL.md`, `standards/*.md`, `references/*.md`, `workflow/*.md`, `recipes/*.md`). The registered argparse tree (`add, list, get, resolve, promote, qgate, assessment` top-level; `add, list, resolve, clear` under `qgate`; `add, list, get, clear` under `assessment`) is baked into the analyzer as the source-of-truth constant; the rule does not import `manage-findings.py` or subprocess-execute the script. Mirrors `_analyze_argument_naming.py` and `_analyze_verb_chains.py` patterns. No `did-you-mean` runtime changes to `manage-findings.py`.
+- **Fix**: Update the prose to use the canonical-form hint emitted in the finding payload. For `list-qgate`, use `qgate list --plan-id {plan_id} --phase {phase}`. For `qgate query`, use `qgate list --plan-id {plan_id} --phase {phase}`. For snake_case script position, replace `manage_findings` with `manage-findings` in the third notation segment.
 - **Rationale**: Three invalid `manage-findings` invocation shapes surfaced as LLM hallucinations at runtime, producing silent argparse rejections that the calling workflow swallowed. Grepping `marketplace/bundles/` for these shapes returns zero matches at source time — the failure mode is recurrence-prone LLM drift, not source drift. Catching the shapes at edit time via plugin-doctor moves the structural guard from runtime to review time, in the same spirit as the `ARGUMENT_NAMING_*` cluster.
 - **Exemptions**: None — every `plan-marshall:manage-findings:*` invocation in skill markdown is expected to resolve to a registered notation, subcommand, and sub-verb. The rule is gated on the `manage-findings-invocation-invalid` opt-in token in `active_rules` (mirroring the `verb_chain` opt-in semantics), so it only runs when the caller explicitly requests it.
 
-**manage-invocation-invalid** (severity: error): Generalization of the `manage-findings-invocation-invalid` rule across the seven in-scope script families — `plan-marshall:manage-status:manage_status`, `plan-marshall:manage-tasks:manage-tasks`, `plan-marshall:manage-logging:manage-logging`, `plan-marshall:manage-references:manage-references`, `plan-marshall:manage-config:manage-config`, `plan-marshall:workflow-integration-git:git_workflow`, and `plan-marshall:workflow-integration-github:github_ops`. For each invocation found in skill markdown, the analyzer extracts the `(subcommand, sub_verb, flags)` tuple and validates it against the script's canonical argparse tree built at scan time. Four failure modes are reported independently, each with `details.canonical_hint` carrying the closest correct form: (1) unknown top-level subcommand (`details.reason: subcommand_unknown`); (2) unknown sub-verb under a subcommand that declares its own subparser (`details.reason: sub_verb_unknown`); (3) unknown long flag `--{flag}` under the resolved leaf parser (`details.reason: flag_unknown`); (4) missing required flag declared by the resolved leaf parser (`details.reason: required_flag_missing`).
+**manage-invocation-invalid** (severity: error): Generalization of the `manage-findings-invocation-invalid` rule across the seven in-scope script families — `plan-marshall:manage-status:manage-status`, `plan-marshall:manage-tasks:manage-tasks`, `plan-marshall:manage-logging:manage-logging`, `plan-marshall:manage-references:manage-references`, `plan-marshall:manage-config:manage-config`, `plan-marshall:workflow-integration-git:git-workflow`, and `plan-marshall:workflow-integration-github:github_ops`. For each invocation found in skill markdown, the analyzer extracts the `(subcommand, sub_verb, flags)` tuple and validates it against the script's canonical argparse tree built at scan time. Four failure modes are reported independently, each with `details.canonical_hint` carrying the closest correct form: (1) unknown top-level subcommand (`details.reason: subcommand_unknown`); (2) unknown sub-verb under a subcommand that declares its own subparser (`details.reason: sub_verb_unknown`); (3) unknown long flag `--{flag}` under the resolved leaf parser (`details.reason: flag_unknown`); (4) missing required flag declared by the resolved leaf parser (`details.reason: required_flag_missing`).
 
 - **Discovery approach**: Pure static analysis — `ast.parse` walk of each in-scope script (whitelisted in `IN_SCOPE_SCRIPTS`) builds a canonical tree `{subcommand: {sub_verb_or_none: {flags, required_flags}}}`. The markdown scan is line-anchored regex extraction of `python3 .plan/execute-script.py {bundle}:{skill}:{script}` invocations from `SKILL.md`, `standards/*.md`, `references/*.md`, `workflow/*.md`, and `recipes/*.md`. Each occurrence is tokenized into positional + flag args and cross-checked against the canonical tree. No subprocess execution, no import of the target scripts. Mirrors the `_analyze_argument_naming.py` and `_analyze_manage_findings_invocation.py` precedents. The implementation lives in `_analyze_manage_invocation.py` (analyzer module) — see the canonical-block convention published in each in-scope SKILL.md's `## Canonical invocations` section for the authoritative spelling reference.
 - **Fix**: Update the markdown invocation to match the script's canonical argparse surface. The finding's `details.canonical_hint` names the closest correct subcommand / sub-verb / flag spelling; the corresponding `## Canonical invocations` section in the script's owning SKILL.md is the full reference.
@@ -145,7 +145,7 @@ Three rules guard against defective `mark-step-done` invocations inside marketpl
 
 **Rationale**: Phase-6 finalize step termination is a silent-failure surface. A mistyped notation resolves to a non-existent script and is swallowed by the executor; a missing `--phase` routes the termination to the wrong phase record; a missing `--outcome` leaves the step in an ambiguous `in_progress` state even though the workflow believes it completed. Static detection in plugin-doctor is the cheapest way to catch these errors before they ship.
 
-**MARK_STEP_DONE_BAD_NOTATION** (severity: error): The invocation line contains the hyphenated notation `manage-status:manage-status` instead of the canonical underscored form `manage-status:manage_status`. The executor uses notation segments as literal keys — the hyphenated form simply does not resolve. Detection is a substring check on every line of the invocation (including continuation lines, since the notation often lives on the command line itself).
+**MARK_STEP_DONE_STALE_NOTATION** (severity: error): The invocation line contains the stale underscored notation `manage-status:manage_status` instead of the canonical kebab-case form `manage-status:manage-status`. The executor uses notation segments as literal keys — the underscored form no longer resolves after the entrypoint-rename cutover. Detection is a substring check on every line of the invocation (including continuation lines, since the notation often lives on the command line itself).
 
 Incorrect:
 
@@ -157,7 +157,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
 Correct:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   mark-step-done --phase phase-6-finalize --outcome done
 ```
 
@@ -166,14 +166,14 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
 Incorrect:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   mark-step-done --outcome done
 ```
 
 Correct:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   mark-step-done --phase phase-6-finalize --outcome done
 ```
 
@@ -182,14 +182,14 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
 Incorrect:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   mark-step-done --phase phase-6-finalize
 ```
 
 Correct:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   mark-step-done --phase phase-6-finalize --outcome done
 ```
 
@@ -383,7 +383,7 @@ Seven forward-looking lint rules.
 
 **Scope**: `marketplace/bundles/**/scripts/**/*.py`.
 
-**Intent**: Production Python scripts must not embed the `.plan/plans/` literal path. The canonical plan-directory helper is `get_plan_dir(plan_id)` from `tools-file-ops:file_ops`, which resolves to `<repo>/.plan/local/plans/{plan_id}`. Any script that joins `plans/{plan_id}` against `cwd/.plan` directly resolves to the wrong path and produces a "ghost" `.plan/plans/{plan_id}/` tree at the repo root on every invocation. The originating failure mode is documented under the ghost-plan-dir bug, where two CI-completion scripts (`ci_complete_precondition.py` and `manage_ci_artifacts.py`) shipped hand-rolled `_resolve_plan_base_dir()` helpers that drifted from the canonical layout.
+**Intent**: Production Python scripts must not embed the `.plan/plans/` literal path. The canonical plan-directory helper is `get_plan_dir(plan_id)` from `tools-file-ops:file_ops`, which resolves to `<repo>/.plan/local/plans/{plan_id}`. Any script that joins `plans/{plan_id}` against `cwd/.plan` directly resolves to the wrong path and produces a "ghost" `.plan/plans/{plan_id}/` tree at the repo root on every invocation. The originating failure mode is documented under the ghost-plan-dir bug, where two CI-completion scripts (`ci_complete_precondition.py` and `manage-ci-artifacts.py`) shipped hand-rolled `_resolve_plan_base_dir()` helpers that drifted from the canonical layout.
 
 **Whitelist categories** (path-component-anchored, not substring):
 

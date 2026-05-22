@@ -101,7 +101,7 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:ci_complete_preco
 
 - **Finding subtype** is carried in the finding's `message` body as a
   prefix tag `[ci_build_failure]`, `[ci_policy_failure]`, etc., so
-  retrospectives and `manage-findings query --type triage` can grep
+  retrospectives and `manage-findings list --type triage` can grep
   for specific subtypes without a schema change.
 
 - **One finding per failing check.** A PR with three build-failure

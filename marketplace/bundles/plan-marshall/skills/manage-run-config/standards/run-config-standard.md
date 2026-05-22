@@ -330,7 +330,7 @@ Capture the numeric output as `{TIMEOUT}` and substitute it into the next call.
 
 ```bash
 # Use in await_until with outer shell timeout as safety net
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wait \
   --pr-number 123 \
   --timeout "{TIMEOUT}" \
   --interval 30
@@ -353,7 +353,7 @@ For **async polling** (CI checks, Sonar analysis), use `await_until --command-ke
 ```bash
 # await_until manages timeout internally via run-config
 # External timeout (600s) is just a safety net
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wait \
   --pr-number 123
 ```
 

@@ -443,9 +443,9 @@ def test_build_parser_pr_auto_merge_pr_number_optional():
 
 
 def test_build_parser_ci_status_pr_number_optional():
-    """ci status should accept --head as alternative to --pr-number."""
+    """checks status should accept --head as alternative to --pr-number."""
     parser, _, _, _, _ = build_parser('test')
-    args = parser.parse_args(['ci', 'status', '--head', 'feature/x'])
+    args = parser.parse_args(['checks', 'status', '--head', 'feature/x'])
     assert args.head == 'feature/x'
     assert args.pr_number is None
 
@@ -835,30 +835,30 @@ def test_run_cli_handles_file_not_found_without_touching_cwd(monkeypatch, _reset
 
 
 # =============================================================================
-# ci wait-for-status-flip argparse tests
+# checks wait-for-status-flip argparse tests
 # =============================================================================
 
 
 def test_ci_wait_for_status_flip_registered():
-    """`ci wait-for-status-flip` subcommand must be registered under the ci subparser."""
+    """`checks wait-for-status-flip` subcommand must be registered under the checks subparser."""
     parser, _, _, _, _ = build_parser('test')
-    args = parser.parse_args(['ci', 'wait-for-status-flip', '--pr-number', '42'])
-    assert args.command == 'ci'
-    assert args.ci_command == 'wait-for-status-flip'
+    args = parser.parse_args(['checks', 'wait-for-status-flip', '--pr-number', '42'])
+    assert args.command == 'checks'
+    assert args.checks_command == 'wait-for-status-flip'
     assert args.pr_number == 42
 
 
 def test_ci_wait_for_status_flip_requires_pr_number():
-    """`ci wait-for-status-flip` must exit when --pr-number is omitted."""
+    """`checks wait-for-status-flip` must exit when --pr-number is omitted."""
     parser, _, _, _, _ = build_parser('test')
     with pytest.raises(SystemExit):
-        parser.parse_args(['ci', 'wait-for-status-flip'])
+        parser.parse_args(['checks', 'wait-for-status-flip'])
 
 
 def test_ci_wait_for_status_flip_defaults():
     """--timeout and --interval default to module constants; --expected defaults to 'any'."""
     parser, _, _, _, _ = build_parser('test')
-    args = parser.parse_args(['ci', 'wait-for-status-flip', '--pr-number', '7'])
+    args = parser.parse_args(['checks', 'wait-for-status-flip', '--pr-number', '7'])
     assert args.timeout == DEFAULT_CI_TIMEOUT
     assert args.interval == DEFAULT_CI_INTERVAL
     assert args.expected == 'any'
@@ -869,7 +869,7 @@ def test_ci_wait_for_status_flip_accepts_custom_timeout_and_interval():
     parser, _, _, _, _ = build_parser('test')
     args = parser.parse_args(
         [
-            'ci',
+            'checks',
             'wait-for-status-flip',
             '--pr-number',
             '7',
@@ -887,7 +887,7 @@ def test_ci_wait_for_status_flip_accepts_custom_timeout_and_interval():
 def test_ci_wait_for_status_flip_accepts_valid_expected_values(expected):
     """--expected accepts success, failure, and any."""
     parser, _, _, _, _ = build_parser('test')
-    args = parser.parse_args(['ci', 'wait-for-status-flip', '--pr-number', '7', '--expected', expected])
+    args = parser.parse_args(['checks', 'wait-for-status-flip', '--pr-number', '7', '--expected', expected])
     assert args.expected == expected
 
 
@@ -897,7 +897,7 @@ def test_ci_wait_for_status_flip_rejects_invalid_expected_value():
     with pytest.raises(SystemExit):
         parser.parse_args(
             [
-                'ci',
+                'checks',
                 'wait-for-status-flip',
                 '--pr-number',
                 '7',
@@ -1286,7 +1286,7 @@ def test_get_known_subcommands_bootstraps_from_build_parser(_reset_subcommand_ca
     tokens = get_known_subcommands()
     # build_parser() registers four top-level subcommands.
     assert 'pr' in tokens
-    assert 'ci' in tokens
+    assert 'checks' in tokens
     assert 'issue' in tokens
     assert 'branch' in tokens
 
@@ -1317,7 +1317,7 @@ def test_register_subcommands_extends_known_set(_reset_subcommand_cache):
     assert 'comments-stage' in after
     # Existing parser-derived tokens must still be present.
     assert 'pr' in after
-    assert 'ci' in after
+    assert 'checks' in after
 
 
 def test_register_subcommands_idempotent(_reset_subcommand_cache):

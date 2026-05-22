@@ -54,7 +54,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar f
   --plan-id EXAMPLE-PLAN --project com.example:project --pr 123 --severities BLOCKER,CRITICAL
 
 # LLM consumer reads stored findings via manage-findings
-python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query --plan-id EXAMPLE-PLAN --type sonar-issue
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list --plan-id EXAMPLE-PLAN --type sonar-issue
 ```
 
 ## Workflows
@@ -76,7 +76,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qu
 
 2. **Query Stored Findings**:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query --plan-id {plan_id} --type sonar-issue
+   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list --plan-id {plan_id} --type sonar-issue
    ```
 
 3. **Process** — the LLM reads each finding's `detail` (which carries `key`, `rule`, `sonar_severity`, `sonar_type`, `project`, `pull_request`, `component`, `file`, `line`, and the full message) and decides fix-vs-suppress per finding. After acting on each finding, call `manage-findings resolve --hash-id {hash} --resolution fixed|suppressed|accepted`.
@@ -142,7 +142,7 @@ statistics:
 
 1. **Query Findings**:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings query --plan-id {plan_id} --type sonar-issue
+   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list --plan-id {plan_id} --type sonar-issue
    ```
 
 2. **LLM Decides Per Finding**

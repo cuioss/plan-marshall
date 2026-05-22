@@ -13,7 +13,7 @@ Check CI status for a pull request.
 ### Step 1: Resolve and Execute
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks status \
     (--pr-number 123 | --head feature/x)
 ```
 
@@ -49,7 +49,7 @@ Wait for CI checks to complete with two-layer timeout pattern. See [wait-pattern
 Use outer shell timeout as safety net:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wait \
     --pr-number 123
 ```
 
@@ -82,7 +82,7 @@ Rerun a failed CI workflow run.
 ### Step 1: Execute
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci rerun \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks rerun \
     --run-id 12345
 ```
 
@@ -105,7 +105,7 @@ Get logs from a CI workflow run.
 ### Step 1: Execute
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci logs \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks logs \
     --run-id 12345
 ```
 
