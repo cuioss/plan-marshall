@@ -195,7 +195,7 @@ def test_end_phase_no_optional_args():
 
 
 def test_generate_creates_metrics_md():
-    """generate creates metrics.md with phase breakdown table."""
+    """generate creates metrics.md with the three-column phase breakdown table."""
     with PlanContext(plan_id='metrics-gen-01') as ctx:
         # Record two phases
         cmd_start_phase(_ns_start_phase('metrics-gen-01', '1-init'))
@@ -209,8 +209,9 @@ def test_generate_creates_metrics_md():
         assert result['phases_recorded'] == 2
         assert result['total_tokens'] == 25000
         # Pre-formatted display fields are populated alongside the raw values.
-        assert isinstance(result['total_duration_formatted'], str)
-        assert result['total_duration_formatted']
+        assert isinstance(result['total_worked_formatted'], str)
+        assert isinstance(result['total_wall_formatted'], str)
+        assert isinstance(result['total_idle_formatted'], str)
         assert result['total_tokens_formatted'] == '25K'
 
         # Verify metrics.md content
@@ -221,12 +222,115 @@ def test_generate_creates_metrics_md():
         assert '## Phase Breakdown' in md_content
         # Header is padded to uniform per-column width; check for the column names rather
         # than the exact unpadded string.
-        assert '| Phase' in md_content and '| Duration' in md_content
+        assert '| Phase' in md_content
+        assert '| Worked' in md_content
+        assert '| Reported (wall)' in md_content
+        assert '| Idle' in md_content
         assert '| Tokens' in md_content and '| Tool Uses' in md_content
+        # The legacy single Duration column is gone.
+        assert '| Duration ' not in md_content
         assert '1-init' in md_content
         assert '2-refine' in md_content
         assert '25,000' in md_content
         assert '**Total**' in md_content
+
+
+def _phase_breakdown_header(md_content: str) -> str:
+    """Return the header row of the ## Phase Breakdown table."""
+    lines = md_content.splitlines()
+    bd_idx = lines.index('## Phase Breakdown')
+    for line in lines[bd_idx:]:
+        if line.startswith('| Phase'):
+            return line
+    raise AssertionError('Phase Breakdown header row not found')
+
+
+def test_generate_three_column_header_order():
+    """The Phase Breakdown header lists Worked, Reported (wall), Idle in order."""
+    with PlanContext(plan_id='metrics-gen-cols') as ctx:
+        cmd_start_phase(_ns_start_phase('metrics-gen-cols', '1-init'))
+        cmd_end_phase(_ns_end_phase('metrics-gen-cols', '1-init', total_tokens=1000, tool_uses=3))
+        cmd_generate(_ns_generate('metrics-gen-cols'))
+
+        header = _phase_breakdown_header((ctx.plan_dir / 'metrics.md').read_text())
+        cols = [c.strip() for c in header.strip('|').split('|')]
+        assert cols == ['Phase', 'Worked', 'Reported (wall)', 'Idle', 'Tokens', 'Tool Uses']
+
+
+def test_generate_worked_rollup_includes_subagent_duration():
+    """Worked time = agent_duration_ms + subagent_duration_ms (subagent included)."""
+    with PlanContext(plan_id='metrics-gen-worked') as ctx:
+        # Seed metrics.toon directly so the exact field set is deterministic.
+        # wall = 120s, worked = agent 60s + subagent 90s = 150s (> wall).
+        manage_metrics.write_metrics(
+            'metrics-gen-worked',
+            {
+                'phases': {
+                    '5-execute': {
+                        'duration_seconds': 120,
+                        'agent_duration_ms': 60000,
+                        'subagent_duration_ms': 90000,
+                    },
+                },
+            },
+        )
+
+        result = cmd_generate(_ns_generate('metrics-gen-worked'))
+        assert result['status'] == 'success'
+        # idle = max(0, wall - worked); worked exceeds wall here so idle clamps to 0.
+        toon = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
+        assert 'idle_duration_ms: 0' in toon
+        # Total worked seconds reflects the rollup including subagent duration.
+        assert result['total_worked_seconds'] == 150.0
+
+
+def test_generate_idle_residual_and_zero_clamp():
+    """idle_duration_ms = max(0, wall_clock - worked), including the zero-clamp branch."""
+    with PlanContext(plan_id='metrics-gen-idle') as ctx:
+        # Phase with idle time: wall-clock (300s) > worked (agent 100s + subagent 50s).
+        manage_metrics.write_metrics(
+            'metrics-gen-idle',
+            {
+                'phases': {
+                    '5-execute': {
+                        'duration_seconds': 300,
+                        'agent_duration_ms': 100000,
+                        'subagent_duration_ms': 50000,
+                    },
+                },
+            },
+        )
+
+        result = cmd_generate(_ns_generate('metrics-gen-idle'))
+        assert result['status'] == 'success'
+        toon = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
+        # worked = 150000 ms; wall = 300000 ms; idle = 150000 ms.
+        assert 'idle_duration_ms: 150000' in toon
+        assert result['total_idle_seconds'] == 150.0
+        assert result['total_worked_seconds'] == 150.0
+        assert result['total_wall_seconds'] == 300.0
+
+
+def test_generate_total_row_sums_three_columns_independently():
+    """The Total row sums Worked, Reported (wall), and Idle independently."""
+    with PlanContext(plan_id='metrics-gen-total'):
+        manage_metrics.write_metrics(
+            'metrics-gen-total',
+            {
+                'phases': {
+                    '1-init': {'duration_seconds': 200, 'agent_duration_ms': 120000},
+                    '2-refine': {'duration_seconds': 100, 'agent_duration_ms': 40000},
+                },
+            },
+        )
+
+        result = cmd_generate(_ns_generate('metrics-gen-total'))
+        assert result['status'] == 'success'
+        # worked total = 120 + 40 = 160 s; wall total = 200 + 100 = 300 s;
+        # idle total = (200-120) + (100-40) = 80 + 60 = 140 s.
+        assert result['total_worked_seconds'] == 160.0
+        assert result['total_wall_seconds'] == 300.0
+        assert result['total_idle_seconds'] == 140.0
 
 
 def test_generate_no_data():

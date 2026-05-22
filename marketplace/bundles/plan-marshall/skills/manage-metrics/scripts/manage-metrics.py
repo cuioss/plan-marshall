@@ -335,6 +335,42 @@ def cmd_end_phase(args: argparse.Namespace) -> dict:
     return result
 
 
+def _wall_clock_ms(phase: dict) -> int | None:
+    """Return the wall-clock duration of a phase in milliseconds, or None.
+
+    Prefers the persisted ``duration_seconds`` field; when absent, derives the
+    span from ``start_time``/``end_time`` ISO timestamps. Returns None when no
+    wall-clock signal is available.
+    """
+    duration_seconds = phase.get('duration_seconds')
+    if isinstance(duration_seconds, (int, float)):
+        return int(round(float(duration_seconds) * 1000.0))
+    start_str = phase.get('start_time')
+    end_str = phase.get('end_time')
+    if start_str and end_str:
+        try:
+            start_dt = datetime.fromisoformat(str(start_str))
+            end_dt = datetime.fromisoformat(str(end_str))
+        except (ValueError, TypeError):
+            return None
+        return int(round((end_dt - start_dt).total_seconds() * 1000.0))
+    return None
+
+
+def _worked_ms(phase: dict) -> int:
+    """Return worked time in ms: agent_duration_ms + subagent_duration_ms.
+
+    Missing operands are treated as 0. Worked time is the effort actually spent
+    by the agent and any dispatched subagents, distinct from wall-clock time
+    which also includes idle/user-wait spans.
+    """
+    agent = phase.get('agent_duration_ms')
+    subagent = phase.get('subagent_duration_ms')
+    agent_ms = int(agent) if isinstance(agent, (int, float)) else 0
+    subagent_ms = int(subagent) if isinstance(subagent, (int, float)) else 0
+    return agent_ms + subagent_ms
+
+
 def cmd_generate(args: argparse.Namespace) -> dict:
     plan_id = require_valid_plan_id(args)
 
@@ -343,6 +379,20 @@ def cmd_generate(args: argparse.Namespace) -> dict:
 
     if not phases:
         return {'status': 'error', 'error': 'no_data', 'message': 'No metrics data found'}
+
+    # Persist the per-phase idle residual back into metrics.toon before
+    # rendering: idle = max(0, wall_clock - worked). Derived deterministically
+    # from already-persisted fields via session-boundary inference — no new API.
+    for phase_name in PHASE_NAMES:
+        if phase_name not in phases:
+            continue
+        phase = phases[phase_name]
+        wall_ms = _wall_clock_ms(phase)
+        if wall_ms is None:
+            continue
+        idle_ms = max(0, wall_ms - _worked_ms(phase))
+        phase['idle_duration_ms'] = idle_ms
+    write_metrics(plan_id, data)
 
     # Build metrics.md content
     lines = []
@@ -372,34 +422,57 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             return None
         return coerced
 
-    def _duration_cell(phase: dict) -> tuple[str, float | None]:
-        """Return (rendered_cell, value_for_total).
+    def _ms_cell(value_ms: int | None) -> tuple[str, float | None]:
+        """Render a duration-in-ms value as a table cell.
 
-        Per-cell rule: prefer phase.duration_seconds; fall back to phase.agent_duration_seconds
-        formatted as '{value}s (agent)'; render '-' when both are absent.
-        Total aggregates whatever value contributed to the per-cell render.
+        Returns (rendered_cell, value_for_total_in_seconds). A truthy numeric
+        renders via format_duration; zero or None renders '-' and contributes
+        nothing to the Total. This is the symmetric per-cell present/absent rule
+        applied uniformly to the Worked, Reported (wall), and Idle columns.
         """
-        wall = _numeric(phase.get('duration_seconds'))
-        if wall is not None:
-            return format_duration(float(wall)), float(wall)
-        agent = _numeric(phase.get('agent_duration_seconds'))
-        if agent is not None:
-            return f'{agent}s (agent)', float(agent)
-        return '-', None
+        if value_ms is None:
+            return '-', None
+        numeric = _numeric(value_ms)
+        if numeric is None:
+            return '-', None
+        seconds = float(numeric) / 1000.0
+        return format_duration(seconds), seconds
 
     # Per-column value subsets (for Total aggregation and partial-marker decisions).
-    duration_values: list[float] = []
+    worked_values: list[float] = []
+    wall_values: list[float] = []
+    idle_values: list[float] = []
     tokens_values: list[int] = []
     tool_uses_values: list[int] = []
 
     # Two-pass build: first collect all rows as tuples, then pad to uniform per-column width.
-    header_row: tuple[str, str, str, str] = ('Phase', 'Duration', 'Tokens', 'Tool Uses')
-    data_rows: list[tuple[str, str, str, str]] = []
+    header_row: tuple[str, str, str, str, str, str] = (
+        'Phase',
+        'Worked',
+        'Reported (wall)',
+        'Idle',
+        'Tokens',
+        'Tool Uses',
+    )
+    data_rows: list[tuple[str, str, str, str, str, str]] = []
 
     for phase_name, phase in breakdown_rows:
-        duration_str, duration_val = _duration_cell(phase)
-        if duration_val is not None:
-            duration_values.append(duration_val)
+        wall_ms = _wall_clock_ms(phase)
+        worked_ms = _worked_ms(phase)
+        idle_ms = phase.get('idle_duration_ms')
+        idle_ms_int = int(idle_ms) if isinstance(idle_ms, (int, float)) else None
+
+        worked_str, worked_val = _ms_cell(worked_ms)
+        if worked_val is not None:
+            worked_values.append(worked_val)
+
+        wall_str, wall_val = _ms_cell(wall_ms)
+        if wall_val is not None:
+            wall_values.append(wall_val)
+
+        idle_str, idle_val = _ms_cell(idle_ms_int)
+        if idle_val is not None:
+            idle_values.append(idle_val)
 
         tokens = _numeric(phase.get('total_tokens'))
         tokens_str = f'{int(tokens):,}' if tokens is not None else '-'
@@ -411,7 +484,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         if tool_uses is not None:
             tool_uses_values.append(int(tool_uses))
 
-        data_rows.append((phase_name, duration_str, tokens_str, tool_uses_str))
+        data_rows.append((phase_name, worked_str, wall_str, idle_str, tokens_str, tool_uses_str))
 
     def _total_str(values: list, formatter, *, is_duration: bool = False) -> str:
         """Apply the symmetric Total aggregation rule.
@@ -433,25 +506,30 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             return f'{sum_str} (n={k}/{breakdown_n})'
         return sum_str
 
-    total_duration_str = _total_str(duration_values, lambda n: format_duration(float(n)), is_duration=True)
+    total_worked_str = _total_str(worked_values, lambda n: format_duration(float(n)), is_duration=True)
+    total_wall_str = _total_str(wall_values, lambda n: format_duration(float(n)), is_duration=True)
+    total_idle_str = _total_str(idle_values, lambda n: format_duration(float(n)), is_duration=True)
     total_tokens_str = _total_str(tokens_values, lambda n: f'{n:,}')
     total_tool_uses_str = _total_str(tool_uses_values, str)
 
-    total_row: tuple[str, str, str, str] = (
+    total_row: tuple[str, str, str, str, str, str] = (
         '**Total**',
-        f'**{total_duration_str}**',
+        f'**{total_worked_str}**',
+        f'**{total_wall_str}**',
+        f'**{total_idle_str}**',
         f'**{total_tokens_str}**',
         f'**{total_tool_uses_str}**',
     )
 
     # Compute per-column widths across header, data rows, and the bold-marked Total row.
-    all_rows: list[tuple[str, str, str, str]] = [header_row, *data_rows, total_row]
-    widths = [max(len(row[c]) for row in all_rows) for c in range(4)]
+    all_rows: list[tuple[str, str, str, str, str, str]] = [header_row, *data_rows, total_row]
+    column_count = len(header_row)
+    widths = [max(len(row[c]) for row in all_rows) for c in range(column_count)]
 
-    def _format_row(row: tuple[str, str, str, str]) -> str:
+    def _format_row(row: tuple[str, str, str, str, str, str]) -> str:
         return '| ' + ' | '.join(cell.ljust(widths[i]) for i, cell in enumerate(row)) + ' |'
 
-    separator_line = '|' + '|'.join('-' * (widths[i] + 2) for i in range(4)) + '|'
+    separator_line = '|' + '|'.join('-' * (widths[i] + 2) for i in range(column_count)) + '|'
 
     lines.append(_format_row(header_row))
     lines.append(separator_line)
@@ -476,13 +554,17 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         lines.append(f'- **Start**: {start}')
         lines.append(f'- **End**: {end}')
 
-        duration = phase.get('duration_seconds')
-        if duration:
-            lines.append(f'- **Wall-clock duration**: {format_duration(float(duration))}')
+        wall_ms = _wall_clock_ms(phase)
+        if wall_ms:
+            lines.append(f'- **Reported (wall-clock) duration**: {format_duration(wall_ms / 1000.0)}')
 
-        agent_dur = phase.get('agent_duration_seconds')
-        if agent_dur:
-            lines.append(f'- **Agent duration**: {format_duration(float(agent_dur))}')
+        worked_ms = _worked_ms(phase)
+        if worked_ms:
+            lines.append(f'- **Worked duration**: {format_duration(worked_ms / 1000.0)}')
+
+        idle_ms = phase.get('idle_duration_ms')
+        if isinstance(idle_ms, (int, float)) and idle_ms:
+            lines.append(f'- **Idle duration**: {format_duration(float(idle_ms) / 1000.0)}')
 
         tokens = phase.get('total_tokens')
         if tokens:
@@ -498,7 +580,9 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     md_path = get_plan_dir(plan_id) / METRICS_MD
     atomic_write_file(md_path, md_content)
 
-    total_duration = sum(duration_values)
+    total_worked = sum(worked_values)
+    total_wall = sum(wall_values)
+    total_idle = sum(idle_values)
     total_tokens = sum(tokens_values)
 
     return {
@@ -506,9 +590,13 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         'plan_id': plan_id,
         'file': METRICS_MD,
         'phases_recorded': len(phases),
-        'total_duration_seconds': round(total_duration, 1),
+        'total_worked_seconds': round(total_worked, 1),
+        'total_wall_seconds': round(total_wall, 1),
+        'total_idle_seconds': round(total_idle, 1),
         'total_tokens': total_tokens,
-        'total_duration_formatted': format_duration(total_duration),
+        'total_worked_formatted': format_duration(total_worked),
+        'total_wall_formatted': format_duration(total_wall),
+        'total_idle_formatted': format_duration(total_idle),
         'total_tokens_formatted': format_tokens_short(total_tokens),
     }
 

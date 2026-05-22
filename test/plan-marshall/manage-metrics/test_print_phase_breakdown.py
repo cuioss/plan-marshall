@@ -213,7 +213,8 @@ class TestPhaseBreakdownRenderingRule:
             total_line = next(ln for ln in lines if '**Total**' in ln)
             # Every numeric cell on the Total row is '-' (no '0', no '0s').
             cells = [c.strip() for c in total_line.split('|') if c.strip()]
-            # cells = ['**Total**', '**-**', '**-**', '**-**']  (Duration, Tokens, Tool Uses)
+            # cells = ['**Total**', '**-**', '**-**', '**-**', '**-**', '**-**']
+            # (Worked, Reported (wall), Idle, Tokens, Tool Uses)
             assert cells[0] == '**Total**'
             for numeric_cell in cells[1:]:
                 assert numeric_cell == '**-**', f'expected dash, got {numeric_cell!r}'
@@ -255,52 +256,190 @@ class TestPhaseBreakdownRenderingRule:
             assert '12' in total_line  # tool_uses total
             assert '(n=' not in total_line, total_line
 
-    def test_duration_agent_fallback_per_cell(self):
-        """1-init has only agent_duration_seconds → cell renders '{value}s (agent)'."""
+    def test_worked_cell_rolls_up_agent_and_subagent_duration(self):
+        """Worked cell = agent_duration_ms + subagent_duration_ms via format_duration."""
         with PlanContext(plan_id='render-rule-04'):
             _seed_phases(
                 'render-rule-04',
                 {
-                    '1-init': {'agent_duration_seconds': 179.8},
+                    '1-init': {'agent_duration_ms': 120000, 'subagent_duration_ms': 60000},
                 },
             )
             lines = _render_breakdown('render-rule-04')
             init_line = next(ln for ln in lines if '1-init' in ln)
-            assert '179.8s (agent)' in init_line, init_line
+            # worked = 180000 ms = 180 s = '3m0s'; no '(agent)' marker on the cell.
+            assert '3m0s' in init_line, init_line
+            assert '(agent)' not in init_line, init_line
 
-    def test_duration_wall_clock_preferred_over_agent_fallback(self):
-        """1-init has duration_seconds → renders wall-clock (agent fallback NOT triggered)."""
+    def test_reported_wall_column_renders_wall_clock(self):
+        """The Reported (wall) column renders duration_seconds independent of worked."""
         with PlanContext(plan_id='render-rule-05'):
             _seed_phases(
                 'render-rule-05',
                 {
                     '1-init': {
                         'duration_seconds': 42.0,
-                        'agent_duration_seconds': 179.8,
+                        'agent_duration_ms': 30000,
                     },
                 },
             )
             lines = _render_breakdown('render-rule-05')
             init_line = next(ln for ln in lines if '1-init' in ln)
-            # Wall-clock formatting is '42.0s', no '(agent)' marker on this cell.
-            assert '42.0s' in init_line, init_line
-            assert '(agent)' not in init_line, init_line
+            cells = [c.strip() for c in init_line.split('|') if c.strip()]
+            # cells = [Phase, Worked, Reported (wall), Idle, Tokens, Tool Uses]
+            assert cells[1] == '30.0s'  # worked (agent 30000 ms)
+            assert cells[2] == '42.0s'  # reported (wall) = 42.0 s
+            assert cells[3] == '12.0s'  # idle = max(0, 42 - 30) = 12 s
 
-    def test_duration_total_marker_with_agent_fallback_contribution(self):
-        """Total Duration respects the partial-Total marker when 1-init contributes an agent fallback."""
+    def test_total_marker_with_partial_worked_contribution(self):
+        """Total Worked respects the partial-Total marker when only some phases worked."""
         with PlanContext(plan_id='render-rule-06'):
             _seed_phases(
                 'render-rule-06',
                 {
-                    '1-init': {'agent_duration_seconds': 179.8},
-                    '2-refine': {'duration_seconds': 60.0},
+                    '1-init': {'agent_duration_ms': 179800},
+                    '2-refine': {'agent_duration_ms': 60000},
                     '3-outline': {},  # No duration of any kind.
                 },
             )
             lines = _render_breakdown('render-rule-06')
             total_line = next(ln for ln in lines if '**Total**' in ln)
-            # Two contributors out of three breakdown rows → marker '(n=2/3)'.
+            # Two of three breakdown rows contribute worked time → marker '(n=2/3)'.
             assert '(n=2/3)' in total_line, total_line
-            # 1-init cell renders agent fallback.
-            init_line = next(ln for ln in lines if '1-init' in ln)
-            assert '179.8s (agent)' in init_line, init_line
+
+
+class TestEndToEndPhaseBreakdownRendering:
+    """End-to-end regression: metrics.toon → generate → print-phase-breakdown.
+
+    Exercises the producer→consumer contract that the phase-6-finalize Phase
+    Breakdown override path depends on — distinct from the cmd_generate-only
+    unit tests in TestPhaseBreakdownRenderingRule. The captured section is the
+    exact content the override renderer inlines into the finalize summary.
+    """
+
+    def test_captured_section_carries_three_time_columns_with_idle(self):
+        """generate → print-phase-breakdown captures Worked/Reported/Idle with the
+        worked rollup including subagent_duration_ms and the correct idle residual.
+        """
+        with PlanContext(plan_id='metrics-e2e-01'):
+            # Seed a metrics.toon with full per-phase timing, as the live workflow
+            # would after end-phase + enrich. 5-execute carries a subagent rollup
+            # and genuine idle time (wall 600s > worked 200s + 100s).
+            write_metrics(
+                'metrics-e2e-01',
+                {
+                    'phases': {
+                        '1-init': {
+                            'start_time': '2026-05-22T10:00:00+00:00',
+                            'end_time': '2026-05-22T10:02:00+00:00',
+                            'duration_seconds': 120,
+                            'agent_duration_ms': 90000,
+                        },
+                        '5-execute': {
+                            'start_time': '2026-05-22T10:02:00+00:00',
+                            'end_time': '2026-05-22T10:12:00+00:00',
+                            'duration_seconds': 600,
+                            'agent_duration_ms': 200000,
+                            'subagent_duration_ms': 100000,
+                        },
+                    },
+                },
+            )
+
+            gen_result = cmd_generate(_ns_generate('metrics-e2e-01'))
+            assert gen_result['status'] == 'success'
+
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                print_result = cmd_print_phase_breakdown(_ns_print_breakdown('metrics-e2e-01'))
+            assert print_result['status'] == 'success'
+            section = buf.getvalue()
+
+            # The captured section begins with the heading and carries the three
+            # time columns in order, followed by Tokens and Tool Uses.
+            assert section.startswith('## Phase Breakdown')
+            header = next(ln for ln in section.splitlines() if ln.startswith('| Phase'))
+            cols = [c.strip() for c in header.strip('|').split('|')]
+            assert cols == ['Phase', 'Worked', 'Reported (wall)', 'Idle', 'Tokens', 'Tool Uses']
+
+            # 5-execute worked time includes subagent_duration_ms:
+            # worked = 200000 + 100000 = 300000 ms = 300 s = '5m0s'.
+            exec_line = next(ln for ln in section.splitlines() if ln.startswith('| 5-execute'))
+            exec_cells = [c.strip() for c in exec_line.strip('|').split('|')]
+            assert exec_cells[1] == '5m0s'  # Worked
+            assert exec_cells[2] == '10m0s'  # Reported (wall) = 600 s
+            # idle = max(0, 600 - 300) = 300 s = '5m0s'.
+            assert exec_cells[3] == '5m0s'  # Idle
+
+    def test_captured_section_idle_zero_clamp_when_worked_exceeds_wall(self):
+        """When worked exceeds wall-clock, the captured Idle cell renders the zero clamp."""
+        with PlanContext(plan_id='metrics-e2e-02'):
+            write_metrics(
+                'metrics-e2e-02',
+                {
+                    'phases': {
+                        # worked (agent 100s + subagent 80s = 180s) > wall (120s).
+                        '5-execute': {
+                            'start_time': '2026-05-22T10:00:00+00:00',
+                            'end_time': '2026-05-22T10:02:00+00:00',
+                            'duration_seconds': 120,
+                            'agent_duration_ms': 100000,
+                            'subagent_duration_ms': 80000,
+                        },
+                    },
+                },
+            )
+
+            assert cmd_generate(_ns_generate('metrics-e2e-02'))['status'] == 'success'
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                cmd_print_phase_breakdown(_ns_print_breakdown('metrics-e2e-02'))
+            section = buf.getvalue()
+
+            exec_line = next(ln for ln in section.splitlines() if ln.startswith('| 5-execute'))
+            exec_cells = [c.strip() for c in exec_line.strip('|').split('|')]
+            assert exec_cells[1] == '3m0s'  # Worked = 180 s
+            assert exec_cells[2] == '2m0s'  # Reported (wall) = 120 s
+            # idle = max(0, 120 - 180) = 0 → renders the zero-clamped cell '-'.
+            assert exec_cells[3] == '-'  # Idle clamped to zero → absent per-cell
+
+    def test_captured_section_total_row_sums_three_time_columns(self):
+        """The captured Total row sums Worked, Reported (wall), and Idle independently
+        across multiple phases — the producer→consumer contract for the override path.
+        """
+        with PlanContext(plan_id='metrics-e2e-03'):
+            write_metrics(
+                'metrics-e2e-03',
+                {
+                    'phases': {
+                        '1-init': {
+                            'start_time': '2026-05-22T10:00:00+00:00',
+                            'end_time': '2026-05-22T10:03:00+00:00',
+                            'duration_seconds': 180,
+                            'agent_duration_ms': 120000,
+                        },
+                        '5-execute': {
+                            'start_time': '2026-05-22T10:03:00+00:00',
+                            'end_time': '2026-05-22T10:13:00+00:00',
+                            'duration_seconds': 600,
+                            'agent_duration_ms': 240000,
+                            'subagent_duration_ms': 120000,
+                        },
+                    },
+                },
+            )
+
+            assert cmd_generate(_ns_generate('metrics-e2e-03'))['status'] == 'success'
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                cmd_print_phase_breakdown(_ns_print_breakdown('metrics-e2e-03'))
+            section = buf.getvalue()
+
+            total_line = next(ln for ln in section.splitlines() if '**Total**' in ln)
+            total_cells = [c.strip() for c in total_line.strip('|').split('|')]
+            # worked total = 120 + 360 = 480 s = '8m0s';
+            # wall total   = 180 + 600 = 780 s = '13m0s';
+            # idle total   = (180-120) + (600-360) = 60 + 240 = 300 s = '5m0s'.
+            assert total_cells[1] == '**8m0s**'   # Worked
+            assert total_cells[2] == '**13m0s**'  # Reported (wall)
+            assert total_cells[3] == '**5m0s**'   # Idle
