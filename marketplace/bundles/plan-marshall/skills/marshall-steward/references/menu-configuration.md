@@ -18,9 +18,14 @@ Sub-menu for skill domains and project structure configuration.
 
 ## Configuration Submenu
 
+The Configuration submenu has 9 options, which exceeds the `AskUserQuestion` 4-option cap. It is presented as a multi-page paginated menu following the "More actions..." pattern documented in `plan-marshall/workflow/planning.md` (§ Action: list): options are chunked into pages of ≤4, every non-final page reserves its 4th slot for a "More..." continuation that triggers the next page's `AskUserQuestion`, and the final page exposes a "Back" element returning to the Main Menu without quitting.
+
+**Page 1** — first 3 options plus the "More..." continuation:
+
 ```
 AskUserQuestion:
   question: "What would you like to configure?"
+  header: "Configuration"
   options:
     - label: "Skill Domains"
       description: "Configure implementation skills per domain"
@@ -31,6 +36,18 @@ AskUserQuestion:
     - label: "Project Structure"
       description: "View, regenerate, and enrich architecture data"
       value: "structure"
+    - label: "More..."
+      description: "Show remaining configuration options"
+      value: "more-1"
+```
+
+**Page 2** — shown only when the user selects "More..." on Page 1 — the next 3 options plus the "More..." continuation:
+
+```
+AskUserQuestion:
+  question: "What would you like to configure?"
+  header: "Configuration (continued)"
+  options:
     - label: "Quality Pipelines"
       description: "Verification and finalize step pipelines"
       value: "quality-pipelines"
@@ -40,6 +57,18 @@ AskUserQuestion:
     - label: "Credentials & Secrets"
       description: "Manage external tool credentials"
       value: "credentials"
+    - label: "More..."
+      description: "Show remaining configuration options"
+      value: "more-2"
+```
+
+**Page 3** — shown only when the user selects "More..." on Page 2 — the final 3 options plus the "Back" element:
+
+```
+AskUserQuestion:
+  question: "What would you like to configure?"
+  header: "Configuration (continued)"
+  options:
     - label: "Terminal Title"
       description: "Dynamic terminal tab title + statusline (hook-driven)"
       value: "terminal-title"
@@ -49,6 +78,9 @@ AskUserQuestion:
     - label: "Full Reconfigure"
       description: "Re-run setup wizard from Step 5 onwards (skips bootstrap steps 1-4)"
       value: "wizard"
+    - label: "Back"
+      description: "Return to the Main Menu"
+      value: "back"
 ```
 
 ## Routing
@@ -57,13 +89,16 @@ AskUserQuestion:
 |-----------|--------|
 | skill-domains | Execute "Configuration: Skill Domains" below |
 | plan-phases | Execute "Configuration: Plan Phase Settings" below |
+| structure | Execute "Configuration: Project Structure" below |
+| more-1 | Present Configuration Page 2 `AskUserQuestion` |
 | quality-pipelines | Execute "Configuration: Quality Pipelines" below |
 | review-gates | Execute "Configuration: Review Gates" below |
-| structure | Execute "Configuration: Project Structure" below |
 | credentials | Execute "Configuration: Credentials & Secrets" below |
+| more-2 | Present Configuration Page 3 `AskUserQuestion` |
 | terminal-title | Load `Read references/menu-terminal-title.md` → Execute |
 | recipes | Load `Read references/menu-recipes.md` → Execute "Configuration: Recipes" below |
 | wizard | Load `Read references/wizard-flow.md` — skip to Step 5 (bootstrap already done) |
+| back | Do nothing → Return to the Main Menu |
 
 > **Note**: Recipe registration affects which menu items appear here. A recipe whose extension is not active in the project is hidden from selection lists. See `references/menu-recipes.md` for the full catalog of built-in and project-local recipes and how to add new ones.
 

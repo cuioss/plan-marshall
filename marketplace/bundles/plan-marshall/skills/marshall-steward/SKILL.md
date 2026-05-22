@@ -17,32 +17,15 @@ Project configuration wizard for the planning system.
 
 ## Banner
 
-Output this banner directly as text at command start (do NOT use Bash echo - output it in your response):
+At command start, produce the banner by running `print_logo.py` and surfacing its stdout — do NOT reproduce the ASCII-art block inside your response.
 
+**BOOTSTRAP**: The banner is emitted before the executor exists, so use a DIRECT Python call. Resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/print_logo.py` and capture the first match as `{PRINT_LOGO}`. Then invoke it directly:
+
+```bash
+python3 "{PRINT_LOGO}"
 ```
-╔═══════════════════════════════════════════════════════════════════════╗
-║                                 :                                     ║
-║                               .;:;.                                   ║
-║                              :;:::;:                                  ║
-║          ...             .;:::::::::;.              ...               ║
-║          .::;:::::::::::::;:::::::::;:::::::::::::;::.                ║
-║               :;:::::::::::::::::::::::::::::::;:                     ║
-║                .;:::::::::::::::::::::::::::::;.                      ║
-║                                                                       ║
-║                        █▀█ █   █▀█ █▄ █                               ║
-║                        █▀▀ █▄▄ █▀█ █ ▀█                               ║
-║                  █▀▄▀█ █▀█ █▀█ █▀ █ █ █▀█ █   █                       ║
-║                  █ ▀ █ █▀█ █▀▄ ▄█ █▀█ █▀█ █▄▄ █▄▄                     ║
-║                                                                       ║
-║                .;:::::::::::::::::::::::::::::;.                      ║
-║               :;:::::::::::::::::::::::::::::::;:                     ║
-║          .::;:::::::::::::;:::::::::;:::::::::::::;::.                ║
-║         ...              .;:::::::::;.              ...               ║
-║                              :;:::;:                                  ║
-║                               .;:;.                                   ║
-║                                 :                                     ║
-╚═══════════════════════════════════════════════════════════════════════╝
-```
+
+Surface the script's stdout verbatim to the user. The script prints the full banner and exits 0.
 
 ---
 
@@ -81,6 +64,7 @@ Output this banner directly as text at command start (do NOT use Bash echo - out
 | determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `seed-blocking-finding-types` for the wizard's blocking-partition seed step |
 | gitignore_setup | `plan-marshall:marshall-steward:gitignore_setup` | Configure .gitignore for .plan/ |
 | bootstrap_plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/local/marshall-state.toon` |
+| print_logo | _(direct Python call)_ | Print the marshall-steward ASCII-art banner at command start |
 
 ### Delegated Scripts (require executor)
 
@@ -147,6 +131,10 @@ Display menu when both executor and marshal.json exist.
 
 ### Main Menu
 
+The Main Menu has 5 options, which exceeds the `AskUserQuestion` 4-option cap. It is presented as a paginated menu following the "More actions..." pattern documented in `plan-marshall/workflow/planning.md` (§ Action: list): each page presents at most 4 options, and every non-final page reserves its 4th slot for a "More..." continuation that triggers the next page's `AskUserQuestion`.
+
+**Page 1** — first 3 options plus the "More..." continuation:
+
 ```
 AskUserQuestion:
   question: "What would you like to do?"
@@ -158,6 +146,18 @@ AskUserQuestion:
       description: "Verify setup, diagnose issues"
     - label: "3. Configuration"
       description: "Build systems, skill domains"
+    - label: "More..."
+      description: "Show remaining Main Menu options"
+  multiSelect: false
+```
+
+**Page 2** — shown only when the user selects "More..." on Page 1 — the remaining options:
+
+```
+AskUserQuestion:
+  question: "What would you like to do?"
+  header: "Main Menu (continued)"
+  options:
     - label: "4. Effort"
       description: "Configure per-role model levels (variant routing)"
     - label: "5. Quit"
@@ -172,10 +172,11 @@ AskUserQuestion:
 | "1. Maintenance" | Load: `Read references/menu-maintenance.md` → Execute |
 | "2. Health Check" | Load: `Read references/menu-healthcheck.md` → Execute |
 | "3. Configuration" | Load: `Read references/menu-configuration.md` → Execute |
+| "More..." (Page 1) | Present Main Menu Page 2 `AskUserQuestion` |
 | "4. Effort" | Load: `Read standards/effort-menu.md` → Execute |
 | "5. Quit" | Output "Good bye!" → STOP |
 
-After any menu option completes, return to Main Menu (except Quit).
+After any menu option completes, return to Main Menu Page 1 (except Quit).
 
 ---
 
