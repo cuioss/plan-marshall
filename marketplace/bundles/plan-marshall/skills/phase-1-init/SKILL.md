@@ -100,7 +100,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons get 
 ```
 
 Extract the `title` field from the TOON output. Retain the full lesson record
-(title, category, component, detail, related) in context — Step 4 ("From Lesson")
+(title, category, component, content) in context — Step 4 ("From Lesson")
 reuses this same result and does NOT re-fetch the lesson.
 
 **Sub-step 2a.2 — Derive the kebab-case slug**:
@@ -188,10 +188,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 The lesson record was already fetched in **Step 2a.1** (`manage-lessons get
 --lesson-id {lesson_id}`) so that the `title` field was available for plan_id
-derivation. Do NOT re-fetch the lesson here — reuse the record retained in context
-from Step 2a.1.
-
-Use the already-retrieved fields: title, category, component, detail, related.
+derivation. Reuse the record retained in context from Step 2a.1.
 
 If an explicit `--plan-id` was provided (so Step 2a was skipped and the lesson was
 never fetched), fetch it now:
@@ -200,6 +197,8 @@ never fetched), fetch it now:
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons get \
   --lesson-id {lesson_id}
 ```
+
+Extract and use the retrieved fields: title, category, component, content.
 
 **From Issue**:
 
