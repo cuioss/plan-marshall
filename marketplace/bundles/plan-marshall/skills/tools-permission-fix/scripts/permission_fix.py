@@ -8,6 +8,7 @@ Provides:
 - ensure: Ensure multiple permissions exist
 - consolidate: Consolidate timestamped permissions with wildcards
 - ensure-wildcards: Ensure marketplace wildcards exist
+- remove-redundant: Remove redundant permissions from local settings (duplicates of global or covered by wildcard); optionally move marketplace permissions to global
 - apply-project-step-permissions: Append Skill({skill}) rules for project: steps in marshal.json
 - generate-wildcards: Generate permission wildcards from marketplace inventory
 - ensure-executor: Ensure the executor permission exists
@@ -48,9 +49,11 @@ from permission_common import (  # type: ignore[import-not-found]  # noqa: E402
     get_settings_path,
     load_settings,
     load_settings_path,
+    resolve_scope_to_paths,
     save_settings,
 )
 from permission_doctor import (  # type: ignore[import-not-found]  # noqa: E402
+    cmd_detect_redundant,
     extract_project_steps,
     load_marshal_config,
     skill_permission_covered,
@@ -547,6 +550,123 @@ def cmd_ensure_wildcards(args) -> dict:
         result['applied'] = False
 
     result.setdefault('status', 'success')
+    return result
+
+
+# =============================================================================
+# remove-redundant subcommand
+# =============================================================================
+
+
+def cmd_remove_redundant(args) -> dict:
+    """Handle remove-redundant subcommand.
+
+    Removes permissions from local/project settings that are redundant with
+    global settings (exact duplicates or covered by a broader wildcard) and
+    optionally moves marketplace-scoped permissions from local to global.
+
+    Detects issues via permission_doctor.cmd_detect_redundant, then applies
+    the requested fixes.
+    """
+    # Resolve paths
+    if args.scope:
+        global_path_or_none, local_path_or_none = resolve_scope_to_paths(args.scope)
+        if global_path_or_none is None or local_path_or_none is None:
+            return {'status': 'error', 'error': 'Could not resolve global or local settings path from scope'}
+        global_path: str = global_path_or_none
+        local_path: str = local_path_or_none
+    else:
+        global_path = args.global_settings
+        local_path = args.local_settings
+
+    # Run detection to identify what needs fixing
+    detect_args = argparse.Namespace(scope=None, global_settings=global_path, local_settings=local_path)
+    detection = cmd_detect_redundant(detect_args)
+
+    if detection.get('status') == 'error':
+        return detection
+
+    redundant = detection.get('redundant', [])
+    marketplace_in_local = detection.get('marketplace_in_local', [])
+
+    redundant_permissions = [entry['permission'] for entry in redundant]
+    marketplace_permissions = [entry['permission'] for entry in marketplace_in_local]
+
+    # Load local settings for mutation
+    local_settings, local_error = load_settings(local_path)
+    if local_error:
+        return {'status': 'error', 'error': local_error}
+
+    # Load global settings for mutation (if moving marketplace perms)
+    global_settings, global_error = load_settings(global_path)
+    if global_error:
+        return {'status': 'error', 'error': global_error}
+
+    local_allow = local_settings.get('permissions', {}).get('allow', [])
+    global_allow = global_settings.get('permissions', {}).get('allow', [])
+
+    removed_redundant: list[str] = []
+    moved_to_global: list[str] = []
+    already_in_global: list[str] = []
+
+    # Remove exact duplicates and covered-by-wildcard entries from local
+    for perm in redundant_permissions:
+        if perm in local_allow:
+            removed_redundant.append(perm)
+            if not args.dry_run:
+                local_allow.remove(perm)
+
+    # Handle marketplace-scoped permissions in local settings
+    if args.move_marketplace:
+        for perm in marketplace_permissions:
+            if perm in local_allow:
+                if perm in global_allow:
+                    already_in_global.append(perm)
+                    if not args.dry_run:
+                        local_allow.remove(perm)
+                else:
+                    moved_to_global.append(perm)
+                    if not args.dry_run:
+                        local_allow.remove(perm)
+                        global_allow.append(perm)
+
+    changes_made = bool(removed_redundant or moved_to_global or already_in_global)
+
+    result: dict = {
+        'removed_redundant': removed_redundant,
+        'moved_to_global': moved_to_global,
+        'already_in_global': already_in_global,
+        'marketplace_skipped': [
+            p for p in marketplace_permissions if p not in moved_to_global and p not in already_in_global
+        ],
+        'removed_count': len(removed_redundant),
+        'moved_count': len(moved_to_global),
+        'dry_run': args.dry_run,
+        'local_path': local_path,
+        'global_path': global_path,
+        'changes_made': changes_made,
+    }
+
+    if not args.dry_run and changes_made:
+        # Sort and save local settings
+        if removed_redundant or moved_to_global or already_in_global:
+            local_settings['permissions']['allow'] = sorted(local_allow)
+            saved_local = save_settings(local_path, local_settings)
+            if not saved_local:
+                return {'status': 'error', 'error': f'Failed to save local settings: {local_path}'}
+
+        # Sort and save global settings (if we added anything)
+        if moved_to_global:
+            global_settings['permissions']['allow'] = sorted(global_allow)
+            saved_global = save_settings(global_path, global_settings)
+            if not saved_global:
+                return {'status': 'error', 'error': f'Failed to save global settings: {global_path}'}
+
+        result['applied'] = True
+    else:
+        result['applied'] = False
+
+    result['status'] = 'success'
     return result
 
 
@@ -1076,6 +1196,33 @@ def main():
     p_ewc.add_argument('--marketplace-json', required=True, help='Path to marketplace.json file')
     p_ewc.add_argument('--dry-run', action='store_true', help='Preview changes without modifying files')
     p_ewc.set_defaults(func=cmd_ensure_wildcards)
+
+    # remove-redundant subcommand
+    p_rrd = subparsers.add_parser(
+        'remove-redundant',
+        help='Remove redundant permissions from local settings (duplicates of global or covered by wildcard)',
+        allow_abbrev=False,
+    )
+    p_rrd_group = p_rrd.add_mutually_exclusive_group(required=True)
+    p_rrd_group.add_argument(
+        '--scope', choices=['both'], help='Analyze both global and project settings (auto-resolves paths)'
+    )
+    p_rrd_group.add_argument('--global-settings', help='Path to global settings file (requires --local-settings)')
+    p_rrd.add_argument('--local-settings', help='Path to local/project settings file (required with --global-settings)')
+    p_rrd.add_argument(
+        '--move-marketplace',
+        action='store_true',
+        default=True,
+        help='Move marketplace permissions from local to global settings (default: true)',
+    )
+    p_rrd.add_argument(
+        '--no-move-marketplace',
+        dest='move_marketplace',
+        action='store_false',
+        help='Skip moving marketplace permissions to global settings',
+    )
+    p_rrd.add_argument('--dry-run', action='store_true', help='Preview changes without modifying files')
+    p_rrd.set_defaults(func=cmd_remove_redundant)
 
     # apply-project-step-permissions subcommand
     p_apps = subparsers.add_parser(

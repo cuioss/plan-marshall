@@ -98,13 +98,46 @@ Include `project_step_permissions` alongside `wildcards` in the Step 7 summary T
 
 ## Step 4: Check for Stale Permissions
 
-Detect permissions for bundles that no longer exist:
+Detect permissions that are redundant (exact duplicates of global rules or covered by a broader global wildcard) or misplaced (marketplace permissions sitting in project-local settings when they should be global):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission_doctor detect-redundant --scope both
 ```
 
-Report any redundant or stale permissions found.
+**Interpret results**:
+- `summary.redundant_count: 0` AND `summary.marketplace_in_local_count: 0` → No redundant permissions PASS
+- `summary.redundant_count > 0` OR `summary.marketplace_in_local_count > 0` → Issues found, offer to fix
+
+When issues are found, first preview the changes with `--dry-run`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix remove-redundant \
+  --scope both \
+  --dry-run
+```
+
+Then prompt the user once:
+
+```
+AskUserQuestion:
+  question: "Found {redundant_count} redundant permissions and {marketplace_count} marketplace permissions in project-local settings. Remove redundant entries and move marketplace permissions to global settings?"
+  options:
+    - label: "Yes"
+      description: "Remove redundant local permissions and move marketplace permissions to global settings"
+      value: "yes"
+    - label: "No"
+      description: "Skip (permissions stay as-is)"
+      value: "no"
+```
+
+If yes, apply the fix:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix remove-redundant \
+  --scope both
+```
+
+Include `redundant_permissions` in the Step 7 summary TOON (e.g., `redundant_permissions: {redundant: 0, marketplace_moved: 0}`).
 
 ---
 
@@ -153,6 +186,52 @@ AskUserQuestion:
 
 ---
 
+## Step 6b: Check Terminal Title Hook
+
+Verify whether the SessionStart hook for the dynamic terminal title is installed:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
+  health-check --checks all
+```
+
+Inspect the `hook` entry in the `results` array:
+- `hook.healthy: true` → Terminal title hook installed PASS
+- `hook.healthy: false` → Hook not installed; offer to enable
+
+When `hook.healthy` is false, prompt the user:
+
+```
+AskUserQuestion:
+  question: "The terminal title SessionStart hook is not installed. Enable it now? (Shows active plan, phase, and status in the terminal tab.)"
+  options:
+    - label: "Enable"
+      description: "Install the SessionStart hook into ./.claude/settings.local.json"
+      value: "enable"
+    - label: "Skip"
+      description: "Leave terminal title disabled"
+      value: "skip"
+```
+
+If the user chooses **Enable**, install the hook:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
+  project install-hook --target .claude/settings.local.json
+```
+
+Report the result:
+- `status: success` with `already_present: false` → Hook installed successfully
+- `status: success` with `already_present: true` → Hook was already present
+- `status: error` → Report `message` and advise checking write permissions on `./.claude/settings.local.json`
+- `status: no-op` → Platform does not support this hook (e.g. OpenCode); report info and continue
+
+If the user chooses **Skip**: continue to Step 7.
+
+Include `terminal_title` in the Step 7 summary TOON (e.g., `terminal_title: {hook_installed: true}`).
+
+---
+
 ## Step 7: Summary
 
 Output health check summary. Use `status: success` and `overall: HEALTHY` when all checks passed. Use `status: warning` and `overall: DEGRADED` when any check reported issues.
@@ -172,12 +251,16 @@ wildcards:
 project_step_permissions:
   total: 2
   missing: 0
-redundant_permissions: 0
+redundant_permissions:
+  redundant: 0
+  marketplace_moved: 0
 project_structure: configured
 ci:
   provider: github
   required_tool: gh
   tool_ready: true
+terminal_title:
+  hook_installed: true
 
 overall: HEALTHY
 ```
@@ -197,20 +280,25 @@ wildcards:
 project_step_permissions:
   total: 2
   missing: 1
-redundant_permissions: 3
+redundant_permissions:
+  redundant: 8
+  marketplace_moved: 11
 project_structure: missing
 ci:
   provider: github
   required_tool: gh
   tool_ready: false
+terminal_title:
+  hook_installed: false
 
 issues:
   - Executor drift detected (regenerate recommended)
   - 2 plugin wildcards missing
   - 1 project-step permission rule missing
-  - 3 redundant permissions in project settings
+  - 8 redundant permissions + 11 misplaced marketplace permissions in project settings
   - Project structure not configured
   - CI tool 'gh' not authenticated
+  - Terminal title SessionStart hook not installed
 
 fixes_available: true
 ```

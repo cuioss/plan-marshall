@@ -27,7 +27,7 @@ user-invocable: true
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| permission_fix | `plan-marshall:tools-permission-fix:permission_fix` | Write operations for permissions |
+| `permission_fix` | `plan-marshall:tools-permission-fix:permission_fix` | Write operations for permissions |
 
 **Shared dependency**: Imports `permission_common` from `tools-permission-doctor/scripts/`. The executor's PYTHONPATH ensures this is resolvable.
 
@@ -152,6 +152,53 @@ already_present: 14
 total: 16
 dry_run: true
 ```
+
+### remove-redundant - Remove Redundant Permissions from Local Settings
+
+Remove permissions from local/project settings that are exact duplicates of global settings,
+covered by a broader global wildcard, or marketplace permissions that should live in global settings.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix remove-redundant \
+  --scope both \
+  --dry-run
+```
+
+Or with explicit paths:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix remove-redundant \
+  --global-settings ~/.claude/settings.json \
+  --local-settings .claude/settings.json \
+  --dry-run
+```
+
+**Output (TOON)**:
+```
+removed_redundant[2]:
+- Bash(git:*)
+- Edit(.plan/**)
+moved_to_global[1]:
+- Skill(pm-dev-java:*)
+already_in_global[0]:
+marketplace_skipped[0]:
+removed_count: 2
+moved_count: 1
+dry_run: true
+changes_made: true
+applied: false
+local_path: .claude/settings.json
+global_path: /Users/me/.claude/settings.json
+```
+
+**Options**:
+- `--move-marketplace` (default: true): Move marketplace permissions (Skill/SlashCommand) from local to global settings
+- `--no-move-marketplace`: Skip moving marketplace permissions; only remove exact duplicates and wildcard-covered entries
+- `--dry-run`: Preview changes without modifying files
+
+**Usage**: Run after `tools-permission-doctor detect-redundant` to clean up permission drift. The health check in marshall-steward uses this operation to fix the "duplicate global rules + marketplace permissions in project-local settings" issue.
+
+---
 
 ### apply-project-step-permissions - Add Skill() Rules for project: Steps
 
