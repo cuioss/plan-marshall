@@ -62,6 +62,7 @@ Public API
 
 from __future__ import annotations
 
+import functools
 import re
 from pathlib import Path
 
@@ -117,8 +118,14 @@ def _marketplace_root(skill_dir: Path) -> Path | None:
     return Path(*parts[:bundles_idx])
 
 
+@functools.cache
 def _script_exists(root: Path, bundle: str, skill: str, script: str) -> bool:
-    """Return True when ``{script}.py`` exists under the resolved scripts dir."""
+    """Return True when ``{script}.py`` exists under the resolved scripts dir.
+
+    Cached: the marketplace tree is static for the duration of an analysis
+    run, so repeated lookups for the same notation avoid redundant
+    filesystem ``is_file()`` calls across every scanned file.
+    """
     scripts_dir = root / 'bundles' / bundle / 'skills' / skill / 'scripts'
     return (scripts_dir / f'{script}.py').is_file()
 

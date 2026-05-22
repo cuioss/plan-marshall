@@ -117,7 +117,7 @@ Per the plugin.json registration convention documented in `frontmatter-standards
 Entry-point script filenames must match the 3-part executor notation. Two patterns coexist:
 
 - **Dash notation**: `manage-files.py` → `plan-marshall:manage-files:manage-files`
-- **Underscore notation**: `manage_status.py` → `plan-marshall:manage-status:manage-status`
+- **Underscore notation**: `generate_executor.py` → `plan-marshall:tools-script-executor:generate_executor`
 
 The filename is the authoritative notation. Do NOT rename existing scripts — it would break the executor mapping.
 
