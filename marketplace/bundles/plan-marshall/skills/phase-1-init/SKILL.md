@@ -121,7 +121,7 @@ Before continuing to Step 3, check whether the candidate slug already correspond
 to an existing plan directory:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status list
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status list
 ```
 
 Compare the candidate slug against the `plan_id` values in the returned list.
@@ -160,7 +160,7 @@ If `action: exists`, use AskUserQuestion:
 
 1. Delete the existing plan:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status delete-plan \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status delete-plan \
   --plan-id {plan_id}
 ```
 
@@ -388,7 +388,7 @@ Write the raw `lesson_id` value into `status.metadata.plan_source` so downstream
 The literal value written is the raw lesson_id string (e.g., `2026-05-11-08-004`) — NOT a tag like `"lesson"`. This makes the originating lesson directly recoverable from status metadata and keeps the field's semantics aligned with the existing `recipe_key` pattern (raw id, not bucket label).
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --set --plan-id {plan_id} \
   --field plan_source \
   --value {lesson_id}
@@ -434,14 +434,14 @@ A lesson body is doc-shaped when ALL of the following hold:
 If ALL three conditions hold, set `plan_source=recipe` and `recipe_key=lesson_cleanup` in status metadata:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --set --plan-id {plan_id} \
   --field plan_source \
   --value recipe
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --set --plan-id {plan_id} \
   --field recipe_key \
   --value lesson_cleanup
@@ -561,7 +561,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 Create status.json with phases (6-phase model). When Step 6 recorded worktree intent (the `branch_strategy == "feature" AND use_worktree == true` branch ran), pass the intent pair as flags so `metadata.use_worktree` and `metadata.worktree_branch` are seeded atomically. `--worktree-path` is omitted — the path is unknown until phase-5-execute Step 2.5 materializes the worktree.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status create \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create \
   --plan-id {plan_id} \
   --title "{title_from_task_md}" \
   --phases 1-init,2-refine,3-outline,4-plan,5-execute,6-finalize \
@@ -572,7 +572,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status create
 When Step 6 did NOT record worktree intent (the `use_worktree == false` opt-out branch, or the `branch_strategy == "direct"` branch), omit the worktree flags so `manage_status create` writes the explicit `metadata.use_worktree=false` marker:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status create \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create \
   --plan-id {plan_id} \
   --title "{title_from_task_md}" \
   --phases 1-init,2-refine,3-outline,4-plan,5-execute,6-finalize
@@ -629,7 +629,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 The phase transitions from init → refine after configuration completes:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
   --plan-id {plan_id} \
   --completed 1-init
 ```

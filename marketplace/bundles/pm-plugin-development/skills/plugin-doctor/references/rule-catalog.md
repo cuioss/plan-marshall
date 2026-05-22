@@ -467,6 +467,28 @@ The ack tag must match `^ack-[a-z0-9_-]+$`. The slug after `ack-` must be non-em
 
 ---
 
+### notation-staleness
+
+**Rule ID**: `notation-staleness`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_notation_staleness.py`
+
+**Scope**: Per-skill — `SKILL.md` plus every `*.md` under `standards/`, `references/`, `workflow/`, `recipes/`, plus every `*.py` under `scripts/`. Wired into `_doctor_analysis.py` unconditionally active (not gated on `active_rules`), mirroring the `refine-contract-violation` integration.
+
+**Intent**: Flag three-part executor notations (`{bundle}:{skill}:{script}`) whose third segment has no matching `{script}.py` file under the resolved `bundles/{bundle}/skills/{skill}/scripts/` directory. `generate_executor` derives a script's public notation from its filename, so renaming an entrypoint script silently changes the notation — callers that still use the old third segment resolve to `Unknown notation`.
+
+**Detection**: Pure static analysis — regex extraction of three-segment notations from each line, then a filesystem check that `{script}.py` exists under the resolved scripts directory. Notations whose target `scripts/` directory does not exist are skipped (they are not executor notations).
+
+**Canonical hint**: When the literal third segment has no matching file but the hyphen/underscore-flipped form does, the finding carries `details.canonical_hint` naming the corrected notation so the fix can be applied mechanically.
+
+**False-positive policy**: Conservative — the analyzer only evaluates notations whose `bundles/{bundle}/skills/{skill}/scripts/` directory exists, filtering out incidental colon-separated tokens (URLs, timestamps, prose).
+
+**Recommended fix**: Update the notation's third segment to match the actual script filename (typically the hyphen/underscore-flipped form named in `details.canonical_hint`).
+
+**Suppression mechanism**: None — a non-resolving notation is a hard breakage and must be fixed.
+
+---
+
 ## Provenance Contract for New Rules
 
 Every rule emitted by plugin-doctor must have a documented provenance entry before merge. This contract is enforced by the regression tests in `test/pm-plugin-development/plugin-doctor/test_rule_provenance_table.py`.

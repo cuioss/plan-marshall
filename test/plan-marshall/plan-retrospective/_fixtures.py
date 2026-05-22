@@ -198,7 +198,7 @@ def build_happy_plan_dir(plan_dir: Path) -> Path:
         '[2026-04-17T10:00:01Z] [INFO] [eeeeee] '
         'plan-marshall:manage-tasks:manage-tasks add (0.12s)\n'
         '[2026-04-17T10:00:05Z] [INFO] [ffffff] '
-        'plan-marshall:manage-status:manage_status read (2.5s)\n'
+        'plan-marshall:manage-status:manage-status read (2.5s)\n'
         '[2026-04-17T10:00:10Z] [ERROR] [111111] '
         'plan-marshall:manage-files:manage-files add (0.05s)\n',
         encoding='utf-8',

@@ -58,7 +58,7 @@ plan already past `4-plan`), use a fused boundary call to close the
 previously active phase and start `5-execute` in one step:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
   --plan-id {plan_id} --prev-phase 4-plan --next-phase 5-execute
 ```
 
@@ -126,7 +126,7 @@ phase-boundary action so the audit trail captures the actual termination
 order:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics record-dispatch-boundary \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
   --plan-id {plan_id} --phase 5-execute --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|harness_cancellation|error|clean_exit_queue_empty} \
   --total-tokens {n} --tool-uses {n} --duration-ms {n}
 ```
@@ -167,7 +167,7 @@ guard introduced in `manage-tasks finalize-step`.
 2. **Reset the persisted phase to `2-refine`** so the orchestrator's standard envelope re-enters refine cleanly:
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-phase \
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status set-phase \
      --plan-id {plan_id} --phase 2-refine
    ```
 
@@ -212,7 +212,7 @@ After all tasks complete, transition and check auto-continue:
 all tasks complete, record the `5-execute → 6-finalize` boundary in a single
 fused call (forwarding the aggregated totals to the closing phase):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
   --plan-id {plan_id} --prev-phase 5-execute --next-phase 6-finalize \
   --total-tokens {sum of total_tokens from all task agent <usage> tags} \
   --tool-uses {sum of tool_uses from all task agent <usage> tags} \
@@ -231,7 +231,7 @@ The fused call already recorded the start of `6-finalize`; the
 again.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
   --plan-id {plan_id} --completed 5-execute
 ```
 
@@ -263,7 +263,7 @@ use a fused boundary call to close the previously active phase and start
 `6-finalize`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
   --plan-id {plan_id} --prev-phase {prev_phase} --next-phase 6-finalize
 ```
 
@@ -286,7 +286,7 @@ Resolve the current Claude Code `session_id` from the plan's status metadata bef
 **Resolve `session_id`:**
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} --get --field session_id
 ```
 
@@ -349,7 +349,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 **Read `loop_back_target` from the most recent `phase_steps["6-finalize"]` outcome record**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read --plan-id {plan_id}
 ```
 
 The field is structurally guaranteed to be present on every `loop_back` outcome (the manage-status `--loop-back-target` validation contract enforces this — absence is a dispatcher contract bug, not a routing case to handle).

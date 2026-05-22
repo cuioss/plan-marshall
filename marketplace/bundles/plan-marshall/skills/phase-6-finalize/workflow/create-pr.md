@@ -125,7 +125,7 @@ Pass a `--display-detail` value alongside `--outcome done` so the output-templat
 **Branch A — new PR created** (from "Create PR via CI abstraction"): `{pr_number}` is the PR number returned by `pr create`.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step create-pr --outcome done \
   --display-detail "#{pr_number}"
 ```
@@ -133,7 +133,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 **Branch B — existing PR re-used** (from "Check if PR already exists"): `{pr_number}` is the PR number returned by `pr view`.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step create-pr --outcome done \
   --display-detail "existing PR #{pr_number}"
 ```

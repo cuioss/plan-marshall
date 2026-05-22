@@ -41,7 +41,7 @@ Every invocation of this skill MUST provide the following inputs:
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `plan_id` | string | Yes | Plan identifier. Used by all manage-* script calls AND as the worktree-binding token: the skill resolves the active worktree internally via `plan-marshall:manage-status:manage_status get-worktree-path --plan-id {plan_id}`. The resolved path is the mandatory root for every Edit/Write/Read tool call during this task. When the plan runs against the main checkout (`metadata.use_worktree == false`), the resolved path is empty and operations target the main checkout directly. See `workflow-integration-git/standards/worktree-handling.md` for the canonical `--plan-id` two-state binding. |
+| `plan_id` | string | Yes | Plan identifier. Used by all manage-* script calls AND as the worktree-binding token: the skill resolves the active worktree internally via `plan-marshall:manage-status:manage-status get-worktree-path --plan-id {plan_id}`. The resolved path is the mandatory root for every Edit/Write/Read tool call during this task. When the plan runs against the main checkout (`metadata.use_worktree == false`), the resolved path is empty and operations target the main checkout directly. See `workflow-integration-git/standards/worktree-handling.md` for the canonical `--plan-id` two-state binding. |
 | `task_number` | number | Yes | Numeric task id to execute |
 | `worktree_path` | string | Deprecated | **Deprecated** — kept only for backward compatibility with callers that still pass an absolute path. New callers MUST forward only `plan_id`. When supplied, the value MUST agree with the path resolved from `plan_id`; treat any disagreement as fail-loud. |
 
@@ -108,7 +108,7 @@ After all steps complete, run task verification using commands from `task.verifi
 When the plan resolves to an active worktree, before executing any `task.verification.commands[N]`, first resolve the worktree path from `plan_id`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-worktree-path \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-worktree-path \
   --plan-id {plan_id}
 ```
 
@@ -205,7 +205,7 @@ Production code creation and modification.
 
 ### Path Resolution
 
-When the plan runs in an isolated worktree (resolvable via `plan-marshall:manage-status:manage_status get-worktree-path --plan-id {plan_id}` returning a non-empty path), every Edit/Write/Read tool call in this profile MUST resolve its file path against the returned path. If a subagent is dispatched from this profile, embed the path-free Worktree Header (`WORKTREE: --plan-id {plan_id}` plus the resolution-and-rationale block — see phase-5-execute § Dispatch Protocol) so the child propagates the constraint without leaking the absolute path. The auto-injection sub-step under Common Workflow → Step: Run Verification handles Bucket B forwarding structurally; Bucket A `manage-*` scripts remain cwd-agnostic. See `workflow-integration-git/standards/worktree-handling.md` for the canonical `--plan-id` two-state binding and `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the Bucket A/B split.
+When the plan runs in an isolated worktree (resolvable via `plan-marshall:manage-status:manage-status get-worktree-path --plan-id {plan_id}` returning a non-empty path), every Edit/Write/Read tool call in this profile MUST resolve its file path against the returned path. If a subagent is dispatched from this profile, embed the path-free Worktree Header (`WORKTREE: --plan-id {plan_id}` plus the resolution-and-rationale block — see phase-5-execute § Dispatch Protocol) so the child propagates the constraint without leaking the absolute path. The auto-injection sub-step under Common Workflow → Step: Run Verification handles Bucket B forwarding structurally; Bucket A `manage-*` scripts remain cwd-agnostic. See `workflow-integration-git/standards/worktree-handling.md` for the canonical `--plan-id` two-state binding and `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the Bucket A/B split.
 
 ### Compatibility Strategy
 
@@ -248,7 +248,7 @@ Unit and module test creation.
 
 ### Path Resolution
 
-When the plan runs in an isolated worktree (resolvable via `plan-marshall:manage-status:manage_status get-worktree-path --plan-id {plan_id}` returning a non-empty path), every Edit/Write/Read tool call in this profile MUST resolve its file path against the returned path. If a subagent is dispatched from this profile, embed the path-free Worktree Header (`WORKTREE: --plan-id {plan_id}` plus the resolution-and-rationale block — see phase-5-execute § Dispatch Protocol) so the child propagates the constraint without leaking the absolute path. The auto-injection sub-step under Common Workflow → Step: Run Verification handles Bucket B forwarding structurally; Bucket A `manage-*` scripts remain cwd-agnostic. See `workflow-integration-git/standards/worktree-handling.md` for the canonical `--plan-id` two-state binding and `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the Bucket A/B split.
+When the plan runs in an isolated worktree (resolvable via `plan-marshall:manage-status:manage-status get-worktree-path --plan-id {plan_id}` returning a non-empty path), every Edit/Write/Read tool call in this profile MUST resolve its file path against the returned path. If a subagent is dispatched from this profile, embed the path-free Worktree Header (`WORKTREE: --plan-id {plan_id}` plus the resolution-and-rationale block — see phase-5-execute § Dispatch Protocol) so the child propagates the constraint without leaking the absolute path. The auto-injection sub-step under Common Workflow → Step: Run Verification handles Bucket B forwarding structurally; Bucket A `manage-*` scripts remain cwd-agnostic. See `workflow-integration-git/standards/worktree-handling.md` for the canonical `--plan-id` two-state binding and `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the Bucket A/B split.
 
 ### Workflow
 

@@ -101,12 +101,12 @@ Plus `<usage>` tag with `total_tokens=38420, tool_uses=14, duration_ms=210000`.
 **Step 8 (orchestrator records):**
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   mark-step-done --plan-id lesson-2026-05-11-foo \
   --phase 2-refine --step refine-analyze \
   --outcome done --display-detail "confidence 95 reached at iteration 2"
 
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics \
   accumulate-agent-usage --plan-id lesson-2026-05-11-foo --phase 2-refine \
   --total-tokens 38420 --tool-uses 14 --duration-ms 210000
 ```

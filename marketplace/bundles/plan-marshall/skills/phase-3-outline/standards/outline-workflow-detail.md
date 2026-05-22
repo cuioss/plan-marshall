@@ -76,7 +76,7 @@ If no unresolved findings: Continue with normal Steps 2..12 (first entry).
 ### Check for Recipe Source
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --get \
   --field plan_source
@@ -86,12 +86,12 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metada
 
 1. Read recipe metadata:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --get \
   --field recipe_key
 
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --get \
   --field recipe_skill
@@ -102,17 +102,17 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metada
 
 ```bash
 # Only read these if recipe_key == "refactor-to-profile-standards"
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --get \
   --field recipe_domain
 
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --get \
   --field recipe_profile
 
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --get \
   --field recipe_package_source
@@ -126,7 +126,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 3. Set `change_type` from recipe's `default_change_type` (skip `manage-status:change-type-heuristic` and any LLM fallback):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --set \
   --field change_type \
@@ -207,7 +207,7 @@ reasoning: "Request describes improving existing functionality"
 The agent persists change_type to status.json metadata. Read it:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --get \
   --field change_type
@@ -223,7 +223,7 @@ If the agent returned `analysis`, verify this is correct by checking the request
 - Set `change_type = enhancement` (or `tech_debt` if the action is refactor/migrate/restructure/remove)
 - Persist the override:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --set \
   --field change_type \

@@ -56,7 +56,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ### Check for Recipe Source
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --get \
   --field plan_source
@@ -66,7 +66,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metada
 
 1. Force `track = complex` (recipes always need codebase discovery):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --set \
   --field track \
@@ -75,7 +75,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metada
 
 2. Set confidence = 100 immediately:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --set \
   --field confidence \
@@ -91,7 +91,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 4. **Skip Steps 4-14**. Transition phase and return.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
   --plan-id {plan_id} \
   --completed 2-refine
 ```
@@ -225,7 +225,7 @@ The `baseline-reconcile` script invoked in Sub-step 3d.1 below enforces the guar
 ### Sub-step 3d.1 — Run the mechanical predicate
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow \
   baseline-reconcile --plan-id {plan_id}
 ```
 
@@ -805,7 +805,7 @@ If `qgate_pending_count > 0`, the orchestrator (planning.md) decides whether to 
 **Read activation guard**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} --get --field plan_source
 ```
 
@@ -832,7 +832,7 @@ This step runs AFTER the inline lightweight Q-Gate checks (above) and BEFORE Ste
 The phase transitions from refine → outline after confidence reaches the threshold:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
   --plan-id {plan_id} \
   --completed 2-refine
 ```

@@ -51,7 +51,7 @@ Catch the recurring failure mode where a long-running execute phase is interrupt
 4. **Drift detected** — exit code non-zero means upstream has new commits the worktree does not contain. Capture divergent commits via `git -C {worktree_path} log --oneline HEAD..origin/{base_branch}`, then invoke `baseline-reconcile` with `--no-emit` to obtain a deterministic overlap predicate:
 
    ```
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow \
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow \
      baseline-reconcile --plan-id {plan_id} --no-emit
    ```
 

@@ -21,7 +21,7 @@ Record that this step ran on the live plan so the `phase_steps_complete` handsha
 Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the archive destination. `{archive_path}` is the canonical archive location `.plan/archived-plans/{date}-{plan_id}` (the same path `manage-status archive` will move the plan directory to in the next call):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step archive-plan --outcome done \
   --display-detail "-> {archive_path}"
 ```
@@ -29,7 +29,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 ## Archive
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status archive \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status archive \
   --plan-id {plan_id}
 ```
 

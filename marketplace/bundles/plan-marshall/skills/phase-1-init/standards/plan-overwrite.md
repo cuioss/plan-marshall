@@ -19,7 +19,7 @@ When user selects "Replace", execute the following steps:
 Use the `delete-plan` command to remove the entire plan directory:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status delete-plan \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status delete-plan \
   --plan-id {plan_id}
 ```
 
@@ -74,6 +74,6 @@ Possible errors:
 ## Integration
 
 This standard is implemented by:
-- `plan-marshall:manage-status:manage_status delete-plan` - Script command
+- `plan-marshall:manage-status:manage-status delete-plan` - Script command
 - `plan-marshall:phase-1-init` - Skill workflow (Step 3)
 - `plan-marshall:execution-context` - Generic execution-context dispatcher (canonical + 5 level variants)

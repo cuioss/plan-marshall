@@ -61,7 +61,7 @@ Pass a `--display-detail` value alongside `--outcome done` so the output-templat
 **Branch A — commit created**: `{commit_hash}` is the short 7-character hash of the commit produced by the `workflow-integration-git` call above (captured from its return payload); `{sha}` is the full SHA from `git rev-parse HEAD` (which equals the commit just created):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step commit-push --outcome done \
   --head-at-completion {sha} \
   --display-detail "-> {commit_hash}"
@@ -70,7 +70,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 **Branch B — no uncommitted changes** (no-changes path from "Check for uncommitted changes" above — `git status --porcelain` returned empty). `{sha}` is the full SHA from `git rev-parse HEAD` (the unchanged prior HEAD):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step commit-push --outcome done \
   --head-at-completion {sha} \
   --display-detail "no changes"

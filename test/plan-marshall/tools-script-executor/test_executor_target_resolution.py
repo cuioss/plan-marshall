@@ -249,7 +249,7 @@ class TestClaudeResolver:
         # Point HOME at tmp_path so ~/.claude/plugins/cache is absent
         monkeypatch.setenv('HOME', str(tmp_path))
 
-        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage_status')
+        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
         assert result is None
 
     def test_returns_none_for_unknown_notation(self, tmp_path, monkeypatch):
@@ -279,15 +279,15 @@ class TestClaudeResolver:
         )
         scripts_dir = version_dir / 'skills' / 'manage-status' / 'scripts'
         scripts_dir.mkdir(parents=True)
-        script_file = scripts_dir / 'manage_status.py'
+        script_file = scripts_dir / 'manage-status.py'
         script_file.write_text('# stub', encoding='utf-8')
 
         monkeypatch.setenv('HOME', str(tmp_path))
 
-        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage_status')
+        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
         assert result is not None, 'Expected to find the script in the fake cache'
         assert os.path.isabs(result), f'Returned path must be absolute, got {result!r}'
-        assert result.endswith('manage_status.py'), f'Expected manage_status.py, got {result!r}'
+        assert result.endswith('manage-status.py'), f'Expected manage-status.py, got {result!r}'
 
     def test_skips_hidden_version_directories(self, tmp_path, monkeypatch):
         """Hidden directories (starting with '.') inside the cache are skipped."""
@@ -338,7 +338,7 @@ class TestOpenCodeResolver:
         monkeypatch.setenv('HOME', str(tmp_path))
         monkeypatch.delenv('OPENCODE_CONFIG_DIR', raising=False)
 
-        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage_status')
+        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
         assert result is None
 
     def test_finds_script_in_opencode_skills_dir(self, tmp_path, monkeypatch):
@@ -353,16 +353,16 @@ class TestOpenCodeResolver:
         # Create the .opencode/skills/{bundle}-{skill}/scripts/{script}.py structure
         skill_dir = tmp_path / '.opencode' / 'skills' / 'plan-marshall-manage-status' / 'scripts'
         skill_dir.mkdir(parents=True)
-        script_file = skill_dir / 'manage_status.py'
+        script_file = skill_dir / 'manage-status.py'
         script_file.write_text('# stub', encoding='utf-8')
 
         # Change cwd to tmp_path so relative .opencode/skills resolves correctly
         monkeypatch.chdir(tmp_path)
 
-        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage_status')
+        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
         assert result is not None, 'Expected to find the script in .opencode/skills'
         assert os.path.isabs(result), f'Returned path must be absolute, got {result!r}'
-        assert result.endswith('manage_status.py'), f'Expected manage_status.py, got {result!r}'
+        assert result.endswith('manage-status.py'), f'Expected manage-status.py, got {result!r}'
 
     def test_finds_script_via_env_var_override(self, tmp_path, monkeypatch):
         """$OPENCODE_CONFIG_DIR/skills root has highest priority."""
@@ -376,18 +376,18 @@ class TestOpenCodeResolver:
         config_dir = tmp_path / 'opencode-config'
         skill_dir = config_dir / 'skills' / 'plan-marshall-manage-status' / 'scripts'
         skill_dir.mkdir(parents=True)
-        script_file = skill_dir / 'manage_status.py'
+        script_file = skill_dir / 'manage-status.py'
         script_file.write_text('# stub', encoding='utf-8')
 
         # Also create a lower-priority root with a different file to verify priority
         fallback_dir = tmp_path / '.opencode' / 'skills' / 'plan-marshall-manage-status' / 'scripts'
         fallback_dir.mkdir(parents=True)
-        (fallback_dir / 'manage_status.py').write_text('# fallback', encoding='utf-8')
+        (fallback_dir / 'manage-status.py').write_text('# fallback', encoding='utf-8')
 
         monkeypatch.setenv('OPENCODE_CONFIG_DIR', str(config_dir))
         monkeypatch.chdir(tmp_path)
 
-        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage_status')
+        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
         assert result is not None
         assert os.path.isabs(result)
         # Must have resolved through the env-var root (first match)
@@ -410,12 +410,12 @@ class TestOpenCodeResolver:
             / 'plan-marshall-manage-status' / 'scripts'
         )
         skill_dir.mkdir(parents=True)
-        (skill_dir / 'manage_status.py').write_text('# user-global', encoding='utf-8')
+        (skill_dir / 'manage-status.py').write_text('# user-global', encoding='utf-8')
 
         # cwd has no local .opencode/skills root
         monkeypatch.chdir(tmp_path)
 
-        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage_status')
+        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
         assert result is not None
         assert os.path.isabs(result)
 
@@ -432,9 +432,9 @@ class TestOpenCodeResolver:
         # Create the WRONG (slash-namespaced) layout — must NOT be found
         wrong_dir = tmp_path / '.opencode' / 'skills' / 'plan-marshall' / 'manage-status' / 'scripts'
         wrong_dir.mkdir(parents=True)
-        (wrong_dir / 'manage_status.py').write_text('# wrong layout', encoding='utf-8')
+        (wrong_dir / 'manage-status.py').write_text('# wrong layout', encoding='utf-8')
 
-        result_wrong = ns._resolve_notation_by_target('plan-marshall:manage-status:manage_status')
+        result_wrong = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
         assert result_wrong is None, (
             'Slash-namespaced layout must not be found; resolver uses dash-namespaced dirs'
         )
@@ -444,9 +444,9 @@ class TestOpenCodeResolver:
             tmp_path / '.opencode' / 'skills' / 'plan-marshall-manage-status' / 'scripts'
         )
         correct_dir.mkdir(parents=True)
-        (correct_dir / 'manage_status.py').write_text('# correct layout', encoding='utf-8')
+        (correct_dir / 'manage-status.py').write_text('# correct layout', encoding='utf-8')
 
-        result_correct = ns._resolve_notation_by_target('plan-marshall:manage-status:manage_status')
+        result_correct = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
         assert result_correct is not None, 'Dash-namespaced layout must be found'
         assert os.path.isabs(result_correct)
 
@@ -464,11 +464,11 @@ class TestOpenCodeResolver:
             tmp_path / '.opencode' / 'skills' / 'plan-marshall-manage-status' / 'scripts'
         )
         skill_dir.mkdir(parents=True)
-        (skill_dir / 'manage_status.py').write_text('# stub', encoding='utf-8')
+        (skill_dir / 'manage-status.py').write_text('# stub', encoding='utf-8')
 
         monkeypatch.chdir(tmp_path)
 
-        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage_status')
+        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
         assert result is not None
         assert os.path.isabs(result), f'Path must be absolute, got {result!r}'
 

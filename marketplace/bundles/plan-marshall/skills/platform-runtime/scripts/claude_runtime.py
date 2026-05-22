@@ -255,7 +255,7 @@ def _manage_status_store_session(plan_id: str, session_id: str) -> bool:
             [
                 sys.executable,
                 ".plan/execute-script.py",
-                "plan-marshall:manage-status:manage_status",
+                "plan-marshall:manage-status:manage-status",
                 "metadata",
                 "--plan-id",
                 plan_id,
@@ -281,7 +281,7 @@ def _manage_status_read_session(plan_id: str) -> str | None:
             [
                 sys.executable,
                 ".plan/execute-script.py",
-                "plan-marshall:manage-status:manage_status",
+                "plan-marshall:manage-status:manage-status",
                 "metadata",
                 "--plan-id",
                 plan_id,
@@ -309,7 +309,7 @@ def _manage_metrics_end_phase(plan_id: str, phase: str, total_tokens: int) -> bo
             [
                 sys.executable,
                 ".plan/execute-script.py",
-                "plan-marshall:manage-metrics:manage_metrics",
+                "plan-marshall:manage-metrics:manage-metrics",
                 "end-phase",
                 "--plan-id",
                 plan_id,

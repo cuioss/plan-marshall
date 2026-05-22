@@ -301,7 +301,7 @@ plan-init time by the platform-runtime `SessionStart` hook and stored in
 `status.json`. Read it back via:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} --get --field session_id
 ```
 

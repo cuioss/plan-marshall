@@ -51,6 +51,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -890,6 +891,79 @@ def cmd_verify(args) -> dict:
         return {'status': 'error', 'error': 'Verification failed'}
 
 
+def _flip_notation_separators(segment: str) -> str:
+    """Return ``segment`` with hyphens and underscores swapped.
+
+    ``manage_status`` ↔ ``manage-status``. Used to detect the
+    rename-without-sweep signature: a notation referenced by callers whose
+    third segment differs from the registered (filename-derived) form only
+    in hyphen/underscore separators.
+    """
+    return ''.join(
+        '_' if ch == '-' else '-' if ch == '_' else ch for ch in segment
+    )
+
+
+_NOTATION_REFERENCE_RE = re.compile(
+    r'execute-script\.py\s+'
+    r'([A-Za-z0-9][A-Za-z0-9_-]*:[A-Za-z0-9][A-Za-z0-9_-]*:[A-Za-z0-9][A-Za-z0-9_-]*)'
+)
+
+
+def _collect_referenced_notations(base_path: Path) -> set[str]:
+    """Scan marketplace markdown / scripts for executor notation references.
+
+    Returns the set of three-part notations that appear after a
+    ``execute-script.py`` token anywhere under ``base_path``. These are the
+    notations callers actually invoke; comparing them against the registered
+    (filename-derived) mappings surfaces a half-done entrypoint rename.
+    """
+    referenced: set[str] = set()
+    if not base_path.is_dir():
+        return referenced
+    for pattern in ('*.md', '*.py'):
+        for path in base_path.rglob(pattern):
+            try:
+                text = path.read_text(encoding='utf-8')
+            except (OSError, UnicodeDecodeError):
+                continue
+            for match in _NOTATION_REFERENCE_RE.finditer(text):
+                referenced.add(match.group(1))
+    return referenced
+
+
+def _detect_notation_drift(
+    registered: dict[str, str],
+    base_path: Path,
+) -> list[tuple[str, str]]:
+    """Detect referenced notations whose filename-derived form drifted.
+
+    For each notation referenced by callers that is NOT in the registered
+    mappings, check whether the hyphen/underscore-flipped third segment IS
+    registered. A match is the rename-without-sweep signature: the script
+    file was renamed (changing its filename-derived notation) but callers
+    still reference the old third segment.
+
+    Returns a list of ``(referenced_notation, registered_notation)`` pairs.
+    """
+    drift: list[tuple[str, str]] = []
+    referenced = _collect_referenced_notations(base_path)
+    for notation in sorted(referenced):
+        if notation in registered:
+            continue
+        parts = notation.split(':')
+        if len(parts) != 3:
+            continue
+        bundle, skill, script = parts
+        flipped = _flip_notation_separators(script)
+        if flipped == script:
+            continue
+        candidate = f'{bundle}:{skill}:{flipped}'
+        if candidate in registered:
+            drift.append((notation, candidate))
+    return drift
+
+
 def cmd_drift(args) -> dict:
     """Compare executor mappings with current bundles state."""
     executor_mappings = get_executor_mappings()
@@ -924,7 +998,21 @@ def cmd_drift(args) -> dict:
         if executor_mappings[notation] != current_mappings.get(notation):
             changed.append(notation)
 
-    drift_status = 'drift' if (added or removed or changed) else 'ok'
+    # Notation-drift detection: a script whose filename-derived notation has
+    # changed (an entrypoint rename) leaves callers referencing the old third
+    # segment. Warn on stderr rather than silently registering only the
+    # filename-derived form.
+    notation_drift = _detect_notation_drift(current_mappings, base_path)
+    for referenced, registered in notation_drift:
+        print(
+            f'Warning: notation drift — `{referenced}` is referenced by '
+            f'callers but only `{registered}` is registered (filename-derived). '
+            f'A renamed entrypoint script silently changed its public '
+            f'notation; sweep callers to the registered form.',
+            file=sys.stderr,
+        )
+
+    drift_status = 'drift' if (added or removed or changed or notation_drift) else 'ok'
     return {
         'status': 'success',
         'drift_status': drift_status,
@@ -933,6 +1021,7 @@ def cmd_drift(args) -> dict:
         'added': len(added),
         'removed': len(removed),
         'changed': len(changed),
+        'notation_drift': len(notation_drift),
     }
 
 

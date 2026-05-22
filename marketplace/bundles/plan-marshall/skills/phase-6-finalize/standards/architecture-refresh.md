@@ -50,7 +50,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config \
 Read the plan's `change_type` from status metadata:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   metadata --plan-id {plan_id} --get --field change_type
 ```
 
@@ -67,7 +67,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   mark-step-done --plan-id {plan_id} --phase 6-finalize \
   --step architecture-refresh --outcome done \
   --display-detail "skipped — derived.json is ephemeral, no pre-snapshot exists"
@@ -311,7 +311,7 @@ Pass a `--display-detail` value alongside `--outcome done` so the output-templat
 **Branch A — greenfield (Step 2 path)**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   mark-step-done --plan-id {plan_id} --phase 6-finalize \
   --step architecture-refresh --outcome done \
   --display-detail "skipped (greenfield — no pre-snapshot)"
@@ -320,7 +320,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
 **Branch B — Tier 0 disabled, Tier 1 also skipped**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   mark-step-done --plan-id {plan_id} --phase 6-finalize \
   --step architecture-refresh --outcome done \
   --display-detail "tier-0 disabled; tier-1 skipped"
@@ -329,7 +329,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
 **Branch C — Tier 0 ran, no diff**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   mark-step-done --plan-id {plan_id} --phase 6-finalize \
   --step architecture-refresh --outcome done \
   --display-detail "no module structure changed"
@@ -338,7 +338,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
 **Branch D — Tier 0 commit only (Tier 1 skipped via change_type, knob, or empty diff)**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   mark-step-done --plan-id {plan_id} --phase 6-finalize \
   --step architecture-refresh --outcome done \
   --display-detail "refreshed derived data ({affected_module_count} modules)"
@@ -347,7 +347,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
 **Branch E — Tier 0 + Tier 1 enrich (auto or prompt-accepted)**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   mark-step-done --plan-id {plan_id} --phase 6-finalize \
   --step architecture-refresh --outcome done \
   --display-detail "refreshed + re-enriched ({affected_module_count} modules)"
@@ -356,7 +356,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
 **Branch F — Tier 0 commit, Tier 1 deferred to PR note (disabled or prompt-declined)**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   mark-step-done --plan-id {plan_id} --phase 6-finalize \
   --step architecture-refresh --outcome done \
   --display-detail "refreshed; re-enrichment deferred to PR note"

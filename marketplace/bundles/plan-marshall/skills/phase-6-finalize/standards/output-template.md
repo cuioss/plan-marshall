@@ -111,7 +111,7 @@ Capture the following into in-memory state (no work file is written):
 1. **phase_steps map** — step outcomes and display_detail strings.
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
      --plan-id {plan_id}
    ```
 

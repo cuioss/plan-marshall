@@ -244,7 +244,7 @@ def _load_status_metadata(plan_id: str) -> dict[str, Any]:
             [
                 'python3',
                 str(executor),
-                'plan-marshall:manage-status:manage_status',
+                'plan-marshall:manage-status:manage-status',
                 'read',
                 '--plan-id',
                 plan_id,

@@ -43,7 +43,7 @@ Display all plans with numbered selection, recipe option, and conditional lesson
 
 **Step 1**: Get existing plans:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status list
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status list
 ```
 
 **Step 2**: Check if lessons exist:
@@ -134,7 +134,7 @@ The agent returns `plan_id` and `domains` in its TOON.
 `<usage>` data to the closing phase). The fused command persists the same
 state as the prior `end-phase` + `start-phase` + `generate` sequence:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
   --plan-id {plan_id} --prev-phase 1-init --next-phase 2-refine \
   --total-tokens {total_tokens from <usage>} \
   --duration-ms {duration_ms from <usage>} \
@@ -182,7 +182,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   get-worktree-path --plan-id {plan_id}
 ```
 
@@ -296,7 +296,7 @@ Do NOT call `manage-status transition` to 3-outline. Do NOT proceed with the met
 
 **Metrics**: After refine completes, record the `2-refine → 3-outline` boundary in a single fused call (forwarding the aggregated `<usage>` data from every dispatch that fired inside this phase — the `phase-2-refine` envelope itself plus any q-gate-validation sub-dispatch at Step 13.5 for lesson-derived plans). Sum `total_tokens`, `tool_uses`, and `duration_ms` across each dispatch's `<usage>` tag:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
   --plan-id {plan_id} --prev-phase 2-refine --next-phase 3-outline \
   --total-tokens {sum of total_tokens from all agent <usage> tags} \
   --tool-uses {sum of tool_uses from all agent <usage> tags} \
@@ -335,7 +335,7 @@ List completed plans (filter `complete`). For each entry, present a numbered sel
 **1a — List completed plans:**
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status list --filter complete
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status list --filter complete
 ```
 
 Parse the result. If the list is empty, log and continue to Step 2:
@@ -349,7 +349,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 **1b — Confirm and archive:** When the list is non-empty, present the entries via `AskUserQuestion` (multiSelect: true) and for each selected plan_id call:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status archive \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status archive \
   --plan-id {plan_id}
 ```
 
@@ -428,7 +428,7 @@ Prune orphan plan directories — entries under `.plan/plans/` that have no read
 **3a — Enumerate orphan directories:**
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status list-orphans
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status list-orphans
 ```
 
 Parse `orphans[]` from the TOON output. Each entry exposes `id`, `path`, and `contents` (top-level entries inside the orphan directory). If the list is empty, log and finish the cleanup action:
@@ -626,7 +626,7 @@ See [`workflow/planning-lessons-aggregate.md`](planning-lessons-aggregate.md) fo
 
 ## Script API Reference
 
-Script: `plan-marshall:manage-status:manage_status`
+Script: `plan-marshall:manage-status:manage-status`
 
 | Command | Parameters | Description |
 |---------|------------|-------------|

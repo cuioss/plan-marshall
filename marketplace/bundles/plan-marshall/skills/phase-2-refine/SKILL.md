@@ -189,7 +189,7 @@ Otherwise → track = complex
 Aggregate the per-dimension scores from Steps 8 / 9 into a single weighted confidence via the deterministic aggregator:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   aggregate-confidence --plan-id {plan_id} \
   --correctness {N} --completeness {N} --consistency {N} \
   --non-duplication {N} --ambiguity {N} --module-mapping {N} \
@@ -314,7 +314,7 @@ boundary via the fused `manage-metrics phase-boundary` call — see
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-logging:manage-logging` - Work and decision logging
 - `plan-marshall:manage-config:manage-config` - Project config (threshold, compatibility)
-- `plan-marshall:manage-status:manage_status` - Phase transition and lifecycle management
+- `plan-marshall:manage-status:manage-status` - Phase transition and lifecycle management
 
 **Persistence Locations**:
 - `work/module_mapping.toon`: Module mapping analysis state

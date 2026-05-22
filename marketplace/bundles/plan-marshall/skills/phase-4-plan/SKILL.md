@@ -714,7 +714,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add 
 **Transition phase**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
   --plan-id {plan_id} \
   --completed 4-plan
 ```
