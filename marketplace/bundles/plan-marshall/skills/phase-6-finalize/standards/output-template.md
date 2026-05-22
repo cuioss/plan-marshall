@@ -55,12 +55,12 @@ Finalize steps ({N_done}/{N_total} done)
 
   ## Phase Breakdown
 
-  | Phase | Duration | Tokens | Input | Output | Tool Uses |
-  |-------|----------|--------|-------|--------|-----------|
-  | 1-init | 2m41s | 53,719 | - | - | 29 |
-  | 2-refine | 8m41s | - | - | - | - |
+  | Phase | Worked | Reported (wall) | Idle | Tokens | Tool Uses |
+  |-------|--------|-----------------|------|--------|-----------|
+  | 1-init | 2m10s | 2m41s | 31s | 53,719 | 29 |
+  | 2-refine | 6m05s | 8m41s | 2m36s | - | - |
   | ... | ... | ... | ... | ... | ... |
-  | **Total** | **1h46m** | **599,089** | **...** | **...** | **...** |
+  | **Total** | **1h22m** | **1h46m** | **24m** | **599,089** | **...** |
   [OK]  archive-plan                      -> {archive_path}
 
 Repository: main up-to-date | worktree removed | working tree clean

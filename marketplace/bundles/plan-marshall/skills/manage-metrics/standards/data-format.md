@@ -51,8 +51,17 @@ enriched.message_count: 127
 | `subagent_tool_uses` | int | `enrich` post-hoc transcript walk |
 | `subagent_duration_ms` | int | `enrich` post-hoc transcript walk |
 | `subagent_samples` | int | `enrich` post-hoc transcript walk — count of attributed Task-agent calls |
+| `idle_duration_ms` | int | Derived by `generate` — the per-phase idle residual `max(0, wall_clock_ms - worked_ms)` |
 
 `subagent_*` fields exist independently of the closed-phase `total_tokens` row. The closed-phase row is filled at `end-phase` time from explicit flags (preferred) or the accumulator file (fallback). The `subagent_*` fields are written by `enrich` as a post-hoc safety net so that even when the orchestrator never called `accumulate-agent-usage`, the transcript walk surfaces the missed totals.
+
+### Worked, Reported (Wall), and Idle Time
+
+`generate` derives three time quantities per phase from already-persisted fields — no new pause/resume or user-gate API is introduced:
+
+- **Worked** — effort actually spent by the agent and any dispatched subagents: `worked_ms = agent_duration_ms + subagent_duration_ms` (missing operands treated as `0`).
+- **Reported (wall)** — wall-clock span of the phase: `duration_seconds` (or, when absent, the span between `start_time` and `end_time`).
+- **Idle** — the residual user-wait/idle time, persisted into `metrics.toon` as `idle_duration_ms`: `idle = max(0, wall_clock - worked)`. The `max(0, …)` clamp guards the case where worked time exceeds the recorded wall-clock span (e.g., overlapping subagent attribution). Idle time is computed post-hoc via session-boundary inference — `generate` reads the persisted phase window and effort fields and writes `idle_duration_ms` back before rendering.
 
 ### Enrichment Fields
 
@@ -70,12 +79,12 @@ The `generate` command produces a markdown report with per-phase rows:
 ```markdown
 # Plan Metrics: my-feature
 
-| Phase | Duration | Tokens | Tool Uses |
-|-------|----------|--------|-----------|
-| 1-init | 3m 0s | 25,514 | 12 |
-| 2-refine | 5m 30s | 42,000 | 8 |
-| 3-outline | 8m 15s | 68,000 | 25 |
-| **Total** | **16m 45s** | **135,514** | **45** |
+| Phase | Worked | Reported (wall) | Idle | Tokens | Tool Uses |
+|-------|--------|-----------------|------|--------|-----------|
+| 1-init | 2m 30s | 3m 0s | 30s | 25,514 | 12 |
+| 2-refine | 4m 0s | 5m 30s | 1m 30s | 42,000 | 8 |
+| 3-outline | 7m 0s | 8m 15s | 1m 15s | 68,000 | 25 |
+| **Total** | **13m 30s** | **16m 45s** | **3m 15s** | **135,514** | **45** |
 
 ## Session Enrichment
 
@@ -87,7 +96,7 @@ The `generate` command produces a markdown report with per-phase rows:
 
 ### Duration Formatting
 
-Duration is computed as wall-clock time from start/end timestamps and formatted as `Xm Ys`.
+The Phase Breakdown table carries three time columns in this order — `Worked`, `Reported (wall)`, `Idle` — followed by `Tokens` and `Tool Uses`. Each cell is formatted as `Xm Ys`. A cell renders `-` when its underlying value is absent or zero (the symmetric per-cell present/absent rule), and the Total row sums `Worked`, `Reported (wall)`, and `Idle` independently. See the Worked, Reported (Wall), and Idle Time subsection above for how each quantity is derived.
 
 ## Valid Phase Names
 
