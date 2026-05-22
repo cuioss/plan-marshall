@@ -6,6 +6,10 @@ Sub-menu for maintenance operations.
 
 ## Maintenance Submenu
 
+The Maintenance submenu has 6 options, which exceeds the `AskUserQuestion` 4-option cap. It is presented as a paginated menu following the "More actions..." pattern documented in `plan-marshall/workflow/planning.md` (§ Action: list): each page presents at most 4 options, and every non-final page reserves its 4th slot for a "More..." continuation that triggers the next page's `AskUserQuestion`. The final page exposes the "Back" element returning to the Main Menu without quitting.
+
+**Page 1** — first 3 operations plus the "More..." continuation:
+
 ```
 AskUserQuestion:
   question: "Which maintenance operation?"
@@ -17,6 +21,18 @@ AskUserQuestion:
       description: "Rebuild executor with fresh script mappings"
     - label: "3. Regenerate Architecture"
       description: "Re-detect project structure and extensions"
+    - label: "More..."
+      description: "Show remaining maintenance operations"
+  multiSelect: false
+```
+
+**Page 2** — shown only when the user selects "More..." on Page 1 — the remaining operations plus the "Back" element:
+
+```
+AskUserQuestion:
+  question: "Which maintenance operation?"
+  header: "Maintenance (continued)"
+  options:
     - label: "4. Cleanup"
       description: "Clean temp, old logs, archived plans, memory"
     - label: "5. Worktree Cleanup"
@@ -33,6 +49,7 @@ AskUserQuestion:
 | "1. All" | Execute Operation: All (below) | → Return to Main Menu |
 | "2. Regenerate Executor" | Execute Operation: Regenerate Executor (below) | → Return to Main Menu |
 | "3. Regenerate Architecture" | Execute Operation: Regenerate Architecture (below) | → Return to Main Menu |
+| "More..." | Present Maintenance Page 2 `AskUserQuestion` | — |
 | "4. Cleanup" | Execute Operation: Cleanup (below) | → Return to Main Menu |
 | "5. Worktree Cleanup" | Execute Operation: Worktree Cleanup (below) | → Return to Main Menu |
 | "6. Back" | Do nothing | → Return to Main Menu |
