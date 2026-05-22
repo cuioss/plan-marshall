@@ -290,7 +290,26 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metada
   --plan-id {plan_id} --get --field session_id
 ```
 
-Parse `value` from the TOON output. On `status: error` or empty `value`, abort the finalize phase with a clear message — do **not** invent a filler value and do **not** reach for any `$VAR` expansion. See `phase-6-finalize/SKILL.md` → "How to obtain session_id" for the full resolver contract and forbidden patterns.
+Parse `value` from the TOON output.
+
+**On `status: error` or empty `value`** — do NOT abort immediately. The session may still be live, so attempt exactly one late session capture before falling back to the hard-block:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session capture \
+  --plan-id {plan_id}
+```
+
+Then re-read `status.metadata.session_id`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+  --plan-id {plan_id} --get --field session_id
+```
+
+- **Late capture succeeded** (`status: success` and `value` now populated): use the captured value as the resolved `session_id` and proceed with the dispatch below.
+- **Late capture also failed** (`status: error` or `value` still empty): abort the finalize phase with a clear message — do **not** invent a filler value and do **not** reach for any `$VAR` expansion. See `phase-6-finalize/SKILL.md` → "How to obtain session_id" for the full resolver contract and forbidden patterns.
+
+The retry runs at most once — never loop the capture call.
 
 **Dispatch the skill:**
 
