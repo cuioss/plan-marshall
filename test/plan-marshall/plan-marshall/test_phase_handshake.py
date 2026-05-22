@@ -208,6 +208,50 @@ def test_capture_worktree_applicable(stubbed_invariants, stub_metadata) -> None:
         assert result['invariants']['worktree_sha'] == 'wt-sha'
 
 
+@pytest.mark.xfail(
+    strict=False,
+    reason=(
+        'Root-cause notation fix (underscore manage_status -> hyphen manage-status '
+        'in _handshake_commands.py:_load_status_metadata) is owned by plan '
+        'renaming-a-marketplace-script-file-silently-chang. Until that plan lands, '
+        '_load_status_metadata invokes an unresolvable executor notation. This '
+        'contract test flips to a real pass once the sibling fix merges; the xfail '
+        'marker is removed in a follow-up.'
+    ),
+)
+def test_load_status_metadata_uses_resolvable_manage_status_notation() -> None:
+    """End-to-end contract: _load_status_metadata must invoke a resolvable notation.
+
+    Unlike every other handshake test, this test does NOT monkeypatch
+    ``_load_status_metadata`` — it inspects the real source so a notation
+    regression in that function is caught structurally. The existing suite
+    patches ``_load_status_metadata`` everywhere, so an unresolvable script
+    notation inside it is invisible to those tests.
+
+    The executor (``.plan/execute-script.py``) only maps the hyphenated
+    notation ``plan-marshall:manage-status:manage-status``. An underscore
+    variant (``manage_status``) fails to resolve, the subprocess exits
+    non-zero, ``_load_status_metadata`` swallows it and returns ``{}``, and
+    every downstream ``metadata.get('use_worktree')`` silently yields
+    ``None`` — producing a spurious ``worktree_metadata_drift`` for plans
+    that legitimately run in a worktree.
+    """
+    handshake_src = (SCRIPTS_DIR / '_handshake_commands.py').read_text(encoding='utf-8')
+    canonical_notation = 'plan-marshall:manage-status:manage-status'
+    underscore_notation = 'plan-marshall:manage-status:manage_status'
+
+    assert canonical_notation in handshake_src, (
+        '_handshake_commands.py must invoke manage-status via the canonical '
+        f'hyphenated notation {canonical_notation!r} that the executor maps.'
+    )
+    assert underscore_notation not in handshake_src, (
+        '_handshake_commands.py must not invoke the underscore notation '
+        f'{underscore_notation!r} — it is absent from the executor SCRIPTS '
+        'mapping and resolves to a non-zero exit, which _load_status_metadata '
+        'swallows into an empty metadata dict.'
+    )
+
+
 def test_capture_override_requires_reason(stubbed_invariants, stub_metadata) -> None:
     with PlanContext(plan_id='cap-c'):
         result = cmds.cmd_capture(_ns(plan_id='cap-c', phase='5-execute', override=True))

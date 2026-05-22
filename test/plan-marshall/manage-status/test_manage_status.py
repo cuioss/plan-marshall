@@ -303,6 +303,68 @@ def test_metadata_update_existing():
         assert result['previous_value'] == 'feature'
 
 
+def test_metadata_set_use_worktree_coerces_string_true_to_bool():
+    """Setting use_worktree via the CLI stores a JSON boolean, not a string.
+
+    The ``--set`` CLI receives every value as a raw string. For the
+    boolean-typed key ``use_worktree`` the raw ``"true"`` must be coerced
+    to the JSON boolean ``True`` so downstream consumers (phase_handshake
+    worktree drift checks) see a proper boolean.
+    """
+    with PlanContext(plan_id='metadata-bool-true-plan') as ctx:
+        cmd_create(Namespace(plan_id='metadata-bool-true-plan', title='Test', phases='1-init', force=False))
+        result = cmd_metadata(
+            Namespace(plan_id='metadata-bool-true-plan', set=True, get=False, field='use_worktree', value='true')
+        )
+        assert result['status'] == 'success'
+        assert result['value'] is True
+
+        status_file = ctx.plan_dir / 'status.json'
+        content = json.loads(status_file.read_text(encoding='utf-8'))
+        stored = content['metadata']['use_worktree']
+        assert stored is True
+        assert isinstance(stored, bool)
+
+
+def test_metadata_set_use_worktree_coerces_string_false_to_bool():
+    """Setting use_worktree to "false" via the CLI stores JSON boolean False."""
+    with PlanContext(plan_id='metadata-bool-false-plan') as ctx:
+        cmd_create(Namespace(plan_id='metadata-bool-false-plan', title='Test', phases='1-init', force=False))
+        result = cmd_metadata(
+            Namespace(plan_id='metadata-bool-false-plan', set=True, get=False, field='use_worktree', value='false')
+        )
+        assert result['status'] == 'success'
+        assert result['value'] is False
+
+        status_file = ctx.plan_dir / 'status.json'
+        content = json.loads(status_file.read_text(encoding='utf-8'))
+        stored = content['metadata']['use_worktree']
+        assert stored is False
+        assert isinstance(stored, bool)
+
+
+def test_metadata_set_non_boolean_field_keeps_string_storage():
+    """Non-allowlisted fields are unaffected by boolean coercion.
+
+    Coercion is restricted to the boolean-typed allowlist; every other
+    field — including string values that happen to read like booleans —
+    keeps verbatim string storage.
+    """
+    with PlanContext(plan_id='metadata-nonbool-plan') as ctx:
+        cmd_create(Namespace(plan_id='metadata-nonbool-plan', title='Test', phases='1-init', force=False))
+        result = cmd_metadata(
+            Namespace(plan_id='metadata-nonbool-plan', set=True, get=False, field='change_type', value='true')
+        )
+        assert result['status'] == 'success'
+        assert result['value'] == 'true'
+
+        status_file = ctx.plan_dir / 'status.json'
+        content = json.loads(status_file.read_text(encoding='utf-8'))
+        stored = content['metadata']['change_type']
+        assert stored == 'true'
+        assert isinstance(stored, str)
+
+
 # =============================================================================
 # Test: Get-Context Command
 # =============================================================================

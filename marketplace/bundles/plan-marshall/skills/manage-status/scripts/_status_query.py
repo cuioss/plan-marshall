@@ -19,6 +19,31 @@ from _status_core import (
 from constants import PHASE_STATUS_DONE, PHASE_STATUS_IN_PROGRESS  # type: ignore[import-not-found]
 from file_ops import get_plan_dir  # type: ignore[import-not-found]
 
+# Metadata fields that are semantically boolean. The ``metadata --set`` CLI
+# receives every value as a raw string; for these keys the raw string is
+# coerced to a JSON boolean before storage so downstream consumers
+# (e.g. phase_handshake worktree drift checks) see ``true``/``false`` rather
+# than the string ``"true"``/``"false"``. Non-allowlisted fields keep
+# verbatim string storage.
+BOOLEAN_METADATA_FIELDS = frozenset({'use_worktree'})
+
+
+def _coerce_metadata_value(field: str, raw_value: str) -> Any:
+    """Coerce a raw ``--set`` value string for typed metadata fields.
+
+    Boolean-typed fields (see ``BOOLEAN_METADATA_FIELDS``) map the
+    case-insensitive strings ``"true"``/``"false"`` to JSON booleans. Any
+    other value for a boolean field, and every value for a non-boolean
+    field, is returned verbatim as a string.
+    """
+    if field in BOOLEAN_METADATA_FIELDS:
+        lowered = raw_value.strip().lower()
+        if lowered == 'true':
+            return True
+        if lowered == 'false':
+            return False
+    return raw_value
+
 
 def cmd_read(args: argparse.Namespace) -> dict | None:
     """Read plan status.
@@ -138,16 +163,17 @@ def cmd_metadata(args: argparse.Namespace) -> dict | None:
             status['metadata'] = {}
 
         previous_value = status['metadata'].get(args.field)
-        status['metadata'][args.field] = args.value
+        coerced_value = _coerce_metadata_value(args.field, args.value)
+        status['metadata'][args.field] = coerced_value
 
         write_status(args.plan_id, status)
-        log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Metadata: {args.field}={args.value}')
+        log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Metadata: {args.field}={coerced_value}')
 
         result: dict[str, Any] = {
             'status': 'success',
             'plan_id': args.plan_id,
             'field': args.field,
-            'value': args.value,
+            'value': coerced_value,
         }
         if previous_value is not None:
             result['previous_value'] = previous_value
