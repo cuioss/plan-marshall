@@ -151,7 +151,7 @@ Record the outcome on the live plan so the `phase_steps_complete` handshake inva
 **Branch A — findings list is empty**: read the `display_detail` returned by the workflow verbatim (the workflow computes the candidate count for the human-readable message).
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step pre-submission-self-review --outcome done \
   --display-detail "{display_detail_from_workflow}"
 ```
@@ -159,7 +159,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 **Branch B — findings list is non-empty**: surface the findings in the finalize TOON output (consumed by `output-template.md`) so the operator sees `file:line` and `defect_class` per finding:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step pre-submission-self-review --outcome failed \
   --display-detail "{display_detail_from_workflow}"
 ```

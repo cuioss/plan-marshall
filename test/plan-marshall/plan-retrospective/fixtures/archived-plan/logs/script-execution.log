@@ -1,7 +1,7 @@
 [2026-04-18T11:45:25Z] [INFO] [f4840d] plan-marshall:manage-files:manage-files create-or-reference (0.26s)
 [2026-04-18T11:45:37Z] [INFO] [75a05d] plan-marshall:manage-plan-documents:manage-plan-documents request (0.26s)
 [2026-04-18T11:46:10Z] [INFO] [a0ae44] plan-marshall:manage-worktree:manage-worktree create (0.85s)
-[2026-04-18T11:46:36Z] [INFO] [4bb86b] plan-marshall:manage-status:manage_status create (0.29s)
+[2026-04-18T11:46:36Z] [INFO] [4bb86b] plan-marshall:manage-status:manage-status create (0.29s)
 [2026-04-18T11:50:58Z] [ERROR] [6e70ff] plan-marshall:manage-plan-documents:manage-plan-documents request (0.20s)
   exit_code: 2
   args: request clarify --plan-id lesson-2026-04-18-13-001
@@ -34,7 +34,7 @@
 [2026-04-18T12:19:38Z] [INFO] [71b398] plan-marshall:manage-tasks:manage-tasks finalize-step (0.31s)
 [2026-04-18T12:23:37Z] [INFO] [9ec2a6] plan-marshall:manage-tasks:manage-tasks finalize-step (0.29s)
 [2026-04-18T12:27:40Z] [INFO] [25dada] plan-marshall:manage-tasks:manage-tasks finalize-step (0.28s)
-[2026-04-18T12:43:33Z] [INFO] [81728a] plan-marshall:manage-metrics:manage_metrics generate (0.48s)
+[2026-04-18T12:43:33Z] [INFO] [81728a] plan-marshall:manage-metrics:manage-metrics generate (0.48s)
 [2026-04-18T12:44:31Z] [INFO] [fca41d] plan-marshall:plan-retrospective:collect-plan-artifacts run (0.38s)
 [2026-04-18T12:44:32Z] [INFO] [79bee1] plan-marshall:plan-retrospective:collect-fragments init (0.36s)
 [2026-04-18T12:44:36Z] [INFO] [0c891c] plan-marshall:plan-retrospective:check-artifact-consistency run (0.36s)

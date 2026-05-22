@@ -30,7 +30,7 @@ The step is the **producer** in the cross-deliverable contract documented in `ou
 Invoke `manage-metrics print-phase-breakdown`, which reads `metrics.md` and prints the verbatim `## Phase Breakdown` section to stdout (no TOON status on success):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics print-phase-breakdown \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics print-phase-breakdown \
   --plan-id {plan_id}
 ```
 
@@ -63,7 +63,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step finalize-step-print-phase-breakdown --outcome done \
   --display-detail "Phase Breakdown table captured ({bytes_written} bytes)"
 ```
@@ -83,7 +83,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 Mark the step `failed` with a brief detail; the renderer's override-activation rule requires both manifest presence AND non-`None` captured content, so a failed step naturally falls back to the default block:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step finalize-step-print-phase-breakdown --outcome failed \
   --display-detail "{error_message}"
 ```

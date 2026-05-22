@@ -65,11 +65,11 @@ Validate mutual exclusion of `--plan-id` and `--archived-plan-path`. Resolve:
 **Canonical plan-status read** — when this workflow needs to read plan status (current phase, metadata, worktree binding) it MUST use the `manage-status` script's `read` subcommand. The supported invocation is:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {plan_id}
 ```
 
-Do not extrapolate `status get`, `manage_status get`, or `manage-status:status` — none of those exist. The canonical script notation is the 3-part form `plan-marshall:manage-status:manage_status` (the third segment matches the on-disk script filename `manage_status.py`), and the only read verb is `read`. The full canonical-forms entry for `manage-status` (covering `read`, `metadata --get --field`, `transition`, `get-worktree-path`, `change-type-heuristic`, and friends) lives in [`dev-agent-behavior-rules/standards/argument-naming.md`](../dev-agent-behavior-rules/standards/argument-naming.md#manage--scripts) — that table is the regression guard against the invented-verb drift that motivated this entry (see lesson `2026-05-14-00-001`). Future maintainers editing this workflow MUST cross-check any new `manage-status` call against that table before committing.
+Do not extrapolate `status get`, `manage_status get`, or `manage-status:status` — none of those exist. The canonical script notation is the 3-part form `plan-marshall:manage-status:manage-status` (the third segment matches the on-disk script filename `manage_status.py`), and the only read verb is `read`. The full canonical-forms entry for `manage-status` (covering `read`, `metadata --get --field`, `transition`, `get-worktree-path`, `change-type-heuristic`, and friends) lives in [`dev-agent-behavior-rules/standards/argument-naming.md`](../dev-agent-behavior-rules/standards/argument-naming.md#manage--scripts) — that table is the regression guard against the invented-verb drift that motivated this entry (see lesson `2026-05-14-00-001`). Future maintainers editing this workflow MUST cross-check any new `manage-status` call against that table before committing.
 
 Log start:
 
@@ -220,7 +220,7 @@ In non-interactive finalize-step mode, emit lessons automatically only when conf
 **Finalize-step mode**: emit the `mark-step-done` handshake so the `phase_steps_complete` invariant is satisfied:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step plan-retrospective --outcome done \
   --display-detail "{N} findings across {M} aspects"
 ```

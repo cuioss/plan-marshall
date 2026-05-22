@@ -241,7 +241,7 @@ The worktree must be removed BEFORE executing any post-removal git operations �
 The `git_workflow worktree remove` script operates on the main checkout internally and does not rely on the caller's cwd:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree remove \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree remove \
   --plan-id {plan_id}
 ```
 
@@ -378,7 +378,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 **Only if `{worktree_path}` is set** (from the Worktree Awareness section).
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow worktree remove \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree remove \
   --plan-id {plan_id}
 ```
 
@@ -430,7 +430,7 @@ Pass a `--display-detail` value alongside `--outcome done` so the output-templat
 **Branch A — PR mode (rebase + merge + cleanup)** (PR was rebased onto base, merged, base branch pulled, feature branch deleted locally and on remote, worktree removed):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
   --display-detail "rebased onto base, merged, cleanup complete"
 ```
@@ -438,7 +438,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 **Branch B — local-only mode** (no PR was created; only local switch-to-base-branch was performed):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
   --display-detail "local-only: switched to main"
 ```
@@ -446,7 +446,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 **Branch C — declined by user** (interactive prompt was rejected; cleanup was not performed):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
   --display-detail "declined by user"
 ```
@@ -454,7 +454,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 **Branch D — no PR found** (PR mode, `pr view` returned status: error — there is no PR for the current branch, so there is nothing to clean up on the remote side):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
   --display-detail "no PR, nothing to clean up"
 ```

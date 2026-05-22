@@ -101,7 +101,7 @@ ELSE:
 ### Step 5: Persist to status metadata
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --set --field change_type --value {change_type}
 ```

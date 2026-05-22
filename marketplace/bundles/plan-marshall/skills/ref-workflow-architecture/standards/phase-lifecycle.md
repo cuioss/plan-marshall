@@ -94,7 +94,7 @@ After all phase-specific steps are done, execute this 4-step completion sequence
 ### Step 1: Transition Phase
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
   --plan-id {plan_id} \
   --completed {phase_key}
 ```

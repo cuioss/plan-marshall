@@ -61,7 +61,7 @@ class TestHappyPath:
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         data = result.toon()
         slowest = data['slowest_scripts']
-        assert slowest[0]['notation'] == 'plan-marshall:manage-status:manage_status'
+        assert slowest[0]['notation'] == 'plan-marshall:manage-status:manage-status'
 
 
 class TestFaultPaths:
@@ -111,7 +111,7 @@ class TestRegression:
             '[2026-04-17T10:00:01Z] [ERROR] [aaaaaa] '
             'plan-marshall:manage-tasks:manage-tasks add (0.12s)\n'
             '[2026-04-17T10:00:02Z] [ERROR] [bbbbbb] '
-            'plan-marshall:manage-status:manage_status read (2.5s)\n'
+            'plan-marshall:manage-status:manage-status read (2.5s)\n'
             '[2026-04-17T10:00:10Z] [ERROR] [cccccc] '
             'plan-marshall:manage-files:manage-files add (0.05s)\n',
             encoding='utf-8',

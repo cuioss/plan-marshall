@@ -21,7 +21,7 @@ script_duration_p95_ms: 850.0
 script_duration_max_ms: 850.0
 slowest_scripts[3]{notation,duration_ms}:
   plan-marshall:manage-worktree:manage-worktree,850.0
-  plan-marshall:manage-metrics:manage_metrics,480.0
+  plan-marshall:manage-metrics:manage-metrics,480.0
   plan-marshall:manage-tasks:manage-tasks,430.0
 top_tags[1]{tag,count}:
   INFO,80

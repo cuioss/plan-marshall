@@ -140,7 +140,7 @@ The triage subagent above allocated fix tasks and posted reviewer-facing thread 
 
 ```bash
 # IF loop_back_target == "5-execute":
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-phase \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status set-phase \
   --plan-id {plan_id} --phase 5-execute
 # IF loop_back_target == "6-finalize": skip the set-phase call entirely.
 ```
@@ -148,7 +148,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-ph
 2. Mark this finalize step as a loop-back iteration, forwarding the `loop_back_target` value verbatim to `mark-step-done` (REQUIRED per the manage-status `--loop-back-target` validation contract — omitting it returns `error: missing_loop_back_target`):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step automated-review --outcome loop_back \
   --loop-back-target {5-execute|6-finalize} \
   --display-detail "loop-back iteration {iteration} (target={5-execute|6-finalize})"
@@ -213,7 +213,7 @@ git -C {worktree_path} rev-parse HEAD
 Capture stdout as `{sha}` and forward via `--head-at-completion`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step automated-review --outcome done \
   --display-detail "{N} comment(s) resolved (no loop-back)" \
   --head-at-completion {sha}
@@ -228,7 +228,7 @@ git -C {worktree_path} rev-parse HEAD
 Capture stdout as `{sha}` and forward via `--head-at-completion`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step automated-review --outcome done \
   --display-detail "no PR available" \
   --head-at-completion {sha}
@@ -237,7 +237,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 **Branch C — loop-back recorded** (intermediate pass; used when a non-terminal iteration must be surfaced and the dispatcher must re-fire this step on the next phase-6-finalize entry): `{iteration}` is the current loop-back iteration number (1..3); `{loop_back_target}` is the granularity classification from the triage subagent's return TOON (`5-execute` for fix-task-required dispositions, `6-finalize` for inline-fixable). This branch records `--outcome loop_back --loop-back-target {value}` so the Step 3 dispatcher table (and the Resumability table below) re-fires the step as a fresh dispatch on next entry AND the continuation hook (§ 7b) routes deterministically. The terminal pass still uses Branch A when review eventually goes clean. Never record `--outcome done` for an intermediate iteration — `done` is terminal and will cause the dispatcher to skip the step on re-entry. The `loop_back` branch does NOT need `--head-at-completion` but DOES require `--loop-back-target` (per the manage-status validation contract — omitting it returns `error: missing_loop_back_target`):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step automated-review --outcome loop_back \
   --loop-back-target {5-execute|6-finalize} \
   --display-detail "loop-back iteration {iteration} (target={5-execute|6-finalize})"

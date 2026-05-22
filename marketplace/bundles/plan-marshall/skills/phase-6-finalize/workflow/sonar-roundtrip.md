@@ -111,7 +111,7 @@ When the subagent returns `status: loop_back` it has created fix tasks (FIX outc
 
    ```bash
    # IF loop_back_target == "5-execute":
-   python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-phase \
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status set-phase \
      --plan-id {plan_id} --phase 5-execute
    # IF loop_back_target == "6-finalize": skip the set-phase call entirely.
    ```
@@ -177,7 +177,7 @@ git -C {worktree_path} rev-parse HEAD
 Capture stdout as `{sha}` and forward via `--head-at-completion`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step sonar-roundtrip --outcome done \
   --display-detail "quality gate passed" \
   --head-at-completion {sha}
@@ -192,7 +192,7 @@ git -C {worktree_path} rev-parse HEAD
 Capture stdout as `{sha}` and forward via `--head-at-completion`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step sonar-roundtrip --outcome done \
   --display-detail "quality gate failed" \
   --head-at-completion {sha}
@@ -207,7 +207,7 @@ git -C {worktree_path} rev-parse HEAD
 Capture stdout as `{sha}` and forward via `--head-at-completion`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step sonar-roundtrip --outcome done \
   --display-detail "Sonar not configured" \
   --head-at-completion {sha}
@@ -216,7 +216,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 **Branch D — loop-back recorded** (intermediate pass; used when `loop_back_needed = true` after the "Handle findings (loop-back)" block above). `{iteration}` is the current loop-back iteration number (1..3); `{loop_back_target}` is the granularity classification from the triage dispatch's return TOON (`5-execute` for fix-task-required dispositions, `6-finalize` for inline-fixable). This branch records `--outcome loop_back --loop-back-target {value}` so the Step 3 dispatcher table re-fires the step as a fresh dispatch on next entry AND the continuation hook (§ 7b) routes deterministically. Never record `--outcome done` for an intermediate iteration — `done` is terminal and will cause the dispatcher to skip the step on re-entry. The `loop_back` branch does NOT need `--head-at-completion` but DOES require `--loop-back-target` (per the manage-status validation contract — omitting it returns `error: missing_loop_back_target`):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step sonar-roundtrip --outcome loop_back \
   --loop-back-target {5-execute|6-finalize} \
   --display-detail "loop-back iteration {iteration} (target={5-execute|6-finalize})"

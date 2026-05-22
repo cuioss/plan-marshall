@@ -31,7 +31,7 @@ Rationale:
 The path is computed by the worktree-handling layer; callers never construct it from string concatenation. Resolve it via:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-worktree-path \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-worktree-path \
   --plan-id {plan_id}
 ```
 

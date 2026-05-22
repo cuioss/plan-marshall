@@ -151,19 +151,19 @@ The agent returns `plan_id` and `domains` in its TOON.
 After plan creation, store recipe metadata in status:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --set \
   --field plan_source \
   --value recipe
 
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --set \
   --field recipe_key \
   --value {recipe_key}
 
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --set \
   --field recipe_skill \
@@ -173,19 +173,19 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metada
 **For built-in recipe only** — store additional fields for the generic recipe skill:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --set \
   --field recipe_domain \
   --value {selected_domain}
 
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --set \
   --field recipe_profile \
   --value {selected_profile}
 
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} \
   --set \
   --field recipe_package_source \

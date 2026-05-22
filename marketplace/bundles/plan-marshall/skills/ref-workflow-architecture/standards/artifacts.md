@@ -147,11 +147,11 @@ updated: 2025-12-02T14:30:00Z
 
 ```bash
 # Status operations
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   {create|read|set-phase|update-phase|progress} --plan-id {id}
 
 # Lifecycle transitions (subcommands of manage-status)
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   {transition|list|archive|route} --plan-id {id}
 ```
 

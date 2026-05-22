@@ -81,7 +81,7 @@ Task:
 After parsing the agent's returned `<usage>...</usage>` block, persist the totals to the on-disk per-phase accumulator so the orchestrator's end-of-phase `manage-metrics phase-boundary` call can read them even when the model context has been compacted between dispatches:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics accumulate-agent-usage \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics accumulate-agent-usage \
   --plan-id {plan_id} --phase 5-execute \
   --total-tokens {total_tokens} --tool-uses {tool_uses} --duration-ms {duration_ms}
 ```

@@ -96,7 +96,7 @@ Once the action is resolved, load the appropriate workflow document and follow i
 When `plan` is specified but no `action`, auto-detect from plan phase:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-routing-context \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-routing-context \
   --plan-id {plan_id}
 ```
 

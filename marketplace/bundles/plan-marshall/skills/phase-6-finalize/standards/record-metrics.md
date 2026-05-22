@@ -19,7 +19,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 Close out the 6-finalize phase timing/token ledger. The agent-dispatched steps (`create-pr`, `automated-review`, `sonar-roundtrip`, `lessons-capture`) persist their `<usage>` totals to `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` via `manage-metrics accumulate-agent-usage` from SKILL.md Step 3 step 5b. `end-phase` reads that accumulator file as a fallback when no explicit token flags are passed:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics end-phase \
   --plan-id {plan_id} --phase 6-finalize
 ```
 
@@ -30,14 +30,14 @@ The script reads `work/metrics-accumulator-6-finalize.toon` and incorporates its
 Supplement the phase ledger with main-context token usage captured from the host-platform transcript JSONL. `session_id` is the current host-platform session id, passed down from the skill caller (see SKILL.md "Input Parameters"):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics enrich \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics enrich \
   --plan-id {plan_id} --session-id {session_id}
 ```
 
 ## Generate Final Metrics Report
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics generate \
   --plan-id {plan_id}
 ```
 
@@ -88,7 +88,7 @@ Before returning control to the finalize pipeline, record that this step ran on 
 Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the core metrics without re-reading `metrics.md`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step record-metrics --outcome done \
   --display-detail "{total_duration_formatted} / {total_tokens_formatted} tokens"
 ```

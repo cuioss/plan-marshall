@@ -93,7 +93,7 @@ def _query_worktree_path(plan_id: str) -> tuple[bool, str]:
     cmd = [
         sys.executable,
         str(executor),
-        'plan-marshall:manage-status:manage_status',
+        'plan-marshall:manage-status:manage-status',
         'get-worktree-path',
         '--plan-id',
         plan_id,

@@ -28,6 +28,8 @@ from _analyze_markdown import (
     check_resolver_gap,
     get_bloat_classification,
 )
+from _analyze_notation_staleness import RULE_ID as NOTATION_STALENESS_RULE_ID
+from _analyze_notation_staleness import analyze_notation_staleness
 from _analyze_phase2_refine_contract import RULE_ID as REFINE_CONTRACT_RULE_ID
 from _analyze_phase2_refine_contract import analyze_phase2_refine_contract
 from _analyze_shared import check_agent_glob_resolver_workaround, extract_frontmatter
@@ -261,6 +263,20 @@ def analyze_component(component: dict, active_rules: frozenset[str] | None = Non
             )
         )
 
+        # notation-staleness: catch three-part executor notations whose third
+        # segment has no matching {script}.py file under the resolved
+        # bundles/{bundle}/skills/{skill}/scripts/ directory. A renamed
+        # entrypoint script silently changes its public notation, so callers
+        # that still use the old form resolve to `Unknown notation`.
+        # Unconditionally active (not gated on active_rules) — the rule
+        # enforces a hard breakage from lesson 2026-05-22-12-002 that must
+        # surface on every plugin-doctor run.
+        issues.extend(
+            extract_issues_from_notation_staleness_analysis(
+                analyze_notation_staleness([skill_dir])
+            )
+        )
+
     return {'component': component, 'analysis': analysis, 'issues': issues, 'issue_count': len(issues)}
 
 
@@ -364,6 +380,38 @@ def extract_issues_from_refine_contract_analysis(findings: list[dict]) -> list[d
                     'path': path_ref,
                     'suggested_fix': finding.get('suggested_fix', ''),
                 },
+            }
+        )
+    return issues
+
+
+def extract_issues_from_notation_staleness_analysis(findings: list[dict]) -> list[dict]:
+    """Translate ``analyze_notation_staleness`` output into plugin-doctor issue dicts.
+
+    The analyzer returns findings with the native shape
+    (``rule_id``/``type``/``file``/``line``/``severity``/``fixable``/
+    ``details``). Plugin-doctor's downstream categorizer keys on
+    ``type``/``fixable`` (see ``categorize_all_issues``), so this helper
+    normalises each finding to the shared schema while preserving
+    rule-specific fields under ``details``.
+    """
+    issues: list[dict] = []
+    for finding in findings:
+        details = finding.get('details', {})
+        issues.append(
+            {
+                'type': NOTATION_STALENESS_RULE_ID,
+                'rule_id': NOTATION_STALENESS_RULE_ID,
+                'file': finding.get('file', ''),
+                'line': finding.get('line'),
+                'severity': finding.get('severity', 'error'),
+                'fixable': False,
+                'description': finding.get(
+                    'description',
+                    'Executor notation has no matching script file '
+                    '(notation-staleness)',
+                ),
+                'details': details,
             }
         )
     return issues

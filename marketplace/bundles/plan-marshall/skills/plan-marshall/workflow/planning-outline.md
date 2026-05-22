@@ -35,7 +35,7 @@ same orchestration cycle), use a fused call to close the previous active
 phase and start `3-outline`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
   --plan-id {plan_id} --prev-phase {prev_phase} --next-phase 3-outline
 ```
 
@@ -63,7 +63,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   get-worktree-path --plan-id {plan_id}
 ```
 
@@ -160,7 +160,7 @@ This loop runs automatically — do NOT prompt the user for Q-Gate findings unle
 
 **Step 2c**: Transition phase after outline completes AND Q-Gate is clean:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
   --plan-id {plan_id} --completed 3-outline
 ```
 
@@ -173,7 +173,7 @@ the sibling orchestrator-level q-gate-validation dispatch above when
 `ambiguous`). Sum `total_tokens`, `tool_uses`, and `duration_ms` across each
 dispatch's `<usage>` tag:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
   --plan-id {plan_id} --prev-phase 3-outline --next-phase 4-plan \
   --total-tokens {sum of total_tokens from all agent <usage> tags} \
   --tool-uses {sum of tool_uses from all agent <usage> tags} \
@@ -361,7 +361,7 @@ from every dispatch spawned during this phase — the `phase-4-plan` envelope
 itself plus the sibling orchestrator-level q-gate-validation dispatch above
 when `qgate_validation_required` was `true`):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
   --plan-id {plan_id} --prev-phase 4-plan --next-phase 5-execute \
   --total-tokens {sum of total_tokens from all agent <usage> tags} \
   --duration-ms {sum of duration_ms from all agent <usage> tags} \
@@ -383,7 +383,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **Step 4b**: Transition phase after tasks created:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
   --plan-id {plan_id} --completed 4-plan
 ```
 

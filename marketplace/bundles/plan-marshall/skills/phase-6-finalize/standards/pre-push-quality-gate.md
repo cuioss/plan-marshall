@@ -79,7 +79,7 @@ git -C {worktree_path} rev-parse HEAD
 The `{worktree_path}` value is the path resolved by `phase-6-finalize` Step 0 (Resolve Worktree and Main Checkout Paths). Do NOT re-resolve it from any other cwd or shell context — the canonical resolution lives in Step 0 and propagates into every standards document loaded by the finalize pipeline. Capture the stdout as `{sha}` (a 40-character hex SHA) and forward it via `--head-at-completion`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step pre-push-quality-gate --outcome done \
   --display-detail "quality-gate green for {N} bundle(s)" \
   --head-at-completion {sha}
@@ -90,7 +90,7 @@ The persisted `head_at_completion` field is consumed by phase-6-finalize Step 3'
 **Branch B — at least one bundle failed**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step pre-push-quality-gate --outcome failed \
   --display-detail "quality-gate failed for {bundle}"
 ```
