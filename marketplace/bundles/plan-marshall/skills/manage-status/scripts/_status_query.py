@@ -28,15 +28,15 @@ from file_ops import get_plan_dir  # type: ignore[import-not-found]
 BOOLEAN_METADATA_FIELDS = frozenset({'use_worktree'})
 
 
-def _coerce_metadata_value(field: str, raw_value: str) -> Any:
+def _coerce_metadata_value(field: str, raw_value: Any) -> Any:
     """Coerce a raw ``--set`` value string for typed metadata fields.
 
     Boolean-typed fields (see ``BOOLEAN_METADATA_FIELDS``) map the
     case-insensitive strings ``"true"``/``"false"`` to JSON booleans. Any
     other value for a boolean field, and every value for a non-boolean
-    field, is returned verbatim as a string.
+    field, is returned verbatim.
     """
-    if field in BOOLEAN_METADATA_FIELDS:
+    if field in BOOLEAN_METADATA_FIELDS and isinstance(raw_value, str):
         lowered = raw_value.strip().lower()
         if lowered == 'true':
             return True

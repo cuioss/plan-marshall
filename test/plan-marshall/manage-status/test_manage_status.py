@@ -365,6 +365,28 @@ def test_metadata_set_non_boolean_field_keeps_string_storage():
         assert isinstance(stored, str)
 
 
+def test_metadata_set_boolean_field_with_none_value_stores_none():
+    """Boolean-typed field coercion is skipped when raw_value is None.
+
+    When ``--value`` is omitted, argparse supplies ``None``. The coercion
+    function must not call ``.strip()`` on a ``None`` value — the
+    ``isinstance(raw_value, str)`` guard ensures the value is stored
+    verbatim rather than raising ``AttributeError``.
+    """
+    with PlanContext(plan_id='metadata-none-plan') as ctx:
+        cmd_create(Namespace(plan_id='metadata-none-plan', title='Test', phases='1-init', force=False))
+        result = cmd_metadata(
+            Namespace(plan_id='metadata-none-plan', set=True, get=False, field='use_worktree', value=None)
+        )
+        assert result['status'] == 'success'
+        assert result['value'] is None
+
+        status_file = ctx.plan_dir / 'status.json'
+        content = json.loads(status_file.read_text(encoding='utf-8'))
+        stored = content['metadata']['use_worktree']
+        assert stored is None
+
+
 # =============================================================================
 # Test: Get-Context Command
 # =============================================================================
