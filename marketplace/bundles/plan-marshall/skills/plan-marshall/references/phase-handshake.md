@@ -217,6 +217,26 @@ No changes are required in `_handshake_commands.py`, `phase_handshake.py`, or an
 
 `worktree_sha` and `worktree_dirty` apply iff `status.metadata.worktree_path` is set. `phase-1-init` writes that field when a plan uses a worktree and omits it otherwise, so per-plan worktree usage is already the single source of truth — the handshake does not look at global config.
 
+### `worktree_metadata_drift` capture-time error
+
+When `metadata.use_worktree` is truthy, capture asserts that `metadata.worktree_path` is non-empty AND filesystem-resolvable (the directory exists AND `git -C {path} rev-parse --show-toplevel` returns the same canonical path). When the assertion fails, `cmd_capture` returns a structured error payload **without writing a row**:
+
+```toon
+status: error
+error: worktree_metadata_drift
+plan_id: X
+phase: 5-execute
+worktree_dir: /path/to/worktree
+use_worktree: true
+message: "worktree_metadata_drift: metadata.use_worktree is set but worktree_path is unresolved"
+```
+
+**Trigger condition:** the plan opted into an isolated worktree (`metadata.use_worktree` truthy) but `metadata.worktree_path` is empty, points at a non-existent directory, or points at a path that is not a git worktree root.
+
+**Detection fingerprint:** `phase_handshake` reports `metadata.use_worktree=None` (the metadata read swallowed a non-resolving notation and returned `{}`) while `manage-status read` shows a non-empty `metadata.use_worktree` value. The two readings disagreeing is the signature of this failure class.
+
+**Root cause and resolution:** historically this error also fired spuriously when `metadata.use_worktree` was stored as the JSON string `"true"` instead of the boolean `true`. `manage-status metadata --set` now coerces boolean-typed metadata keys (`use_worktree`) from the raw CLI string to a JSON boolean before storage, so the stored value is always a proper boolean. A persistent `worktree_metadata_drift` after that fix indicates a genuine unresolved worktree path — repair `metadata.worktree_path` (re-run phase-5-execute Step 2.5 materialization) and re-enter the phase.
+
 ## Integration with phase lifecycle
 
 The actual call sites for `capture` and `verify` are the orchestrator workflow files [`plan-marshall:plan-marshall:workflow/planning.md`](../workflow/planning.md) (phases 1-init through 4-plan boundaries) and [`plan-marshall:plan-marshall:workflow/execution.md`](../workflow/execution.md) (4-plan→5-execute fallback and 5-execute→6-finalize boundaries). Each `manage-metrics phase-boundary` invocation in those workflows is followed by a `phase_handshake capture --phase {prev_phase}` call. For non-guarded next-phase entries, the workflow runs a standalone `phase_handshake verify --phase {prev_phase} --strict` before any phase-specific work begins. For guarded boundaries (next phase in `_BLOCKING_BOUNDARIES`, currently `{'6-finalize'}`), the strict-verify step is inlined into `manage-status transition --completed {prev_phase}` so the workflow issues a single atomic call instead of a verify+transition pair — the transition refuses to advance state and exits 1 on drift, mirroring the standalone verify --strict contract.
