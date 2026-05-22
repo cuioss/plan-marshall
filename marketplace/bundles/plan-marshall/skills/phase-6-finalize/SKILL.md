@@ -70,7 +70,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
   --plan-id {plan_id} --get --field session_id
 ```
 
-Parse `value` from the TOON output. On `status: error` or empty `value`, abort finalize with a clear message — do **not** invent a filler value.
+Parse `value` from the TOON output. On `status: error` or empty `value`, the orchestrator's `session_id` resolver (in `plan-marshall/workflow/execution.md`) does NOT abort immediately — it first attempts exactly one `platform-runtime session capture --plan-id {plan_id}` retry and re-reads the metadata field. An absent `session_id` at finalize entry is therefore recoverable as long as the platform session is still live. Only when that single late capture also fails (`status: error` or `value` still empty) does the resolver abort finalize with a clear message — do **not** invent a filler value.
 
 **transcript_path**: when a step needs the absolute path of the session transcript JSONL, the path follows the pattern `~/.claude/projects/{cwd-slug}/{session_id}.jsonl` where `{cwd-slug}` is the absolute project cwd with each `/` replaced by `-`. The `manage-metrics enrich` command resolves this internally given the `session_id`. On `transcript_not_found`, degrade gracefully (skip `enrich`).
 

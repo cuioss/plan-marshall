@@ -582,6 +582,26 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status create
 
 **Writer-chain contract**: `manage_status create` is the sole writer of `metadata.use_worktree` and `metadata.worktree_branch` in phase-1-init; `metadata.worktree_path` is never written by this phase. Phase-5-execute Step 2.5 is the sole writer of `metadata.worktree_path` (it materializes the worktree on first task execution and persists the resolved absolute path then). The inverse-direction `_worktree_orphan` invariant in `_invariants.py` (registered in `INVARIANTS`) tolerates an absent `worktree_path` until phase-5 materialization. See `workflow-integration-git/standards/worktree-handling.md` for the canonical worktree contract.
 
+#### Step 8a: session_id Early-Warning Check
+
+Immediately after `manage_status create` writes `status.json`, verify that `status.metadata.session_id` was captured. The platform-runtime `SessionStart` hook (`session capture`) normally writes this field at plan-init time, but if the hook never ran or stored nothing, the gap stays invisible until phase-6-finalize aborts with an opaque hard-block. This sub-step surfaces the gap early — it does NOT abort init.
+
+Read the field back:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+  --plan-id {plan_id} --get --field session_id
+```
+
+If `value` is empty OR the call returns `status: error`, emit a `[WARNING]` work-log entry noting the gap:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-1-init) session_id not captured at plan-init — phase-6-finalize will attempt a late session capture before its hard-block abort"
+```
+
+If `value` is present and non-empty, no log entry is required — continue to Step 9. This check only surfaces the gap; it never aborts the phase and never renumbers existing steps.
+
 ### Step 9: Store Domains in References
 
 Store the detected domain(s) in references.json:
