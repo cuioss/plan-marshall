@@ -49,7 +49,7 @@ AskUserQuestion:
 | "1. All" | Execute Operation: All (below) | → Return to Main Menu |
 | "2. Regenerate Executor" | Execute Operation: Regenerate Executor (below) | → Return to Main Menu |
 | "3. Regenerate Architecture" | Execute Operation: Regenerate Architecture (below) | → Return to Main Menu |
-| "More..." (Page 1) | Present Maintenance Page 2 `AskUserQuestion` | — |
+| "More..." | Present Maintenance Page 2 `AskUserQuestion` | — |
 | "4. Cleanup" | Execute Operation: Cleanup (below) | → Return to Main Menu |
 | "5. Worktree Cleanup" | Execute Operation: Worktree Cleanup (below) | → Return to Main Menu |
 | "6. Back" | Do nothing | → Return to Main Menu |

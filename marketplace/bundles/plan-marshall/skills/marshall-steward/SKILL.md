@@ -172,7 +172,7 @@ AskUserQuestion:
 | "1. Maintenance" | Load: `Read references/menu-maintenance.md` → Execute |
 | "2. Health Check" | Load: `Read references/menu-healthcheck.md` → Execute |
 | "3. Configuration" | Load: `Read references/menu-configuration.md` → Execute |
-| "More..." (Page 1) | Present Main Menu Page 2 `AskUserQuestion` |
+| "More..." | Present Main Menu Page 2 `AskUserQuestion` |
 | "4. Effort" | Load: `Read standards/effort-menu.md` → Execute |
 | "5. Quit" | Output "Good bye!" → STOP |
 
