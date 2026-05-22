@@ -34,6 +34,7 @@ from permission_fix import (  # type: ignore[import-not-found]  # noqa: E402
     cmd_consolidate,
     cmd_ensure_wildcards,
     cmd_generate_wildcards,
+    cmd_remove_redundant,
     scan_marketplace_dir,
 )
 
@@ -301,6 +302,167 @@ class TestApplyFixes(ScriptTestCase):
         self.assertIn('Edit(.plan/**)', defaults)
         self.assertIn('Write(.plan/**)', defaults)
         self.assertIn('Read(~/.claude/plugins/cache/**)', defaults)
+
+
+# =============================================================================
+# Tier 2: Tests for remove-redundant subcommand
+# =============================================================================
+
+
+class TestRemoveRedundant(ScriptTestCase):
+    """Test permission_fix.py remove-redundant subcommand via direct import."""
+
+    bundle = 'plan-marshall'
+    skill = 'tools-permission-fix'
+    script = 'permission_fix.py'
+
+    def _write_settings(self, path, allow: list[str]) -> None:
+        path.write_text(json.dumps({'permissions': {'allow': allow, 'deny': [], 'ask': []}}))
+
+    def _read_allow(self, path) -> list[str]:
+        return json.loads(path.read_text())['permissions']['allow']
+
+    def test_dry_run_removes_nothing(self):
+        """Dry-run should not modify any settings file."""
+        global_file = self.temp_dir / 'global_settings.json'
+        local_file = self.temp_dir / 'local_settings.json'
+        self._write_settings(global_file, ['Bash(git:*)', 'Bash(npm:*)'])
+        self._write_settings(local_file, ['Bash(git:*)', 'Bash(npm:*)'])
+
+        result = cmd_remove_redundant(
+            Namespace(
+                scope=None,
+                global_settings=str(global_file),
+                local_settings=str(local_file),
+                move_marketplace=True,
+                dry_run=True,
+            )
+        )
+
+        self.assertEqual(result['status'], 'success')
+        self.assertTrue(result['dry_run'])
+        self.assertFalse(result['applied'])
+        # Files should be unchanged
+        self.assertEqual(self._read_allow(local_file), ['Bash(git:*)', 'Bash(npm:*)'])
+
+    def test_removes_exact_duplicates_from_local(self):
+        """Should remove permissions from local that are exact duplicates in global."""
+        global_file = self.temp_dir / 'global_settings.json'
+        local_file = self.temp_dir / 'local_settings.json'
+        self._write_settings(global_file, ['Bash(git:*)', 'Bash(npm:*)'])
+        self._write_settings(local_file, ['Bash(git:*)', 'Edit(.plan/**)'])
+
+        result = cmd_remove_redundant(
+            Namespace(
+                scope=None,
+                global_settings=str(global_file),
+                local_settings=str(local_file),
+                move_marketplace=False,
+                dry_run=False,
+            )
+        )
+
+        self.assertEqual(result['status'], 'success')
+        self.assertTrue(result['applied'])
+        self.assertIn('Bash(git:*)', result['removed_redundant'])
+        local_allow = self._read_allow(local_file)
+        self.assertNotIn('Bash(git:*)', local_allow)
+        self.assertIn('Edit(.plan/**)', local_allow)
+
+    def test_moves_marketplace_permissions_to_global(self):
+        """Should move Skill() and SlashCommand() perms from local to global."""
+        global_file = self.temp_dir / 'global_settings.json'
+        local_file = self.temp_dir / 'local_settings.json'
+        self._write_settings(global_file, ['Bash(git:*)'])
+        self._write_settings(local_file, ['Bash(git:*)', 'Skill(pm-dev-java:*)', 'Edit(.plan/**)'])
+
+        result = cmd_remove_redundant(
+            Namespace(
+                scope=None,
+                global_settings=str(global_file),
+                local_settings=str(local_file),
+                move_marketplace=True,
+                dry_run=False,
+            )
+        )
+
+        self.assertEqual(result['status'], 'success')
+        self.assertTrue(result['applied'])
+        # Exact duplicate removed from local
+        self.assertIn('Bash(git:*)', result['removed_redundant'])
+        # Marketplace perm moved to global
+        self.assertIn('Skill(pm-dev-java:*)', result['moved_to_global'])
+        local_allow = self._read_allow(local_file)
+        self.assertNotIn('Skill(pm-dev-java:*)', local_allow)
+        global_allow = self._read_allow(global_file)
+        self.assertIn('Skill(pm-dev-java:*)', global_allow)
+
+    def test_no_move_marketplace_skips_marketplace_perms(self):
+        """--no-move-marketplace should leave marketplace permissions in local."""
+        global_file = self.temp_dir / 'global_settings.json'
+        local_file = self.temp_dir / 'local_settings.json'
+        self._write_settings(global_file, ['Bash(git:*)'])
+        self._write_settings(local_file, ['Bash(git:*)', 'Skill(pm-dev-java:*)'])
+
+        result = cmd_remove_redundant(
+            Namespace(
+                scope=None,
+                global_settings=str(global_file),
+                local_settings=str(local_file),
+                move_marketplace=False,
+                dry_run=False,
+            )
+        )
+
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['moved_to_global'], [])
+        local_allow = self._read_allow(local_file)
+        self.assertIn('Skill(pm-dev-java:*)', local_allow)
+
+    def test_already_in_global_removes_from_local_without_duplicate(self):
+        """Marketplace perm already in global: remove from local, not re-added to global."""
+        global_file = self.temp_dir / 'global_settings.json'
+        local_file = self.temp_dir / 'local_settings.json'
+        self._write_settings(global_file, ['Bash(git:*)', 'Skill(pm-dev-java:*)'])
+        self._write_settings(local_file, ['Skill(pm-dev-java:*)'])
+
+        result = cmd_remove_redundant(
+            Namespace(
+                scope=None,
+                global_settings=str(global_file),
+                local_settings=str(local_file),
+                move_marketplace=True,
+                dry_run=False,
+            )
+        )
+
+        self.assertEqual(result['status'], 'success')
+        local_allow = self._read_allow(local_file)
+        self.assertNotIn('Skill(pm-dev-java:*)', local_allow)
+        # Not duplicated in global
+        global_allow = self._read_allow(global_file)
+        self.assertEqual(global_allow.count('Skill(pm-dev-java:*)'), 1)
+
+    def test_no_changes_when_already_clean(self):
+        """Should report no changes when local has no redundancies."""
+        global_file = self.temp_dir / 'global_settings.json'
+        local_file = self.temp_dir / 'local_settings.json'
+        self._write_settings(global_file, ['Bash(git:*)'])
+        self._write_settings(local_file, ['Edit(.plan/**)', 'Write(.plan/**)'])
+
+        result = cmd_remove_redundant(
+            Namespace(
+                scope=None,
+                global_settings=str(global_file),
+                local_settings=str(local_file),
+                move_marketplace=True,
+                dry_run=False,
+            )
+        )
+
+        self.assertEqual(result['status'], 'success')
+        self.assertFalse(result['changes_made'])
+        self.assertFalse(result['applied'])
 
 
 # =============================================================================
@@ -932,6 +1094,12 @@ def test_migrate_executor_help():
 def test_apply_project_step_permissions_help():
     """apply-project-step-permissions subcommand should have help."""
     result = run_script(SCRIPT_PATH, 'apply-project-step-permissions', '--help')
+    assert result.returncode == 0
+
+
+def test_remove_redundant_help():
+    """remove-redundant subcommand should have help."""
+    result = run_script(SCRIPT_PATH, 'remove-redundant', '--help')
     assert result.returncode == 0
 
 
