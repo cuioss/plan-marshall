@@ -390,22 +390,35 @@ cache holds, which is exactly the published bundle definitions.
 
 **Resumable re-entry semantics**: Before dispatching each step, read the current step record from `status.metadata.phase_steps["6-finalize"]`. If the step is already marked `done`, skip dispatch entirely (no re-run, no log noise — the previous run completed it). If the step is marked `failed`, retry it from scratch. If the step has no record (or any other outcome), dispatch it as a fresh run. This makes finalize safe to re-enter after a partial run, a crash, or an explicit retry — completed steps stay completed, failed steps get exactly one retry per invocation.
 
-**Precondition resolution**: before dispatching any step in the FOR loop, parse the step's frontmatter `requires:` list (if present) and resolve each entry against its mapped resolver. The only precondition currently defined is `ci-complete`, mapped to the dispatcher-internal helper `scripts/ci_complete_precondition.py` (notation `plan-marshall:phase-6-finalize:ci_complete_precondition`). The resolver is invoked inline through the executor proxy (no Task agent dispatch — the helper itself is bounded by `ci wait --timeout 600`, matching the host platform's per-call ceiling):
+**Precondition resolution**: before dispatching any step in the FOR loop, parse the step's frontmatter `requires:` list (if present) and resolve each entry against its mapped resolver. The only precondition currently defined is `ci-complete`, mapped to the dispatcher-internal helper `scripts/ci_complete_precondition.py` (notation `plan-marshall:phase-6-finalize:ci_complete_precondition`). The resolver is invoked inline through the executor proxy (no Task agent dispatch — the helper itself is bounded by `ci wait --timeout 600`, matching the host platform's per-call ceiling).
+
+The resolver accepts a `--mode` flag (`strict` | `consume-failures`) selecting how `wait_failed` is mapped to the consumer step's outcome. The dispatcher MUST pass `--mode` per consumer step using the table below — the value depends on which consumer the precondition is being resolved for, NOT on the resolver itself:
+
+| Consumer step | `--mode` value | Why |
+|---------------|----------------|------|
+| `default:ci-verify` | `consume-failures` | The step's whole purpose is to classify CI failures into the multi-failure-mode taxonomy and emit one structured finding per failing check. `strict` would skip the body on `wait_failed` and make the classify → file-findings → verification-feedback → loop_back machinery unreachable on red CI. |
+| `default:automated-review` | `strict` (default) | A red CI invalidates the PR-review snapshot the reviewer would consume; short-circuit to `failed` and let the operator address the CI failure first. |
+| `default:sonar-roundtrip` | `strict` (default) | A red CI means Sonar's analysis has not yet completed against the latest tree; short-circuit and let CI recover first. |
+| _Future consumers_ | Default to `strict` unless the consumer's body explicitly handles `wait_failed` envelopes. Add a row above when a new consumer joins the `consume-failures` set. |
+
+The dispatcher resolves the value by mapping the consumer step id (`step.name` from frontmatter) to the table above. When a step declares `requires: [ci-complete]` but does not appear in the table, the default is `strict`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:phase-6-finalize:ci_complete_precondition \
-  resolve --plan-id {plan_id} --worktree-path {worktree_path} --pr-number {pr_number} [--timeout 600]
+  resolve --plan-id {plan_id} --worktree-path {worktree_path} --pr-number {pr_number} \
+  --mode {strict|consume-failures} [--timeout 600]
 ```
 
-The helper returns a TOON envelope with `status`, `head_sha`, `ci_final_status`, and (on `wait_failed`) `failing_checks` plus `wait_outcome`. The underlying `ci wait` envelope partitions GitHub check conclusions per the canonical table (`success | skipped | neutral` → non-failing; `failure | timed_out | cancelled | action_required | stale` → failing; `null | in_progress | queued` → wait); the previous `mixed` outcome is no longer returned by any github_ops function. Outcome mapping:
+The helper returns a TOON envelope with `status`, `head_sha`, `ci_final_status`, and (on `wait_failed`) `failing_checks`, `wait_outcome`, and `mode` (the value passed in). The underlying `ci wait` envelope partitions GitHub check conclusions per the canonical table (`success | skipped | neutral` → non-failing; `failure | timed_out | cancelled | action_required | stale` → failing; `null | in_progress | queued` → wait); the previous `mixed` outcome is no longer returned by any github_ops function. Outcome mapping:
 
-| Resolver `status` | `ci_final_status` | Dispatcher action |
-|-------------------|--------------------|--------------------|
-| `satisfied` | `success` | Cache hit — proceed to dispatch the consumer step normally. |
-| `wait_succeeded` | `success` | Cache miss → fresh `ci wait` returned success — proceed to dispatch. |
-| `wait_failed` | `failure` | CI ran to completion and at least one check is in the failing partition. SKIP the consumer step's body and mark the step's outcome `failed` via `manage-status mark-step-done … --outcome failed --display-detail "ci_failure (precondition): {failing_check_names}"`. The `failing_checks[]` list is forwarded into the `display_detail` so the work-log line names the specific checks that drove the verdict rather than the opaque "mixed" phrasing the pre-fix code emitted. |
-| `wait_failed` | `timeout` | `ci wait` exhausted its `--timeout` budget; `wait_outcome: deadline_exceeded` and `failing_checks[]` enumerates the still-running checks at the deadline. Same skip-and-mark action as `failure`; downstream consumers route this to `ci-verify-timeout`. |
-| `wait_failed` | `no_checks` | CI never produced any checks (`final_status: none` from `ci wait`). Distinct from real failure so the dispatcher can surface "no CI configured for this branch" rather than "CI ran red". Same skip-and-mark action; downstream consumers route this to `ci-verify-missing`. |
+| Resolver `status` | `ci_final_status` | `--mode` | Dispatcher action |
+|-------------------|--------------------|----------|--------------------|
+| `satisfied` | `success` | _any_ | Cache hit — proceed to dispatch the consumer step normally. |
+| `wait_succeeded` | `success` | _any_ | Cache miss → fresh `ci wait` returned success — proceed to dispatch. |
+| `wait_failed` | `failure` | `strict` | CI ran to completion and at least one check is in the failing partition. SKIP the consumer step's body and mark the step's outcome `failed` via `manage-status mark-step-done … --outcome failed --display-detail "ci_failure (precondition): {failing_check_names}"`. The `failing_checks[]` list is forwarded into the `display_detail` so the work-log line names the specific checks that drove the verdict rather than the opaque "mixed" phrasing the pre-fix code emitted. |
+| `wait_failed` | `timeout` | `strict` | `ci wait` exhausted its `--timeout` budget; `wait_outcome: deadline_exceeded` and `failing_checks[]` enumerates the still-running checks at the deadline. Same skip-and-mark action as `failure`; downstream consumers route this to `ci-verify-timeout`. |
+| `wait_failed` | `no_checks` | `strict` | CI never produced any checks (`final_status: none` from `ci wait`). Distinct from real failure so the dispatcher can surface "no CI configured for this branch" rather than "CI ran red". Same skip-and-mark action; downstream consumers route this to `ci-verify-missing`. |
+| `wait_failed` | `failure` \| `timeout` \| `no_checks` | `consume-failures` | Do NOT skip the consumer body. Thread `failing_checks[]`, `wait_outcome`, and `ci_final_status` into the consumer step's runtime inputs and dispatch the body normally; the consumer (currently only `default:ci-verify`) is responsible for classifying the failures into structured findings. The structured-finding emission below STILL fires so the precondition decision remains audit-traceable; the difference vs `strict` is purely "skip body" → "run body with envelope". |
 
 **Structured finding emission on `wait_failed`**: in addition to the `mark-step-done … --outcome failed --display-detail "ci_failure (precondition): {failing_check_names}"` call above, the dispatcher MUST also persist a structured `triage` finding so the precondition decision survives outside the work-log. Emit exactly one finding per `wait_failed` resolution (NOT one per failing check — the failing-check enumeration lives in the message body). Invoke immediately after the `mark-step-done … --outcome failed` call:
 

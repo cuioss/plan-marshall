@@ -42,6 +42,7 @@ pr_number: {pr_number}
 plan_id: {plan_id}
 wait_outcome: completed | deadline_exceeded
 final_status: success | failure | none | timeout | ""
+jobs_source: enumerated | empty
 jobs[N]{name,workflow_name,job_name,conclusion,started_at,completed_at,run_url,log_path}:
   ...
 ```
@@ -49,6 +50,23 @@ jobs[N]{name,workflow_name,job_name,conclusion,started_at,completed_at,run_url,l
 The `head_sha` field makes the loop-back ↔ commit linkage auditable: a
 retrospective sweeping every `artifacts/ci-runs/*/manifest.toon` can
 correlate every CI run to the exact HEAD it ran against.
+
+The `jobs_source` field labels how the `jobs[]` array was populated so
+a zero-job manifest is never silently mistaken for "no CI ran":
+
+- `enumerated` — the `persist` call was handed a non-empty jobs array
+  (from the `checks status` / `checks wait` envelope), so every job is
+  recorded with its per-job log slice.
+- `empty` — the `persist` call received no jobs (an empty or missing
+  `--jobs-file`). The manifest records zero jobs **deliberately**; this
+  is a labelling state, not evidence that CI never ran. Callers that
+  see `jobs_source: empty` on a green-CI path should treat it as a
+  persist-invocation defect (the jobs array was not captured upstream),
+  not as a genuine no-CI verdict.
+
+`jobs_source` is also surfaced on the `persist` subcommand's TOON
+return alongside `job_count` so the caller can react without re-reading
+the manifest.
 
 The `wait_outcome` and `final_status` fields are forwarded verbatim
 from the `checks wait` envelope; they enable retrospectives to walk the

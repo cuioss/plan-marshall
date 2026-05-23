@@ -800,3 +800,129 @@ def test_fetch_pr_overall_ci_status_pass_plus_skipping_is_success(monkeypatch):
     ok, overall = github_ops._fetch_pr_overall_ci_status(42)
     assert ok is True
     assert overall == 'success'
+
+
+# =============================================================================
+# SKIPPED-as-terminal regression — deliverable 7
+# =============================================================================
+#
+# The SKIPPED-classification root cause is the gh CLI's gerund bucket form
+# (`bucket: "skipping"` rather than `"skipped"`). The fix is in
+# _normalize_conclusion()/_CONCLUSION_NON_FAILING reading the state field
+# rather than bucket. The regression tests below pin this contract at the
+# cmd_ci_wait / cmd_ci_status entry points so a future refactor that
+# silently reintroduces bucket-based classification fails loudly here.
+
+
+def _skipped_only_checks_json():
+    """A check set containing ONE check whose state is SKIPPED.
+
+    The single-check shape exercises the "all-terminal" exit path of
+    cmd_ci_wait — there is no other check that could be in-progress,
+    so the wait loop MUST exit immediately on its first poll.
+    """
+    return (
+        '['
+        '{"name":"skipped-only","state":"SKIPPED","bucket":"skipping",'
+        '"startedAt":"","completedAt":"","link":"","workflow":"CI"}'
+        ']'
+    )
+
+
+def test_ci_wait_exits_immediately_for_skipped_only_check_set(monkeypatch):
+    """A SKIPPED-only check set MUST be treated as all-terminal so cmd_ci_wait
+    exits on its first poll with final_status=success and an empty
+    failing_checks list. A regression that classifies SKIPPED as in-progress
+    would block the wait loop until the host-platform timeout fires.
+    """
+    import json as _json
+
+    checks = _json.loads(_skipped_only_checks_json())
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        if args[:2] == ['pr', 'checks']:
+            return 0, _skipped_only_checks_json(), ''
+        return 0, '', ''
+
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    # The poll loop returns the SKIPPED-only check set on the first poll.
+    monkeypatch.setattr(
+        github_ops,
+        'poll_until',
+        lambda check_fn, is_complete_fn, **_: {
+            'timed_out': False,
+            'duration_sec': 1,
+            'polls': 1,
+            'last_data': {'checks': checks},
+        },
+    )
+
+    ns = argparse.Namespace(pr_number=42, timeout=30, interval=5)
+    result = github_ops.cmd_ci_wait(ns)
+    assert result['status'] == 'success'
+    assert result['final_status'] == 'success', (
+        f'SKIPPED-only check set must classify as final_status=success; '
+        f'got {result!r}'
+    )
+    assert result.get('failing_checks', []) == [], (
+        f'SKIPPED-only check set must produce zero failing_checks; '
+        f'got {result.get("failing_checks")!r}'
+    )
+
+
+def test_ci_status_and_ci_wait_agree_on_skipped_bearing_set(monkeypatch):
+    """cmd_ci_status() and cmd_ci_wait() MUST agree on a SKIPPED-bearing
+    check set: both resolve to success. A divergence would surface as
+    cmd_ci_status reporting "success" while cmd_ci_wait reports "failure"
+    or "mixed" — the exact failure mode the bucket-based classification
+    bug produced before the SKIPPED-state fix.
+    """
+    import json as _json
+
+    payload = (
+        '['
+        '{"name":"build","state":"SUCCESS","bucket":"pass","startedAt":"","completedAt":"","link":"","workflow":"CI"},'
+        '{"name":"lint","state":"SKIPPED","bucket":"skipping","startedAt":"","completedAt":"","link":"","workflow":"CI"},'
+        '{"name":"deploy","state":"SKIPPED","bucket":"skipping","startedAt":"","completedAt":"","link":"","workflow":"CI"}'
+        ']'
+    )
+    checks = _json.loads(payload)
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        if args[:2] == ['pr', 'checks']:
+            return 0, payload, ''
+        return 0, '', ''
+
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    # cmd_ci_status: synchronous read of the same check set.
+    status_ns = argparse.Namespace(pr_number=42, head=None)
+    status_result = github_ops.cmd_ci_status(status_ns)
+    assert status_result['status'] == 'success'
+    assert status_result['overall_status'] == 'success'
+
+    # cmd_ci_wait: short-circuit the poll loop to the same data.
+    monkeypatch.setattr(
+        github_ops,
+        'poll_until',
+        lambda check_fn, is_complete_fn, **_: {
+            'timed_out': False,
+            'duration_sec': 1,
+            'polls': 1,
+            'last_data': {'checks': checks},
+        },
+    )
+    wait_ns = argparse.Namespace(pr_number=42, timeout=30, interval=5)
+    wait_result = github_ops.cmd_ci_wait(wait_ns)
+    assert wait_result['status'] == 'success'
+    assert wait_result['final_status'] == 'success'
+
+    # Agreement is the load-bearing assertion: both verdicts MUST match.
+    assert status_result['overall_status'] == wait_result['final_status'], (
+        f'cmd_ci_status (overall_status={status_result["overall_status"]!r}) '
+        f'and cmd_ci_wait (final_status={wait_result["final_status"]!r}) '
+        'disagree on a SKIPPED-bearing check set — the bucket-vs-state '
+        'classification bug is back'
+    )

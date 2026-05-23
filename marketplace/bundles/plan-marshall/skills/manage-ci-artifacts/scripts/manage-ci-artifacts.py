@@ -158,6 +158,14 @@ def _build_manifest(
         'plan_id': plan_id,
         'wait_outcome': wait_outcome,
         'final_status': final_status,
+        # ``jobs_source`` labels how the jobs[] array was populated so a
+        # retrospective can tell a genuine zero-job run apart from a
+        # persist call that simply was not handed the jobs array.
+        # ``enumerated`` — the caller supplied a non-empty jobs list.
+        # ``empty`` — the caller supplied no jobs (empty/missing
+        # --jobs-file); the manifest records zero jobs deliberately, NOT
+        # because no CI ran.
+        'jobs_source': 'enumerated' if job_rows else 'empty',
         'jobs': job_rows,
     }
 
@@ -241,6 +249,8 @@ def persist(
             else str(run_dir),
             'already_persisted': True,
             'job_count': len(existing_jobs),
+            'jobs_source': existing.get('jobs_source')
+            or ('enumerated' if existing_jobs else 'empty'),
             'manifest_path': str(manifest_path.relative_to(_relative_anchor()))
             if manifest_path.is_absolute()
             else str(manifest_path),
@@ -292,6 +302,7 @@ def persist(
         else str(run_dir),
         'already_persisted': False,
         'job_count': len(jobs),
+        'jobs_source': manifest['jobs_source'],
         'manifest_path': str(manifest_path.relative_to(_relative_anchor()))
         if manifest_path.is_absolute()
         else str(manifest_path),
@@ -344,7 +355,52 @@ def read_manifest(*, plan_id: str, run_id: str) -> dict:
         'plan_id': plan_id,
         'run_id': run_id,
         'manifest': manifest,
+        'log_paths': sorted(
+            j.get('log_path', '')
+            for j in (manifest.get('jobs') or [])
+            if j.get('log_path')
+        ),
     }
+
+
+def read_latest_manifest(*, plan_id: str) -> dict:
+    """Read the most-recently-persisted manifest for ``plan_id``.
+
+    Recency is determined by the ``fetched_at`` timestamp recorded
+    inside each manifest — NEVER by lexicographic ``run_id`` sorting.
+    Run-id monotonicity is a GitHub-specific assumption (and not even
+    reliably monotonic across forks/reruns) that no caller should bake
+    in; sourcing recency from the timestamp inside the manifest keeps
+    the accessor provider-neutral.
+
+    Returns:
+        Dict matching the ``read`` subcommand's return shape (status,
+        plan_id, run_id, manifest, log_paths) when at least one
+        persisted manifest exists; otherwise a ``status: error``
+        envelope with ``error: no_persisted_runs``.
+
+    The implementation reuses :func:`list_runs`'s enumeration so the
+    "which manifests are eligible?" predicate stays in one place — the
+    only difference from ``list`` is that this verb picks the newest
+    instead of returning all rows.
+    """
+    listing = list_runs(plan_id=plan_id)
+    if listing.get('status') != 'success':
+        return listing
+    rows = listing.get('runs') or []
+    if not rows:
+        return {
+            'status': 'error',
+            'error': 'no_persisted_runs',
+            'plan_id': plan_id,
+        }
+    # list_runs sorts ascending by fetched_at; the last row is the
+    # newest. Manifests with an empty/missing fetched_at sort first and
+    # would only be selected if every manifest carries an empty value
+    # — in that degenerate case the newest is simply the last entry
+    # produced by directory iteration order.
+    latest = rows[-1]
+    return read_manifest(plan_id=plan_id, run_id=str(latest.get('run_id', '')))
 
 
 def list_runs(*, plan_id: str) -> dict:
@@ -433,7 +489,10 @@ def cmd_persist(args: argparse.Namespace) -> int:
 
 
 def cmd_read(args: argparse.Namespace) -> int:
-    result = read_manifest(plan_id=args.plan_id, run_id=args.run_id)
+    if getattr(args, 'latest', False):
+        result = read_latest_manifest(plan_id=args.plan_id)
+    else:
+        result = read_manifest(plan_id=args.plan_id, run_id=args.run_id)
     print(serialize_toon(result))
     return 0 if result.get('status') == 'success' else 1
 
@@ -483,7 +542,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     read_p = sub.add_parser('read', help='Read a persisted manifest', allow_abbrev=False)
     read_p.add_argument('--plan-id', required=True, dest='plan_id')
-    read_p.add_argument('--run-id', required=True, dest='run_id')
+    # --run-id and --latest are mutually exclusive: a caller specifies
+    # either the exact run identifier OR asks for the most-recent run
+    # selected by manifest fetched_at timestamp. Exactly one of the two
+    # must be supplied.
+    read_group = read_p.add_mutually_exclusive_group(required=True)
+    read_group.add_argument('--run-id', dest='run_id')
+    read_group.add_argument(
+        '--latest',
+        action='store_true',
+        dest='latest',
+        help='Read the most-recently-persisted manifest, selected by the '
+        'fetched_at timestamp inside each manifest (never by '
+        'caller-side run_id sorting — run_id monotonicity is a '
+        'GitHub-specific assumption).',
+    )
     read_p.set_defaults(func=cmd_read)
 
     list_p = sub.add_parser('list', help='List all persisted runs', allow_abbrev=False)
@@ -506,5 +579,6 @@ if __name__ == '__main__':
 __all__ = [
     'persist',
     'read_manifest',
+    'read_latest_manifest',
     'list_runs',
 ]

@@ -16,6 +16,7 @@ directly)::
     ci_final_status: success | failure | timeout | no_checks | null
     failing_checks: [str, ...]      # present on wait_failed (may be empty)
     wait_outcome: completed | deadline_exceeded   # present on wait_failed
+    mode: strict | consume-failures               # present on wait_failed
 
 Outcome semantics:
 
@@ -102,6 +103,17 @@ _CACHE_RELATIVE_PATH: str = 'work/ci-precondition-cache.toon'
 #: The CI-wait notation routed through the executor proxy.
 _CI_WAIT_NOTATION: str = 'plan-marshall:tools-integration-ci:ci'
 
+#: The run-configuration notation routed through the executor proxy. Used to
+#: source — and adaptively update — the ``ci wait --timeout`` ceiling so the
+#: precondition's tolerance tracks observed CI durations like build-command
+#: timeouts do.
+_RUN_CONFIG_NOTATION: str = 'plan-marshall:manage-run-config:run_config'
+
+#: The run-configuration command key under which the CI-wait timeout is
+#: persisted. ``manage-run-config`` namespaces command timeouts by an
+#: arbitrary string key; ``ci:wait`` mirrors the ``checks wait`` primitive.
+_CI_WAIT_TIMEOUT_KEY: str = 'ci:wait'
+
 
 # ---------------------------------------------------------------------------
 # Subprocess seams (overridable in tests)
@@ -167,7 +179,7 @@ def _run_ci_wait(
         _CI_WAIT_NOTATION,
         '--plan-id',
         plan_id,
-        'ci',
+        'checks',
         'wait',
         '--pr-number',
         str(pr_number),
@@ -206,6 +218,90 @@ def _run_ci_wait(
             'error': f"ci wait output not parseable as TOON: {exc}",
             'raw_stdout': stdout,
         }
+
+
+def _run_run_config_timeout_get(default_seconds: int) -> int:
+    """Read the persisted ``ci:wait`` timeout via the run-config helper.
+
+    Invokes ``run_config timeout get --command ci:wait --default {n}`` through
+    the executor proxy and returns the parsed ``timeout_seconds`` integer. Any
+    failure (executor crash, unparseable output, missing field) degrades
+    gracefully to ``default_seconds`` — sourcing the timeout from
+    run-configuration.json is an optimisation, never a hard dependency.
+    """
+    repo_root = git_main_checkout_root()
+    if repo_root is None:
+        return default_seconds
+    executor = repo_root / '.plan' / 'execute-script.py'
+    cmd = [
+        sys.executable,
+        str(executor),
+        _RUN_CONFIG_NOTATION,
+        'timeout',
+        'get',
+        '--command',
+        _CI_WAIT_TIMEOUT_KEY,
+        '--default',
+        str(default_seconds),
+    ]
+    try:
+        completed = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return default_seconds
+    stdout = completed.stdout or ''
+    if not stdout.strip():
+        return default_seconds
+    try:
+        parsed = parse_toon(stdout)
+    except Exception:  # pragma: no cover — defensive only
+        return default_seconds
+    value = parsed.get('timeout_seconds')
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default_seconds
+
+
+def _run_run_config_timeout_set(duration_seconds: int) -> None:
+    """Persist an observed CI-wait duration via the run-config helper.
+
+    Invokes ``run_config timeout set --command ci:wait --duration {n}`` through
+    the executor proxy so the timeout adapts to observed CI durations the same
+    way build-command timeouts do. Failures are swallowed — recording the
+    observed duration is best-effort telemetry, not a hard dependency of the
+    precondition resolution.
+    """
+    repo_root = git_main_checkout_root()
+    if repo_root is None:
+        return
+    executor = repo_root / '.plan' / 'execute-script.py'
+    cmd = [
+        sys.executable,
+        str(executor),
+        _RUN_CONFIG_NOTATION,
+        'timeout',
+        'set',
+        '--command',
+        _CI_WAIT_TIMEOUT_KEY,
+        '--duration',
+        str(duration_seconds),
+    ]
+    try:
+        subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
 
 
 # ---------------------------------------------------------------------------
@@ -267,9 +363,11 @@ def resolve(
     worktree_path: str,
     pr_number: int,
     *,
-    timeout_seconds: int = DEFAULT_CI_WAIT_TIMEOUT_SECONDS,
+    timeout_seconds: int | None = None,
     ci_wait_runner=None,
     git_head_resolver=None,
+    timeout_get_runner=None,
+    timeout_set_runner=None,
     mode: str = 'strict',
 ) -> dict:
     """Resolve the ``ci-complete`` precondition for the current HEAD.
@@ -283,14 +381,25 @@ def resolve(
             the ``create-pr`` step's outcome record. The dispatcher MUST
             pass a real PR number — there is no "no PR" branch here
             (the dispatcher handles that condition before calling).
-        timeout_seconds: ``ci wait --timeout`` ceiling. Defaults to
-            :data:`DEFAULT_CI_WAIT_TIMEOUT_SECONDS` (600s = 10 min).
+        timeout_seconds: ``ci wait --timeout`` ceiling. When ``None``
+            (the default), the ceiling is sourced from
+            run-configuration.json under the command key ``ci:wait`` via
+            the run-config ``timeout get`` helper, falling back to
+            :data:`DEFAULT_CI_WAIT_TIMEOUT_SECONDS` (600s = 10 min) when
+            no persisted value exists. An explicit integer overrides the
+            run-config lookup entirely.
         ci_wait_runner: Optional callable used as a test seam in place of
             :func:`_run_ci_wait`. Signature:
             ``(plan_id, pr_number, timeout_seconds, worktree_path) -> dict``.
         git_head_resolver: Optional callable used as a test seam in place
             of :func:`_run_git_rev_parse_head`. Signature:
             ``(worktree_path) -> str``.
+        timeout_get_runner: Optional callable used as a test seam in place
+            of :func:`_run_run_config_timeout_get`. Signature:
+            ``(default_seconds) -> int``.
+        timeout_set_runner: Optional callable used as a test seam in place
+            of :func:`_run_run_config_timeout_set`. Signature:
+            ``(duration_seconds) -> None``.
 
     Returns:
         Dict matching the return contract documented in the module
@@ -298,12 +407,21 @@ def resolve(
     """
     head_fn = git_head_resolver or _run_git_rev_parse_head
     wait_fn = ci_wait_runner or _run_ci_wait
+    timeout_get_fn = timeout_get_runner or _run_run_config_timeout_get
+    timeout_set_fn = timeout_set_runner or _run_run_config_timeout_set
 
     if mode not in ('strict', 'consume-failures'):
         raise RuntimeError(
             f"ci_complete_precondition.resolve: invalid mode {mode!r} — "
             "must be 'strict' or 'consume-failures'"
         )
+
+    # Source the wait ceiling from run-configuration.json when the caller
+    # did not pass an explicit value. The run-config lookup degrades to
+    # DEFAULT_CI_WAIT_TIMEOUT_SECONDS so the precondition never hard-fails
+    # on a missing/corrupt run-configuration.json.
+    if timeout_seconds is None:
+        timeout_seconds = timeout_get_fn(DEFAULT_CI_WAIT_TIMEOUT_SECONDS)
 
     head_sha = head_fn(worktree_path)
 
@@ -333,6 +451,17 @@ def resolve(
 
     if envelope_status == 'success' and final_status == 'success':
         _write_cache(plan_id, head_sha, 'success')
+        # Record the observed CI duration so the ci:wait timeout adapts to
+        # real run lengths the way build-command timeouts do. The wait
+        # envelope carries ``duration_sec`` (see ci checks wait contract);
+        # a missing/non-int value simply skips the adaptive update.
+        observed = wait_result.get('duration_sec')
+        try:
+            observed_int = int(observed)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            observed_int = None
+        if observed_int is not None and observed_int > 0:
+            timeout_set_fn(observed_int)
         return {
             'status': 'wait_succeeded',
             'head_sha': head_sha,
@@ -441,10 +570,13 @@ def build_parser() -> argparse.ArgumentParser:
     resolve_parser.add_argument(
         '--timeout',
         type=int,
-        default=DEFAULT_CI_WAIT_TIMEOUT_SECONDS,
+        default=None,
         help=(
-            f'ci wait --timeout ceiling in seconds '
-            f'(default: {DEFAULT_CI_WAIT_TIMEOUT_SECONDS})'
+            'ci wait --timeout ceiling in seconds. When omitted, the '
+            'ceiling is sourced from run-configuration.json under the '
+            f'command key {_CI_WAIT_TIMEOUT_KEY!r}, falling back to '
+            f'{DEFAULT_CI_WAIT_TIMEOUT_SECONDS}s when no value is '
+            'persisted.'
         ),
     )
     resolve_parser.add_argument(

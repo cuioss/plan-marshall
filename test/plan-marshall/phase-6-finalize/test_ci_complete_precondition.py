@@ -625,3 +625,439 @@ def test_wait_succeeded_does_not_carry_failing_checks_field():
         assert result['status'] == 'wait_succeeded'
         assert 'failing_checks' not in result
         assert 'wait_outcome' not in result
+
+
+# ---------------------------------------------------------------------------
+# Subcommand-vector regression — the resolver MUST invoke the executor with
+# the ``checks wait`` primitive, NOT the non-existent ``ci wait`` subcommand.
+# The ci.py executor's top-level choices are {pr, checks, issue, branch};
+# the CI-wait primitive lives at ``checks wait``. A call carrying ``ci wait``
+# is rejected by argparse with exit 2 and empty stdout, which made
+# ``_run_ci_wait`` return ``{status: error}`` and ``resolve`` fall through
+# to wait_failed / timeout for every plan. These tests pin the corrected
+# vector at the command-construction level — the seam-injected tests above
+# never observe the constructed cmd list.
+# ---------------------------------------------------------------------------
+
+
+class _CapturingSubprocessRun:
+    """Records the ``cmd`` list passed to ``subprocess.run`` and returns a
+    canned ``CompletedProcess`` carrying a parseable TOON envelope.
+    """
+
+    def __init__(self, stdout: str) -> None:
+        self.stdout = stdout
+        self.captured_cmd: list[str] | None = None
+
+    def __call__(self, cmd, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        self.captured_cmd = list(cmd)
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=0, stdout=self.stdout, stderr=''
+        )
+
+
+def test_run_ci_wait_uses_checks_wait_subcommand_vector(monkeypatch):
+    """``_run_ci_wait`` MUST construct the executor command with the
+    ``checks wait`` subcommand vector — never the non-existent ``ci wait``.
+    """
+    capturing = _CapturingSubprocessRun(
+        stdout='status: success\nfinal_status: success\n'
+    )
+    monkeypatch.setattr(_resolver_mod.subprocess, 'run', capturing)
+
+    result = _resolver_mod._run_ci_wait(
+        plan_id='ci-precond-vector-check',
+        pr_number=_PR,
+        timeout_seconds=DEFAULT_CI_WAIT_TIMEOUT_SECONDS,
+        worktree_path=str(_REPO_ROOT),
+    )
+
+    assert capturing.captured_cmd is not None
+    cmd = capturing.captured_cmd
+    # The corrected vector: 'checks' immediately followed by 'wait'.
+    assert 'checks' in cmd, f'cmd missing "checks" segment: {cmd!r}'
+    checks_idx = cmd.index('checks')
+    assert cmd[checks_idx + 1] == 'wait', (
+        f'"checks" must be immediately followed by "wait": {cmd!r}'
+    )
+    # The legacy non-existent vector MUST NOT be present: there must be no
+    # 'ci' element immediately followed by 'wait'.
+    for i, token in enumerate(cmd[:-1]):
+        assert not (token == 'ci' and cmd[i + 1] == 'wait'), (
+            f'legacy "ci wait" subcommand vector reappeared in {cmd!r} — '
+            'the ci.py executor has no "ci" subcommand'
+        )
+    # The wait primitive's --pr-number / --timeout flags are unchanged.
+    assert '--pr-number' in cmd
+    assert '--timeout' in cmd
+    # The envelope parsed cleanly into the success outcome.
+    assert result.get('final_status') == 'success'
+
+
+def test_run_ci_wait_success_envelope_yields_wait_succeeded(monkeypatch):
+    """End-to-end through ``resolve``: when the executor (subprocess.run)
+    returns a success envelope, ``resolve`` MUST report ``wait_succeeded``.
+    This pins the corrected vector all the way to the public return value
+    without injecting the ``ci_wait_runner`` seam.
+    """
+    capturing = _CapturingSubprocessRun(
+        stdout='status: success\nfinal_status: success\n'
+    )
+    monkeypatch.setattr(_resolver_mod.subprocess, 'run', capturing)
+
+    plan_id = 'ci-precond-vector-end-to-end'
+    with PlanContext(plan_id=plan_id):
+        result = resolve(
+            plan_id=plan_id,
+            worktree_path=str(_REPO_ROOT),
+            pr_number=_PR,
+            git_head_resolver=_StubGitHead(_SHA_A),
+        )
+
+    assert result['status'] == 'wait_succeeded'
+    assert result['ci_final_status'] == 'success'
+    # The real _run_ci_wait ran and constructed the corrected vector.
+    assert capturing.captured_cmd is not None
+    checks_idx = capturing.captured_cmd.index('checks')
+    assert capturing.captured_cmd[checks_idx + 1] == 'wait'
+
+
+# ---------------------------------------------------------------------------
+# Run-config-backed CI-wait timeout — deliverable 2. The resolver sources the
+# ``ci wait --timeout`` ceiling from run-configuration.json (command key
+# ``ci:wait``) instead of the hard-coded constant, and records the observed
+# CI duration back after a successful wait so the ceiling adapts like
+# build-command timeouts. These tests inject the timeout_get_runner /
+# timeout_set_runner seams so no real run-configuration.json I/O occurs.
+# ---------------------------------------------------------------------------
+
+
+class _StubTimeoutGet:
+    """Deterministic ``run_config timeout get`` substitute.
+
+    Returns a fixed seeded value, ignoring the requested default — this
+    models a run-configuration.json that already carries a ci:wait entry.
+    """
+
+    def __init__(self, seeded_value: int) -> None:
+        self.seeded_value = seeded_value
+        self.calls: list[int] = []
+
+    def __call__(self, default_seconds: int) -> int:
+        self.calls.append(default_seconds)
+        return self.seeded_value
+
+
+class _StubTimeoutGetMissing:
+    """Models a run-configuration.json with no ci:wait entry — the helper
+    echoes the supplied default straight back.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[int] = []
+
+    def __call__(self, default_seconds: int) -> int:
+        self.calls.append(default_seconds)
+        return default_seconds
+
+
+class _StubTimeoutSet:
+    """Records the durations written back via ``run_config timeout set``."""
+
+    def __init__(self) -> None:
+        self.durations: list[int] = []
+
+    def __call__(self, duration_seconds: int) -> None:
+        self.durations.append(duration_seconds)
+
+
+def test_resolve_reads_timeout_from_run_config_entry():
+    """(a) When run-configuration.json carries a ci:wait entry, resolve()
+    MUST forward that persisted value as the ci wait --timeout ceiling
+    rather than the hard-coded DEFAULT_CI_WAIT_TIMEOUT_SECONDS.
+    """
+    plan_id = 'ci-precond-runconfig-seeded'
+    with PlanContext(plan_id=plan_id):
+        get_stub = _StubTimeoutGet(seeded_value=420)
+        set_stub = _StubTimeoutSet()
+        wait_stub = _StubCiWait(
+            [{'status': 'success', 'final_status': 'success'}]
+        )
+
+        result = resolve(
+            plan_id=plan_id,
+            worktree_path=_WORKTREE,
+            pr_number=_PR,
+            ci_wait_runner=wait_stub,
+            git_head_resolver=_StubGitHead(_SHA_A),
+            timeout_get_runner=get_stub,
+            timeout_set_runner=set_stub,
+        )
+
+        assert result['status'] == 'wait_succeeded'
+        # The run-config lookup fired with the documented fallback default.
+        assert get_stub.calls == [DEFAULT_CI_WAIT_TIMEOUT_SECONDS]
+        # The seeded value (not the default) reached the ci wait runner.
+        assert len(wait_stub.calls) == 1
+        # _StubCiWait records (plan_id, pr_number, timeout_seconds, worktree).
+        assert wait_stub.calls[0][2] == 420
+
+
+def test_resolve_uses_default_timeout_when_no_run_config_entry():
+    """(b) With no ci:wait entry, the run-config helper echoes the supplied
+    default, so resolve() falls back to DEFAULT_CI_WAIT_TIMEOUT_SECONDS.
+    """
+    plan_id = 'ci-precond-runconfig-missing'
+    with PlanContext(plan_id=plan_id):
+        get_stub = _StubTimeoutGetMissing()
+        set_stub = _StubTimeoutSet()
+        wait_stub = _StubCiWait(
+            [{'status': 'success', 'final_status': 'success'}]
+        )
+
+        result = resolve(
+            plan_id=plan_id,
+            worktree_path=_WORKTREE,
+            pr_number=_PR,
+            ci_wait_runner=wait_stub,
+            git_head_resolver=_StubGitHead(_SHA_A),
+            timeout_get_runner=get_stub,
+            timeout_set_runner=set_stub,
+        )
+
+        assert result['status'] == 'wait_succeeded'
+        assert get_stub.calls == [DEFAULT_CI_WAIT_TIMEOUT_SECONDS]
+        # The default propagated through to the ci wait runner unchanged.
+        assert wait_stub.calls[0][2] == DEFAULT_CI_WAIT_TIMEOUT_SECONDS
+
+
+def test_resolve_records_observed_duration_after_successful_wait():
+    """(c) After a successful ci wait, resolve() MUST write the observed
+    ``duration_sec`` back via the run-config timeout-set helper so the
+    ci:wait ceiling adapts to real run lengths.
+    """
+    plan_id = 'ci-precond-runconfig-writeback'
+    with PlanContext(plan_id=plan_id):
+        get_stub = _StubTimeoutGetMissing()
+        set_stub = _StubTimeoutSet()
+        wait_stub = _StubCiWait(
+            [
+                {
+                    'status': 'success',
+                    'final_status': 'success',
+                    'duration_sec': 137,
+                }
+            ]
+        )
+
+        result = resolve(
+            plan_id=plan_id,
+            worktree_path=_WORKTREE,
+            pr_number=_PR,
+            ci_wait_runner=wait_stub,
+            git_head_resolver=_StubGitHead(_SHA_A),
+            timeout_get_runner=get_stub,
+            timeout_set_runner=set_stub,
+        )
+
+        assert result['status'] == 'wait_succeeded'
+        # The observed duration was written back exactly once.
+        assert set_stub.durations == [137]
+
+
+def test_resolve_explicit_timeout_overrides_run_config_lookup():
+    """An explicit ``timeout_seconds`` argument bypasses the run-config
+    lookup entirely — the get helper MUST NOT be consulted.
+    """
+    plan_id = 'ci-precond-runconfig-explicit'
+    with PlanContext(plan_id=plan_id):
+        get_stub = _StubTimeoutGet(seeded_value=420)
+        set_stub = _StubTimeoutSet()
+        wait_stub = _StubCiWait(
+            [{'status': 'success', 'final_status': 'success'}]
+        )
+
+        result = resolve(
+            plan_id=plan_id,
+            worktree_path=_WORKTREE,
+            pr_number=_PR,
+            timeout_seconds=55,
+            ci_wait_runner=wait_stub,
+            git_head_resolver=_StubGitHead(_SHA_A),
+            timeout_get_runner=get_stub,
+            timeout_set_runner=set_stub,
+        )
+
+        assert result['status'] == 'wait_succeeded'
+        # The run-config get helper was never consulted.
+        assert get_stub.calls == []
+        # The explicit value reached the ci wait runner.
+        assert wait_stub.calls[0][2] == 55
+
+
+def test_consume_failures_mode_threads_wait_failed_envelope():
+    """Regression guard for deliverable 6.
+
+    A failing CI run resolved with ``mode='consume-failures'`` MUST surface
+    the full ``wait_failed`` envelope — ``failing_checks``, ``wait_outcome``,
+    AND a ``mode: consume-failures`` echo — so the ``default:ci-verify``
+    consumer body can classify the failures into the multi-failure-mode
+    taxonomy. The previous strict-only resolver short-circuited the body
+    on ``wait_failed``, making the classify → file-findings →
+    verification-feedback → loop_back machinery unreachable on red CI.
+
+    This test feeds a ``ci_wait_runner`` seam reporting a failure envelope
+    with two failing checks and asserts the resolver output preserves the
+    mode, the failing-check enumeration, and the wait outcome.
+    """
+    plan_id = 'ci-precond-consume-failures-mode'
+    with PlanContext(plan_id=plan_id):
+        git_stub = _StubGitHead(_SHA_A)
+        wait_stub = _StubCiWait(
+            [
+                {
+                    'status': 'success',
+                    'final_status': 'failure',
+                    'failing_checks': [
+                        {'name': 'lint', 'conclusion': 'FAILURE'},
+                        {'name': 'unit-tests', 'conclusion': 'FAILURE'},
+                    ],
+                    'wait_outcome': 'completed',
+                }
+            ]
+        )
+
+        result = resolve(
+            plan_id=plan_id,
+            worktree_path=_WORKTREE,
+            pr_number=_PR,
+            ci_wait_runner=wait_stub,
+            git_head_resolver=git_stub,
+            mode='consume-failures',
+        )
+
+        # The wait_failed envelope was NOT short-circuited — the resolver
+        # returned the failure envelope verbatim so the ci-verify body
+        # can classify the failing checks.
+        assert result['status'] == 'wait_failed', (
+            f'consume-failures resolution must surface wait_failed, not '
+            f'{result["status"]!r} — short-circuiting on wait_failed is '
+            'the precise defect lesson 2026-05-22-16-001 deliverable 6 '
+            'guards against'
+        )
+        assert result['ci_final_status'] == 'failure'
+        # The mode echo is the load-bearing signal: consumers branch on
+        # this field to decide whether to short-circuit or thread the
+        # envelope through to their body.
+        assert result['mode'] == 'consume-failures', (
+            'resolver output must echo the mode value so consumers can '
+            'tell strict-mode wait_failed (short-circuit) from '
+            'consume-failures wait_failed (run body with envelope)'
+        )
+        # The full failing-check enumeration is preserved verbatim.
+        assert result['failing_checks'] == [
+            {'name': 'lint', 'conclusion': 'FAILURE'},
+            {'name': 'unit-tests', 'conclusion': 'FAILURE'},
+        ]
+        assert result['wait_outcome'] == 'completed'
+
+
+def test_consume_failures_mode_preserves_timeout_envelope():
+    """A timeout under consume-failures MUST still surface as wait_failed
+    with ci_final_status=timeout — the consume-failures path is for
+    *all* wait_failed shapes (failure, timeout, no_checks), not just
+    final_status=failure.
+    """
+    plan_id = 'ci-precond-consume-failures-timeout'
+    with PlanContext(plan_id=plan_id):
+        git_stub = _StubGitHead(_SHA_A)
+        wait_stub = _StubCiWait(
+            [
+                {
+                    'status': 'error',
+                    'operation': 'ci_wait',
+                    'error': 'Timeout waiting for CI',
+                    'wait_outcome': 'deadline_exceeded',
+                    'failing_checks': [
+                        {'name': 'slow-deploy', 'conclusion': 'PENDING'},
+                    ],
+                }
+            ]
+        )
+
+        result = resolve(
+            plan_id=plan_id,
+            worktree_path=_WORKTREE,
+            pr_number=_PR,
+            ci_wait_runner=wait_stub,
+            git_head_resolver=git_stub,
+            mode='consume-failures',
+        )
+
+        assert result['status'] == 'wait_failed'
+        assert result['ci_final_status'] == 'timeout'
+        assert result['mode'] == 'consume-failures'
+        assert result['wait_outcome'] == 'deadline_exceeded'
+        assert [c['name'] for c in result['failing_checks']] == ['slow-deploy']
+
+
+def test_strict_mode_default_does_not_echo_consume_failures():
+    """Sanity guard: a default (strict) resolution MUST NOT echo
+    ``mode: consume-failures`` — the mode echo is a load-bearing signal
+    and accidentally setting it under strict would mis-route consumers
+    into the consume-failures branch.
+    """
+    plan_id = 'ci-precond-strict-mode-default'
+    with PlanContext(plan_id=plan_id):
+        git_stub = _StubGitHead(_SHA_A)
+        wait_stub = _StubCiWait(
+            [
+                {
+                    'status': 'success',
+                    'final_status': 'failure',
+                    'failing_checks': [{'name': 'lint'}],
+                    'wait_outcome': 'completed',
+                }
+            ]
+        )
+
+        result = resolve(
+            plan_id=plan_id,
+            worktree_path=_WORKTREE,
+            pr_number=_PR,
+            ci_wait_runner=wait_stub,
+            git_head_resolver=git_stub,
+            # No mode argument — defaults to strict.
+        )
+
+        assert result['status'] == 'wait_failed'
+        # The mode echo is present on wait_failed but carries strict.
+        assert result.get('mode') == 'strict'
+
+
+def test_resolve_skips_writeback_when_duration_absent():
+    """When the ci wait envelope omits ``duration_sec``, resolve() MUST NOT
+    write a bogus value back — the adaptive update is skipped.
+    """
+    plan_id = 'ci-precond-runconfig-no-duration'
+    with PlanContext(plan_id=plan_id):
+        get_stub = _StubTimeoutGetMissing()
+        set_stub = _StubTimeoutSet()
+        # Envelope carries no duration_sec field.
+        wait_stub = _StubCiWait(
+            [{'status': 'success', 'final_status': 'success'}]
+        )
+
+        result = resolve(
+            plan_id=plan_id,
+            worktree_path=_WORKTREE,
+            pr_number=_PR,
+            ci_wait_runner=wait_stub,
+            git_head_resolver=_StubGitHead(_SHA_A),
+            timeout_get_runner=get_stub,
+            timeout_set_runner=set_stub,
+        )
+
+        assert result['status'] == 'wait_succeeded'
+        # No duration → no write-back.
+        assert set_stub.durations == []
