@@ -121,11 +121,46 @@ commit creates a new `{run_id}` directory rather than overwriting the
 previous one. No automatic pruning at finalize completion — retention
 is the plan dir's lifetime.
 
+The persist call MUST be handed the full jobs array via `--jobs-file`
+so `manifest.jobs[]` enumerates every job (one row per check) with a
+non-empty `log_path`. The workflow body captures `checks[]` from the
+step-1 `ci status` envelope into a `.plan/temp/` JSON file and passes
+that path to `manage-ci-artifacts persist --jobs-file …`; the manifest's
+`jobs_source` field labels the outcome (`enumerated` when the array
+was supplied, `empty` otherwise) so a zero-jobs manifest on a green-CI
+run is structurally distinguishable from a genuine no-CI verdict. A
+`jobs_source: empty` value on a green-CI run is a defect signal — not
+the route by which `ci_no_checks` findings get filed (those flow from
+`final_status=none` in step 1's envelope).
+
 The persistence layer is implemented by the `manage-ci-artifacts`
 skill ([`../../manage-ci-artifacts/SKILL.md`](../../manage-ci-artifacts/SKILL.md)).
 Findings reference per-job log paths via `--source-path` so the
 triager has direct evidence; the `ci_no_checks` row uses the manifest
 itself as evidence.
+
+### Read side: `read --run-id` and `read --latest`
+
+The persist/read contract is symmetric: every persisted manifest can
+be retrieved via either of the two read accessors below.
+
+- `manage-ci-artifacts read --plan-id {plan_id} --run-id {run_id}` —
+  read a specific run by identifier. Returns
+  `{manifest, log_paths[]}` on success or `status: error,
+  error: manifest not found for run_id={run_id}` when absent.
+- `manage-ci-artifacts read --plan-id {plan_id} --latest` — read the
+  most-recently-persisted manifest. Recency is determined by the
+  `fetched_at` timestamp inside each manifest (never by lexicographic
+  `run_id` sorting — run-id monotonicity is a GitHub-specific
+  assumption no caller should bake in). Returns the same shape as
+  `--run-id`, or `status: error, error: no_persisted_runs` when no
+  manifests exist yet.
+
+The two flags are mutually exclusive; the read subparser enforces
+exactly one. The `--latest` accessor reuses the `list` enumeration
+internally, so the predicate "which manifests are eligible?" stays in
+one place; the only difference from `list` is that `--latest` picks
+the newest instead of returning all rows.
 
 ## HEAD-dependent re-fire
 

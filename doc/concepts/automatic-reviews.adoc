@@ -125,6 +125,17 @@ Sonar quality-gate failures (row a in the canonical taxonomy) are deliberately e
 
 Each classified check produces ONE finding with `finding-type: triage`, severity `warning`, message tagged with the subtype (`[ci_build_failure]`, `[ci_policy_failure]`, …) for retrospective grep, and a `source-path` pointing at the persisted per-job log. The consumer side then dispatches `verification-feedback` **once per producer string** (not once per finding) so the triage envelope batches findings of the same kind. If any per-producer triage returns `loop_back`, the step marks `loop_back`; otherwise `done`.
 
+==== CI-wait primitive and timeout
+
+The `ci-complete` precondition resolver invokes the bounded `checks wait` subcommand on `tools-integration-ci:ci` to drive the actual CI poll loop. The subcommand is `checks wait` (not the older `ci wait` form) — the executor's top-level surface partitions verbs across `{pr, checks, issue, branch}`, and the CI-wait primitive lives at `checks wait`. The wait ceiling is sourced from `run-configuration.json` under the command key `ci:wait` (default 600 s when no value is persisted), and the observed CI duration is written back via `run_config timeout set --command ci:wait --duration {observed}` after every successful wait so the ceiling adapts the same way build-command timeouts do.
+
+==== Two distinct artifact surfaces
+
+CI-verify writes to two on-disk surfaces that should not be conflated:
+
+* `work/ci-bodies/` — operation-body scratch allocated by `ci_base.prepare_body`. Holds the multi-line bodies (PR comments, issue updates, etc.) that the executor needs to pass to `gh` / `glab` via `--body-file`. Lifetime is a single dispatcher pass; contents are NOT part of the audit trail.
+* `artifacts/ci-runs/{run_id}/` — per-run CI evidence written by `manage-ci-artifacts persist`. One directory per CI run with a `manifest.toon` enumerating every job plus one `.log` slice per job. The manifest is read back via `manage-ci-artifacts read --run-id {run_id}` for a specific run, or `manage-ci-artifacts read --plan-id {plan_id} --latest` for the most-recently-persisted run (recency is decided by the manifest's `fetched_at` timestamp, never by lexicographic `run_id` sorting). The manifest carries a `jobs_source: enumerated | empty` label so a zero-jobs manifest is never silently mistaken for "no CI ran" — `empty` means the `persist` call was not handed a `--jobs-file` (a defect signal on a green-CI path), whereas a genuine no-CI run surfaces as the `ci_no_checks` finding via the `final_status=none` taxonomy row.
+
 === Automated review — PR comments (`producer=pr-comment`)
 
 Workflow: link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/automated-review.md[`phase-6-finalize/workflow/automated-review.md`].
