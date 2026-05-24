@@ -1,0 +1,16 @@
+status: error
+operation: ci_wait
+error: Timeout waiting for CI
+pr_number: 380
+duration_sec: 300
+last_status: pending
+wait_outcome: deadline_exceeded
+failing_checks[2]{name,conclusion,workflow_name,job_name,started_at,completed_at,run_id,run_url}:
+	build	PENDING	Python Verify	build	2026-05-21T10:00:00Z		301	https://github.com/cuioss/plan-marshall/actions/runs/301
+	test	IN_PROGRESS	Python Verify	test	2026-05-21T10:00:00Z		302	https://github.com/cuioss/plan-marshall/actions/runs/302
+run_id: "301"
+head_sha: cccc3333dddd4444eeee5555ffff6666aaaa7777
+elapsed_sec: 300
+checks[2]{name,status,result,url,workflow,elapsed_sec}:
+	build	in_progress	-	https://github.com/cuioss/plan-marshall/actions/runs/301	Python Verify	300
+	test	in_progress	-	https://github.com/cuioss/plan-marshall/actions/runs/302	Python Verify	300

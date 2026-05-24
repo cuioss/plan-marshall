@@ -183,9 +183,23 @@ def _parse_uniform_array(ctx: ParseContext, count: int, fields: list[str], min_i
 
         # Parse the row if it's at the right indentation
         if indent >= min_indent and content and not content.startswith('#'):
-            # Check if this looks like a new key-value pair (word followed by colon at start)
-            # Skip this check if the line looks like CSV data (starts with alphanumeric or quote)
-            if re.match(r'^[a-zA-Z_][\w_]*\s*:', content) and not re.match(r'^[a-zA-Z_][\w_]*,', content):
+            # Check if this looks like a new key-value pair (word followed by colon at start).
+            # Skip this check if the line looks like CSV/TSV row data:
+            #   - starts with `<ident>,` (comma-separated row whose first column is the
+            #     identifier — never a key/value pair)
+            #   - contains a TAB (tab-separated row whose first column may legitimately
+            #     contain a colon, e.g. CI check names like 'lint:strict' or
+            #     'coverage:enforce'; without this exclusion the parser falsely treats
+            #     such rows as a key/value pair and breaks out of the array, silently
+            #     truncating downstream rows — see lesson 2026-05-24-14-001's stress
+            #     fixtures `check-name-special-chars.toon` and
+            #     `failing-checks-with-colon-names.toon`).
+            looks_like_key_value = (
+                re.match(r'^[a-zA-Z_][\w_-]*\s*:', content)
+                and not re.match(r'^[a-zA-Z_][\w_-]*,', content)
+                and '\t' not in content
+            )
+            if looks_like_key_value:
                 # This is a new key-value pair, stop parsing array
                 break
             result.append(_parse_csv_row(content, fields))

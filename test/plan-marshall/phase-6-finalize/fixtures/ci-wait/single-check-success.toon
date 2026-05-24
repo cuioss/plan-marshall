@@ -1,0 +1,13 @@
+status: success
+operation: ci_wait
+pr_number: 450
+final_status: success
+duration_sec: 60
+polls: 2
+elapsed_sec: 60
+checks[1]{name,status,result,url,workflow,elapsed_sec}:
+	verify	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/701	Python Verify	60
+failing_checks[0]:
+wait_outcome: completed
+run_id: "701"
+head_sha: aaaa7777bbbb8888cccc9999dddd0000eeee1111

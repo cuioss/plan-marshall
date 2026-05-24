@@ -1,0 +1,21 @@
+status: success
+operation: ci_wait
+pr_number: 463
+final_status: failure
+duration_sec: 140
+polls: 5
+elapsed_sec: 140
+checks[6]{name,status,result,url,workflow,elapsed_sec}:
+	build	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/920	Python Verify	40
+	test	completed	cancelled	https://github.com/cuioss/plan-marshall/actions/runs/921	Python Verify	30
+	lint	completed	neutral	https://github.com/cuioss/plan-marshall/actions/runs/922	Python Verify	10
+	coverage	completed	skipping	https://github.com/cuioss/plan-marshall/actions/runs/923	Python Verify	5
+	deploy	completed	skipping	https://github.com/cuioss/plan-marshall/actions/runs/924	Deploy	2
+	security-scan	completed	fail	https://github.com/cuioss/plan-marshall/actions/runs/925	Security	30
+failing_checks[3]{name,conclusion,workflow_name,job_name,started_at,completed_at,run_id,run_url}:
+	test	CANCELLED	Python Verify	test	2026-05-23T12:00:00Z	2026-05-23T12:00:30Z	921	https://github.com/cuioss/plan-marshall/actions/runs/921
+	lint	NEUTRAL	Python Verify	lint	2026-05-23T12:00:00Z	2026-05-23T12:00:10Z	922	https://github.com/cuioss/plan-marshall/actions/runs/922
+	security-scan	FAILURE	Security	scan	2026-05-23T12:00:00Z	2026-05-23T12:00:30Z	925	https://github.com/cuioss/plan-marshall/actions/runs/925
+wait_outcome: completed
+run_id: "920"
+head_sha: dddd3333eeee4444ffff5555aaaa6666bbbb7777

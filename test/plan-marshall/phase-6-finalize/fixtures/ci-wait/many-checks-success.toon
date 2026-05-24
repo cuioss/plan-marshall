@@ -1,0 +1,20 @@
+status: success
+operation: ci_wait
+pr_number: 453
+final_status: success
+duration_sec: 220
+polls: 8
+elapsed_sec: 220
+checks[8]{name,status,result,url,workflow,elapsed_sec}:
+	build	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/801	Python Verify	60
+	unit-tests	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/802	Python Verify	90
+	integration-tests	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/803	Python Verify	120
+	lint	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/804	Python Verify	20
+	type-check	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/805	Python Verify	30
+	coverage	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/806	Python Verify	45
+	security-scan	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/807	Security	60
+	dependency-review	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/808	Security	15
+failing_checks[0]:
+wait_outcome: completed
+run_id: "801"
+head_sha: bbbb8888cccc9999dddd0000eeee1111ffff2222

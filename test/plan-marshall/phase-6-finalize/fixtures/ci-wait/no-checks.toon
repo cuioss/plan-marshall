@@ -1,0 +1,12 @@
+status: success
+operation: ci_wait
+pr_number: 320
+final_status: none
+duration_sec: 30
+polls: 1
+elapsed_sec: 0
+checks[0]:
+failing_checks[0]:
+wait_outcome: completed
+run_id: ""
+head_sha: bbbb2222cccc3333dddd4444eeee5555ffff6666

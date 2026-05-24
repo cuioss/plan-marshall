@@ -1,0 +1,16 @@
+status: success
+operation: ci_wait
+pr_number: 401
+final_status: failure
+duration_sec: 240
+polls: 9
+elapsed_sec: 240
+checks[3]{name,status,result,url,workflow,elapsed_sec}:
+	build	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/201	Python Verify	60
+	test	completed	fail	https://github.com/cuioss/plan-marshall/actions/runs/202	Python Verify	120
+	lint	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/203	Python Verify	60
+failing_checks[1]{name,conclusion,workflow_name,job_name,started_at,completed_at,run_id,run_url}:
+	test	FAILURE	Python Verify	test	2026-05-20T10:00:00Z	2026-05-20T10:02:00Z	202	https://github.com/cuioss/plan-marshall/actions/runs/202
+wait_outcome: completed
+run_id: "201"
+head_sha: aaaa1111bbbb2222cccc3333dddd4444eeee5555
