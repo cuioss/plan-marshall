@@ -279,7 +279,7 @@ Iterate the manifest `phase_6.steps` list in order. For each step, emit:
 
 Every step row — including `record-metrics` — emits unchanged. The renderer does NOT substitute or skip any row inside the Finalize-steps block.
 
-**Appended `Phase Breakdown` supplement**: after the per-step iteration completes, if the supplement toggle is active (see `## Phase Breakdown Supplement` above for the toggle activation conditions and append-emission semantics — the single source of truth for both), emit the section as documented there. The Repository trailer (step 6 emission) then follows after the appended section, separated by a blank line per the standard block separator (Emission Procedure step 7).
+**Appended `Phase Breakdown` supplement**: after the per-step iteration completes, if the supplement toggle is active (see `## Phase Breakdown Supplement` above for the toggle activation conditions and the verbatim emission shape of `phase_breakdown_override_content` — the single source of truth for both), append the supplement section as documented there. The Repository trailer (step 6 emission) then follows after the appended section, separated by a blank line per the standard block separator (Emission Procedure step 7).
 
 ### 6. Build repository trailer
 
