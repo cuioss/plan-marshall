@@ -256,8 +256,14 @@ class TestPhaseBreakdownRenderingRule:
             assert '12' in total_line  # tool_uses total
             assert '(n=' not in total_line, total_line
 
-    def test_worked_cell_rolls_up_agent_and_subagent_duration(self):
-        """Worked cell = agent_duration_ms + subagent_duration_ms via format_duration."""
+    def test_worked_cell_uses_max_of_agent_and_subagent_duration(self):
+        """Worked cell = max(agent_duration_ms, subagent_duration_ms) via format_duration.
+
+        Non-double-counting attribution: the longer span subsumes the shorter
+        overlap so the Worked <= wall invariant holds. Prior additive formula
+        (120 + 60 = 180s) would have rendered '3m0s'; the corrected max(...)
+        form renders the longer single-source span (120s = '2m0s').
+        """
         with PlanContext(plan_id='render-rule-04'):
             _seed_phases(
                 'render-rule-04',
@@ -267,8 +273,9 @@ class TestPhaseBreakdownRenderingRule:
             )
             lines = _render_breakdown('render-rule-04')
             init_line = next(ln for ln in lines if '1-init' in ln)
-            # worked = 180000 ms = 180 s = '3m0s'; no '(agent)' marker on the cell.
-            assert '3m0s' in init_line, init_line
+            # worked = max(120000, 60000) ms = 120 s = '2m0s'; no '(agent)' marker.
+            assert '2m0s' in init_line, init_line
+            assert '3m0s' not in init_line, init_line  # guard against regression to sum
             assert '(agent)' not in init_line, init_line
 
     def test_reported_wall_column_renders_wall_clock(self):
@@ -362,29 +369,37 @@ class TestEndToEndPhaseBreakdownRendering:
             cols = [c.strip() for c in header.strip('|').split('|')]
             assert cols == ['Phase', 'Worked', 'Reported (wall)', 'Idle', 'Tokens', 'Tool Uses']
 
-            # 5-execute worked time includes subagent_duration_ms:
-            # worked = 200000 + 100000 = 300000 ms = 300 s = '5m0s'.
+            # 5-execute worked = max(agent 200s, subagent 100s) = 200000 ms = '3m20s'.
+            # The longer attribution span (agent_duration_ms) subsumes the shorter
+            # subagent overlap rather than being summed with it.
             exec_line = next(ln for ln in section.splitlines() if ln.startswith('| 5-execute'))
             exec_cells = [c.strip() for c in exec_line.strip('|').split('|')]
-            assert exec_cells[1] == '5m0s'  # Worked
+            assert exec_cells[1] == '3m20s'  # Worked = max(200s, 100s) = 200s
             assert exec_cells[2] == '10m0s'  # Reported (wall) = 600 s
-            # idle = max(0, 600 - 300) = 300 s = '5m0s'.
-            assert exec_cells[3] == '5m0s'  # Idle
+            # idle = max(0, 600 - 200) = 400 s = '6m40s'.
+            assert exec_cells[3] == '6m40s'  # Idle
 
-    def test_captured_section_idle_zero_clamp_when_worked_exceeds_wall(self):
-        """When worked exceeds wall-clock, the captured Idle cell renders the zero clamp."""
+    def test_captured_section_idle_zero_clamp_safety_net(self):
+        """The Idle zero-clamp safety net still fires when a single attribution
+        source exceeds the wall span (e.g., out-of-window subagent attribution
+        artefact). Under the corrected max(...) Worked formula this is a rare
+        path — both attribution spans must individually stay within the phase
+        window — but the clamp remains in place defensively.
+        """
         with PlanContext(plan_id='metrics-e2e-02'):
             write_metrics(
                 'metrics-e2e-02',
                 {
                     'phases': {
-                        # worked (agent 100s + subagent 80s = 180s) > wall (120s).
+                        # subagent attribution (180s) artefactually exceeds the
+                        # recorded wall span (120s). With Worked = max(...) = 180s,
+                        # Idle = max(0, 120 - 180) = 0 → renders '-'.
                         '5-execute': {
                             'start_time': '2026-05-22T10:00:00+00:00',
                             'end_time': '2026-05-22T10:02:00+00:00',
                             'duration_seconds': 120,
                             'agent_duration_ms': 100000,
-                            'subagent_duration_ms': 80000,
+                            'subagent_duration_ms': 180000,
                         },
                     },
                 },
@@ -398,7 +413,7 @@ class TestEndToEndPhaseBreakdownRendering:
 
             exec_line = next(ln for ln in section.splitlines() if ln.startswith('| 5-execute'))
             exec_cells = [c.strip() for c in exec_line.strip('|').split('|')]
-            assert exec_cells[1] == '3m0s'  # Worked = 180 s
+            assert exec_cells[1] == '3m0s'  # Worked = max(100s, 180s) = 180 s
             assert exec_cells[2] == '2m0s'  # Reported (wall) = 120 s
             # idle = max(0, 120 - 180) = 0 → renders the zero-clamped cell '-'.
             assert exec_cells[3] == '-'  # Idle clamped to zero → absent per-cell
@@ -437,9 +452,12 @@ class TestEndToEndPhaseBreakdownRendering:
 
             total_line = next(ln for ln in section.splitlines() if '**Total**' in ln)
             total_cells = [c.strip() for c in total_line.strip('|').split('|')]
-            # worked total = 120 + 360 = 480 s = '8m0s';
+            # Per-phase worked with max(...):
+            #   1-init:    max(120s, 0)    = 120s
+            #   5-execute: max(240s, 120s) = 240s
+            # worked total = 120 + 240 = 360 s = '6m0s';
             # wall total   = 180 + 600 = 780 s = '13m0s';
-            # idle total   = (180-120) + (600-360) = 60 + 240 = 300 s = '5m0s'.
-            assert total_cells[1] == '**8m0s**'   # Worked
+            # idle total   = (180-120) + (600-240) = 60 + 360 = 420 s = '7m0s'.
+            assert total_cells[1] == '**6m0s**'   # Worked
             assert total_cells[2] == '**13m0s**'  # Reported (wall)
-            assert total_cells[3] == '**5m0s**'   # Idle
+            assert total_cells[3] == '**7m0s**'   # Idle

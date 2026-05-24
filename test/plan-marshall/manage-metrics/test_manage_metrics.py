@@ -257,11 +257,21 @@ def test_generate_three_column_header_order():
         assert cols == ['Phase', 'Worked', 'Reported (wall)', 'Idle', 'Tokens', 'Tool Uses']
 
 
-def test_generate_worked_rollup_includes_subagent_duration():
-    """Worked time = agent_duration_ms + subagent_duration_ms (subagent included)."""
+def test_generate_worked_rollup_uses_max_not_sum():
+    """Worked time = max(agent_duration_ms, subagent_duration_ms) — never additive.
+
+    The prior additive formula double-counted the orchestrator/subagent overlap
+    span (the orchestrator is awaiting the subagent return, not doing
+    independent compute) and could produce ``Worked > Reported (wall)``,
+    breaking the per-phase ``Worked <= wall`` invariant and forcing Idle to
+    clamp to zero. The max(...) form lets the longer attribution subsume the
+    shorter overlap.
+    """
     with PlanContext(plan_id='metrics-gen-worked') as ctx:
         # Seed metrics.toon directly so the exact field set is deterministic.
-        # wall = 120s, worked = agent 60s + subagent 90s = 150s (> wall).
+        # wall = 120s; agent = 60s; subagent = 90s. With the additive formula
+        # this would yield worked=150s > wall=120s (invariant violation). With
+        # max(...), worked=90s and the invariant holds.
         manage_metrics.write_metrics(
             'metrics-gen-worked',
             {
@@ -277,11 +287,65 @@ def test_generate_worked_rollup_includes_subagent_duration():
 
         result = cmd_generate(_ns_generate('metrics-gen-worked'))
         assert result['status'] == 'success'
-        # idle = max(0, wall - worked); worked exceeds wall here so idle clamps to 0.
+        # worked = max(60s, 90s) = 90s; wall = 120s; idle = 30s.
+        assert result['total_worked_seconds'] == 90.0
+        assert result['total_wall_seconds'] == 120.0
+        assert result['total_idle_seconds'] == 30.0
         toon = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
-        assert 'idle_duration_ms: 0' in toon
-        # Total worked seconds reflects the rollup including subagent duration.
-        assert result['total_worked_seconds'] == 150.0
+        assert 'idle_duration_ms: 30000' in toon
+
+
+def test_worked_le_wall_invariant_holds_for_subagent_dispatching_phases():
+    """Worked <= Reported (wall) invariant — holds for every phase that
+    dispatches a subagent within the phase window.
+
+    Three subagent-dispatching phases (1-init, 3-outline, 5-execute) are
+    seeded with overlapping agent + subagent attribution spans. After the
+    fix, every per-phase worked value MUST be <= the corresponding wall
+    value and Idle MUST be non-blank (non-zero) for each.
+    """
+    with PlanContext(plan_id='metrics-invariant') as ctx:
+        manage_metrics.write_metrics(
+            'metrics-invariant',
+            {
+                'phases': {
+                    '1-init': {
+                        'duration_seconds': 200,
+                        'agent_duration_ms': 80000,
+                        'subagent_duration_ms': 150000,
+                    },
+                    '3-outline': {
+                        'duration_seconds': 400,
+                        'agent_duration_ms': 120000,
+                        'subagent_duration_ms': 250000,
+                    },
+                    '5-execute': {
+                        'duration_seconds': 900,
+                        'agent_duration_ms': 300000,
+                        'subagent_duration_ms': 600000,
+                    },
+                },
+            },
+        )
+
+        result = cmd_generate(_ns_generate('metrics-invariant'))
+        assert result['status'] == 'success'
+
+        toon = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
+        # Per-phase invariant: worked = max(agent, subagent), idle = wall - worked.
+        # 1-init: worked=150s, wall=200s, idle=50s.
+        # 3-outline: worked=250s, wall=400s, idle=150s.
+        # 5-execute: worked=600s, wall=900s, idle=300s.
+        assert 'idle_duration_ms: 50000' in toon
+        assert 'idle_duration_ms: 150000' in toon
+        assert 'idle_duration_ms: 300000' in toon
+
+        # Total worked never exceeds total wall.
+        assert result['total_worked_seconds'] <= result['total_wall_seconds']
+        # Total idle is the residual.
+        assert result['total_idle_seconds'] == (
+            result['total_wall_seconds'] - result['total_worked_seconds']
+        )
 
 
 def test_generate_idle_residual_and_zero_clamp():
@@ -304,10 +368,10 @@ def test_generate_idle_residual_and_zero_clamp():
         result = cmd_generate(_ns_generate('metrics-gen-idle'))
         assert result['status'] == 'success'
         toon = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
-        # worked = 150000 ms; wall = 300000 ms; idle = 150000 ms.
-        assert 'idle_duration_ms: 150000' in toon
-        assert result['total_idle_seconds'] == 150.0
-        assert result['total_worked_seconds'] == 150.0
+        # worked = max(100000, 50000) = 100000 ms; wall = 300000 ms; idle = 200000 ms.
+        assert 'idle_duration_ms: 200000' in toon
+        assert result['total_idle_seconds'] == 200.0
+        assert result['total_worked_seconds'] == 100.0
         assert result['total_wall_seconds'] == 300.0
 
 

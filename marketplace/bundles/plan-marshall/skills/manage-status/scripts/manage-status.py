@@ -95,16 +95,20 @@ def main() -> int:
         action='store_true',
         help=(
             'Mark the plan as running in an isolated git worktree. When set, '
-            '--worktree-path and --worktree-branch are required and are seeded '
-            'into status.metadata for downstream resolution by --plan-id.'
+            '--worktree-branch is required and seeded into status.metadata; '
+            '--worktree-path is optional and may be filled in later by '
+            'phase-5-execute Step 2.5 (deferred materialization).'
         ),
     )
     create_parser.add_argument(
         '--worktree-path',
         default=None,
         help=(
-            'Absolute path to the worktree root (required with --use-worktree). '
-            'Persisted as status.metadata.worktree_path.'
+            'Absolute path to the worktree root (optional with --use-worktree). '
+            'When omitted, persisted as the empty-string sentinel marking the '
+            'deferred-materialization window between phase-1 and phase-5; '
+            'phase-5-execute Step 2.5 back-fills the resolved path once '
+            '`git worktree add` runs. Persisted as status.metadata.worktree_path.'
         ),
     )
     create_parser.add_argument(

@@ -366,17 +366,28 @@ def _wall_clock_ms(phase: dict) -> int | None:
 
 
 def _worked_ms(phase: dict) -> int:
-    """Return worked time in ms: agent_duration_ms + subagent_duration_ms.
+    """Return worked time in ms: max(agent_duration_ms, subagent_duration_ms).
 
     Missing operands are treated as 0. Worked time is the effort actually spent
-    by the agent and any dispatched subagents, distinct from wall-clock time
-    which also includes idle/user-wait spans.
+    on this phase. When a main-context (orchestrating) turn dispatches a
+    subagent, the subagent's wall span overlaps with the orchestrator's own
+    wall span — the orchestrator is awaiting the subagent return, not doing
+    independent compute. Summing the two values double-counts that overlap and
+    can produce `Worked > Reported (wall)`, which breaks the per-phase
+    Worked <= wall invariant.
+
+    The non-double-counting definition: take the maximum of the two attribution
+    sources. When only one is present, that value wins. When both are present,
+    the longer span subsumes the shorter overlap. The result is bounded above
+    by the per-phase wall clock for any phase whose subagent dispatches stay
+    within the phase window, so the Idle = max(0, wall - worked) residual is
+    non-negative and meaningful.
     """
     agent = phase.get('agent_duration_ms')
     subagent = phase.get('subagent_duration_ms')
     agent_ms = int(agent) if isinstance(agent, (int, float)) else 0
     subagent_ms = int(subagent) if isinstance(subagent, (int, float)) else 0
-    return agent_ms + subagent_ms
+    return max(agent_ms, subagent_ms)
 
 
 def cmd_generate(args: argparse.Namespace) -> dict:

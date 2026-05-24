@@ -2004,3 +2004,198 @@ def test_handshake_fields_includes_references_valid() -> None:
     at persistence time, defeating the drift guard at every phase boundary.
     """
     assert 'references_valid' in store.HANDSHAKE_FIELDS
+
+
+# =============================================================================
+# Blocking-classification axis (INVARIANT_BLOCKING_SCOPE)
+# =============================================================================
+#
+# main_sha / main_dirty / main_dirty_files are classified as blocking only at
+# the 5-execute boundary (verify --phase 5-execute, i.e. the 5-execute →
+# 6-finalize transition). At planning-phase boundaries (1-init through
+# 4-plan) drift on those three columns is informational only — it is
+# captured in handshakes.toon for retrospective analysis but does NOT raise
+# status: drift and does NOT contribute to drift_count.
+#
+# All other invariants (task_state_hash, qgate_open_count, config_hash,
+# pending_tasks_count, phase_steps_complete, references_valid,
+# pending_findings_by_type, pending_findings_blocking_count, worktree_*)
+# remain blocking at every boundary.
+
+
+def test_classifier_main_sha_blocking_at_5_execute() -> None:
+    """main_sha drift IS blocking at verify --phase 5-execute."""
+    assert inv.is_invariant_blocking_at_phase('main_sha', '5-execute') is True
+
+
+def test_classifier_main_sha_informational_at_planning_phases() -> None:
+    """main_sha drift is informational-only at every planning-phase boundary.
+
+    Verify --phase X for X in {1-init, 2-refine, 3-outline, 4-plan} captures
+    main_sha drift in handshakes.toon for retrospective analysis but does
+    NOT block the transition.
+    """
+    for planning_phase in ('1-init', '2-refine', '3-outline', '4-plan'):
+        assert inv.is_invariant_blocking_at_phase('main_sha', planning_phase) is False, (
+            f'main_sha must be informational at {planning_phase}, got blocking'
+        )
+
+
+def test_classifier_main_dirty_and_files_classified_same_as_main_sha() -> None:
+    """main_dirty and main_dirty_files share the same blocking scope as main_sha."""
+    for invariant in ('main_dirty', 'main_dirty_files'):
+        assert inv.is_invariant_blocking_at_phase(invariant, '5-execute') is True
+        for planning_phase in ('1-init', '2-refine', '3-outline', '4-plan'):
+            assert inv.is_invariant_blocking_at_phase(invariant, planning_phase) is False
+
+
+def test_classifier_task_state_hash_blocking_everywhere() -> None:
+    """task_state_hash drift IS blocking at every boundary (planning + execute)."""
+    for phase in ('1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-finalize'):
+        assert inv.is_invariant_blocking_at_phase('task_state_hash', phase) is True, (
+            f'task_state_hash must remain blocking at {phase}'
+        )
+
+
+def test_classifier_other_invariants_blocking_everywhere() -> None:
+    """All non-main_* invariants remain blocking at every boundary."""
+    always_blocking = (
+        'worktree_sha',
+        'worktree_dirty',
+        'worktree_orphan',
+        'references_valid',
+        'task_state_hash',
+        'qgate_open_count',
+        'config_hash',
+        'pending_tasks_count',
+        'phase_steps_complete',
+        'task_graph_valid',
+        'pending_findings_by_type',
+        'pending_findings_blocking_count',
+    )
+    for invariant in always_blocking:
+        for phase in ('1-init', '3-outline', '4-plan', '5-execute', '6-finalize'):
+            assert inv.is_invariant_blocking_at_phase(invariant, phase) is True, (
+                f'{invariant} must remain blocking at {phase}'
+            )
+
+
+def test_classifier_unmapped_invariant_defaults_to_blocking() -> None:
+    """Unknown invariant names fail safe to blocking_at_every_boundary."""
+    # A newly-added invariant name without an INVARIANT_BLOCKING_SCOPE entry
+    # MUST be treated as blocking to preserve the strict pre-classification
+    # semantics.
+    assert inv.is_invariant_blocking_at_phase('newly_added_unmapped_invariant', '3-outline') is True
+
+
+def test_verify_drift_main_sha_at_planning_phase_returns_ok_with_informational(
+    stubbed_invariants, stub_metadata
+) -> None:
+    """At a planning-phase boundary, main_sha drift returns status: ok and is
+    surfaced in informational_diffs[], not the blocking diffs[] payload.
+
+    Mirrors test_verify_drift_main_sha but at --phase 3-outline (a
+    planning-phase boundary) — where the classification routes the drift to
+    informational. The strict-exit path and drift-recovery branch read
+    drift_count / diffs[] only, so the transition is NOT blocked.
+    """
+    with PlanContext(plan_id='ver-cls-sha-planning'):
+        cmds.cmd_capture(_ns(plan_id='ver-cls-sha-planning', phase='3-outline'))
+        stubbed_invariants['main_sha'] = 'def456'  # drift the main_sha
+        result = cmds.cmd_verify(_ns(plan_id='ver-cls-sha-planning', phase='3-outline'))
+
+        # Classification routes main_sha drift to informational at 3-outline,
+        # so status is OK and diffs[] is absent.
+        assert result['status'] == 'ok', (
+            f'main_sha drift at planning-phase 3-outline must NOT block, got {result!r}'
+        )
+        # The informational payload captures the drift for retrospective analysis.
+        assert result.get('informational_count', 0) == 1
+        informational = result.get('informational_diffs') or []
+        info_names = {d['invariant'] for d in informational}
+        assert 'main_sha' in info_names, (
+            f'main_sha drift must appear in informational_diffs, got {informational!r}'
+        )
+
+
+def test_verify_drift_main_sha_at_5_execute_still_blocks(
+    stubbed_invariants, stub_metadata
+) -> None:
+    """At the 5-execute → 6-finalize boundary, main_sha drift IS blocking.
+
+    This is the symmetric guard: planning-phase boundaries downgrade main_*
+    drift to informational, but the integration boundary keeps it blocking
+    because the just-built changes may rest on the captured main_sha as
+    their integration premise.
+    """
+    with PlanContext(plan_id='ver-cls-sha-execute'):
+        cmds.cmd_capture(_ns(plan_id='ver-cls-sha-execute', phase='5-execute'))
+        stubbed_invariants['main_sha'] = 'def456'
+        result = cmds.cmd_verify(_ns(plan_id='ver-cls-sha-execute', phase='5-execute'))
+
+        assert result['status'] == 'drift', (
+            f'main_sha drift at 5-execute boundary MUST still block, got {result!r}'
+        )
+        diff_names = {d['invariant'] for d in result['diffs']}
+        assert 'main_sha' in diff_names
+
+
+def test_verify_drift_main_dirty_at_planning_phase_returns_ok_with_informational(
+    stubbed_invariants, stub_metadata
+) -> None:
+    """main_dirty drift at planning-phase boundary is informational, not blocking."""
+    with PlanContext(plan_id='ver-cls-dirty-planning'):
+        cmds.cmd_capture(_ns(plan_id='ver-cls-dirty-planning', phase='2-refine'))
+        stubbed_invariants['main_dirty'] = 7
+        result = cmds.cmd_verify(_ns(plan_id='ver-cls-dirty-planning', phase='2-refine'))
+
+        assert result['status'] == 'ok'
+        informational = result.get('informational_diffs') or []
+        info_names = {d['invariant'] for d in informational}
+        assert 'main_dirty' in info_names
+
+
+def test_verify_drift_task_state_hash_at_planning_phase_still_blocks(
+    stubbed_invariants, stub_metadata
+) -> None:
+    """task_state_hash drift at planning-phase boundary IS still blocking.
+
+    Counterpart to the main_* informational tests — non-main invariants
+    remain blocking at every boundary. This guards against an over-broad
+    classification rollout that would also relax plan-internal invariants.
+    """
+    with PlanContext(plan_id='ver-cls-task-planning'):
+        cmds.cmd_capture(_ns(plan_id='ver-cls-task-planning', phase='3-outline'))
+        stubbed_invariants['task_state_hash'] = 'different-hash'
+        result = cmds.cmd_verify(_ns(plan_id='ver-cls-task-planning', phase='3-outline'))
+
+        assert result['status'] == 'drift', (
+            f'task_state_hash drift at planning-phase 3-outline must still block, '
+            f'got {result!r}'
+        )
+        diff_names = {d['invariant'] for d in result['diffs']}
+        assert 'task_state_hash' in diff_names
+
+
+def test_verify_main_columns_persist_regardless_of_classification(
+    stubbed_invariants, stub_metadata
+) -> None:
+    """main_sha / main_dirty captured rows are persisted in handshakes.toon
+    even at planning-phase boundaries — classification affects drift-counting,
+    not persistence.
+
+    The `list` output (and the underlying handshakes.toon row) MUST continue
+    to surface every captured invariant value regardless of blocking scope so
+    retrospective analysis sees the full state at each boundary.
+    """
+    with PlanContext(plan_id='ver-cls-persistence'):
+        cmds.cmd_capture(_ns(plan_id='ver-cls-persistence', phase='3-outline'))
+        rows = store.load_rows('ver-cls-persistence')
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.get('main_sha'), (
+            f'main_sha must be persisted in the captured row, got {row!r}'
+        )
+        # main_dirty defaults to 0 in the stub — TOON empty-string for zero is
+        # acceptable; the column key MUST be present in the row.
+        assert 'main_dirty' in row
