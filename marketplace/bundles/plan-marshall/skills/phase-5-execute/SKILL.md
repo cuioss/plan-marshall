@@ -757,9 +757,11 @@ This step is the single source of "did the phase end clean?" — it appends the 
 
 #### Step 12a: Pending-tasks transition guard
 
-Before invoking `manage-status transition --completed 5-execute` (see **Phase Transition** section below), refuse to transition when any pending tasks remain. `manage-tasks next` only surfaces the head of the queue — a `null` next does NOT prove the queue is empty when downstream tasks are still in `pending`. Fix tasks created by Step 11 triage commonly land here, and a premature transition silently abandons them.
+Before invoking `manage-status transition --completed 5-execute` (see **Phase Transition** section below), refuse to transition when any pending tasks remain AND when the on-disk worktree has not been observed by a fresh `verify` run. Pending-queue emptiness is **necessary but not sufficient**: a task that was marked `done` against a prior code state still leaves the queue empty, yet the codebase the orchestrator is about to ship has never been verified end-to-end. The seed failure (`lesson 2026-05-24-22-001`) is the canonical instance of this gap — `loop-exit-guard` returned `pending_count: 0` while the most recent `verify` predated the last source-file mutation, and CI failed on the pushed commit. Step 12a therefore enforces two co-equal gates: (a) `manage-tasks next` only surfaces the head of the queue, so a `null` next does NOT prove the queue is empty when downstream tasks are still in `pending` — fix tasks created by Step 11 triage commonly land here, and a premature transition silently abandons them; (b) the worktree state itself must be **fresh** with respect to the most recent build-runner log entry.
 
 **Script-level enforcement**: the authoritative pending-count check is `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks loop-exit-guard --plan-id {plan_id}` — see `manage-tasks/SKILL.md` § "Loop-Exit Guard". `status: continue` (with `pending_count > 0` and `pending_ids`) forces the orchestrator to re-dispatch the execution-context; `status: success` (with `pending_count: 0`) is the precondition for `manage-metrics record-dispatch-boundary --termination-cause clean_exit_queue_empty`. The list-based check below remains documented for backwards compatibility with existing callers — both forms read the same on-disk state, but `loop-exit-guard` is the canonical surface and the verb the orchestrator MUST consult.
+
+**Worktree-state freshness enforcement**: the authoritative freshness check is `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks pre-commit-verify-freshness --plan-id {plan_id}` — see `manage-tasks/SKILL.md` § "Pre-Commit Verify Freshness". The script compares the most recent `plan-marshall:build-pyproject:pyproject_build run` line in `logs/script-execution.log` against the most recent file mtime in the worktree (using `references.modified_files` when populated, otherwise a worktree-root walk) and returns one of three statuses. `status: fresh` permits transition; `status: stale` or `status: undecidable` blocks transition with the same `[BLOCKED]` log line shape used for the pending-tasks branch. The gate fails closed by design — there is no LLM judgement and no "probably fine" fallback. Pending-queue emptiness and worktree freshness are **co-equal** gates: both MUST succeed before the phase may transition.
 
 1. Query the pending-task list:
 
@@ -768,9 +770,26 @@ Before invoking `manage-status transition --completed 5-execute` (see **Phase Tr
      --plan-id {plan_id} --status pending
    ```
 
-2. Parse the row count from the returned `tasks_table`. **If the count is zero**, proceed to Phase Transition.
+2. Parse the row count from the returned `tasks_table`. **If the count is zero**, proceed to step 2.5 (freshness check). **If non-zero**, jump to step 3.
 
-3. **If the count is non-zero**, the phase is NOT complete. Log a `[BLOCKED]` line and abort the transition:
+2.5. Run the freshness check:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+     pre-commit-verify-freshness --plan-id {plan_id}
+   ```
+
+   Parse `status` from the returned TOON. **On `status: fresh`**, proceed to Phase Transition. **On `status: stale` or `status: undecidable`**, log a `[BLOCKED]` line and abort the transition:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level ERROR \
+     --message "[BLOCKED] (plan-marshall:phase-5-execute) Worktree state not verified: {reason} (newest_mtime_path={path}, t_build={t_build_iso}, t_worktree={t_worktree_iso}) — refusing to transition 5-execute → 6-finalize. Re-dispatch a verify run, or invoke with --force to override."
+   ```
+
+   Substitute the placeholders with the corresponding fields from the script's TOON output. Each branch omits a different field set: `stale` omits `reason`; `undecidable` (both `no_build_log_entry` and `worktree_mtime_unresolvable` sub-cases) omits `newest_mtime_path` and `t_worktree_iso`, and the `no_build_log_entry` sub-case additionally omits `t_build_iso`. Substitute `-` for any field absent in the returned TOON. Do NOT call `manage-status transition` and do NOT auto-continue to finalize. The orchestrator's recovery path is to dispatch a fresh `verify` run, after which Step 12a is re-entered.
+
+3. **If the pending count is non-zero**, the phase is NOT complete. Log a `[BLOCKED]` line and abort the transition:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -780,7 +799,7 @@ Before invoking `manage-status transition --completed 5-execute` (see **Phase Tr
 
    `{ids}` is a comma-separated list of `TASK-{number}` identifiers parsed from the `tasks_table`. Do NOT call `manage-status transition` and do NOT auto-continue to finalize.
 
-4. **`--force` escape** (mirrors the verification-cap escape in `Step 11b`): when the orchestrator is invoked with `--force`, log the override decision, then proceed to Phase Transition with the pending tasks intact:
+4. **`--force` escape** (mirrors the verification-cap escape in `Step 11b`): when the orchestrator is invoked with `--force`, log the override decision, then proceed to Phase Transition. The escape covers both gates — pending tasks left intact AND a non-`fresh` freshness status. Emit one decision line per gate that the override bypasses:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -788,7 +807,15 @@ Before invoking `manage-status transition --completed 5-execute` (see **Phase Tr
      --message "(plan-marshall:phase-5-execute) Pending-tasks guard overridden via --force — transitioning with {count} pending task(s): {ids}"
    ```
 
-   The `--force` escape is a deliberate safety valve for triage-driven aborts (the user has already decided the pending tasks are out-of-scope) — never invoke it programmatically from inside the loop.
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level WARNING \
+     --message "(plan-marshall:phase-5-execute) Worktree-freshness guard overridden via --force — transitioning with status={status}"
+   ```
+
+   Append `reason={reason}` to the message body only when `status` is `undecidable`; the `stale` branch does not emit a `reason` field, so the appended fragment is omitted for that branch. This mirrors the `--force` escape format in `phase-6-finalize/standards/commit-push.md` § Freshness precondition.
+
+   The `--force` escape is a deliberate safety valve for triage-driven aborts (the user has already decided the pending tasks are out-of-scope, or that the stale-freshness signal is being addressed elsewhere) — never invoke it programmatically from inside the loop.
 
 ### Step 13: Log Phase Completion (When phase completes)
 

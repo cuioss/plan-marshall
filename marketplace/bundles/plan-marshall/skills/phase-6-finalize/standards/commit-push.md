@@ -15,6 +15,27 @@ This document carries NO step-activation logic. Activation is controlled by the 
 - `commit_strategy` from phase-5-execute config (per_deliverable / per_plan). The `none` value is filtered out at manifest composition time and never reaches this executor.
 - `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All git commands below MUST use `git -C {worktree_path}`.
 
+### Freshness precondition
+
+Before any of the Execution steps below run — and specifically BEFORE the `git status --porcelain` check, so the no-changes branch is never reached on a stale worktree — invoke the deterministic freshness gate:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  pre-commit-verify-freshness --plan-id {plan_id}
+```
+
+Parse `status` from the returned TOON. The contract is **fail-closed**: only `status: fresh` permits the executor to proceed. Any other status halts `commit-push` immediately — record `outcome=failed` with a `display_detail` carrying the reason, the newest-mtime path, and the two timestamps so the orchestrator's recovery path has the structured signal it needs to dispatch a fresh `verify` run.
+
+| `status` value | `commit-push` action |
+|----------------|----------------------|
+| `fresh` | Proceed to **Execution** below. |
+| `stale` | Halt. Record `outcome=failed` with `display_detail` `"stale: newest={newest_mtime_path} t_build={t_build_iso} t_worktree={t_worktree_iso}"`. Do NOT push. |
+| `undecidable` | Halt. Record `outcome=failed` with `display_detail` `"undecidable: {reason}"`. Do NOT push. |
+
+The freshness gate is **complementary to**, NOT redundant with, the `pre-push-quality-gate` step. The quality-gate verifies *what the code is* (mypy + ruff + tests on the on-disk tree); freshness verifies *that the most recent `verify` run actually observed this version of the code*. A worktree that was modified after the most recent build-runner log line passes neither: the quality-gate may pass against the new tree if the orchestrator re-runs it, but the freshness gate fails because no `verify` log line post-dates the mutation. The two gates together close the gap that `loop-exit-guard` cannot close on its own — see lesson `2026-05-24-22-001` for the seed failure and the necessary-but-not-sufficient framing.
+
+The `--force` escape mirrors phase-5 Step 12a's escape — orchestrator-only, log-recorded, never auto-invoked. When the orchestrator drives finalize with `--force` AND the freshness gate returned a non-`fresh` status, the dispatcher records a `decision`-level WARNING (`(plan-marshall:phase-6-finalize:commit-push) Worktree-freshness precondition overridden via --force — proceeding with status={status}` — append `reason={reason}` only when status is `undecidable`; the `stale` branch does not emit a `reason` field) and then allows `commit-push` to proceed.
+
 ## Execution
 
 ### Strategy context (informational)

@@ -24,6 +24,13 @@ Subcommands:
   rename-path      - Record a path rename mapping
   loop-exit-guard  - Script-level enforcement that the phase-5-execute
                      dispatch loop MUST continue while pending tasks remain
+  pre-commit-verify-freshness
+                   - Script-level enforcement that the worktree state has
+                     been observed by a fresh ``verify`` run before the
+                     orchestrator may transition out of phase-5-execute or
+                     dispatch ``commit-push`` in phase-6-finalize. Returns
+                     ``fresh``, ``stale``, or ``undecidable``; non-``fresh``
+                     statuses are gate failures (fail-closed contract)
 
 Output: TOON format for all operations.
 
@@ -64,6 +71,7 @@ emitting tasks that named lesson IDs that did not exist in the inventory).
 
 import argparse
 
+from _cmd_pre_commit_verify_freshness import cmd_pre_commit_verify_freshness
 from _cmd_qgate_mechanical import cmd_qgate_mechanical
 from _cmd_rename import cmd_rename_path
 from _cmd_step import cmd_add_step, cmd_finalize_step, cmd_remove_step
@@ -333,6 +341,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_plan_id_arg(p_loop_guard)
 
+    # pre-commit-verify-freshness
+    p_freshness = subparsers.add_parser(
+        'pre-commit-verify-freshness',
+        help='Script-level enforcement: worktree state must be observed by a fresh verify run',
+        description=(
+            'Compare the most recent ``plan-marshall:build-pyproject:pyproject_build run`` '
+            'line in ``script-execution.log`` against the most recent file-content mtime in '
+            'the worktree. Returns ``status: fresh`` when the build entry post-dates the '
+            'newest worktree mtime, ``status: stale`` when the worktree has been mutated '
+            'since the last observed verify, and ``status: undecidable`` when no positive '
+            'freshness proof exists (no matching log entry, or no mtime baseline). The '
+            'gate is fail-closed: only ``fresh`` permits transition. Wired as a '
+            'precondition by ``phase-5-execute`` Step 12a and ``phase-6-finalize`` '
+            '``commit-push``.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(p_freshness)
+
     return parser
 
 
@@ -354,6 +382,7 @@ COMMANDS = {
     'rename-path': cmd_rename_path,
     'qgate-mechanical-checks': cmd_qgate_mechanical,
     'loop-exit-guard': cmd_loop_exit_guard,
+    'pre-commit-verify-freshness': cmd_pre_commit_verify_freshness,
 }
 
 
