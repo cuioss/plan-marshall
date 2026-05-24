@@ -1347,6 +1347,102 @@ INVARIANTS: list[tuple[str, AppliesFn, CaptureFn]] = [
 ]
 
 
+# --- blocking-scope classification ---------------------------------------
+#
+# Parallel map keyed by invariant name documenting which phase boundaries
+# treat a drift in the captured value as ``status: drift`` versus as
+# informational-only (drift is persisted in handshakes.toon for retrospective
+# analysis but does not contribute to ``drift_count`` and does not surface
+# in ``diffs[]``). Three classification values are recognised:
+#
+# - ``'blocking_at_every_boundary'`` — drift at any phase entry raises
+#   ``status: drift`` and exits non-zero under ``--strict``. This is the
+#   pre-existing behaviour for every invariant.
+# - ``frozenset({'5-execute'})`` (or any other frozenset of phase keys) —
+#   drift is blocking only at the named phase keys, informational at every
+#   other phase. The phase keys are the ``--phase`` argument values passed
+#   to ``phase_handshake verify`` (i.e. the *captured* phase whose row is
+#   being re-verified, which by the handshake's call convention is the
+#   phase the orchestrator is transitioning OUT of). For example,
+#   ``frozenset({'5-execute'})`` means drift is blocking at the
+#   ``5-execute → 6-finalize`` boundary (``verify --phase 5-execute``)
+#   and informational at every planning-phase boundary
+#   (``verify --phase 1-init`` through ``verify --phase 4-plan``).
+# - ``'informational_only'`` — drift is never blocking; the column is
+#   captured for retrospective analysis only.
+#
+# Rationale (lesson behind this deliverable): ``main_sha`` / ``main_dirty``
+# can change between planning-phase boundaries (1→2, 2→3, 3→4, 4→5) for
+# reasons unrelated to the in-flight plan (an upstream commit lands on the
+# default branch during a long-paused planning phase). Treating those
+# changes as blocking forces a manual override / re-capture loop with no
+# corresponding correctness gain — the planning artefacts (request,
+# outline, task list) do not depend on the main SHA. At the
+# ``5-execute → 6-finalize`` boundary, however, ``main_sha`` change DOES
+# matter (it can invalidate the integration premise the just-built changes
+# were merged on top of), so those two invariants remain blocking there.
+#
+# Other invariants (``task_state_hash``, ``qgate_open_count``,
+# ``config_hash``, ``references_valid``, ``phase_steps_complete``,
+# ``pending_findings_blocking_count``, ``pending_tasks_count``,
+# ``pending_findings_by_type``, ``task_graph_valid``) describe plan-internal
+# state that should remain stable across every boundary and stay blocking
+# everywhere. Worktree-applicable invariants (``worktree_sha``,
+# ``worktree_dirty``) stay blocking when their ``applies_fn`` returns true.
+# The inverse-direction ``worktree_orphan`` invariant stays blocking
+# everywhere — its capture-time exception path already enforces the
+# writer-chain contract.
+
+BlockingScope = str | frozenset[str]
+
+INVARIANT_BLOCKING_SCOPE: dict[str, BlockingScope] = {
+    'main_sha': frozenset({'5-execute'}),
+    'main_dirty': frozenset({'5-execute'}),
+    'main_dirty_files': frozenset({'5-execute'}),
+    'worktree_sha': 'blocking_at_every_boundary',
+    'worktree_dirty': 'blocking_at_every_boundary',
+    'worktree_orphan': 'blocking_at_every_boundary',
+    'references_valid': 'blocking_at_every_boundary',
+    'task_state_hash': 'blocking_at_every_boundary',
+    'qgate_open_count': 'blocking_at_every_boundary',
+    'config_hash': 'blocking_at_every_boundary',
+    'pending_tasks_count': 'blocking_at_every_boundary',
+    'phase_steps_complete': 'blocking_at_every_boundary',
+    'task_graph_valid': 'blocking_at_every_boundary',
+    'pending_findings_by_type': 'blocking_at_every_boundary',
+    'pending_findings_blocking_count': 'blocking_at_every_boundary',
+}
+
+
+def is_invariant_blocking_at_phase(invariant_name: str, phase: str) -> bool:
+    """Return True when drift in ``invariant_name`` is blocking at ``phase``.
+
+    ``phase`` is the ``--phase`` argument passed to
+    ``phase_handshake verify`` — by the handshake's call convention this is
+    the *captured* phase whose row is being re-verified, i.e. the phase the
+    orchestrator is transitioning OUT of. For example, the
+    ``5-execute → 6-finalize`` boundary is verified via
+    ``verify --phase 5-execute``, so an invariant scoped to
+    ``frozenset({'5-execute'})`` blocks at that boundary.
+
+    Default behaviour for any unmapped invariant is
+    ``blocking_at_every_boundary`` (fail-safe to the pre-classification
+    behaviour) — new invariants added to ``INVARIANTS`` without a
+    corresponding ``INVARIANT_BLOCKING_SCOPE`` entry retain the strict
+    semantics until they are explicitly relaxed.
+    """
+    scope = INVARIANT_BLOCKING_SCOPE.get(invariant_name, 'blocking_at_every_boundary')
+    if scope == 'blocking_at_every_boundary':
+        return True
+    if scope == 'informational_only':
+        return False
+    if isinstance(scope, frozenset):
+        return phase in scope
+    # Unknown scope value — fail safe to blocking so misconfiguration cannot
+    # silently disable an invariant.
+    return True
+
+
 def capture_all(plan_id: str, metadata: dict[str, Any], phase: str) -> dict[str, Any]:
     """Run every applicable invariant and return name -> captured value.
 

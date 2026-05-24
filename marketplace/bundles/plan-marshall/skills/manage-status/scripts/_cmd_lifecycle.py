@@ -58,15 +58,26 @@ def cmd_create(args: argparse.Namespace) -> dict:
     """Create status.json for a new plan.
 
     When the plan runs in an isolated worktree, the caller MUST pass
-    ``--use-worktree``, ``--worktree-path``, and ``--worktree-branch``
-    so the trio is seeded into ``status.metadata`` at creation time.
-    Downstream consumers (build wrappers, phase-entry assertions,
-    ``get-worktree-path``) read these fields without re-deriving the
-    path from filesystem layout.
+    ``--use-worktree`` and ``--worktree-branch`` so the use-worktree
+    intent and the feature branch name are seeded into
+    ``status.metadata`` at creation time. ``--worktree-path`` is
+    OPTIONAL — phase-1-init defers worktree materialization to
+    phase-5-execute Step 2.5, which creates the worktree directory on
+    disk and back-fills ``metadata.worktree_path`` at that point.
+
+    Deferred-materialization shape: passing ``--use-worktree
+    --worktree-branch X`` without ``--worktree-path`` persists
+    ``metadata.use_worktree: true``, ``metadata.worktree_branch: X``,
+    and ``metadata.worktree_path: ''`` (empty-string sentinel). The
+    phase-handshake invariants treat ``use_worktree==true`` +
+    empty ``worktree_path`` as the legitimate deferred-materialization
+    window between phase-1 and phase-5; ``get-worktree-path`` returns
+    the empty string as a separate ``worktree_state: pending`` signal
+    distinct from the disabled state.
 
     When ``--use-worktree`` is omitted (or set to ``false``), no
-    worktree metadata is written and the plan is treated as running
-    against the main checkout.
+    worktree metadata trio is written and the plan is treated as
+    running against the main checkout.
     """
     require_valid_plan_id(args)
 
@@ -89,18 +100,24 @@ def cmd_create(args: argparse.Namespace) -> dict:
             'message': 'At least one phase is required',
         }
 
-    # Worktree metadata seeding — when use-worktree is true, both
-    # worktree-path and worktree-branch must be supplied. Refusing
-    # partial input prevents silently-incoherent metadata.
+    # Worktree metadata seeding — when use-worktree is true,
+    # --worktree-branch is REQUIRED (the feature branch name is
+    # committed downstream consumers cannot back-derive). The
+    # --worktree-path is OPTIONAL: when absent it is persisted as the
+    # empty-string sentinel marking the deferred-materialization
+    # window between phase-1 and phase-5. Refusing partial input on
+    # the branch flag prevents silently-incoherent metadata; the path
+    # flag is intentionally tolerant so phase-1-init can persist intent
+    # before the worktree directory exists on disk.
     use_worktree = bool(getattr(args, 'use_worktree', False))
     worktree_path_arg = getattr(args, 'worktree_path', None)
     worktree_branch_arg = getattr(args, 'worktree_branch', None)
-    if use_worktree and (not worktree_path_arg or not worktree_branch_arg):
+    if use_worktree and not worktree_branch_arg:
         return {
             'status': 'error',
             'plan_id': args.plan_id,
             'error': 'invalid_worktree_args',
-            'message': '--use-worktree requires both --worktree-path and --worktree-branch',
+            'message': '--use-worktree requires --worktree-branch',
         }
 
     now = now_utc_iso()
@@ -117,9 +134,14 @@ def cmd_create(args: argparse.Namespace) -> dict:
     status['phases'][0]['status'] = PHASE_STATUS_IN_PROGRESS
 
     if use_worktree:
+        # Empty-string sentinel for the deferred-materialization
+        # window: phase-5-execute Step 2.5 back-fills the resolved
+        # absolute path once `git worktree add` runs. The phase-handshake
+        # invariant assertion treats use_worktree==true + empty
+        # worktree_path as the legitimate deferred state.
         status['metadata'] = {
             'use_worktree': True,
-            'worktree_path': worktree_path_arg,
+            'worktree_path': worktree_path_arg or '',
             'worktree_branch': worktree_branch_arg,
         }
     else:
@@ -147,7 +169,7 @@ def cmd_create(args: argparse.Namespace) -> dict:
         'use_worktree': use_worktree,
     }
     if use_worktree:
-        result['worktree_path'] = worktree_path_arg
+        result['worktree_path'] = worktree_path_arg or ''
         result['worktree_branch'] = worktree_branch_arg
     return result
 

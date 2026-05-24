@@ -85,22 +85,43 @@ Rationale for flat TOON over nested: simpler parsing, one row per phase, direct 
 
 ## Invariant registry
 
-Defined in `_invariants.py` as `(name, applies_fn, capture_fn)` tuples.
+Defined in `_invariants.py` as `(name, applies_fn, capture_fn)` tuples. The parallel `INVARIANT_BLOCKING_SCOPE` map records each invariant's blocking scope (see [Blocking classification](#blocking-classification) below).
 
-| Invariant | `applies_fn` | `capture_fn` | Catches |
-|---|---|---|---|
-| `main_sha` | always | `git rev-parse HEAD` at main checkout root | any commit change |
-| `main_dirty` | always | `git status --porcelain` line count at main checkout root | uncommitted drift |
-| `worktree_sha` | `status.metadata.worktree_path` non-null | `git rev-parse HEAD` inside worktree | worktree/main confusion |
-| `worktree_dirty` | same as above | `git status --porcelain` line count inside worktree | uncommitted drift inside worktree |
-| `references_valid` | always | SHA256 of `{present, top_level_is_dict, required_field_set}` from `manage-references read` | references.json deleted, corrupted to non-dict, or missing a required key (`branch`, `base_branch`, `modified_files`) |
-| `task_state_hash` | always | SHA256 of sorted `(number, status, step_outcomes, depends_on)` from `manage-tasks list` | tasks silently mutated |
-| `qgate_open_count` | always | `filtered_count` from `manage-findings qgate list --resolution pending --phase P` | Q-Gate bypass |
-| `config_hash` | always | SHA256 of stable-key JSON of `manage-config plan phase-P get` output | config swapped mid-run |
-| `pending_tasks_count` | always | row count from `manage-tasks list --status pending` | premature transition with fix tasks still pending |
-| `phase_steps_complete` | always (no-op when phase has no declaration) | See [resolution rule](#phase_steps_complete-resolution) | silently skipped intra-phase steps |
-| `pending_findings_by_type` | always | per-type breakdown from `manage-findings list --type T --resolution pending` for every known type, serialized as `"build-error=N,test-failure=N,..."` | retrospective view of the queue at every boundary |
-| `pending_findings_blocking_count` | always | sum of pending counts across the **per-phase** `blocking_finding_types` partition (see [resolution rule](#pending_findings_blocking_count-resolution)) | phase advance with blocking-type findings still pending |
+| Invariant | `applies_fn` | `capture_fn` | Blocking scope | Catches |
+|---|---|---|---|---|
+| `main_sha` | always | `git rev-parse HEAD` at main checkout root | `blocking_at: {5-execute}` (informational at every other boundary) | any commit change at the integration boundary |
+| `main_dirty` | always | `git status --porcelain` line count at main checkout root | `blocking_at: {5-execute}` (informational at every other boundary) | uncommitted drift at the integration boundary |
+| `main_dirty_files` | always | sorted list of dirty paths (filtered to exclude `.plan/`) | `blocking_at: {5-execute}` (informational at every other boundary) | layer-D leak detection (proper-superset rule in `_check_main_dirty_drift`) |
+| `worktree_sha` | `status.metadata.worktree_path` non-null | `git rev-parse HEAD` inside worktree | `blocking_at_every_boundary` | worktree/main confusion |
+| `worktree_dirty` | same as above | `git status --porcelain` line count inside worktree | `blocking_at_every_boundary` | uncommitted drift inside worktree |
+| `worktree_orphan` | always | inverse-direction check (raises `WorktreeMetadataDrift` capture-time) | `blocking_at_every_boundary` | orphan worktree dir + metadata says no worktree |
+| `references_valid` | always | SHA256 of `{present, top_level_is_dict, required_field_set}` from `manage-references read` | `blocking_at_every_boundary` | references.json deleted, corrupted to non-dict, or missing a required key (`branch`, `base_branch`, `modified_files`) |
+| `task_state_hash` | always | SHA256 of sorted `(number, status, step_outcomes, depends_on)` from `manage-tasks list` | `blocking_at_every_boundary` | tasks silently mutated |
+| `qgate_open_count` | always | `filtered_count` from `manage-findings qgate list --resolution pending --phase P` | `blocking_at_every_boundary` | Q-Gate bypass |
+| `config_hash` | always | SHA256 of stable-key JSON of `manage-config plan phase-P get` output | `blocking_at_every_boundary` | config swapped mid-run |
+| `pending_tasks_count` | always | row count from `manage-tasks list --status pending` | `blocking_at_every_boundary` | premature transition with fix tasks still pending |
+| `phase_steps_complete` | always (no-op when phase has no declaration) | See [resolution rule](#phase_steps_complete-resolution) | `blocking_at_every_boundary` | silently skipped intra-phase steps |
+| `task_graph_valid` | always | adjacency graph from `manage-tasks read` (cycle / dangling detection) | `blocking_at_every_boundary` | broken task graph blocking transition |
+| `pending_findings_by_type` | always | per-type breakdown from `manage-findings list --type T --resolution pending` for every known type, serialized as `"build-error=N,test-failure=N,..."` | `blocking_at_every_boundary` | retrospective view of the queue at every boundary |
+| `pending_findings_blocking_count` | always | sum of pending counts across the **per-phase** `blocking_finding_types` partition (see [resolution rule](#pending_findings_blocking_count-resolution)) | `blocking_at_every_boundary` | phase advance with blocking-type findings still pending |
+
+### Blocking classification
+
+Each invariant carries a `blocking_scope` value (in `INVARIANT_BLOCKING_SCOPE`) that controls whether drift between capture and re-verify counts toward `drift_count` and `diffs[]` (blocking) or is recorded passively in `handshakes.toon` as informational only. Three classifications are recognised:
+
+| Classification | Effect on `cmd_verify` |
+|---|---|
+| `'blocking_at_every_boundary'` | Drift at any phase boundary raises `status: drift` and exits non-zero under `--strict`. Pre-classification default behaviour for every invariant. |
+| `frozenset({...phase-keys...})` | Drift is blocking only at the named phase keys (the `--phase` argument value passed to `phase_handshake verify` — by the handshake's call convention this is the *captured* phase whose row is being re-verified, i.e. the phase the orchestrator is transitioning OUT of). Informational at every other phase. Example: `frozenset({'5-execute'})` blocks at the `5-execute → 6-finalize` boundary (`verify --phase 5-execute`). |
+| `'informational_only'` | Drift is never blocking; the column is captured for retrospective analysis only. |
+
+**Default for unmapped invariants**: `'blocking_at_every_boundary'`. New invariants added to `INVARIANTS` without a corresponding `INVARIANT_BLOCKING_SCOPE` entry retain the strict semantics until they are explicitly relaxed — `is_invariant_blocking_at_phase()` fails safe to blocking.
+
+**`main_sha` / `main_dirty` / `main_dirty_files` rationale**: these three invariants describe state of the integration target branch (`main`/`master`), which can change between planning-phase boundaries (1→2, 2→3, 3→4, 4→5) for reasons unrelated to the in-flight plan — an unrelated commit lands on main during a long-paused planning phase, the operator's local main pulls in upstream changes, etc. Treating those changes as blocking forces a manual override / re-capture loop with no corresponding correctness gain: the planning artefacts (request, outline, task list) do not depend on the main SHA. At the `5-execute → 6-finalize` boundary, however, `main_sha` change DOES matter — it can invalidate the integration premise the just-built changes were merged on top of — so the three columns remain blocking there.
+
+**Informational rows are persisted, not dropped**: classification affects *drift-counting*, not *persistence*. The `capture` output and `list` output continue to include every captured invariant column (including informational rows for `main_sha`/`main_dirty`/`main_dirty_files`) so retrospective analysis sees the full state at every boundary. `cmd_verify` returns informational drift in a separate `informational_diffs[]` payload alongside `informational_count` so callers that want to surface it explicitly can; the strict-exit path and the orchestrator's drift-recovery branch only ever read `drift_count` / `diffs[]`.
+
+**Guarded boundaries for `pending_findings_blocking_count`** (a separate axis from blocking classification): the capture-time exception path described in [`pending_findings_blocking_count` resolution](#pending_findings_blocking_count-resolution) is orthogonal to the classification scheme above. The exception fires only at the configured guarded boundaries regardless of classification; the classification controls whether *value-drift* between capture and re-verify is reported as blocking drift or as informational drift.
 
 ### `phase_steps_complete` resolution
 

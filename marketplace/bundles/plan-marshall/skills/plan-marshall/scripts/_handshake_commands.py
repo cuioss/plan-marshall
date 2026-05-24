@@ -57,6 +57,7 @@ from _invariants import (  # type: ignore[import-not-found]
     WorktreeMetadataDrift,
     _main_dirty_drift_diff,
     capture_all,
+    is_invariant_blocking_at_phase,
 )
 from file_ops import get_base_dir  # type: ignore[import-not-found]
 from toon_parser import parse_toon  # type: ignore[import-not-found]
@@ -434,8 +435,24 @@ def cmd_capture(args: Any) -> dict[str, Any]:
     }
 
 
-def _diffs(captured_row: dict[str, Any], observed: dict[str, Any]) -> list[dict[str, Any]]:
-    diffs: list[dict[str, Any]] = []
+def _diffs(
+    captured_row: dict[str, Any],
+    observed: dict[str, Any],
+    phase: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Return ``(blocking_diffs, informational_diffs)`` for ``phase``.
+
+    Each invariant's drift is bucketed by its blocking classification (see
+    ``_invariants.INVARIANT_BLOCKING_SCOPE``). Blocking diffs contribute to
+    ``drift_count`` and are surfaced in the ``diffs[]`` payload; informational
+    diffs are returned separately so ``cmd_verify`` can record them in
+    ``handshakes.toon`` without raising ``status: drift``.
+
+    ``phase`` is the phase being entered (the target side of the transition
+    the handshake is verifying).
+    """
+    blocking_diffs: list[dict[str, Any]] = []
+    informational_diffs: list[dict[str, Any]] = []
     for name, _a, _c in INVARIANTS:
         # ``main_dirty_files`` is owned by the dedicated layer-D drift
         # check :func:`_check_main_dirty_drift` (proper-superset semantics).
@@ -454,14 +471,16 @@ def _diffs(captured_row: dict[str, Any], observed: dict[str, Any]) -> list[dict[
         if obs_value is None:
             obs_value = ''
         if str(cap_value) != str(obs_value):
-            diffs.append(
-                {
-                    'invariant': name,
-                    'captured': str(cap_value),
-                    'observed': str(obs_value),
-                }
-            )
-    return diffs
+            diff_entry = {
+                'invariant': name,
+                'captured': str(cap_value),
+                'observed': str(obs_value),
+            }
+            if is_invariant_blocking_at_phase(name, phase):
+                blocking_diffs.append(diff_entry)
+            else:
+                informational_diffs.append(diff_entry)
+    return blocking_diffs, informational_diffs
 
 
 def cmd_verify(args: Any) -> dict[str, Any]:
@@ -565,15 +584,25 @@ def cmd_verify(args: Any) -> dict[str, Any]:
             'message': str(exc),
         }
 
-    diffs = _diffs(captured_row, observed)
+    diffs, informational_diffs = _diffs(captured_row, observed, phase)
 
     if not diffs:
-        return {
+        result_ok: dict[str, Any] = {
             'status': 'ok',
             'plan_id': plan_id,
             'phase': phase,
             'override': captured_row.get('override', False),
         }
+        # Surface informational-only drift (e.g. main_sha changed between
+        # planning-phase boundaries) so retrospective analysis sees it even
+        # when status is ``ok``. ``drift_count`` deliberately stays absent
+        # in the ``ok`` envelope so callers that branch on it (the strict
+        # exit path, the orchestrator's drift-recovery branch) continue to
+        # treat informational drift as "not a drift".
+        if informational_diffs:
+            result_ok['informational_count'] = len(informational_diffs)
+            result_ok['informational_diffs'] = informational_diffs
+        return result_ok
 
     result: dict[str, Any] = {
         'status': 'drift',
@@ -583,6 +612,9 @@ def cmd_verify(args: Any) -> dict[str, Any]:
         'drift_count': len(diffs),
         'diffs': diffs,
     }
+    if informational_diffs:
+        result['informational_count'] = len(informational_diffs)
+        result['informational_diffs'] = informational_diffs
     return result
 
 

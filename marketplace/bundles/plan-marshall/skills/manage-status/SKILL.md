@@ -88,7 +88,7 @@ seeds them atomically and `get-worktree-path` reads them:
 | Field | Type | When set | Description |
 |-------|------|----------|-------------|
 | `use_worktree` | bool | Always (seeded by `create`) | `true` when the plan runs in an isolated worktree, `false` when it runs against the main checkout. Never absent on plans created via `create`. |
-| `worktree_path` | string | Only when `use_worktree==true` | Absolute path to the worktree root. Used by `get-worktree-path`, build wrappers (`--plan-id` resolution), and phase-entry assertions. |
+| `worktree_path` | string | Only when `use_worktree==true` (may be empty until phase-5-execute Step 2.5 back-fills) | Absolute path to the worktree root. Used by `get-worktree-path`, build wrappers (`--plan-id` resolution), and phase-entry assertions. Persisted as the empty-string sentinel during the deferred-materialization window between phase-1 and phase-5; phase-5-execute Step 2.5 back-fills the resolved path once `git worktree add` runs. |
 | `worktree_branch` | string | Only when `use_worktree==true` | Feature branch ref checked out in the worktree. Recorded for the audit trail and consumed by `workflow-integration-git` worktree subcommands. |
 
 Downstream consumers MUST read these fields via `get-worktree-path`
@@ -115,7 +115,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create
   --title {title} \
   --phases {comma-separated-phases} \
   [--force] \
-  [--use-worktree --worktree-path {abs_path} --worktree-branch {ref}]
+  [--use-worktree --worktree-branch {ref} [--worktree-path {abs_path}]]
 ```
 
 **Parameters**:
@@ -123,9 +123,9 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create
 - `--title` (required): Plan title
 - `--phases` (required): Comma-separated phase names in execution order (e.g., `1-init,2-refine,3-outline,4-plan,5-execute,6-finalize`). Order matters — it determines progress calculation and transition sequence.
 - `--force`: Overwrite existing status.json
-- `--use-worktree` (optional): Mark the plan as running in an isolated git worktree. When set, both `--worktree-path` and `--worktree-branch` are required. Seeds `status.metadata.use_worktree=true` and persists the path and branch alongside it. When omitted, `status.metadata.use_worktree=false` is seeded explicitly so downstream resolvers never have to treat absence-of-metadata as "main-checkout".
-- `--worktree-path` (required with `--use-worktree`): Absolute path to the worktree root. Persisted as `status.metadata.worktree_path`.
+- `--use-worktree` (optional): Mark the plan as running in an isolated git worktree. When set, `--worktree-branch` is required and `--worktree-path` is optional. Seeds `status.metadata.use_worktree=true` and persists the branch alongside it; when `--worktree-path` is omitted, the path is persisted as the empty-string sentinel marking the deferred-materialization window (phase-5-execute Step 2.5 fills it in). When `--use-worktree` is omitted, `status.metadata.use_worktree=false` is seeded explicitly so downstream resolvers never have to treat absence-of-metadata as "main-checkout".
 - `--worktree-branch` (required with `--use-worktree`): Feature branch ref checked out in the worktree. Persisted as `status.metadata.worktree_branch`.
+- `--worktree-path` (optional with `--use-worktree`): Absolute path to the worktree root. Persisted as `status.metadata.worktree_path` when supplied; otherwise persisted as the empty-string sentinel. The phase-handshake invariants treat `use_worktree==true` + empty `worktree_path` as the legitimate deferred-materialization window between phase-1 and phase-5, and `get-worktree-path` returns `worktree_state: pending` for that case. Phase-5-execute Step 2.5 back-fills the resolved absolute path once `git worktree add` runs.
 
 **Output — main-checkout** (TOON):
 ```toon
@@ -139,7 +139,21 @@ plan:
 use_worktree: false
 ```
 
-**Output — worktree** (TOON):
+**Output — worktree (deferred path)** (TOON):
+```toon
+status: success
+plan_id: my-feature
+file: status.json
+created: true
+plan:
+  title: My Feature
+  current_phase: 1-init
+use_worktree: true
+worktree_path: ""
+worktree_branch: feature/my-feature
+```
+
+**Output — worktree (path supplied)** (TOON):
 ```toon
 status: success
 plan_id: my-feature
@@ -153,12 +167,12 @@ worktree_path: /abs/path/.plan/local/worktrees/my-feature
 worktree_branch: feature/my-feature
 ```
 
-**Error — partial worktree args** (TOON):
+**Error — missing branch on use-worktree** (TOON):
 ```toon
 status: error
 plan_id: my-feature
 error: invalid_worktree_args
-message: --use-worktree requires both --worktree-path and --worktree-branch
+message: --use-worktree requires --worktree-branch
 ```
 
 ### read
@@ -612,7 +626,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `create` | `--plan-id --title --phases [--force] [--use-worktree --worktree-path --worktree-branch]` | Create status.json (seeds worktree metadata when `--use-worktree` is present) |
+| `create` | `--plan-id --title --phases [--force] [--use-worktree --worktree-branch [--worktree-path]]` | Create status.json (seeds worktree metadata when `--use-worktree` is present; `--worktree-path` is optional — defers materialization to phase-5-execute Step 2.5) |
 | `read` | `--plan-id` | Read full status |
 | `set-phase` | `--plan-id --phase` | Set current phase (marks as in_progress) |
 | `update-phase` | `--plan-id --phase --status` | Update specific phase status |
@@ -647,7 +661,7 @@ restating the command inline.
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create \
   --plan-id PLAN_ID --title TEXT --phases CSV \
   [--force] \
-  [--use-worktree --worktree-path ABS_PATH --worktree-branch BRANCH]
+  [--use-worktree --worktree-branch BRANCH [--worktree-path ABS_PATH]]
 ```
 
 ### read
@@ -799,7 +813,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status self-t
 | `missing_loop_back_target` | 1 | `mark-step-done`: `--outcome=loop_back` supplied without `--loop-back-target`. The flag is REQUIRED on every loop_back outcome (no backwards-compat fallback). |
 | `invalid_loop_back_target` | 1 | `mark-step-done`: `--loop-back-target` value not in `5-execute`/`6-finalize`. (Argparse `choices` normally catches this at parse time; this error fires only when the validation is bypassed at the API layer.) |
 | `unexpected_loop_back_target` | 1 | `mark-step-done`: `--loop-back-target` supplied alongside an outcome other than `loop_back`. The flag is FORBIDDEN on `done`/`skipped`/`failed` outcomes. |
-| `invalid_worktree_args` | 1 | `create`: `--use-worktree` set without both `--worktree-path` and `--worktree-branch` |
+| `invalid_worktree_args` | 1 | `create`: `--use-worktree` set without `--worktree-branch`. `--worktree-path` is optional — its absence triggers the deferred-materialization window (phase-5-execute Step 2.5 back-fills) rather than an error. |
 | `worktree_unresolved` | 1 | `phase_handshake verify`: `metadata.use_worktree==true` and `metadata.worktree_path` is non-empty but does not resolve on the filesystem. `get-worktree-path` does not emit this error — it returns `worktree_state: pending` for the pre-materialization state. |
 
 ---

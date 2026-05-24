@@ -959,10 +959,14 @@ def test_archive_dry_run_leaves_status_unchanged(tmp_path):
 # three seeding scenarios called out in the driving lesson:
 #
 # 1. use_worktree=true with path+branch → metadata seeded with all three.
-# 2. use_worktree=false (or omitted) → metadata seeded with use_worktree:false
+# 2. use_worktree=true with branch only (deferred path) → metadata seeded with
+#    use_worktree:true, worktree_branch:<branch>, worktree_path:'' (empty-string
+#    sentinel). Phase-5-execute Step 2.5 back-fills the resolved path later.
+# 3. use_worktree=false (or omitted) → metadata seeded with use_worktree:false
 #    only (symmetric contract — no path/branch fields written).
-# 3. Partial input (path without branch, or vice versa) → invalid_worktree_args
-#    error. Refusing partial input prevents silently-incoherent metadata.
+# 4. Missing --worktree-branch with --use-worktree → invalid_worktree_args
+#    error (branch is the only required-together flag; path is optional and
+#    defers to phase-5-execute Step 2.5).
 
 
 def test_create_seeds_worktree_metadata_when_use_worktree_true():
@@ -1039,47 +1043,80 @@ def test_create_seeds_use_worktree_false_when_omitted():
         )
 
 
-def test_create_rejects_partial_worktree_args_path_only():
-    """use_worktree=true with path but missing branch → invalid_worktree_args."""
-    plan_id = 'wt-partial-path'
+def test_create_rejects_use_worktree_without_branch():
+    """use_worktree=true with path supplied but no branch → invalid_worktree_args.
+
+    --worktree-branch is the only required-together flag with --use-worktree;
+    omitting it fails closed regardless of whether --worktree-path is supplied,
+    because the branch name is the irreducible piece of intent phase-5-execute
+    cannot back-derive at materialization time.
+    """
+    plan_id = 'wt-no-branch'
     with PlanContext(plan_id=plan_id):
         result = cmd_create(
             Namespace(
                 plan_id=plan_id,
-                title='Partial Worktree',
+                title='Missing Branch',
                 phases='1-init,2-refine',
                 force=False,
                 use_worktree=True,
-                worktree_path='/tmp/worktrees/wt-partial-path',
+                worktree_path='/tmp/worktrees/wt-no-branch',
                 worktree_branch=None,
             )
         )
         assert result['status'] == 'error', (
-            f'Partial worktree input must error, got {result!r}. '
-            f'TASK-1 contract: --use-worktree requires both --worktree-path '
-            f'and --worktree-branch — refusing partial input prevents '
-            f'silently-incoherent metadata.'
+            f'Missing --worktree-branch must error, got {result!r}. '
+            f'Deferred-materialization contract: --use-worktree requires '
+            f'--worktree-branch (path is optional).'
         )
         assert result['error'] == 'invalid_worktree_args'
+        assert '--worktree-branch' in result['message']
 
 
-def test_create_rejects_partial_worktree_args_branch_only():
-    """use_worktree=true with branch but missing path → invalid_worktree_args."""
-    plan_id = 'wt-partial-branch'
-    with PlanContext(plan_id=plan_id):
+def test_create_seeds_deferred_path_when_only_branch_supplied():
+    """use_worktree=true with branch only (no path) → metadata seeds the
+    empty-string sentinel for worktree_path.
+
+    The deferred-materialization shape: phase-1-init has the worktree branch
+    name committed but the worktree directory is not yet allocated. The script
+    persists ``metadata.use_worktree: true``, ``metadata.worktree_branch:
+    <branch>``, and ``metadata.worktree_path: ''`` (empty-string sentinel
+    marking the deferred window). Phase-5-execute Step 2.5 back-fills the
+    resolved path on first task execution.
+    """
+    plan_id = 'wt-deferred-path'
+    branch = 'feature/wt-deferred-path'
+    with PlanContext(plan_id=plan_id) as ctx:
         result = cmd_create(
             Namespace(
                 plan_id=plan_id,
-                title='Partial Worktree',
+                title='Deferred Worktree Path',
                 phases='1-init,2-refine',
                 force=False,
                 use_worktree=True,
-                worktree_path=None,
-                worktree_branch='feature/wt-partial',
+                worktree_path=None,  # <-- the deferred-materialization shape
+                worktree_branch=branch,
             )
         )
-        assert result['status'] == 'error'
-        assert result['error'] == 'invalid_worktree_args'
+        assert result['status'] == 'success', (
+            f'Deferred-path create must succeed, got {result!r}. '
+            f'--use-worktree with --worktree-branch only is the canonical '
+            f'phase-1-init shape; --worktree-path is filled in by '
+            f'phase-5-execute Step 2.5.'
+        )
+        assert result['use_worktree'] is True
+        assert result['worktree_branch'] == branch
+        # The result surfaces the empty-string sentinel for worktree_path.
+        assert result['worktree_path'] == ''
+
+        # Verify on-disk status.json carries the sentinel exactly.
+        status = json.loads((ctx.plan_dir / 'status.json').read_text(encoding='utf-8'))
+        assert status['metadata']['use_worktree'] is True
+        assert status['metadata']['worktree_branch'] == branch
+        assert status['metadata']['worktree_path'] == '', (
+            f'metadata.worktree_path must be the empty-string sentinel, got '
+            f'{status["metadata"].get("worktree_path")!r}.'
+        )
 
 
 # =============================================================================

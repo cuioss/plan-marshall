@@ -1,23 +1,23 @@
 ---
 name: default:finalize-step-print-phase-breakdown
-description: Optional finalize-summary mode that captures the Phase Breakdown table from metrics.md and writes it to work/phase-breakdown-output.txt for the renderer to inline in place of the per-step [OK] list
+description: Optional finalize-summary supplement that captures the Phase Breakdown table from metrics.md and writes it to work/phase-breakdown-output.txt for the renderer to append after the per-step [OK] list
 order: 995
 ---
 
 # Finalize Step: print-phase-breakdown
 
-Pure executor for the `default:finalize-step-print-phase-breakdown` finalize step. Replaces the per-step `[OK]` Finalize-steps block with the verbatim `## Phase Breakdown` table content from `metrics.md`.
+Pure executor for the `default:finalize-step-print-phase-breakdown` finalize step. Captures the verbatim `## Phase Breakdown` table content from `metrics.md` so the renderer can append it as an additional section after the per-step `[OK]` Finalize-steps block.
 
 This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `finalize-step-print-phase-breakdown` in `manifest.phase_6.steps` (bare name — the manifest holds un-prefixed step ids; the dispatcher prepends `default:` when looking up the dispatch-table row). When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
 
 ## Purpose
 
-Optional finalize-summary mode. When the step is in `manifest.phase_6.steps` (and runs successfully), the `phase-6-finalize` output renderer enters Phase Breakdown override mode and emits the captured breakdown content in place of the default per-step list. Useful for users who prefer the compact per-phase metrics view over the redundant `[OK]` summary.
+Optional finalize-summary supplement. When the step is in `manifest.phase_6.steps` (and runs successfully), the `phase-6-finalize` output renderer appends the captured breakdown content as an additional section AFTER the default per-step `[OK]` Finalize-steps block. Useful for users who want the compact per-phase metrics view alongside the per-step list. The per-step list (including the `record-metrics` row) emits unchanged — the breakdown supplements it rather than substituting for any row.
 
 The step is the **producer** in the cross-deliverable contract documented in `output-template.md` (the consumer/renderer side). Both ends MUST reference the same artifact path verbatim:
 
 - **Producer (this step)** — writes `work/phase-breakdown-output.txt`.
-- **Consumer (renderer)** — reads `work/phase-breakdown-output.txt` during the snapshot procedure, BEFORE `default:archive-plan` runs.
+- **Consumer (renderer)** — reads `work/phase-breakdown-output.txt` during the snapshot procedure, BEFORE `default:archive-plan` runs. The captured content is appended as an additional section after the Finalize-steps block; the per-step list emits unchanged.
 
 ## Ordering constraint
 
@@ -68,7 +68,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "Phase Breakdown table captured ({bytes_written} bytes)"
 ```
 
-The `display_detail` string would normally appear in the renderer's per-step `[OK]` row, but in override mode the row is suppressed — the captured breakdown content is emitted instead. The detail is still recorded for the manifest/handshake invariants.
+The `display_detail` string appears in the renderer's per-step `[OK]` row for this step; the captured breakdown content is emitted as an additional section after the Finalize-steps block (the per-step list, including the `record-metrics` row, emits unchanged). The detail is also recorded for the manifest/handshake invariants.
 
 ### Step 4: Error handling
 
@@ -80,7 +80,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[WARN] (plan-marshall:phase-6-finalize:finalize-step-print-phase-breakdown) print-phase-breakdown failed: {error_message} — renderer will fall back to default Finalize-steps block"
 ```
 
-Mark the step `failed` with a brief detail; the renderer's override-activation rule requires both manifest presence AND non-`None` captured content, so a failed step naturally falls back to the default block:
+Mark the step `failed` with a brief detail; the renderer's supplement-activation rule requires both manifest presence AND non-`None` captured content, so a failed step naturally suppresses the appended breakdown section (the per-step Finalize-steps block emits unchanged either way):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
@@ -102,5 +102,5 @@ Finalize MUST continue — this step is presentation-only and never blocks plan 
 ## Related
 
 - [../../manage-metrics/SKILL.md](../../manage-metrics/SKILL.md) — `print-phase-breakdown` subcommand (the producer's data source)
-- [output-template.md](output-template.md) — renderer (the consumer that reads `work/phase-breakdown-output.txt` and emits the override block)
+- [output-template.md](output-template.md) — renderer (the consumer that reads `work/phase-breakdown-output.txt` and appends the supplement section)
 - [record-metrics.md](record-metrics.md) — the previous-order step (990) that produces `metrics.md`
