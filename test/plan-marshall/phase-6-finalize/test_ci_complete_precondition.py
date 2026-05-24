@@ -1477,3 +1477,39 @@ def test_parse_toon_inline_table_handles_colon_in_first_column():
         'The fix must not interfere with array-exit on genuine top-level '
         'key/value pairs that follow the array.'
     )
+
+
+def test_parse_toon_inline_table_handles_colon_in_first_column_csv():
+    """`parse_toon` MUST treat a comma-separated row whose first column
+    contains BOTH a hyphen AND a colon (e.g. plan-retrospective
+    `failures[N]{notation,exit_code}` rows like
+    ``plan-marshall:foo:bar,1``) as data, NOT as a key/value pair.
+
+    The post-`\\t-guard` regression: extending the identifier character
+    class to ``[\\w_-]*`` so hyphenated TOON keys still terminate arrays
+    inadvertently made the heuristic match ``plan-marshall:`` at the
+    start of a CSV row. The lookahead ``(?=\\s|$)`` after the colon
+    re-tightens the heuristic — a real TOON key/value pair always has
+    whitespace (or EOL) after the colon, CSV first-column-with-colon
+    never does.
+    """
+    toon = (
+        'failures[1]{notation,exit_code}:\n'
+        '  plan-marshall:foo:bar,1\n'
+        'sentinel: present\n'
+    )
+    parsed = _parse_toon(toon)
+    failures = parsed.get('failures') or []
+    assert len(failures) == 1, (
+        f'Parser truncated colon-bearing comma-separated row: got '
+        f'{len(failures)}/1 rows. The `[\\w_-]*` identifier widening '
+        'matched `plan-marshall:` at the start of the row and broke out '
+        'of the array — the `(?=\\s|$)` lookahead must re-tighten the '
+        'heuristic.'
+    )
+    assert failures[0]['notation'] == 'plan-marshall:foo:bar'
+    assert int(failures[0]['exit_code']) == 1
+    assert parsed.get('sentinel') == 'present', (
+        'The fix must not interfere with array-exit on genuine top-level '
+        'key/value pairs that follow the array.'
+    )

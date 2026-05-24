@@ -184,18 +184,27 @@ def _parse_uniform_array(ctx: ParseContext, count: int, fields: list[str], min_i
         # Parse the row if it's at the right indentation
         if indent >= min_indent and content and not content.startswith('#'):
             # Check if this looks like a new key-value pair (word followed by colon at start).
-            # Skip this check if the line looks like CSV/TSV row data:
-            #   - starts with `<ident>,` (comma-separated row whose first column is the
-            #     identifier — never a key/value pair)
-            #   - contains a TAB (tab-separated row whose first column may legitimately
-            #     contain a colon, e.g. CI check names like 'lint:strict' or
-            #     'coverage:enforce'; without this exclusion the parser falsely treats
-            #     such rows as a key/value pair and breaks out of the array, silently
-            #     truncating downstream rows — see lesson 2026-05-24-14-001's stress
-            #     fixtures `check-name-special-chars.toon` and
-            #     `failing-checks-with-colon-names.toon`).
+            #
+            # A genuine TOON key/value pair has the structural shape `<key>:` followed by
+            # either whitespace-then-value or end-of-line (for nested-block keys). The
+            # `(?=\s|$)` lookahead enforces that — CSV/TSV first-column data whose first
+            # field contains a colon (e.g. `plan-marshall:foo:bar,1` for the
+            # `failures[N]{notation,exit_code}` table, or `lint:strict` / `coverage:enforce`
+            # for CI check-name TSV rows) has `<ident>:<more-data>` with NO trailing space,
+            # so the lookahead fails and the array continues parsing.
+            #
+            # Additional guards:
+            #   - starts with `<ident>,` -> CSV row with bare identifier first column
+            #   - contains a TAB -> TSV row (tabs never appear in TOON key/value pairs)
+            #
+            # Identifier character class includes `-` so hyphenated TOON keys
+            # (`base-branch`, `worktree-path`) still terminate arrays correctly when
+            # a sibling key/value pair follows the array body without an outdent.
+            # See lesson 2026-05-24-14-001 for the CI-stress fixtures and the
+            # `failures[N]{notation,exit_code}` regression that motivated the
+            # lookahead.
             looks_like_key_value = (
-                re.match(r'^[a-zA-Z_][\w_-]*\s*:', content)
+                re.match(r'^[a-zA-Z_][\w_-]*\s*:(?=\s|$)', content)
                 and not re.match(r'^[a-zA-Z_][\w_-]*,', content)
                 and '\t' not in content
             )
