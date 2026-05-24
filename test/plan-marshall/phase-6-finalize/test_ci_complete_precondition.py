@@ -1164,9 +1164,8 @@ def test_fixture_dir_present():
         # Additional failure-mode regression fixture surfaced by (b).
         'failing-checks-with-colon-names.toon',
     }
-    found = {f.name for f in _FIXTURE_DIR.iterdir() if f.suffix == '.toon'}
-    missing = expected - found
-    assert not missing, f'Missing fixtures: {missing}'
+    found = {f.name for f in _FIXTURE_DIR.iterdir() if f.is_file() and f.suffix == '.toon'}
+    assert expected == found, f'Fixture directory out of sync. Missing: {expected - found}, Extra: {found - expected}'
 
 
 def test_fixture_green_success_resolves_to_success():
