@@ -88,28 +88,27 @@ def _scan_latest_build_ts(log_path: Path) -> tuple[datetime | None, str | None]:
     plan lifetime and tail-scanning would require a backwards-line iterator
     that is not worth the complexity here.
     """
-    if not log_path.exists():
+    if not log_path.is_file():
         return (None, None)
 
     latest_ts: datetime | None = None
     latest_iso: str | None = None
     try:
-        content = log_path.read_text(encoding='utf-8', errors='replace')
+        with log_path.open(encoding='utf-8', errors='replace') as f:
+            for line in f:
+                match = _BUILD_LINE_RE.match(line)
+                if not match:
+                    continue
+                iso = match.group('ts')
+                try:
+                    ts = datetime.strptime(iso, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=UTC)
+                except ValueError:
+                    continue
+                if latest_ts is None or ts > latest_ts:
+                    latest_ts = ts
+                    latest_iso = iso
     except OSError:
         return (None, None)
-
-    for line in content.splitlines():
-        match = _BUILD_LINE_RE.match(line)
-        if not match:
-            continue
-        iso = match.group('ts')
-        try:
-            ts = datetime.strptime(iso, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=UTC)
-        except ValueError:
-            continue
-        if latest_ts is None or ts > latest_ts:
-            latest_ts = ts
-            latest_iso = iso
 
     return (latest_ts, latest_iso)
 
@@ -178,7 +177,7 @@ def _read_status_metadata(plan_id: str) -> dict:
     read/parse error so the caller can degrade to the cwd fallback.
     """
     status_path = get_plan_dir(plan_id) / FILE_STATUS
-    if not status_path.exists():
+    if not status_path.is_file():
         return {}
     try:
         status = read_json(status_path)
@@ -204,7 +203,7 @@ def _resolve_worktree_root(plan_id: str) -> Path:
     worktree_path = metadata.get('worktree_path', '')
     if isinstance(worktree_path, str) and worktree_path:
         candidate = Path(worktree_path)
-        if candidate.exists():
+        if candidate.is_dir():
             return candidate
     return Path.cwd()
 
@@ -219,7 +218,7 @@ def _read_modified_files(plan_id: str) -> list[str]:
     list as "fall back to the worktree-root walk".
     """
     refs_path = get_plan_dir(plan_id) / FILE_REFERENCES
-    if not refs_path.exists():
+    if not refs_path.is_file():
         return []
     try:
         refs = read_json(refs_path)
@@ -230,7 +229,15 @@ def _read_modified_files(plan_id: str) -> list[str]:
     modified = refs.get('modified_files', [])
     if not isinstance(modified, list):
         return []
-    return [entry for entry in modified if isinstance(entry, str) and entry]
+    return [
+        entry
+        for entry in modified
+        if isinstance(entry, str)
+        and entry
+        and not Path(entry).is_absolute()
+        and '..' not in Path(entry).parts
+        and '.' not in Path(entry).parts
+    ]
 
 
 def _iso_from_epoch(epoch: float) -> str:
