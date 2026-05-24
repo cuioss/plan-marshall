@@ -1,0 +1,15 @@
+status: success
+operation: ci_wait
+pr_number: 460
+final_status: success
+duration_sec: 90
+polls: 3
+elapsed_sec: 90
+checks[3]{name,status,result,url,workflow,elapsed_sec}:
+	build	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/901?query=foo,bar,baz	Python Verify	60
+	test	completed	pass	https://example.com/run?q=%22quoted%22&list=a,b,c	Python Verify	20
+	lint	completed	skipping	https://github.com/cuioss/plan-marshall/actions/runs/903?ref=feat/x,y&token="abc"	Python Verify	10
+failing_checks[0]:
+wait_outcome: completed
+run_id: "901"
+head_sha: aaaaffff1111222233334444555566667777aaaa

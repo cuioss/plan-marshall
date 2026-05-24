@@ -1061,3 +1061,454 @@ def test_resolve_skips_writeback_when_duration_absent():
         assert result['status'] == 'wait_succeeded'
         # No duration → no write-back.
         assert set_stub.durations == []
+
+
+# ---------------------------------------------------------------------------
+# Fixture-driven tests — feed each representative ``ci checks wait`` TOON
+# stdout through ``parse_toon`` and the resolver. Closes the test gap that
+# lesson 2026-05-24-14-001 ("Mock-only unit tests cannot reproduce the live
+# failure mode") identified: the existing seam-based tests pin the post-
+# parse contract but never exercise parse_toon → resolve(). The fixtures
+# live under test/plan-marshall/phase-6-finalize/fixtures/ci-wait/.
+# ---------------------------------------------------------------------------
+
+
+_FIXTURE_DIR = (
+    _REPO_ROOT
+    / 'test'
+    / 'plan-marshall'
+    / 'phase-6-finalize'
+    / 'fixtures'
+    / 'ci-wait'
+)
+
+
+def _load_parse_toon():
+    """Import parse_toon from the ref-toon-format scripts directory."""
+    parser_dir = (
+        _REPO_ROOT
+        / 'marketplace'
+        / 'bundles'
+        / 'plan-marshall'
+        / 'skills'
+        / 'ref-toon-format'
+        / 'scripts'
+    )
+    spec = importlib.util.spec_from_file_location(
+        'toon_parser', parser_dir / 'toon_parser.py'
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.parse_toon
+
+
+_parse_toon = _load_parse_toon()
+
+
+def _make_fixture_wait_runner(parsed: dict):
+    """Build a ci_wait_runner stub that returns the parsed-fixture dict."""
+
+    def _runner(plan_id, pr_number, timeout_seconds, worktree_path):  # noqa: ARG001
+        return parsed
+
+    return _runner
+
+
+def _run_fixture_through_resolver(fixture_path, plan_id):
+    """Parse a fixture file and feed the parsed dict through resolve()."""
+    raw = fixture_path.read_text()
+    parsed = _parse_toon(raw)
+    runner = _make_fixture_wait_runner(parsed)
+    git_stub = _StubGitHead(_SHA_A)
+    return resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=runner,
+        git_head_resolver=git_stub,
+    )
+
+
+def test_fixture_dir_present():
+    """The fixture set composed by deliverable 2 (plus the stress fixtures
+    added under the phase-5-execute Q-Gate finding e2c3ee re-direction) must
+    be present.
+
+    The Q-Gate finding called for widening the fixture set with the six
+    stressor categories (a-f) the original 9 captures didn't cover. The
+    `check-name-special-chars` and `failing-checks-with-colon-names` fixtures
+    surfaced a live bug in `parse_toon`'s `_parse_uniform_array` key/value
+    detection heuristic — fixed in TASK-004.
+    """
+    assert _FIXTURE_DIR.is_dir(), f'Fixture directory missing: {_FIXTURE_DIR}'
+    expected = {
+        # Original 9 fixtures from deliverable 2 (TASK-002).
+        'green-success.toon',
+        'failure-with-failing-checks.toon',
+        'no-checks.toon',
+        'timeout-deadline-exceeded.toon',
+        'pending-then-cancelled.toon',
+        'mixed-success-failure.toon',
+        'skipped-checks.toon',
+        'single-check-success.toon',
+        'many-checks-success.toon',
+        # Stress fixtures added per Q-Gate finding e2c3ee (stressors a-f).
+        'url-with-commas-and-quotes.toon',          # (a) commas/quotes in URL
+        'check-name-special-chars.toon',            # (b) special chars in name
+        'multi-line-error-summary.toon',            # (c) multi-line | content
+        'older-gh-envelope.toon',                   # (d) older gh format
+        'huge-checks-block.toon',                   # (e) >50 rows
+        'mixed-skipped-cancelled-neutral.toon',     # (f) SKIPPED+CANCELLED+NEUTRAL
+        # Additional failure-mode regression fixture surfaced by (b).
+        'failing-checks-with-colon-names.toon',
+    }
+    found = {f.name for f in _FIXTURE_DIR.iterdir() if f.is_file() and f.suffix == '.toon'}
+    assert expected == found, f'Fixture directory out of sync. Missing: {expected - found}, Extra: {found - expected}'
+
+
+def test_fixture_green_success_resolves_to_success():
+    """The exact regression case from PR #454 — green fixture must classify
+    as ``wait_succeeded / ci_final_status: success``. This is the headline
+    mis-classification the lesson identifies; if this test fails, the
+    parse-and-extract pipeline is broken."""
+    fixture = _FIXTURE_DIR / 'green-success.toon'
+    plan_id = 'ci-fixture-green-success'
+    with PlanContext(plan_id=plan_id):
+        result = _run_fixture_through_resolver(fixture, plan_id)
+    assert result['status'] == 'wait_succeeded', (
+        f"green-success.toon expected wait_succeeded, got "
+        f"{result['status']} (ci_final_status="
+        f"{result.get('ci_final_status')!r}). This is the headline "
+        f"regression from PR #454."
+    )
+    assert result['ci_final_status'] == 'success'
+
+
+def test_fixture_single_check_success_resolves_to_success():
+    """Smallest non-empty checks table — minimum parser surface."""
+    fixture = _FIXTURE_DIR / 'single-check-success.toon'
+    plan_id = 'ci-fixture-single-check-success'
+    with PlanContext(plan_id=plan_id):
+        result = _run_fixture_through_resolver(fixture, plan_id)
+    assert result['status'] == 'wait_succeeded'
+    assert result['ci_final_status'] == 'success'
+
+
+def test_fixture_many_checks_success_resolves_to_success():
+    """Larger checks table — exercises the parser at realistic counts."""
+    fixture = _FIXTURE_DIR / 'many-checks-success.toon'
+    plan_id = 'ci-fixture-many-checks-success'
+    with PlanContext(plan_id=plan_id):
+        result = _run_fixture_through_resolver(fixture, plan_id)
+    assert result['status'] == 'wait_succeeded'
+    assert result['ci_final_status'] == 'success'
+
+
+def test_fixture_skipped_checks_resolves_to_success():
+    """Mix of pass + skipping rows — variant of green-success."""
+    fixture = _FIXTURE_DIR / 'skipped-checks.toon'
+    plan_id = 'ci-fixture-skipped-checks'
+    with PlanContext(plan_id=plan_id):
+        result = _run_fixture_through_resolver(fixture, plan_id)
+    assert result['status'] == 'wait_succeeded'
+    assert result['ci_final_status'] == 'success'
+
+
+def test_fixture_failure_with_failing_checks_resolves_to_failure():
+    """One failing check — exercises failing_checks[] enumeration."""
+    fixture = _FIXTURE_DIR / 'failure-with-failing-checks.toon'
+    plan_id = 'ci-fixture-failure-with-failing-checks'
+    with PlanContext(plan_id=plan_id):
+        result = _run_fixture_through_resolver(fixture, plan_id)
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'failure'
+    assert len(result.get('failing_checks') or []) == 1
+
+
+def test_fixture_mixed_success_failure_resolves_to_failure():
+    """Multiple failing checks alongside passing — multi-row failing list."""
+    fixture = _FIXTURE_DIR / 'mixed-success-failure.toon'
+    plan_id = 'ci-fixture-mixed-success-failure'
+    with PlanContext(plan_id=plan_id):
+        result = _run_fixture_through_resolver(fixture, plan_id)
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'failure'
+    assert len(result.get('failing_checks') or []) == 2
+
+
+def test_fixture_pending_then_cancelled_resolves_to_failure():
+    """All checks cancelled (non-failure terminal) — classifies as failure
+    per the resolver contract (only success/none distinguish)."""
+    fixture = _FIXTURE_DIR / 'pending-then-cancelled.toon'
+    plan_id = 'ci-fixture-pending-then-cancelled'
+    with PlanContext(plan_id=plan_id):
+        result = _run_fixture_through_resolver(fixture, plan_id)
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'failure'
+
+
+def test_fixture_no_checks_resolves_to_no_checks():
+    """Empty checks[] (no CI configured) — distinct from real failure."""
+    fixture = _FIXTURE_DIR / 'no-checks.toon'
+    plan_id = 'ci-fixture-no-checks'
+    with PlanContext(plan_id=plan_id):
+        result = _run_fixture_through_resolver(fixture, plan_id)
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'no_checks'
+
+
+def test_fixture_timeout_deadline_exceeded_resolves_to_timeout():
+    """True timeout (deadline_exceeded) — distinct from the false-timeout
+    mis-classification the lesson identifies."""
+    fixture = _FIXTURE_DIR / 'timeout-deadline-exceeded.toon'
+    plan_id = 'ci-fixture-timeout-deadline-exceeded'
+    with PlanContext(plan_id=plan_id):
+        result = _run_fixture_through_resolver(fixture, plan_id)
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'timeout'
+    assert result.get('wait_outcome') == 'deadline_exceeded'
+
+
+# ---------------------------------------------------------------------------
+# Stress fixtures — Q-Gate finding e2c3ee re-direction. The six stressor
+# categories (a-f) called out by the user's review of the first-pass
+# fixture set:
+#
+#   (a) URLs containing commas/quotes inside the tab-separated row
+#   (b) Check names with embedded special chars (colon, brackets, slash,
+#       parentheses, spaces, '=')
+#   (c) Multi-line embedded content via the TOON `|` block marker
+#   (d) Older `gh` CLI envelope shapes (empty url / run_id fields)
+#   (e) Very large `checks[N]` blocks (>50 rows)
+#   (f) SKIPPED + CANCELLED + NEUTRAL conclusion combinations
+#
+# (b) and the companion `failing-checks-with-colon-names` fixture surfaced
+# a live bug: `parse_toon`'s `_parse_uniform_array` key/value detection
+# heuristic at the prior `re.match(r'^[a-zA-Z_][\w_]*\s*:', content)` line
+# treated tab-separated rows whose first column contained `:` (e.g.
+# `lint:strict`, `coverage:enforce`) as a new key/value pair and broke
+# out of the array — silently truncating downstream rows. TASK-004 fixed
+# this by adding `\t not in content` to the heuristic; these tests pin
+# the corrected behaviour.
+# ---------------------------------------------------------------------------
+
+
+def test_fixture_url_with_commas_and_quotes_resolves_to_success():
+    """Stressor (a): commas and quotes inside URL columns of a tab-separated
+    row must not break parsing — the tab-mode splitter ignores commas."""
+    fixture = _FIXTURE_DIR / 'url-with-commas-and-quotes.toon'
+    plan_id = 'ci-fixture-url-commas-quotes'
+    with PlanContext(plan_id=plan_id):
+        result = _run_fixture_through_resolver(fixture, plan_id)
+    assert result['status'] == 'wait_succeeded'
+    assert result['ci_final_status'] == 'success'
+
+
+def test_fixture_check_name_special_chars_preserves_all_rows():
+    """Stressor (b): check names containing special characters — including
+    the bug-trigger colon (`lint:strict`, `coverage = 95%`) — must NOT
+    short-circuit the inline-table parse.
+
+    Before the TASK-004 fix, the parser's key/value detection heuristic
+    treated `lint:strict\\tcompleted\\t...` as a new key/value pair after
+    `.strip()` left the colon at offset 4, breaking out of the array and
+    silently truncating downstream rows. This test pins the fix by feeding
+    the raw fixture through `parse_toon` directly and asserting the full
+    row count is preserved.
+    """
+    fixture = _FIXTURE_DIR / 'check-name-special-chars.toon'
+    raw = fixture.read_text()
+    parsed = _parse_toon(raw)
+    assert len(parsed.get('checks') or []) == 5, (
+        f"Expected 5 checks rows, got {len(parsed.get('checks') or [])}. "
+        'The parser truncated the array — most likely the key/value '
+        "detection heuristic in `_parse_uniform_array` fired on a row "
+        "whose first column legitimately contains ':' (e.g. 'lint:strict')."
+    )
+    # The bug-trigger row must be present with name verbatim.
+    names = [c['name'] for c in parsed['checks']]
+    assert 'lint:strict' in names, f'lint:strict row missing: {names!r}'
+    assert 'coverage = 95%' in names, f'coverage row missing: {names!r}'
+
+
+def test_fixture_check_name_special_chars_resolves_to_success():
+    """End-to-end: the special-chars fixture still resolves to wait_succeeded."""
+    fixture = _FIXTURE_DIR / 'check-name-special-chars.toon'
+    plan_id = 'ci-fixture-check-name-special-chars'
+    with PlanContext(plan_id=plan_id):
+        result = _run_fixture_through_resolver(fixture, plan_id)
+    assert result['status'] == 'wait_succeeded'
+    assert result['ci_final_status'] == 'success'
+
+
+def test_fixture_multi_line_error_summary_resolves_to_timeout():
+    """Stressor (c): multi-line `|` content in a top-level envelope field
+    must parse without breaking the trailing `checks[N]:` table or the
+    top-level `status: error` classification."""
+    fixture = _FIXTURE_DIR / 'multi-line-error-summary.toon'
+    plan_id = 'ci-fixture-multi-line-error'
+    with PlanContext(plan_id=plan_id):
+        result = _run_fixture_through_resolver(fixture, plan_id)
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'timeout'
+    assert result.get('wait_outcome') == 'deadline_exceeded'
+    # The failing_checks list captures the still-pending checks at deadline.
+    assert len(result.get('failing_checks') or []) == 2
+
+
+def test_fixture_older_gh_envelope_resolves_to_success():
+    """Stressor (d): older `gh` envelope shapes with empty url and run_id
+    fields must still parse and resolve to success when final_status is set."""
+    fixture = _FIXTURE_DIR / 'older-gh-envelope.toon'
+    plan_id = 'ci-fixture-older-gh'
+    with PlanContext(plan_id=plan_id):
+        result = _run_fixture_through_resolver(fixture, plan_id)
+    assert result['status'] == 'wait_succeeded'
+    assert result['ci_final_status'] == 'success'
+
+
+def test_fixture_huge_checks_block_resolves_to_success():
+    """Stressor (e): a >50-row checks block must parse without performance
+    cliff and resolve cleanly. The fixture carries exactly 55 rows."""
+    fixture = _FIXTURE_DIR / 'huge-checks-block.toon'
+    plan_id = 'ci-fixture-huge-checks-block'
+    with PlanContext(plan_id=plan_id):
+        result = _run_fixture_through_resolver(fixture, plan_id)
+    assert result['status'] == 'wait_succeeded'
+    assert result['ci_final_status'] == 'success'
+    # Verify the parser captured every row — pin the structural completeness.
+    raw = fixture.read_text()
+    parsed = _parse_toon(raw)
+    assert len(parsed['checks']) == 55, (
+        f"Expected all 55 rows, got {len(parsed['checks'])}"
+    )
+
+
+def test_fixture_mixed_skipped_cancelled_neutral_resolves_to_failure():
+    """Stressor (f): a mix of pass + SKIPPED + CANCELLED + NEUTRAL + FAIL
+    conclusions where `final_status: failure` MUST classify as wait_failed
+    and forward the failing_checks list verbatim."""
+    fixture = _FIXTURE_DIR / 'mixed-skipped-cancelled-neutral.toon'
+    plan_id = 'ci-fixture-mixed-conclusions'
+    with PlanContext(plan_id=plan_id):
+        result = _run_fixture_through_resolver(fixture, plan_id)
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'failure'
+    failing_names = [c['name'] for c in result.get('failing_checks') or []]
+    assert set(failing_names) == {'test', 'lint', 'security-scan'}, (
+        f'Failing-check enumeration drifted: {failing_names!r}'
+    )
+
+
+def test_fixture_failing_checks_with_colon_names_forwards_full_list():
+    """Companion regression for stressor (b): when a `failing_checks[N]:`
+    inline-table block has rows whose first column contains `:` (e.g.
+    `lint:strict`, `coverage:enforce`), the resolver MUST forward the full
+    failing-check enumeration — not a truncated/empty list.
+
+    Pre-fix observed: `failing_checks` came back as `[]` because the parser
+    broke out of the array on the first colon-bearing row, silently
+    losing both failure entries. Consumers that route on `failing_checks`
+    (e.g. ci-verify consume-failures mode) would receive no signal about
+    which checks actually failed.
+    """
+    fixture = _FIXTURE_DIR / 'failing-checks-with-colon-names.toon'
+    plan_id = 'ci-fixture-failing-colon-names'
+    with PlanContext(plan_id=plan_id):
+        result = _run_fixture_through_resolver(fixture, plan_id)
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'failure'
+    failing_names = [c['name'] for c in result.get('failing_checks') or []]
+    assert failing_names == ['lint:strict', 'coverage:enforce'], (
+        f'Expected [lint:strict, coverage:enforce], got {failing_names!r}. '
+        "If this is an empty list, the parser regression has returned — "
+        'the key/value detection heuristic in _parse_uniform_array fired '
+        'on the colon-bearing first column and truncated the array.'
+    )
+
+
+# ---------------------------------------------------------------------------
+# Direct parser regression guard — pins the heuristic-fix at the parser
+# level, independent of the resolver / fixture layout. If a future change
+# re-introduces the bug (e.g. by reverting the `\\t not in content`
+# guard), this test fails fast with a clear diagnostic.
+# ---------------------------------------------------------------------------
+
+
+def test_parse_toon_inline_table_handles_colon_in_first_column():
+    """`parse_toon` MUST treat a tab-separated row whose first column
+    contains a colon (e.g. CI check names like `lint:strict`) as a data
+    row, NOT as a key/value pair.
+
+    The pre-fix heuristic at `_parse_uniform_array`:
+
+        if re.match(r'^[a-zA-Z_][\\w_]*\\s*:', content) and not ...:
+            break
+
+    matched `lint:strict\\tcompleted\\t...` after `.strip()` (the `\\s*`
+    matched zero whitespace before the colon) and broke out of the
+    array. The fix added `'\\t' not in content` to the heuristic.
+    """
+    toon = (
+        'rows[3]{name,status,result}:\n'
+        '\tlint:strict\tcompleted\tpass\n'
+        '\tcoverage:enforce\tcompleted\tfail\n'
+        '\tbuild\tcompleted\tpass\n'
+        'sentinel: present\n'
+    )
+    parsed = _parse_toon(toon)
+    rows = parsed.get('rows') or []
+    assert len(rows) == 3, (
+        f'Parser truncated colon-bearing tab-separated rows: got '
+        f'{len(rows)}/3 rows. Heuristic regression in '
+        '`_parse_uniform_array` — see TASK-004 fix.'
+    )
+    assert [r['name'] for r in rows] == [
+        'lint:strict',
+        'coverage:enforce',
+        'build',
+    ]
+    # The post-table sentinel key/value MUST still be picked up — the
+    # array-exit condition must work for genuine top-level keys.
+    assert parsed.get('sentinel') == 'present', (
+        'The fix must not interfere with array-exit on genuine top-level '
+        'key/value pairs that follow the array.'
+    )
+
+
+def test_parse_toon_inline_table_handles_colon_in_first_column_csv():
+    """`parse_toon` MUST treat a comma-separated row whose first column
+    contains BOTH a hyphen AND a colon (e.g. plan-retrospective
+    `failures[N]{notation,exit_code}` rows like
+    ``plan-marshall:foo:bar,1``) as data, NOT as a key/value pair.
+
+    The post-`\\t-guard` regression: extending the identifier character
+    class to ``[\\w_-]*`` so hyphenated TOON keys still terminate arrays
+    inadvertently made the heuristic match ``plan-marshall:`` at the
+    start of a CSV row. The lookahead ``(?=\\s|$)`` after the colon
+    re-tightens the heuristic — a real TOON key/value pair always has
+    whitespace (or EOL) after the colon, CSV first-column-with-colon
+    never does.
+    """
+    toon = (
+        'failures[1]{notation,exit_code}:\n'
+        '  plan-marshall:foo:bar,1\n'
+        'sentinel: present\n'
+    )
+    parsed = _parse_toon(toon)
+    failures = parsed.get('failures') or []
+    assert len(failures) == 1, (
+        f'Parser truncated colon-bearing comma-separated row: got '
+        f'{len(failures)}/1 rows. The `[\\w_-]*` identifier widening '
+        'matched `plan-marshall:` at the start of the row and broke out '
+        'of the array — the `(?=\\s|$)` lookahead must re-tighten the '
+        'heuristic.'
+    )
+    assert failures[0]['notation'] == 'plan-marshall:foo:bar'
+    assert int(failures[0]['exit_code']) == 1
+    assert parsed.get('sentinel') == 'present', (
+        'The fix must not interfere with array-exit on genuine top-level '
+        'key/value pairs that follow the array.'
+    )

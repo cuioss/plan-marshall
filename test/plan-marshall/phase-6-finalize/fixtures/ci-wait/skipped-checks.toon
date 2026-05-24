@@ -1,0 +1,16 @@
+status: success
+operation: ci_wait
+pr_number: 440
+final_status: success
+duration_sec: 110
+polls: 4
+elapsed_sec: 110
+checks[4]{name,status,result,url,workflow,elapsed_sec}:
+	build	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/601	Python Verify	60
+	test	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/602	Python Verify	50
+	docs	completed	skipping	https://github.com/cuioss/plan-marshall/actions/runs/603	Docs	2
+	deploy	completed	skipping	https://github.com/cuioss/plan-marshall/actions/runs/604	Deploy	1
+failing_checks[0]:
+wait_outcome: completed
+run_id: "601"
+head_sha: ffff6666aaaa7777bbbb8888cccc9999dddd0000

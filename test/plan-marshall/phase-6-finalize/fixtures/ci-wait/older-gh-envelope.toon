@@ -1,0 +1,14 @@
+status: success
+operation: ci_wait
+pr_number: 462
+final_status: success
+duration_sec: 80
+polls: 3
+elapsed_sec: 80
+checks[2]{name,status,result,url,workflow,elapsed_sec}:
+	build	completed	pass		Python Verify	40
+	test	completed	pass		Python Verify	40
+failing_checks[0]:
+wait_outcome: completed
+run_id: ""
+head_sha: cccc2222dddd3333eeee4444ffff5555aaaa6666

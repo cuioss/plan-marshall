@@ -15,8 +15,25 @@ TEST_ROOT = Path(__file__).parent.parent.parent
 
 
 def find_toon_files():
-    """Find all .toon files in test directory."""
-    return list(TEST_ROOT.rglob('*.toon'))
+    """Find all .toon files in test directory.
+
+    Excludes fixture sets that mirror verbatim production stdout where the
+    canonical TOON-style rules (no tabs, exact array-row counts) do not
+    apply because the file IS the production output. Current excluded
+    paths:
+
+    - ``phase-6-finalize/fixtures/ci-wait/*`` — captured ``ci checks
+      wait`` stdout, tab-separated table rows per the production
+      serializer's ``table_separator='\\t'`` mode.
+    """
+    excluded_parents = {
+        TEST_ROOT / 'plan-marshall' / 'phase-6-finalize' / 'fixtures' / 'ci-wait',
+    }
+    all_files = list(TEST_ROOT.rglob('*.toon'))
+    return [
+        f for f in all_files
+        if not any(excluded in f.parents for excluded in excluded_parents)
+    ]
 
 
 def validate_toon_file(file_path):

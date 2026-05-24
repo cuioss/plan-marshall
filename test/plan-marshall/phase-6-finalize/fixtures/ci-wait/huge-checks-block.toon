@@ -1,0 +1,67 @@
+status: success
+operation: ci_wait
+pr_number: 464
+final_status: success
+duration_sec: 540
+polls: 18
+elapsed_sec: 540
+checks[55]{name,status,result,url,workflow,elapsed_sec}:
+	check-01	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1001	Python Verify	6
+	check-02	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1002	Python Verify	7
+	check-03	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1003	Python Verify	8
+	check-04	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1004	Python Verify	9
+	check-05	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1005	Python Verify	10
+	check-06	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1006	Python Verify	11
+	check-07	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1007	Python Verify	12
+	check-08	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1008	Python Verify	13
+	check-09	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1009	Python Verify	14
+	check-10	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1010	Python Verify	15
+	check-11	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1011	Python Verify	16
+	check-12	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1012	Python Verify	17
+	check-13	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1013	Python Verify	18
+	check-14	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1014	Python Verify	19
+	check-15	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1015	Python Verify	20
+	check-16	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1016	Python Verify	21
+	check-17	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1017	Python Verify	22
+	check-18	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1018	Python Verify	23
+	check-19	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1019	Python Verify	24
+	check-20	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1020	Python Verify	25
+	check-21	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1021	Python Verify	26
+	check-22	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1022	Python Verify	27
+	check-23	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1023	Python Verify	28
+	check-24	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1024	Python Verify	29
+	check-25	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1025	Python Verify	30
+	check-26	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1026	Python Verify	31
+	check-27	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1027	Python Verify	32
+	check-28	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1028	Python Verify	33
+	check-29	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1029	Python Verify	34
+	check-30	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1030	Python Verify	5
+	check-31	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1031	Python Verify	6
+	check-32	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1032	Python Verify	7
+	check-33	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1033	Python Verify	8
+	check-34	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1034	Python Verify	9
+	check-35	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1035	Python Verify	10
+	check-36	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1036	Python Verify	11
+	check-37	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1037	Python Verify	12
+	check-38	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1038	Python Verify	13
+	check-39	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1039	Python Verify	14
+	check-40	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1040	Python Verify	15
+	check-41	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1041	Python Verify	16
+	check-42	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1042	Python Verify	17
+	check-43	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1043	Python Verify	18
+	check-44	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1044	Python Verify	19
+	check-45	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1045	Python Verify	20
+	check-46	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1046	Python Verify	21
+	check-47	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1047	Python Verify	22
+	check-48	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1048	Python Verify	23
+	check-49	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1049	Python Verify	24
+	check-50	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1050	Python Verify	25
+	check-51	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1051	Python Verify	26
+	check-52	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1052	Python Verify	27
+	check-53	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1053	Python Verify	28
+	check-54	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1054	Python Verify	29
+	check-55	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1055	Python Verify	30
+failing_checks[0]:
+wait_outcome: completed
+run_id: "1001"
+head_sha: eeee4444ffff5555aaaa6666bbbb7777cccc8888

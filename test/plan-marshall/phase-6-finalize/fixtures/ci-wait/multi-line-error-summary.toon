@@ -1,0 +1,23 @@
+status: error
+operation: ci_wait
+pr_number: 465
+error: |
+  Timeout waiting for CI after 600s.
+  Still-pending checks:
+    - integration-tests (workflow: Integration, run: 1100)
+    - e2e-tests (workflow: E2E, run: 1101)
+  See https://github.com/cuioss/plan-marshall/actions for details.
+duration_sec: 600
+polls: 30
+elapsed_sec: 600
+last_status: pending
+checks[3]{name,status,result,url,workflow,elapsed_sec}:
+	build	completed	pass	https://github.com/cuioss/plan-marshall/actions/runs/1099	Python Verify	60
+	integration-tests	in_progress	pending	https://github.com/cuioss/plan-marshall/actions/runs/1100	Integration	540
+	e2e-tests	in_progress	pending	https://github.com/cuioss/plan-marshall/actions/runs/1101	E2E	540
+failing_checks[2]{name,conclusion,workflow_name,job_name,started_at,completed_at,run_id,run_url}:
+	integration-tests	PENDING	Integration	integration	2026-05-23T13:00:00Z		1100	https://github.com/cuioss/plan-marshall/actions/runs/1100
+	e2e-tests	PENDING	E2E	e2e	2026-05-23T13:00:00Z		1101	https://github.com/cuioss/plan-marshall/actions/runs/1101
+wait_outcome: deadline_exceeded
+run_id: "1099"
+head_sha: ffff5555aaaa6666bbbb7777cccc8888dddd9999
