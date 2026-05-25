@@ -56,7 +56,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   read --plan-id {plan_id}
 ```
 
-Locate the `automated-review` step under `phases[name=6-finalize].steps`. Treat any of the following as a non-zero signal ⇒ continue: (a) `outcome` is anything other than `done`, (b) `display_detail` reports a non-zero promoted-comment count (e.g. `"3 comments promoted"`). Outcome `done` with zero promoted comments ⇒ signal count zero.
+Locate the `automated-review` step under `metadata.phase_steps["6-finalize"]`. Treat any of the following as a non-zero signal ⇒ continue: (a) `outcome` is anything other than `done`, (b) `display_detail` reports a non-zero promoted-comment count (e.g. `"3 comments promoted"`). Outcome `done` with zero promoted comments ⇒ signal count zero.
 
 **Signal 3 — script-failure clusters**:
 
