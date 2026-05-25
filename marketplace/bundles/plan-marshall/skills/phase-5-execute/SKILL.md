@@ -33,6 +33,15 @@ Skill: plan-marshall:dev-agent-behavior-rules
 
 **Constraints:**
 - Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
+
+## Exit-code convention for `manage-*` script calls
+
+Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+
+- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the failure mode documented in lesson `2026-04-29-23-002` (silent swallowing of `wrong_parameters` rejections). "Log and continue" is the prohibited anti-pattern.
+
+Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., `manage-files exists` returning `exists: false`, `manage-status get-worktree-path` returning an empty `worktree_path`) — are documented inline in the step that issues them.
 - On phase entry (Step 4), resolve the active worktree absolute path and surface it as a `[STATUS]` work-log line so it stays visible in model context throughout the run.
 - Every subagent dispatch (Task / Skill / execution-context invocation) MUST embed the Worktree Header in the dispatch prompt when a worktree is active (see **Dispatch Protocol** below) AND MUST pass `plan_id` as an input parameter to satisfy the subagent's Input Contract (e.g., `execute-task`, `execution-context`). Prompt embedding and parameter passing are both required — the former propagates the constraint through free-form delegation, the latter satisfies the structured interface.
 
@@ -201,9 +210,9 @@ Each verify step declares an `order: <int>` value in its authoritative source �
 |-----------|--------|-------------|
 | `default:quality_check` | Run quality-gate build command | Code quality checks |
 | `default:build_verify` | Run full test suite | Build verification |
-| `default:coverage_check` | Run coverage build, then parse JaCoCo report | Coverage threshold verification |
+| `default:coverage_check` | Run resolved coverage build; threshold enforcement is native to the build tool | Coverage threshold verification |
 
-**`coverage_check` dispatch**: Resolve via `architecture resolve --command coverage` to run the coverage build, then invoke `build-maven:maven coverage-report` (or `build-gradle:gradle coverage-report`) to parse the JaCoCo report. Pass `--report-path` pointing to the module's target directory and `--threshold` from config.
+**`coverage_check` dispatch**: Resolve via `architecture resolve --command coverage` and run the resolved executable. Threshold enforcement is native to the resolved command — pytest receives `--cov-fail-under={threshold}` from `build.py::cmd_coverage`, and JaCoCo (Maven/Gradle) enforces the threshold via build-tool configuration. No secondary parse-and-check call is required.
 
 ### Interface Contract for External Steps
 
@@ -513,6 +522,29 @@ For each step in task's `steps[]` array:
 2. Execute the action (delegate if specified) — when delegating to a subagent via `Task:`, `Skill:` (prompt-accepting), or `execution-context`, the prompt MUST begin with the Worktree Header from the **Dispatch Protocol** section above (omit only when no worktree is active).
 3. Mark step complete via `manage-tasks:finalize-step`
 
+### Step 6.5: Scope-Creep Guard (per-task)
+
+After Step 6 completes its file-system changes but BEFORE running task verification (Step 7's `finalize-step` records "done" only after this guard clears), invoke the deterministic scope-creep helper. The helper computes the residual file-set drift — files modified since the plan was created that are NOT declared in the union of all deliverables' `affected_files` — and emits a `scope_creep_warning` finding when the residual cardinality exceeds the configured threshold.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-5-execute:scope_creep_check \
+  check --plan-id {plan_id}
+```
+
+The helper reads `plan_creation_sha` from `references.json`, computes `git diff --name-only {plan_creation_sha}..HEAD` against the worktree, subtracts the union of `affected_files` from every deliverable, and returns:
+
+```toon
+status: success
+residual_count: N
+threshold: T
+finding_emitted: true|false
+residual_files[N]: [paths]
+```
+
+When `finding_emitted: true`, the helper has already persisted a `scope_creep_warning` finding to the Q-Gate findings store via `manage-findings qgate add --type scope_creep_warning`. The finding flows into the Step 11 triage loop alongside other verify findings (same resolution path: FIX / SUPPRESS / ACCEPT). No additional surface action required here — the standard triage loop handles it.
+
+**Threshold configuration**: default is `5`; override via `phase_5.scope_creep_threshold` in `marshal.json`'s plan-scoped config. Set to `0` to disable the guard entirely.
+
 ### Step 7: Mark Step Complete
 
 ```bash
@@ -628,6 +660,30 @@ If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
 - Step 9 marked a task `blocked` with reason `no_changes_detected` or `verification_mismatch`
 
 The per-finding LLM core (FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over the failing findings) is owned by [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) and dispatched under `--phase phase-5-execute --role verification-feedback` with `producer=build-runner`.
+
+#### Pre-triage scope cross-reference
+
+Before composing the triage dispatch, classify the failing file paths against the plan's declared `modified_files` from `references.json`. The cross-reference is deterministic — a small Python helper that subtracts `modified_files` from the union of error paths and returns a `exclusively_out_of_scope` flag:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-5-execute:verify_failure_scope \
+  classify --plan-id {plan_id} --error-paths {comma_separated_paths}
+```
+
+The script reads `modified_files` from `references.json`, classifies each error path, and returns:
+
+```toon
+status: success
+total: N
+in_scope_count: I
+out_of_scope_count: O
+exclusively_out_of_scope: true|false
+out_of_scope_paths[O]: [paths]
+```
+
+**When `exclusively_out_of_scope: true`**: the failing tests originate ENTIRELY outside the plan's declared scope (a sibling refactor on the same branch surfaced unrelated breakage). The `[BLOCKED]` triage message MUST include the distinction (e.g., `"All N failures originate outside plan scope: {paths}"`) and the AskUserQuestion offered to the user MUST present **"Stash foreign files and re-verify"** as the default recommended action, alongside the standard FIX / SUPPRESS / ACCEPT options.
+
+**When `exclusively_out_of_scope: false`** (the common case): proceed to the standard triage dispatch below without the foreign-failure annotation. The classification is informational only.
 
 #### Planned-failure exception (breaking-refactor task split)
 
@@ -882,7 +938,9 @@ The loop's continue-vs-yield decision is governed by exactly one deterministic c
 
 > **Small-plan short-circuit**: If `tasks_total <= 2` (read from `phase_5.tasks_total` in the execution manifest cached at Step 2), the sentinel is disabled for the dispatch lifetime — continue to the next task until the queue is empty or a terminal outcome fires.
 >
-> **Budget-vs-N comparison** (applies only when `tasks_total > 2`): **If `remaining_budget > N`: continue to the next task. Else: yield.**
+> **Final-task long-running-verify short-circuit**: If BOTH (a) the current task is the final task in the queue (`task_index + 1 == tasks_total`) AND (b) its resolved verification command is in the known long-running build set (`verify`, `coverage`, `quality-gate` fully scoped), suppress the sentinel for this single task — continue and finish in-dispatch. The cost-benefit is asymmetric: re-dispatching at the queue tail to run a long-running build pays the full dispatch overhead for zero scheduling benefit (no subsequent task ever runs). Log the suppression decision via `manage-logging decision`.
+>
+> **Budget-vs-N comparison** (applies only when neither short-circuit fires): **If `remaining_budget > N`: continue to the next task. Else: yield.**
 
 The small-plan short-circuit drops the orchestrator/task ratio from 3-5x to 1.0x for 1-task plans by suppressing the inter-task yield boundary that the budget-vs-N clause would otherwise impose. The threshold of `2` is deliberately conservative: a plan with at most two tasks completes well inside any reasonable per-dispatch budget, and the inter-task yield is pure overhead. The cross-phase analogue — per-phase caching of loop-invariant inputs — is documented in the phase-2/3/4 "Loop-invariant inputs (cached at phase entry)" subsections (see `phase-2-refine/SKILL.md`, `phase-3-outline/SKILL.md`, and `phase-4-plan/SKILL.md`) and in `extension-api/standards/dispatch-granularity.md` § 5.1 (Heuristic 2 — bundle when steps share context).
 

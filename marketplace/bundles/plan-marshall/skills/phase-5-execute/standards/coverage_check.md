@@ -14,21 +14,23 @@ Resolved from the `default:` prefix by `phase-5-execute` via the Built-in Step D
 
 **Whether this step fires is decided exclusively by `phase_5.verification_steps` in the per-plan execution manifest** (`manage-execution-manifest read`). This document carries **no embedded skip logic** — `coverage` runs iff `manage-execution-manifest`'s decision matrix included `coverage` in the manifest's `verification_steps` list. Any skip rule (e.g., docs-only plans, recipe paths, early-terminate analysis) is encoded in the matrix, not here.
 
-Resolve via `architecture resolve --command coverage` to run the coverage build, then invoke `build-maven:maven coverage-report` (or `build-gradle:gradle coverage-report`) to parse the JaCoCo report. Pass `--report-path` pointing to the module's target directory and `--threshold` from config:
+## Exit-code convention for `manage-*` script calls
+
+Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+
+- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the failure mode documented in lesson `2026-04-29-23-002` (silent swallowing of `wrong_parameters` rejections). "Log and continue" is the prohibited anti-pattern.
+
+Resolve via `architecture resolve --command coverage` and run the resolved executable. Threshold enforcement is native to the resolved build command: pytest emits `--cov-fail-under={threshold}` from `build.py::cmd_coverage`, and JaCoCo (Maven/Gradle) enforces the threshold via build-tool configuration. No secondary parse-and-check call is required.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   resolve --command coverage --module {module} --audit-plan-id {plan_id}
 ```
 
-```bash
-python3 .plan/execute-script.py plan-marshall:build-maven:maven \
-  coverage-report --report-path {module_target_dir} --threshold {coverage_threshold}
-```
-
 ## Return Contract
 
-Follows the standard phase-5-execute verification result shape: a coverage value below `--threshold` (or a failed build) surfaces as a failure and is routed through the Step 10 triage loop (fix-task creation, suppress, or accept) with `verification_max_iterations` from config.
+Follows the standard phase-5-execute verification result shape: a coverage value below the configured threshold (or a failed build) surfaces as a non-zero exit and is routed through the Step 10 triage loop (fix-task creation, suppress, or accept) with `verification_max_iterations` from config.
 
 ## Related Steps
 

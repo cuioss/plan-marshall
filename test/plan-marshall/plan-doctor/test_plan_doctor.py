@@ -51,7 +51,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from _doctor_fixtures import (  # type: ignore[import-not-found]  # noqa: E402
     REAL_LESSON_IDS,
+    make_archived_plan,
+    make_healthy_plan,
     make_plan_with_tasks,
+    make_status_json,
+    make_worktree_dir,
     seed_lesson_inventory,
 )
 
@@ -322,20 +326,24 @@ def test_scan_all_aggregates_findings_with_per_plan_attribution():
         result = _scan_all()
 
     # Assert — exit 1 (findings present); all four task files were parsed
-    # successfully (1 + 1 + 2); two findings; per-plan attribution matches
-    # the seeded layout.
+    # successfully (1 + 1 + 2); two PHANTOM findings; per-plan attribution
+    # matches the seeded layout. The directory rules (orphan etc.) also
+    # run on ``--all`` and may fire on the bare fixture plan-dirs above;
+    # this test asserts only on the phantom-lesson surface (lesson-ID
+    # sweep), so we filter by reason before counting.
     assert result.returncode == 1, result.stderr
     payload = result.toon()
     assert payload['status'] == 'success'
     assert payload['checked_files'] == 4
-    assert payload['findings_count'] == 2
     summary = payload.get('summary') or {}
     assert int(summary.get('plans_scanned', 0)) == 3
     # ``--no-emit`` was passed; surface that in the summary so callers
     # know the Q-Gate store was untouched.
     assert str(summary.get('emit_to_qgate')).lower() == 'false'
 
-    findings = _findings(payload)
+    phantom_findings = [f for f in _findings(payload) if f.get('reason') == 'phantom_lesson_id']
+    assert len(phantom_findings) == 2
+    findings = phantom_findings
     by_plan: dict[str, list[dict]] = {}
     for finding in findings:
         by_plan.setdefault(finding['plan_id'], []).append(finding)
@@ -351,3 +359,251 @@ def test_scan_all_aggregates_findings_with_per_plan_attribution():
     assert {f['task_file'] for f in by_plan['mixed-dirty-two']} == {'TASK-001.json'}
     # All findings carry the canonical reason code.
     assert {f['reason'] for f in findings} == {'phantom_lesson_id'}
+
+
+# =============================================================================
+# Directory-rule helpers (orphan / stuck-low-confidence / dangling-worktree)
+# =============================================================================
+
+
+def _findings_by_reason(payload: dict, reason: str) -> list[dict]:
+    """Filter the TOON ``findings`` slot to entries matching ``reason``."""
+    return [f for f in _findings(payload) if f.get('reason') == reason]
+
+
+# =============================================================================
+# Rule 1 — orphan-plan-directory (cases a, b, c)
+# =============================================================================
+
+
+def test_orphan_rule_case_a_logs_only_plan_dir_flagged_with_rm_rf():
+    # Arrange — a plan dir that has only ``logs/`` (no status.json, no
+    # plan-defining artifacts). PlanContext seeds ``plans/{plan_id}/`` for
+    # the named plan so we use a SEPARATE plan-id ('orphan-logs-only') and
+    # build it under the same fixture_dir; the PlanContext-anchored plan is
+    # cleared to keep --all from seeing the placeholder.
+    with PlanContext(plan_id='rule1-host') as ctx:
+        seed_lesson_inventory(ctx.fixture_dir)
+        # PlanContext creates ``plans/rule1-host/`` as a bare dir; the
+        # directory rules see it as an orphan unless we populate it.
+        # Materializing a healthy shape keeps Rule 1 focused on the
+        # ACTUAL orphan introduced below.
+        make_healthy_plan(ctx.plan_dir)
+
+        orphan_id = 'orphan-logs-only'
+        orphan_dir = ctx.fixture_dir / 'plans' / orphan_id
+        # logs/ present, nothing else. No status.json → orphan + rm_rf safe.
+        (orphan_dir / 'logs').mkdir(parents=True)
+
+        # Act — directory rules only run on --all.
+        result = _scan_all()
+
+    # Assert — exit 1 (findings present), the orphan is flagged with the
+    # ``rm_rf`` remediation (logs/ exists but empty).
+    assert result.returncode == 1, result.stderr
+    payload = result.toon()
+    orphan_findings = _findings_by_reason(payload, 'orphan_plan_directory')
+    assert len(orphan_findings) == 1
+    finding = orphan_findings[0]
+    assert finding['plan_id'] == orphan_id
+    assert finding['remediation'] == 'rm_rf'
+    assert finding['rule'] == 'orphan_plan_directory'
+
+
+def test_orphan_rule_case_b_status_only_no_artifacts_flagged_with_archive():
+    # Arrange — status.json is present but NONE of request.md /
+    # references.json / solution_outline.md exist. logs/ has content so the
+    # remediation upgrades to ``archive_with_reason``.
+    with PlanContext(plan_id='rule1-host-b') as ctx:
+        seed_lesson_inventory(ctx.fixture_dir)
+        make_healthy_plan(ctx.plan_dir)
+
+        orphan_id = 'orphan-status-no-artifacts'
+        orphan_dir = ctx.fixture_dir / 'plans' / orphan_id
+        make_status_json(orphan_dir, current_phase='3-outline')
+        # Logs with at least one file → archive_with_reason path.
+        logs_dir = orphan_dir / 'logs'
+        logs_dir.mkdir(parents=True)
+        (logs_dir / 'work.log').write_text('previous activity\n', encoding='utf-8')
+
+        # Act
+        result = _scan_all()
+
+    # Assert — exit 1, finding has archive_with_reason remediation.
+    assert result.returncode == 1, result.stderr
+    payload = result.toon()
+    orphan_findings = _findings_by_reason(payload, 'orphan_plan_directory')
+    matching = [f for f in orphan_findings if f['plan_id'] == orphan_id]
+    assert len(matching) == 1
+    assert matching[0]['remediation'] == 'archive_with_reason'
+
+
+def test_orphan_rule_case_c_healthy_plan_dir_yields_no_finding():
+    # Arrange — a fully-formed plan dir (status.json + request.md) must
+    # NOT fire Rule 1. The PlanContext-anchored plan IS the healthy plan
+    # so we don't have to coordinate with --all listing.
+    with PlanContext(plan_id='healthy-plan') as ctx:
+        seed_lesson_inventory(ctx.fixture_dir)
+        make_healthy_plan(ctx.plan_dir)
+        # Make sure the plan has at least one task so the lesson-ID scan
+        # has something to do (Rule 1 is independent, but this matches
+        # production "healthy" usage).
+        make_plan_with_tasks(
+            ctx.plan_dir,
+            [{'title': 'work', 'description': 'no lesson references'}],
+        )
+
+        # Act
+        result = _scan_all()
+
+    # Assert — no orphan findings of any kind.
+    payload = result.toon()
+    orphan_findings = _findings_by_reason(payload, 'orphan_plan_directory')
+    assert orphan_findings == []
+
+
+# =============================================================================
+# Rule 3 — dangling-worktree (case d)
+# =============================================================================
+
+
+def test_dangling_worktree_rule_case_d_worktree_without_plan_flagged():
+    # Arrange — a worktree directory whose corresponding plan dir is absent.
+    with PlanContext(plan_id='rule3-host') as ctx:
+        seed_lesson_inventory(ctx.fixture_dir)
+        # Live plan + matching worktree → must NOT be flagged.
+        live_id = 'live-plan-with-wt'
+        live_dir = ctx.fixture_dir / 'plans' / live_id
+        make_healthy_plan(live_dir)
+        make_worktree_dir(ctx.fixture_dir, live_id)
+
+        # Dangling worktree → must be flagged.
+        dangling_id = 'dangling-wt-no-plan'
+        make_worktree_dir(ctx.fixture_dir, dangling_id)
+
+        # Act
+        result = _scan_all()
+
+    # Assert
+    payload = result.toon()
+    dangling_findings = _findings_by_reason(payload, 'dangling_worktree')
+    by_plan = {f['plan_id'] for f in dangling_findings}
+    assert dangling_id in by_plan
+    assert live_id not in by_plan
+
+
+# =============================================================================
+# Rule 2 — stuck-low-confidence-archive (cases e, f, g)
+# =============================================================================
+
+
+def test_stuck_low_confidence_case_e_low_conf_no_reason_flagged():
+    # Arrange — archived plan stuck at refine with low confidence and NO
+    # ``archived_reason`` → Rule 2 fires.
+    with PlanContext(plan_id='rule2-host') as ctx:
+        seed_lesson_inventory(ctx.fixture_dir)
+
+        stuck_id = 'stuck-low-conf-no-reason'
+        make_archived_plan(
+            ctx.fixture_dir,
+            stuck_id,
+            confidence=47.0,
+            archived_reason=None,
+        )
+
+        # Act
+        result = _scan_all()
+
+    # Assert
+    payload = result.toon()
+    findings = _findings_by_reason(payload, 'stuck_low_confidence_archive')
+    matching = [f for f in findings if f['plan_id'] == stuck_id]
+    assert len(matching) == 1
+    finding = matching[0]
+    # Confidence echoed as float; threshold is the default 95.0.
+    assert float(finding['confidence']) == 47.0
+    assert float(finding['threshold']) == 95.0
+
+
+def test_stuck_low_confidence_case_f_low_conf_with_reason_not_flagged():
+    # Arrange — low confidence BUT operator recorded an archived_reason.
+    # Rule 2 must NOT fire (the audit trail explains the abandonment).
+    with PlanContext(plan_id='rule2-host-f') as ctx:
+        seed_lesson_inventory(ctx.fixture_dir)
+
+        documented_id = 'low-conf-with-reason'
+        make_archived_plan(
+            ctx.fixture_dir,
+            documented_id,
+            confidence=47.0,
+            archived_reason='operator abandoned: request too vague',
+        )
+
+        # Act
+        result = _scan_all()
+
+    # Assert — the documented plan is absent from Rule 2 findings.
+    payload = result.toon()
+    findings = _findings_by_reason(payload, 'stuck_low_confidence_archive')
+    by_plan = {f['plan_id'] for f in findings}
+    assert documented_id not in by_plan
+
+
+def test_stuck_low_confidence_case_g_healthy_archive_not_flagged():
+    # Arrange — archived plan that completed normally: confidence at or
+    # above threshold AND every phase done. Rule 2 must NOT fire.
+    with PlanContext(plan_id='rule2-host-g') as ctx:
+        seed_lesson_inventory(ctx.fixture_dir)
+
+        complete_id = 'archived-complete'
+        all_done = {
+            '1-init': 'done',
+            '2-refine': 'done',
+            '3-outline': 'done',
+            '4-plan': 'done',
+            '5-execute': 'done',
+            '6-finalize': 'done',
+        }
+        make_archived_plan(
+            ctx.fixture_dir,
+            complete_id,
+            confidence=98.0,
+            phase_statuses=all_done,
+            archived_reason=None,
+        )
+
+        # Act
+        result = _scan_all()
+
+    # Assert — the healthy archive is not flagged.
+    payload = result.toon()
+    findings = _findings_by_reason(payload, 'stuck_low_confidence_archive')
+    by_plan = {f['plan_id'] for f in findings}
+    assert complete_id not in by_plan
+
+
+# =============================================================================
+# Single-plan scan does NOT run directory rules
+# =============================================================================
+
+
+def test_single_plan_scan_skips_directory_rules():
+    # Arrange — orphan plan dir present, but the targeted scan uses
+    # ``--plan-id healthy``. Directory rules must NOT fire on the
+    # single-plan path (per plan_doctor.cmd_scan's documented behaviour).
+    with PlanContext(plan_id='single-target') as ctx:
+        seed_lesson_inventory(ctx.fixture_dir)
+        make_healthy_plan(ctx.plan_dir)
+
+        orphan_id = 'orphan-should-be-ignored'
+        orphan_dir = ctx.fixture_dir / 'plans' / orphan_id
+        (orphan_dir / 'logs').mkdir(parents=True)
+
+        # Act — single-plan scan against the healthy plan only.
+        result = _scan_plan('single-target')
+
+    # Assert — no directory-rule findings even though the orphan exists.
+    payload = result.toon()
+    assert _findings_by_reason(payload, 'orphan_plan_directory') == []
+    assert _findings_by_reason(payload, 'dangling_worktree') == []
+    assert _findings_by_reason(payload, 'stuck_low_confidence_archive') == []

@@ -2,6 +2,15 @@
 
 Interface contract for domain-specific component-analysis workflow docs dispatched during the outline phase. Workflows implementing this contract analyse component files against a request using semantic reasoning and persist assessments for downstream deliverable creation.
 
+## Exit-code convention for `manage-*` script calls
+
+Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+
+- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the failure mode documented in lesson `2026-04-29-23-002` (silent swallowing of `wrong_parameters` rejections). "Log and continue" is the prohibited anti-pattern.
+
+Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., `manage-files exists` returning `exists: false`) — are documented inline in the step that issues them.
+
 ## Implementors
 
 - `pm-plugin-development:ext-outline-workflow` — marketplace plugin components (skills, agents, commands). The component-analysis workflow doc lives under that skill's `workflow/` directory and is dispatched via `execution-context-{level}` against the appropriate outline role key.

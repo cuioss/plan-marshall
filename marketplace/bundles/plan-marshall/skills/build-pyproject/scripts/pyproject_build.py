@@ -12,7 +12,13 @@ Subcommands:
     run             Execute build and auto-parse on failure (primary API)
     parse           Parse pyprojectx build output and categorize issues
     check-warnings  Categorize build warnings against acceptable patterns
-    coverage-report Parse coverage.py XML report
+    coverage-report Ad-hoc diagnostic parser invoked manually for inspection.
+                    NOT part of the default:coverage_check verify-step pipeline
+                    (which uses single-resolver native enforcement via the
+                    architecture-resolved coverage command, with the pytest
+                    --cov-fail-under flag enforcing the threshold inside the
+                    build itself). Use this subcommand for manual local
+                    inspection of coverage.py XML output only.
 """
 
 import sys

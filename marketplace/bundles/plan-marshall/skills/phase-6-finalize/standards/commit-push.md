@@ -8,6 +8,13 @@ order: 10
 
 Pure executor for the `commit-push` finalize step. Commits all changes and pushes to remote.
 
+## Exit-code convention for `manage-*` script calls
+
+Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+
+- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the failure mode documented in lesson `2026-04-29-23-002` (silent swallowing of `wrong_parameters` rejections). "Log and continue" is the prohibited anti-pattern.
+
 This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `commit-push` in `manifest.phase_6.steps`. When the dispatcher runs this step, the executor always runs to completion and records `outcome=done` regardless of whether a commit was produced — the `display_detail` payload distinguishes the branches. The `commit_strategy == none` case is handled at composition time by the manifest's `commit_strategy_none` pre-filter (see `manage-execution-manifest/standards/decision-rules.md`), so this step is never dispatched in that case.
 
 ## Inputs

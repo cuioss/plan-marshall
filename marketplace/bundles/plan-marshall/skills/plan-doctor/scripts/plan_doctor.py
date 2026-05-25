@@ -9,6 +9,27 @@ for lesson-ID-shaped tokens, and verifies them against the live
 lessons become Q-Gate findings (phase ``5-execute``) and are also surfaced in
 a TOON summary on stdout.
 
+In addition to the TASK-level lesson-ID sweep, the ``scan`` verb also runs
+three plan-directory-shape diagnostics that surface state escaping the
+artifact-bearing checks above:
+
+* ``orphan-plan-directory`` — a subdirectory under ``.plan/local/plans/``
+  that lacks ``status.json``, or whose ``status.json`` is present but no
+  other plan artifacts (``request.md`` / ``references.json`` /
+  ``solution_outline.md``) exist.
+* ``stuck-low-confidence-archive`` — a subdirectory under
+  ``.plan/local/archived-plans/`` whose ``status.json`` has
+  ``metadata.confidence < 95`` AND every phase beyond ``2-refine`` is
+  ``pending`` AND no ``metadata.archived_reason`` is recorded.
+* ``dangling-worktree`` — a subdirectory under ``.plan/local/worktrees/``
+  whose corresponding ``.plan/local/plans/{name}/`` is absent.
+
+These three rules run only on ``--all`` sweeps and on the ``--plan-id``
+form when the plan ID matches a worktree or archived plan; their findings
+share the same TOON shape as the lesson-ID rows and are also emitted to
+the plan-scoped Q-Gate store under phase ``5-execute`` unless ``--no-emit``
+is passed.
+
 The scanner helpers (``scan_lesson_id_tokens`` and ``verify_lesson_ids_exist``)
 live in ``tools-input-validation`` and are reused verbatim — no duplication.
 The live-anchor discipline mandated by lessons 2026-04-29-10-001 and
@@ -56,8 +77,29 @@ from input_validation import (  # type: ignore[import-not-found]
 # triage point — see SKILL.md for the rationale.
 QGATE_PHASE = '5-execute'
 
-# Reason code stored on every finding (currently the only reason emitted).
+# Reason codes emitted on each finding. ``phantom_lesson_id`` is the
+# original TASK-level reason; the remaining three are the plan-directory-
+# shape diagnostics described in the module docstring.
 REASON_PHANTOM = 'phantom_lesson_id'
+REASON_ORPHAN = 'orphan_plan_directory'
+REASON_STUCK_LOW_CONF = 'stuck_low_confidence_archive'
+REASON_DANGLING_WT = 'dangling_worktree'
+
+# Default confidence threshold. Mirrors ``manage-config`` /
+# ``_config_defaults.py`` (``confidence_threshold: 95``). A plan-doctor
+# finding fires when an archived plan reports ``metadata.confidence``
+# strictly less than this value.
+DEFAULT_CONFIDENCE_THRESHOLD = 95.0
+
+# Phase that must be ``done`` before later phases can run. Rule 2 fires only
+# when every phase AFTER this one is ``pending`` — i.e. the plan stalled at
+# refine without ever reaching outline.
+REFINE_PHASE = '2-refine'
+
+# Artifact filenames that, when ANY are present alongside status.json,
+# disqualify a plan-dir from Rule 1. Keeping the set explicit (and small)
+# matches the request's "minimum-viable plan" contract.
+PLAN_DEFINING_ARTIFACTS = ('request.md', 'references.json', 'solution_outline.md')
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +196,7 @@ def _findings_for_file(
                 # best-effort. ``1`` is the agreed sentinel — see SKILL.md.
                 'line': 1,
                 'token': token,
+                'rule': REASON_PHANTOM,
                 'reason': REASON_PHANTOM,
             }
         )
@@ -195,17 +238,59 @@ def _emit_finding_to_qgate(finding: dict[str, Any]) -> None:
     ``manage-findings qgate add`` calls — keeps the data path identical to
     the production write path without spawning a subprocess per finding
     (which would explode runtime on large plans).
+
+    Routes by ``finding['reason']`` so the four rules each produce a
+    title/detail that is meaningful in the Q-Gate triage UI without
+    forcing the caller to pre-format.
     """
     # Local import — keeps the manage-findings dependency lazy so the
     # ``--no-emit`` path doesn't pay for it.
     from _findings_core import add_qgate_finding  # type: ignore[import-not-found]
 
-    title = f'Phantom lesson-ID reference: {finding["token"]}'
-    detail = (
-        f'Task file {finding["task_file"]} references lesson-ID '
-        f'{finding["token"]!r}, which is not present in the live '
-        f'manage-lessons inventory.'
-    )
+    reason = finding.get('reason')
+    severity: str = 'warning'
+    file_path: str | None = None
+
+    if reason == REASON_PHANTOM:
+        title = f'Phantom lesson-ID reference: {finding["token"]}'
+        detail = (
+            f'Task file {finding["task_file"]} references lesson-ID '
+            f'{finding["token"]!r}, which is not present in the live '
+            f'manage-lessons inventory.'
+        )
+        file_path = finding['task_file']
+    elif reason == REASON_ORPHAN:
+        title = f'Orphan plan directory: {finding["plan_id"]}'
+        detail = (
+            f'Plan directory {finding["plan_id"]!r} lacks the minimum-viable '
+            f'plan artifacts (status.json + at least one of request.md / '
+            f'references.json / solution_outline.md). Remediation: '
+            f'{finding.get("remediation", "investigate")}.'
+        )
+    elif reason == REASON_STUCK_LOW_CONF:
+        # Information-level only — the archive is a record of an operator
+        # decision; surface it for audit but do not auto-remediate.
+        severity = 'info'
+        title = f'Stuck-low-confidence archive: {finding["plan_id"]}'
+        detail = (
+            f'Archived plan {finding["plan_id"]!r} reached confidence '
+            f'{finding.get("confidence")!s} (threshold '
+            f'{finding.get("threshold")!s}), never advanced past '
+            f'{REFINE_PHASE}, and carries no archived_reason.'
+        )
+    elif reason == REASON_DANGLING_WT:
+        title = f'Dangling worktree: {finding["plan_id"]}'
+        detail = (
+            f'Worktree directory {finding["plan_id"]!r} has no corresponding '
+            f'plan under .plan/local/plans/. Likely a cleanup race or '
+            f'worktree-remove failure on a prior finalize.'
+        )
+    else:
+        # Defensive — unknown reasons still get emitted so they can be
+        # triaged manually, but with a clearly synthetic title.
+        title = f'plan-doctor finding ({reason}): {finding.get("plan_id", "<unknown>")}'
+        detail = str(finding)
+
     add_qgate_finding(
         plan_id=finding['plan_id'],
         phase=QGATE_PHASE,
@@ -213,11 +298,250 @@ def _emit_finding_to_qgate(finding: dict[str, Any]) -> None:
         finding_type='bug',
         title=title,
         detail=detail,
-        file_path=finding['task_file'],
+        file_path=file_path,
         component='plan-marshall:plan-doctor',
-        severity='warning',
+        severity=severity,
         iteration=None,
     )
+
+
+# ---------------------------------------------------------------------------
+# Plan-directory-shape diagnostics
+# ---------------------------------------------------------------------------
+
+
+def _read_status_json(plan_dir: Path) -> dict[str, Any] | None:
+    """Load and parse ``plan_dir/status.json`` or return ``None``.
+
+    A parse failure is treated identically to a missing file — callers
+    that distinguish "missing" from "unreadable" inspect ``status.json``
+    existence directly before calling this helper.
+    """
+    status_path = plan_dir / 'status.json'
+    if not status_path.is_file():
+        return None
+    try:
+        data: dict[str, Any] = json.loads(status_path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data
+
+
+def _has_any_artifact(plan_dir: Path) -> bool:
+    """Return ``True`` if any plan-defining artifact lives in ``plan_dir``."""
+    return any((plan_dir / name).is_file() for name in PLAN_DEFINING_ARTIFACTS)
+
+
+def _logs_has_content(plan_dir: Path) -> bool:
+    """Return ``True`` if ``plan_dir/logs/`` contains any files.
+
+    Distinguishes the "rm -rf safe" remediation (no logs) from the
+    "archive with reason" remediation (logs present — the partial run
+    produced audit trails worth keeping).
+    """
+    logs = plan_dir / 'logs'
+    if not logs.is_dir():
+        return False
+    return any(logs.iterdir())
+
+
+def _orphan_remediation(plan_dir: Path, status: dict[str, Any] | None) -> str:
+    """Return the suggested remediation token for an orphan plan-dir.
+
+    Three cases (per the lesson body):
+      * ``status.json`` present but claims ``current_phase == 6-finalize``
+        with no artifacts: ``operator_review`` (stuck finalize on a shell).
+      * ``logs/`` has content: ``archive_with_reason``.
+      * Otherwise (no logs, no artifacts): ``rm_rf``.
+    """
+    if status is not None and status.get('current_phase') == '6-finalize':
+        return 'operator_review'
+    if _logs_has_content(plan_dir):
+        return 'archive_with_reason'
+    return 'rm_rf'
+
+
+def _scan_orphan_plan_dirs() -> list[dict[str, Any]]:
+    """Return findings for every orphan plan dir under ``.plan/local/plans/``.
+
+    An orphan is a direct child of the plans root that either:
+      * has no ``status.json``, or
+      * has ``status.json`` but none of ``request.md`` / ``references.json``
+        / ``solution_outline.md``.
+    """
+    root = _plans_root()
+    if not root.is_dir():
+        return []
+
+    findings: list[dict[str, Any]] = []
+    for entry in sorted(root.iterdir()):
+        if not entry.is_dir():
+            continue
+        if not is_valid_plan_id(entry.name):
+            continue
+
+        status = _read_status_json(entry)
+        if status is None:
+            # Missing/unreadable status.json — definite orphan.
+            findings.append(
+                {
+                    'plan_id': entry.name,
+                    'rule': REASON_ORPHAN,
+                    'reason': REASON_ORPHAN,
+                    'remediation': _orphan_remediation(entry, None),
+                }
+            )
+            continue
+
+        if not _has_any_artifact(entry):
+            # status.json present but no plan-defining artifacts — the
+            # init flow produced a shell and stopped.
+            findings.append(
+                {
+                    'plan_id': entry.name,
+                    'rule': REASON_ORPHAN,
+                    'reason': REASON_ORPHAN,
+                    'remediation': _orphan_remediation(entry, status),
+                }
+            )
+    return findings
+
+
+def _archived_plans_root() -> Path:
+    """Return the on-disk archived-plans root (or test override)."""
+    return base_path('archived-plans')
+
+
+def _scan_stuck_low_confidence_archives(
+    threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
+) -> list[dict[str, Any]]:
+    """Return findings for archived plans stuck below the confidence threshold.
+
+    Trigger conditions (all must hold):
+      * archived plan has parseable ``status.json``,
+      * every phase AFTER ``2-refine`` is ``pending``,
+      * ``metadata.confidence`` is a number strictly less than ``threshold``,
+      * ``metadata.archived_reason`` is missing or empty.
+    """
+    root = _archived_plans_root()
+    if not root.is_dir():
+        return []
+
+    findings: list[dict[str, Any]] = []
+    for entry in sorted(root.iterdir()):
+        if not entry.is_dir():
+            continue
+        status = _read_status_json(entry)
+        if status is None:
+            # Archived plan without status.json is itself a defect, but
+            # Rule 2 only fires on the specific stuck-low-confidence
+            # shape. Skip silently here; the archived inventory has its
+            # own consistency checks.
+            continue
+
+        metadata = status.get('metadata') or {}
+        confidence_raw = metadata.get('confidence')
+        if confidence_raw is None:
+            continue
+        try:
+            confidence = float(confidence_raw)
+        except (TypeError, ValueError):
+            continue
+        if confidence >= threshold:
+            continue
+
+        archived_reason = metadata.get('archived_reason')
+        if archived_reason:
+            # Operator documented the abandonment — Rule 2 is satisfied.
+            continue
+
+        phases = status.get('phases') or []
+        if not _all_post_refine_pending(phases):
+            continue
+
+        findings.append(
+            {
+                'plan_id': entry.name,
+                'rule': REASON_STUCK_LOW_CONF,
+                'reason': REASON_STUCK_LOW_CONF,
+                'confidence': confidence,
+                'threshold': threshold,
+            }
+        )
+    return findings
+
+
+def _all_post_refine_pending(phases: list[dict[str, Any]]) -> bool:
+    """Return ``True`` when every phase after ``2-refine`` is ``pending``.
+
+    Handles the canonical 6-phase shape and any future extension by
+    locating ``2-refine`` in the list and inspecting the tail. If
+    ``2-refine`` is absent (non-canonical plan), returns ``False`` — Rule 2
+    is anchored to the refine-stall pattern and should not fire on
+    arbitrary archived plans.
+    """
+    refine_idx: int | None = None
+    for idx, phase in enumerate(phases):
+        if phase.get('name') == REFINE_PHASE:
+            refine_idx = idx
+            break
+    if refine_idx is None:
+        return False
+    tail = phases[refine_idx + 1 :]
+    if not tail:
+        return False
+    return all(p.get('status') == 'pending' for p in tail)
+
+
+def _worktrees_root() -> Path:
+    """Return the on-disk worktrees root (or test override).
+
+    Resolved against the same ``base_path()`` anchor as the plans and
+    archived-plans roots so the ``PLAN_BASE_DIR`` test override
+    propagates cleanly. This is intentionally distinct from
+    ``file_ops.get_worktree_root()``, which resolves against the live
+    git checkout — plan-doctor needs the env-overridable form so tests
+    can seed a fixture worktree tree under ``tmp_path``.
+    """
+    return base_path('worktrees')
+
+
+def _scan_dangling_worktrees() -> list[dict[str, Any]]:
+    """Return findings for worktree dirs whose plan-dir is absent.
+
+    Each direct child of the worktree root is checked against
+    ``.plan/local/plans/{name}/``. When the corresponding plan dir does
+    not exist, the worktree is dangling. Archived plans are NOT a
+    rescue — a worktree that survived an archive is still dangling
+    because finalize should have removed it.
+    """
+    root = _worktrees_root()
+    if not root.is_dir():
+        return []
+
+    plans_root = _plans_root()
+    findings: list[dict[str, Any]] = []
+    for entry in sorted(root.iterdir()):
+        if not entry.is_dir():
+            continue
+        # Worktree directory names mirror plan IDs by construction. Skip
+        # entries that fail plan-id validation so we don't flag stray
+        # operator scratch dirs.
+        if not is_valid_plan_id(entry.name):
+            continue
+
+        plan_dir = plans_root / entry.name
+        if plan_dir.is_dir():
+            continue
+
+        findings.append(
+            {
+                'plan_id': entry.name,
+                'rule': REASON_DANGLING_WT,
+                'reason': REASON_DANGLING_WT,
+            }
+        )
+    return findings
 
 
 # ---------------------------------------------------------------------------
@@ -225,8 +549,27 @@ def _emit_finding_to_qgate(finding: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _scan_plans(plan_ids: list[str], emit_to_qgate: bool) -> dict[str, Any]:
-    """Scan every TASK file across ``plan_ids`` and return the TOON payload."""
+def _scan_plans(
+    plan_ids: list[str],
+    emit_to_qgate: bool,
+    run_directory_rules: bool = False,
+) -> dict[str, Any]:
+    """Scan every TASK file across ``plan_ids`` and return the TOON payload.
+
+    When ``run_directory_rules`` is ``True``, the three plan-directory-shape
+    diagnostics (orphan, stuck-low-confidence, dangling-worktree) also
+    execute and contribute their findings to the same payload. The
+    inventory-shape rules are inventory-wide by nature so they only run
+    once per call, regardless of the ``plan_ids`` list length.
+
+    Q-Gate emission for the directory rules requires a valid plan-id under
+    ``.plan/local/plans/``. Findings whose ``plan_id`` does not have a
+    live plan-dir (the dangling-worktree case and the stuck-low-confidence-
+    archive case) are surfaced in the TOON payload but skipped on the
+    Q-Gate write path — there is no destination phase store to write to.
+    Callers parse the TOON to remediate; Q-Gate emission stays consistent
+    with the manage-findings contract.
+    """
     checked_files = 0
     findings: list[dict[str, Any]] = []
     plans_scanned = 0
@@ -247,9 +590,19 @@ def _scan_plans(plan_ids: list[str], emit_to_qgate: bool) -> dict[str, Any]:
                 checked_files += 1
             findings.extend(file_findings)
 
+    if run_directory_rules:
+        findings.extend(_scan_orphan_plan_dirs())
+        findings.extend(_scan_stuck_low_confidence_archives())
+        findings.extend(_scan_dangling_worktrees())
+
     if emit_to_qgate:
+        plans_root = _plans_root()
         for finding in findings:
-            _emit_finding_to_qgate(finding)
+            # Q-Gate writes require a live plan-dir; skip rule-2/rule-3
+            # findings whose plan does not exist under plans/.
+            finding_plan_id = finding.get('plan_id')
+            if finding_plan_id and (plans_root / finding_plan_id).is_dir():
+                _emit_finding_to_qgate(finding)
 
     return _build_summary(
         checked_files=checked_files,
@@ -330,8 +683,17 @@ def cmd_scan(args: argparse.Namespace) -> int:
             return 1
         plan_ids = [plan_id]
 
+    # Directory-shape rules (orphan / stuck-low-confidence / dangling-worktree)
+    # run only on the ``--all`` form. On a single-plan ``--plan-id`` call
+    # the user is targeting one plan's TASK files; sweeping the inventory
+    # at the same time would surprise the caller. Operators who want the
+    # directory checks against a single plan can pass ``--all`` and grep.
     try:
-        payload = _scan_plans(plan_ids, emit_to_qgate=not args.no_emit)
+        payload = _scan_plans(
+            plan_ids,
+            emit_to_qgate=not args.no_emit,
+            run_directory_rules=bool(args.all),
+        )
     except LessonInventoryUnavailable as exc:
         output_toon_error('lesson_inventory_unavailable', str(exc))
         return 1

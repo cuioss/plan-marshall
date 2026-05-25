@@ -23,6 +23,11 @@ BUNDLES_DIR = Path('marketplace/bundles')
 TEST_DIR = Path('test')
 CLAUDE_DIR = Path('.claude')
 
+# Native coverage threshold enforced by cmd_coverage via pytest's --cov-fail-under.
+# Sourcing this from marshal.json (rather than a static constant) is deliberately
+# deferred per the originating request constraint.
+COVERAGE_THRESHOLD = 80
+
 
 # Single source of truth: delegate to collect_script_dirs so mypy_path matches runtime PYTHONPATH.
 def _compute_mypypath() -> str:
@@ -152,7 +157,9 @@ def cmd_coverage(module: str | None) -> int:
     cmd = [
         'uv', 'run', 'pytest', test_path,
         f'--cov={bundle_path}',
-        '--cov-report=html:.plan/temp/htmlcov'
+        '--cov-report=html:.plan/temp/htmlcov',
+        '--cov-report=xml:.plan/temp/coverage.xml',
+        f'--cov-fail-under={COVERAGE_THRESHOLD}',
     ]
     return run(cmd, f'coverage: pytest {test_path} --cov={bundle_path}')
 

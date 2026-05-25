@@ -517,8 +517,16 @@ Archive a completed plan (moves to `.plan/archived-plans/YYYY-MM-DD-{plan_id}`).
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status archive \
   --plan-id {plan_id} \
-  [--dry-run]
+  [--dry-run] \
+  [--reason REASON]
 ```
+
+`--reason REASON` persists a human-readable explanation to
+`status.metadata.archived_reason` on the archived plan. The field is additive
+(omitted when the flag is absent — no schema migration). Used by `plan-doctor`
+rule `stuck-low-confidence-archive` as the canonical remediation flag so a
+retrospective audit can distinguish intentional abandonment from neglect.
+Example values: `low_confidence`, `scope_changed`, `superseded_by_<plan_id>`.
 
 **Output** (TOON):
 ```toon
@@ -637,7 +645,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `get-worktree-path` | `--plan-id` | Resolve persisted worktree path (returns empty string when `use_worktree==false`) |
 | `list` | `[--filter PHASE]` | Discover all plans, optionally filtered by phase |
 | `transition` | `--plan-id --completed` | Mark phase done, advance to next |
-| `archive` | `--plan-id [--dry-run]` | Archive completed plan |
+| `archive` | `--plan-id [--dry-run] [--reason REASON]` | Archive completed plan; `--reason` persists to `status.metadata.archived_reason` (used by `plan-doctor stuck-low-confidence-archive` rule) |
 | `delete-plan` | `--plan-id` | Delete entire plan directory |
 | `route` | `--phase` | Get skill name for phase |
 | `get-routing-context` | `--plan-id` | Get combined routing context |
@@ -732,7 +740,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status archive \
-  --plan-id PLAN_ID [--dry-run]
+  --plan-id PLAN_ID [--dry-run] [--reason REASON]
 ```
 
 ### route

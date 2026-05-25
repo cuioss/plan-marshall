@@ -373,6 +373,14 @@ def cmd_archive(args: argparse.Namespace) -> dict | None:
         phases[active_idx]['status'] = PHASE_STATUS_DONE
     if all(p.get('status') == PHASE_STATUS_DONE for p in phases):
         status['current_phase'] = 'complete'
+    # Persist optional --reason into status.metadata.archived_reason before
+    # write_status so the archived status.json carries the structured reason.
+    # Absent --reason leaves the field unset (no schema migration). Mirrors the
+    # additive-metadata contract used elsewhere in this module.
+    reason = getattr(args, 'reason', None)
+    if reason is not None:
+        metadata = status.setdefault('metadata', {})
+        metadata['archived_reason'] = reason
     write_status(args.plan_id, status)
     # Title-body publication hook — archive always pushes ``current_phase``
     # towards a terminal state, so the helper deletes ``title-body.txt`` from

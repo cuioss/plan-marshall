@@ -8,6 +8,12 @@ user-invocable: true
 
 **Role**: Post-hoc diagnostic for plan artifacts. Walks `TASK-*.json` files for one or all plans, scans `title` and `description` for lesson-ID-shaped tokens, verifies each token against the live `manage-lessons` inventory, and emits structured findings for any tokens that resolve to non-existent lessons.
 
+In addition to the TASK-level lesson-ID sweep, `scan --all` also runs three plan-directory-shape diagnostics:
+
+- **`orphan-plan-directory`** — a subdirectory under `.plan/local/plans/` that lacks `status.json`, or has `status.json` but none of `request.md` / `references.json` / `solution_outline.md`.
+- **`stuck-low-confidence-archive`** — a subdirectory under `.plan/local/archived-plans/` whose `status.json` has `metadata.confidence < 95` (or the project-configured threshold), every phase after `2-refine` is `pending`, and `metadata.archived_reason` is absent.
+- **`dangling-worktree`** — a subdirectory under `.plan/local/worktrees/` whose corresponding `.plan/local/plans/{name}/` directory does not exist.
+
 This skill complements the at-write-time validation in `manage-tasks` (which prevents new bad references) by sweeping plans that may already contain stale or phantom lesson-ID references introduced before the at-write check existed (or via direct file edits that bypassed `manage-tasks`).
 
 ## Enforcement
@@ -55,9 +61,37 @@ python3 .plan/execute-script.py plan-marshall:plan-doctor:plan_doctor scan --all
 **Behavior:**
 - For each TASK-*.json file, scans `title` + `description` for lesson-ID-shaped tokens via `scan_lesson_id_tokens`
 - Verifies every token against the live `manage-lessons list` inventory via `verify_lesson_ids_exist`
-- Tokens that resolve to non-existent lessons become findings
-- Each finding is written to the Q-Gate store (`source: qgate`, `type: bug`, `severity: warning`, `phase: 5-execute`) unless `--no-emit` is passed
+- Tokens that resolve to non-existent lessons become findings (`rule: phantom_lesson_id`)
+- When `--all` is passed, additionally sweeps the three plan-directory-shape rules described below (`orphan_plan_directory`, `stuck_low_confidence_archive`, `dangling_worktree`); these rules do NOT run on a single-plan `--plan-id` call
+- Each finding is written to the Q-Gate store (`source: qgate`, `type: bug`, `severity: warning` for orphan/dangling/phantom; `severity: info` for stuck-low-confidence; `phase: 5-execute`) unless `--no-emit` is passed
+- Findings whose `plan_id` does not have a live `.plan/local/plans/{plan_id}/` directory (dangling-worktree and stuck-low-confidence-archive cases) are emitted in the TOON payload but NOT written to a Q-Gate store — there is no destination plan-dir to receive them
 - Exits `1` when any findings are produced; `0` otherwise
+
+### Plan-directory-shape rules (`--all` only)
+
+#### `orphan-plan-directory` (severity: warning)
+
+Triggers when a subdirectory of `.plan/local/plans/` either:
+- has no `status.json`, OR
+- has `status.json` but none of `request.md`, `references.json`, `solution_outline.md` exist.
+
+The finding carries a `remediation` field with one of three values:
+- `rm_rf` — no `logs/` content; the partial init produced nothing worth keeping.
+- `archive_with_reason` — `logs/` has content; archive with `manage-status archive --reason orphan-init-incomplete` (see [D2 — manage-status archive --reason](../manage-status/SKILL.md#archive)).
+- `operator_review` — `status.json` claims `current_phase: 6-finalize` but artifacts are absent; needs operator decision (likely "stuck finalize on a shell" from a parallel session).
+
+#### `stuck-low-confidence-archive` (severity: info)
+
+Triggers when an archived plan (subdirectory of `.plan/local/archived-plans/`) meets ALL of:
+- `status.json` has every phase after `2-refine` in `status: pending`.
+- `status.metadata.confidence` is a number strictly less than `95` (the default threshold).
+- `status.metadata.archived_reason` is missing or empty.
+
+This is advisory only — the archive is a record of an operator decision. The finding carries `confidence` and `threshold` fields so the operator can decide whether to (a) restore + raise the threshold or (b) annotate the archive with `archived_reason`. **Do NOT auto-remediate.**
+
+#### `dangling-worktree` (severity: warning)
+
+Triggers when a subdirectory of `.plan/local/worktrees/` does not have a corresponding `.plan/local/plans/{name}/` directory. The likely cause is a cleanup race or a failed `git worktree remove` on a prior finalize. Operator should inspect the worktree for uncommitted work, then remove it.
 
 ### scan-task-file
 
@@ -85,14 +119,18 @@ Both verbs print:
 ```toon
 status: success
 checked_files: 12
-findings_count: 2
-findings[2]{plan_id,task_file,line,token,reason}:
-  EXAMPLE-PLAN,TASK-003.json,1,2099-01-01-00-001,phantom_lesson_id
-  EXAMPLE-PLAN,TASK-007.json,1,2099-12-31-23-999,phantom_lesson_id
+findings_count: 4
+findings[4]{plan_id,task_file,line,token,rule,reason,remediation,confidence,threshold}:
+  EXAMPLE-PLAN,TASK-003.json,1,2099-01-01-00-001,phantom_lesson_id,phantom_lesson_id,,,
+  EXAMPLE-PLAN,TASK-007.json,1,2099-12-31-23-999,phantom_lesson_id,phantom_lesson_id,,,
+  doc-revamp,,,,orphan_plan_directory,orphan_plan_directory,operator_review,,
+  2026-05-18-lesson,,,,stuck_low_confidence_archive,stuck_low_confidence_archive,,47.0,95.0
 summary:
   plans_scanned: 1
   emit_to_qgate: true
 ```
+
+The TOON table widens to the union of fields across all rule types — TASK-level rows leave the rule-specific cells empty, and rule-level rows leave the TASK-specific cells empty. The TOON parser surfaces each row as a dict keyed by the column names; missing cells parse as empty strings.
 
 Errors (TOON, exit 1):
 
@@ -107,8 +145,11 @@ message: "manage-lessons list exited 2: 'boom'"
 | `status` | `success` (always for non-fatal results) or `error` (fatal — see error table) |
 | `checked_files` | Number of TASK-*.json files actually parsed |
 | `findings_count` | Number of phantom lesson-ID references discovered |
-| `findings[]{plan_id, task_file, line, token, reason}` | Per-finding rows. `line` is `1` (the file is JSON; per-line attribution is best-effort) |
-| `reason` | Currently always `phantom_lesson_id` |
+| `findings[]{plan_id, task_file, line, token, rule, reason, remediation, confidence, threshold}` | Per-finding rows. `line` is `1` for phantom rows (the file is JSON; per-line attribution is best-effort). Rule-level rows leave TASK-specific cells empty. |
+| `rule` | Identifies the diagnostic: `phantom_lesson_id`, `orphan_plan_directory`, `stuck_low_confidence_archive`, or `dangling_worktree`. Mirrors `reason` for backward compatibility. |
+| `reason` | Same value as `rule` (retained for backward compatibility with the original single-rule contract). |
+| `remediation` | Set only on `orphan_plan_directory` rows: `rm_rf`, `archive_with_reason`, or `operator_review`. |
+| `confidence` / `threshold` | Set only on `stuck_low_confidence_archive` rows. |
 | `summary.plans_scanned` | Distinct plans inspected |
 | `summary.emit_to_qgate` | `true` when findings were emitted, `false` for `--no-emit` |
 
