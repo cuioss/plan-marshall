@@ -40,6 +40,15 @@ When persisting the multi-task batch (Step 6 → 6a/6b), the following shell sho
 
 **Constraints:**
 - Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
+
+## Exit-code convention for `manage-*` script calls
+
+Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+
+- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the failure mode documented in lesson `2026-04-29-23-002` (silent swallowing of `wrong_parameters` rejections). "Log and continue" is the prohibited anti-pattern.
+
+Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., `manage-files exists` returning `exists: false`) — are documented inline in the step that issues them.
 - Batch JSON staging files MUST live under `.plan/local/plans/{plan_id}/work/`. Never use `Write` to `/tmp/`, `/var/`, or any path outside the plan's `work/` directory. (Cross-reference: see anti-pattern callout at SKILL.md:30 for the shell-substitution shortcut prohibition; both rules apply together.)
 
 ## Dispatched workflows vs inline steps

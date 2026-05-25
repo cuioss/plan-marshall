@@ -4,6 +4,15 @@ Outline-time procedure that ensures every cross-bundle consumer of a deleted or 
 
 > **Why this matters**: Consumer sweeps are the difference between a plan that ships clean and a plan whose verification phase (or worse, the next adjacent sweep) discovers a half-rewritten public surface. The sweep adds seconds at outline time and saves a fix-loop iteration during execute.
 
+## Exit-code convention for `manage-*` script calls
+
+Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+
+- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the failure mode documented in lesson `2026-04-29-23-002` (silent swallowing of `wrong_parameters` rejections). "Log and continue" is the prohibited anti-pattern.
+
+Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., `manage-files exists` returning `exists: false`) — are documented inline in the step that issues them.
+
 ---
 
 ## 1. Trigger Heuristic

@@ -6,6 +6,13 @@ The renderer is a pure assembler: it never invents per-step content. Each finali
 
 When `finalize-step-print-phase-breakdown` is present in `manifest.phase_6.steps` AND its outcome is `done`, the renderer enters **Phase Breakdown supplement mode**: the verbatim Phase Breakdown table content captured from `metrics.md` is appended as an additional section AFTER the Finalize-steps block. Every step row in the Finalize-steps block (including `record-metrics`) emits unchanged; the breakdown supplements the per-step list rather than substituting for any row. All other blocks (Headline, Goal, Deliverables, Repository trailer) emit unchanged as well. See `## Phase Breakdown Supplement` below for the full toggle, snapshot read, and append emission rule.
 
+## Exit-code convention for `manage-*` script calls
+
+Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+
+- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the failure mode documented in lesson `2026-04-29-23-002` (silent swallowing of `wrong_parameters` rejections). "Log and continue" is the prohibited anti-pattern.
+
 ## Template Skeleton
 
 ```

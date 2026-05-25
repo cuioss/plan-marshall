@@ -44,6 +44,7 @@ def load_executor_module():
     "test:skill": "/test/path/test-skill.py",
 """,
     )
+    code = code.replace('{{SUBCOMMAND_MAPPINGS}}', '')
     code = code.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
     code = code.replace('{{SHARED_MODULE_DIRS}}', '# (none in test)')
     code = code.replace('{{EXTRA_SCRIPT_DIRS}}', '')

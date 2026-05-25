@@ -2,6 +2,13 @@
 
 Conceptual companion to `lessons-capture.md`. Describes WHY lessons capture exists and the criteria for recording or skipping a lesson. The mechanical executor lives in `standards/lessons-capture.md`; this document carries no dispatch logic of its own.
 
+## Exit-code convention for `manage-*` script calls
+
+Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+
+- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the failure mode documented in lesson `2026-04-29-23-002` (silent swallowing of `wrong_parameters` rejections). "Log and continue" is the prohibited anti-pattern.
+
 ## Purpose
 
 At plan completion, notable patterns, decisions, and improvements discovered during implementation should be recorded for future reference.

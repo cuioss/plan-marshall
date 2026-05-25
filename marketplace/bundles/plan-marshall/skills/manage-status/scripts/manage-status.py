@@ -195,6 +195,19 @@ def main() -> int:
     archive_parser = subparsers.add_parser('archive', help='Archive completed plan', allow_abbrev=False)
     add_plan_id_arg(archive_parser)
     archive_parser.add_argument('--dry-run', action='store_true', help='Show what would be done')
+    archive_parser.add_argument(
+        '--reason',
+        default=None,
+        help=(
+            'Optional structured reason string recorded alongside the archive '
+            '(e.g., low_confidence, dangling_worktree, orphan_directory, '
+            'normal_completion). Persisted to status.metadata.archived_reason '
+            'before the plan directory is moved into the archive. Referenced by '
+            'plan-doctor Rule stuck-low-confidence-archive as the canonical '
+            'remediation flag. When omitted, the archived status.json simply '
+            'lacks the archived_reason field — no schema migration is required.'
+        ),
+    )
     archive_parser.set_defaults(func=cmd_archive)
 
     # route
