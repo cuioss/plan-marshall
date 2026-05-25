@@ -420,16 +420,30 @@ def cmd_baseline_reconcile(args) -> dict:
                 )
         else:
             # Rare: merge-tree predicted no conflict but the real merge produced
-            # one (e.g., overlapping renames). Abort the merge and downgrade
-            # classification so downstream paths handle it as a real conflict.
+            # one (e.g., overlapping renames). Capture the conflicting file
+            # paths via ``git diff --name-only --diff-filter=U`` BEFORE
+            # aborting — parsing ``merge_stdout`` is unreliable because the
+            # merge output contains human-readable log messages
+            # (``Auto-merging…``, ``CONFLICT…``) rather than a clean list of
+            # paths. Then abort the merge and downgrade classification so
+            # downstream paths handle it as a real conflict.
+            rc_diff, diff_stdout, _ = run_git(
+                ['-C', worktree_path, 'diff', '--name-only', '--diff-filter=U']
+            )
+            if rc_diff == 0:
+                merge_failure_paths = [
+                    line.strip() for line in (diff_stdout or '').splitlines() if line.strip()
+                ]
+            else:
+                merge_failure_paths = []
             run_git(['-C', worktree_path, 'merge', '--abort'])
             classification = 'overlap_with_content_conflict'
-            merge_failure_paths = [
-                line.strip() for line in (merge_stdout or '').splitlines() if line.strip()
-            ]
             if not merge_failure_paths:
                 merge_failure_paths = ['<unknown>']
             merge_error = (merge_stderr or '').strip() or merge_error
+            # ``merge_stdout`` is intentionally unused now; retain the param to
+            # preserve the existing call signature for downstream readers.
+            _ = merge_stdout
 
     # ------------------------------------------------------------------
     # Finding emission
