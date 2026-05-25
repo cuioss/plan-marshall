@@ -363,14 +363,91 @@ def cmd_baseline_reconcile(args) -> dict:
     upstream_commits = _list_upstream_commits(worktree_path, baseline_sha, base_branch)
     conflicts, merge_error = _detect_merge_conflicts(worktree_path, base_branch)
 
+    # ------------------------------------------------------------------
+    # Three-way classification (deliverable 6):
+    #   no_overlap                     — upstream commits exist but touch
+    #                                    disjoint files OR no commits
+    #   overlap_no_content_conflict    — upstream + in-flight touch overlapping
+    #                                    files BUT merge-tree predicts no
+    #                                    content conflict (auto-resolvable)
+    #   overlap_with_content_conflict  — merge-tree predicts conflicts
+    # ------------------------------------------------------------------
+    upstream_files: set[str] = set()
+    for commit in upstream_commits:
+        upstream_files.update(commit.get('files') or [])
+
+    in_flight_files = _list_in_flight_files(worktree_path, baseline_sha)
+    overlap = bool(upstream_files & in_flight_files)
+
+    if conflicts:
+        classification = 'overlap_with_content_conflict'
+    elif overlap:
+        classification = 'overlap_no_content_conflict'
+    else:
+        classification = 'no_overlap'
+
+    # ------------------------------------------------------------------
+    # Focused reconcile (only on overlap_no_content_conflict)
+    # ------------------------------------------------------------------
+    auto_reconciled = False
+    merge_commit_sha: str | None = None
+    merge_failure_paths: list[str] = []
+    if classification == 'overlap_no_content_conflict':
+        merge_rc, merge_stdout, merge_stderr = run_git(
+            ['-C', worktree_path, 'merge', f'origin/{base_branch}', '--no-edit']
+        )
+        if merge_rc == 0:
+            auto_reconciled = True
+            rc_sha, sha_out, _ = run_git(['-C', worktree_path, 'rev-parse', 'HEAD'])
+            if rc_sha == 0:
+                merge_commit_sha = sha_out.strip() or None
+            try:
+                from plan_logging import log_entry  # type: ignore[import-not-found]
+            except ImportError:
+                log_entry = None  # type: ignore[assignment]
+            if log_entry is not None:
+                commit_subjects = ', '.join(
+                    f'{c.get("sha", "")[:8]} {c.get("subject", "")}'
+                    for c in upstream_commits
+                )
+                log_entry(
+                    'decision',
+                    plan_id,
+                    'INFO',
+                    f'(plan-marshall:workflow-integration-git:baseline-reconcile) '
+                    f'Focused reconcile auto-resolved overlap_no_content_conflict drift '
+                    f'(merged origin/{base_branch} into HEAD): {commit_subjects}',
+                )
+        else:
+            # Rare: merge-tree predicted no conflict but the real merge produced
+            # one (e.g., overlapping renames). Abort the merge and downgrade
+            # classification so downstream paths handle it as a real conflict.
+            run_git(['-C', worktree_path, 'merge', '--abort'])
+            classification = 'overlap_with_content_conflict'
+            merge_failure_paths = [
+                line.strip() for line in (merge_stdout or '').splitlines() if line.strip()
+            ]
+            if not merge_failure_paths:
+                merge_failure_paths = ['<unknown>']
+            merge_error = (merge_stderr or '').strip() or merge_error
+
+    # ------------------------------------------------------------------
+    # Finding emission
+    # ------------------------------------------------------------------
     findings_emitted = 0
-    if emit:
-        for path in conflicts:
+    if emit and classification == 'overlap_with_content_conflict':
+        finding_paths = conflicts or merge_failure_paths
+        finding_type = (
+            'baseline_drift_reconcile_failed'
+            if merge_failure_paths
+            else 'triage'
+        )
+        for path in finding_paths:
             result = add_qgate_finding(
                 plan_id=plan_id,
                 phase=_PHASE,
                 source=_QGATE_SOURCE,
-                finding_type='triage',
+                finding_type=finding_type,
                 title=f'baseline-reconcile: merge conflict in {path}',
                 detail=(
                     f'Three-way merge of HEAD against origin/{base_branch} '
@@ -404,7 +481,23 @@ def cmd_baseline_reconcile(args) -> dict:
         'merge_tree_error': merge_error,
         'findings_emitted': findings_emitted,
         'emit': emit,
+        'classification': classification,
+        'auto_reconciled': auto_reconciled,
     }
+    if merge_commit_sha is not None:
+        payload['merge_commit_sha'] = merge_commit_sha
+    if merge_failure_paths:
+        payload['merge_failure_paths'] = merge_failure_paths
     if base_branch_updated and original_base_branch is not None:
         payload['original_base_branch'] = original_base_branch
     return payload
+
+
+def _list_in_flight_files(worktree_path: str, baseline_sha: str) -> set[str]:
+    """Return the set of files modified in the worktree since ``baseline_sha``."""
+    rc, stdout, _ = run_git(
+        ['-C', worktree_path, 'diff', '--name-only', f'{baseline_sha}..HEAD']
+    )
+    if rc != 0 or not stdout:
+        return set()
+    return {line.strip() for line in stdout.splitlines() if line.strip()}

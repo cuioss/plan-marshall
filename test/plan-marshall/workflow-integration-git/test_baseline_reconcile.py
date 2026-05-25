@@ -487,3 +487,161 @@ def _write_status_main_checkout(plan_dir: Path) -> None:
         ),
         encoding='utf-8',
     )
+
+
+# =============================================================================
+# Classification tests (deliverable 6)
+# =============================================================================
+
+
+def _setup_overlap_no_conflict(fixture_root: Path) -> tuple[Path, Path, str]:
+    """Build a fixture where upstream and in-flight touch the SAME file but
+    different lines, so merge-tree predicts no conflict yet there is overlap.
+    """
+    remote = fixture_root / 'remote.git'
+    seed = fixture_root / 'seed'
+    worktree = fixture_root / 'worktree'
+
+    _git_init_repo(seed, default_branch='main')
+    _commit_file(
+        seed,
+        'shared.txt',
+        'A\nB\nC\nD\nE\nF\nG\nH\n',
+        'seed: initial',
+    )
+    subprocess.run(
+        ['git', 'clone', '--bare', '-q', str(seed), str(remote)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ['git', 'clone', '-q', str(remote), str(worktree)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    _git(worktree, 'config', 'user.email', 'tests@example.com')
+    _git(worktree, 'config', 'user.name', 'Test')
+    baseline_sha = subprocess.run(
+        ['git', '-C', str(worktree), 'rev-parse', 'HEAD'],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    # In-flight change: edit the FIRST line of shared.txt.
+    _commit_file(
+        worktree,
+        'shared.txt',
+        'A-local\nB\nC\nD\nE\nF\nG\nH\n',
+        'local: edit first line',
+    )
+    # Upstream change: edit the LAST line of shared.txt — non-overlapping.
+    _commit_file(
+        seed,
+        'shared.txt',
+        'A\nB\nC\nD\nE\nF\nG\nH-upstream\n',
+        'upstream: edit last line',
+    )
+    _git(seed, 'push', '-q', str(remote), 'main')
+
+    return remote, worktree, baseline_sha
+
+
+def test_classification_no_overlap():
+    """Upstream commits touch disjoint files -> classification: no_overlap."""
+    with PlanContext(plan_id='br-class-none') as ctx:
+        assert ctx.plan_dir is not None
+        fixture_root = ctx.plan_dir / 'fixture'
+        fixture_root.mkdir(parents=True, exist_ok=True)
+        # upstream_commits=2 with upstream_conflicts=False writes
+        # upstream-0.txt and upstream-1.txt; the local clone has no
+        # in-flight commits, so the in-flight set is empty -> no_overlap.
+        _, worktree, baseline_sha = _setup_remote_and_worktree(
+            fixture_root,
+            upstream_commits=2,
+            upstream_conflicts=False,
+        )
+        _write_status(ctx.plan_dir, worktree, baseline_sha)
+        args = Namespace(
+            plan_id='br-class-none',
+            base_branch='main',
+            worktree_path=str(worktree),
+            no_emit=True,
+            skip_fetch=False,
+        )
+        result = cmd_baseline_reconcile(args)
+        assert result['status'] == 'success'
+        assert result['classification'] == 'no_overlap'
+        assert result['auto_reconciled'] is False
+        assert result['findings_emitted'] == 0
+
+
+def test_classification_overlap_no_content_conflict_auto_reconciles():
+    """Same-file non-overlapping line edits -> auto-merge, no findings, no loop re-entry."""
+    with PlanContext(plan_id='br-class-overlap-ok') as ctx:
+        assert ctx.plan_dir is not None
+        fixture_root = ctx.plan_dir / 'fixture'
+        fixture_root.mkdir(parents=True, exist_ok=True)
+        _, worktree, baseline_sha = _setup_overlap_no_conflict(fixture_root)
+        _write_status(ctx.plan_dir, worktree, baseline_sha)
+        args = Namespace(
+            plan_id='br-class-overlap-ok',
+            base_branch='main',
+            worktree_path=str(worktree),
+            no_emit=False,  # would emit if classification mis-routed
+            skip_fetch=False,
+        )
+        result = cmd_baseline_reconcile(args)
+        assert result['status'] == 'success'
+        assert result['classification'] == 'overlap_no_content_conflict'
+        assert result['auto_reconciled'] is True
+        assert result.get('merge_commit_sha')
+        assert result['findings_emitted'] == 0
+        # The worktree HEAD should now contain both changes.
+        head_text = (worktree / 'shared.txt').read_text(encoding='utf-8')
+        assert 'A-local' in head_text
+        assert 'H-upstream' in head_text
+
+
+def test_classification_overlap_with_content_conflict_keeps_loop_entry():
+    """Conflicting line edits -> classification stays overlap_with_content_conflict,
+    findings emitted, no auto-reconcile (worktree unchanged).
+    """
+    with PlanContext(plan_id='br-class-overlap-conflict') as ctx:
+        assert ctx.plan_dir is not None
+        fixture_root = ctx.plan_dir / 'fixture'
+        fixture_root.mkdir(parents=True, exist_ok=True)
+        _, worktree, baseline_sha = _setup_remote_and_worktree(
+            fixture_root,
+            upstream_commits=1,
+            upstream_conflicts=True,
+        )
+        _write_status(ctx.plan_dir, worktree, baseline_sha)
+        head_before = subprocess.run(
+            ['git', '-C', str(worktree), 'rev-parse', 'HEAD'],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        args = Namespace(
+            plan_id='br-class-overlap-conflict',
+            base_branch='main',
+            worktree_path=str(worktree),
+            no_emit=False,
+            skip_fetch=False,
+        )
+        result = cmd_baseline_reconcile(args)
+        assert result['status'] == 'success'
+        assert result['classification'] == 'overlap_with_content_conflict'
+        assert result['auto_reconciled'] is False
+        assert result['findings_emitted'] >= 1
+        # Worktree HEAD must be unchanged (no merge attempted).
+        head_after = subprocess.run(
+            ['git', '-C', str(worktree), 'rev-parse', 'HEAD'],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        assert head_before == head_after
