@@ -75,6 +75,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `rename-path` | `--plan-id --old-path --new-path` | Record path rename and rewrite step targets |
 | `qgate-mechanical-checks` | `--plan-id [--no-emit]` | Run the six deterministic Q-Gate checks for phase-4-plan Step 9 (coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Pure regex + graph + filesystem; no LLM dispatch. Each failure becomes a Q-Gate finding under `--source qgate` so phase-4-plan's existing aggregate consumes it. Returns `total_failed`, per-check counts, and an `ambiguous` flag the caller uses to decide whether the LLM q-gate-validation dispatch still needs to fire. |
 | `loop-exit-guard` | `--plan-id` | Script-level enforcement of the phase-5-execute "pending > 0 → must continue" invariant. Emits `status: continue` (with `pending_count` and `pending_ids`) when pending tasks remain — the non-success status forces the orchestrator to re-dispatch the execution-context. Emits `status: success` with `pending_count: 0` only when the queue is genuinely empty. See "Loop-Exit Guard" below for the contract. |
+| `pre-commit-verify-freshness` | `--plan-id` | Script-level enforcement that the worktree state has been observed by a fresh `verify` run before any pre-commit transition. Emits `status: fresh` (verify entry post-dates the worktree mtime), `status: stale` (worktree mutated since the last observed verify), or `status: undecidable` (no positive freshness proof exists — either no matching log entry, or no mtime baseline). Fail-closed contract: only `fresh` permits transition. See "Pre-Commit Verify Freshness" below for the contract. |
 
 ### Loop-Exit Guard (`loop-exit-guard`)
 
@@ -102,6 +103,87 @@ dispatched agent's terminal payload, which the agent could echo verbatim
 done out of three" from "the queue is empty". Moving the decision to a
 script-level read of disk state — the same `get_all_tasks` machinery as
 `list --status pending` — closes the control-flow gap.
+
+### Pre-Commit Verify Freshness (`pre-commit-verify-freshness`)
+
+`pre-commit-verify-freshness` is the script-level enforcement of the
+necessary-vs-sufficient gap between `loop-exit-guard` (queue-empty proof) and
+the pre-commit-push state (worktree-actually-verified proof). `loop-exit-guard`
+answers a structurally narrower question ("is the task queue empty?") than
+what the pre-commit gate needs ("has the codebase actually been verified
+against its current on-disk state?"). This verb closes the gap by comparing
+the most recent `plan-marshall:build-pyproject:pyproject_build run` INFO line
+in `script-execution.log` against the most recent file-content mtime in the
+worktree (resolved against `references.modified_files` when populated, falling
+back to a pruned worktree-root walk otherwise — see "Algorithm" below). The
+two guards are complementary, not redundant: queue-emptiness and
+verify-freshness must BOTH be true before any pre-commit transition.
+
+See lesson `2026-05-24-22-001` for the seed observation (PR #456 — orchestrator
+dispatched `commit-push` against a tree no full `verify` had observed).
+
+**Question answered:** is the most recent `verify` log entry newer than the
+worktree state it would re-verify?
+
+**Three return statuses (fail-closed contract):**
+
+- `status: fresh` — latest matching INFO build entry post-dates the newest
+  worktree mtime. A fresh `verify` has been observed against the current
+  on-disk state, so the gate is permitted to pass. Carries `t_build_iso`,
+  `t_worktree_iso`, `newest_mtime_path`, and `worktree_root` for the
+  audit trail.
+- `status: stale` — newest worktree mtime post-dates the most recent build
+  entry. The worktree has been mutated since the last observed verify, so
+  the gate MUST fail closed. Carries the same audit fields as `fresh`.
+- `status: undecidable` — no positive freshness proof exists. Two
+  sub-reasons: (a) `reason: no_build_log_entry` — `script-execution.log`
+  carries no matching INFO line (or the log file is missing); (b)
+  `reason: worktree_mtime_unresolvable` — the worktree root produced no
+  candidate files after pruning skip-list directories. Both
+  sub-reasons MUST be treated as gate failure.
+
+**Canonical invocation:**
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  pre-commit-verify-freshness --plan-id {plan_id}
+```
+
+**Wired-in gates:** the dispatcher prose lives at:
+
+- `phase-5-execute/SKILL.md` § Step 12a — Pending-tasks transition guard
+  (now a co-equal gate alongside `loop-exit-guard`).
+- `phase-6-finalize/SKILL.md` and `phase-6-finalize/standards/commit-push.md`
+  § "Freshness precondition" — fires BEFORE the no-changes-branch check of
+  `commit-push`.
+
+Both gates fail closed on any non-`fresh` status and emit a `[BLOCKED]` work-log
+line carrying the reason, the newest-mtime path, and both timestamps. The
+`--force` orchestrator escape mirrors the existing pending-tasks-guard escape
+— deliberate, log-recorded override for triage-driven aborts. Never invoked
+programmatically from inside the loop.
+
+**Algorithm (deterministic; no LLM dispatch):**
+
+1. Resolve the plan-scoped `script-execution.log` path via the same
+   `.plan/plans/{plan_id}/logs/` resolution used by `manage-logging`.
+2. Scan the log for INFO lines matching the literal substring
+   `plan-marshall:build-pyproject:pyproject_build run`. Parse the leading
+   ISO-8601 timestamp for the newest match as `t_build`.
+3. Resolve the worktree root via `status.metadata.worktree_path`; fall back
+   to the current working directory when no worktree is materialised.
+4. Read `references.modified_files`. When non-empty, compute `t_worktree` as
+   the maximum mtime over the entries that still exist on disk (resolved
+   relative to the worktree root). When the list is empty or all entries are
+   missing, fall back to a pruned worktree-root walk that skips `.git/`,
+   `.plan/`, `node_modules/`, `__pycache__/`, `.venv/`, `target/`, `build/`,
+   and any other dotted directory.
+5. Decide: `t_build < t_worktree` → `stale`; otherwise → `fresh`; missing
+   either timestamp → `undecidable` with the appropriate `reason`.
+
+The algorithm never raises uncaught exceptions on missing log file, missing
+references, or absent worktree — every degenerate input case returns
+`undecidable` with a descriptive `reason`.
 
 ### Script-Level `[OUTCOME]` Emission (`finalize-step`)
 
@@ -649,6 +731,13 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks rename-p
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks qgate-mechanical-checks \
   --plan-id PLAN_ID [--no-emit]
+```
+
+### pre-commit-verify-freshness
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks pre-commit-verify-freshness \
+  --plan-id PLAN_ID
 ```
 
 ---
