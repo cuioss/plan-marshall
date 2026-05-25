@@ -8,6 +8,13 @@ order: 25
 
 Pure executor for the `architecture-refresh` finalize step. Under the on-demand crawl model, `derived.json` is ephemeral — there is no pre-snapshot to diff against — so this step reduces to a deterministic no-op for every plan, optionally followed by an LLM re-enrichment pass when the user invokes it manually.
 
+## Exit-code convention for `manage-*` script calls
+
+Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+
+- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the failure mode documented in lesson `2026-04-29-23-002` (silent swallowing of `wrong_parameters` rejections). "Log and continue" is the prohibited anti-pattern.
+
 This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `architecture-refresh` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer beyond the documented Tier-0 / Tier-1 knob reads.
 
 This step is **inline** (executed directly inside the finalize main context, not via a separate Task agent) because the Tier-1 `prompt` mode requires an `AskUserQuestion` interaction. Inline steps are not timeout-wrapped — they execute under the host platform's standard per-call ceiling.

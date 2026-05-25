@@ -109,6 +109,7 @@ def _render_executor(target_path: Path, embedded_script_path: Path) -> Path:
     mappings_code = f'    "{TEST_NOTATION}": "{embedded_script_path}",'
 
     rendered = template_content.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
+    rendered = rendered.replace('{{SUBCOMMAND_MAPPINGS}}', '')
     rendered = rendered.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
     rendered = rendered.replace(
         '{{SHARED_MODULE_DIRS}}',
@@ -278,6 +279,165 @@ def test_pm_marketplace_root_matching_embedded_root_is_noop(two_marketplace_tree
     assert 'SENTINEL:A' in result.stdout, (
         f'Expected tree A to remain invoked when PM_MARKETPLACE_ROOT matches embedded root. stdout:\n{result.stdout}'
     )
+
+
+# ============================================================================
+# PRE-FLIGHT SUBCOMMAND VALIDATOR (lesson 2026-04-29-23-002)
+# ============================================================================
+
+# Sentinel multi-subcommand script body — argparse parser with two declared
+# subcommands. When invoked with a registered subcommand the script prints a
+# sentinel and exits 0; argparse handles invalid subcommands itself (which is
+# precisely the failure mode the pre-flight validator now intercepts upstream).
+MULTI_SUB_SCRIPT_TEMPLATE = """#!/usr/bin/env python3
+import argparse
+import sys
+
+def main():
+    parser = argparse.ArgumentParser()
+    subs = parser.add_subparsers(dest='cmd', required=True)
+    subs.add_parser('alpha')
+    subs.add_parser('bravo')
+    args = parser.parse_args()
+    print(f'SENTINEL:{args.cmd}')
+    sys.exit(0)
+
+if __name__ == '__main__':
+    main()
+"""
+
+PREFLIGHT_NOTATION = 'fakebundle:fakeskill'
+
+
+def _render_executor_with_subcommands(
+    target_path: Path,
+    embedded_script_path: Path,
+    subcommands_block: str,
+) -> Path:
+    """Render the template with a populated SUBCOMMAND_MAPPINGS block.
+
+    ``subcommands_block`` is the literal text to substitute for
+    ``{{SUBCOMMAND_MAPPINGS}}`` — a multi-line string of dict-literal entries
+    indented for embedding inside the SUBCOMMANDS dict.
+    """
+    template_content = EXECUTOR_TEMPLATE.read_text()
+    mappings_code = f'    "{PREFLIGHT_NOTATION}": "{embedded_script_path}",'
+
+    rendered = template_content.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
+    rendered = rendered.replace('{{SUBCOMMAND_MAPPINGS}}', subcommands_block)
+    rendered = rendered.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
+    rendered = rendered.replace(
+        '{{SHARED_MODULE_DIRS}}',
+        f"sys.path.insert(0, '{INPUT_VALIDATION_DIR}')",
+    )
+    rendered = rendered.replace('{{EXTRA_SCRIPT_DIRS}}', '')
+    rendered = rendered.replace('{{PLAN_DIR_NAME}}', '.plan')
+    rendered = rendered.replace('{{EXECUTOR_TARGET}}', 'claude')
+    rendered = rendered.replace(
+        '{{TARGET_AWARE_RESOLVER}}',
+        'def _resolve_notation_by_target(notation):\n    return None\n',
+    )
+
+    target_path.write_text(rendered)
+    return target_path
+
+
+@pytest.fixture
+def preflight_executor(tmp_path):
+    """Render an executor that embeds a multi-subcommand script and its
+    SUBCOMMANDS mapping. Yields the rendered executor path plus the script
+    path and plan_dir for logging isolation."""
+    script_dir = tmp_path / 'pkg' / 'scripts'
+    script_dir.mkdir(parents=True, exist_ok=True)
+    script_path = script_dir / 'fakeskill.py'
+    script_path.write_text(MULTI_SUB_SCRIPT_TEMPLATE)
+    script_path = script_path.resolve()
+
+    plan_dir = tmp_path / 'plan'
+    plan_dir.mkdir()
+    (plan_dir / 'logs').mkdir()
+
+    executor_path = plan_dir / 'execute-script.py'
+
+    # Populate SUBCOMMANDS with the two declared subcommand names.
+    subcommands_block = f'    "{PREFLIGHT_NOTATION}": ["alpha", "bravo"],'
+
+    _render_executor_with_subcommands(executor_path, script_path, subcommands_block)
+
+    yield {
+        'executor': executor_path,
+        'script': script_path,
+        'plan_dir': plan_dir,
+    }
+
+
+def test_known_subcommand_passes(preflight_executor, monkeypatch):
+    """A subcommand declared in SUBCOMMANDS dispatches to the script normally."""
+    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+
+    result = _run_executor(
+        preflight_executor['executor'],
+        preflight_executor['plan_dir'],
+        PREFLIGHT_NOTATION,
+        'alpha',
+    )
+
+    assert result.returncode == 0, (
+        f'Known subcommand should dispatch normally.\nstdout: {result.stdout}\nstderr: {result.stderr}'
+    )
+    assert 'SENTINEL:alpha' in result.stdout, (
+        f'Script should have been invoked with the alpha subcommand.\nstdout: {result.stdout}'
+    )
+
+
+def test_invented_subcommand_rejected(preflight_executor, monkeypatch):
+    """An invented subcommand is rejected pre-flight with the structured TOON
+    contract that names lesson 2026-04-29-23-002."""
+    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+
+    result = _run_executor(
+        preflight_executor['executor'],
+        preflight_executor['plan_dir'],
+        PREFLIGHT_NOTATION,
+        'invented-verb',
+    )
+
+    assert result.returncode != 0, (
+        f'Invented subcommand must exit non-zero.\nstdout: {result.stdout}\nstderr: {result.stderr}'
+    )
+    # Script must NOT have run — no SENTINEL output.
+    assert 'SENTINEL' not in result.stdout, (
+        f'Script must not be invoked when validator rejects subcommand.\nstdout: {result.stdout}'
+    )
+    # Structured TOON fields per the contract.
+    assert 'status: error' in result.stderr
+    assert 'error: "invented_subcommand"' in result.stderr
+    assert f'notation: "{PREFLIGHT_NOTATION}"' in result.stderr
+    assert 'invented: "invented-verb"' in result.stderr
+    assert 'alpha' in result.stderr and 'bravo' in result.stderr, (
+        'valid_choices must list the declared subcommand names.'
+    )
+    assert 'lesson: "2026-04-29-23-002"' in result.stderr
+
+
+def test_help_flag_bypasses_preflight(preflight_executor, monkeypatch):
+    """The validator must let -h / --help through so callers can still
+    discover the subcommand surface via the script's own help output."""
+    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+
+    result = _run_executor(
+        preflight_executor['executor'],
+        preflight_executor['plan_dir'],
+        PREFLIGHT_NOTATION,
+        '--help',
+    )
+
+    # The script's argparse --help exits 0 and prints usage to stdout.
+    assert result.returncode == 0, (
+        f'Help flag must bypass pre-flight and reach the script.\nstdout: {result.stdout}\nstderr: {result.stderr}'
+    )
+    # The pre-flight TOON must NOT have been emitted.
+    assert 'invented_subcommand' not in result.stderr
 
 
 def test_pm_marketplace_root_with_trailing_slash_rewrites(two_marketplace_trees, monkeypatch):

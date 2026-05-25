@@ -33,6 +33,15 @@ Skill: plan-marshall:dev-agent-behavior-rules
 
 **Constraints:**
 - Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
+
+## Exit-code convention for `manage-*` script calls
+
+Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+
+- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the failure mode documented in lesson `2026-04-29-23-002` (silent swallowing of `wrong_parameters` rejections). "Log and continue" is the prohibited anti-pattern.
+
+Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., `manage-files exists` returning `exists: false`, `manage-status get-worktree-path` returning an empty `worktree_path`) — are documented inline in the step that issues them.
 - On phase entry (Step 4), resolve the active worktree absolute path and surface it as a `[STATUS]` work-log line so it stays visible in model context throughout the run.
 - Every subagent dispatch (Task / Skill / execution-context invocation) MUST embed the Worktree Header in the dispatch prompt when a worktree is active (see **Dispatch Protocol** below) AND MUST pass `plan_id` as an input parameter to satisfy the subagent's Input Contract (e.g., `execute-task`, `execution-context`). Prompt embedding and parameter passing are both required — the former propagates the constraint through free-form delegation, the latter satisfies the structured interface.
 

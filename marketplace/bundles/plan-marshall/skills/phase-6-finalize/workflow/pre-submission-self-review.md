@@ -9,6 +9,13 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 Pure executor for the `pre-submission-self-review` finalize step. Catches the class of structural defects that PR-review bots reliably surface but local quality gates systematically miss: missing initialization in symmetric save/restore pairs, regex/glob over-fit, ambiguous user-facing wording, duplicate prose sections covering the same contract, and schema/contract drift.
 
+## Exit-code convention for `manage-*` script calls
+
+Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+
+- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the failure mode documented in lesson `2026-04-29-23-002` (silent swallowing of `wrong_parameters` rejections). "Log and continue" is the prohibited anti-pattern.
+
 The step combines a deterministic helper that surfaces concrete candidates from the staged diff (Step 1 below) with an LLM cognitive review applied only to those candidates (Steps 2–3 below). Step 1 (deterministic surface) and Step 4 (outcome bookkeeping) run inline in the manifest dispatcher's context; Steps 2–3 (contract cross-reference setup + the five LLM cognitive checks) run in the dispatched envelope under `--phase phase-6-finalize` (no `--role` — pre-submission-self-review tracks `phase-6-finalize.default`). On any finding the LLM returns, the step hard-fails and halts the phase, mirroring the gating-step convention established by `pre-push-quality-gate`.
 
 This document carries NO step-activation logic. Activation is controlled by the manifest composer in `manage-execution-manifest/scripts/manage-execution-manifest.py` via the `pre_submission_self_review_inactive` pre-filter (see `manage-execution-manifest/standards/decision-rules.md`). The composer drops the step when `commit_strategy == none` (transitively, via `commit_strategy_none`) OR `references.modified_files` is empty. When the dispatcher runs this step the executor always runs to completion: a clean run records `outcome=done`; a non-empty findings list records `outcome=failed` and halts the phase.

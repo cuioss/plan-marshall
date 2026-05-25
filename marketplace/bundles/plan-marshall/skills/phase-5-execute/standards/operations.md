@@ -4,6 +4,15 @@ Reference for executing common checklist items. The executor uses these patterns
 
 **Manifest-driven execution**: This document does not encode any skip-conditional language for verification steps. Whether `quality-gate`, `module-tests`, or `coverage` fires at the end of Phase 5 is decided by the per-plan execution manifest (`manage-execution-manifest read`) Step 2 of `SKILL.md` consumes — the dispatch templates here are unconditional and only run when the manifest's `phase_5.verification_steps` list includes the corresponding step name.
 
+## Exit-code convention for `manage-*` script calls
+
+Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+
+- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the failure mode documented in lesson `2026-04-29-23-002` (silent swallowing of `wrong_parameters` rejections). "Log and continue" is the prohibited anti-pattern.
+
+Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., `manage-files exists` returning `exists: false`, `manage-status get-worktree-path` returning an empty `worktree_path`) — are documented inline in the step that issues them.
+
 ## Worktree Header Protocol (Applies to ALL Dispatch Patterns)
 
 When the plan runs in an isolated worktree, every `Task:` dispatch (and every other subagent dispatch that accepts a free-form prompt) below MUST have its `prompt:` block BEGIN with the following header, with `{worktree_path}` substituted by the active worktree absolute path surfaced by phase-5-execute's `[STATUS] Active worktree` work-log line:

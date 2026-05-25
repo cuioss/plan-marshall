@@ -14,6 +14,13 @@ Resolved from the `default:` prefix by `phase-5-execute` via the Built-in Step D
 
 **Whether this step fires is decided exclusively by `phase_5.verification_steps` in the per-plan execution manifest** (`manage-execution-manifest read`). This document carries **no embedded skip logic** — `coverage` runs iff `manage-execution-manifest`'s decision matrix included `coverage` in the manifest's `verification_steps` list. Any skip rule (e.g., docs-only plans, recipe paths, early-terminate analysis) is encoded in the matrix, not here.
 
+## Exit-code convention for `manage-*` script calls
+
+Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+
+- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the failure mode documented in lesson `2026-04-29-23-002` (silent swallowing of `wrong_parameters` rejections). "Log and continue" is the prohibited anti-pattern.
+
 Resolve via `architecture resolve --command coverage` and run the resolved executable. Threshold enforcement is native to the resolved build command: pytest emits `--cov-fail-under={threshold}` from `build.py::cmd_coverage`, and JaCoCo (Maven/Gradle) enforces the threshold via build-tool configuration. No secondary parse-and-check call is required.
 
 ```bash
