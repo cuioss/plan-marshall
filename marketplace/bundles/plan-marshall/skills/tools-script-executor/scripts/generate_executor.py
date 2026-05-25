@@ -361,7 +361,7 @@ def _extract_subcommands_from_source(source: str) -> list[str]:
     container. The function does NOT execute the script — it only parses
     the source.
 
-    Returns the subcommand names in declaration order (deduplicated). An
+    Returns the subcommand names in sorted order (deduplicated). An
     empty list signals "no subcommands declared" (a single-action script);
     the caller treats this as "skip pre-flight validation for this notation".
 
@@ -369,7 +369,7 @@ def _extract_subcommands_from_source(source: str) -> list[str]:
         source: Python source code as a string.
 
     Returns:
-        Sorted list of unique subcommand name string literals.
+        Alphabetically sorted list of unique subcommand name string literals.
     """
     try:
         tree = ast.parse(source)

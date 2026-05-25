@@ -318,7 +318,7 @@ def _read_status_json(plan_dir: Path) -> dict[str, Any] | None:
     existence directly before calling this helper.
     """
     status_path = plan_dir / 'status.json'
-    if not status_path.exists():
+    if not status_path.is_file():
         return None
     try:
         data: dict[str, Any] = json.loads(status_path.read_text(encoding='utf-8'))
@@ -329,7 +329,7 @@ def _read_status_json(plan_dir: Path) -> dict[str, Any] | None:
 
 def _has_any_artifact(plan_dir: Path) -> bool:
     """Return ``True`` if any plan-defining artifact lives in ``plan_dir``."""
-    return any((plan_dir / name).exists() for name in PLAN_DEFINING_ARTIFACTS)
+    return any((plan_dir / name).is_file() for name in PLAN_DEFINING_ARTIFACTS)
 
 
 def _logs_has_content(plan_dir: Path) -> bool:
@@ -340,7 +340,7 @@ def _logs_has_content(plan_dir: Path) -> bool:
     produced audit trails worth keeping).
     """
     logs = plan_dir / 'logs'
-    if not logs.exists() or not logs.is_dir():
+    if not logs.is_dir():
         return False
     return any(logs.iterdir())
 
@@ -370,7 +370,7 @@ def _scan_orphan_plan_dirs() -> list[dict[str, Any]]:
         / ``solution_outline.md``.
     """
     root = _plans_root()
-    if not root.exists():
+    if not root.is_dir():
         return []
 
     findings: list[dict[str, Any]] = []
@@ -424,7 +424,7 @@ def _scan_stuck_low_confidence_archives(
       * ``metadata.archived_reason`` is missing or empty.
     """
     root = _archived_plans_root()
-    if not root.exists():
+    if not root.is_dir():
         return []
 
     findings: list[dict[str, Any]] = []
@@ -516,7 +516,7 @@ def _scan_dangling_worktrees() -> list[dict[str, Any]]:
     because finalize should have removed it.
     """
     root = _worktrees_root()
-    if not root.exists():
+    if not root.is_dir():
         return []
 
     plans_root = _plans_root()
@@ -531,7 +531,7 @@ def _scan_dangling_worktrees() -> list[dict[str, Any]]:
             continue
 
         plan_dir = plans_root / entry.name
-        if plan_dir.exists():
+        if plan_dir.is_dir():
             continue
 
         findings.append(
@@ -601,7 +601,7 @@ def _scan_plans(
             # Q-Gate writes require a live plan-dir; skip rule-2/rule-3
             # findings whose plan does not exist under plans/.
             finding_plan_id = finding.get('plan_id')
-            if finding_plan_id and (plans_root / finding_plan_id).exists():
+            if finding_plan_id and (plans_root / finding_plan_id).is_dir():
                 _emit_finding_to_qgate(finding)
 
     return _build_summary(
