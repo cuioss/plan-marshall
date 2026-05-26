@@ -66,6 +66,11 @@ DISPATCH_TERMINATION_CAUSES = (
     'harness_cancellation',
     'error',
     'clean_exit_queue_empty',
+    'step_complete',
+    'blocked_user_review',
+    'blocked_session_restart',
+    'task_batch_complete',
+    'agent_returned',
 )
 USAGE_TAG_RE = re.compile(r'<usage>([\s\S]*?)</usage>', re.MULTILINE)
 USAGE_FIELD_RE = re.compile(r'^\s*(total_tokens|tool_uses|duration_ms)\s*:\s*(\d+)', re.MULTILINE)
@@ -1538,7 +1543,9 @@ def main() -> int:
             'Append a TOON row to work/metrics-dispatch-boundaries-{phase}.toon '
             'capturing the termination cause of a phase Task dispatch '
             '(voluntary_checkpoint | task_complete_returned_verbatim | '
-            'harness_cancellation | error | clean_exit_queue_empty) and the '
+            'harness_cancellation | error | clean_exit_queue_empty | '
+            'step_complete | blocked_user_review | blocked_session_restart | '
+            'task_batch_complete | agent_returned) and the '
             "dispatched agent's <usage> totals at the time of return. "
             '``clean_exit_queue_empty`` is the canonical value the '
             'orchestrator MUST use for a successful loop-exit (queue '

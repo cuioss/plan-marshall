@@ -394,28 +394,16 @@ def detect_outcome_for_diffed_tasks(
     return {'tasks_with_diff_no_outcome': missing}
 
 
-def read_dispatch_boundaries(plan_dir: Path) -> dict[str, Any]:
-    """Read `work/metrics-dispatch-boundaries-5-execute.toon` if present.
+def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
+    """Parse a single ``metrics-dispatch-boundaries-{phase}.toon`` artifact.
 
-    Returns:
-      - present: bool — false when the artifact does not exist (precondition
-            guard for the LLM rule; lesson-2026-05-08-14-001 § DISPATCH_TERMINATION_CAUSE).
+    Returned dict shape (unchanged from the legacy phase-5-only reader):
+      - present: bool
       - rows: list of {timestamp, termination_cause, total_tokens, tool_uses, duration_ms}
-            dicts; empty list when present == false.
-      - unknown_count: number of rows with termination_cause == "unknown".
-            The recorder no longer accepts ``unknown`` as a valid cause —
-            rows carrying this value are legacy data from before the
-            ``clean_exit_queue_empty`` migration. The retrospective rule
-            fires a ``warning`` on ``unknown_count > 0`` so any post-merge
-            recurrence of the overloaded-fallback defect surfaces in the
-            audit trail.
-      - clean_exit_queue_empty_count: number of rows with termination_cause
-            == "clean_exit_queue_empty" — the canonical value for clean
-            exits where the loop drove to completion AND the pending queue
-            is empty. This counter is the input signal for the new
-            ``info``-severity distribution finding.
+      - unknown_count: number of rows with ``termination_cause == "unknown"``
+      - clean_exit_queue_empty_count: number of rows with
+            ``termination_cause == "clean_exit_queue_empty"``
     """
-    artifact = plan_dir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
     if not artifact.exists():
         return {
             'present': False,
@@ -466,6 +454,45 @@ def read_dispatch_boundaries(plan_dir: Path) -> dict[str, Any]:
     }
 
 
+def read_dispatch_boundaries_per_phase(plan_dir: Path) -> dict[str, dict[str, Any]]:
+    """Glob ``work/metrics-dispatch-boundaries-*.toon`` and parse each as a per-phase entry.
+
+    The artifact filename ``metrics-dispatch-boundaries-{phase}.toon`` encodes
+    the originating phase as the trailing path-stem segment. The returned dict
+    is keyed by extracted phase name (e.g. ``"4-plan"``, ``"5-execute"``,
+    ``"6-finalize"``) with each value carrying the same per-file shape as the
+    legacy single-phase reader (``present``, ``rows``, ``unknown_count``,
+    ``clean_exit_queue_empty_count``).
+
+    An empty work directory produces an empty dict — the top-level
+    ``dispatch_boundaries`` key surfaces in ``cmd_run`` output regardless,
+    which is the structural signal that plan-retrospective discovered no
+    boundary artifacts (vs. a structural error reading them).
+
+    Generalised from the prior phase-5-only reader to cover phase-4-plan and
+    phase-6-finalize dispatch-boundary artifacts as well (lesson
+    `2026-05-20-12-002`).
+    """
+    work_dir = plan_dir / 'work'
+    if not work_dir.exists():
+        return {}
+
+    per_phase: dict[str, dict[str, Any]] = {}
+    for artifact in sorted(work_dir.glob('metrics-dispatch-boundaries-*.toon')):
+        # ``metrics-dispatch-boundaries-{phase}.toon`` → extract ``{phase}``
+        # from the stem by stripping the fixed prefix.
+        stem = artifact.stem  # e.g. ``metrics-dispatch-boundaries-5-execute``
+        prefix = 'metrics-dispatch-boundaries-'
+        if not stem.startswith(prefix):
+            continue
+        phase = stem[len(prefix):]
+        if not phase:
+            continue
+        per_phase[phase] = _parse_dispatch_boundary_file(artifact)
+
+    return per_phase
+
+
 def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     plan_dir = resolve_plan_dir(args.mode, args.plan_id, args.archived_plan_path)
     logs_dir = plan_dir / 'logs'
@@ -504,8 +531,15 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         'outcome_pairing': pair_outcome_emissions(work),
         'dispatch_clustering': cluster_dispatches(work, script),
         'outcome_for_diffed_tasks': detect_outcome_for_diffed_tasks(work, plan_dir),
-        'dispatch_boundaries': read_dispatch_boundaries(plan_dir),
     }
+
+    # Per-phase dispatch-boundary artifacts (lesson 2026-05-20-12-002). The
+    # generalised reader globs ``work/metrics-dispatch-boundaries-*.toon`` and
+    # returns a per-phase dict keyed by phase name. It is hoisted to a
+    # top-level fragment so the compile-report renderer can emit a dedicated
+    # Phase Dispatch Boundaries section without descending into the phase-5
+    # logging-gap bag.
+    dispatch_boundaries = read_dispatch_boundaries_per_phase(plan_dir)
 
     return {
         'status': 'success',
@@ -529,6 +563,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         'top_tags': top_n(tag_counter, 5),
         'top_error_tags': top_n(error_tags, 5),
         'phase5_logging_gaps': phase5_logging_gaps,
+        'dispatch_boundaries': dispatch_boundaries,
         'findings': findings,
     }
 

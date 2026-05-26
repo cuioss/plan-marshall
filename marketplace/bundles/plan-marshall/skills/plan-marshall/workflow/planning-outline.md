@@ -315,6 +315,27 @@ Task: plan-marshall:{target}
 
 The agent returns the task creation summary (`tasks` array with `domain`, `profile`, `skills`) plus `qgate_pending_count` and `qgate_validation_required` in its TOON.
 
+**Dispatch-boundary recording (phase-4-plan dispatch)**: Immediately after the phase-4-plan execution-context Task dispatch returns and BEFORE the conditional q-gate-validation block below, record the termination boundary of the phase-4-plan dispatch itself. The call captures the phase-4-plan agent's return outcome — NOT the combined phase-4+qgate outcome (q-gate-validation, when dispatched, is a sibling orchestrator-level dispatch that records its own boundary independently if instrumented). This call mirrors the existing phase-5-execute dispatch-boundary contract documented in `workflow/execution.md` § "After execution-context returns".
+
+Classify the phase-4-plan return into exactly one of:
+
+| Cause | Detection rule |
+|-------|----------------|
+| `task_batch_complete` | The agent returned `status: success` with the `tasks` array populated (clean exit — the task creation summary is complete). |
+| `voluntary_checkpoint` | The agent returned a non-error payload with `qgate_pending_count > 0` findings still pending, OR emitted a "Returning control to orchestrator" / "progress checkpoint" / "partial-completion handoff" marker. |
+| `harness_cancellation` | The dispatch ended with a host-platform cancellation marker (timeout, context-window limit, etc.). |
+| `error` | The agent returned a structured error payload via the skill's Error Handling section. |
+
+Issue the call BEFORE any subsequent dispatch (q-gate-validation, phase-boundary, phase_handshake) so the audit trail captures the actual termination order:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
+  --plan-id {plan_id} --phase 4-plan --termination-cause {task_batch_complete|voluntary_checkpoint|harness_cancellation|error} \
+  --total-tokens {n} --tool-uses {n} --duration-ms {n}
+```
+
+Substitute the `--termination-cause` value with the canonical cause from the table above and `{n}` with the integer parsed from the phase-4-plan agent's `<usage>...</usage>` block (use `0` when the field is absent).
+
 **Post-return q-gate-validation dispatch (conditional)**: Read `qgate_validation_required` from the phase return TOON captured above. When `true` (the default — phase-4-plan signals unconditionally on successful completion per Step 9b), dispatch q-gate-validation as a sibling top-level Task at the orchestrator layer — the phase body cannot spawn it because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. When `false` or absent (unrecoverable error path), skip this block and continue directly to the Metrics fused-call below.
 
 Resolve the dispatch target via the same role used for phase-4-plan (q-gate-validation tracks the calling phase's default):

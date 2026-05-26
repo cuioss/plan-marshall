@@ -562,3 +562,151 @@ class TestFragmentBundleCleanup:
         assert 'WARN' in captured.err
         assert 'failed to delete fragments bundle' in captured.err
         assert str(fragments) in captured.err
+
+
+# =============================================================================
+# Phase Dispatch Boundaries section (lesson 2026-05-20-12-002)
+# =============================================================================
+
+
+def _write_fragments_with_dispatch_boundaries(
+    tmp_path: Path,
+    phases: dict[str, dict] | None,
+) -> Path:
+    """Write a fragments bundle that includes a ``dispatch_boundaries`` key.
+
+    Args:
+        tmp_path: pytest tmp_path fixture.
+        phases: dict mapping phase name (e.g. ``"5-execute"``) to a per-phase
+            dict (``present``, ``rows``, ``unknown_count``,
+            ``clean_exit_queue_empty_count``). Pass ``None`` to omit the key
+            entirely; pass ``{}`` to emit an empty dict.
+    """
+    import json
+
+    # Start from the minimal fragments bundle.
+    base_fragments = _write_fragments(tmp_path)
+    content = base_fragments.read_text(encoding='utf-8')
+
+    if phases is None:
+        return base_fragments
+    # Inline the dispatch_boundaries dict as a TOON nested block.
+    lines = ['dispatch_boundaries:']
+    if phases:
+        for phase, data in phases.items():
+            # TOON keys are unquoted bare identifiers; phase names like
+            # ``4-plan`` are accepted verbatim by the parser.
+            lines.append(f'  {phase}:')
+            for k, v in data.items():
+                if isinstance(v, list):
+                    if not v:
+                        lines.append(f'    {k}[0]:')
+                    else:
+                        lines.append(f'    {k}: {json.dumps(v)}')
+                elif isinstance(v, bool):
+                    lines.append(f'    {k}: {"true" if v else "false"}')
+                else:
+                    lines.append(f'    {k}: {v}')
+    content = content + '\n'.join(lines) + '\n'
+    fragments_file = tmp_path / 'fragments-dispatch-boundaries.toon'
+    fragments_file.write_text(content, encoding='utf-8')
+    return fragments_file
+
+
+class TestPhaseDispatchBoundariesSection:
+    """Rendering tests for the Phase Dispatch Boundaries section."""
+
+    def test_section_emitted_when_fragment_has_present_phase(self, tmp_path, monkeypatch):
+        """The section emits when at least one phase reports present=true."""
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        fragments = _write_fragments_with_dispatch_boundaries(
+            tmp_path,
+            phases={
+                '5-execute': {
+                    'present': True,
+                    'rows': [],
+                    'unknown_count': 0,
+                    'clean_exit_queue_empty_count': 3,
+                },
+            },
+        )
+        result = run_script(
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--fragments-file',
+            str(fragments),
+        )
+        assert result.success, result.stderr
+        data = result.toon()
+        assert 'Phase Dispatch Boundaries' in data['sections_written']
+        content = (plan_dir / 'quality-verification-report.md').read_text(encoding='utf-8')
+        assert '## Phase Dispatch Boundaries' in content
+        # The per-phase markdown table renders with one row per recorded phase.
+        assert '| 5-execute | 0 | 0 | 3 |' in content
+
+    def test_section_omitted_when_fragment_absent(self, tmp_path, monkeypatch):
+        """No fragment ⇒ section is omitted (gate returns false)."""
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        fragments = _write_fragments_with_dispatch_boundaries(tmp_path, phases=None)
+        result = run_script(
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--fragments-file',
+            str(fragments),
+        )
+        assert result.success, result.stderr
+        data = result.toon()
+        assert 'Phase Dispatch Boundaries' in data['sections_omitted']
+        content = (plan_dir / 'quality-verification-report.md').read_text(encoding='utf-8')
+        assert '## Phase Dispatch Boundaries' not in content
+
+    def test_per_phase_table_renders_one_row_per_recorded_phase(self, tmp_path, monkeypatch):
+        """All three phases (4-plan, 5-execute, 6-finalize) appear as table rows."""
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        fragments = _write_fragments_with_dispatch_boundaries(
+            tmp_path,
+            phases={
+                '4-plan': {
+                    'present': True,
+                    'rows': [],
+                    'unknown_count': 0,
+                    'clean_exit_queue_empty_count': 0,
+                },
+                '5-execute': {
+                    'present': True,
+                    'rows': [],
+                    'unknown_count': 1,
+                    'clean_exit_queue_empty_count': 2,
+                },
+                '6-finalize': {
+                    'present': True,
+                    'rows': [],
+                    'unknown_count': 0,
+                    'clean_exit_queue_empty_count': 0,
+                },
+            },
+        )
+        result = run_script(
+            SCRIPT_PATH,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--fragments-file',
+            str(fragments),
+        )
+        assert result.success, result.stderr
+        content = (plan_dir / 'quality-verification-report.md').read_text(encoding='utf-8')
+        # Per-phase markdown table includes one row per recorded phase, sorted.
+        assert '| 4-plan | 0 | 0 | 0 |' in content
+        assert '| 5-execute | 0 | 1 | 2 |' in content
+        assert '| 6-finalize | 0 | 0 | 0 |' in content
