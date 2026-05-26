@@ -141,6 +141,14 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phas
   --tool-uses {tool_uses from <usage>}
 ```
 
+phase-1-init Step 3a records `1-init.start_time` via `manage-metrics
+start-phase` as soon as the plan directory exists, so the fused
+`phase-boundary` call above closes 1-init using a real agent-side timestamp
+and computes `duration_seconds = end_time - start_time` against it. The
+`_read_status_created` backfill in `manage-metrics.py` is retained only as a
+safety net for plans materialised under older orchestrator versions; current
+plans never exercise that path.
+
 **Phase handshake**: Capture invariants for the just-completed phase so drift is detected at the next phase entry:
 
 ```bash

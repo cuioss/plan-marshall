@@ -151,6 +151,17 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-1-init) Starting init phase"
 ```
 
+### Step 3a: Seed Metrics Start-Time
+
+Immediately after Step 3 creates the plan directory and emits the `[STATUS] Starting init phase` log line, self-record `1-init.start_time` so the downstream fused `phase-boundary --prev-phase 1-init --next-phase 2-refine` call in `plan-marshall/workflow/planning.md` sees a real start timestamp rather than falling back to the structural `status.json.created` backfill:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics \
+  start-phase --plan-id {plan_id} --phase 1-init
+```
+
+**Rationale**: Bootstrap phase has no preceding `phase-boundary` call to stamp `start_time` (the call requires a `plan_id`, which doesn't exist until Step 3 returns). Recording the start as early as the plan directory permits makes the subsequent fused `phase-boundary --prev-phase 1-init` call (in `plan-marshall/workflow/planning.md`) compute a wall duration that bounds the agent's `<usage>` duration — restoring the `Worked <= Wall` invariant. The earlier `_read_status_created` backfill in `manage-metrics.py` (`cmd_phase_boundary`) is retained as a safety net for plans materialised under older orchestrator versions, but the start-time recorded here is the authoritative source for plans created by the current orchestrator. See the **Phase-boundary metric bookkeeping** footnote below and `plan-marshall/workflow/planning.md` for the cross-references.
+
 If `action: exists`, use AskUserQuestion:
 - **Resume**: Continue with existing plan (skip to Step 9 with existing data)
 - **Replace**: Delete existing plan and create new (see below)
@@ -744,13 +755,24 @@ This skill is dispatched as the workflow body of `plan-marshall:execution-contex
 
 ### Phase-boundary metric bookkeeping
 
-This skill does not invoke `manage-metrics` itself — phase boundary metric
-recording happens in the orchestrator (`plan-marshall:plan-marshall`
-workflows). When the orchestrator transitions out of `1-init`, it MUST use
-the fused `manage-metrics phase-boundary --prev-phase 1-init --next-phase
-2-refine` call. See
+With one bootstrap exception, this skill does not invoke `manage-metrics` —
+phase boundary metric recording happens in the orchestrator
+(`plan-marshall:plan-marshall` workflows). When the orchestrator transitions
+out of `1-init`, it MUST use the fused `manage-metrics phase-boundary
+--prev-phase 1-init --next-phase 2-refine` call. See
 `marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md` §
 `phase-boundary` for the API.
+
+**Bootstrap exception**: `1-init` is the only phase that self-records its own
+`start_time`. Step 3a above calls `manage-metrics start-phase --phase 1-init`
+immediately after the plan directory is created — this is the moment
+`plan_id` first exists, so it is also the earliest point at which
+`manage-metrics` can write `work/metrics.toon`. All other phases inherit
+`start_time` from the prior fused `phase-boundary` call (which writes both
+the closing `end_time` for the previous phase and the opening `start_time`
+for the next phase atomically). The `_read_status_created` backfill in
+`manage-metrics.py` is retained as a safety net for plans created by older
+orchestrator versions only.
 
 ---
 
