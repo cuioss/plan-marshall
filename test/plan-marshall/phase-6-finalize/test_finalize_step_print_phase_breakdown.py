@@ -134,6 +134,61 @@ class TestStandardsBodyContract:
         assert 'archive-plan' in standards_text
 
 
+class TestCollapsedProducerPattern:
+    """The standards doc collapses the producer pattern from 3 steps to 1.
+
+    Pre-collapse shape: capture stdout from `manage-metrics print-phase-breakdown`,
+    Write the captured content to `.plan/temp/...`, then `manage-files write
+    --content-file ...`. Post-collapse shape: one direct `manage-metrics
+    print-phase-breakdown` invocation that writes the artifact file itself and
+    returns the bytes_written count in TOON.
+    """
+
+    def test_no_content_file_flag(self, standards_text: str):
+        # The collapsed shape no longer stages content to .plan/temp/ and then
+        # invokes `manage-files write --content-file`.
+        assert '--content-file' not in standards_text, (
+            'collapsed producer must not reference --content-file (was used by '
+            'the 3-step staging pattern)'
+        )
+
+    def test_no_plan_temp_staging(self, standards_text: str):
+        # No `.plan/temp/` staging language remains.
+        assert '.plan/temp/' not in standards_text, (
+            'collapsed producer must not reference .plan/temp/ staging path'
+        )
+
+    def test_no_manage_files_write_step(self, standards_text: str):
+        # `manage-files write` should no longer appear as a producer step. We
+        # still allow the bundle name to surface in cross-references, so check
+        # for the verb-level invocation pattern.
+        assert 'manage-files write' not in standards_text, (
+            "collapsed producer must not invoke 'manage-files write' (the "
+            'producer writes the artifact directly)'
+        )
+
+    def test_single_producer_bash_block(self, standards_text: str):
+        # Exactly one Bash block invokes `manage-metrics print-phase-breakdown`.
+        # Find all fenced bash blocks and count matches.
+        bash_blocks = re.findall(r'```bash\n(.*?)```', standards_text, re.DOTALL)
+        producer_blocks = [
+            block for block in bash_blocks
+            if 'manage-metrics:manage-metrics print-phase-breakdown' in block
+        ]
+        assert len(producer_blocks) == 1, (
+            f'expected exactly one producer Bash block invoking '
+            f'manage-metrics print-phase-breakdown, found {len(producer_blocks)}'
+        )
+
+    def test_documents_bytes_written_return_field(self, standards_text: str):
+        # The collapsed pattern consumes `bytes_written` from the script's
+        # returned TOON envelope (replaces the prior `manage-files write` return).
+        assert 'bytes_written' in standards_text, (
+            'collapsed producer must document the bytes_written field from '
+            'the print-phase-breakdown TOON envelope'
+        )
+
+
 class TestDispatchTableRegistration:
     """The phase-6-finalize SKILL.md dispatch table routes the new step."""
 

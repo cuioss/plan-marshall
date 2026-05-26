@@ -49,12 +49,14 @@ from input_validation import (  # type: ignore[import-not-found]
     add_phase_arg,
     add_plan_id_arg,
     add_session_id_arg,
+    is_valid_relative_path,
     parse_args_with_toon_errors,
     require_valid_plan_id,
 )
 
 METRICS_FILE = FILE_WORK_METRICS
 METRICS_MD = 'metrics.md'
+PHASE_BREAKDOWN_DEFAULT_OUTPUT = 'work/phase-breakdown-output.txt'
 PHASE_NAMES = list(PHASES)
 ACCUMULATOR_FILE_TEMPLATE = 'work/metrics-accumulator-{phase}.toon'
 DISPATCH_BOUNDARY_FILE_TEMPLATE = 'work/metrics-dispatch-boundaries-{phase}.toon'
@@ -661,12 +663,22 @@ def _extract_phase_breakdown_section(content: str) -> str | None:
 
 
 def cmd_print_phase_breakdown(args: argparse.Namespace) -> dict:
-    """Print the '## Phase Breakdown' section from metrics.md to stdout.
+    """Extract the '## Phase Breakdown' section from metrics.md and persist it.
 
-    On success, writes the section verbatim to stdout (no trailing TOON) and
-    returns a result dict carrying the ``_print_only`` sentinel so ``main``
-    skips the standard TOON emission. On error (missing metrics.md, missing
-    section), returns a normal error TOON via the standard emit path.
+    Default (``--output-file`` absent): write the extracted section to a known
+    plan-relative artifact path (default ``work/phase-breakdown-output.txt``)
+    and return a TOON envelope ``{status, plan_id, file, bytes_written}``.
+
+    Explicit relative path: write the section to the supplied plan-relative
+    path (parent directories are created as needed) and return the same TOON
+    envelope. Absolute paths are rejected.
+
+    Legacy stdout mode (``--output-file -``): write the section verbatim to
+    stdout (no trailing TOON) and return a result dict carrying the
+    ``_print_only`` sentinel so ``main`` skips the standard TOON emission.
+
+    On error (missing metrics.md, missing section, invalid output path), a
+    normal error TOON is returned via the standard emit path.
     """
     plan_id = require_valid_plan_id(args)
     md_path = get_plan_dir(plan_id) / METRICS_MD
@@ -686,13 +698,41 @@ def cmd_print_phase_breakdown(args: argparse.Namespace) -> dict:
             'plan_id': plan_id,
             'message': '## Phase Breakdown heading not found in metrics.md',
         }
-    sys.stdout.write(section)
-    sys.stdout.flush()
+
+    output_file = getattr(args, 'output_file', None)
+    section_bytes = section.encode('utf-8')
+
+    if output_file == '-':
+        # Legacy stdout-only mode.
+        sys.stdout.write(section)
+        sys.stdout.flush()
+        return {
+            '_print_only': True,
+            'status': 'success',
+            'plan_id': plan_id,
+            'bytes_written': len(section_bytes),
+        }
+
+    # Direct file-write mode (default + explicit relative path).
+    relative_path = output_file if output_file else PHASE_BREAKDOWN_DEFAULT_OUTPUT
+    if not is_valid_relative_path(relative_path):
+        return {
+            'status': 'error',
+            'error': 'output_file_must_be_relative',
+            'plan_id': plan_id,
+            'message': (
+                f'--output-file must be a plan-relative path '
+                f'(no absolute paths, no traversal): {relative_path}'
+            ),
+        }
+    file_path = get_plan_dir(plan_id) / relative_path
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_file(file_path, section)
     return {
-        '_print_only': True,
         'status': 'success',
         'plan_id': plan_id,
-        'bytes_written': len(section.encode('utf-8')),
+        'file': relative_path,
+        'bytes_written': len(section_bytes),
     }
 
 
@@ -1473,20 +1513,35 @@ def main() -> int:
     # print-phase-breakdown
     pb_print = subparsers.add_parser(
         'print-phase-breakdown',
-        help='Extract and print the ## Phase Breakdown section from metrics.md',
+        help='Extract the ## Phase Breakdown section from metrics.md and persist it',
         description=(
             'Read metrics.md from the live plan directory, extract only the '
             '## Phase Breakdown section (table from heading to the next ## '
-            'heading or EOF), and print it verbatim to stdout. On success, '
-            'TOON status output is suppressed so stdout contains only the '
-            'section content (the new finalize-step skill captures it for '
-            'the renderer). On error (metrics.md missing, section missing), '
-            'a standard error TOON is emitted.'
+            'heading or EOF), and persist it. Default behavior writes the '
+            "section verbatim to the plan-relative artifact path "
+            f"'{PHASE_BREAKDOWN_DEFAULT_OUTPUT}' and emits a TOON envelope "
+            '{status, plan_id, file, bytes_written}. Pass an explicit '
+            "--output-file PATH to override the artifact path (plan-relative "
+            'only; absolute paths are rejected). Pass --output-file - to use '
+            'legacy stdout-only mode: the section is written verbatim to '
+            'stdout with no TOON envelope (handy for ad-hoc inspection). On '
+            'error (metrics.md missing, section missing, invalid path), a '
+            'standard error TOON is emitted.'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
     )
     add_plan_id_arg(pb_print)
+    pb_print.add_argument(
+        '--output-file',
+        dest='output_file',
+        default=None,
+        help=(
+            'Plan-relative artifact path to write the extracted section to '
+            f"(default: '{PHASE_BREAKDOWN_DEFAULT_OUTPUT}'). Use '-' for "
+            'stdout-only mode (legacy behavior, no TOON envelope).'
+        ),
+    )
     pb_print.set_defaults(func=cmd_print_phase_breakdown)
 
     # phase-boundary (fused end-phase + start-phase + generate)

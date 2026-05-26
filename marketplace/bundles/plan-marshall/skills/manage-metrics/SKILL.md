@@ -100,14 +100,28 @@ Returns `status: error, error: no_data` if no metrics have been collected yet (n
 
 ### print-phase-breakdown
 
-Read `metrics.md` from the live plan directory, extract only the `## Phase Breakdown` section (table content from the heading to the next `## ` heading or end-of-file), and print it verbatim to stdout. On success, TOON status output is suppressed so stdout contains only the section content — the `finalize-step-print-phase-breakdown` skill captures stdout and writes it to `work/phase-breakdown-output.txt` for the renderer.
+Read `metrics.md` from the live plan directory, extract only the `## Phase Breakdown` section (table content from the heading to the next `## ` heading or end-of-file), and persist it. The default behavior writes the section verbatim to the plan-relative artifact path `work/phase-breakdown-output.txt` and emits a TOON envelope `{status, plan_id, file, bytes_written}` — the `finalize-step-print-phase-breakdown` skill consumes the envelope directly with no intermediate stdout capture.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics print-phase-breakdown \
-  --plan-id {plan_id}
+  --plan-id {plan_id} [--output-file PATH | -]
 ```
 
-**Output (success)**: stdout contains the verbatim section. No TOON status is emitted.
+**Modes:**
+
+- **Default (no `--output-file`)**: writes `work/phase-breakdown-output.txt` under the plan directory and emits the TOON envelope below.
+- **Explicit relative path (`--output-file work/foo.txt`)**: writes the section to the supplied plan-relative path (parent directories are created as needed) and emits the same TOON envelope. Absolute paths are rejected.
+- **Legacy stdout (`--output-file -`)**: writes the section verbatim to stdout with no TOON envelope; useful for ad-hoc inspection from a shell.
+
+**Output (success, default + explicit relative)**:
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+file: work/phase-breakdown-output.txt
+bytes_written: 412
+```
+
+**Output (success, `--output-file -`)**: stdout contains the verbatim section. No TOON status is emitted.
 
 **Output (error, TOON to stdout)**:
 ```toon
@@ -122,6 +136,13 @@ status: error
 error: phase_breakdown_section_not_found
 plan_id: EXAMPLE-PLAN
 message: ## Phase Breakdown heading not found in metrics.md
+```
+or
+```toon
+status: error
+error: output_file_must_be_relative
+plan_id: EXAMPLE-PLAN
+message: --output-file must be a plan-relative path (no absolute paths, no traversal): {value}
 ```
 
 ### phase-boundary
