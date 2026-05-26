@@ -34,8 +34,13 @@ cmd_start_phase = manage_metrics.cmd_start_phase
 write_metrics = manage_metrics.write_metrics
 
 
-def _ns_print_breakdown(plan_id: str) -> Namespace:
-    return Namespace(plan_id=plan_id, command='print-phase-breakdown', func=cmd_print_phase_breakdown)
+def _ns_print_breakdown(plan_id: str, output_file: str | None = None) -> Namespace:
+    return Namespace(
+        plan_id=plan_id,
+        output_file=output_file,
+        command='print-phase-breakdown',
+        func=cmd_print_phase_breakdown,
+    )
 
 
 def _ns_start_phase(plan_id: str, phase: str) -> Namespace:
@@ -115,18 +120,82 @@ class TestExtractPhaseBreakdownSection:
 class TestCmdPrintPhaseBreakdown:
     """Tier-2 import tests for the cmd_* function."""
 
-    def test_success_prints_section_and_skips_toon(self):
-        with PlanContext(plan_id='metrics-print-01'):
+    def test_default_writes_artifact_and_returns_toon(self):
+        """No --output-file → writes work/phase-breakdown-output.txt and emits TOON."""
+        with PlanContext(plan_id='metrics-print-01') as ctx:
             _seed_metrics_md('metrics-print-01')
             buf = io.StringIO()
             with redirect_stdout(buf):
                 result = cmd_print_phase_breakdown(_ns_print_breakdown('metrics-print-01'))
             assert result['status'] == 'success'
-            assert result['_print_only'] is True
+            assert result['file'] == 'work/phase-breakdown-output.txt'
             assert result['bytes_written'] > 0
+            assert result['plan_id'] == 'metrics-print-01'
+            assert '_print_only' not in result
+            # Nothing on stdout in direct-write mode.
+            assert buf.getvalue() == ''
+            # Artifact file exists and contains verbatim section.
+            artifact = ctx.plan_dir / 'work' / 'phase-breakdown-output.txt'
+            assert artifact.is_file()
+            section = artifact.read_text(encoding='utf-8')
+            assert section.startswith('## Phase Breakdown')
+            assert 'Phase Details' not in section
+            assert result['bytes_written'] == len(section.encode('utf-8'))
+
+    def test_explicit_relative_output_file_creates_parent_dirs(self):
+        """--output-file with a nested relative path creates missing parents."""
+        with PlanContext(plan_id='metrics-print-explicit') as ctx:
+            _seed_metrics_md('metrics-print-explicit')
+            result = cmd_print_phase_breakdown(
+                _ns_print_breakdown('metrics-print-explicit', output_file='work/nested/breakdown.txt')
+            )
+            assert result['status'] == 'success'
+            assert result['file'] == 'work/nested/breakdown.txt'
+            assert result['bytes_written'] > 0
+            artifact = ctx.plan_dir / 'work' / 'nested' / 'breakdown.txt'
+            assert artifact.is_file()
+            assert artifact.read_text(encoding='utf-8').startswith('## Phase Breakdown')
+
+    def test_legacy_stdout_mode_with_dash(self):
+        """--output-file - retains legacy stdout-only behavior with the _print_only sentinel."""
+        with PlanContext(plan_id='metrics-print-stdout') as ctx:
+            _seed_metrics_md('metrics-print-stdout')
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                result = cmd_print_phase_breakdown(
+                    _ns_print_breakdown('metrics-print-stdout', output_file='-')
+                )
+            assert result['status'] == 'success'
+            assert result['_print_only'] is True
+            assert 'file' not in result
             output = buf.getvalue()
             assert output.startswith('## Phase Breakdown')
             assert 'Phase Details' not in output
+            assert result['bytes_written'] == len(output.encode('utf-8'))
+            # Default artifact file is NOT created in legacy mode.
+            assert not (ctx.plan_dir / 'work' / 'phase-breakdown-output.txt').exists()
+
+    def test_absolute_output_file_rejected(self):
+        """Absolute --output-file paths are rejected with output_file_must_be_relative."""
+        with PlanContext(plan_id='metrics-print-abs'):
+            _seed_metrics_md('metrics-print-abs')
+            result = cmd_print_phase_breakdown(
+                _ns_print_breakdown('metrics-print-abs', output_file='/tmp/breakdown.txt')
+            )
+            assert result['status'] == 'error'
+            assert result['error'] == 'output_file_must_be_relative'
+            assert result['plan_id'] == 'metrics-print-abs'
+
+    def test_traversal_output_file_rejected(self):
+        """Path traversal sequences are rejected with output_file_must_be_relative."""
+        with PlanContext(plan_id='metrics-print-trav'):
+            _seed_metrics_md('metrics-print-trav')
+            result = cmd_print_phase_breakdown(
+                _ns_print_breakdown('metrics-print-trav', output_file='../../etc/passwd')
+            )
+            assert result['status'] == 'error'
+            assert result['error'] == 'output_file_must_be_relative'
+            assert result['plan_id'] == 'metrics-print-trav'
 
     def test_error_when_metrics_md_missing(self):
         with PlanContext(plan_id='metrics-print-02'):
@@ -148,16 +217,39 @@ class TestCmdPrintPhaseBreakdown:
 class TestCliPlumbing:
     """Subprocess test verifying the CLI surface (argparse wiring + stdout)."""
 
-    def test_cli_success_prints_only_section(self):
-        with PlanContext(plan_id='metrics-print-cli-01'):
+    def test_cli_default_emits_toon_envelope(self):
+        """Default invocation writes the artifact and emits a TOON envelope on stdout."""
+        with PlanContext(plan_id='metrics-print-cli-01') as ctx:
             _seed_metrics_md('metrics-print-cli-01')
             result = run_script(
                 SCRIPT_PATH, 'print-phase-breakdown', '--plan-id', 'metrics-print-cli-01'
             )
             assert result.returncode == 0, f'stderr: {result.stderr}'
+            payload = parse_toon(result.stdout)
+            assert payload['status'] == 'success'
+            assert payload['plan_id'] == 'metrics-print-cli-01'
+            assert payload['file'] == 'work/phase-breakdown-output.txt'
+            assert int(payload['bytes_written']) > 0
+            # Artifact written to disk.
+            artifact = ctx.plan_dir / 'work' / 'phase-breakdown-output.txt'
+            assert artifact.is_file()
+            assert artifact.read_text(encoding='utf-8').startswith('## Phase Breakdown')
+
+    def test_cli_dash_output_file_retains_legacy_stdout(self):
+        """--output-file - retains section-only stdout (no TOON envelope)."""
+        with PlanContext(plan_id='metrics-print-cli-dash'):
+            _seed_metrics_md('metrics-print-cli-dash')
+            result = run_script(
+                SCRIPT_PATH,
+                'print-phase-breakdown',
+                '--plan-id',
+                'metrics-print-cli-dash',
+                '--output-file',
+                '-',
+            )
+            assert result.returncode == 0, f'stderr: {result.stderr}'
             stdout = result.stdout
             assert stdout.startswith('## Phase Breakdown'), stdout[:200]
-            # Success path skips TOON status output entirely.
             assert 'status: success' not in stdout
             assert 'status: error' not in stdout
 
@@ -170,6 +262,22 @@ class TestCliPlumbing:
             payload = parse_toon(result.stdout)
             assert payload['status'] == 'error'
             assert payload['error'] == 'metrics_md_not_found'
+
+    def test_cli_rejects_absolute_output_file(self):
+        with PlanContext(plan_id='metrics-print-cli-abs'):
+            _seed_metrics_md('metrics-print-cli-abs')
+            result = run_script(
+                SCRIPT_PATH,
+                'print-phase-breakdown',
+                '--plan-id',
+                'metrics-print-cli-abs',
+                '--output-file',
+                '/tmp/breakdown.txt',
+            )
+            assert result.returncode == 0
+            payload = parse_toon(result.stdout)
+            assert payload['status'] == 'error'
+            assert payload['error'] == 'output_file_must_be_relative'
 
 
 def _seed_phases(plan_id: str, phases: dict) -> None:
@@ -356,11 +464,11 @@ class TestEndToEndPhaseBreakdownRendering:
             gen_result = cmd_generate(_ns_generate('metrics-e2e-01'))
             assert gen_result['status'] == 'success'
 
-            buf = io.StringIO()
-            with redirect_stdout(buf):
-                print_result = cmd_print_phase_breakdown(_ns_print_breakdown('metrics-e2e-01'))
+            print_result = cmd_print_phase_breakdown(_ns_print_breakdown('metrics-e2e-01'))
             assert print_result['status'] == 'success'
-            section = buf.getvalue()
+            assert print_result['file'] == 'work/phase-breakdown-output.txt'
+            from file_ops import get_plan_dir  # type: ignore[import-not-found]
+            section = (get_plan_dir('metrics-e2e-01') / print_result['file']).read_text(encoding='utf-8')
 
             # The captured section begins with the heading and carries the three
             # time columns in order, followed by Tokens and Tool Uses.
@@ -406,10 +514,10 @@ class TestEndToEndPhaseBreakdownRendering:
             )
 
             assert cmd_generate(_ns_generate('metrics-e2e-02'))['status'] == 'success'
-            buf = io.StringIO()
-            with redirect_stdout(buf):
-                cmd_print_phase_breakdown(_ns_print_breakdown('metrics-e2e-02'))
-            section = buf.getvalue()
+            print_result = cmd_print_phase_breakdown(_ns_print_breakdown('metrics-e2e-02'))
+            assert print_result['status'] == 'success'
+            from file_ops import get_plan_dir  # type: ignore[import-not-found]
+            section = (get_plan_dir('metrics-e2e-02') / print_result['file']).read_text(encoding='utf-8')
 
             exec_line = next(ln for ln in section.splitlines() if ln.startswith('| 5-execute'))
             exec_cells = [c.strip() for c in exec_line.strip('|').split('|')]
@@ -445,10 +553,10 @@ class TestEndToEndPhaseBreakdownRendering:
             )
 
             assert cmd_generate(_ns_generate('metrics-e2e-03'))['status'] == 'success'
-            buf = io.StringIO()
-            with redirect_stdout(buf):
-                cmd_print_phase_breakdown(_ns_print_breakdown('metrics-e2e-03'))
-            section = buf.getvalue()
+            print_result = cmd_print_phase_breakdown(_ns_print_breakdown('metrics-e2e-03'))
+            assert print_result['status'] == 'success'
+            from file_ops import get_plan_dir  # type: ignore[import-not-found]
+            section = (get_plan_dir('metrics-e2e-03') / print_result['file']).read_text(encoding='utf-8')
 
             total_line = next(ln for ln in section.splitlines() if '**Total**' in ln)
             total_cells = [c.strip() for c in total_line.strip('|').split('|')]

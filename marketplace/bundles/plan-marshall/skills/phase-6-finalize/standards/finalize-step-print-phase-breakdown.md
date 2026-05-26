@@ -1,12 +1,12 @@
 ---
 name: default:finalize-step-print-phase-breakdown
-description: Optional finalize-summary supplement that captures the Phase Breakdown table from metrics.md and writes it to work/phase-breakdown-output.txt for the renderer to append after the per-step [OK] list
+description: Optional finalize-summary supplement that captures the Phase Breakdown table from metrics.md, writes it directly to work/phase-breakdown-output.txt, and lets the renderer append it after the per-step [OK] list
 order: 995
 ---
 
 # Finalize Step: print-phase-breakdown
 
-Pure executor for the `default:finalize-step-print-phase-breakdown` finalize step. Captures the verbatim `## Phase Breakdown` table content from `metrics.md` so the renderer can append it as an additional section after the per-step `[OK]` Finalize-steps block.
+Pure executor for the `default:finalize-step-print-phase-breakdown` finalize step. Drives `manage-metrics print-phase-breakdown`, which extracts the verbatim `## Phase Breakdown` table from `metrics.md` and writes it directly to `work/phase-breakdown-output.txt`. The renderer appends the captured content after the per-step `[OK]` Finalize-steps block.
 
 ## Exit-code convention for `manage-*` script calls
 
@@ -23,7 +23,7 @@ Optional finalize-summary supplement. When the step is in `manifest.phase_6.step
 
 The step is the **producer** in the cross-deliverable contract documented in `output-template.md` (the consumer/renderer side). Both ends MUST reference the same artifact path verbatim:
 
-- **Producer (this step)** — writes `work/phase-breakdown-output.txt`.
+- **Producer (this step)** — invokes `manage-metrics print-phase-breakdown`, which writes `work/phase-breakdown-output.txt` directly.
 - **Consumer (renderer)** — reads `work/phase-breakdown-output.txt` during the snapshot procedure, BEFORE `default:archive-plan` runs. The captured content is appended as an additional section after the Finalize-steps block; the per-step list emits unchanged.
 
 ## Ordering constraint
@@ -32,36 +32,18 @@ The step is the **producer** in the cross-deliverable contract documented in `ou
 
 ## Workflow
 
-### Step 1: Capture the Phase Breakdown table
+### Step 1: Capture and persist the Phase Breakdown table
 
-Invoke `manage-metrics print-phase-breakdown`, which reads `metrics.md` and prints the verbatim `## Phase Breakdown` section to stdout (no TOON status on success):
+Invoke `manage-metrics print-phase-breakdown`. The script reads `metrics.md`, extracts the verbatim `## Phase Breakdown` section, writes it directly to `work/phase-breakdown-output.txt` under the live plan directory, and returns a TOON envelope:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics print-phase-breakdown \
   --plan-id {plan_id}
 ```
 
-Capture stdout into a model-context variable `{breakdown_content}`. On non-zero exit code (script emitted error TOON to stdout instead of section content), proceed to Step 4 — Error Handling.
+The success envelope shape is `{status: success, plan_id, file: work/phase-breakdown-output.txt, bytes_written}`. Capture `bytes_written` from the returned TOON. On non-zero exit (the script emitted an error TOON), proceed to Step 3 — Error Handling.
 
-### Step 2: Persist captured content to work/phase-breakdown-output.txt
-
-Write the captured content to the cross-deliverable artifact path so the renderer's snapshot procedure can read it before archive. The captured `{breakdown_content}` is a multi-line markdown block whose first line is a `## Phase Breakdown` heading, so the inline `--content` form is forbidden — stage to `.plan/temp/` and pass `--content-file`.
-
-Step 2a: Use the `Write` tool to stage `{breakdown_content}` to `.plan/temp/phase-breakdown-output.txt`.
-
-Step 2b: Invoke `manage-files write` with `--content-file`:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
-  --plan-id {plan_id} --file work/phase-breakdown-output.txt \
-  --content-file .plan/temp/phase-breakdown-output.txt
-```
-
-Capture `bytes_written` from the returned TOON.
-
-See `marketplace/bundles/plan-marshall/skills/manage-files/SKILL.md` § Enforcement and § write subsection for the binding rule.
-
-### Step 3: Log artifact and mark step done
+### Step 2: Log artifact and mark step done
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -77,9 +59,9 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 The `display_detail` string appears in the renderer's per-step `[OK]` row for this step; the captured breakdown content is emitted as an additional section after the Finalize-steps block (the per-step list, including the `record-metrics` row, emits unchanged). The detail is also recorded for the manifest/handshake invariants.
 
-### Step 4: Error handling
+### Step 3: Error handling
 
-When `manage-metrics print-phase-breakdown` returns an error (metrics.md missing, section missing, or any other non-success TOON):
+When `manage-metrics print-phase-breakdown` returns an error (metrics.md missing, section missing, invalid output path, or any other non-success TOON):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -103,11 +85,11 @@ Finalize MUST continue — this step is presentation-only and never blocks plan 
 |----------|--------|
 | `metrics.md` missing under live plan dir | Log `[WARN]`, mark `failed`, continue |
 | `## Phase Breakdown` heading missing in `metrics.md` | Log `[WARN]`, mark `failed`, continue |
-| `manage-files write` fails | Log `[WARN]`, mark `failed`, continue |
+| `manage-metrics print-phase-breakdown` returns any other error TOON | Log `[WARN]`, mark `failed`, continue |
 | Generator/script raises unhandled exception | Same — non-fatal |
 
 ## Related
 
-- [../../manage-metrics/SKILL.md](../../manage-metrics/SKILL.md) — `print-phase-breakdown` subcommand (the producer's data source)
+- [../../manage-metrics/SKILL.md](../../manage-metrics/SKILL.md) — `print-phase-breakdown` subcommand (the producer that writes the artifact directly)
 - [output-template.md](output-template.md) — renderer (the consumer that reads `work/phase-breakdown-output.txt` and appends the supplement section)
 - [record-metrics.md](record-metrics.md) — the previous-order step (990) that produces `metrics.md`
