@@ -93,7 +93,7 @@ def read_log(path: Path) -> list[str]:
     common case (some plans never invoke any script). Emitting a stderr
     warning here would create noise on every legitimate empty-log retrospective.
     """
-    if not path.exists():
+    if not path.is_file():
         return []
     try:
         return path.read_text(encoding='utf-8').splitlines()
