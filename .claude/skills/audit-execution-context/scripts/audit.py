@@ -63,7 +63,7 @@ def read_json(path: Path) -> dict[str, Any] | None:
     if not path.is_file():
         return None
     try:
-        return cast(dict[str, Any], json.loads(path.read_text()))
+        return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
     except (json.JSONDecodeError, OSError):
         return None
 
@@ -78,7 +78,7 @@ def parse_execution_toon(path: Path) -> tuple[bool, list[str], list[str]] | None
     """
     if not path.is_file():
         return None
-    lines = path.read_text().splitlines()
+    lines = path.read_text(encoding="utf-8").splitlines()
     early_terminate = False
     phase_5: list[str] = []
     phase_6: list[str] = []
@@ -131,7 +131,7 @@ def scan_decision_log(path: Path) -> tuple[bool, str | None]:
         return False, None
     has_compose = False
     rule: str | None = None
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         if "manage-execution-manifest:compose" in line:
             has_compose = True
             m = RULE_FIRED_RE.search(line)
