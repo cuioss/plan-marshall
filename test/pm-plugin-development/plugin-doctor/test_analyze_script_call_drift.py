@@ -59,7 +59,7 @@ _parse_flag_names = _ascd._parse_flag_names
 
 
 def test_extract_invocations_finds_simple_verb():
-    """A single notation + verb invocation is extracted with the verb."""
+    """A single notation + verb invocation is extracted with the verb chain."""
     content = (
         'Run the following:\n'
         '\n'
@@ -70,9 +70,9 @@ def test_extract_invocations_finds_simple_verb():
     invocations = _extract_invocations(content)
 
     assert len(invocations) == 1
-    line, notation, verb, flags = invocations[0]
+    line, notation, verbs, flags = invocations[0]
     assert notation == 'plan-marshall:manage-status:manage-status'
-    assert verb == 'read'
+    assert verbs == ['read']
     assert '--plan-id' in flags
 
 
@@ -83,19 +83,19 @@ def test_extract_invocations_skips_placeholder_verbs():
     )
     invocations = _extract_invocations(content)
     assert len(invocations) == 1
-    _, _, verb, flags = invocations[0]
-    assert verb is None
+    _, _, verbs, flags = invocations[0]
+    assert verbs == []
     assert '--plan-id' in flags
 
 
 def test_extract_invocations_handles_no_verb():
-    """A bare notation with no verb leaves verb as None."""
+    """A bare notation with no verb yields an empty verb chain."""
     content = 'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status --help\n'
     invocations = _extract_invocations(content)
     assert len(invocations) == 1
-    _, notation, verb, _ = invocations[0]
+    _, notation, verbs, _ = invocations[0]
     assert notation == 'plan-marshall:manage-status:manage-status'
-    assert verb is None
+    assert verbs == []
 
 
 def test_extract_invocations_multiple_in_one_file():
@@ -109,10 +109,25 @@ def test_extract_invocations_multiple_in_one_file():
     )
     invocations = _extract_invocations(content)
     assert len(invocations) == 2
-    assert invocations[0][2] == 'read'
-    assert invocations[1][2] == 'create'
+    assert invocations[0][2] == ['read']
+    assert invocations[1][2] == ['create']
     # Line numbers are 1-based and monotonically increasing.
     assert invocations[0][0] < invocations[1][0]
+
+
+def test_extract_invocations_collects_nested_verb_chain():
+    """Nested subparser invocations capture every positional verb in order."""
+    content = (
+        'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings '
+        'qgate list --plan-id foo --phase 5-execute\n'
+    )
+    invocations = _extract_invocations(content)
+    assert len(invocations) == 1
+    _, notation, verbs, flags = invocations[0]
+    assert notation == 'plan-marshall:manage-findings:manage-findings'
+    assert verbs == ['qgate', 'list']
+    assert '--plan-id' in flags
+    assert '--phase' in flags
 
 
 # =============================================================================

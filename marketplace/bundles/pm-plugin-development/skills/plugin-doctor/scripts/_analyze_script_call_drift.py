@@ -74,14 +74,18 @@ _VERB_TOKEN_RE = re.compile(r'^[a-z][a-z0-9_-]*$')
 _FLAG_RE = re.compile(r'--[a-z][a-z0-9-]+')
 
 
-def _extract_invocations(content: str) -> list[tuple[int, str, str | None, list[str]]]:
+def _extract_invocations(content: str) -> list[tuple[int, str, list[str], list[str]]]:
     """Extract documented executor invocations from markdown content.
 
     Returns:
-        List of (line_number, notation, verb, flag_list) tuples. ``verb`` is
-        ``None`` when no positional verb follows the notation.
+        List of (line_number, notation, verbs, flag_list) tuples. ``verbs`` is
+        the list of positional subcommand/verb tokens following the notation,
+        preserving order (empty when no positional verb follows). Capturing the
+        full verb chain — rather than only the first verb — is required to
+        resolve flags declared on nested subparsers (e.g., ``qgate list`` on
+        ``manage-findings``); see PR #462 review.
     """
-    invocations: list[tuple[int, str, str | None, list[str]]] = []
+    invocations: list[tuple[int, str, list[str], list[str]]] = []
     for m in _INVOCATION_RE.finditer(content):
         # 1-based line number of the match's start position.
         line_no = content.count('\n', 0, m.start()) + 1
@@ -89,8 +93,9 @@ def _extract_invocations(content: str) -> list[tuple[int, str, str | None, list[
         rest = m.group('rest') or ''
         tokens = [t for t in rest.split() if t]
 
-        verb: str | None = None
-        # First non-flag token after notation is the candidate verb.
+        verbs: list[str] = []
+        # Collect every non-flag positional token before the first flag as the
+        # verb chain. Stop on the first flag-shaped token; the chain ends there.
         for tok in tokens:
             if tok.startswith('--'):
                 break
@@ -98,11 +103,10 @@ def _extract_invocations(content: str) -> list[tuple[int, str, str | None, list[
             if '{' in tok or '}' in tok:
                 continue
             if _VERB_TOKEN_RE.match(tok):
-                verb = tok
-                break
+                verbs.append(tok)
 
         flags = list(_FLAG_RE.findall(rest))
-        invocations.append((line_no, notation, verb, flags))
+        invocations.append((line_no, notation, verbs, flags))
     return invocations
 
 
@@ -204,9 +208,11 @@ def analyze_script_call_drift(marketplace_root: Path) -> list[dict]:
 
     findings: list[dict] = []
 
-    # Per-process caches.
+    # Per-process caches. The flag cache is keyed by the full verb chain
+    # (tuple) so nested subparser flags are resolved against the correct help
+    # page (e.g., ``manage-findings qgate list``).
     notation_choices_cache: dict[str, set[str]] = {}
-    notation_verb_flags_cache: dict[tuple[str, str], set[str]] = {}
+    notation_verb_flags_cache: dict[tuple[str, tuple[str, ...]], set[str]] = {}
 
     for md_path in _iter_skill_markdown_files(marketplace_root):
         try:
@@ -215,7 +221,7 @@ def analyze_script_call_drift(marketplace_root: Path) -> list[dict]:
             continue
 
         invocations = _extract_invocations(content)
-        for line_no, notation, verb, flags in invocations:
+        for line_no, notation, verbs, flags in invocations:
             # Resolve choices for this notation (cached).
             if notation not in notation_choices_cache:
                 help_text = _run_help(executor, [notation])
@@ -226,7 +232,8 @@ def analyze_script_call_drift(marketplace_root: Path) -> list[dict]:
             # checking. argparse owns flag validation for single-action
             # scripts and the verb token in prose may legitimately be a
             # positional argument value rather than a subcommand.
-            if verb and choices and verb not in choices:
+            first_verb = verbs[0] if verbs else None
+            if first_verb and choices and first_verb not in choices:
                 findings.append(
                     {
                         'rule_id': RULE_ID,
@@ -237,24 +244,26 @@ def analyze_script_call_drift(marketplace_root: Path) -> list[dict]:
                         'severity': 'error',
                         'fixable': False,
                         'notation': notation,
-                        'invented_verb': verb,
+                        'invented_verb': first_verb,
                         'valid_choices': sorted(choices),
                         'description': (
-                            f'Documented verb {verb!r} for {notation!r} is not in the script\'s '
+                            f'Documented verb {first_verb!r} for {notation!r} is not in the script\'s '
                             f'declared subcommand choices: {sorted(choices)!r}'
                         ),
                     }
                 )
 
-            # Per-verb flag check — only when verb is valid for the notation
-            # (or when notation is single-action and verb is None, in which
-            # case probe with no verb).
-            if flags and choices and verb and verb in choices:
-                cache_key = (notation, verb)
+            # Per-verb flag check — run when either (a) the notation is
+            # single-action (no choices) and we probe with no verbs, or
+            # (b) the first verb is valid against the root choices, in which
+            # case the full verb chain probes the nested subparser help.
+            if flags and (not choices or (first_verb is not None and first_verb in choices)):
+                cache_key = (notation, tuple(verbs))
                 if cache_key not in notation_verb_flags_cache:
-                    help_text = _run_help(executor, [notation, verb])
+                    help_text = _run_help(executor, [notation, *verbs])
                     notation_verb_flags_cache[cache_key] = _parse_flag_names(help_text)
                 valid_flags = notation_verb_flags_cache[cache_key]
+                verb_label = ' '.join(verbs)
                 for flag in flags:
                     if flag in ('--help', '--audit-plan-id'):
                         # Universal flags handled by the executor itself.
@@ -270,11 +279,11 @@ def analyze_script_call_drift(marketplace_root: Path) -> list[dict]:
                                 'severity': 'error',
                                 'fixable': False,
                                 'notation': notation,
-                                'verb': verb,
+                                'verb': verb_label,
                                 'invented_flag': flag,
                                 'valid_flags': sorted(valid_flags),
                                 'description': (
-                                    f'Documented flag {flag!r} for {notation!r} {verb!r} is '
+                                    f'Documented flag {flag!r} for {notation!r} {verb_label!r} is '
                                     f'not in the script\'s declared options: {sorted(valid_flags)!r}'
                                 ),
                             }
