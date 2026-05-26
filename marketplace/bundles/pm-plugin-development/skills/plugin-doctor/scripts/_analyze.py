@@ -27,6 +27,7 @@ from _analyze_notation_staleness import analyze_notation_staleness
 from _analyze_orphan_argparse_flags import analyze_orphan_argparse_flags
 from _analyze_plan_path_in_scripts import analyze_plan_path_in_scripts
 from _analyze_resolution_branch_markers import analyze_resolution_branch_markers
+from _analyze_role_field import analyze_role_field
 from _analyze_shared import detect_component_type, extract_frontmatter
 from _analyze_shell_active_tokens import analyze_shell_active_tokens
 from _analyze_shell_substitution_in_skills import analyze_shell_substitution_in_skills
@@ -46,6 +47,7 @@ __all__ = [
     'analyze_orphan_argparse_flags',
     'analyze_plan_path_in_scripts',
     'analyze_resolution_branch_markers',
+    'analyze_role_field',
     'analyze_shell_active_tokens',
     'analyze_shell_substitution_in_skills',
     'analyze_skill_structure',

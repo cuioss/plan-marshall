@@ -2,6 +2,7 @@
 name: default:build_verify
 description: Run full test suite
 order: 20
+role: module-tests
 ---
 
 # Build Verify

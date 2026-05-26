@@ -48,6 +48,7 @@ read_manifest = _mem.read_manifest
 get_manifest_path = _mem.get_manifest_path
 DEFAULT_PHASE_5_STEPS = _mem.DEFAULT_PHASE_5_STEPS
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
+_role_of = _mem._role_of
 
 # Quiet down the best-effort decision-log subprocess so tests don't depend on a
 # running executor. The handler is wrapped in try/except so failures are
@@ -207,7 +208,13 @@ def test_docs_only_skips_phase_5_verification_retains_review_gates():
 
 
 def test_tests_only_runs_module_tests_and_full_phase_6():
-    """Row 4 — verification change_type with affected files → module-tests + full Phase 6."""
+    """Row 4 — verification change_type with affected files → role:module-tests + full Phase 6.
+
+    Row 4 intersects ``phase_5_candidates`` by ``role: module-tests`` (see
+    decision-rules.md § Role-Field Intersection). ``quality_check`` (role
+    ``quality-gate``) and ``coverage_check`` (role ``coverage``) are dropped;
+    ``build_verify`` (role ``module-tests``) is kept.
+    """
     with PlanContext(plan_id='matrix-tests'):
         result = cmd_compose(
             _compose_ns(
@@ -215,13 +222,13 @@ def test_tests_only_runs_module_tests_and_full_phase_6():
                 change_type='verification',
                 scope_estimate='single_module',
                 affected_files_count=4,
-                phase_5_steps='quality-gate,module-tests,coverage',
+                phase_5_steps='quality_check,build_verify,coverage_check',
             )
         )
         assert result is not None and result['rule_fired'] == 'tests_only'
         manifest = read_manifest('matrix-tests')
         assert manifest is not None
-        assert manifest['phase_5']['verification_steps'] == ['module-tests']
+        assert manifest['phase_5']['verification_steps'] == ['build_verify']
         assert manifest['phase_6']['steps'] == list(DEFAULT_PHASE_6_STEPS)
 
 
@@ -269,9 +276,10 @@ def test_surgical_tech_debt_retains_review_gates():
                 change_type='tech_debt',
                 scope_estimate='surgical',
                 affected_files_count=2,
-                # Need code-shaped candidate set (module-tests present) so we
-                # don't fall into the docs_only row first.
-                phase_5_steps='quality-gate,module-tests',
+                # Need code-shaped candidate set (role: module-tests present) so
+                # we don't fall into the docs_only row first. build_verify
+                # declares role: module-tests in its frontmatter.
+                phase_5_steps='quality_check,build_verify',
                 phase_6_steps=','.join(candidates_with_legacy),
             )
         )
@@ -453,8 +461,9 @@ def test_rule_5_surgical_tech_debt_with_prefixed_candidates():
                 change_type='tech_debt',
                 scope_estimate='surgical',
                 affected_files_count=2,
-                # Code-shaped candidate set so we don't fall into docs_only first.
-                phase_5_steps='quality-gate,module-tests',
+                # Code-shaped candidate set (role: module-tests present) so we
+                # don't fall into docs_only first.
+                phase_5_steps='quality_check,build_verify',
                 phase_6_steps=','.join(prefixed_with_review_and_legacy),
             )
         )
@@ -818,7 +827,11 @@ def test_recipe_wins_over_docs_only_when_both_match():
 
 
 def test_surgical_enhancement_with_code_candidates_falls_to_default():
-    """Row 5 only matches bug_fix/tech_debt; surgical+enhancement+code → default."""
+    """Row 5 only matches bug_fix/tech_debt; surgical+enhancement+code → default.
+
+    Candidate set declares ``role: module-tests`` (via ``build_verify``) so
+    docs_only does NOT match (see decision-rules.md § Role-Field Intersection).
+    """
     with PlanContext(plan_id='matrix-surgical-enh'):
         result = cmd_compose(
             _compose_ns(
@@ -826,8 +839,9 @@ def test_surgical_enhancement_with_code_candidates_falls_to_default():
                 change_type='enhancement',
                 scope_estimate='surgical',
                 affected_files_count=2,
-                # Candidate set has module-tests so docs_only does NOT match.
-                phase_5_steps='quality-gate,module-tests',
+                # Candidate set has build_verify (role: module-tests) so docs_only
+                # does NOT match.
+                phase_5_steps='quality_check,build_verify',
             )
         )
         assert result is not None and result['rule_fired'] == 'default'
@@ -868,7 +882,13 @@ def test_single_module_tech_debt_with_docs_candidates_hits_docs_only():
 
 
 def test_recipe_with_partial_phase_5_candidates_filters_to_known_steps():
-    """Recipe rule intersects phase_5 candidates with {quality-gate, module-tests}."""
+    """Recipe rule intersects phase_5 candidates by role ∈ {quality-gate, module-tests}.
+
+    See decision-rules.md § Role-Field Intersection. ``coverage_check``
+    (role ``coverage``) and ``exotic-step`` (no role file) are dropped;
+    ``quality_check`` (role ``quality-gate``) and ``build_verify`` (role
+    ``module-tests``) are kept.
+    """
     with PlanContext(plan_id='matrix-recipe-filter'):
         cmd_compose(
             _compose_ns(
@@ -878,13 +898,14 @@ def test_recipe_with_partial_phase_5_candidates_filters_to_known_steps():
                 recipe_key='lesson_cleanup',
                 affected_files_count=2,
                 # Pass an unknown candidate alongside the known ones.
-                phase_5_steps='quality-gate,module-tests,coverage,exotic-step',
+                phase_5_steps='quality_check,build_verify,coverage_check,exotic-step',
             )
         )
         manifest = read_manifest('matrix-recipe-filter')
         assert manifest is not None
-        # Recipe keeps only quality-gate + module-tests; coverage/exotic dropped.
-        assert manifest['phase_5']['verification_steps'] == ['quality-gate', 'module-tests']
+        # Recipe keeps candidates whose role ∈ {quality-gate, module-tests};
+        # coverage_check (role: coverage) and exotic-step (no role) dropped.
+        assert manifest['phase_5']['verification_steps'] == ['quality_check', 'build_verify']
 
 
 def test_compose_is_idempotent_and_deterministic():
@@ -1340,7 +1361,7 @@ def test_cli_validate_happy_path():
             '--plan-id',
             'cli-val-ok',
             '--phase-5-steps',
-            'quality-gate,module-tests',
+            ','.join(DEFAULT_PHASE_5_STEPS),
             '--phase-6-steps',
             ','.join(DEFAULT_PHASE_6_STEPS),
         )
@@ -1978,7 +1999,9 @@ class TestBotEnforcementGuardRemediation:
                 change_type=change_type,
                 scope_estimate='surgical',
                 affected_files_count=2,
-                phase_5_steps='quality-gate,module-tests',
+                # Use real step IDs whose role: frontmatter resolves so
+                # _looks_docs_only returns False and Row 5 fires.
+                phase_5_steps='quality_check,build_verify',
                 phase_6_steps=phase_6,
             )
         )
@@ -2440,6 +2463,264 @@ def test_csv_fallback_when_marshal_json_missing():
         steps = manifest['phase_6']['steps']
         for expected in ('commit-push', 'create-pr', 'lessons-capture', 'archive-plan'):
             assert expected in steps
+
+
+# =============================================================================
+# Role-loader and role-based intersection (deliverable 2)
+#
+# The composer resolves phase-5 candidate step IDs to their declared ``role:``
+# frontmatter field via ``_role_of`` and uses the role for intersection in
+# Rows 2, 3, 4, and 5 of the decision matrix. The tests below cover:
+#
+# (a) role-loader correctness for each built-in step file (and the negative
+#     cases: external steps, missing files, malformed frontmatter)
+# (b) Row 5 intersection produces the expected non-empty list when project
+#     candidates carry the built-in step IDs (e.g., ``quality_check``,
+#     ``build_verify``)
+# (c) decision-log line shape (the canonical Rule N fired line) is byte-
+#     identical to its pre-refactor form for at least one Row 5 fixture
+# =============================================================================
+
+
+class TestRoleLoader:
+    """``_role_of`` resolves a phase-5 candidate step ID to its frontmatter role."""
+
+    def test_quality_check_resolves_to_quality_gate_role(self):
+        cache: dict[str, str | None] = {}
+        assert _role_of('quality_check', cache) == 'quality-gate'
+
+    def test_build_verify_resolves_to_module_tests_role(self):
+        cache: dict[str, str | None] = {}
+        assert _role_of('build_verify', cache) == 'module-tests'
+
+    def test_coverage_check_resolves_to_coverage_role(self):
+        cache: dict[str, str | None] = {}
+        assert _role_of('coverage_check', cache) == 'coverage'
+
+    def test_default_prefix_is_stripped_during_resolution(self):
+        """``default:quality_check`` resolves to the same role as the bare form."""
+        cache: dict[str, str | None] = {}
+        assert _role_of('default:quality_check', cache) == 'quality-gate'
+
+    def test_external_step_resolves_to_none(self):
+        """``project:`` / ``bundle:skill`` candidates have no role file."""
+        cache: dict[str, str | None] = {}
+        assert _role_of('project:finalize-step-plugin-doctor', cache) is None
+        assert _role_of('my-bundle:my-verify-step', cache) is None
+
+    def test_unknown_step_id_resolves_to_none(self):
+        """A bare name with no source file in phase-5-execute/standards/ → None."""
+        cache: dict[str, str | None] = {}
+        assert _role_of('does-not-exist', cache) is None
+
+    def test_cache_returns_same_value_on_second_lookup(self):
+        """The per-compose cache short-circuits the second call for the same step."""
+        cache: dict[str, str | None] = {}
+        first = _role_of('quality_check', cache)
+        # Mutate cache to a sentinel — second call MUST observe the cached value,
+        # not re-read the file.
+        cache['quality_check'] = 'mutated-sentinel'
+        second = _role_of('quality_check', cache)
+        assert first == 'quality-gate'
+        assert second == 'mutated-sentinel'
+
+
+class TestRoleBasedIntersection:
+    """Rows 2, 4, and 5 intersect by ``role:`` rather than by literal step ID."""
+
+    def test_row_5_surgical_bug_fix_with_built_in_candidates_produces_non_empty_phase_5(self):
+        """Row 5 + built-in candidate IDs → both quality_check and build_verify retained.
+
+        Pins the regression: before this refactor the composer compared
+        candidate IDs against literal {'quality-gate', 'module-tests'}, which
+        never matched the prefixed/bare step IDs callers actually pass
+        (`default:quality_check`, `default:build_verify`). The result was an
+        empty `phase_5.verification_steps` — the original `name_drift=true`
+        defect from the audit lesson. Role-based intersection resolves each
+        candidate's declared `role:` field and matches against
+        `{quality-gate, module-tests}`.
+        """
+        with PlanContext(plan_id='role-row-5-bug'):
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id='role-row-5-bug',
+                    change_type='bug_fix',
+                    scope_estimate='surgical',
+                    affected_files_count=1,
+                    phase_5_steps='quality_check,build_verify',
+                )
+            )
+            assert result is not None and result['rule_fired'] == 'surgical_bug_fix'
+            manifest = read_manifest('role-row-5-bug')
+            assert manifest is not None
+            # Both candidates have roles in {quality-gate, module-tests} →
+            # both survive the intersection.
+            assert manifest['phase_5']['verification_steps'] == ['quality_check', 'build_verify']
+
+    def test_row_5_surgical_tech_debt_with_prefixed_built_in_candidates_produces_non_empty_phase_5(self):
+        """Row 5 + ``default:``-prefixed built-in IDs → boundary normalized + roles match.
+
+        Exercises the joint contract of boundary normalization (the existing
+        `_strip_default_prefix` pass at intake) and role resolution: prefixed
+        candidates lose the prefix at cmd_compose intake, then role lookup
+        resolves the bare names to their frontmatter `role:` values.
+        """
+        with PlanContext(plan_id='role-row-5-tech-prefixed'):
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id='role-row-5-tech-prefixed',
+                    change_type='tech_debt',
+                    scope_estimate='surgical',
+                    affected_files_count=2,
+                    phase_5_steps='default:quality_check,default:build_verify',
+                )
+            )
+            assert result is not None and result['rule_fired'] == 'surgical_tech_debt'
+            manifest = read_manifest('role-row-5-tech-prefixed')
+            assert manifest is not None
+            # Boundary normalization strips `default:`; role intersection
+            # then matches both bare step IDs.
+            assert manifest['phase_5']['verification_steps'] == ['quality_check', 'build_verify']
+
+    def test_row_5_drops_coverage_role_from_phase_5(self):
+        """Row 5's role set is {quality-gate, module-tests} — coverage role is dropped."""
+        with PlanContext(plan_id='role-row-5-drop-coverage'):
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id='role-row-5-drop-coverage',
+                    change_type='bug_fix',
+                    scope_estimate='surgical',
+                    affected_files_count=1,
+                    phase_5_steps='quality_check,build_verify,coverage_check',
+                )
+            )
+            assert result is not None and result['rule_fired'] == 'surgical_bug_fix'
+            manifest = read_manifest('role-row-5-drop-coverage')
+            assert manifest is not None
+            assert manifest['phase_5']['verification_steps'] == ['quality_check', 'build_verify']
+            assert 'coverage_check' not in manifest['phase_5']['verification_steps']
+
+    def test_row_5_drops_external_step_without_role(self):
+        """External (project: / bundle:skill) candidates have no role → dropped by intersection."""
+        with PlanContext(plan_id='role-row-5-drop-external'):
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id='role-row-5-drop-external',
+                    change_type='bug_fix',
+                    scope_estimate='surgical',
+                    affected_files_count=1,
+                    phase_5_steps='quality_check,project:my-verify-step,build_verify',
+                )
+            )
+            assert result is not None and result['rule_fired'] == 'surgical_bug_fix'
+            manifest = read_manifest('role-row-5-drop-external')
+            assert manifest is not None
+            # External step has no role file → dropped; built-ins survive.
+            assert manifest['phase_5']['verification_steps'] == ['quality_check', 'build_verify']
+
+    def test_row_4_tests_only_matches_only_module_tests_role(self):
+        """Row 4's role set is {module-tests} — only build_verify (role: module-tests) survives."""
+        with PlanContext(plan_id='role-row-4'):
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id='role-row-4',
+                    change_type='verification',
+                    scope_estimate='single_module',
+                    affected_files_count=4,
+                    phase_5_steps='quality_check,build_verify,coverage_check',
+                )
+            )
+            assert result is not None and result['rule_fired'] == 'tests_only'
+            manifest = read_manifest('role-row-4')
+            assert manifest is not None
+            assert manifest['phase_5']['verification_steps'] == ['build_verify']
+
+    def test_row_3_docs_only_fires_when_candidate_set_has_no_module_tests_or_coverage_role(self):
+        """Row 3 (docs_only) fires when no candidate declares role: module-tests / coverage."""
+        with PlanContext(plan_id='role-row-3-docs'):
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id='role-row-3-docs',
+                    change_type='tech_debt',
+                    scope_estimate='surgical',
+                    affected_files_count=3,
+                    # Only quality_check (role: quality-gate) — no module-tests / coverage role.
+                    phase_5_steps='quality_check',
+                )
+            )
+            assert result is not None and result['rule_fired'] == 'docs_only'
+            manifest = read_manifest('role-row-3-docs')
+            assert manifest is not None
+            assert manifest['phase_5']['verification_steps'] == []
+
+    def test_row_3_skipped_when_module_tests_role_is_present(self):
+        """Row 3 does NOT fire when at least one candidate declares role: module-tests."""
+        with PlanContext(plan_id='role-row-3-skip'):
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id='role-row-3-skip',
+                    change_type='tech_debt',
+                    scope_estimate='surgical',
+                    affected_files_count=3,
+                    # build_verify carries role: module-tests → Row 3 skipped, Row 5 fires.
+                    phase_5_steps='quality_check,build_verify',
+                )
+            )
+            assert result is not None and result['rule_fired'] == 'surgical_tech_debt'
+
+
+class TestDecisionLogShapePreserved:
+    """Decision-log line shape is byte-identical to its pre-refactor form."""
+
+    def test_row_5_decision_log_message_matches_canonical_shape(self):
+        """``Rule {rule_key} fired — early_terminate=…, phase_5.verification_steps=…, phase_6.steps=…``."""
+        captured: list[tuple[str, str]] = []
+        original_emit = _mem._emit_decision_log
+        original_log_decision = _mem._log_decision
+
+        def _capture(plan_id_: str, message: str) -> None:
+            captured.append((plan_id_, message))
+
+        def _log_decision_capture(plan_id_, rule, body):
+            phase_5 = body.get('phase_5', {})
+            phase_6 = body.get('phase_6', {})
+            p5_steps = phase_5.get('verification_steps', [])
+            p6_steps = phase_6.get('steps', [])
+            early = phase_5.get('early_terminate', False)
+            message = (
+                f'(plan-marshall:manage-execution-manifest:compose) Rule {rule} fired — '
+                f'early_terminate={early}, phase_5.verification_steps={p5_steps}, '
+                f'phase_6.steps={p6_steps}'
+            )
+            _capture(plan_id_, message)
+
+        _mem._emit_decision_log = _capture
+        _mem._log_decision = _log_decision_capture
+        try:
+            with PlanContext(plan_id='role-log-shape'):
+                cmd_compose(
+                    _compose_ns(
+                        plan_id='role-log-shape',
+                        change_type='bug_fix',
+                        scope_estimate='surgical',
+                        affected_files_count=1,
+                        phase_5_steps='quality_check,build_verify',
+                    )
+                )
+        finally:
+            _mem._emit_decision_log = original_emit
+            _mem._log_decision = original_log_decision
+
+        rule_messages = [msg for _, msg in captured if 'Rule surgical_bug_fix fired' in msg]
+        assert len(rule_messages) == 1, f'expected exactly one Row 5 rule line, got: {captured!r}'
+        msg = rule_messages[0]
+        # Canonical shape segments.
+        assert msg.startswith('(plan-marshall:manage-execution-manifest:compose) Rule surgical_bug_fix fired — ')
+        assert 'early_terminate=False' in msg
+        # phase_5.verification_steps reflects role-based intersection output.
+        assert "phase_5.verification_steps=['quality_check', 'build_verify']" in msg
+        # phase_6.steps is present (we don't pin the full list here — other tests do).
+        assert 'phase_6.steps=' in msg
 
 
 def test_marshal_json_phase_5_steps_also_preferred():

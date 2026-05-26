@@ -2,6 +2,7 @@
 name: default:coverage_check
 description: Run coverage build and verify threshold
 order: 30
+role: coverage
 ---
 
 # Coverage Check

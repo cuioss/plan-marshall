@@ -71,7 +71,12 @@ VALID_COMMIT_STRATEGIES = ('per_plan', 'per_deliverable', 'none')
 DEFAULT_COMMIT_STRATEGY = 'per_plan'
 
 # Default candidate step sets when callers don't pass --phase-5-steps / --phase-6-steps.
-DEFAULT_PHASE_5_STEPS = ('quality-gate', 'module-tests')
+# These are bare step IDs (post boundary-normalization shape) that resolve to
+# standards files at marketplace/bundles/plan-marshall/skills/phase-5-execute/
+# standards/{name}.md. Each declares its ``role:`` frontmatter field, consumed
+# by ``_role_of`` below for structural role-based intersection in the 7-row
+# decision matrix.
+DEFAULT_PHASE_5_STEPS = ('quality_check', 'build_verify')
 DEFAULT_PHASE_6_STEPS = (
     'commit-push',
     'create-pr',
@@ -83,9 +88,84 @@ DEFAULT_PHASE_6_STEPS = (
     'archive-plan',
 )
 
+# Path to the phase-5-execute standards directory, used by ``_role_of`` to
+# resolve a candidate step ID to its source file and read the ``role:``
+# frontmatter field. The script lives at
+# marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/
+# manage-execution-manifest.py — parents[2] resolves to the skill root, and
+# we walk to the sibling phase-5-execute skill's standards directory.
+_PHASE_5_STANDARDS_DIR = (
+    Path(__file__).resolve().parent.parent.parent / 'phase-5-execute' / 'standards'
+)
+
+
 def _strip_default_prefix(step: str) -> str:
     """Return the bare step name regardless of the optional ``default:`` prefix."""
     return step[len('default:') :] if step.startswith('default:') else step
+
+
+def _role_of(step_id: str, cache: dict[str, str | None]) -> str | None:
+    """Resolve a phase-5 candidate step ID to its ``role:`` frontmatter value.
+
+    The composer intersects phase-5 candidates by role rather than by literal
+    step ID. For each candidate, we resolve the step's source file (e.g.,
+    ``quality_check`` → ``marketplace/bundles/plan-marshall/skills/phase-5-execute/
+    standards/quality_check.md``) and read the ``role:`` field from the YAML
+    frontmatter.
+
+    Returns ``None`` for:
+
+    - External steps (``project:`` or ``bundle:skill``) — no role-file concept.
+    - Built-in steps whose source file is missing.
+    - Files without a ``role:`` frontmatter field (plugin-doctor's
+      ``MISSING_ROLE_FIELD`` analyzer catches this drift at edit time).
+
+    Results are cached per compose call to avoid re-reading the same file when
+    a candidate appears in multiple intersection sites.
+    """
+    if step_id in cache:
+        return cache[step_id]
+
+    # External steps (project:foo or bundle:skill) have no role file — they
+    # are dispatched as PROJECT/SKILL steps, not built-in default steps.
+    if ':' in step_id and not step_id.startswith('default:'):
+        cache[step_id] = None
+        return None
+
+    bare = _strip_default_prefix(step_id)
+    path = _PHASE_5_STANDARDS_DIR / f'{bare}.md'
+    if not path.is_file():
+        cache[step_id] = None
+        return None
+
+    try:
+        text = path.read_text(encoding='utf-8')
+    except OSError:
+        cache[step_id] = None
+        return None
+
+    # Minimal YAML frontmatter parsing: scan the first ``---``-fenced block
+    # for a ``role:`` key. We avoid pulling in PyYAML to keep the script's
+    # dependency surface narrow; the frontmatter shape is constrained by
+    # plugin-doctor and the test suite.
+    role: str | None = None
+    if text.startswith('---'):
+        lines = text.splitlines()
+        for line in lines[1:]:
+            if line.strip() == '---':
+                break
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            if ':' in stripped:
+                key, _, value = stripped.partition(':')
+                if key.strip() == 'role':
+                    candidate = value.strip().strip('"').strip("'")
+                    if candidate:
+                        role = candidate
+                    break
+    cache[step_id] = role
+    return role
 
 
 # =============================================================================
@@ -138,7 +218,18 @@ def _decide(
     Returns the manifest body (under ``phase_5`` / ``phase_6`` keys) plus the
     name of the rule that fired (one of the seven rule keys defined in
     standards/decision-rules.md).
+
+    Rows 2, 3, 5, 6 intersect phase-5 candidates by the ``role:`` frontmatter
+    field of each candidate's source standards file rather than by literal
+    step ID. The intersection mechanism is structural: candidates declare
+    their role explicitly (e.g., ``role: quality-gate``) and the matrix
+    matches against a set of role names. See ``_role_of`` and
+    ``standards/decision-rules.md`` § Role-Field Intersection.
     """
+
+    # Per-compose role-lookup cache: avoid re-reading a candidate's source file
+    # when it appears in multiple intersection sites.
+    role_cache: dict[str, str | None] = {}
 
     # Rule 1: early_terminate — analysis without affected files. Phase 5 is
     # skipped entirely; Phase 6 still runs lessons capture so the analysis
@@ -168,7 +259,9 @@ def _decide(
         body = {
             'phase_5': {
                 'early_terminate': False,
-                'verification_steps': [s for s in phase_5_candidates if s in {'quality-gate', 'module-tests'}],
+                'verification_steps': [
+                    s for s in phase_5_candidates if _role_of(s, role_cache) in {'quality-gate', 'module-tests'}
+                ],
             },
             'phase_6': {'steps': phase_6_steps},
         }
@@ -183,7 +276,7 @@ def _decide(
         scope_estimate in ('surgical', 'single_module')
         and change_type in ('tech_debt', 'enhancement')
         and affected_files_count > 0
-        and _looks_docs_only(phase_5_candidates)
+        and _looks_docs_only(phase_5_candidates, role_cache)
     ):
         body = {
             'phase_5': {
@@ -202,7 +295,7 @@ def _decide(
         body = {
             'phase_5': {
                 'early_terminate': False,
-                'verification_steps': [s for s in phase_5_candidates if s == 'module-tests'],
+                'verification_steps': [s for s in phase_5_candidates if _role_of(s, role_cache) == 'module-tests'],
             },
             'phase_6': {'steps': list(phase_6_candidates)},
         }
@@ -220,7 +313,9 @@ def _decide(
         body = {
             'phase_5': {
                 'early_terminate': False,
-                'verification_steps': [s for s in phase_5_candidates if s in {'quality-gate', 'module-tests'}],
+                'verification_steps': [
+                    s for s in phase_5_candidates if _role_of(s, role_cache) in {'quality-gate', 'module-tests'}
+                ],
             },
             'phase_6': {'steps': phase_6_steps},
         }
@@ -360,14 +455,18 @@ def _read_solution_outline_affected_files(plan_id: str) -> list[str]:
     return flat
 
 
-def _looks_docs_only(phase_5_candidates: list[str]) -> bool:
+def _looks_docs_only(phase_5_candidates: list[str], role_cache: dict[str, str | None]) -> bool:
     """Heuristic: docs-only plans don't request module-tests or coverage.
 
-    The composer treats any candidate set that lacks ``module-tests`` AND
-    ``coverage`` as a docs-only signal. Real code-shaped plans always include
-    at least ``module-tests`` in their candidate set.
+    The composer treats any candidate set whose declared roles include
+    neither ``module-tests`` nor ``coverage`` as a docs-only signal. Real
+    code-shaped plans always include at least one candidate whose ``role:``
+    frontmatter is ``module-tests`` (typically ``default:build_verify``).
+
+    Uses the per-compose role cache to avoid re-reading frontmatter files.
     """
-    return 'module-tests' not in phase_5_candidates and 'coverage' not in phase_5_candidates
+    roles = {_role_of(s, role_cache) for s in phase_5_candidates}
+    return 'module-tests' not in roles and 'coverage' not in roles
 
 
 # =============================================================================

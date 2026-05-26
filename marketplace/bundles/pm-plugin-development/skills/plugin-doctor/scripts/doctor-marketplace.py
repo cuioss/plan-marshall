@@ -33,6 +33,7 @@ from pathlib import Path
 
 from _analyze_argument_naming import analyze_argument_naming
 from _analyze_lesson_id_in_skill_prose import analyze_lesson_id_in_skill_prose
+from _analyze_role_field import analyze_role_field
 from _analyze_script_call_drift import analyze_script_call_drift
 from _analyze_shell_substitution_in_skills import analyze_shell_substitution_in_skills
 from _analyze_test_conventions import (
@@ -354,6 +355,15 @@ def cmd_analyze(args) -> dict:
     all_issues.extend(lesson_id_issues)
     total_issues += len(lesson_id_issues)
 
+    # Phase-5 step standards files MUST declare a ``role:`` frontmatter field
+    # so the manage-execution-manifest composer's role-based intersection
+    # (Rows 2/3/4/5) can resolve candidates correctly. Unconditionally active;
+    # path-scoped to plan-marshall/skills/phase-5-execute/standards/*.md so
+    # the analyzer's cost is bounded to a handful of files.
+    role_field_issues = analyze_role_field(marketplace_root)
+    all_issues.extend(role_field_issues)
+    total_issues += len(role_field_issues)
+
     # Marketplace-wide script-call-drift rule. Gated OFF by default — opt in
     # via ``--rules script_call_drift``. The analyzer probes --help via
     # subprocess for every documented notation/verb pair, which costs many
@@ -513,6 +523,10 @@ def cmd_quality_gate(args) -> dict:
     rule_summaries.append(
         {'rule': 'analyze_lesson_id_in_skill_prose', 'findings': len(lesson_id_findings)}
     )
+
+    role_field_findings = analyze_role_field(marketplace_root)
+    all_issues.extend(role_field_findings)
+    rule_summaries.append({'rule': 'analyze_role_field', 'findings': len(role_field_findings)})
 
     # script-call-drift is intentionally NOT in quality-gate — it probes
     # --help via subprocess for every documented notation/verb pair, which
