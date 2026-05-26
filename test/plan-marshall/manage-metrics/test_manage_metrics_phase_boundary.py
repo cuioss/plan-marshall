@@ -298,6 +298,67 @@ def test_phase_boundary_status_json_missing_no_exception():
         assert 'duration_seconds' not in prev_block
 
 
+def test_phase_boundary_uses_real_1init_start_time_when_present():
+    """When phase-1-init seeds 1-init.start_time, phase-boundary uses the real value.
+
+    Regression guard for the bootstrap accounting bug fixed by
+    fix-1-init-phase-boundary-bootstrap-bug. Phase-1-init (Step 3a) now self-
+    records 1-init.start_time via `manage-metrics start-phase --phase 1-init`
+    immediately after the plan directory is created. The downstream fused
+    `phase-boundary --prev-phase 1-init` call MUST observe this seeded
+    timestamp and compute `duration_seconds = end_time - seeded_start_time`
+    against it — NOT fall back to the `_read_status_created` backfill, even
+    when status.json.created is present.
+
+    This test asserts that path by:
+      1. Seeding 1-init.start_time via cmd_start_phase (mirrors phase-1-init Step 3a).
+      2. Writing a status.json with a deliberately old `created` timestamp that
+         would yield a wildly different (years-long) duration if backfill ran.
+      3. Calling cmd_phase_boundary.
+      4. Confirming the start_time on the 1-init row equals the seeded value,
+         the status.json.created sentinel does NOT appear, and the resulting
+         prev_duration_seconds is on the order of seconds (real wall clock
+         between seed and end) — not years.
+    """
+    with PlanContext(plan_id='boundary-real-seed') as ctx:
+        # Step 1: phase-1-init self-records 1-init.start_time.
+        cmd_start_phase(_ns_start_phase('boundary-real-seed', '1-init'))
+
+        # Capture the seeded start_time so we can assert it's preserved.
+        content_pre = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
+        init_idx = content_pre.index('[1-init]')
+        block = content_pre[init_idx:]
+        start_line = next(line for line in block.splitlines() if line.strip().startswith('start_time:'))
+        seeded_start = start_line.split('start_time:', 1)[1].strip()
+
+        # Step 2: status.json present with a far-past `created` that would
+        # produce a years-long duration if the backfill path were taken.
+        old_created_ts = '1999-01-01T00:00:00+00:00'
+        _seed_status_created(ctx.plan_dir, old_created_ts)
+
+        # Step 3: fused phase-boundary call.
+        result = cmd_phase_boundary(
+            _ns_boundary('boundary-real-seed', prev_phase='1-init', next_phase='2-refine')
+        )
+        assert result['status'] == 'success'
+
+        # Step 4: verify the seeded value was used, not the backfill.
+        content_post = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
+        assert old_created_ts not in content_post, (
+            'status.json.created leaked into metrics — backfill ran despite seeded start_time'
+        )
+        assert f'start_time: {seeded_start}' in content_post
+
+        # Duration was computed against the seeded start_time → small (seconds),
+        # not years. Anything under one day (86400s) proves the real seed was used.
+        assert 'prev_duration_seconds' in result
+        assert result['prev_duration_seconds'] >= 0
+        assert result['prev_duration_seconds'] < 86400, (
+            f'prev_duration_seconds={result["prev_duration_seconds"]} suggests backfill '
+            f'from status.json.created (1999) was used instead of the seeded start_time'
+        )
+
+
 def test_phase_boundary_status_json_malformed_no_exception():
     """status.json malformed → call succeeds, no backfill, no exception."""
     with PlanContext(plan_id='boundary-backfill-05') as ctx:
