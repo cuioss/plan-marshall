@@ -1,7 +1,3 @@
----
-description: Authoritative reference for phase-5-execute Step 3 baseline fast-path check
----
-
 # Sync Worktree With Main — Fast-Path Verification
 
 Authoritative reference for the `phase-5-execute` Step 3 "Baseline Fast-Path Check" action. The SKILL.md inlines the step flow; this document explains the fast-path semantics, the drift error contract, the main-checkout fallback, and the rationale for the phase-2-refine ↔ phase-5-execute split.

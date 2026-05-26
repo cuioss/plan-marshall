@@ -1,7 +1,3 @@
----
-description: First-line responses for recovering an active plan worktree during phase-5-execute
----
-
 # Recovery Patterns
 
 First-line responses for recovering an active plan worktree when external state shifts during phase-5-execute.

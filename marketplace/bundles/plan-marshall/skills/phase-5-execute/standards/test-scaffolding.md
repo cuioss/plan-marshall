@@ -1,7 +1,3 @@
----
-description: Canonical patterns for test files whose collection is non-trivial
----
-
 # Test Scaffolding Patterns
 
 Canonical patterns for test files in this repository whose collection is non-trivial. Each pattern is a documented composition that fresh agents should not have to rediscover.

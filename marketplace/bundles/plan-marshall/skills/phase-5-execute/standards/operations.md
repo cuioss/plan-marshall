@@ -1,7 +1,3 @@
----
-description: Reference for executing common checklist items via delegation patterns
----
-
 # Delegation Operations
 
 Reference for executing common checklist items. The executor uses these patterns when encountering specific checklist items.

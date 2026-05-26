@@ -153,15 +153,26 @@ def _is_step_file(frontmatter: dict[str, str]) -> bool:
 
 
 def _has_role_field(text: str) -> bool:
-    """Return True iff the leading YAML frontmatter declares a non-empty ``role:`` key.
+    """Return True iff the file is exempt from or satisfies the ``role:`` requirement.
 
-    A file that is not a phase-5 step file (per ``_is_step_file``) is treated
-    as compliant — the role requirement does not apply to helper / narrative
-    documents that happen to sit in the same standards directory.
+    Exemption rules:
+
+    - Files with no YAML frontmatter at all are reference / narrative documents
+      (operations, recovery, sync-with-main, test-scaffolding, workflow, …)
+      and are NOT subject to the role requirement. They cannot structurally
+      be step files because step-file identification (``_is_step_file``)
+      requires ``name: default:…`` + ``description`` + ``order`` in the
+      frontmatter block. Without a frontmatter block, the file is unambiguously
+      a helper doc.
+    - Files whose frontmatter is present but does NOT identify the file as a
+      phase-5 step file (per ``_is_step_file``) are also helper documents.
+    - Only files identified as step files are required to declare a non-empty
+      ``role:`` value.
     """
     frontmatter = _parse_frontmatter_keys(text)
     if frontmatter is None:
-        return False
+        # No frontmatter at all — narrative / reference document. Exempt.
+        return True
     if not _is_step_file(frontmatter):
         # Helper / narrative document — role: requirement does not apply.
         return True

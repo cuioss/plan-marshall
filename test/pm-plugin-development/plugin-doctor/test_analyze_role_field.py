@@ -186,21 +186,22 @@ class TestRoleFieldMissing:
         assert finding['file'] == str(path)
         assert finding['snippet'] == 'quality_check'
 
-    def test_file_without_frontmatter_produces_finding(self, tmp_path: Path) -> None:
-        """A markdown file with no leading ``---`` block is treated as missing role.
+    def test_file_without_frontmatter_is_exempt(self, tmp_path: Path) -> None:
+        """A markdown file with no leading ``---`` block is treated as a helper doc.
 
-        Note: only files identifiable as step files (via the ``name:
-        default:…`` + ``description`` + ``order:`` triple) are subject to
-        the requirement; a bare markdown file with no frontmatter cannot
-        be classified as a step file but is still flagged here because the
-        absence of any frontmatter at all is itself a structural defect for
-        the step-files directory.
+        The phase-5-execute standards/ directory hosts both step files
+        (``quality_check.md``, ``build_verify.md``, ``coverage_check.md``)
+        AND reference / narrative documents (``operations.md``, ``recovery.md``,
+        ``sync-with-main.md``, ``test-scaffolding.md``, ``workflow.md``).
+        Reference docs carry no YAML frontmatter at all and cannot structurally
+        be step files (step-file identification requires
+        ``name: default:…`` + ``description`` + ``order``). They are exempt
+        from the role requirement.
         """
         scoped = _make_scoped_dir(tmp_path)
-        path = _write(scoped / 'orphan.md', '# Just a heading, no frontmatter\n')
+        _write(scoped / 'orphan.md', '# Just a heading, no frontmatter\n')
         findings = analyze_role_field(tmp_path)
-        assert len(findings) == 1
-        assert findings[0]['file'] == str(path)
+        assert findings == []
 
     def test_multiple_missing_files_produce_one_finding_each(self, tmp_path: Path) -> None:
         scoped = _make_scoped_dir(tmp_path)
