@@ -316,10 +316,41 @@ Run verification commands without modifying files.
 
 ### Workflow
 
-1. **Execute Verification Steps**: Steps contain verification commands (not file paths). Execute sequentially. For each step, run `{step.target}` and check exit code and output.
-2. **Mark Step Complete** (common step)
-3. **Handle Failures**: This is a verification task — do NOT modify source files. Report failures with structured output for triage. If verification fails, mark task as `blocked`.
-4. **Record Lessons** (on unexpected failures or environment issues), **Return Results**
+1. **Resolve Worktree Path**: Before executing any verification step, resolve the active worktree path from `plan_id`:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-worktree-path \
+     --plan-id {plan_id}
+   ```
+
+   Capture the returned `worktree_path`. When `metadata.use_worktree == false` the returned path is empty — skip the auto-injection sub-step below and execute each raw `step.target` directly against the main checkout.
+
+2. **Execute Verification Steps with `--project-dir` Auto-Injection**: Steps contain verification commands (not file paths). Execute sequentially. For each `step.target`:
+
+   a. Route the command through the existing injection helper:
+
+      ```bash
+      python3 .plan/execute-script.py plan-marshall:execute-task:inject_project_dir \
+        run --command "{step.target}" --worktree-path "{resolved_worktree_path}"
+      ```
+
+      Parse the `TOON` output. Use the `rewritten_command` value as the command to execute. When `worktree_path` is empty (main-checkout flow), skip the helper and execute the raw `step.target`.
+
+   b. Execute the resulting command with a Bash timeout of **at least 600000ms (10 minutes)** — verification commands routinely include `quality-gate`, `verify`, and `coverage` invocations that exceed default timeouts. The 10-minute floor matches `CLAUDE.md` § Build Commands.
+
+   c. On `injected: true`, emit the standard auto-injection work-log entry:
+
+      ```bash
+      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+        work --plan-id {plan_id} --level INFO \
+        --message "[VERIFY] (plan-marshall:execute-task) Auto-injected --project-dir for {notation} (resolved from --plan-id {plan_id})"
+      ```
+
+   Check exit code and output of the executed command. This step mirrors the Common Workflow → Step: Run Verification sub-step; see that section for the authoritative whitelist of `Bucket B` notations, the no-inject pass-through rule for `Bucket A` `manage-*` notations, and the rationale for skipping injection when the command already supplies `--plan-id`.
+
+3. **Mark Step Complete** (common step)
+4. **Handle Failures**: This is a verification task — do NOT modify source files. Report failures with structured output for triage. If verification fails, mark task as `blocked`.
+5. **Record Lessons** (on unexpected failures or environment issues), **Return Results**
 
 No domain skills are needed for this profile.
 

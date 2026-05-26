@@ -100,3 +100,63 @@ def test_constraints_block_requires_strict_gate(skill_text: str) -> None:
         'Constraints block must explicitly state that module-tests passing '
         'alone is necessary but not sufficient.'
     )
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for the verification profile workflow (lesson 2026-05-26-15-002)
+#
+# The verification profile previously instructed the subagent to execute each
+# `step.target` directly with no worktree resolution and no --project-dir
+# injection. When the plan ran in an isolated worktree, this caused the
+# subagent to freeze silently: the build command was identical to the step
+# command, lacked --project-dir, and had no contract for what to do next.
+# These tests pin three required directives in the verification profile body:
+#
+#   1. Explicit worktree resolution via `get-worktree-path` before step execution
+#   2. Auto-injection of --project-dir via the `inject_project_dir` helper
+#   3. Bash-timeout guidance (≥10 minutes / 600000ms) for verification commands
+# ---------------------------------------------------------------------------
+
+
+def _verification_profile_body(skill_text: str) -> str:
+    """Slice the verification-profile section from SKILL.md.
+
+    The body starts at `## Profile: verification` and extends until the next
+    top-level `## ` heading or EOF.
+    """
+    return _section_body(skill_text, '## Profile: verification')
+
+
+def test_verification_profile_resolves_worktree_path(skill_text: str) -> None:
+    section = _verification_profile_body(skill_text)
+
+    assert 'get-worktree-path' in section, (
+        'verification profile workflow must instruct the subagent to resolve '
+        'the worktree path via manage-status get-worktree-path before '
+        'executing any step.target. See lesson 2026-05-26-15-002 — without '
+        'this directive the subagent freezes on holistic verification tasks '
+        'when the plan runs in an isolated worktree.'
+    )
+
+
+def test_verification_profile_injects_project_dir(skill_text: str) -> None:
+    section = _verification_profile_body(skill_text)
+
+    assert 'inject_project_dir' in section, (
+        'verification profile workflow must route each step.target through '
+        'the inject_project_dir helper so --project-dir is auto-injected for '
+        'Bucket B build commands. The helper exists in scripts/ and is '
+        'already wired into the Common Workflow Run Verification sub-step; '
+        'the verification profile must call out the same helper.'
+    )
+
+
+def test_verification_profile_documents_bash_timeout(skill_text: str) -> None:
+    section = _verification_profile_body(skill_text)
+
+    assert '600000' in section, (
+        'verification profile workflow must document the ≥10-minute Bash '
+        'timeout guidance (600000ms) for verification commands. CLAUDE.md '
+        'Build Commands sets the same floor and quality-gate/verify/coverage '
+        'invocations routinely exceed default timeouts.'
+    )
