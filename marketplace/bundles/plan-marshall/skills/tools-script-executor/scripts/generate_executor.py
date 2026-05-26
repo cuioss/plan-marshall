@@ -48,7 +48,6 @@ Runtime Side-effects:
 """
 
 import argparse
-import ast
 import hashlib
 import json
 import os
@@ -348,115 +347,6 @@ def discover_local_scripts(cwd: Path | None = None) -> dict[str, str]:
 
 
 # ============================================================================
-# SUBCOMMAND INTROSPECTION (PRE-FLIGHT VALIDATOR)
-# ============================================================================
-
-
-def _extract_subcommands_from_source(source: str) -> list[str]:
-    """Extract argparse subcommand names from a script's source via AST.
-
-    Walks the AST looking for ``<something>.add_parser('name', ...)`` calls
-    where the first positional argument is a string literal. This is the
-    canonical shape used to register a subcommand on an argparse subparsers
-    container. The function does NOT execute the script — it only parses
-    the source.
-
-    Returns the subcommand names in sorted order (deduplicated). An
-    empty list signals "no subcommands declared" (a single-action script);
-    the caller treats this as "skip pre-flight validation for this notation".
-
-    Args:
-        source: Python source code as a string.
-
-    Returns:
-        Alphabetically sorted list of unique subcommand name string literals.
-    """
-    try:
-        tree = ast.parse(source)
-    except SyntaxError:
-        return []
-
-    names: list[str] = []
-    seen: set[str] = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        func = node.func
-        if not isinstance(func, ast.Attribute):
-            continue
-        if func.attr != 'add_parser':
-            continue
-        if not node.args:
-            continue
-        first_arg = node.args[0]
-        # Python 3.8+: string literals are ast.Constant with str value.
-        if isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str):
-            name = first_arg.value
-            if name and name not in seen:
-                seen.add(name)
-                names.append(name)
-    return sorted(names)
-
-
-def extract_subcommands_for_path(script_path: str) -> list[str]:
-    """Read ``script_path`` and return its declared argparse subcommand names.
-
-    Returns an empty list when the file is unreadable, has no add_parser
-    calls, or fails to parse. The pre-flight validator treats an empty list
-    as "no subcommands declared" and skips validation for that notation.
-    """
-    try:
-        source = Path(script_path).read_text(encoding='utf-8')
-    except (OSError, UnicodeDecodeError):
-        return []
-    return _extract_subcommands_from_source(source)
-
-
-def build_subcommands_mapping(mappings: dict[str, str]) -> dict[str, list[str]]:
-    """Build the notation → declared-subcommands mapping for the executor.
-
-    Skips notations whose source has no declared subcommands (single-action
-    scripts); the pre-flight validator only activates when SUBCOMMANDS[n] is
-    non-empty.
-
-    Args:
-        mappings: Notation → absolute path mapping (output of
-            :func:`discover_scripts`).
-
-    Returns:
-        Notation → sorted list of declared subcommand strings. Notations
-        with no declared subcommands are omitted from the result.
-    """
-    out: dict[str, list[str]] = {}
-    for notation, path in mappings.items():
-        subs = extract_subcommands_for_path(path)
-        if subs:
-            out[notation] = subs
-    return out
-
-
-def generate_subcommands_code(subcommands: dict[str, list[str]]) -> str:
-    """Generate Python code for the SUBCOMMANDS dict embedded in the template.
-
-    Output is sorted by notation for deterministic generation. Subcommand
-    lists are themselves sorted by :func:`build_subcommands_mapping`.
-
-    Args:
-        subcommands: Notation → list of subcommand names.
-
-    Returns:
-        Multi-line string of ``"notation": [list],`` entries, indented for
-        embedding inside a dict literal.
-    """
-    lines = []
-    for notation in sorted(subcommands.keys()):
-        names = subcommands[notation]
-        names_repr = ', '.join(f'"{n}"' for n in names)
-        lines.append(f'    "{notation}": [{names_repr}],')
-    return '\n'.join(lines)
-
-
-# ============================================================================
 # TARGET-AWARE RESOLVER GENERATION
 # ============================================================================
 
@@ -693,15 +583,6 @@ def generate_executor(
     template = executor_template.read_text()
     mappings_code = generate_mappings_code(mappings)
 
-    # Pre-flight subcommand validator: introspect each registered script's
-    # argparse subcommand choices via AST and embed the result as SUBCOMMANDS.
-    # The runtime template checks argv[1] against SUBCOMMANDS[notation] before
-    # dispatch and fails fast with a structured TOON when the subcommand is
-    # invented. Notations with no declared subcommands are omitted from the
-    # mapping so the runtime check skips them (single-action scripts).
-    subcommands_mapping = build_subcommands_mapping(mappings)
-    subcommands_code = generate_subcommands_code(subcommands_mapping)
-
     # Resolve platform target for target-aware resolver injection.
     resolved_target = target if target is not None else read_marshal_target()
     resolver_code = generate_target_aware_resolver_code(resolved_target)
@@ -724,7 +605,6 @@ def generate_executor(
     extra_dirs_code = ', '.join(f"'{d}'" for d in sorted({str(Path(d).resolve()) for d in all_script_dirs}))
 
     content = template.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
-    content = content.replace('{{SUBCOMMAND_MAPPINGS}}', subcommands_code)
     content = content.replace('{{LOGGING_DIR}}', logging_dir)
     content = content.replace('{{SHARED_MODULE_DIRS}}', shared_module_lines)
     content = content.replace('{{EXTRA_SCRIPT_DIRS}}', extra_dirs_code)

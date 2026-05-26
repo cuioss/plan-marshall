@@ -282,13 +282,19 @@ def test_pm_marketplace_root_matching_embedded_root_is_noop(two_marketplace_tree
 
 
 # ============================================================================
-# PRE-FLIGHT SUBCOMMAND VALIDATOR (lesson 2026-04-29-23-002)
+# POST-REMOVAL: argparse-native rejection of invented subcommands
 # ============================================================================
+# Lesson 2026-04-29-23-002 originally drove a runtime pre-flight validator
+# (SUBCOMMANDS dict + structured TOON rejection). That validator was removed
+# in plan fix-generate-executor-ast-subcommands — drift is now detected at
+# dev-time via plugin-doctor and post-hoc via plan-retrospective. The
+# executor itself stays dumb and delegates to the target script's argparse,
+# which produces its own well-formed `invalid choice` error on stderr with
+# exit code 2.
 
 # Sentinel multi-subcommand script body — argparse parser with two declared
-# subcommands. When invoked with a registered subcommand the script prints a
-# sentinel and exits 0; argparse handles invalid subcommands itself (which is
-# precisely the failure mode the pre-flight validator now intercepts upstream).
+# subcommands. Used to verify the post-removal contract: argparse handles
+# invented subcommands directly with its standard error message shape.
 MULTI_SUB_SCRIPT_TEMPLATE = """#!/usr/bin/env python3
 import argparse
 import sys
@@ -306,25 +312,20 @@ if __name__ == '__main__':
     main()
 """
 
-PREFLIGHT_NOTATION = 'fakebundle:fakeskill'
+POST_REMOVAL_NOTATION = 'fakebundle:fakeskill'
 
 
-def _render_executor_with_subcommands(
+def _render_executor_for_post_removal(
     target_path: Path,
     embedded_script_path: Path,
-    subcommands_block: str,
 ) -> Path:
-    """Render the template with a populated SUBCOMMAND_MAPPINGS block.
-
-    ``subcommands_block`` is the literal text to substitute for
-    ``{{SUBCOMMAND_MAPPINGS}}`` — a multi-line string of dict-literal entries
-    indented for embedding inside the SUBCOMMANDS dict.
-    """
+    """Render the template with no SUBCOMMANDS surface — the template no
+    longer contains a {{SUBCOMMAND_MAPPINGS}} placeholder after the
+    pre-flight validator was removed."""
     template_content = EXECUTOR_TEMPLATE.read_text()
-    mappings_code = f'    "{PREFLIGHT_NOTATION}": "{embedded_script_path}",'
+    mappings_code = f'    "{POST_REMOVAL_NOTATION}": "{embedded_script_path}",'
 
     rendered = template_content.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
-    rendered = rendered.replace('{{SUBCOMMAND_MAPPINGS}}', subcommands_block)
     rendered = rendered.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
     rendered = rendered.replace(
         '{{SHARED_MODULE_DIRS}}',
@@ -343,10 +344,10 @@ def _render_executor_with_subcommands(
 
 
 @pytest.fixture
-def preflight_executor(tmp_path):
-    """Render an executor that embeds a multi-subcommand script and its
-    SUBCOMMANDS mapping. Yields the rendered executor path plus the script
-    path and plan_dir for logging isolation."""
+def post_removal_executor(tmp_path):
+    """Render an executor that embeds a multi-subcommand script. With the
+    pre-flight validator removed, dispatch flows straight through to the
+    target script's argparse."""
     script_dir = tmp_path / 'pkg' / 'scripts'
     script_dir.mkdir(parents=True, exist_ok=True)
     script_path = script_dir / 'fakeskill.py'
@@ -359,10 +360,7 @@ def preflight_executor(tmp_path):
 
     executor_path = plan_dir / 'execute-script.py'
 
-    # Populate SUBCOMMANDS with the two declared subcommand names.
-    subcommands_block = f'    "{PREFLIGHT_NOTATION}": ["alpha", "bravo"],'
-
-    _render_executor_with_subcommands(executor_path, script_path, subcommands_block)
+    _render_executor_for_post_removal(executor_path, script_path)
 
     yield {
         'executor': executor_path,
@@ -371,14 +369,14 @@ def preflight_executor(tmp_path):
     }
 
 
-def test_known_subcommand_passes(preflight_executor, monkeypatch):
-    """A subcommand declared in SUBCOMMANDS dispatches to the script normally."""
+def test_known_subcommand_dispatches_to_script(post_removal_executor, monkeypatch):
+    """A registered subcommand still reaches the script's argparse handler."""
     monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
 
     result = _run_executor(
-        preflight_executor['executor'],
-        preflight_executor['plan_dir'],
-        PREFLIGHT_NOTATION,
+        post_removal_executor['executor'],
+        post_removal_executor['plan_dir'],
+        POST_REMOVAL_NOTATION,
         'alpha',
     )
 
@@ -390,54 +388,57 @@ def test_known_subcommand_passes(preflight_executor, monkeypatch):
     )
 
 
-def test_invented_subcommand_rejected(preflight_executor, monkeypatch):
-    """An invented subcommand is rejected pre-flight with the structured TOON
-    contract that names lesson 2026-04-29-23-002."""
+def test_invented_subcommand_reaches_argparse_native_rejection(post_removal_executor, monkeypatch):
+    """With the pre-flight validator removed, an invented subcommand falls
+    through to the target script's argparse. argparse exits 2 and emits its
+    standard `invalid choice` error to stderr — never the legacy
+    `invented_subcommand` TOON shape."""
     monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
 
     result = _run_executor(
-        preflight_executor['executor'],
-        preflight_executor['plan_dir'],
-        PREFLIGHT_NOTATION,
+        post_removal_executor['executor'],
+        post_removal_executor['plan_dir'],
+        POST_REMOVAL_NOTATION,
         'invented-verb',
     )
 
-    assert result.returncode != 0, (
-        f'Invented subcommand must exit non-zero.\nstdout: {result.stdout}\nstderr: {result.stderr}'
+    # argparse exits 2 on invalid subparser choices.
+    assert result.returncode == 2, (
+        f'argparse should reject invented subcommand with exit 2. '
+        f'stdout: {result.stdout}\nstderr: {result.stderr}'
     )
-    # Script must NOT have run — no SENTINEL output.
-    assert 'SENTINEL' not in result.stdout, (
-        f'Script must not be invoked when validator rejects subcommand.\nstdout: {result.stdout}'
+    # argparse's stderr shape names the invalid choice and lists valid ones.
+    assert 'invalid choice' in result.stderr, (
+        f'argparse stderr should mention `invalid choice`: {result.stderr}'
     )
-    # Structured TOON fields per the contract.
-    assert 'status: error' in result.stderr
-    assert 'error: "invented_subcommand"' in result.stderr
-    assert f'notation: "{PREFLIGHT_NOTATION}"' in result.stderr
-    assert 'invented: "invented-verb"' in result.stderr
-    assert 'alpha' in result.stderr and 'bravo' in result.stderr, (
-        'valid_choices must list the declared subcommand names.'
+    assert "'invented-verb'" in result.stderr, (
+        f'argparse stderr should quote the rejected token: {result.stderr}'
     )
-    assert 'lesson: "2026-04-29-23-002"' in result.stderr
+    # The legacy pre-flight TOON shape MUST NOT appear — confirms the
+    # validator is structurally gone.
+    assert 'invented_subcommand' not in result.stderr, (
+        f'Legacy `invented_subcommand` TOON shape leaked into stderr: {result.stderr}'
+    )
+    assert 'lesson: "2026-04-29-23-002"' not in result.stderr
 
 
-def test_help_flag_bypasses_preflight(preflight_executor, monkeypatch):
-    """The validator must let -h / --help through so callers can still
-    discover the subcommand surface via the script's own help output."""
+def test_help_flag_reaches_script_help(post_removal_executor, monkeypatch):
+    """`--help` flows through to the target script's argparse help path."""
     monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
 
     result = _run_executor(
-        preflight_executor['executor'],
-        preflight_executor['plan_dir'],
-        PREFLIGHT_NOTATION,
+        post_removal_executor['executor'],
+        post_removal_executor['plan_dir'],
+        POST_REMOVAL_NOTATION,
         '--help',
     )
 
-    # The script's argparse --help exits 0 and prints usage to stdout.
     assert result.returncode == 0, (
-        f'Help flag must bypass pre-flight and reach the script.\nstdout: {result.stdout}\nstderr: {result.stderr}'
+        f'Help flag must reach the script.\nstdout: {result.stdout}\nstderr: {result.stderr}'
     )
-    # The pre-flight TOON must NOT have been emitted.
+    # No legacy pre-flight TOON in either stream.
     assert 'invented_subcommand' not in result.stderr
+    assert 'invented_subcommand' not in result.stdout
 
 
 def test_pm_marketplace_root_with_trailing_slash_rewrites(two_marketplace_trees, monkeypatch):

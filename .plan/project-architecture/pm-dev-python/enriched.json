@@ -42,6 +42,6 @@
       ]
     }
   },
-  "skills_by_profile_reasoning": "",
+  "skills_by_profile_reasoning": "Backfill skills_by_profile for plan-marshall module to resolve phase-4-plan Q-Gate findings 1103b8 and 7e3190 (missing implementation and module_testing profiles)",
   "tips": []
 }

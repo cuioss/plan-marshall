@@ -134,6 +134,12 @@ Seven forward-looking lint rules added by the lesson-2026-05-05-18-001 remediati
 |---------|-------|---------|--------|
 | `shell-substitution-in-skills` | safety | `_analyze_shell_substitution_in_skills.py` | Lesson `2026-05-15-13-001` — `$(` command substitution in plan-marshall skill markdown violates the dev-agent-behavior-rules "Bash: no shell constructs" hard rule. Structural exemptions: inline-code spans and fenced blocks with `markdown`/`text` info-string. |
 
+### Script-call drift
+
+| Rule ID | Class | Emitter | Source |
+|---------|-------|---------|--------|
+| `script-call-drift` | structural | `_analyze_script_call_drift.py` | Plan `fix-generate-executor-ast-subcommands` (2026-05-26) — replaces the deleted runtime SUBCOMMANDS pre-flight validator with a dev-time `--help`-based drift detector. Probes `python3 .plan/execute-script.py {notation} --help` per documented invocation to validate the published argparse interface. Lessons `2026-04-29-23-002`, `2026-05-25-21-001`, `2026-05-26-09-001`. Opt-in via `--rules script_call_drift` — NOT in the unconditional quality-gate set due to subprocess overhead. |
+
 ### Lesson-ID prose hygiene
 
 | Rule ID | Class | Emitter | Source |

@@ -254,6 +254,38 @@ Seven forward-looking lint rules.
 
 ---
 
+## Rule Pack: Script-call drift
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `script-call-drift` | Detect drift between documented `python3 .plan/execute-script.py {notation} {verb}` invocations in skill markdown and the live argparse interface published by the target script's `--help` output | The analyzer probes `--help` per process and caches results. Single-action scripts (no subparsers) skip verb checking. Placeholder tokens (`{value}`, `{plan_id}`) are skipped. Universal flags (`--help`, `--audit-plan-id`) are exempt | None — fix the skill prose to match the script's published `--help` interface, or correct the script's argparse declaration |
+
+### script-call-drift
+
+**Rule ID**: `script-call-drift`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_script_call_drift.py`
+
+**Scope**: All `*.md` files under `marketplace/bundles/**/skills/**`.
+
+**Intent**: Replace the deleted runtime SUBCOMMANDS pre-flight validator with a dev-time drift detector. The runtime executor is now a dumb dispatcher; drift between documented invocations and the script's actual argparse interface is caught here, before the prose ships. The rule consumes argparse's published interface (`--help` text) rather than parsing the script source via AST — `--help` is the canonical interface, and AST walking proved fragile against argparse's dynamic shapes.
+
+**Detection logic**:
+1. Regex-match `python3 .plan/execute-script.py {notation} [verb] [flags...]` invocations in skill markdown.
+2. For each unique `notation`, invoke `python3 .plan/execute-script.py {notation} --help` (subprocess) and parse the `{choice1, choice2, ...}` subcommand-choices block from the usage line.
+3. For each `(notation, verb)` referenced in prose, invoke `python3 .plan/execute-script.py {notation} {verb} --help` and parse declared `--flag` names from argparse's options block.
+4. Emit `verb_not_in_subcommand_list` when a documented verb is absent from the choices set. Emit `flag_not_in_options` when a documented `--flag` is absent from the options set.
+
+**Caching**: `--help` text is cached per process — one subprocess per unique notation, one per unique `(notation, verb)` pair.
+
+**Activation**: Opt-in via `--rules script_call_drift` on the `analyze` subcommand. NOT included in the unconditional `quality-gate` set — the subprocess overhead is too high for an unattended build gate. Invoke explicitly for drift sweeps after large skill-prose changes.
+
+**Rationale**: The pre-flight runtime validator (removed in plan `fix-generate-executor-ast-subcommands`) embedded a stale SUBCOMMANDS allowlist at executor-generation time and rejected valid calls when the allowlist drifted. The new architecture moves drift detection to dev time: the doctor consumes the same argparse interface the runtime would, but it runs against the latest source on every invocation rather than against a snapshot embedded in the executor. The post-hoc complement (plan-retrospective `script-failure-analysis` pass) mines `script-execution.log` for argparse rejections to catch any drift the doctor missed at edit time.
+
+**Suppression mechanism**: None — fix the prose or the argparse declaration to converge.
+
+---
+
 ## Rule Pack: Lesson-ID prose hygiene
 
 | Rule ID | Intent | False-positive policy | Suppression |
