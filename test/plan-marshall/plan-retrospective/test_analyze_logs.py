@@ -407,65 +407,95 @@ class TestPhase5LoggingGapExtractors:
         assert result['tasks_with_diff_no_outcome'] == ['TASK-002']
 
     # ------------------------------------------------------------------
-    # read_dispatch_boundaries
+    # read_dispatch_boundaries_per_phase
     # ------------------------------------------------------------------
 
-    def test_read_dispatch_boundaries_absent(self, tmp_path):
-        """Plans without the artifact return present=false (precondition guard)."""
+    def test_read_dispatch_boundaries_per_phase_absent(self, tmp_path):
+        """Plans with no boundary artifacts return an empty per-phase dict."""
         plan_dir = tmp_path / 'plans' / 'no-boundary'
         plan_dir.mkdir(parents=True)
-        result = _analyze_logs.read_dispatch_boundaries(plan_dir)
-        assert result == {
-            'present': False,
-            'rows': [],
-            'unknown_count': 0,
-            'clean_exit_queue_empty_count': 0,
-        }
+        result = _analyze_logs.read_dispatch_boundaries_per_phase(plan_dir)
+        assert result == {}
 
-    def test_read_dispatch_boundaries_present(self, tmp_path):
-        """Artifact parses into one row per data line; both counts are extracted.
+    def test_read_dispatch_boundaries_per_phase_present(self, tmp_path):
+        """Glob discovers every per-phase artifact and keys the result by phase name.
 
-        Lesson 2026-05-10-15-001: `unknown_count` remains the legacy-row
-        detector (the recorder no longer emits `unknown`, so any row carrying
-        it is pre-migration data); `clean_exit_queue_empty_count` is the new
-        canonical clean-exit counter.
+        Lesson 2026-05-20-12-002 generalised the prior phase-5-only reader to
+        cover phase-4-plan and phase-6-finalize boundary artifacts. The
+        per-file shape (``present``, ``rows``, ``unknown_count``,
+        ``clean_exit_queue_empty_count``) is unchanged.
         """
         plan_dir = tmp_path / 'plans' / 'with-boundary'
         (plan_dir / 'work').mkdir(parents=True)
-        artifact = plan_dir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
-        artifact.write_text(
+        # Phase-5-execute artifact — preserves the legacy single-phase shape.
+        (plan_dir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon').write_text(
             'plan_id: with-boundary\n'
             'phase: 5-execute\n'
             'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:\n'
             '2026-05-08T14:00:00Z,voluntary_checkpoint,100,2,1000\n'
             '2026-05-08T14:01:00Z,unknown,200,4,2000\n'
-            '2026-05-08T14:02:00Z,unknown,300,6,3000\n'
-            '2026-05-08T14:03:00Z,clean_exit_queue_empty,400,8,4000\n',
+            '2026-05-08T14:02:00Z,clean_exit_queue_empty,300,6,3000\n',
             encoding='utf-8',
         )
-        result = _analyze_logs.read_dispatch_boundaries(plan_dir)
-        assert result['present'] is True
-        assert len(result['rows']) == 4
-        assert result['rows'][0]['termination_cause'] == 'voluntary_checkpoint'
-        assert result['rows'][0]['total_tokens'] == 100
-        # Legacy `unknown` rows still surface in unknown_count for the
-        # warning-severity retrospective finding.
-        assert result['unknown_count'] == 2
-        # Canonical clean-exit rows surface in the new counter for the
-        # info-severity retrospective distribution finding.
-        assert result['clean_exit_queue_empty_count'] == 1
+        # Phase-4-plan artifact — new dispatch surface in this lesson.
+        (plan_dir / 'work' / 'metrics-dispatch-boundaries-4-plan.toon').write_text(
+            'plan_id: with-boundary\n'
+            'phase: 4-plan\n'
+            'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:\n'
+            '2026-05-08T14:00:00Z,task_batch_complete,500,10,5000\n',
+            encoding='utf-8',
+        )
+        # Phase-6-finalize artifact — per-step recorder.
+        (plan_dir / 'work' / 'metrics-dispatch-boundaries-6-finalize.toon').write_text(
+            'plan_id: with-boundary\n'
+            'phase: 6-finalize\n'
+            'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:\n'
+            '2026-05-08T14:00:00Z,step_complete,600,12,6000\n'
+            '2026-05-08T14:01:00Z,step_complete,700,14,7000\n',
+            encoding='utf-8',
+        )
+
+        result = _analyze_logs.read_dispatch_boundaries_per_phase(plan_dir)
+        # All three phases surface as top-level keys.
+        assert set(result.keys()) == {'4-plan', '5-execute', '6-finalize'}
+
+        # Phase-5-execute counters carry through verbatim from the legacy parser.
+        p5 = result['5-execute']
+        assert p5['present'] is True
+        assert len(p5['rows']) == 3
+        assert p5['rows'][0]['termination_cause'] == 'voluntary_checkpoint'
+        assert p5['unknown_count'] == 1
+        assert p5['clean_exit_queue_empty_count'] == 1
+
+        # Phase-4-plan boundary row.
+        p4 = result['4-plan']
+        assert p4['present'] is True
+        assert len(p4['rows']) == 1
+        assert p4['rows'][0]['termination_cause'] == 'task_batch_complete'
+
+        # Phase-6-finalize per-step rows.
+        p6 = result['6-finalize']
+        assert p6['present'] is True
+        assert len(p6['rows']) == 2
+        assert all(r['termination_cause'] == 'step_complete' for r in p6['rows'])
 
     # ------------------------------------------------------------------
     # Integration: cmd_run end-to-end
     # ------------------------------------------------------------------
 
-    def test_cmd_run_surfaces_phase5_logging_gaps(self, tmp_path, monkeypatch):
-        """End-to-end: cmd_run emits a phase5_logging_gaps block under the live
-        plan dir containing all four extractor outputs."""
+    def test_cmd_run_surfaces_phase5_logging_gaps_and_top_level_dispatch_boundaries(
+        self, tmp_path, monkeypatch
+    ):
+        """End-to-end: cmd_run emits phase5_logging_gaps (three extractors) and
+        a top-level dispatch_boundaries per-phase dict.
+
+        Lesson 2026-05-20-12-002 restructured ``dispatch_boundaries`` from a
+        sub-key of ``phase5_logging_gaps`` to a top-level fragment so the
+        compile-report renderer can emit a dedicated section keyed by phase.
+        """
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
 
-        # Add a tasks/ dir + dispatch-boundary artifact so all four extractors
-        # have inputs to surface.
+        # Add a tasks/ dir + boundary artifacts for all three phases.
         (plan_dir / 'tasks').mkdir(parents=True, exist_ok=True)
         (plan_dir / 'tasks' / 'TASK-001.json').write_text(
             json.dumps({'number': 1, 'title': 'A', 'status': 'done'}),
@@ -479,20 +509,54 @@ class TestPhase5LoggingGapExtractors:
             '2026-05-08T14:00:00Z,unknown,100,2,1000\n',
             encoding='utf-8',
         )
+        (plan_dir / 'work' / 'metrics-dispatch-boundaries-4-plan.toon').write_text(
+            'plan_id: ' + plan_id + '\n'
+            'phase: 4-plan\n'
+            'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:\n'
+            '2026-05-08T14:00:00Z,task_batch_complete,500,10,5000\n',
+            encoding='utf-8',
+        )
+        (plan_dir / 'work' / 'metrics-dispatch-boundaries-6-finalize.toon').write_text(
+            'plan_id: ' + plan_id + '\n'
+            'phase: 6-finalize\n'
+            'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:\n'
+            '2026-05-08T14:00:00Z,step_complete,600,12,6000\n',
+            encoding='utf-8',
+        )
 
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         assert result.success, result.stderr
         data = result.toon()
 
+        # phase5_logging_gaps keeps the three extractor sub-keys (the prior
+        # ``dispatch_boundaries`` sub-key has been hoisted out — see below).
         gaps = data['phase5_logging_gaps']
-        # All four extractor blocks present.
         assert 'outcome_pairing' in gaps
         assert 'dispatch_clustering' in gaps
         assert 'outcome_for_diffed_tasks' in gaps
-        assert 'dispatch_boundaries' in gaps
+        assert 'dispatch_boundaries' not in gaps
 
-        # The dispatch-boundaries block reflects the artifact we wrote.
-        boundaries = gaps['dispatch_boundaries']
-        # TOON parser may keep nested dicts intact — accept either structured
-        # or stringified shape.
-        assert str(boundaries.get('present', boundaries)).lower().startswith('true')
+        # Top-level dispatch_boundaries surfaces every phase artifact discovered
+        # by the glob.
+        boundaries = data['dispatch_boundaries']
+        for phase in ('4-plan', '5-execute', '6-finalize'):
+            assert phase in boundaries, f'expected {phase} key in dispatch_boundaries'
+
+    def test_cmd_run_dispatch_boundaries_empty_when_no_artifacts(self, tmp_path, monkeypatch):
+        """When no boundary artifacts exist the top-level key is an empty dict
+        (vs. absent) — the compile-report renderer's gate distinguishes the
+        two states.
+        """
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+        # Key is present and empty (per the generalised reader contract).
+        assert 'dispatch_boundaries' in data
+        # The TOON parser may render an empty dict as an empty-string-like or
+        # empty-iterable value — accept any falsy representation.
+        boundaries = data['dispatch_boundaries']
+        if isinstance(boundaries, dict):
+            assert boundaries == {}
+        else:
+            assert not boundaries

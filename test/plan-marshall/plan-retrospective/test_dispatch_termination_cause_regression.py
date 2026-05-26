@@ -218,8 +218,10 @@ class TestDispatchTerminationCauseCleanExitReplay:
         assert result.success, result.stderr
         data = result.toon()
 
-        gaps = data['phase5_logging_gaps']
-        boundaries = gaps['dispatch_boundaries']
+        # `dispatch_boundaries` is now a top-level per-phase-keyed dict
+        # (lesson 2026-05-20-12-002 generalised the prior phase-5-only
+        # nested fragment).
+        boundaries = data['dispatch_boundaries']['5-execute']
 
         # Precondition for the LLM rule — the artifact exists.
         present = boundaries['present']
@@ -294,8 +296,10 @@ class TestDispatchTerminationCauseLegacyUnknownWarning:
         assert result.success, result.stderr
         data = result.toon()
 
-        gaps = data['phase5_logging_gaps']
-        boundaries = gaps['dispatch_boundaries']
+        # `dispatch_boundaries` is now a top-level per-phase-keyed dict
+        # (lesson 2026-05-20-12-002 generalised the prior phase-5-only
+        # nested fragment).
+        boundaries = data['dispatch_boundaries']['5-execute']
 
         # Precondition for the LLM warning branch — the artifact exists.
         present = boundaries['present']

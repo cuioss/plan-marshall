@@ -646,6 +646,26 @@ FOR each step_id in manifest.phase_6.steps:
 
       The script reads `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` (initialising it on first call), sums in the supplied values, increments the `samples` counter, and writes the file back. Inline steps and timed-out steps skip this call — the timeout path's cost is captured by the `manage-metrics enrich` transcript sweep inside `default:record-metrics`. Step 5b runs at most once per dispatched agent return; do NOT also append the totals to a model-context variable.
 
+  5c. Record dispatch-boundary row for the just-returned step (per-step, only when 5b also ran):
+      Apply the SAME gate as 5b — fire only when the step ran as a Task agent and did NOT time out. Inline-only steps (commit-push, architecture-refresh, branch-cleanup, record-metrics, archive-plan, project:finalize-step-deploy-target, project:finalize-step-sync-plugin-cache, project:finalize-step-regenerate-executor) skip this call uniformly, mirroring the 5b gate. The call fires per-step — once for each dispatched finalize step return — NOT once per phase entry.
+
+      Classify the step's return into exactly one of the four phase-6-finalize termination causes:
+
+      | Cause | Detection rule |
+      |-------|----------------|
+      | `step_complete` | The dispatched step returned cleanly (its `mark-step-done` call recorded `outcome: done`). |
+      | `blocked_user_review` | The dispatched step raised an `AskUserQuestion` review gate that halted dispatch (e.g., branch-cleanup confirmation, sonar-roundtrip `loop_back` prompt under `loop_back_without_asking=false`). |
+      | `blocked_session_restart` | The dispatch was cut short by a session restart, harness cancellation, or the per-agent timeout budget firing (timeout block at item 5 above). |
+      | `error` | The dispatched step's `mark-step-done` call recorded `outcome: failed`. |
+
+      Forward the `<usage>` totals captured by 5b (total_tokens, tool_uses, duration_ms):
+
+         python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
+           --plan-id {plan_id} --phase 6-finalize --termination-cause {step_complete|blocked_user_review|blocked_session_restart|error} \
+           --total-tokens {total_tokens} --tool-uses {tool_uses} --duration-ms {duration_ms}
+
+      The accumulating artifact at `work/metrics-dispatch-boundaries-6-finalize.toon` is the per-step audit trail that `plan-retrospective` correlates with finalize-step `[STEP]` log coverage; the same shape as the phase-5-execute boundary artifact, generalised to per-phase keying (lesson `2026-05-20-12-002`).
+
   6. Capture archive result (only when step_id == "archive-plan"):
      Record the returned `archive_path` into model context alongside the pre-archive snapshot — it is consumed by Step 4 (Render Final Output Template).
 

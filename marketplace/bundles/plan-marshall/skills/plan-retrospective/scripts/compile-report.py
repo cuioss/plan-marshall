@@ -47,6 +47,11 @@ _SECTION_SPEC: tuple[tuple[str, str, str | None], ...] = (
     ('Goals vs Outcomes', 'request-result-alignment', None),
     ('Artifact Consistency', 'artifact-consistency', None),
     ('Log Analysis', 'log-analysis', None),
+    # Phase Dispatch Boundaries — gated on the presence of at least one phase
+    # entry with ``present: true``. The trigger key is the per-phase fragment
+    # itself; the should_emit dispatch surfaces a dedicated boundary-presence
+    # branch (lesson 2026-05-20-12-002).
+    ('Phase Dispatch Boundaries', 'dispatch_boundaries', 'dispatch_boundaries'),
     ('Invariant Outcomes', 'invariant-summary', None),
     ('Plan Efficiency', 'plan-efficiency', None),
     ('LLM-to-Script Opportunities', 'llm-to-script-opportunities', None),
@@ -99,11 +104,37 @@ def load_fragments(fragments_path: Path) -> dict[str, Any]:
     return parsed
 
 
+def _dispatch_boundaries_has_present_phase(fragment: Any) -> bool:
+    """Return True when at least one phase entry reports ``present: true``.
+
+    The dispatch_boundaries fragment is structurally a per-phase dict
+    keyed by phase name (e.g. ``"4-plan"``, ``"5-execute"``, ``"6-finalize"``).
+    Each value is the per-file shape from analyze-logs.read_dispatch_boundaries_per_phase
+    (``present``, ``rows``, ``unknown_count``, ``clean_exit_queue_empty_count``).
+    The section emits when at least one phase has ``present: true``.
+    """
+    if not isinstance(fragment, dict) or not fragment:
+        return False
+    for phase_data in fragment.values():
+        if not isinstance(phase_data, dict):
+            continue
+        present = phase_data.get('present')
+        # Accept both Python bool True and the string ``"true"`` (TOON parser
+        # may keep boolean values as strings depending on the load path).
+        if present is True or str(present).lower() == 'true':
+            return True
+    return False
+
+
 def should_emit(section_key: str, trigger_key: str | None, fragments: dict[str, Any]) -> bool:
     """Conditional sections emit only when their fragment has non-empty data."""
     if trigger_key is None:
         return True
     fragment = fragments.get(trigger_key)
+    # Dispatch_boundaries is a per-phase dict, NOT a status-wrapped fragment —
+    # gate on at least one phase entry with ``present: true``.
+    if trigger_key == 'dispatch_boundaries':
+        return _dispatch_boundaries_has_present_phase(fragment)
     if not isinstance(fragment, dict):
         return False
     # Accept only success-status fragments with meaningful content.
@@ -123,6 +154,40 @@ def should_emit(section_key: str, trigger_key: str | None, fragments: dict[str, 
     if trigger_key == 'manifest-decisions' and fragment.get('manifest_present') is True:
         return True
     return False
+
+
+def render_dispatch_boundaries_body(fragment: Any) -> str:
+    """Render the Phase Dispatch Boundaries section body.
+
+    Emits a markdown table with one row per recorded phase, columns:
+    ``phase | rows | unknown_count | clean_exit_queue_empty_count``. Falls
+    back to a generic JSON dump after the table for the full fragment data.
+    """
+    import json
+
+    if not isinstance(fragment, dict) or not fragment:
+        return '_No dispatch-boundary artifacts present._\n'
+
+    lines = [
+        '| phase | rows | unknown_count | clean_exit_queue_empty_count |',
+        '|-------|------|---------------|------------------------------|',
+    ]
+    for phase in sorted(fragment.keys()):
+        phase_data = fragment[phase]
+        if not isinstance(phase_data, dict):
+            continue
+        present = phase_data.get('present')
+        if not (present is True or str(present).lower() == 'true'):
+            continue
+        rows = phase_data.get('rows', [])
+        row_count = len(rows) if isinstance(rows, list) else 0
+        unknown_count = phase_data.get('unknown_count', 0)
+        clean_count = phase_data.get('clean_exit_queue_empty_count', 0)
+        lines.append(f'| {phase} | {row_count} | {unknown_count} | {clean_count} |')
+
+    table_block = '\n'.join(lines) + '\n\n'
+    data_block = '```json\n' + json.dumps(fragment, indent=2, default=str) + '\n```\n'
+    return table_block + data_block
 
 
 def render_section_body(fragment: Any) -> str:
@@ -217,7 +282,12 @@ def build_document(
             omitted.append(heading)
             continue
         fragment = fragments.get(fragment_key)
-        body = render_section_body(fragment)
+        # Dispatch_boundaries uses a dedicated per-phase table renderer; every
+        # other fragment falls back to the generic JSON+findings renderer.
+        if fragment_key == 'dispatch_boundaries':
+            body = render_dispatch_boundaries_body(fragment)
+        else:
+            body = render_section_body(fragment)
         parts.append(f'## {heading}\n\n{body}')
         written.append(heading)
 
