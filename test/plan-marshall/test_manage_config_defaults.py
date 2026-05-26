@@ -147,3 +147,101 @@ class TestCiVerifyRegistration:
             "BUILT_IN_FINALIZE_STEP_DESCRIPTIONS['default:ci-verify'] "
             'must be a non-empty string'
         )
+
+
+class TestFinalizeStepDescriptionDrift:
+    """``BUILT_IN_FINALIZE_STEP_DESCRIPTIONS`` is the user-facing source of
+    truth surfaced by ``list-finalize-steps`` and the wizard. Each entry
+    MUST stay in lockstep with its workflow doc. Q-Gate validation in
+    phase-2-refine of plan ``built-in-finalize-step-descriptions-must-stay-in``
+    surfaced three drift defects this class regresses against:
+
+    - ``default:sonar-roundtrip`` — must name the
+      ``requires: [ci-complete]`` precondition declared in
+      ``sonar-roundtrip.md`` frontmatter.
+    - ``default:branch-cleanup`` — must describe the create-pr-presence
+      adaptation, NOT imply PR-merge is mandatory.
+    - ``default:lessons-capture`` — must match the clarified-request string
+      exactly, advertising the Signal Gate skip-conditional behavior.
+    """
+
+    _READABILITY_BOUND = 200
+    """Per the deliverable Success Criteria: descriptions must stay ≤200
+    chars so ``list-finalize-steps`` output remains readable."""
+
+    def test_sonar_roundtrip_names_ci_complete_precondition(self) -> None:
+        """``default:sonar-roundtrip`` description MUST contain
+        ``requires: [ci-complete]`` so the precondition is visible in the
+        wizard / ``list-finalize-steps`` surface, mirroring the shape
+        already used by ``default:ci-verify`` and
+        ``default:automated-review``."""
+        descriptions = _config_defaults.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
+        text = descriptions['default:sonar-roundtrip']
+        assert 'requires: [ci-complete]' in text, (
+            "BUILT_IN_FINALIZE_STEP_DESCRIPTIONS['default:sonar-roundtrip'] "
+            "must name the 'requires: [ci-complete]' precondition declared "
+            'in sonar-roundtrip.md frontmatter — current text: ' + repr(text)
+        )
+
+    def test_branch_cleanup_drops_pr_merge_only_phrasing(self) -> None:
+        """``default:branch-cleanup`` MUST NOT contain the old
+        ``Merge PR (with --delete-branch) and pull latest`` phrasing —
+        that text implies PR-merge is mandatory but the step adapts
+        based on whether ``create-pr`` is present in the manifest."""
+        descriptions = _config_defaults.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
+        text = descriptions['default:branch-cleanup']
+        assert 'Merge PR (with --delete-branch) and pull latest' not in text, (
+            "BUILT_IN_FINALIZE_STEP_DESCRIPTIONS['default:branch-cleanup'] "
+            "must not retain the legacy 'Merge PR (with --delete-branch) "
+            "and pull latest' phrasing — current text: " + repr(text)
+        )
+
+    def test_branch_cleanup_describes_conditional_adaptation(self) -> None:
+        """``default:branch-cleanup`` MUST mention either ``create-pr``,
+        ``conditionally``, or ``adapts`` so the conditional shape is
+        visible in the description surface."""
+        descriptions = _config_defaults.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
+        text = descriptions['default:branch-cleanup']
+        markers = ('create-pr', 'conditionally', 'adapts')
+        assert any(marker in text for marker in markers), (
+            "BUILT_IN_FINALIZE_STEP_DESCRIPTIONS['default:branch-cleanup'] "
+            'must mention one of ' + repr(markers) + ' to capture the '
+            'conditional adaptation based on create-pr presence — current '
+            'text: ' + repr(text)
+        )
+
+    def test_lessons_capture_matches_clarified_request_string(self) -> None:
+        """``default:lessons-capture`` MUST equal the clarified-request
+        string verbatim — the exact wording is part of the request
+        contract and downstream consumers may grep for the substring
+        ``skipped when qgate_findings=0`` to detect the Signal Gate
+        behavior advertised here."""
+        descriptions = _config_defaults.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
+        expected = (
+            'Capture lessons from triage findings and PR-review '
+            'escalations (skipped when qgate_findings=0, '
+            'pr_comments_promoted=0, and script_failure_clusters=0)'
+        )
+        assert descriptions['default:lessons-capture'] == expected, (
+            "BUILT_IN_FINALIZE_STEP_DESCRIPTIONS['default:lessons-capture'] "
+            'must match the clarified-request string exactly — expected: '
+            + repr(expected)
+            + ', got: '
+            + repr(descriptions['default:lessons-capture'])
+        )
+
+    def test_updated_descriptions_within_readability_bound(self) -> None:
+        """All three updated descriptions MUST stay ≤200 chars to keep
+        ``list-finalize-steps`` output readable."""
+        descriptions = _config_defaults.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
+        for key in (
+            'default:sonar-roundtrip',
+            'default:branch-cleanup',
+            'default:lessons-capture',
+        ):
+            text = descriptions[key]
+            assert len(text) <= self._READABILITY_BOUND, (
+                f"BUILT_IN_FINALIZE_STEP_DESCRIPTIONS[{key!r}] exceeds "
+                f'{self._READABILITY_BOUND}-char readability bound — '
+                f'length={len(text)}, text={text!r}'
+            )

@@ -18,9 +18,9 @@ Every `manage-*` script call in this document carries the following exit-code co
 
 See also `standards/lessons-integration.md` for conceptual guidance on when and what to capture.
 
-This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `lessons-capture` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
+This document carries body-level skip-conditional branching: when no lesson-bearing signals are present, the Signal Gate below short-circuits with `outcome=skipped` before any LLM dispatch. Dispatcher-level activation is controlled by `phase-6-finalize/SKILL.md` Step 3 and is driven by presence of `lessons-capture` in `manifest.phase_6.steps`; reaching this body is necessary but no longer sufficient to trigger the `post-run-review` LLM.
 
-**Unconditional dispatch when manifested**: Whenever this step appears in the manifest, the dispatcher runs it on every Phase 6 entry. It is NOT gated on PR state, CI status, Sonar gate result, or any earlier step's outcome — reaching Phase 6 is itself the trigger. The composer in `manage-execution-manifest:compose` includes `lessons-capture` for every change-type that produces non-trivial work (the rule-1 early-terminate analysis path is the only documented exclusion).
+**Conditional dispatch based on signal presence**: Whenever this step appears in the manifest, the dispatcher runs the body on every Phase 6 entry, but the body itself decides whether the LLM dispatch fires. The decision reads three signal sources: (1) pending Q-Gate findings via `manage-findings qgate list --resolution pending` (`total_count`), (2) the `automated-review` step's outcome via `manage-status read` (treating outcomes other than `done` and non-zero promoted-comment counts as signals), and (3) script-failure clusters in the work log via `manage-logging read --type work` (counting distinct failing script notations in `[FAILED]` markers). When all three counts are zero, the Signal Gate emits `mark-step-done --outcome skipped --display-detail "no lesson-bearing signals"` and returns early; otherwise the body proceeds into the three-step path-allocate flow. The composer in `manage-execution-manifest:compose` includes `lessons-capture` for every change-type that produces non-trivial work (the rule-1 early-terminate analysis path is the only documented exclusion).
 
 This step runs as a Task dispatch under the `post-run-review` sub-key (resolved via `manage-config effort resolve-target --phase phase-6-finalize --role post-run-review`) with a 5-minute (300 s) per-agent timeout budget enforced by the SKILL.md Step 3 dispatch loop. The dispatcher emits the standardized `[DISPATCH]` work-log line at the call site — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) for the canonical emission contract. The `post-run-review` sub-key bundles lessons-capture with retrospective — both workflows look back at the full plan history and ride the same level. On timeout the dispatcher records `outcome=failed` with `display_detail="timed out after 300s"` and continues — lessons capture is advisory and never blocks the rest of the pipeline.
 
@@ -35,6 +35,57 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ```
 
 ## Execution
+
+### Signal Gate (early-return guard)
+
+Before loading `manage-lessons` and BEFORE any `Task:` dispatch, evaluate three signal sources. When ALL THREE counts are zero, short-circuit with `outcome=skipped` and return `status: success, lessons_recorded: 0` — do NOT enter the three-step add flow below.
+
+**Signal 1 — pending Q-Gate findings**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate list --plan-id {plan_id} --resolution pending
+```
+
+Parse `total_count` from the TOON output. Non-zero ⇒ continue past the gate.
+
+**Signal 2 — `automated-review` step outcome**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
+  read --plan-id {plan_id}
+```
+
+Locate the `automated-review` step under `metadata.phase_steps["6-finalize"]`. Treat any of the following as a non-zero signal ⇒ continue: (a) `outcome` is anything other than `done`, (b) `display_detail` reports a non-zero promoted-comment count (e.g. `"3 comments promoted"`). Outcome `done` with zero promoted comments ⇒ signal count zero.
+
+**Signal 3 — script-failure clusters**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  read --plan-id {plan_id} --type work
+```
+
+Scan the returned log lines for `[FAILED]` markers and bucket them by distinct failing script notation (the `bundle:skill:script` token in the `[FAILED]` line). The cluster count is the number of distinct notations. Non-zero ⇒ continue.
+
+**Skip branch — all three counts zero**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome skipped \
+  --display-detail "no lesson-bearing signals"
+```
+
+Return immediately with:
+
+```toon
+status: success
+display_detail: "no lesson-bearing signals"
+lessons_recorded: 0
+```
+
+Do NOT load `manage-lessons`, do NOT enter the three-step add flow, and do NOT dispatch the `post-run-review` Task.
+
+**Continue branch — at least one signal non-zero**: proceed to the `Skill: plan-marshall:manage-lessons` load below and run the standard three-step add flow.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -110,11 +161,19 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "no lessons recorded"
 ```
 
+**Branch C — no lesson-bearing signals (skip)**: emitted by the Signal Gate above when all three signal counts are zero. Recorded with `--outcome skipped` rather than `--outcome done` to distinguish the structural short-circuit from a normal advisory pass-through:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome skipped \
+  --display-detail "no lesson-bearing signals"
+```
+
 ## Output
 
 ```toon
 status: success | error
-display_detail: "<{N} lessons recorded or `no lessons recorded`>"
+display_detail: "<{N} lessons recorded or `no lessons recorded` or `no lesson-bearing signals`>"
 lessons_recorded: {N}
 ```
 
