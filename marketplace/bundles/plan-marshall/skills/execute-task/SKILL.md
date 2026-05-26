@@ -334,7 +334,7 @@ Run verification commands without modifying files.
         run --command "{step.target}" --worktree-path "{resolved_worktree_path}"
       ```
 
-      Parse the TOON output. Use the `rewritten_command` value as the command to execute. When `worktree_path` is empty (main-checkout flow), skip the helper and execute the raw `step.target`.
+      Parse the `TOON` output. Use the `rewritten_command` value as the command to execute. When `worktree_path` is empty (main-checkout flow), skip the helper and execute the raw `step.target`.
 
    b. Execute the resulting command with a Bash timeout of **at least 600000ms (10 minutes)** — verification commands routinely include `quality-gate`, `verify`, and `coverage` invocations that exceed default timeouts. The 10-minute floor matches `CLAUDE.md` § Build Commands.
 
@@ -346,7 +346,7 @@ Run verification commands without modifying files.
         --message "[VERIFY] (plan-marshall:execute-task) Auto-injected --project-dir for {notation} (resolved from --plan-id {plan_id})"
       ```
 
-   Check exit code and output of the executed command. This step mirrors the Common Workflow → Step: Run Verification sub-step; see that section for the authoritative whitelist of Bucket B notations, the no-inject pass-through rule for Bucket A `manage-*` notations, and the rationale for skipping injection when the command already supplies `--plan-id`.
+   Check exit code and output of the executed command. This step mirrors the Common Workflow → Step: Run Verification sub-step; see that section for the authoritative whitelist of `Bucket B` notations, the no-inject pass-through rule for `Bucket A` `manage-*` notations, and the rationale for skipping injection when the command already supplies `--plan-id`.
 
 3. **Mark Step Complete** (common step)
 4. **Handle Failures**: This is a verification task — do NOT modify source files. Report failures with structured output for triage. If verification fails, mark task as `blocked`.
