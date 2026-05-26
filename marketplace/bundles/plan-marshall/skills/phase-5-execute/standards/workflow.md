@@ -1,3 +1,7 @@
+---
+description: Plan execute workflow reference covering exit-code convention, execution pattern, and artifact emission
+---
+
 # Plan Execute Workflow
 
 ## Exit-code convention for `manage-*` script calls

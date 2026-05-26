@@ -2,6 +2,7 @@
 name: default:quality_check
 description: Run quality-gate build command
 order: 10
+role: quality-gate
 ---
 
 # Quality Check

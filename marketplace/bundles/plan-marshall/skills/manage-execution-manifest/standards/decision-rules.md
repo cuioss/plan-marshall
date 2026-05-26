@@ -120,9 +120,19 @@ When `ci_provider` is neither `github` nor `gitlab`, OR `default:automated-revie
 
 **Safety-net error path**: The function still has a non-`None` return contract (`str | None`) and the caller (`cmd_compose`) still translates a non-`None` return into a `bot_enforcement_violation` error TOON. In current code this branch is unreachable — the guard either no-ops (returns `None`) or remediates and returns `None`. The branch is retained as a hook for any future logic that detects a non-remediable violation (e.g., a malformed `phase_6_steps` list), so the legacy `bot-enforcement guard fired` log line and error TOON shape remain documented in the codebase even though they are not exercised by the current control flow.
 
+## Role-Field Intersection
+
+Rows 2, 3, 5, and 6 intersect the `phase_5_candidates` list against a set of canonical roles (`{quality-gate}`, `{module-tests}`, `{quality-gate, module-tests}`) rather than against literal step IDs. The mechanism is structural: each phase-5 step standards file under `marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/` declares its role in YAML frontmatter (e.g., `role: quality-gate` on `quality_check.md`, `role: module-tests` on `build_verify.md`, `role: coverage` on `coverage_check.md`). At compose time the composer resolves each candidate step ID to its source file and reads the `role:` value; intersection is `candidate_role ∈ {target_role, ...}` rather than `candidate_id ∈ {literal_id, ...}`.
+
+This decouples canonical names from intersection logic. The composer never compares candidate step IDs directly against literal strings like `'quality-gate'` — those names are role values, not step IDs. Step IDs are arbitrary handles (e.g., `default:quality_check`, `default:build_verify`) whose intersection-meaningful attribute is the role declared in their source file.
+
+**External steps** (`project:` and `bundle:skill` prefixes) have no role file and resolve to `role = None`; they are therefore never selected by any role-based intersection. This is the correct behavior: Rows 2/3/5/6 select built-in verify steps only.
+
+**Drift enforcement**: A `MISSING_ROLE_FIELD` analyzer in `pm-plugin-development:plugin-doctor` flags any phase-5 step standards file missing the `role:` frontmatter field at edit time, preventing future name-drift defects.
+
 ## The Seven-Row Matrix
 
-The seven rows below are evaluated top-down; the first match wins. They operate on the (possibly pre-filtered) `phase_6_candidates` list described above.
+The seven rows below are evaluated top-down; the first match wins. They operate on the (possibly pre-filtered) `phase_6_candidates` list described above. Rows 2, 3, 5, and 6 use the structural role intersection described above for their `phase_5.verification_steps` outputs; Rows 1, 4, and 7 do not consult roles (Row 1 produces an empty list, Row 4 still matches a single literal role, Row 7 passes the candidate list through unchanged).
 
 ### Row 1 — `early_terminate_analysis`
 
@@ -141,14 +151,14 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 
 **Outcome**:
 - `phase_5.early_terminate = false`
-- `phase_5.verification_steps = phase_5_candidates ∩ {quality-gate, module-tests}`
+- `phase_5.verification_steps` = the candidates from `phase_5_candidates` whose declared `role:` ∈ `{quality-gate, module-tests}` (see [Role-Field Intersection](#role-field-intersection))
 - `phase_6.steps = phase_6_candidates − {ci-wait}`
 
 **Why**: Recipe-driven plans (currently `recipe-refactor-to-profile-standards` and the upcoming `recipe-lesson-cleanup` from deliverable 7) follow deterministic, surgical-style patterns. The only subtraction here is the legacy `ci-wait` step ID — kept as a defensive narrowing against project marshal.json files that still list it as a candidate. Review gates a project opted into (`automated-review`, `sonar-roundtrip`) are NEVER silently suppressed by the planner: the recipe label is exactly the case where the bots' job is to catch what humans miss. CI completion is now a dispatcher-resolved precondition (declared via `requires: [ci-complete]` on consumer step frontmatters), not a sibling step.
 
 ### Row 3 — `docs_only`
 
-**Condition**: `scope_estimate ∈ {surgical, single_module}` AND `change_type ∈ {tech_debt, enhancement}` AND `affected_files_count > 0` AND `phase_5_candidates` lacks both `module-tests` and `coverage`.
+**Condition**: `scope_estimate ∈ {surgical, single_module}` AND `change_type ∈ {tech_debt, enhancement}` AND `affected_files_count > 0` AND no candidate in `phase_5_candidates` declares `role: module-tests` or `role: coverage` (see [Role-Field Intersection](#role-field-intersection)).
 
 **Outcome**:
 - `phase_5.early_terminate = false`
@@ -163,7 +173,7 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 
 **Outcome**:
 - `phase_5.early_terminate = false`
-- `phase_5.verification_steps = phase_5_candidates ∩ {module-tests}`
+- `phase_5.verification_steps` = the candidates from `phase_5_candidates` whose declared `role:` == `module-tests` (see [Role-Field Intersection](#role-field-intersection))
 - `phase_6.steps = phase_6_candidates` (full set)
 
 **Why**: The plan only changes tests; we want the test suite to run but `quality-gate` is overkill since no production code moved. Phase 6 stays unconditional because new test signal benefits from the full review cycle.
@@ -174,7 +184,7 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 
 **Outcome**:
 - `phase_5.early_terminate = false`
-- `phase_5.verification_steps = phase_5_candidates ∩ {quality-gate, module-tests}`
+- `phase_5.verification_steps` = the candidates from `phase_5_candidates` whose declared `role:` ∈ `{quality-gate, module-tests}` (see [Role-Field Intersection](#role-field-intersection))
 - `phase_6.steps = phase_6_candidates − {ci-wait}`
 
 **Why**: Surgical bug fixes and tech-debt nudges have already passed the Q-Gate bypass at outline time (deliverable 4). The only subtraction here is the legacy `ci-wait` step ID — kept as a defensive narrowing against project marshal.json files that still list it as a candidate. Review gates a project opted into (`automated-review`, `sonar-roundtrip`) are NEVER silently suppressed by the planner: surgical bug_fix / tech_debt is exactly the case where the bots' job is to catch what humans miss on a one-line fix. We keep `lessons-capture` so any lesson observed during execution is still captured. CI completion is now a dispatcher-resolved precondition (declared via `requires: [ci-complete]` on consumer step frontmatters), not a sibling step.

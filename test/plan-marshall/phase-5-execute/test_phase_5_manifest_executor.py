@@ -193,8 +193,15 @@ class TestExecutorDispatchScenarios:
             assert dispatched[-1] == 'quality-gate'
 
     def test_just_module_tests_fires_module_tests_then_quality_sweep(self):
-        """Tests-only candidate set → only module-tests in verification_steps,
-        then Step 11b appends a single quality-gate sweep."""
+        """Tests-only candidate set (role-based intersection) → only the
+        candidate with ``role: module-tests`` survives Row 4's intersection;
+        then Step 11b appends a single quality-gate sweep.
+
+        Row 4 intersects candidates by ``role: module-tests`` (see
+        manage-execution-manifest decision-rules.md § Role-Field Intersection).
+        Only ``build_verify`` declares that role; ``quality_check`` and
+        ``coverage_check`` are dropped.
+        """
         with PlanContext(plan_id='p5-tests-only'):
             cmd_compose(
                 _compose_ns(
@@ -202,16 +209,16 @@ class TestExecutorDispatchScenarios:
                     change_type='verification',
                     scope_estimate='single_module',
                     affected_files_count=4,
-                    phase_5_steps='quality-gate,module-tests,coverage',
+                    phase_5_steps='quality_check,build_verify,coverage_check',
                 )
             )
             manifest = read_manifest('p5-tests-only')
             assert manifest is not None
-            assert manifest['phase_5']['verification_steps'] == ['module-tests']
+            assert manifest['phase_5']['verification_steps'] == ['build_verify']
 
             dispatched = _derive_executor_dispatch(manifest)
-            assert dispatched == ['module-tests', 'quality-gate'], (
-                f'tests-only manifest must dispatch [module-tests, quality-gate] '
+            assert dispatched == ['build_verify', 'quality-gate'], (
+                f'tests-only manifest must dispatch [build_verify, quality-gate] '
                 f'(per-task + Step 11b sweep), got {dispatched}'
             )
             # Exactly ONE quality-gate sweep — Step 11b never doubles up.

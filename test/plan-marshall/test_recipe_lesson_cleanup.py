@@ -528,6 +528,11 @@ class TestRecipePathEndToEnd:
         """Companion to the bug_fix failsafe: surgical+tech_debt also
         defensively drops the legacy ``ci-wait`` step ID while retaining
         the review gates.
+
+        Uses ``build_verify`` in the phase-5 candidate set so its declared
+        ``role: module-tests`` keeps Row 3 (docs_only) from firing first
+        — see manage-execution-manifest decision-rules.md § Role-Field
+        Intersection.
         """
         with PlanContext(plan_id='recipe-surgical-failsafe-td'):
             candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
@@ -538,7 +543,7 @@ class TestRecipePathEndToEnd:
                 scope_estimate='surgical',
                 recipe_key=None,
                 affected_files_count=2,
-                phase_5_steps='quality-gate,module-tests',
+                phase_5_steps='quality_check,build_verify',
                 phase_6_steps=','.join(candidates),
                 commit_strategy=None,
             )
