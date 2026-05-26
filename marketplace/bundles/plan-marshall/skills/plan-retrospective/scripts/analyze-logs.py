@@ -404,7 +404,7 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
       - clean_exit_queue_empty_count: number of rows with
             ``termination_cause == "clean_exit_queue_empty"``
     """
-    if not artifact.exists():
+    if not artifact.is_file():
         return {
             'present': False,
             'rows': [],
