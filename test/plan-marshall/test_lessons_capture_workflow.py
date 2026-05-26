@@ -100,17 +100,20 @@ class TestSignalGateSourcesNamed:
     the dispatcher knows which counts to read."""
 
     def test_qgate_findings_signal_named(self) -> None:
-        """Signal 1 — pending Q-Gate findings via
-        ``manage-findings qgate list --resolution pending``."""
+        """Signal 1 — pending Q-Gate findings via five per-phase
+        ``manage-findings qgate list --phase {phase} --resolution pending``
+        invocations whose ``total_count`` values are summed."""
         body = _read_workflow()
-        assert 'qgate list --plan-id {plan_id} --resolution pending' in body, (
-            'Signal Gate must invoke '
-            '"manage-findings qgate list --resolution pending" '
-            'to read pending Q-Gate finding counts'
-        )
+        for phase in ('2-refine', '3-outline', '4-plan', '5-execute', '6-finalize'):
+            needle = f'qgate list --plan-id {{plan_id}} --phase {phase} --resolution pending'
+            assert needle in body, (
+                f'Signal Gate must invoke "manage-findings qgate list" '
+                f'with --phase {phase} --resolution pending to sample '
+                f'pending Q-Gate findings in the {phase} phase'
+            )
         assert 'total_count' in body, (
-            'Signal Gate must read the "total_count" field from the '
-            'manage-findings qgate list TOON output'
+            'Signal Gate must read the "total_count" field from each '
+            'per-phase manage-findings qgate list TOON output'
         )
 
     def test_automated_review_signal_named(self) -> None:
