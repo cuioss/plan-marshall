@@ -36,7 +36,7 @@ Skill: plan-marshall:dev-agent-behavior-rules
 
 ## Dispatch shape: 9 aspects iterate inside one envelope
 
-This workflow dispatches under `--phase phase-6-finalize --role post-run-review` as **one** `execution-context-{level}` envelope. The `post-run-review` sub-key bundles retrospective with lessons-capture — both workflows look back at the full plan history and ride the same level. The 9 LLM analytical aspects (metrics, decision/work logs, references vs deliverables, deliverable vs lesson alignment, scope-deviation footprint, behavioural observations, execution-context dispatch audit, chat-history aspect when `--session-id` is present, lesson-quality audit) iterate **in-context inside that single envelope** — the orchestrator never spawns N × envelope per aspect. Bundling matches granularity Heuristic 2 (steps share context): every aspect reads the same plan artefacts, runs the same skill loads, and contributes to the same final retrospective document. Per-aspect dispatch would pay 9× envelope cost with no parallelism payoff. See [`../extension-api/standards/dispatch-granularity.md`](../extension-api/standards/dispatch-granularity.md) § 3.
+This workflow dispatches under `--phase phase-6-finalize --role post-run-review` as **one** `execution-context-{level}` envelope. The `post-run-review` sub-key bundles retrospective with lessons-capture — both workflows look back at the full plan history and ride the same level. The 8 LLM analytical aspects (metrics, decision/work logs, references vs deliverables, deliverable vs lesson alignment, scope-deviation footprint, behavioural observations, execution-context dispatch audit, chat-history aspect when `--session-id` is present, lesson-quality audit) iterate **in-context inside that single envelope** — the orchestrator never spawns N × envelope per aspect. Bundling matches granularity Heuristic 2 (steps share context): every aspect reads the same plan artefacts, runs the same skill loads, and contributes to the same final retrospective document. Per-aspect dispatch would pay 9× envelope cost with no parallelism payoff. See [`../extension-api/standards/dispatch-granularity.md`](../extension-api/standards/dispatch-granularity.md) § 3.
 
 ## Input Contract
 
@@ -120,7 +120,7 @@ For each aspect below, produce a TOON fragment on disk at `work/fragment-{aspect
 | 5 | Request-result alignment | (LLM on request.md + solution_outline.md + logs) | `references/request-result-alignment.md` |
 | 6 | LLM-to-script opportunities | (LLM on logs + scripts) | `references/llm-to-script-opportunities.md` |
 | 7 | Logging gap analysis | (LLM on references + logs) | `references/logging-gap-analysis.md` |
-| 8 | Script failure analysis | (LLM on work/script logs) | `references/script-failure-analysis.md` |
+| 8 | Script failure analysis | `script-failure-analysis` | `references/script-failure-analysis.md` |
 | 9 | Permission prompt analysis | (LLM on description or session) | `references/permission-prompt-analysis.md` |
 | 10 | Direct gh/glab usage | `direct-gh-glab-usage` | `references/direct-gh-glab-usage.md` |
 | 11 | Execution-context dispatch audit | (LLM on logs + dispatch decisions) | `standards/execution-context-dispatch-audit.md` |
@@ -136,7 +136,9 @@ The Execution-context dispatch audit (aspect 11) consumes the `[DISPATCH]` work-
 
 **Per-aspect capture pattern**:
 
-**Deterministic aspects (1-3 and 10, script-backed)** — pipe the script's stdout to the fragment file, then register it:
+**Deterministic aspects (1-3, 8, and 10, script-backed)** — pipe the script's stdout to the fragment file, then register it:
+
+The `script-failure-analysis` script (aspect 8) consumes the plan's `script-execution.log` directly and classifies non-zero-exit calls by stderr signature (`invalid choice:` → `invented_subcommand`; `the following arguments are required:` → `missing_required_flag`; `unrecognized arguments:` → `invented_flag`; non-argparse exit-1 → `script_internal_error`). The TOON fragment carries deduped `findings[]` and seed `lessons[]` for downstream classification; the orchestrator does NOT inject LLM judgement at this point. See `references/script-failure-analysis.md` for the finding shape; the LLM aspects that follow may augment the script-emitted findings with source-component tracing.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:{script} \
@@ -145,7 +147,7 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
   add --plan-id {plan_id} --aspect {name} --fragment-file work/fragment-{aspect}.toon
 ```
 
-**LLM aspects (4-9, 11, and 13)** — load the aspect reference via `Read`, produce the TOON fragment body per the reference's schema, emit it with the `Write` tool to `work/fragment-{aspect}.toon`, then register:
+**LLM aspects (4-7, 9, 11, and 13)** — load the aspect reference via `Read`, produce the TOON fragment body per the reference's schema, emit it with the `Write` tool to `work/fragment-{aspect}.toon`, then register:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \

@@ -1018,117 +1018,26 @@ def test_write_active_plan_overwrites_on_subsequent_calls(tmp_path, monkeypatch)
 
 
 # =============================================================================
-# TESTS: Pre-flight subcommand introspection (lesson 2026-04-29-23-002)
+# TESTS: AST subcommand extractor removed (lesson 2026-05-26-09-001 / plan
+# fix-generate-executor-ast-subcommands). The generator no longer emits a
+# SUBCOMMANDS dict; drift is now detected at dev-time via plugin-doctor and
+# post-hoc via plan-retrospective.
 # =============================================================================
 
 
-def test_extract_subcommands_from_source_finds_string_literals():
-    """AST walker collects every ``add_parser('name', ...)`` string-literal name."""
+def test_ast_subcommand_extractor_symbols_removed():
+    """Removed AST extractor symbols must be absent — guards against reintroduction."""
     module = load_module()
-    src = (
-        'import argparse\n'
-        "parser = argparse.ArgumentParser()\n"
-        "subs = parser.add_subparsers(dest='cmd', required=True)\n"
-        "p1 = subs.add_parser('create')\n"
-        "p2 = subs.add_parser('read', help='read it')\n"
-        "p3 = subs.add_parser('archive')\n"
-    )
-    names = module._extract_subcommands_from_source(src)
-    assert names == ['archive', 'create', 'read']
-
-
-def test_extract_subcommands_from_source_no_subparsers_returns_empty():
-    """Single-action scripts (no add_parser calls) yield an empty list."""
-    module = load_module()
-    src = (
-        'import argparse\n'
-        "parser = argparse.ArgumentParser()\n"
-        "parser.add_argument('--foo')\n"
-        "args = parser.parse_args()\n"
-    )
-    assert module._extract_subcommands_from_source(src) == []
-
-
-def test_extract_subcommands_skips_non_string_literal_args():
-    """When the first arg is not a string literal, it is skipped (not exploded)."""
-    module = load_module()
-    src = (
-        "name = 'computed'\n"
-        "subs.add_parser(name)\n"
-        "subs.add_parser('literal')\n"
-    )
-    assert module._extract_subcommands_from_source(src) == ['literal']
-
-
-def test_extract_subcommands_for_path_returns_empty_on_missing_file(tmp_path):
-    """Unreadable / missing files return an empty list, not an exception."""
-    module = load_module()
-    assert module.extract_subcommands_for_path(str(tmp_path / 'does-not-exist.py')) == []
-
-
-def test_extract_subcommands_for_path_handles_syntax_error(tmp_path):
-    """A file with a SyntaxError yields an empty list — never raises."""
-    module = load_module()
-    bad = tmp_path / 'bad.py'
-    bad.write_text("def (incomplete\n", encoding='utf-8')
-    assert module.extract_subcommands_for_path(str(bad)) == []
-
-
-def test_build_subcommands_mapping_omits_single_action_scripts(tmp_path):
-    """Notations with no declared subcommands are omitted from the mapping."""
-    module = load_module()
-    multi = tmp_path / 'multi.py'
-    multi.write_text(
-        "subs = p.add_subparsers()\n"
-        "subs.add_parser('a')\n"
-        "subs.add_parser('b')\n",
-        encoding='utf-8',
-    )
-    single = tmp_path / 'single.py'
-    single.write_text("p.add_argument('--foo')\n", encoding='utf-8')
-
-    mappings = {
-        'pkg:skill:multi': str(multi),
-        'pkg:skill:single': str(single),
-    }
-    result = module.build_subcommands_mapping(mappings)
-    assert result == {'pkg:skill:multi': ['a', 'b']}
-
-
-def test_generate_subcommands_code_emits_sorted_entries():
-    """The generated code is deterministic — entries sorted by notation."""
-    module = load_module()
-    mapping = {
-        'z:skill:script': ['x', 'y'],
-        'a:skill:script': ['m', 'n'],
-    }
-    code = module.generate_subcommands_code(mapping)
-    lines = [line for line in code.split('\n') if line.strip()]
-    assert lines[0].startswith('    "a:skill:script":')
-    assert lines[-1].startswith('    "z:skill:script":')
-    # Each entry serialises the list with double-quoted strings.
-    assert '["m", "n"]' in lines[0]
-    assert '["x", "y"]' in lines[-1]
-
-
-def test_subcommands_extracted_at_generation():
-    """A known multi-subcommand script (manage-status) has its subcommands
-    introspected and registered in the SUBCOMMANDS mapping."""
-    module = load_module()
-    manage_status_path = (
-        Path(__file__).parent.parent.parent.parent
-        / 'marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py'
-    )
-    assert manage_status_path.exists(), f'Expected real script at {manage_status_path}'
-
-    mappings = {'plan-marshall:manage-status:manage-status': str(manage_status_path)}
-    sub_map = module.build_subcommands_mapping(mappings)
-
-    assert 'plan-marshall:manage-status:manage-status' in sub_map
-    subcommands = sub_map['plan-marshall:manage-status:manage-status']
-    # manage-status registers (at minimum) these canonical subcommands.
-    for expected in ('create', 'read', 'archive', 'list'):
-        assert expected in subcommands, f'Expected `{expected}` in {subcommands}'
+    for symbol in (
+        '_extract_subcommands_from_source',
+        'extract_subcommands_for_path',
+        'build_subcommands_mapping',
+        'generate_subcommands_code',
+        'generate_subcommands_block',
+    ):
+        assert not hasattr(module, symbol), (
+            f'AST extractor symbol {symbol!r} must be removed from generate_executor.py'
+        )
 
 
 def test_write_active_plan_validate_helper_rejects_unsafe_session_id(tmp_path, monkeypatch):

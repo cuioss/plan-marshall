@@ -33,6 +33,7 @@ from pathlib import Path
 
 from _analyze_argument_naming import analyze_argument_naming
 from _analyze_lesson_id_in_skill_prose import analyze_lesson_id_in_skill_prose
+from _analyze_script_call_drift import analyze_script_call_drift
 from _analyze_shell_substitution_in_skills import analyze_shell_substitution_in_skills
 from _analyze_test_conventions import (
     analyze_subprocess_pythonpath,
@@ -74,7 +75,7 @@ SCRIPT_DIR = Path(__file__).parent
 # ``2026-05-08-19-003``) which violated the ``dev-agent-behavior-rules`` hard
 # rule against ``VAR=val cmd`` invocations.
 
-_OPTIN_RULE_NAMES = frozenset({'argument_naming', 'verb_chain'})
+_OPTIN_RULE_NAMES = frozenset({'argument_naming', 'verb_chain', 'script_call_drift'})
 
 
 def _parse_rules_flag(rules_value: str | None) -> frozenset[str]:
@@ -353,6 +354,17 @@ def cmd_analyze(args) -> dict:
     all_issues.extend(lesson_id_issues)
     total_issues += len(lesson_id_issues)
 
+    # Marketplace-wide script-call-drift rule. Gated OFF by default — opt in
+    # via ``--rules script_call_drift``. The analyzer probes --help via
+    # subprocess for every documented notation/verb pair, which costs many
+    # process spawns on the full marketplace and is unsuitable for unconditional
+    # runs. Replaces the removed runtime SUBCOMMANDS pre-flight validator
+    # with dev-time drift detection.
+    if 'script_call_drift' in active_rules:
+        script_call_drift_issues = analyze_script_call_drift(marketplace_root)
+        all_issues.extend(script_call_drift_issues)
+        total_issues += len(script_call_drift_issues)
+
     # Marketplace-wide argument-naming rule cluster (notation/subcommand/
     # flag/Canonical-Forms cross-check). Gated OFF by default; opt in via
     # ``--rules argument_naming`` or the ``--enable-argument-naming`` alias.
@@ -501,6 +513,11 @@ def cmd_quality_gate(args) -> dict:
     rule_summaries.append(
         {'rule': 'analyze_lesson_id_in_skill_prose', 'findings': len(lesson_id_findings)}
     )
+
+    # script-call-drift is intentionally NOT in quality-gate — it probes
+    # --help via subprocess for every documented notation/verb pair, which
+    # is too expensive for the build gate. Invoke via
+    # ``analyze --rules script_call_drift`` for explicit drift sweeps.
 
     return {
         'status': 'fail' if all_issues else 'pass',
