@@ -248,6 +248,49 @@ Each ADR contains these sections:
 5. **Alternatives Considered** - Options that were not chosen
 6. **References** - Related documents and links
 
+## Authoring Discipline
+
+ADRs are **durable architectural statements**, not incident write-ups. An ADR should still read as a standalone decision record years after the PR that introduced it has scrolled out of memory and the lessons file referenced at write-time has been pruned. CLAUDE.md's project-wide rules — "no version history", "no timestamps", "no duplication", "current state only" — apply to ADR content in the section-specific shapes below.
+
+### Context
+
+- Describe the architectural problem **as a class**, not as an incident narrative.
+- State the failure modes the architecture has to handle and the structural choice point those failure modes create. Do NOT recount "PR #N introduced X, the AST walker missed Y" — that's incident history, not the class of problem.
+- A reader who has never seen the originating bug should still understand why the question this ADR settles is worth settling.
+
+### Decision
+
+- State the principle in plain language; if a one-line statement of the principle exists, lead with it.
+- Describe the mechanisms that realise the decision. Name the concrete artefacts (skills, scripts, rules) but describe them in terms of the contract they enforce, not the commit that introduced them.
+
+### Consequences
+
+- Phrase consequences as **properties of the resulting architecture**, not as "what changed in PR #N".
+- "Positive / Negative / Risks" describe the steady-state behaviour the decision produces, including the residual failure modes the decision deliberately accepts.
+
+### Alternatives Considered
+
+- Each alternative describes the **architectural option on its merits** — what shape the alternative would impose, what it would solve, what it would cost.
+- The "Rejected because" prose explains the architectural failure of the alternative, not which option shipped when.
+- A summary paragraph at the end may state the principle that unifies why the alternatives fall in one class.
+
+### Generalisation (optional)
+
+- When the decision is an instance of a broader pattern, a Generalisation section may state the pattern independently of this codebase: name the underlying abstraction, the diagnostic question, the place each answer belongs.
+- The generalisation must not name project-internal artefacts. A reader from a different project should be able to apply it.
+
+### References
+
+- Link to **other ADRs**, durable architecture docs, and the canonical skill / standards files the decision affects.
+- Do NOT link to PR numbers, commit SHAs, or lesson IDs.
+  - PRs and commits are git-history artefacts; the durable address of the change is the artefact it produced (the skill, the script, the rule), not the merge commit.
+  - Lessons (`.plan/local/lessons-learned/...`) are ephemeral recurrence-detectors and may be pruned, retired, or superseded; an ADR that cross-references a specific lesson ID can develop a dangling reference. When the lesson is the recurrence-detector that ENFORCES the ADR's principle at retrospective time, link the durable artefact (the retrospective rule, the plugin-doctor check) instead.
+- Date-free phrasing: the ADR's own header carries the decision date implicitly via the ADR number's position in the sequence; section bodies should not restate or anchor to dates.
+
+### What goes into a lesson instead
+
+Lessons capture **the recurrence pattern the ADR's principle defends against** — the diagnostic signature a future maintainer might see that should remind them of the ADR's guidance. Lessons are explicitly ephemeral; ADRs are durable. If a piece of prose is "we hit this bug, watch for the pattern", it belongs in a lesson. If it's "the architecture is X because alternatives Y/Z fail in ways A/B", it belongs in the ADR.
+
 ## File Naming Convention
 
 ADRs follow this naming pattern:

@@ -3,19 +3,37 @@
 :toclevels: 2
 :sectnums:
 
+// Authoring discipline (see manage-adr SKILL.md → "Authoring Discipline"):
+// ADRs are durable architectural statements, not incident write-ups. No PR numbers,
+// commit SHAs, dates, or lesson IDs anywhere in the body. CLAUDE.md's "current state
+// only" rule applies — describe the architecture, not the chronology.
+
 == Status
 
 {{STATUS}}
 
 == Context
 
+// Describe the architectural problem AS A CLASS, not as an incident narrative.
+// State the failure modes the architecture has to handle and the structural choice
+// point those failure modes create. A reader who has never seen the originating bug
+// should still understand why the question this ADR settles is worth settling.
+
 {{CONTEXT}}
 
 == Decision
 
+// State the principle in plain language; lead with it if a one-line statement exists.
+// Describe the mechanisms (skills, scripts, rules) that realise the decision in terms
+// of the contract they enforce, not the commit that introduced them.
+
 {{DECISION}}
 
 == Consequences
+
+// Phrase consequences as PROPERTIES OF THE RESULTING ARCHITECTURE, not as "what
+// changed in PR #N". Positive / Negative / Risks describe the steady-state behaviour
+// the decision produces, including residual failure modes deliberately accepted.
 
 === Positive
 
@@ -31,8 +49,27 @@
 
 == Alternatives Considered
 
+// Each alternative describes the architectural option ON ITS MERITS — what shape it
+// would impose, what it would solve, what it would cost. "Rejected because" prose
+// explains the architectural failure, not which option shipped when. A closing
+// paragraph may state the principle that unifies why the alternatives fall in one
+// class.
+
 {{ALTERNATIVES}}
 
 == References
+
+// Link to OTHER ADRs, durable architecture docs, and canonical skill / standards
+// files the decision affects.
+//
+// Do NOT link to:
+// - PR numbers or commit SHAs (git-history artefacts; reference the artefact the
+//   change produced — the skill, script, rule — instead)
+// - Lesson IDs (.plan/local/lessons-learned/...) (ephemeral recurrence-detectors;
+//   may be pruned or superseded, creating dangling references)
+//
+// When a lesson is the recurrence-detector that enforces this ADR's principle at
+// retrospective time, link the durable artefact (the retrospective rule, the
+// plugin-doctor check) instead of the lesson ID.
 
 {{REFERENCES}}
