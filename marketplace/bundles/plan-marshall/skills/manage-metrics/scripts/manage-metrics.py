@@ -726,7 +726,18 @@ def cmd_print_phase_breakdown(args: argparse.Namespace) -> dict:
             ),
         }
     file_path = get_plan_dir(plan_id) / relative_path
-    file_path.parent.mkdir(parents=True, exist_ok=True)
+    # Defense-in-depth: verify resolved path stays within plan dir (guards symlinks, OS quirks).
+    plan_dir_resolved = get_plan_dir(plan_id).resolve()
+    if not file_path.resolve().is_relative_to(plan_dir_resolved):
+        return {
+            'status': 'error',
+            'error': 'output_file_must_be_relative',
+            'plan_id': plan_id,
+            'message': (
+                f'--output-file must be a plan-relative path '
+                f'(no absolute paths, no traversal): {relative_path}'
+            ),
+        }
     atomic_write_file(file_path, section)
     return {
         'status': 'success',

@@ -186,6 +186,17 @@ class TestCmdPrintPhaseBreakdown:
             assert result['error'] == 'output_file_must_be_relative'
             assert result['plan_id'] == 'metrics-print-abs'
 
+    def test_traversal_output_file_rejected(self):
+        """Path traversal sequences are rejected with output_file_must_be_relative."""
+        with PlanContext(plan_id='metrics-print-trav'):
+            _seed_metrics_md('metrics-print-trav')
+            result = cmd_print_phase_breakdown(
+                _ns_print_breakdown('metrics-print-trav', output_file='../../etc/passwd')
+            )
+            assert result['status'] == 'error'
+            assert result['error'] == 'output_file_must_be_relative'
+            assert result['plan_id'] == 'metrics-print-trav'
+
     def test_error_when_metrics_md_missing(self):
         with PlanContext(plan_id='metrics-print-02'):
             # No generate call → no metrics.md.
