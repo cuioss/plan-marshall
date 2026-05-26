@@ -322,14 +322,8 @@ def test_phase_boundary_uses_real_1init_start_time_when_present():
     """
     with PlanContext(plan_id='boundary-real-seed') as ctx:
         # Step 1: phase-1-init self-records 1-init.start_time.
-        cmd_start_phase(_ns_start_phase('boundary-real-seed', '1-init'))
-
-        # Capture the seeded start_time so we can assert it's preserved.
-        content_pre = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
-        init_idx = content_pre.index('[1-init]')
-        block = content_pre[init_idx:]
-        start_line = next(line for line in block.splitlines() if line.strip().startswith('start_time:'))
-        seeded_start = start_line.split('start_time:', 1)[1].strip()
+        start_res = cmd_start_phase(_ns_start_phase('boundary-real-seed', '1-init'))
+        seeded_start = start_res['start_time']
 
         # Step 2: status.json present with a far-past `created` that would
         # produce a years-long duration if the backfill path were taken.
