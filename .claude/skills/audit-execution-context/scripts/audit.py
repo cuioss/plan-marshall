@@ -30,6 +30,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, cast
 
 # Canonical phase-5 step names the standard intersects against in Rows 2/3/5.
 # Projects that rename these (e.g. `quality_check` instead of `quality-gate`)
@@ -58,11 +59,11 @@ class PlanInputs:
     decision_log_present: bool = False
 
 
-def read_json(path: Path) -> dict | None:
+def read_json(path: Path) -> dict[str, Any] | None:
     if not path.is_file():
         return None
     try:
-        return json.loads(path.read_text())
+        return cast(dict[str, Any], json.loads(path.read_text()))
     except (json.JSONDecodeError, OSError):
         return None
 
@@ -274,10 +275,9 @@ def emit_toon(report: dict) -> str:
     lines.append(f"unloggable_count: {report['unloggable_count']}")
     lines.append(f"name_drift_count: {report['name_drift_count']}")
     rows = report["rows"]
+    n = len(rows)
     lines.append(
-        "rows[{n}]{{plan_id,verdict,reason,expected_rule,actual_rule,change_type,scope,recipe,affected,modified,name_drift}}:".format(
-            n=len(rows)
-        )
+        f"rows[{n}]{{plan_id,verdict,reason,expected_rule,actual_rule,change_type,scope,recipe,affected,modified,name_drift}}:"
     )
     for r in rows:
         cells = [
