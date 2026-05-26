@@ -9,122 +9,111 @@ Accepted
 
 == Context
 
-PR #459 (commit `89d7d3cf`, merged 2026-05-25) introduced a runtime SUBCOMMANDS pre-flight validator inside the marketplace executor:
+The marketplace executor (`.plan/execute-script.py`) dispatches every workflow's script invocations of the form `python3 .plan/execute-script.py {notation} {verb_chain...} {flags...}`. Each `{notation}` resolves to a Python script that uses `argparse` (or an equivalent declarative CLI library) to publish its subcommand and flag surface. Workflow markdown — `SKILL.md`, `standards/*.md`, `workflow/*.md` — documents these invocations as code blocks. The contract has two sides that can drift:
 
-* `tools-script-executor/scripts/generate_executor.py` walked each marketplace script's argparse declarations via the Python `ast` module and extracted the literal-string subcommand names.
-* The names were embedded as a `SUBCOMMANDS = {notation: [...]}` mapping in the generated `.plan/execute-script.py`.
-* `preflight_validate_subcommand` rejected any call whose subcommand was not in the embedded list with `error: invented_subcommand` (exit 2) before the target script's argparse ever ran.
+* the **declarative argparse schema** in each script (the live truth)
+* the **prose-documented invocations** in workflow markdown (what callers actually type)
 
-The motivation was lesson `2026-04-29-23-002` (invented-subcommand drift): workflow docs occasionally referenced subcommands that had been renamed or never existed, and the rejection was silently swallowed by callers that did not check the exit code. The pre-flight layer was meant to catch this class at runtime.
+Two failure modes follow from the gap:
 
-The class of scripts the AST extractor could handle correctly was narrower than the marketplace: two scripts register subcommands inside `for` loops at module top level:
+1. **Invented-subcommand drift** — workflow prose references a verb / flag that does not exist (renamed, never implemented, or paraphrased). The runtime call lands an `argparse` `exit_code=2` rejection.
+2. **Stale-prose drift** — argparse renames a verb but the markdown lags. Same surface failure.
 
-[cols="1,1,1", options="header"]
-|===
-| Script | Loop pattern | Subcommands missed
+The architectural question this ADR settles: **where does the check for these drift classes belong?**
 
-| `manage-logging.py`
-| `for log_type in VALID_TYPES: subparsers.add_parser(log_type, ...)`
-| `work`, `decision`, `script`
+A natural-feeling first answer is "validate at runtime before dispatch": pre-flight the call against an embedded allowlist generated from each script's argparse declarations. The allowlist must be produced by static analysis of the source (typically AST walking).
 
-| `manage-plan-documents.py`
-| `for doc_type in get_available_types(): subparsers.add_parser(doc_type, ...)`
-| every document type (e.g. `request`, `lesson`)
-|===
+That answer has two structural problems:
 
-The AST walker handled only `ast.Constant`-string first arguments and silently dropped the loop-registered names. The generated SUBCOMMANDS dict was incomplete the moment the executor was regenerated against the merged PR. The runtime validator started rejecting valid calls to `manage-logging work`, `manage-logging decision`, etc. with `invented_subcommand`. The pre-flight layer the lesson was supposed to enforce ended up enforcing a wrong specification.
+* The AST walker is only correct for declarations that are **always module-top-level literals**. The moment a script registers subcommands inside a loop, conditional, or runtime-resolved iterable (e.g. a list returned by a function that reads disk), the static-analysis layer must either silently miss the names or implement a small Python interpreter to evaluate module-level expressions.
+* Even when the walker produces a correct list, the runtime pre-flight reproduces the rejection logic argparse itself runs at execution. The pre-flight layer adds a second specification of the same contract — one whose correctness must be tracked against every change argparse accepts.
 
-This ADR records the decision made by plan `fix-generate-executor-ast-subcommands` (PR #462, squash-merged as `a7ca1a1d`).
-
-== Decision
-
-Remove runtime pre-flight subcommand validation entirely from the marketplace executor.
-Replace it with two complementary mechanisms that match the underlying argparse contract:
-
-1. **Dev-time static analyzer.** `pm-plugin-development:plugin-doctor` carries a `script-call-drift` rule that:
-+
-* Walks marketplace markdown (`SKILL.md`, `standards/*.md`, `workflow/*.md`).
-* Extracts every `python3 .plan/execute-script.py {notation} {verb_chain...} {flags...}` invocation, including nested subparser verb chains such as `manage-findings qgate list`.
-* Probes each `{notation}` (and verb chain) for `--help` to obtain argparse's published verb / flag surface.
-* Reports drift when a documented verb or flag does not appear in the live `--help` output.
-+
-Drift is caught at edit time, when the maintainer can fix the prose, not at execution time when a workflow silently rejects.
-
-2. **Post-hoc retrospective sweep.** `plan-marshall:plan-retrospective/scripts/script-failure-analysis.py` reads `.plan/script-execution.log`, buckets `argparse_rejection` failures by `notation × verb`, and surfaces clusters in the plan retrospective. Genuine drift that slips past the dev-time analyzer surfaces as a structured finding instead of a silent rejection.
-
-The runtime executor no longer carries an embedded SUBCOMMANDS allowlist. argparse itself produces an `exit_code=2` rejection with a clearer error message and a listing of valid choices — exactly what the deleted pre-flight layer was reproducing.
-
-The principle, stated cleanly:
+The principle the marketplace adopts:
 
 [quote]
 Skills are the source of truth for script calls. Drift detection lives in plugin-doctor (dev-time) and plan-retrospective (post-hoc). The runtime executor stays dumb.
+
+== Decision
+
+The executor does **not** carry an embedded subcommand allowlist or any pre-flight validator. Two complementary mechanisms enforce the script-call contract at the layers where they are correct on their merits:
+
+1. **Dev-time static analyzer** — `pm-plugin-development:plugin-doctor` carries a `script-call-drift` rule that walks marketplace markdown, extracts every `python3 .plan/execute-script.py {notation} {verb_chain...} {flags...}` invocation including nested subparser chains, probes each `{notation}` for `--help` to obtain argparse's published surface, and reports drift when a documented verb / flag does not appear. Drift is caught at edit time, in the same review where the prose drifts, when the maintainer can fix it.
+
+2. **Post-hoc retrospective sweep** — `plan-marshall:plan-retrospective/scripts/script-failure-analysis.py` reads `.plan/script-execution.log`, buckets `argparse_rejection` failures by `notation × verb`, and surfaces clusters in the plan retrospective. Drift that slips past the dev-time analyzer surfaces as a structured finding within the same finalize cycle.
+
+The runtime executor's role narrows to: resolve notation → path, dispatch the subprocess, forward stdin/stdout/stderr/exit-code. argparse owns the schema contract.
 
 == Consequences
 
 === Positive
 
-* The marketplace executor no longer contains a static-analysis layer whose correctness must be tracked against every new subcommand-registration pattern.
-* `manage-logging`, `manage-plan-documents`, and any future script that uses loop / runtime-resolved subcommand registration works without special-casing.
-* Drift is caught at edit time (plugin-doctor `script-call-drift`) rather than at execution time, so workflow docs and live argparse stay aligned in the same commit.
-* `argparse_rejection` failures are surfaced by the retrospective sweep as actionable findings rather than silent runtime rejections.
-* The executor template is ~100 lines shorter; the generator is ~120 lines shorter; the test surface is correspondingly reduced.
+* The executor contains no static-analysis layer. Whatever subcommand-registration pattern a script uses (literal, loop, runtime-resolved, conditional) just works.
+* Drift is caught in the same review that introduces it, by reading argparse's own published help surface — there is no second specification to maintain.
+* The exit code from argparse is the contract. Workflows that don't check it fail loud at the post-hoc sweep instead of silently rejecting.
 
 === Negative
 
-* Lesson `2026-04-29-23-002` (invented-subcommand drift) is no longer enforced at execution time. The argparse rejection is the structural backstop; the dev-time analyzer is the proactive guard.
-* `script-call-drift` is opt-in (`--rules script_call_drift`) per the rule pack's current activation policy, so the analyzer only fires when a maintainer asks for it or when finalize step `project:finalize-step-plugin-doctor` runs against a touched skill.
+* Drift survives in prose until either the dev-time analyzer runs or a caller hits the rejection. The retrospective sweep bounds the survival to one plan cycle.
+* `script-call-drift` parses markdown shell invocations heuristically; exotic line continuations or paraphrased forms can escape detection. Patterns that escape become follow-up rule extensions, not workarounds in the executor.
 
 === Risks
 
-* If a maintainer adds a documented invocation that is also wrong, and never runs the dev-time analyzer or the retrospective sweep, the drift survives in prose until the next caller hits the argparse rejection. The risk is bounded by the retrospective's automatic surfacing — a plan that calls the wrong subcommand will surface it on its next finalize.
-* `script-call-drift` parses markdown shell invocations heuristically and may miss exotic line continuations or paraphrased forms. The TASK-017 follow-up extended the parser to nested verb chains; further patterns may surface follow-up tasks.
+* If a maintainer adds an invocation that is documented wrong AND never runs the dev-time analyzer AND no plan exercises the call path, the drift can persist. The risk is bounded by the fact that any plan that does exercise the path surfaces it on its next finalize via the retrospective sweep.
 
 == Alternatives Considered
 
-Three "extend the safety net" alternatives appeared in the original request narrative. All three were rejected during phase-2-refine (Q-Gate finding `7d3745`, source `user_review`, severity `error`).
+Three alternatives fall under the "extend the runtime safety-net" family. All three were rejected.
 
 === Option A — Source-side annotation contract
 
-Each script declares a module-level literal:
+Each script declares a module-level literal alongside its argparse declarations:
 
 [source,python]
 ----
 _PREFLIGHT_SUBCOMMANDS = ['work', 'decision', 'script', 'read', 'separator']
 ----
 
-The AST extractor reads the constant when present; otherwise falls back to the current AST walk.
+The pre-flight layer reads the constant when present; otherwise falls back to AST extraction.
 
-**Rejected because:** Duplicates the argparse declarations. Drifts the moment a maintainer adds a subcommand without remembering to update the constant — exactly the invented-subcommand drift class lesson `2026-04-29-23-002` warns against. Adds a per-script touch-up cost for a class of error argparse already handles.
+*Rejected because:* duplicates the argparse declarations the constant is supposed to describe. The duplication drifts the moment a maintainer adds a subcommand without updating the constant — re-introducing the failure mode the layer was added to prevent. Adds a per-script touch-up cost for a class of error argparse already handles.
 
 === Option B — AST evaluation for module-level loop constants
 
-Walk the AST to find module-top-level `_ASSIGN VAR = [...]` literal-list assignments, then resolve `for X in VAR:` loops by evaluating the literal list inline.
+The extractor finds module-top-level literal-list assignments and resolves `for X in VAR:` loops by evaluating the list inline.
 
-**Rejected because:** Solves `manage-logging.py` (module-level constant) but NOT `manage-plan-documents.py` (`for doc_type in get_available_types():` reads from disk at runtime). The static-analysis layer cannot resolve runtime-disk-reading iterables without implementing a small Python interpreter — open-ended complexity for a guard against a class of failure argparse already catches.
+*Rejected because:* solves only the subset of cases where the iterable is a module-level literal. Scripts that register subcommands from `for X in get_X():` (runtime-resolved iterables, including disk-reading ones) remain unhandled. The static-analysis layer cannot evaluate runtime calls without becoming a Python interpreter — open-ended complexity in service of a guard argparse already provides.
 
-=== Option C — Hybrid (B + A as escape hatch)
+=== Option C — Hybrid (B with A as escape hatch)
 
-Option B for resolvable cases plus Option A as an opt-in escape hatch for runtime-resolved cases.
+Option B for resolvable cases plus Option A as opt-in for runtime-resolved iterables.
 
-**Rejected because:** Compounds the cost of A and B. The runtime layer still exists, it now has two code paths whose correctness must be maintained against future scripts, and the escape hatch reintroduces the per-script duplication problem from Option A.
+*Rejected because:* compounds the cost of both. The runtime layer still exists, with two code paths whose correctness must be maintained against future scripts, and the escape hatch reintroduces Option A's per-script duplication problem.
 
-=== Why all three were rejected, at the level above the options
+=== Why all three fall in the same class
 
-Each option extends the safety-net validator with more cleverness. The safety net itself is the over-engineering. The validation argparse already performs is sufficient as a runtime contract; the genuine value-add of a pre-flight layer would be edit-time enforcement, which moves to a static analyzer (plugin-doctor), not the runtime executor.
+Each option extends the safety-net validator with more cleverness. The safety net itself is the over-engineering: the runtime contract argparse already enforces is the contract; the genuine value-add of a pre-flight layer would be edit-time enforcement, which moves to a static analyzer (the dev-time `script-call-drift` rule), not the runtime executor.
 
 == Generalisation
 
-The broader pattern — relevant to anyone building runtime validation on top of static analysis of `argparse` / `click` / `typer` / similar declarative argument schemas — is:
+The pattern, stated independently of this codebase:
 
-* AST extraction is appropriate when the declarations are **always** module-top-level literals. The moment any script registers subcommands inside a loop, conditional, or runtime-resolved iterable, the static-analysis layer becomes load-bearing fragile code. The extractor must either silently miss them (false rejections) or implement a small Python interpreter to evaluate module-level expressions (open-ended complexity).
-* When evaluating "should the validator handle case X?" the question to ask is: **what value does this validation layer provide that the underlying tool (argparse / click / typer) doesn't already provide?** If the answer is "edit-time enforcement", move it to a static analyzer that runs at edit/CI time. If the answer is "runtime safety", check whether the underlying tool already enforces it — and if so, delete the layer.
-* Retrospective analysis is the correct cleanup for failures that slip past the dev-time gate: it produces actionable findings without blocking workflows.
+When a proposed safety-net layer's stated job is to enforce a contract that an **underlying tool already enforces at runtime**, ask:
 
-== References
+> **What value does this validation layer provide that the underlying tool doesn't already provide?**
 
-* PR #459 — `feat(plan-marshall): plan-doctor rules, archive reason, executor preflight, workflow exit-code annotations` (commit `89d7d3cf`, merged 2026-05-25). Introduced the AST extractor + runtime pre-flight that this ADR removes.
-* PR #462 — `fix(tools-script-executor): delete AST pre-flight, add dev-time drift detection` (commit `a7ca1a1d`, merged 2026-05-26). Implements this ADR.
-* Lesson `2026-04-29-23-002` — invented-subcommand drift. The class of failure the deleted pre-flight was designed to catch; the new dev-time `script-call-drift` rule is the structural guard.
-* Lesson `2026-05-25-21-001` — stale SUBCOMMANDS allowlist for `manage-logging`. Closed by this ADR.
-* Lesson `2026-05-22-16-002` — static-analysis blind spots that miss dynamic content. Generalises the failure mode.
-* Lesson `2026-05-26-15-001` — recurrence-detector pointing at this ADR (post-conversion form).
+Two legitimate answers:
+
+[cols="1,1", options="header"]
+|===
+| Answer | Where the check belongs
+
+| Edit-time enforcement so prose / docs / call-sites stay aligned with the live schema
+| Dev-time static analyzer (lint pass, CI gate, plugin-doctor rule)
+
+| Runtime safety the underlying tool doesn't provide
+| Keep the runtime layer — but first verify the underlying tool genuinely doesn't provide it
+|===
+
+When neither answer holds — the underlying tool's runtime behaviour is the contract — delete the safety-net layer. The underlying tool's exit code, surfaced cleanly, is the contract. If post-hoc cleanup is desired, a retrospective sweep produces structured findings without blocking workflows.
+
+This pattern applies wherever runtime validation is built on top of static analysis of declarative schemas: `argparse` / `click` / `typer` for CLI surfaces, `pydantic` / `dataclasses` for value objects, type-checker output for type contracts. AST extraction is appropriate only when declarations are **always** module-top-level literals; the moment any declaration shifts to a loop / conditional / runtime-resolved form, the static-analysis layer becomes load-bearing fragile code enforcing a wrong specification.
