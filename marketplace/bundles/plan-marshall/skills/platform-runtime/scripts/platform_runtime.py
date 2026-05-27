@@ -11,7 +11,6 @@ Operations:
     project initial-setup   --project-dir <path>  --target claude|opencode
     project install-hook    --target <settings-file-path>
     session capture         --plan-id <id>
-    session configure-display  --type terminal-title|status-line|none  --style unicode|ascii
     session render-title    (no arguments)
     permission configure    --scope project|global  --permissions <p1> [<p2> ...]
     permission analyze      --scope global|project|both  --checks <c1>[,<c2>]  [--marshal <path>]
@@ -246,8 +245,16 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     if operation == "project install-hook":
         p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime project install-hook")
         p.add_argument("--target", required=True)
+        p.add_argument("--overwrite-statusline", action="store_true",
+                       help="Overwrite an existing statusLine whose command differs from the renderer")
+        p.add_argument("--overwrite-env-disable", action="store_true",
+                       help="Overwrite an existing env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE that is not '1'")
         ns = p.parse_args(remaining)
-        return runtime.project_install_hook(ns.target)
+        return runtime.project_install_hook(
+            ns.target,
+            overwrite_statusline=ns.overwrite_statusline,
+            overwrite_env_disable=ns.overwrite_env_disable,
+        )
 
     # ------------------------------------------------------------------
     # session capture
@@ -259,22 +266,14 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         return runtime.session_capture(ns.plan_id)
 
     # ------------------------------------------------------------------
-    # session configure-display
-    # ------------------------------------------------------------------
-    if operation == "session configure-display":
-        p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime session configure-display")
-        p.add_argument("--type", dest="display_type", required=True,
-                       choices=["terminal-title", "status-line", "none"])
-        p.add_argument("--style", required=True, choices=["unicode", "ascii"])
-        ns = p.parse_args(remaining)
-        return runtime.session_configure_display(ns.display_type, ns.style)
-
-    # ------------------------------------------------------------------
     # session render-title
     # ------------------------------------------------------------------
     if operation == "session render-title":
-        # No arguments — ignore any trailing tokens.
-        return runtime.session_render_title()
+        p = argparse.ArgumentParser(allow_abbrev=False,prog="platform_runtime session render-title")
+        p.add_argument("--statusline", action="store_true",
+                       help="Emit plain text (statusLine mode) instead of the JSON envelope")
+        ns = p.parse_args(remaining)
+        return runtime.session_render_title(statusline=ns.statusline)
 
     # ------------------------------------------------------------------
     # permission configure
@@ -412,8 +411,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         "unknown_operation",
         f"Unknown operation {operation!r}; "
         "valid operations: project initial-setup, project install-hook, "
-        "session capture, "
-        "session configure-display, session render-title, "
+        "session capture, session render-title, "
         "permission configure, permission analyze, permission fix, "
         "permission ensure-wildcards, permission ensure-steps, "
         "permission web-analyze, permission web-apply, "

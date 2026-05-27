@@ -28,19 +28,6 @@ The `alternative` field is advisory — it names what the caller can do instead.
 
 ## Worked Examples
 
-### `session configure-display` on OpenCode
-
-OpenCode has no plugin-driven status-line hook. The operation always returns:
-
-```toon
-status: no-op
-operation: session configure-display
-reason: OpenCode has no plugin-driven status-line hook (issue anomalyco/opencode#8619)
-alternative: Use --type none, or use OpenCode's built-in /statusline TUI command for an interactive status line
-```
-
-The calling skill (typically `marshall-steward`) MUST skip the display-configuration step and continue with the rest of the wizard. Not having a terminal title is a display convenience — it does not affect plan correctness.
-
 ### `session capture` on OpenCode
 
 OpenCode does not expose a platform-provided session id to the shell environment. The operation always returns:

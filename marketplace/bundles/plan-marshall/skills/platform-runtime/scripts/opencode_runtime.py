@@ -6,9 +6,6 @@ OpenCode-specific behaviour:
 - Operations requiring a platform session id (session capture, session
   render-title) return ``no-op`` because OpenCode does not expose a session id
   to the shell environment (upstream issue #9292).
-- Terminal-title and status-line hooks (session configure-display) return
-  ``no-op`` because OpenCode has no plugin-driven hook equivalent
-  (upstream issue anomalyco/opencode#8619).
 - project initial-setup succeeds but reports ``hook_installed: false`` for the
   same reason.
 - All permission and web operations succeed: OpenCode uses its own settings
@@ -95,7 +92,12 @@ class OpenCodeRuntime(Runtime):
             },
         )
 
-    def project_install_hook(self, target: str) -> str:
+    def project_install_hook(
+        self,
+        target: str,
+        overwrite_statusline: bool = False,
+        overwrite_env_disable: bool = False,
+    ) -> str:
         """No-op: OpenCode has no Claude-style SessionStart settings hook."""
         return toon_noop(
             "project install-hook",
@@ -117,17 +119,7 @@ class OpenCodeRuntime(Runtime):
             "pass --total-tokens manually to metrics capture",
         )
 
-    def session_configure_display(self, display_type: str, style: str) -> str:
-        """No-op: OpenCode has no plugin-driven status-line hook."""
-        return toon_noop(
-            "session configure-display",
-            "OpenCode has no plugin-driven status-line hook"
-            " (issue anomalyco/opencode#8619)",
-            "Use --type none, or use OpenCode's built-in /statusline TUI command"
-            " for an interactive status line",
-        )
-
-    def session_render_title(self) -> str:
+    def session_render_title(self, statusline: bool = False) -> str:
         """No-op: OpenCode has no plugin-driven terminal-title hook."""
         return toon_noop(
             "session render-title",
