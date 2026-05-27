@@ -132,7 +132,14 @@ Seven forward-looking lint rules added by the lesson-2026-05-05-18-001 remediati
 
 | Rule ID | Class | Emitter | Source |
 |---------|-------|---------|--------|
-| `shell-substitution-in-skills` | safety | `_analyze_shell_substitution_in_skills.py` | Lesson `2026-05-15-13-001` — `$(` command substitution in plan-marshall skill markdown violates the dev-agent-behavior-rules "Bash: no shell constructs" hard rule. Structural exemptions: inline-code spans and fenced blocks with `markdown`/`text` info-string. |
+| `shell-substitution-in-skills` | safety | `_analyze_shell_substitution_in_skills.py` | Plan `remove-lesson-ref-noise` (2026-05-15) — `$(` command substitution in plan-marshall skill markdown violates the dev-agent-behavior-rules "Bash: no shell constructs" hard rule. Structural exemptions: inline-code spans and fenced blocks with `markdown`/`text` info-string. |
+
+### Bash chain-shape invariant
+
+| Rule ID | Class | Emitter | Source |
+|---------|-------|---------|--------|
+| `bash-chain-shapes-in-skills` | safety | `_analyze_bash_chain_shapes_in_skills.py` | Plan `bash-compound-command-with-tmp-redirect-triggered` — compound Bash command sequences (`&&`, `;`, trailing `&`) inside fenced `bash`/`sh` blocks in plan-marshall skill markdown violate the dev-agent-behavior-rules "Bash: one command per call" hard rule. The canonical anti-pattern (`python3 … > /tmp/… 2>&1; grep …`) triggered a 25-minute permission-prompt pause during plan execution. Structural exemptions: comment lines and inline-code spans; only `bash`/`sh`-fenced blocks are scanned. |
+| `tmp-redirect-in-skills` | safety | `_analyze_tmp_redirect_in_skills.py` | Plan `bash-compound-command-with-tmp-redirect-triggered` — `>` / `>>` redirects targeting `/tmp/` or `/var/tmp/` inside fenced `bash`/`sh` blocks violate the project policy that all temporary files must live under `.plan/temp/`. The violation is frequently paired with a compound chain (`;`, `&&`), which is the pattern from the source incident. Structural exemptions: comment lines and inline-code spans; only `bash`/`sh`-fenced blocks are scanned. |
 
 ### Script-call drift
 

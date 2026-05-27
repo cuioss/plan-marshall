@@ -15,6 +15,7 @@ Output: JSON to stdout.
 
 import argparse
 
+from _analyze_bash_chain_shapes_in_skills import analyze_bash_chain_shapes_in_skills
 from _analyze_cmd_root_anchoring import analyze_cmd_root_anchoring
 from _analyze_coverage import analyze_tool_coverage, cmd_coverage
 from _analyze_crossfile import DEFAULT_SIMILARITY_THRESHOLD, cmd_cross_file
@@ -32,11 +33,13 @@ from _analyze_shared import detect_component_type, extract_frontmatter
 from _analyze_shell_active_tokens import analyze_shell_active_tokens
 from _analyze_shell_substitution_in_skills import analyze_shell_substitution_in_skills
 from _analyze_structure import analyze_skill_structure, cmd_structure
+from _analyze_tmp_redirect_in_skills import analyze_tmp_redirect_in_skills
 from _analyze_verb_chains import analyze_verb_chains
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 # Public API surface — used by _doctor_analysis.py and other scripts
 __all__ = [
+    'analyze_bash_chain_shapes_in_skills',
     'analyze_cmd_root_anchoring',
     'analyze_executor_path_in_production',
     'analyze_lesson_id_in_skill_prose',
@@ -51,6 +54,7 @@ __all__ = [
     'analyze_shell_active_tokens',
     'analyze_shell_substitution_in_skills',
     'analyze_skill_structure',
+    'analyze_tmp_redirect_in_skills',
     'analyze_tool_coverage',
     'analyze_verb_chains',
     'detect_component_type',

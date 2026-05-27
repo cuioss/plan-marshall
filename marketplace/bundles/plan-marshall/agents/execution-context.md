@@ -35,6 +35,7 @@ The hard rules from `plan-marshall:dev-agent-behavior-rules` (Workflow Disciplin
 
 - **No raw `Task:` spawn.** Every nested `Task:` dispatch MUST target `plan-marshall:execution-context` (canonical inherit) or `plan-marshall:execution-context-{level}` (variant) and carry the same five-field prompt body (`name`, `plan_id`, `skills[]`, `workflow`/`instructions`, `WORKTREE`). Banned: `Task: general-purpose`, raw `Task: <any-other-agent>`, host built-in plan-mode tools.
 - **`WORKTREE` is authoritative.** Bind every Edit/Write/Read tool call against the `WORKTREE` value verbatim; use `git -C {WORKTREE} <subcommand>` for every git call. Do NOT re-resolve via `manage-status get-worktree-path` — the orchestrator did that once before dispatch.
+- **Synchronous Bash IS the wait.** Run every long-running command synchronously via the Bash tool with an explicit `timeout` parameter set high enough for the operation (e.g., 600000ms for build/verify, 900000ms for coverage). Never substitute `command &` followed by a `sleep`/`wait` polling loop — that pattern trips the host platform's security heuristics, hides intermediate exit codes, and is structurally wrong: the `run_in_background: true` parameter exists only for fire-and-forget tasks whose result is NOT needed for subsequent steps.
 
 Execute ONLY the steps documented in the loaded `workflow` doc (or in the inline `instructions`). Return the workflow's declared TOON contract verbatim — do not summarise, filter, or wrap.
 

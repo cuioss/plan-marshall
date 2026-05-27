@@ -454,6 +454,57 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
     }
 
 
+_ATTEMPT_RE = re.compile(r'\[ATTEMPT\]')
+
+# Polling-language keywords that, when found within 5 lines of an [ATTEMPT] line,
+# suggest the agent dispatched a subagent then attempted to poll rather than wait
+# synchronously. This is a heuristic — the LLM applies judgement; the extractor
+# counts candidates only.
+_POLLING_KEYWORDS = frozenset(
+    {'sleeping', 'polling', 'background', 'sleep', 'run_in_background', 'wait'}
+)
+
+
+def detect_voluntary_checkpoint_polling(work_log_lines: list[str]) -> dict[str, Any]:
+    """Detect candidate [ATTEMPT] + polling-language consecutive-line pairs in work.log.
+
+    Precondition: at least one ``[ATTEMPT]`` line must exist for the rule to fire.
+    When the precondition is absent, ``precondition_met`` is False and
+    ``polling_pairs_count`` is 0.
+
+    Returns:
+      - precondition_met: True when any ``[ATTEMPT]`` line exists in work_log_lines
+      - polling_pairs_count: number of [ATTEMPT] lines followed within 5 lines by a
+            polling-language keyword (case-insensitive)
+      - candidate_line_numbers: 1-based indices of the [ATTEMPT] lines that triggered
+            a candidate pair (for LLM inspection)
+    """
+    attempt_indices = [i for i, line in enumerate(work_log_lines) if _ATTEMPT_RE.search(line)]
+    if not attempt_indices:
+        return {
+            'precondition_met': False,
+            'polling_pairs_count': 0,
+            'candidate_line_numbers': [],
+        }
+
+    candidates: list[int] = []
+    for idx in attempt_indices:
+        # Look at the next 5 lines (exclusive) for polling keywords
+        window_end = min(idx + 6, len(work_log_lines))
+        window = work_log_lines[idx + 1 : window_end]
+        for line in window:
+            lower = line.lower()
+            if any(kw in lower for kw in _POLLING_KEYWORDS):
+                candidates.append(idx + 1)  # 1-based line number
+                break
+
+    return {
+        'precondition_met': True,
+        'polling_pairs_count': len(candidates),
+        'candidate_line_numbers': candidates,
+    }
+
+
 def read_dispatch_boundaries_per_phase(plan_dir: Path) -> dict[str, dict[str, Any]]:
     """Glob ``work/metrics-dispatch-boundaries-*.toon`` and parse each as a per-phase entry.
 
@@ -527,11 +578,31 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
 
     # Phase-5 logging-gap fact extractors (lesson 2026-05-08-14-001).
     # Pure counting/pairing — judgement lives in the LLM rules.
+    voluntary_checkpoint_polling = detect_voluntary_checkpoint_polling(work)
     phase5_logging_gaps = {
         'outcome_pairing': pair_outcome_emissions(work),
         'dispatch_clustering': cluster_dispatches(work, script),
         'outcome_for_diffed_tasks': detect_outcome_for_diffed_tasks(work, plan_dir),
+        'voluntary_checkpoint_polling': voluntary_checkpoint_polling,
     }
+
+    # Surface a warning finding when the precondition is met and polling pairs exist.
+    if (
+        voluntary_checkpoint_polling['precondition_met']
+        and voluntary_checkpoint_polling['polling_pairs_count'] > 0
+    ):
+        findings.append(
+            {
+                'severity': 'warning',
+                'message': (
+                    f"VOLUNTARY_CHECKPOINT_POLLING: {voluntary_checkpoint_polling['polling_pairs_count']} "
+                    f"candidate [ATTEMPT]+polling-language pair(s) detected in work.log "
+                    f"(lines: {voluntary_checkpoint_polling['candidate_line_numbers']}) — "
+                    'agent may have dispatched a subagent then polled rather than running '
+                    'synchronously. See logging-gap-analysis.md § VOLUNTARY_CHECKPOINT_POLLING.'
+                ),
+            }
+        )
 
     # Per-phase dispatch-boundary artifacts (lesson 2026-05-20-12-002). The
     # generalised reader globs ``work/metrics-dispatch-boundaries-*.toon`` and
