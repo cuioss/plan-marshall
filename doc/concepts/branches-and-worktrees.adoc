@@ -1,0 +1,58 @@
+= Branches and Worktrees
+:nofooter:
+:toc: left
+:toclevels: 2
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
+
+Why Plan Marshall runs each plan in its own git worktree on a dedicated feature branch, and how the worktree mechanism flows through the six-phase lifecycle. This page is a navigational summary; the contract lives in link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md[`workflow-integration-git/standards/worktree-handling.md`].
+
+== Path Convention
+
+Worktrees live at a platform-neutral location under the project root:
+
+[source]
+----
+<project_root>/.plan/local/worktrees/{plan-id}/
+----
+
+The path is computed by the worktree-handling layer — callers never construct it from string concatenation. Resolve it with:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-worktree-path \
+  --plan-id {plan_id}
+----
+
+Living under `.plan/local/` inherits the existing `.plan/*` gitignore coverage (no separate carve-out) and signals "host-local scratch, never published". The canonical standard documents the rationale in full.
+
+== Lifecycle (Deferred Materialization)
+
+A worktree-enabled plan transitions through four lifecycle states: **intent persisted** (end of `phase-1-init`), **pre-materialization** (`phase-2-refine` through `phase-4-plan`), **materialization** (`phase-5-execute` Step 2.5), and **post-materialization** (the rest of `phase-5-execute` and all of `phase-6-finalize`). The agent records the *intent* to use a worktree at plan-init time, but the worktree directory itself is not created until the first phase that needs to mutate source code. Phases 2-4 are read-only analysis and produce only `.plan/` artifacts; allocating a working tree before then would mean carrying an empty worktree through clarification, outline, and planning iterations that may be aborted before any code is touched.
+
+Every consumer of `worktree_path` MUST treat it as a **tri-state** signal (opt-out / intent-only-empty-path / materialized-non-empty-path), not a boolean. The full state matrix and the tri-state assertion contract live in link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md[`worktree-handling.md`] § Worktree Lifecycle.
+
+== Parallel Plans
+
+Multiple plans can run simultaneously without contending for the main checkout's HEAD. Each worktree carries its own branch and index; the only shared state is the `.git/` repository (commits, refs, objects) and the `.plan/` metadata directory. Rebasing a long-running plan onto a moving baseline is handled by `worktree-rebase-to`, whose 8-state outcome matrix (clean-fast-forward, conflict-on-rebase, divergent-tags, …) is documented in link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md[`worktree-handling.md`] § `worktree-rebase-to`.
+
+== Cleanup
+
+Worktree cleanup is **ordering-sensitive** and runs in `phase-6-finalize` after the plan ships: remove the worktree first (`git worktree remove`), then check out the base branch in the main checkout, pull, and delete the feature-branch ref. The reverse order leaves stale ref state behind. Aborted plans are NOT auto-cleaned — the user runs `worktree-remove` explicitly so partial work can be inspected before the directory disappears. Full cleanup ordering and the rationale for each step live in link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md[`worktree-handling.md`] § Cleanup ordering.
+
+== Configuration
+
+A plan opts into worktree mode at `phase-1-init` via `plan.phase-1-init.branch_strategy`:
+
+* `feature` (default for new plans) — allocate a feature branch and a worktree; `metadata.use_worktree` is set to `true`.
+* `main` (for docs-only patches) — run against the main checkout, no worktree allocation.
+
+User-facing knobs (where `branch_strategy` lives, how to flip it per plan, what the worktree path layout looks like from the user's side) are covered in xref:../user/configuration.adoc#worktrees[User Guide › Configuration › Branch strategy and worktrees].
+
+== Related
+
+* link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md[`workflow-integration-git/standards/worktree-handling.md`] — canonical contract (path convention, lifecycle, tri-state assertion, dispatch protocol, `git -C` rule, never-edit-main-checkout invariant, cleanup ordering, `--plan-id` two-state contract, `worktree-rebase-to` 8-state matrix)
+* link:../../marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md[`phase-5-execute/SKILL.md`] — Dispatch Protocol section and the materialization step (Step 2.5)
+* link:../../marketplace/bundles/plan-marshall/skills/tools-script-executor/standards/cwd-policy.md[`tools-script-executor/standards/cwd-policy.md`] — Bucket A/B/C cwd policy that interacts with worktree binding
+* link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md[`phase-6-finalize/standards/branch-cleanup.md`] — phase-6 cleanup-step contract
+* xref:../user/configuration.adoc#worktrees[User Guide › Configuration › Branch strategy and worktrees] — user-facing knobs
