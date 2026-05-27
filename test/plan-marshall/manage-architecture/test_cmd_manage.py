@@ -13,6 +13,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+
+from _arch_fixtures import create_test_project  # noqa: E402
+
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
     / 'marketplace'
@@ -39,7 +43,6 @@ DataNotFoundError = _architecture_core.DataNotFoundError
 ModuleNotFoundInProjectError = _architecture_core.ModuleNotFoundInProjectError
 
 save_project_meta = _architecture_core.save_project_meta
-save_module_derived = _architecture_core.save_module_derived
 load_module_enriched = _architecture_core.load_module_enriched
 load_module_enriched_or_empty = _architecture_core.load_module_enriched_or_empty
 get_module_enriched_path = _architecture_core.get_module_enriched_path
@@ -53,62 +56,7 @@ list_modules = _cmd_manage.list_modules
 save_module_enriched = _architecture_core.save_module_enriched
 
 
-# =============================================================================
-# Helper Functions
-# =============================================================================
-
-
-def create_test_project(tmpdir: str) -> dict:
-    """Seed ``_project.json`` plus per-module ``derived.json`` for two modules.
-
-    Returns the assembled dict equivalent to what api_get_derived will surface.
-    """
-    modules = {
-        'module-a': {
-            'name': 'module-a',
-            'build_systems': ['maven'],
-            'paths': {
-                'module': 'module-a',
-                'descriptor': 'module-a/pom.xml',
-                'sources': ['module-a/src/main/java'],
-                'tests': ['module-a/src/test/java'],
-                'readme': 'module-a/README.md',
-            },
-            'metadata': {'artifact_id': 'module-a', 'description': 'Module A description'},
-            'packages': {'com.example.a': {'path': 'module-a/src/main/java/com/example/a'}},
-            'dependencies': ['org.example:dep1:compile'],
-            'stats': {'source_files': 10, 'test_files': 5},
-            'commands': {
-                'module-tests': 'python3 .plan/execute-script.py ...',
-                'verify': 'python3 .plan/execute-script.py ...',
-            },
-        },
-        'module-b': {
-            'name': 'module-b',
-            'build_systems': ['maven'],
-            'paths': {'module': 'module-b'},
-            'metadata': {},
-            'packages': {},
-            'dependencies': [],
-            'stats': {},
-            'commands': {},
-        },
-    }
-
-    save_project_meta(
-        {
-            'name': 'test-project',
-            'description': '',
-            'description_reasoning': '',
-            'extensions_used': [],
-            'modules': {name: {} for name in modules},
-        },
-        tmpdir,
-    )
-    for name, data in modules.items():
-        save_module_derived(name, data, tmpdir)
-
-    return {'project': {'name': 'test-project'}, 'modules': modules}
+# Helper definitions hoisted to ``_fixtures.py`` (see top-of-file import).
 
 
 # =============================================================================
@@ -119,7 +67,7 @@ def create_test_project(tmpdir: str) -> dict:
 def test_api_init_creates_per_module_enriched_files():
     """api_init writes ``{module}/enriched.json`` for every indexed module."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='metadata_rich')
 
         result = api_init(tmpdir)
 
@@ -141,7 +89,7 @@ def test_api_init_creates_per_module_enriched_files():
 def test_api_init_check_existing_reports_count():
     """api_init(check=True) reports how many per-module enriched files exist."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='metadata_rich')
         api_init(tmpdir)  # populate stubs
 
         result = api_init(tmpdir, check=True)
@@ -160,7 +108,7 @@ def test_api_init_check_missing_reports_missing():
 def test_api_init_no_overwrite_when_already_initialised():
     """Re-running api_init without force is a no-op for already-initialised modules."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='metadata_rich')
         api_init(tmpdir)
 
         result = api_init(tmpdir)
@@ -173,7 +121,7 @@ def test_api_init_no_overwrite_when_already_initialised():
 def test_api_init_force_overwrites_existing():
     """api_init(force=True) re-initialises every module's ``enriched.json``."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='metadata_rich')
         api_init(tmpdir)
 
         # Mutate one to detect that force truly overwrites.
@@ -222,7 +170,7 @@ def test_api_discover_preserves_enrichment(monkeypatch):
         # something to read from. The pre-seeded modules['module-a'] gets
         # curated enrichment; 'module-c' is added later by the mocked
         # discovery to exercise the fresh-module fallback.
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='metadata_rich')
 
         curated = {
             'responsibility': 'Authoritative HTTP adapter for upstream auth',
@@ -321,7 +269,7 @@ def test_api_discover_preserves_enrichment(monkeypatch):
 def test_api_get_derived_assembles_legacy_shape():
     """api_get_derived re-assembles ``{project, modules, extensions_used}``."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='metadata_rich')
 
         result = api_get_derived(tmpdir)
 
@@ -372,7 +320,7 @@ def test_api_get_derived_module_missing_derived_returns_empty_modules():
 def test_api_get_derived_module_returns_single_module_dict():
     """api_get_derived_module returns one module's derived dict."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='metadata_rich')
 
         result = api_get_derived_module('module-a', tmpdir)
 
@@ -384,7 +332,7 @@ def test_api_get_derived_module_returns_single_module_dict():
 def test_api_get_derived_module_unknown_module_raises():
     """api_get_derived_module raises ModuleNotFoundInProjectError for unknown name."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='metadata_rich')
 
         try:
             api_get_derived_module('nonexistent', tmpdir)
@@ -422,7 +370,7 @@ def test_api_get_derived_module_missing_from_crawl_raises_module_not_found():
 def test_list_modules_returns_index_keys():
     """list_modules returns the sorted module names from ``_project.json``."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='metadata_rich')
 
         result = list_modules(tmpdir)
 

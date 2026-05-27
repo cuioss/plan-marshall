@@ -28,8 +28,6 @@ from unittest import mock
 
 import pytest
 
-from conftest import PlanContext
-
 # Tier 2 direct import - load hyphenated module
 _MANAGE_FILES_SCRIPT = (
     Path(__file__).parent.parent.parent.parent
@@ -271,80 +269,75 @@ def test_build_launch_command_linux_code():
 # =============================================================================
 
 
-def test_is_open_in_ide_enabled_explicit_true():
+def test_is_open_in_ide_enabled_explicit_true(plan_context):
     # Arrange
-    with PlanContext(plan_id='cfg-true') as ctx:
-        (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
-        )
+    (plan_context.fixture_dir / 'marshal.json').write_text(
+        json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
+    )
 
-        # Act
-        result = is_open_in_ide_enabled()
+    # Act
+    result = is_open_in_ide_enabled()
 
-        # Assert
-        assert result is True
+    # Assert
+    assert result is True
 
 
-def test_is_open_in_ide_enabled_explicit_false():
+def test_is_open_in_ide_enabled_explicit_false(plan_context):
     # Arrange
-    with PlanContext(plan_id='cfg-false') as ctx:
-        (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'plan': {'open_in_ide': False}}), encoding='utf-8'
-        )
+    (plan_context.fixture_dir / 'marshal.json').write_text(
+        json.dumps({'plan': {'open_in_ide': False}}), encoding='utf-8'
+    )
 
-        # Act
-        result = is_open_in_ide_enabled()
+    # Act
+    result = is_open_in_ide_enabled()
 
-        # Assert
-        assert result is False
+    # Assert
+    assert result is False
 
 
-def test_is_open_in_ide_enabled_missing_open_in_ide_key_defaults_true():
+def test_is_open_in_ide_enabled_missing_open_in_ide_key_defaults_true(plan_context):
     """plan namespace present but no `open_in_ide` key → default True."""
     # Arrange
-    with PlanContext(plan_id='cfg-no-subns') as ctx:
-        (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'plan': {'phase-1-init': {'use_worktree': True}}}), encoding='utf-8'
-        )
+    (plan_context.fixture_dir / 'marshal.json').write_text(
+        json.dumps({'plan': {'phase-1-init': {'use_worktree': True}}}), encoding='utf-8'
+    )
 
-        # Act
-        result = is_open_in_ide_enabled()
+    # Act
+    result = is_open_in_ide_enabled()
 
-        # Assert
-        assert result is True
+    # Assert
+    assert result is True
 
 
-def test_is_open_in_ide_enabled_missing_plan_namespace_defaults_true():
+def test_is_open_in_ide_enabled_missing_plan_namespace_defaults_true(plan_context):
     """No plan namespace at all → default True."""
     # Arrange
-    with PlanContext(plan_id='cfg-no-plan') as ctx:
-        (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'skill_domains': {}}), encoding='utf-8'
-        )
+    (plan_context.fixture_dir / 'marshal.json').write_text(
+        json.dumps({'skill_domains': {}}), encoding='utf-8'
+    )
 
-        # Act
-        result = is_open_in_ide_enabled()
+    # Act
+    result = is_open_in_ide_enabled()
 
-        # Assert
-        assert result is True
+    # Assert
+    assert result is True
 
 
-def test_is_open_in_ide_enabled_no_marshal_file_defaults_true():
+def test_is_open_in_ide_enabled_no_marshal_file_defaults_true(plan_context):
     """marshal.json absent entirely → default True."""
     # Arrange
-    with PlanContext(plan_id='cfg-no-file'):
-        # Act
-        result = is_open_in_ide_enabled()
+    # Act
+    result = is_open_in_ide_enabled()
 
-        # Assert
-        assert result is True
+    # Assert
+    assert result is True
 
 
 @pytest.mark.parametrize(
     'top_level_value',
     ['[]', '"a string"', '42', 'true', 'null'],
 )
-def test_is_open_in_ide_enabled_non_dict_top_level_raises_value_error(top_level_value):
+def test_is_open_in_ide_enabled_non_dict_top_level_raises_value_error(plan_context, top_level_value):
     """Non-dict top-level JSON in marshal.json raises ValueError naming the file.
 
     Regression guard for PR #380 gemini-code-assist finding 8be141: the previous
@@ -352,17 +345,16 @@ def test_is_open_in_ide_enabled_non_dict_top_level_raises_value_error(top_level_
     when `data` is a list/scalar. The guard turns that into a clear ValueError.
     """
     # Arrange
-    with PlanContext(plan_id=f'cfg-nondict-{abs(hash(top_level_value))}') as ctx:
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        marshal_path.write_text(top_level_value, encoding='utf-8')
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(top_level_value, encoding='utf-8')
 
-        # Act / Assert
-        with pytest.raises(ValueError) as exc_info:
-            is_open_in_ide_enabled()
+    # Act / Assert
+    with pytest.raises(ValueError) as exc_info:
+        is_open_in_ide_enabled()
 
-        # The file path must appear in the message so the user can diagnose.
-        assert str(marshal_path) in str(exc_info.value)
-        assert 'JSON object' in str(exc_info.value)
+    # The file path must appear in the message so the user can diagnose.
+    assert str(marshal_path) in str(exc_info.value)
+    assert 'JSON object' in str(exc_info.value)
 
 
 @pytest.mark.parametrize(
@@ -378,7 +370,7 @@ def test_is_open_in_ide_enabled_non_dict_top_level_raises_value_error(top_level_
         ('list', []),
     ],
 )
-def test_is_open_in_ide_enabled_non_bool_value_raises_value_error(open_in_ide_value):
+def test_is_open_in_ide_enabled_non_bool_value_raises_value_error(plan_context, open_in_ide_value):
     """Non-bool value at plan.open_in_ide raises ValueError naming the file.
 
     Regression guard for PR #384 gemini-code-assist finding: silent coercion
@@ -389,18 +381,17 @@ def test_is_open_in_ide_enabled_non_bool_value_raises_value_error(open_in_ide_va
     """
     label, value = open_in_ide_value
     # Arrange
-    with PlanContext(plan_id=f'cfg-nonbool-{label}') as ctx:
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        marshal_path.write_text(
-            json.dumps({'plan': {'open_in_ide': value}}), encoding='utf-8'
-        )
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(
+        json.dumps({'plan': {'open_in_ide': value}}), encoding='utf-8'
+    )
 
-        # Act / Assert
-        with pytest.raises(ValueError) as exc_info:
-            is_open_in_ide_enabled()
+    # Act / Assert
+    with pytest.raises(ValueError) as exc_info:
+        is_open_in_ide_enabled()
 
-        assert str(marshal_path) in str(exc_info.value)
-        assert 'plan.open_in_ide' in str(exc_info.value)
+    assert str(marshal_path) in str(exc_info.value)
+    assert 'plan.open_in_ide' in str(exc_info.value)
 
 
 # =============================================================================
@@ -408,162 +399,155 @@ def test_is_open_in_ide_enabled_non_bool_value_raises_value_error(open_in_ide_va
 # =============================================================================
 
 
-def test_cmd_open_in_ide_mode_a_macos_vscode_success():
+def test_cmd_open_in_ide_mode_a_macos_vscode_success(plan_context):
     # Arrange
-    with PlanContext(plan_id='e2e-mode-a') as ctx:
-        (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
-        )
-        args = Namespace(path='/abs/path/file.md', plan_id=None, document=None)
+    (plan_context.fixture_dir / 'marshal.json').write_text(
+        json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
+    )
+    args = Namespace(path='/abs/path/file.md', plan_id=None, document=None)
 
-        completed = mock.MagicMock(returncode=0, stdout='', stderr='')
-        # Clear env so the host's __CFBundleIdentifier does not leak in and
-        # win over TERM_PROGRAM in the detect_ide priority order.
-        with (
-            mock.patch.object(_mod.sys, 'platform', 'darwin'),
-            mock.patch.object(_mod, 'subprocess') as mock_subprocess,
-            mock.patch.dict(_mod.os.environ, {'TERM_PROGRAM': 'vscode'}, clear=True),
-        ):
-            mock_subprocess.run.return_value = completed
-
-            # Act
-            result = cmd_open_in_ide(args)
-
-        # Assert
-        assert result['status'] == 'success'
-        assert result['ide'] == 'Visual Studio Code'
-        assert '/abs/path/file.md' in result['command']
-        assert result['path'] == '/abs/path/file.md'
-
-
-def test_cmd_open_in_ide_disabled_by_config_short_circuits():
-    """Disabled-by-config: detect_ide and subprocess.run are NEVER called."""
-    # Arrange
-    with PlanContext(plan_id='e2e-disabled') as ctx:
-        (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'plan': {'open_in_ide': False}}), encoding='utf-8'
-        )
-        args = Namespace(path='/abs/path/file.md', plan_id=None, document=None)
-
-        with (
-            mock.patch.object(_mod, 'detect_ide') as mock_detect,
-            mock.patch.object(_mod, 'subprocess') as mock_subprocess,
-        ):
-            # Act
-            result = cmd_open_in_ide(args)
-
-        # Assert
-        assert result['status'] == 'success'
-        assert result['action'] == 'skipped'
-        assert result['reason'] == 'disabled_by_config'
-        assert mock_detect.call_count == 0, 'detect_ide must NOT be invoked when disabled'
-        assert mock_subprocess.run.call_count == 0, 'launcher must NOT fire when disabled'
-
-
-def test_cmd_open_in_ide_missing_key_acts_as_enabled():
-    """Missing plan.open_in_ide sub-namespace → behaves as if enabled=true."""
-    # Arrange
-    with PlanContext(plan_id='e2e-missing-key') as ctx:
-        (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'plan': {}}), encoding='utf-8'
-        )
-        args = Namespace(path='/abs/path/file.md', plan_id=None, document=None)
-
-        completed = mock.MagicMock(returncode=0, stdout='', stderr='')
-        with (
-            mock.patch.object(_mod.sys, 'platform', 'darwin'),
-            mock.patch.object(_mod, 'subprocess') as mock_subprocess,
-            mock.patch.dict(_mod.os.environ, {'TERM_PROGRAM': 'vscode'}, clear=True),
-        ):
-            mock_subprocess.run.return_value = completed
-
-            # Act
-            result = cmd_open_in_ide(args)
-
-        # Assert: detection ran (we matched VS Code on macOS via TERM_PROGRAM)
-        assert result['status'] == 'success'
-        assert result['ide'] == 'Visual Studio Code'
-
-
-def test_cmd_open_in_ide_unknown_ide_returns_ide_not_detected():
-    # Arrange
-    with PlanContext(plan_id='e2e-unknown-ide') as ctx:
-        (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
-        )
-        args = Namespace(path='/abs/path/file.md', plan_id=None, document=None)
-
-        with (
-            mock.patch.object(_mod.sys, 'platform', 'darwin'),
-            mock.patch.dict(_mod.os.environ, {}, clear=True),
-        ):
-            # Act
-            result = cmd_open_in_ide(args)
-
-        # Assert
-        assert result['status'] == 'error'
-        assert result['reason'] == 'ide_not_detected'
-
-
-def test_cmd_open_in_ide_launcher_missing_returns_launcher_missing():
-    # Arrange
-    with PlanContext(plan_id='e2e-launcher-missing') as ctx:
-        (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
-        )
-        args = Namespace(path='/abs/path/file.md', plan_id=None, document=None)
-
-        with (
-            mock.patch.object(_mod.sys, 'platform', 'darwin'),
-            mock.patch.object(_mod, 'subprocess') as mock_subprocess,
-            mock.patch.dict(_mod.os.environ, {'TERM_PROGRAM': 'vscode'}, clear=True),
-        ):
-            mock_subprocess.run.side_effect = FileNotFoundError('open not found')
-
-            # Act
-            result = cmd_open_in_ide(args)
-
-        # Assert
-        assert result['status'] == 'error'
-        assert result['reason'] == 'launcher_missing'
-
-
-def test_cmd_open_in_ide_mode_b_without_document_returns_invalid_arguments():
-    # Arrange — emulate the case where argparse let through plan-id without --document
-    # (e.g., direct function call rather than CLI invocation).
-    with PlanContext(plan_id='e2e-mode-b-no-doc') as ctx:
-        (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
-        )
-        args = Namespace(path=None, plan_id='some-plan', document=None)
+    completed = mock.MagicMock(returncode=0, stdout='', stderr='')
+    # Clear env so the host's __CFBundleIdentifier does not leak in and
+    # win over TERM_PROGRAM in the detect_ide priority order.
+    with (
+        mock.patch.object(_mod.sys, 'platform', 'darwin'),
+        mock.patch.object(_mod, 'subprocess') as mock_subprocess,
+        mock.patch.dict(_mod.os.environ, {'TERM_PROGRAM': 'vscode'}, clear=True),
+    ):
+        mock_subprocess.run.return_value = completed
 
         # Act
         result = cmd_open_in_ide(args)
 
-        # Assert
-        assert result['status'] == 'error'
-        assert result['reason'] == 'invalid_arguments'
+    # Assert
+    assert result['status'] == 'success'
+    assert result['ide'] == 'Visual Studio Code'
+    assert '/abs/path/file.md' in result['command']
+    assert result['path'] == '/abs/path/file.md'
 
 
-def test_cmd_open_in_ide_mode_b_document_resolution_failure():
+def test_cmd_open_in_ide_disabled_by_config_short_circuits(plan_context):
+    """Disabled-by-config: detect_ide and subprocess.run are NEVER called."""
     # Arrange
-    with PlanContext(plan_id='e2e-mode-b-resolver-fail') as ctx:
-        (ctx.fixture_dir / 'marshal.json').write_text(
-            json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
-        )
-        args = Namespace(path=None, plan_id='e2e-mode-b-resolver-fail', document='solution_outline')
+    (plan_context.fixture_dir / 'marshal.json').write_text(
+        json.dumps({'plan': {'open_in_ide': False}}), encoding='utf-8'
+    )
+    args = Namespace(path='/abs/path/file.md', plan_id=None, document=None)
 
-        # Simulate resolver returning non-zero
-        proc = mock.MagicMock(returncode=2, stdout='', stderr='no outline found')
-        with mock.patch.object(_mod, 'subprocess') as mock_subprocess:
-            mock_subprocess.run.return_value = proc
+    with (
+        mock.patch.object(_mod, 'detect_ide') as mock_detect,
+        mock.patch.object(_mod, 'subprocess') as mock_subprocess,
+    ):
+        # Act
+        result = cmd_open_in_ide(args)
 
-            # Act
-            result = cmd_open_in_ide(args)
+    # Assert
+    assert result['status'] == 'success'
+    assert result['action'] == 'skipped'
+    assert result['reason'] == 'disabled_by_config'
+    assert mock_detect.call_count == 0, 'detect_ide must NOT be invoked when disabled'
+    assert mock_subprocess.run.call_count == 0, 'launcher must NOT fire when disabled'
 
-        # Assert
-        assert result['status'] == 'error'
-        assert result['reason'] == 'document_resolution_failed'
+
+def test_cmd_open_in_ide_missing_key_acts_as_enabled(plan_context):
+    """Missing plan.open_in_ide sub-namespace → behaves as if enabled=true."""
+    # Arrange
+    (plan_context.fixture_dir / 'marshal.json').write_text(
+        json.dumps({'plan': {}}), encoding='utf-8'
+    )
+    args = Namespace(path='/abs/path/file.md', plan_id=None, document=None)
+
+    completed = mock.MagicMock(returncode=0, stdout='', stderr='')
+    with (
+        mock.patch.object(_mod.sys, 'platform', 'darwin'),
+        mock.patch.object(_mod, 'subprocess') as mock_subprocess,
+        mock.patch.dict(_mod.os.environ, {'TERM_PROGRAM': 'vscode'}, clear=True),
+    ):
+        mock_subprocess.run.return_value = completed
+
+        # Act
+        result = cmd_open_in_ide(args)
+
+    # Assert: detection ran (we matched VS Code on macOS via TERM_PROGRAM)
+    assert result['status'] == 'success'
+    assert result['ide'] == 'Visual Studio Code'
+
+
+def test_cmd_open_in_ide_unknown_ide_returns_ide_not_detected(plan_context):
+    # Arrange
+    (plan_context.fixture_dir / 'marshal.json').write_text(
+        json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
+    )
+    args = Namespace(path='/abs/path/file.md', plan_id=None, document=None)
+
+    with (
+        mock.patch.object(_mod.sys, 'platform', 'darwin'),
+        mock.patch.dict(_mod.os.environ, {}, clear=True),
+    ):
+        # Act
+        result = cmd_open_in_ide(args)
+
+    # Assert
+    assert result['status'] == 'error'
+    assert result['reason'] == 'ide_not_detected'
+
+
+def test_cmd_open_in_ide_launcher_missing_returns_launcher_missing(plan_context):
+    # Arrange
+    (plan_context.fixture_dir / 'marshal.json').write_text(
+        json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
+    )
+    args = Namespace(path='/abs/path/file.md', plan_id=None, document=None)
+
+    with (
+        mock.patch.object(_mod.sys, 'platform', 'darwin'),
+        mock.patch.object(_mod, 'subprocess') as mock_subprocess,
+        mock.patch.dict(_mod.os.environ, {'TERM_PROGRAM': 'vscode'}, clear=True),
+    ):
+        mock_subprocess.run.side_effect = FileNotFoundError('open not found')
+
+        # Act
+        result = cmd_open_in_ide(args)
+
+    # Assert
+    assert result['status'] == 'error'
+    assert result['reason'] == 'launcher_missing'
+
+
+def test_cmd_open_in_ide_mode_b_without_document_returns_invalid_arguments(plan_context):
+    # Arrange — emulate the case where argparse let through plan-id without --document
+    # (e.g., direct function call rather than CLI invocation).
+    (plan_context.fixture_dir / 'marshal.json').write_text(
+        json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
+    )
+    args = Namespace(path=None, plan_id='some-plan', document=None)
+
+    # Act
+    result = cmd_open_in_ide(args)
+
+    # Assert
+    assert result['status'] == 'error'
+    assert result['reason'] == 'invalid_arguments'
+
+
+def test_cmd_open_in_ide_mode_b_document_resolution_failure(plan_context):
+    # Arrange
+    (plan_context.fixture_dir / 'marshal.json').write_text(
+        json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
+    )
+    args = Namespace(path=None, plan_id='e2e-mode-b-resolver-fail', document='solution_outline')
+
+    # Simulate resolver returning non-zero
+    proc = mock.MagicMock(returncode=2, stdout='', stderr='no outline found')
+    with mock.patch.object(_mod, 'subprocess') as mock_subprocess:
+        mock_subprocess.run.return_value = proc
+
+        # Act
+        result = cmd_open_in_ide(args)
+
+    # Assert
+    assert result['status'] == 'error'
+    assert result['reason'] == 'document_resolution_failed'
 
 
 # =============================================================================

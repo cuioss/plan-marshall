@@ -27,7 +27,7 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT, PlanContext  # type: ignore[import-not-found]
+from conftest import MARKETPLACE_ROOT  # type: ignore[import-not-found]
 
 _MANAGE_CONFIG_SCRIPTS_DIR = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
@@ -99,53 +99,51 @@ def _read_models_block(plan_dir: Path) -> dict:
 # =============================================================================
 
 
-def test_round_trip_default_and_role_persist():
+def test_round_trip_default_and_role_persist(plan_context):
     """Set default=medium and roles.phase-6-finalize.verification-feedback=high; resolver returns saved values."""
-    with PlanContext() as ctx:
-        _seed_marshal(
-            ctx.fixture_dir,
-            {
-                'default': 'medium',
-                'roles': {'phase-6-finalize': {'verification-feedback': 'high'}},
-            },
-        )
-
-        result_role = cmd_effort(
-            Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False)
-        )
-        result_other = cmd_effort(
-            Namespace(role='phase-3-outline', phase=None, default=False)
-        )
-
-        assert result_role['status'] == 'success'
-        assert result_role['level'] == 'high'
-        assert result_role['source'] == 'plan.phase-6-finalize.effort.verification-feedback'
-
-        assert result_other['status'] == 'success'
-        assert result_other['level'] == 'medium'
-        assert result_other['source'] == 'plan.effort'
-
-        # Re-read marshal.json — stored block matches what the wizard would have written.
-        block = _read_models_block(ctx.fixture_dir)
-        assert block == {
+    _seed_marshal(
+        plan_context.fixture_dir,
+        {
             'default': 'medium',
             'roles': {'phase-6-finalize': {'verification-feedback': 'high'}},
-        }
+        },
+    )
+
+    result_role = cmd_effort(
+        Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False)
+    )
+    result_other = cmd_effort(
+        Namespace(role='phase-3-outline', phase=None, default=False)
+    )
+
+    assert result_role['status'] == 'success'
+    assert result_role['level'] == 'high'
+    assert result_role['source'] == 'plan.phase-6-finalize.effort.verification-feedback'
+
+    assert result_other['status'] == 'success'
+    assert result_other['level'] == 'medium'
+    assert result_other['source'] == 'plan.effort'
+
+    # Re-read marshal.json — stored block matches what the wizard would have written.
+    block = _read_models_block(plan_context.fixture_dir)
+    assert block == {
+        'default': 'medium',
+        'roles': {'phase-6-finalize': {'verification-feedback': 'high'}},
+    }
 
 
-def test_round_trip_repeated_reads_do_not_mutate():
+def test_round_trip_repeated_reads_do_not_mutate(plan_context):
     """Multiple `manage-config effort read` invocations leave marshal.json byte-identical."""
-    with PlanContext() as ctx:
-        marshal_path = _seed_marshal(
-            ctx.fixture_dir, {'default': 'low', 'roles': {'research': 'xxhigh'}}
-        )
-        before = marshal_path.read_bytes()
+    marshal_path = _seed_marshal(
+        plan_context.fixture_dir, {'default': 'low', 'roles': {'research': 'xxhigh'}}
+    )
+    before = marshal_path.read_bytes()
 
-        for role in ('research', 'q_gate_validation', 'phase_init'):
-            cmd_effort(Namespace(role=role))
+    for role in ('research', 'q_gate_validation', 'phase_init'):
+        cmd_effort(Namespace(role=role))
 
-        after = marshal_path.read_bytes()
-        assert before == after, 'wizard reads must not mutate marshal.json'
+    after = marshal_path.read_bytes()
+    assert before == after, 'wizard reads must not mutate marshal.json'
 
 
 # =============================================================================
@@ -153,33 +151,31 @@ def test_round_trip_repeated_reads_do_not_mutate():
 # =============================================================================
 
 
-def test_invalid_level_refused_at_read():
+def test_invalid_level_refused_at_read(plan_context):
     """`plan.phase-6-finalize.effort.verification-feedback = 'ultra'` errors out — wizard refuses save."""
-    with PlanContext() as ctx:
-        _seed_marshal(
-            ctx.fixture_dir,
-            {'roles': {'phase-6-finalize': {'verification-feedback': 'ultra'}}},
-        )
+    _seed_marshal(
+        plan_context.fixture_dir,
+        {'roles': {'phase-6-finalize': {'verification-feedback': 'ultra'}}},
+    )
 
-        result = cmd_effort(
-            Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False)
-        )
+    result = cmd_effort(
+        Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False)
+    )
 
-        assert result['status'] == 'error'
-        assert "invalid effort 'ultra'" in result['error']
-        # The error names the source so the wizard can re-prompt with context.
-        assert 'plan.phase-6-finalize.effort.verification-feedback' in result['error']
+    assert result['status'] == 'error'
+    assert "invalid effort 'ultra'" in result['error']
+    # The error names the source so the wizard can re-prompt with context.
+    assert 'plan.phase-6-finalize.effort.verification-feedback' in result['error']
 
 
-def test_max_level_resolves_via_top_level_effort():
+def test_max_level_resolves_via_top_level_effort(plan_context):
     """`max` is a live level (promoted from reserved-future); resolves cleanly via top-level effort."""
-    with PlanContext() as ctx:
-        _seed_marshal(ctx.fixture_dir, {'default': 'max'})
+    _seed_marshal(plan_context.fixture_dir, {'default': 'max'})
 
-        result = cmd_effort(Namespace(role='phase-3-outline'))
+    result = cmd_effort(Namespace(role='phase-3-outline'))
 
-        assert result['status'] == 'success'
-        assert result['level'] == 'max'
+    assert result['status'] == 'success'
+    assert result['level'] == 'max'
 
 
 # =============================================================================
@@ -187,31 +183,29 @@ def test_max_level_resolves_via_top_level_effort():
 # =============================================================================
 
 
-def test_pending_role_surfaced_not_hidden():
+def test_pending_role_surfaced_not_hidden(plan_context):
     """Every registered role key validates and resolves — wizard surfaces them in the registry walk."""
-    with PlanContext() as ctx:
-        # phase-2-refine in the new registry corresponds to the legacy 'phase_refine'.
-        _seed_marshal(ctx.fixture_dir, {'roles': {'phase-2-refine': 'medium'}})
+    # phase-2-refine in the new registry corresponds to the legacy 'phase_refine'.
+    _seed_marshal(plan_context.fixture_dir, {'roles': {'phase-2-refine': 'medium'}})
 
-        result = cmd_effort(Namespace(role='phase-2-refine', phase=None, default=False))
+    result = cmd_effort(Namespace(role='phase-2-refine', phase=None, default=False))
 
-        assert result['status'] == 'success'
-        assert result['level'] == 'medium'
-        # No "unknown role" warning — phase-2-refine is a known registered role.
-        assert 'warnings' not in result
+    assert result['status'] == 'success'
+    assert result['level'] == 'medium'
+    # No "unknown role" warning — phase-2-refine is a known registered role.
+    assert 'warnings' not in result
 
 
-def test_unknown_role_warns_does_not_block_save():
+def test_unknown_role_warns_does_not_block_save(plan_context):
     """Unknown roles warn (not error) so a renamed registry doesn't break saved configs."""
-    with PlanContext() as ctx:
-        _seed_marshal(ctx.fixture_dir, {'default': 'high'})
+    _seed_marshal(plan_context.fixture_dir, {'default': 'high'})
 
-        result = cmd_effort(Namespace(role='legacy_renamed_role'))
+    result = cmd_effort(Namespace(role='legacy_renamed_role'))
 
-        assert result['status'] == 'success'
-        assert result['level'] == 'high'  # falls through to default
-        assert 'warnings' in result
-        assert any('not registered' in w for w in result['warnings'])
+    assert result['status'] == 'success'
+    assert result['level'] == 'high'  # falls through to default
+    assert 'warnings' in result
+    assert any('not registered' in w for w in result['warnings'])
 
 
 # =============================================================================
@@ -219,27 +213,26 @@ def test_unknown_role_warns_does_not_block_save():
 # =============================================================================
 
 
-def test_clear_effort_config_reverts_to_inherit():
+def test_clear_effort_config_reverts_to_inherit(plan_context):
     """Removing every effort field restores `inherit` everywhere."""
-    with PlanContext() as ctx:
-        # Step 1: seed a configured block.
-        marshal_path = _seed_marshal(
-            ctx.fixture_dir, {'default': 'high', 'roles': {'phase-3-outline': 'xxhigh'}}
-        )
-        # Step 2: simulate "clear all" by removing `plan.effort` plus every
-        # per-phase effort attribute under `plan.<phase>`.
-        cleared = json.loads(marshal_path.read_text(encoding='utf-8'))
-        plan_block = cleared.get('plan', {})
-        if isinstance(plan_block, dict):
-            plan_block.pop('effort', None)
-            for phase_entry in plan_block.values():
-                if isinstance(phase_entry, dict):
-                    phase_entry.pop('effort', None)
-        marshal_path.write_text(json.dumps(cleared, indent=2), encoding='utf-8')
+    # Step 1: seed a configured block.
+    marshal_path = _seed_marshal(
+        plan_context.fixture_dir, {'default': 'high', 'roles': {'phase-3-outline': 'xxhigh'}}
+    )
+    # Step 2: simulate "clear all" by removing `plan.effort` plus every
+    # per-phase effort attribute under `plan.<phase>`.
+    cleared = json.loads(marshal_path.read_text(encoding='utf-8'))
+    plan_block = cleared.get('plan', {})
+    if isinstance(plan_block, dict):
+        plan_block.pop('effort', None)
+        for phase_entry in plan_block.values():
+            if isinstance(phase_entry, dict):
+                phase_entry.pop('effort', None)
+    marshal_path.write_text(json.dumps(cleared, indent=2), encoding='utf-8')
 
-        # Step 3: every resolver call returns inherit / implicit_default.
-        for role in ('phase-2-refine', 'phase-3-outline', 'phase-6-finalize'):
-            result = cmd_effort(Namespace(role=role))
-            assert result['status'] == 'success'
-            assert result['level'] == 'inherit'
-            assert result['source'] == 'implicit_default'
+    # Step 3: every resolver call returns inherit / implicit_default.
+    for role in ('phase-2-refine', 'phase-3-outline', 'phase-6-finalize'):
+        result = cmd_effort(Namespace(role=role))
+        assert result['status'] == 'success'
+        assert result['level'] == 'inherit'
+        assert result['source'] == 'implicit_default'

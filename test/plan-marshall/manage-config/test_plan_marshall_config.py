@@ -54,180 +54,168 @@ cmd_resolve_domain_skills = _cmd_skill_resolution.cmd_resolve_domain_skills
 cmd_plan = _cmd_system_plan.cmd_plan
 cmd_system = _cmd_system_plan.cmd_system
 
-from conftest import PlanContext, run_script  # noqa: E402
+from conftest import run_script  # noqa: E402
 
 # =============================================================================
 # Happy-Path Integration Tests (Tier 2 - direct import)
 # =============================================================================
 
 
-def test_init_creates_marshal_json(monkeypatch):
+def test_init_creates_marshal_json(plan_context, monkeypatch):
     """Test init creates marshal.json with defaults."""
-    with PlanContext() as ctx:
-        result = cmd_init(Namespace(force=False))
+    result = cmd_init(Namespace(force=False))
 
-        assert result['status'] == 'success'
+    assert result['status'] == 'success'
 
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        assert marshal_path.exists(), 'marshal.json should be created'
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    assert marshal_path.exists(), 'marshal.json should be created'
 
 
-def test_skill_domains_list(monkeypatch):
+def test_skill_domains_list(plan_context, monkeypatch):
     """Test skill-domains list."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(verb='list'))
+    result = cmd_skill_domains(Namespace(verb='list'))
 
-        assert result['status'] == 'success'
-        assert 'java' in result['domains']
+    assert result['status'] == 'success'
+    assert 'java' in result['domains']
 
 
-def test_skill_domains_get(monkeypatch):
+def test_skill_domains_get(plan_context, monkeypatch):
     """Test skill-domains get."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(verb='get', domain='java'))
+    result = cmd_skill_domains(Namespace(verb='get', domain='java'))
 
-        assert result['status'] == 'success'
-        assert 'pm-dev-java:java-core' in result['defaults']
+    assert result['status'] == 'success'
+    assert 'pm-dev-java:java-core' in result['defaults']
 
 
-def test_system_retention_get(monkeypatch):
+def test_system_retention_get(plan_context, monkeypatch):
     """Test system retention get."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_system(Namespace(sub_noun='retention', verb='get'))
+    result = cmd_system(Namespace(sub_noun='retention', verb='get'))
 
-        assert result['status'] == 'success'
-        assert 'logs_days' in result['retention']
+    assert result['status'] == 'success'
+    assert 'logs_days' in result['retention']
 
 
-def test_plan_phase_5_execute_get(monkeypatch):
+def test_plan_phase_5_execute_get(plan_context, monkeypatch):
     """Test plan phase-5-execute get.
 
     Also asserts the two rebase-control keys (rebase_on_execute_start,
     rebase_strategy) appear in the merged phase section with their documented
     defaults — see marshal.json schema in _config_defaults.DEFAULT_PLAN_EXECUTE.
     """
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='get', field=None))
+    result = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='get', field=None))
 
-        assert result['status'] == 'success'
-        assert 'commit_strategy' in result
-        # rebase-control keys must be present with documented defaults
-        assert result['rebase_on_execute_start'] is True
-        assert result['rebase_strategy'] == 'merge'
+    assert result['status'] == 'success'
+    assert 'commit_strategy' in result
+    # rebase-control keys must be present with documented defaults
+    assert result['rebase_on_execute_start'] is True
+    assert result['rebase_strategy'] == 'merge'
 
 
-def test_plan_phase_5_execute_set_rebase_strategy_invalid_rejected(monkeypatch):
+def test_plan_phase_5_execute_set_rebase_strategy_invalid_rejected(plan_context, monkeypatch):
     """Test plan phase-5-execute set rejects invalid rebase_strategy values.
 
     SKILL.md documents `rebase_strategy` as an enum(rebase|merge); the config
     setter must reject any other value and must not mutate marshal.json.
     """
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_plan(
-            Namespace(
-                sub_noun='phase-5-execute',
-                verb='set',
-                field='rebase_strategy',
-                value='squash',
-            )
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-5-execute',
+            verb='set',
+            field='rebase_strategy',
+            value='squash',
         )
+    )
 
-        assert result['status'] == 'error', f'Invalid rebase_strategy must be rejected; got {result}'
+    assert result['status'] == 'error', f'Invalid rebase_strategy must be rejected; got {result}'
 
-        # Verify default was not overwritten on disk
-        verify = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='get', field='rebase_strategy'))
-        assert verify['status'] == 'success'
-        assert verify['value'] == 'merge'
+    # Verify default was not overwritten on disk
+    verify = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='get', field='rebase_strategy'))
+    assert verify['status'] == 'success'
+    assert verify['value'] == 'merge'
 
 
-def test_plan_phase_5_execute_set_rebase_strategy_valid_accepted(monkeypatch):
+def test_plan_phase_5_execute_set_rebase_strategy_valid_accepted(plan_context, monkeypatch):
     """Test plan phase-5-execute set accepts documented enum values."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_plan(
-            Namespace(
-                sub_noun='phase-5-execute',
-                verb='set',
-                field='rebase_strategy',
-                value='rebase',
-            )
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-5-execute',
+            verb='set',
+            field='rebase_strategy',
+            value='rebase',
         )
+    )
 
-        assert result['status'] == 'success'
-        assert result['value'] == 'rebase'
+    assert result['status'] == 'success'
+    assert result['value'] == 'rebase'
 
-        # Verify persisted
-        verify = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='get', field='rebase_strategy'))
-        assert verify['value'] == 'rebase'
+    # Verify persisted
+    verify = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='get', field='rebase_strategy'))
+    assert verify['value'] == 'rebase'
 
 
-def test_plan_phase_6_finalize_get(monkeypatch):
+def test_plan_phase_6_finalize_get(plan_context, monkeypatch):
     """Test plan phase-6-finalize get returns config including pr_merge_strategy."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='get', field=None))
+    result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='get', field=None))
 
-        assert result['status'] == 'success'
-        assert result['pr_merge_strategy'] == 'squash'
+    assert result['status'] == 'success'
+    assert result['pr_merge_strategy'] == 'squash'
 
 
-def test_plan_phase_6_finalize_get_field_pr_merge_strategy(monkeypatch):
+def test_plan_phase_6_finalize_get_field_pr_merge_strategy(plan_context, monkeypatch):
     """Test plan phase-6-finalize get --field pr_merge_strategy."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='get', field='pr_merge_strategy'))
+    result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='get', field='pr_merge_strategy'))
 
-        assert result['status'] == 'success'
-        assert result['value'] == 'squash'
+    assert result['status'] == 'success'
+    assert result['value'] == 'squash'
 
 
-def test_plan_phase_6_finalize_set_pr_merge_strategy(monkeypatch):
+def test_plan_phase_6_finalize_set_pr_merge_strategy(plan_context, monkeypatch):
     """Test plan phase-6-finalize set --field pr_merge_strategy --value rebase."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='set', field='pr_merge_strategy', value='rebase'))
+    result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='set', field='pr_merge_strategy', value='rebase'))
 
-        assert result['status'] == 'success'
-        assert result['value'] == 'rebase'
+    assert result['status'] == 'success'
+    assert result['value'] == 'rebase'
 
-        # Verify persisted
-        result2 = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='get', field='pr_merge_strategy'))
-        assert result2['value'] == 'rebase'
+    # Verify persisted
+    result2 = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='get', field='pr_merge_strategy'))
+    assert result2['value'] == 'rebase'
 
 
-def test_resolve_domain_skills(monkeypatch):
+def test_resolve_domain_skills(plan_context, monkeypatch):
     """Test resolve-domain-skills command."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
+    create_nested_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_resolve_domain_skills(Namespace(domain='java', profile='implementation'))
+    result = cmd_resolve_domain_skills(Namespace(domain='java', profile='implementation'))
 
-        assert result['status'] == 'success'
-        assert 'pm-dev-java:java-core' in result['defaults']
+    assert result['status'] == 'success'
+    assert 'pm-dev-java:java-core' in result['defaults']
 
 
-def test_error_without_marshal_json(monkeypatch):
+def test_error_without_marshal_json(plan_context, monkeypatch):
     """Test operations fail gracefully without marshal.json."""
-    with PlanContext():
-        # Don't create marshal.json
+    # Don't create marshal.json
 
-        result = cmd_skill_domains(Namespace(verb='list'))
+    result = cmd_skill_domains(Namespace(verb='list'))
 
-        assert result['status'] == 'error'
+    assert result['status'] == 'error'
 
 
 # CI tests removed — CI config now owned by tools-integration-ci/ci_health.py
@@ -239,153 +227,140 @@ def test_error_without_marshal_json(monkeypatch):
 # =============================================================================
 
 
-def test_ext_defaults_set_adds_value(monkeypatch):
+def test_ext_defaults_set_adds_value(plan_context, monkeypatch):
     """Test ext-defaults set adds a value."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_ext_defaults(Namespace(verb='set', key='test.key', value='test-value'))
+    result = cmd_ext_defaults(Namespace(verb='set', key='test.key', value='test-value'))
 
-        assert result['status'] == 'success'
-        assert result['key'] == 'test.key'
+    assert result['status'] == 'success'
+    assert result['key'] == 'test.key'
 
 
-def test_ext_defaults_set_updates_existing(monkeypatch):
+def test_ext_defaults_set_updates_existing(plan_context, monkeypatch):
     """Test ext-defaults set overwrites existing value."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        # Set initial value
-        cmd_ext_defaults(Namespace(verb='set', key='test.key', value='initial'))
+    # Set initial value
+    cmd_ext_defaults(Namespace(verb='set', key='test.key', value='initial'))
 
-        # Update value
-        result = cmd_ext_defaults(Namespace(verb='set', key='test.key', value='updated'))
+    # Update value
+    result = cmd_ext_defaults(Namespace(verb='set', key='test.key', value='updated'))
 
-        assert result['status'] == 'success'
-        assert result['value'] == 'updated'
+    assert result['status'] == 'success'
+    assert result['value'] == 'updated'
 
 
-def test_ext_defaults_set_json_array(monkeypatch):
+def test_ext_defaults_set_json_array(plan_context, monkeypatch):
     """Test ext-defaults set with JSON array value."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_ext_defaults(Namespace(verb='set', key='test.array', value='["a","b","c"]'))
+    result = cmd_ext_defaults(Namespace(verb='set', key='test.array', value='["a","b","c"]'))
 
-        assert result['status'] == 'success'
+    assert result['status'] == 'success'
 
 
-def test_ext_defaults_set_json_object(monkeypatch):
+def test_ext_defaults_set_json_object(plan_context, monkeypatch):
     """Test ext-defaults set with JSON object value."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_ext_defaults(Namespace(verb='set', key='test.obj', value='{"nested": true}'))
+    result = cmd_ext_defaults(Namespace(verb='set', key='test.obj', value='{"nested": true}'))
 
-        assert result['status'] == 'success'
+    assert result['status'] == 'success'
 
 
-def test_ext_defaults_set_plain_string(monkeypatch):
+def test_ext_defaults_set_plain_string(plan_context, monkeypatch):
     """Test ext-defaults set with plain string (not JSON)."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_ext_defaults(Namespace(verb='set', key='test.str', value='hello-world'))
+    result = cmd_ext_defaults(Namespace(verb='set', key='test.str', value='hello-world'))
 
-        assert result['status'] == 'success'
-        assert result['value'] == 'hello-world'
+    assert result['status'] == 'success'
+    assert result['value'] == 'hello-world'
 
 
-def test_ext_defaults_get_existing(monkeypatch):
+def test_ext_defaults_get_existing(plan_context, monkeypatch):
     """Test ext-defaults get retrieves existing value."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-        cmd_ext_defaults(Namespace(verb='set', key='my.key', value='my-value'))
+    create_marshal_json(plan_context.fixture_dir)
+    cmd_ext_defaults(Namespace(verb='set', key='my.key', value='my-value'))
 
-        result = cmd_ext_defaults(Namespace(verb='get', key='my.key'))
+    result = cmd_ext_defaults(Namespace(verb='get', key='my.key'))
 
-        assert result['status'] == 'success'
-        assert result['value'] == 'my-value'
+    assert result['status'] == 'success'
+    assert result['value'] == 'my-value'
 
 
-def test_ext_defaults_get_nonexistent(monkeypatch):
+def test_ext_defaults_get_nonexistent(plan_context, monkeypatch):
     """Test ext-defaults get returns not_found for missing key."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_ext_defaults(Namespace(verb='get', key='nonexistent'))
+    result = cmd_ext_defaults(Namespace(verb='get', key='nonexistent'))
 
-        assert result['status'] == 'not_found'
+    assert result['status'] == 'not_found'
 
 
-def test_ext_defaults_set_default_adds_new(monkeypatch):
+def test_ext_defaults_set_default_adds_new(plan_context, monkeypatch):
     """Test ext-defaults set-default adds value when key doesn't exist."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_ext_defaults(Namespace(verb='set-default', key='new.key', value='new-value'))
+    result = cmd_ext_defaults(Namespace(verb='set-default', key='new.key', value='new-value'))
 
-        assert result['status'] == 'success'
-        assert result['value'] == 'new-value'
+    assert result['status'] == 'success'
+    assert result['value'] == 'new-value'
 
 
-def test_ext_defaults_set_default_skips_existing(monkeypatch):
+def test_ext_defaults_set_default_skips_existing(plan_context, monkeypatch):
     """Test ext-defaults set-default skips when key exists."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-        cmd_ext_defaults(Namespace(verb='set', key='existing.key', value='original'))
+    create_marshal_json(plan_context.fixture_dir)
+    cmd_ext_defaults(Namespace(verb='set', key='existing.key', value='original'))
 
-        result = cmd_ext_defaults(Namespace(verb='set-default', key='existing.key', value='new'))
+    result = cmd_ext_defaults(Namespace(verb='set-default', key='existing.key', value='new'))
 
-        assert result['status'] == 'skipped'
-        assert result['reason'] == 'key_exists'
+    assert result['status'] == 'skipped'
+    assert result['reason'] == 'key_exists'
 
 
-def test_ext_defaults_list_all(monkeypatch):
+def test_ext_defaults_list_all(plan_context, monkeypatch):
     """Test ext-defaults list shows all values."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-        cmd_ext_defaults(Namespace(verb='set', key='key1', value='value1'))
-        cmd_ext_defaults(Namespace(verb='set', key='key2', value='value2'))
+    create_marshal_json(plan_context.fixture_dir)
+    cmd_ext_defaults(Namespace(verb='set', key='key1', value='value1'))
+    cmd_ext_defaults(Namespace(verb='set', key='key2', value='value2'))
 
-        result = cmd_ext_defaults(Namespace(verb='list'))
+    result = cmd_ext_defaults(Namespace(verb='list'))
 
-        assert result['status'] == 'success'
-        assert 'key1' in result['extension_defaults']
-        assert 'key2' in result['extension_defaults']
+    assert result['status'] == 'success'
+    assert 'key1' in result['extension_defaults']
+    assert 'key2' in result['extension_defaults']
 
 
-def test_ext_defaults_list_empty(monkeypatch):
+def test_ext_defaults_list_empty(plan_context, monkeypatch):
     """Test ext-defaults list with no values."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_ext_defaults(Namespace(verb='list'))
+    result = cmd_ext_defaults(Namespace(verb='list'))
 
-        assert result['status'] == 'success'
-        assert result['count'] == 0
+    assert result['status'] == 'success'
+    assert result['count'] == 0
 
 
-def test_ext_defaults_remove_existing(monkeypatch):
+def test_ext_defaults_remove_existing(plan_context, monkeypatch):
     """Test ext-defaults remove deletes existing key."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-        cmd_ext_defaults(Namespace(verb='set', key='to.remove', value='value'))
+    create_marshal_json(plan_context.fixture_dir)
+    cmd_ext_defaults(Namespace(verb='set', key='to.remove', value='value'))
 
-        result = cmd_ext_defaults(Namespace(verb='remove', key='to.remove'))
+    result = cmd_ext_defaults(Namespace(verb='remove', key='to.remove'))
 
-        assert result['status'] == 'success'
-        assert result['action'] == 'removed'
+    assert result['status'] == 'success'
+    assert result['action'] == 'removed'
 
 
-def test_ext_defaults_remove_nonexistent_skips(monkeypatch):
+def test_ext_defaults_remove_nonexistent_skips(plan_context, monkeypatch):
     """Test ext-defaults remove skips non-existent key."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_ext_defaults(Namespace(verb='remove', key='nonexistent'))
+    result = cmd_ext_defaults(Namespace(verb='remove', key='nonexistent'))
 
-        assert result['status'] == 'skipped'
+    assert result['status'] == 'skipped'
 
 
 # =============================================================================

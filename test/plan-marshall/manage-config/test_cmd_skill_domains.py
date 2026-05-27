@@ -42,147 +42,138 @@ cmd_list_verify_steps = _cmd_skill_domains.cmd_list_verify_steps
 cmd_skill_domains = _cmd_skill_domains.cmd_skill_domains
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import PlanContext, run_script  # noqa: E402
+from conftest import run_script  # noqa: E402
 
 # =============================================================================
 # skill-domains Basic Tests (Flat Structure) - Tier 2
 # =============================================================================
 
 
-def test_skill_domains_list(monkeypatch):
+def test_skill_domains_list(plan_context, monkeypatch):
     """Test skill-domains list."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(verb='list'))
+    result = cmd_skill_domains(Namespace(verb='list'))
 
-        assert result['status'] == 'success'
-        assert 'java' in result['domains']
+    assert result['status'] == 'success'
+    assert 'java' in result['domains']
 
 
-def test_skill_domains_get(monkeypatch):
+def test_skill_domains_get(plan_context, monkeypatch):
     """Test skill-domains get."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(verb='get', domain='java'))
+    result = cmd_skill_domains(Namespace(verb='get', domain='java'))
 
-        assert result['status'] == 'success'
-        assert 'pm-dev-java:java-core' in result['defaults']
+    assert result['status'] == 'success'
+    assert 'pm-dev-java:java-core' in result['defaults']
 
 
-def test_skill_domains_get_defaults(monkeypatch):
+def test_skill_domains_get_defaults(plan_context, monkeypatch):
     """Test skill-domains get-defaults."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(verb='get-defaults', domain='java'))
+    result = cmd_skill_domains(Namespace(verb='get-defaults', domain='java'))
 
-        assert result['status'] == 'success'
-        assert 'pm-dev-java:java-core' in result['defaults']
+    assert result['status'] == 'success'
+    assert 'pm-dev-java:java-core' in result['defaults']
 
 
-def test_skill_domains_get_optionals(monkeypatch):
+def test_skill_domains_get_optionals(plan_context, monkeypatch):
     """Test skill-domains get-optionals."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(verb='get-optionals', domain='java'))
+    result = cmd_skill_domains(Namespace(verb='get-optionals', domain='java'))
 
-        assert result['status'] == 'success'
-        assert 'pm-dev-java:java-cdi' in result['optionals']
+    assert result['status'] == 'success'
+    assert 'pm-dev-java:java-cdi' in result['optionals']
 
 
-def test_skill_domains_unknown_domain(monkeypatch):
+def test_skill_domains_unknown_domain(plan_context, monkeypatch):
     """Test skill-domains get with unknown domain returns error."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(verb='get', domain='unknown'))
+    result = cmd_skill_domains(Namespace(verb='get', domain='unknown'))
 
-        assert result['status'] == 'error'
-        assert 'unknown' in result['error'].lower()
+    assert result['status'] == 'error'
+    assert 'unknown' in result['error'].lower()
 
 
-def test_skill_domains_add(monkeypatch):
+def test_skill_domains_add(plan_context, monkeypatch):
     """Test skill-domains add."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(
-            Namespace(
-                verb='add',
-                domain='python',
-                defaults='pm-dev-python:cui-python-core',
-                optionals=None,
-            )
+    result = cmd_skill_domains(
+        Namespace(
+            verb='add',
+            domain='python',
+            defaults='pm-dev-python:cui-python-core',
+            optionals=None,
         )
+    )
 
-        assert result['status'] == 'success'
+    assert result['status'] == 'success'
 
-        # Verify added
-        verify = cmd_skill_domains(Namespace(verb='get', domain='python'))
-        assert 'pm-dev-python:cui-python-core' in verify['defaults']
+    # Verify added
+    verify = cmd_skill_domains(Namespace(verb='get', domain='python'))
+    assert 'pm-dev-python:cui-python-core' in verify['defaults']
 
 
-def test_skill_domains_validate(monkeypatch):
+def test_skill_domains_validate(plan_context, monkeypatch):
     """Test skill-domains validate."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(
-            Namespace(
-                verb='validate',
-                domain='java',
-                skill='pm-dev-java:java-core',
-            )
+    result = cmd_skill_domains(
+        Namespace(
+            verb='validate',
+            domain='java',
+            skill='pm-dev-java:java-core',
         )
+    )
 
-        assert result['status'] == 'success'
-        assert result['valid'] is True
+    assert result['status'] == 'success'
+    assert result['valid'] is True
 
 
-def test_skill_domains_validate_returns_location(monkeypatch):
+def test_skill_domains_validate_returns_location(plan_context, monkeypatch):
     """Test skill-domains validate returns in_defaults or in_optionals."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        # Skill in defaults
-        result_defaults = cmd_skill_domains(
-            Namespace(
-                verb='validate',
-                domain='java',
-                skill='pm-dev-java:java-core',
-            )
+    # Skill in defaults
+    result_defaults = cmd_skill_domains(
+        Namespace(
+            verb='validate',
+            domain='java',
+            skill='pm-dev-java:java-core',
         )
-        assert result_defaults['in_defaults'] is True
+    )
+    assert result_defaults['in_defaults'] is True
 
-        # Skill in optionals
-        result_optionals = cmd_skill_domains(
-            Namespace(
-                verb='validate',
-                domain='java',
-                skill='pm-dev-java:java-cdi',
-            )
+    # Skill in optionals
+    result_optionals = cmd_skill_domains(
+        Namespace(
+            verb='validate',
+            domain='java',
+            skill='pm-dev-java:java-cdi',
         )
-        assert result_optionals['in_optionals'] is True
+    )
+    assert result_optionals['in_optionals'] is True
 
 
-def test_skill_domains_validate_invalid_skill(monkeypatch):
+def test_skill_domains_validate_invalid_skill(plan_context, monkeypatch):
     """Test skill-domains validate with invalid skill returns false."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(
-            Namespace(
-                verb='validate',
-                domain='java',
-                skill='pm-dev-java:invalid-skill',
-            )
+    result = cmd_skill_domains(
+        Namespace(
+            verb='validate',
+            domain='java',
+            skill='pm-dev-java:invalid-skill',
         )
+    )
 
-        assert result['status'] == 'success'
-        assert result['valid'] is False
+    assert result['status'] == 'success'
+    assert result['valid'] is False
 
 
 # =============================================================================
@@ -190,78 +181,72 @@ def test_skill_domains_validate_invalid_skill(monkeypatch):
 # =============================================================================
 
 
-def test_skill_domains_get_nested_structure(monkeypatch):
+def test_skill_domains_get_nested_structure(plan_context, monkeypatch):
     """Test skill-domains get returns nested structure for domains with bundle reference."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
+    create_nested_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(verb='get', domain='java'))
+    result = cmd_skill_domains(Namespace(verb='get', domain='java'))
 
-        assert result['status'] == 'success'
-        assert 'bundle' in result
-        assert result['bundle'] == 'pm-dev-java'
-        assert 'workflow_skill_extensions' in result
+    assert result['status'] == 'success'
+    assert 'bundle' in result
+    assert result['bundle'] == 'pm-dev-java'
+    assert 'workflow_skill_extensions' in result
 
 
-def test_skill_domains_get_defaults_nested(monkeypatch):
+def test_skill_domains_get_defaults_nested(plan_context, monkeypatch):
     """Test skill-domains get-defaults loads core.defaults from extension.py."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
+    create_nested_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(verb='get-defaults', domain='java'))
+    result = cmd_skill_domains(Namespace(verb='get-defaults', domain='java'))
 
-        assert result['status'] == 'success'
-        defaults_str = str(result['defaults'])
-        assert 'pm-dev-java:java-core' in defaults_str
+    assert result['status'] == 'success'
+    defaults_str = str(result['defaults'])
+    assert 'pm-dev-java:java-core' in defaults_str
 
 
-def test_skill_domains_get_optionals_nested(monkeypatch):
+def test_skill_domains_get_optionals_nested(plan_context, monkeypatch):
     """Test skill-domains get-optionals loads core.optionals from extension.py."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
+    create_nested_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(verb='get-optionals', domain='java'))
+    result = cmd_skill_domains(Namespace(verb='get-optionals', domain='java'))
 
-        assert result['status'] == 'success'
-        optionals_str = str(result['optionals'])
-        assert 'pm-dev-java:java-null-safety' in optionals_str
-        assert 'pm-dev-java:java-lombok' in optionals_str
+    assert result['status'] == 'success'
+    optionals_str = str(result['optionals'])
+    assert 'pm-dev-java:java-null-safety' in optionals_str
+    assert 'pm-dev-java:java-lombok' in optionals_str
 
 
-def test_skill_domains_validate_nested():
+def test_skill_domains_validate_nested(plan_context):
     """Test skill-domains validate loads profiles from extension.py."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        result = run_script(
-            SCRIPT_PATH, 'skill-domains', 'validate', '--domain', 'java', '--skill', 'pm-dev-java:java-core'
-        )
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'true' in result.stdout.lower() or 'valid' in result.stdout.lower()
+    create_nested_marshal_json(plan_context.fixture_dir)
+    result = run_script(
+        SCRIPT_PATH, 'skill-domains', 'validate', '--domain', 'java', '--skill', 'pm-dev-java:java-core'
+    )
+    assert result.success, f'Should succeed: {result.stderr}'
+    assert 'true' in result.stdout.lower() or 'valid' in result.stdout.lower()
 
 
-def test_skill_domains_validate_nested_profile_skill():
+def test_skill_domains_validate_nested_profile_skill(plan_context):
     """Test skill-domains validate finds skills in profile blocks loaded from extension.py."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        result = run_script(
-            SCRIPT_PATH, 'skill-domains', 'validate', '--domain', 'java', '--skill', 'pm-dev-java:junit-core'
-        )
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'true' in result.stdout.lower() or 'valid' in result.stdout.lower()
-        assert 'in_defaults' in result.stdout.lower()
+    create_nested_marshal_json(plan_context.fixture_dir)
+    result = run_script(
+        SCRIPT_PATH, 'skill-domains', 'validate', '--domain', 'java', '--skill', 'pm-dev-java:junit-core'
+    )
+    assert result.success, f'Should succeed: {result.stderr}'
+    assert 'true' in result.stdout.lower() or 'valid' in result.stdout.lower()
+    assert 'in_defaults' in result.stdout.lower()
 
 
-def test_skill_domains_get_system_has_execute_task_skills(monkeypatch):
+def test_skill_domains_get_system_has_execute_task_skills(plan_context, monkeypatch):
     """Test skill-domains get returns system domain with execute_task_skills."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
+    create_nested_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(verb='get', domain='system'))
+    result = cmd_skill_domains(Namespace(verb='get', domain='system'))
 
-        assert result['status'] == 'success'
-        assert 'defaults' in result
-        assert 'plan-marshall:dev-agent-behavior-rules' in result['defaults']
-        assert 'execute_task_skills' in result
+    assert result['status'] == 'success'
+    assert 'defaults' in result
+    assert 'plan-marshall:dev-agent-behavior-rules' in result['defaults']
+    assert 'execute_task_skills' in result
 
 
 # =============================================================================
@@ -269,91 +254,89 @@ def test_skill_domains_get_system_has_execute_task_skills(monkeypatch):
 # =============================================================================
 
 
-def test_skill_domains_detect_runs(monkeypatch):
+def test_skill_domains_detect_runs(plan_context, monkeypatch):
     """Test skill-domains detect command runs successfully."""
-    with PlanContext() as ctx:
-        config = {
-            'skill_domains': {'system': {'defaults': ['plan-marshall:dev-agent-behavior-rules'], 'optionals': []}},
-            'system': {'retention': {}},
-            'plan': {
-                'phase-1-init': {'branch_strategy': 'direct'},
-                'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-                'phase-5-execute': {
-                    'commit_strategy': 'per_deliverable',
-                    'verification_max_iterations': 5,
-                    'steps': ['default:quality_check', 'default:build_verify'],
-                },
-                'phase-6-finalize': {
-                    'max_iterations': 3,
-                    'review_bot_buffer_seconds': 300,
-                    'steps': [
-                        'default:commit-push',
-                        'default:create-pr',
-                        'default:automated-review',
-                        'default:sonar-roundtrip',
-                        'default:lessons-capture',
-                        'default:branch-cleanup',
-                        'default:record-metrics',
-                        'default:archive-plan',
-                    ],
-                },
+    config = {
+        'skill_domains': {'system': {'defaults': ['plan-marshall:dev-agent-behavior-rules'], 'optionals': []}},
+        'system': {'retention': {}},
+        'plan': {
+            'phase-1-init': {'branch_strategy': 'direct'},
+            'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+            'phase-5-execute': {
+                'commit_strategy': 'per_deliverable',
+                'verification_max_iterations': 5,
+                'steps': ['default:quality_check', 'default:build_verify'],
             },
-        }
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps(config, indent=2))
+            'phase-6-finalize': {
+                'max_iterations': 3,
+                'review_bot_buffer_seconds': 300,
+                'steps': [
+                    'default:commit-push',
+                    'default:create-pr',
+                    'default:automated-review',
+                    'default:sonar-roundtrip',
+                    'default:lessons-capture',
+                    'default:branch-cleanup',
+                    'default:record-metrics',
+                    'default:archive-plan',
+                ],
+            },
+        },
+    }
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
 
-        result = cmd_skill_domains(Namespace(verb='detect'))
+    result = cmd_skill_domains(Namespace(verb='detect'))
 
-        assert result['status'] == 'success'
-        assert 'detected' in result
+    assert result['status'] == 'success'
+    assert 'detected' in result
 
 
-def test_skill_domains_detect_no_overwrite(monkeypatch):
+def test_skill_domains_detect_no_overwrite(plan_context, monkeypatch):
     """Test skill-domains detect does not overwrite existing domains."""
-    with PlanContext() as ctx:
-        config = {
-            'skill_domains': {
-                'system': {'defaults': [], 'optionals': []},
-                'java': {
-                    'bundle': 'custom-java-bundle',
-                    'workflow_skill_extensions': {'outline': 'custom:outline-skill'},
-                },
+    config = {
+        'skill_domains': {
+            'system': {'defaults': [], 'optionals': []},
+            'java': {
+                'bundle': 'custom-java-bundle',
+                'workflow_skill_extensions': {'outline': 'custom:outline-skill'},
             },
-            'system': {'retention': {}},
-            'plan': {
-                'phase-1-init': {'branch_strategy': 'direct'},
-                'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-                'phase-5-execute': {
-                    'commit_strategy': 'per_deliverable',
-                    'verification_max_iterations': 5,
-                    'steps': ['default:quality_check', 'default:build_verify'],
-                },
-                'phase-6-finalize': {
-                    'max_iterations': 3,
-                    'review_bot_buffer_seconds': 300,
-                    'steps': [
-                        'default:commit-push',
-                        'default:create-pr',
-                        'default:automated-review',
-                        'default:sonar-roundtrip',
-                        'default:lessons-capture',
-                        'default:branch-cleanup',
-                        'default:record-metrics',
-                        'default:archive-plan',
-                    ],
-                },
+        },
+        'system': {'retention': {}},
+        'plan': {
+            'phase-1-init': {'branch_strategy': 'direct'},
+            'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+            'phase-5-execute': {
+                'commit_strategy': 'per_deliverable',
+                'verification_max_iterations': 5,
+                'steps': ['default:quality_check', 'default:build_verify'],
             },
-        }
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps(config, indent=2))
+            'phase-6-finalize': {
+                'max_iterations': 3,
+                'review_bot_buffer_seconds': 300,
+                'steps': [
+                    'default:commit-push',
+                    'default:create-pr',
+                    'default:automated-review',
+                    'default:sonar-roundtrip',
+                    'default:lessons-capture',
+                    'default:branch-cleanup',
+                    'default:record-metrics',
+                    'default:archive-plan',
+                ],
+            },
+        },
+    }
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
 
-        result = cmd_skill_domains(Namespace(verb='detect'))
+    result = cmd_skill_domains(Namespace(verb='detect'))
 
-        assert result['status'] == 'success'
+    assert result['status'] == 'success'
 
-        # Verify existing java domain was NOT overwritten
-        verify = cmd_skill_domains(Namespace(verb='get', domain='java'))
-        assert verify['bundle'] == 'custom-java-bundle'
+    # Verify existing java domain was NOT overwritten
+    verify = cmd_skill_domains(Namespace(verb='get', domain='java'))
+    assert verify['bundle'] == 'custom-java-bundle'
 
 
 # =============================================================================
@@ -361,46 +344,43 @@ def test_skill_domains_detect_no_overwrite(monkeypatch):
 # =============================================================================
 
 
-def test_get_extensions_java(monkeypatch):
+def test_get_extensions_java(plan_context, monkeypatch):
     """Test get-extensions returns extensions for java domain."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
+    create_nested_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(verb='get-extensions', domain='java'))
+    result = cmd_skill_domains(Namespace(verb='get-extensions', domain='java'))
 
-        assert result['status'] == 'success'
-        assert 'extensions' in result
-        assert 'outline' in result['extensions']
-        assert 'triage' in result['extensions']
+    assert result['status'] == 'success'
+    assert 'extensions' in result
+    assert 'outline' in result['extensions']
+    assert 'triage' in result['extensions']
 
 
-def test_get_extensions_unknown_domain(monkeypatch):
+def test_get_extensions_unknown_domain(plan_context, monkeypatch):
     """Test get-extensions returns error for unknown domain."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
+    create_nested_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(Namespace(verb='get-extensions', domain='unknown'))
+    result = cmd_skill_domains(Namespace(verb='get-extensions', domain='unknown'))
 
-        assert result['status'] == 'error'
+    assert result['status'] == 'error'
 
 
-def test_set_extensions(monkeypatch):
+def test_set_extensions(plan_context, monkeypatch):
     """Test set-extensions adds extension to domain."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
+    create_nested_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(
-            Namespace(
-                verb='set-extensions',
-                domain='java',
-                type='triage',
-                skill='pm-dev-java:new-triage',
-            )
+    result = cmd_skill_domains(
+        Namespace(
+            verb='set-extensions',
+            domain='java',
+            type='triage',
+            skill='pm-dev-java:new-triage',
         )
+    )
 
-        assert result['status'] == 'success'
-        assert result['type'] == 'triage'
-        assert result['skill'] == 'pm-dev-java:new-triage'
+    assert result['status'] == 'success'
+    assert result['type'] == 'triage'
+    assert result['skill'] == 'pm-dev-java:new-triage'
 
 
 # =============================================================================
@@ -408,43 +388,42 @@ def test_set_extensions(monkeypatch):
 # =============================================================================
 
 
-def test_get_available_uses_discovery(monkeypatch):
+def test_get_available_uses_discovery(plan_context, monkeypatch):
     """Test get-available uses discovery for domains."""
-    with PlanContext() as ctx:
-        config = {
-            'skill_domains': {'system': {'defaults': []}},
-            'system': {'retention': {}},
-            'plan': {
-                'phase-1-init': {'branch_strategy': 'direct'},
-                'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-                'phase-5-execute': {
-                    'commit_strategy': 'per_deliverable',
-                    'verification_max_iterations': 5,
-                    'steps': ['default:quality_check', 'default:build_verify'],
-                },
-                'phase-6-finalize': {
-                    'max_iterations': 3,
-                    'review_bot_buffer_seconds': 300,
-                    'steps': [
-                        'default:commit-push',
-                        'default:create-pr',
-                        'default:automated-review',
-                        'default:sonar-roundtrip',
-                        'default:lessons-capture',
-                        'default:branch-cleanup',
-                        'default:record-metrics',
-                        'default:archive-plan',
-                    ],
-                },
+    config = {
+        'skill_domains': {'system': {'defaults': []}},
+        'system': {'retention': {}},
+        'plan': {
+            'phase-1-init': {'branch_strategy': 'direct'},
+            'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+            'phase-5-execute': {
+                'commit_strategy': 'per_deliverable',
+                'verification_max_iterations': 5,
+                'steps': ['default:quality_check', 'default:build_verify'],
             },
-        }
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps(config, indent=2))
+            'phase-6-finalize': {
+                'max_iterations': 3,
+                'review_bot_buffer_seconds': 300,
+                'steps': [
+                    'default:commit-push',
+                    'default:create-pr',
+                    'default:automated-review',
+                    'default:sonar-roundtrip',
+                    'default:lessons-capture',
+                    'default:branch-cleanup',
+                    'default:record-metrics',
+                    'default:archive-plan',
+                ],
+            },
+        },
+    }
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
 
-        result = cmd_skill_domains(Namespace(verb='get-available'))
+    result = cmd_skill_domains(Namespace(verb='get-available'))
 
-        assert result['status'] == 'success'
-        assert 'discovered_domains' in result
+    assert result['status'] == 'success'
+    assert 'discovered_domains' in result
 
 
 def test_get_available_domain_only_extensions_use_applies_to_module():
@@ -471,90 +450,88 @@ def test_get_available_domain_only_extensions_use_applies_to_module():
         assert 'applicable' in domain, f"Domain {domain['key']} missing 'applicable' field"
 
 
-def test_configure_domains(monkeypatch):
+def test_configure_domains(plan_context, monkeypatch):
     """Test configure adds system domain and selected domains."""
-    with PlanContext() as ctx:
-        config = {
-            'skill_domains': {},
-            'system': {'retention': {}},
-            'plan': {
-                'phase-1-init': {'branch_strategy': 'direct'},
-                'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-                'phase-5-execute': {
-                    'commit_strategy': 'per_deliverable',
-                    'verification_max_iterations': 5,
-                    'steps': ['default:quality_check', 'default:build_verify'],
-                },
-                'phase-6-finalize': {
-                    'max_iterations': 3,
-                    'review_bot_buffer_seconds': 300,
-                    'steps': [
-                        'default:commit-push',
-                        'default:create-pr',
-                        'default:automated-review',
-                        'default:sonar-roundtrip',
-                        'default:lessons-capture',
-                        'default:branch-cleanup',
-                        'default:record-metrics',
-                        'default:archive-plan',
-                    ],
-                },
+    config = {
+        'skill_domains': {},
+        'system': {'retention': {}},
+        'plan': {
+            'phase-1-init': {'branch_strategy': 'direct'},
+            'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+            'phase-5-execute': {
+                'commit_strategy': 'per_deliverable',
+                'verification_max_iterations': 5,
+                'steps': ['default:quality_check', 'default:build_verify'],
             },
-        }
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps(config, indent=2))
+            'phase-6-finalize': {
+                'max_iterations': 3,
+                'review_bot_buffer_seconds': 300,
+                'steps': [
+                    'default:commit-push',
+                    'default:create-pr',
+                    'default:automated-review',
+                    'default:sonar-roundtrip',
+                    'default:lessons-capture',
+                    'default:branch-cleanup',
+                    'default:record-metrics',
+                    'default:archive-plan',
+                ],
+            },
+        },
+    }
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
 
-        result = cmd_skill_domains(Namespace(verb='configure', domains='java,javascript'))
+    result = cmd_skill_domains(Namespace(verb='configure', domains='java,javascript'))
 
-        assert result['status'] == 'success'
-        assert 'system_domain' in result
+    assert result['status'] == 'success'
+    assert 'system_domain' in result
 
-        # Verify marshal.json was updated
-        updated = json.loads(marshal_path.read_text())
-        assert 'system' in updated['skill_domains']
-        assert 'java' in updated['skill_domains']
-        assert 'javascript' in updated['skill_domains']
+    # Verify marshal.json was updated
+    updated = json.loads(marshal_path.read_text())
+    assert 'system' in updated['skill_domains']
+    assert 'java' in updated['skill_domains']
+    assert 'javascript' in updated['skill_domains']
 
 
-def test_configure_always_adds_system(monkeypatch):
+def test_configure_always_adds_system(plan_context, monkeypatch):
     """Test configure always adds system domain even with empty selection."""
-    with PlanContext() as ctx:
-        config = {
-            'skill_domains': {},
-            'system': {'retention': {}},
-            'plan': {
-                'phase-1-init': {'branch_strategy': 'direct'},
-                'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-                'phase-5-execute': {
-                    'commit_strategy': 'per_deliverable',
-                    'verification_max_iterations': 5,
-                    'steps': ['default:quality_check', 'default:build_verify'],
-                },
-                'phase-6-finalize': {
-                    'max_iterations': 3,
-                    'review_bot_buffer_seconds': 300,
-                    'steps': [
-                        'default:commit-push',
-                        'default:create-pr',
-                        'default:automated-review',
-                        'default:sonar-roundtrip',
-                        'default:lessons-capture',
-                        'default:branch-cleanup',
-                        'default:record-metrics',
-                        'default:archive-plan',
-                    ],
-                },
+    config = {
+        'skill_domains': {},
+        'system': {'retention': {}},
+        'plan': {
+            'phase-1-init': {'branch_strategy': 'direct'},
+            'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+            'phase-5-execute': {
+                'commit_strategy': 'per_deliverable',
+                'verification_max_iterations': 5,
+                'steps': ['default:quality_check', 'default:build_verify'],
             },
-        }
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps(config, indent=2))
+            'phase-6-finalize': {
+                'max_iterations': 3,
+                'review_bot_buffer_seconds': 300,
+                'steps': [
+                    'default:commit-push',
+                    'default:create-pr',
+                    'default:automated-review',
+                    'default:sonar-roundtrip',
+                    'default:lessons-capture',
+                    'default:branch-cleanup',
+                    'default:record-metrics',
+                    'default:archive-plan',
+                ],
+            },
+        },
+    }
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
 
-        result = cmd_skill_domains(Namespace(verb='configure', domains=''))
+    result = cmd_skill_domains(Namespace(verb='configure', domains=''))
 
-        assert result['status'] == 'success'
+    assert result['status'] == 'success'
 
-        updated = json.loads(marshal_path.read_text())
-        assert 'system' in updated['skill_domains']
+    updated = json.loads(marshal_path.read_text())
+    assert 'system' in updated['skill_domains']
 
 
 # =============================================================================
@@ -562,22 +539,21 @@ def test_configure_always_adds_system(monkeypatch):
 # =============================================================================
 
 
-def test_set_with_profile_returns_error(monkeypatch):
+def test_set_with_profile_returns_error(plan_context, monkeypatch):
     """Test set with --profile returns error since profiles are in extension.py."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
+    create_nested_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(
-            Namespace(
-                verb='set',
-                domain='java',
-                profile='quality',
-                defaults='pm-dev-java:new-skill',
-                optionals=None,
-            )
+    result = cmd_skill_domains(
+        Namespace(
+            verb='set',
+            domain='java',
+            profile='quality',
+            defaults='pm-dev-java:new-skill',
+            optionals=None,
         )
+    )
 
-        assert result['status'] == 'error'
+    assert result['status'] == 'error'
 
 
 # =============================================================================
@@ -585,123 +561,120 @@ def test_set_with_profile_returns_error(monkeypatch):
 # =============================================================================
 
 
-def test_get_available_works_without_skill_domains(monkeypatch):
+def test_get_available_works_without_skill_domains(plan_context, monkeypatch):
     """Test get-available works without skill_domains being configured."""
-    with PlanContext() as ctx:
-        config = {
-            'system': {'retention': {}},
-            'plan': {
-                'phase-1-init': {'branch_strategy': 'direct'},
-                'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-                'phase-5-execute': {
-                    'commit_strategy': 'per_deliverable',
-                    'verification_max_iterations': 5,
-                    'steps': ['default:quality_check', 'default:build_verify'],
-                },
-                'phase-6-finalize': {
-                    'max_iterations': 3,
-                    'review_bot_buffer_seconds': 300,
-                    'steps': [
-                        'default:commit-push',
-                        'default:create-pr',
-                        'default:automated-review',
-                        'default:sonar-roundtrip',
-                        'default:lessons-capture',
-                        'default:branch-cleanup',
-                        'default:record-metrics',
-                        'default:archive-plan',
-                    ],
-                },
+    config = {
+        'system': {'retention': {}},
+        'plan': {
+            'phase-1-init': {'branch_strategy': 'direct'},
+            'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+            'phase-5-execute': {
+                'commit_strategy': 'per_deliverable',
+                'verification_max_iterations': 5,
+                'steps': ['default:quality_check', 'default:build_verify'],
             },
-        }
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps(config, indent=2))
+            'phase-6-finalize': {
+                'max_iterations': 3,
+                'review_bot_buffer_seconds': 300,
+                'steps': [
+                    'default:commit-push',
+                    'default:create-pr',
+                    'default:automated-review',
+                    'default:sonar-roundtrip',
+                    'default:lessons-capture',
+                    'default:branch-cleanup',
+                    'default:record-metrics',
+                    'default:archive-plan',
+                ],
+            },
+        },
+    }
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
 
-        result = cmd_skill_domains(Namespace(verb='get-available'))
+    result = cmd_skill_domains(Namespace(verb='get-available'))
 
-        assert result['status'] == 'success'
-        assert 'discovered_domains' in result
+    assert result['status'] == 'success'
+    assert 'discovered_domains' in result
 
 
-def test_configure_works_without_skill_domains(monkeypatch):
+def test_configure_works_without_skill_domains(plan_context, monkeypatch):
     """Test configure works without skill_domains being configured."""
-    with PlanContext() as ctx:
-        config = {
-            'system': {'retention': {}},
-            'plan': {
-                'phase-1-init': {'branch_strategy': 'direct'},
-                'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-                'phase-5-execute': {
-                    'commit_strategy': 'per_deliverable',
-                    'verification_max_iterations': 5,
-                    'steps': ['default:quality_check', 'default:build_verify'],
-                },
-                'phase-6-finalize': {
-                    'max_iterations': 3,
-                    'review_bot_buffer_seconds': 300,
-                    'steps': [
-                        'default:commit-push',
-                        'default:create-pr',
-                        'default:automated-review',
-                        'default:sonar-roundtrip',
-                        'default:lessons-capture',
-                        'default:branch-cleanup',
-                        'default:record-metrics',
-                        'default:archive-plan',
-                    ],
-                },
+    config = {
+        'system': {'retention': {}},
+        'plan': {
+            'phase-1-init': {'branch_strategy': 'direct'},
+            'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+            'phase-5-execute': {
+                'commit_strategy': 'per_deliverable',
+                'verification_max_iterations': 5,
+                'steps': ['default:quality_check', 'default:build_verify'],
             },
-        }
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps(config, indent=2))
+            'phase-6-finalize': {
+                'max_iterations': 3,
+                'review_bot_buffer_seconds': 300,
+                'steps': [
+                    'default:commit-push',
+                    'default:create-pr',
+                    'default:automated-review',
+                    'default:sonar-roundtrip',
+                    'default:lessons-capture',
+                    'default:branch-cleanup',
+                    'default:record-metrics',
+                    'default:archive-plan',
+                ],
+            },
+        },
+    }
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
 
-        result = cmd_skill_domains(Namespace(verb='configure', domains='java'))
+    result = cmd_skill_domains(Namespace(verb='configure', domains='java'))
 
-        assert result['status'] == 'success'
-        assert 'system_domain' in result
+    assert result['status'] == 'success'
+    assert 'system_domain' in result
 
-        updated = json.loads(marshal_path.read_text())
-        assert 'skill_domains' in updated
-        assert 'system' in updated['skill_domains']
-        assert 'java' in updated['skill_domains']
+    updated = json.loads(marshal_path.read_text())
+    assert 'skill_domains' in updated
+    assert 'system' in updated['skill_domains']
+    assert 'java' in updated['skill_domains']
 
 
-def test_list_requires_skill_domains(monkeypatch):
+def test_list_requires_skill_domains(plan_context, monkeypatch):
     """Test list verb requires skill_domains to be configured."""
-    with PlanContext() as ctx:
-        config = {
-            'system': {'retention': {}},
-            'plan': {
-                'phase-1-init': {'branch_strategy': 'direct'},
-                'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-                'phase-5-execute': {
-                    'commit_strategy': 'per_deliverable',
-                    'verification_max_iterations': 5,
-                    'steps': ['default:quality_check', 'default:build_verify'],
-                },
-                'phase-6-finalize': {
-                    'max_iterations': 3,
-                    'review_bot_buffer_seconds': 300,
-                    'steps': [
-                        'default:commit-push',
-                        'default:create-pr',
-                        'default:automated-review',
-                        'default:sonar-roundtrip',
-                        'default:lessons-capture',
-                        'default:branch-cleanup',
-                        'default:record-metrics',
-                        'default:archive-plan',
-                    ],
-                },
+    config = {
+        'system': {'retention': {}},
+        'plan': {
+            'phase-1-init': {'branch_strategy': 'direct'},
+            'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+            'phase-5-execute': {
+                'commit_strategy': 'per_deliverable',
+                'verification_max_iterations': 5,
+                'steps': ['default:quality_check', 'default:build_verify'],
             },
-        }
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps(config, indent=2))
+            'phase-6-finalize': {
+                'max_iterations': 3,
+                'review_bot_buffer_seconds': 300,
+                'steps': [
+                    'default:commit-push',
+                    'default:create-pr',
+                    'default:automated-review',
+                    'default:sonar-roundtrip',
+                    'default:lessons-capture',
+                    'default:branch-cleanup',
+                    'default:record-metrics',
+                    'default:archive-plan',
+                ],
+            },
+        },
+    }
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
 
-        result = cmd_skill_domains(Namespace(verb='list'))
+    result = cmd_skill_domains(Namespace(verb='list'))
 
-        assert result['status'] == 'error'
-        assert 'skill_domains not configured' in result['error']
+    assert result['status'] == 'error'
+    assert 'skill_domains not configured' in result['error']
 
 
 # =============================================================================
@@ -709,277 +682,267 @@ def test_list_requires_skill_domains(monkeypatch):
 # =============================================================================
 
 
-def test_discover_project_discovers_skills():
+def test_discover_project_discovers_skills(plan_context):
     """Test discover-project finds skills in .claude/skills/.
 
     This test scans .claude/skills/ relative to cwd, so keep as subprocess.
     """
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
+    create_nested_marshal_json(plan_context.fixture_dir)
 
-        # Create .claude/skills/ with a test skill (relative to cwd)
-        skills_dir = Path('.claude/skills/test-skill')
-        skills_dir.mkdir(parents=True, exist_ok=True)
-        skill_md = skills_dir / 'SKILL.md'
-        skill_md.write_text('---\nname: test-skill\ndescription: A test skill\n---\n# Test Skill\n')
+    # Create .claude/skills/ with a test skill (relative to cwd)
+    skills_dir = Path('.claude/skills/test-skill')
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    skill_md = skills_dir / 'SKILL.md'
+    skill_md.write_text('---\nname: test-skill\ndescription: A test skill\n---\n# Test Skill\n')
 
-        try:
-            result = run_script(SCRIPT_PATH, 'skill-domains', 'discover-project')
-
-            assert result.success, f'Should succeed: {result.stderr}'
-            assert 'project:test-skill' in result.stdout
-        finally:
-            skill_md.unlink()
-            skills_dir.rmdir()
-
-
-def test_discover_project_returns_structured_output():
-    """Test discover-project returns TOON output with status, count, and skills fields."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-
+    try:
         result = run_script(SCRIPT_PATH, 'skill-domains', 'discover-project')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        assert 'status: success' in result.stdout
-        assert 'count: ' in result.stdout
+        assert 'project:test-skill' in result.stdout
+    finally:
+        skill_md.unlink()
+        skills_dir.rmdir()
 
 
-def test_attach_project_to_domain(monkeypatch):
+def test_discover_project_returns_structured_output(plan_context):
+    """Test discover-project returns TOON output with status, count, and skills fields."""
+    create_nested_marshal_json(plan_context.fixture_dir)
+
+    result = run_script(SCRIPT_PATH, 'skill-domains', 'discover-project')
+
+    assert result.success, f'Should succeed: {result.stderr}'
+    assert 'status: success' in result.stdout
+    assert 'count: ' in result.stdout
+
+
+def test_attach_project_to_domain(plan_context, monkeypatch):
     """Test attach-project adds project skills to a domain."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
+    create_nested_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(
-            Namespace(
-                verb='attach-project',
-                domain='java',
-                skills='project:my-custom-skill',
-            )
+    result = cmd_skill_domains(
+        Namespace(
+            verb='attach-project',
+            domain='java',
+            skills='project:my-custom-skill',
         )
+    )
 
-        assert result['status'] == 'success'
-        assert 'project:my-custom-skill' in result['project_skills']
+    assert result['status'] == 'success'
+    assert 'project:my-custom-skill' in result['project_skills']
 
-        # Verify marshal.json was updated
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        updated = json.loads(marshal_path.read_text())
-        assert 'project:my-custom-skill' in updated['skill_domains']['java']['project_skills']
+    # Verify marshal.json was updated
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    updated = json.loads(marshal_path.read_text())
+    assert 'project:my-custom-skill' in updated['skill_domains']['java']['project_skills']
 
 
-def test_attach_project_to_system_domain(monkeypatch):
+def test_attach_project_to_system_domain(plan_context, monkeypatch):
     """Test attach-project works with system domain."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
+    create_nested_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(
-            Namespace(
-                verb='attach-project',
-                domain='system',
-                skills='project:cross-domain-skill',
-            )
+    result = cmd_skill_domains(
+        Namespace(
+            verb='attach-project',
+            domain='system',
+            skills='project:cross-domain-skill',
         )
+    )
 
-        assert result['status'] == 'success'
+    assert result['status'] == 'success'
 
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        updated = json.loads(marshal_path.read_text())
-        assert 'project:cross-domain-skill' in updated['skill_domains']['system']['project_skills']
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    updated = json.loads(marshal_path.read_text())
+    assert 'project:cross-domain-skill' in updated['skill_domains']['system']['project_skills']
 
 
-def test_attach_project_rejects_invalid_notation(monkeypatch):
+def test_attach_project_rejects_invalid_notation(plan_context, monkeypatch):
     """Test attach-project rejects skills not starting with project:."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
+    create_nested_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(
-            Namespace(
-                verb='attach-project',
-                domain='java',
-                skills='pm-dev-java:invalid-notation',
-            )
+    result = cmd_skill_domains(
+        Namespace(
+            verb='attach-project',
+            domain='java',
+            skills='pm-dev-java:invalid-notation',
         )
+    )
 
-        assert result['status'] == 'error'
+    assert result['status'] == 'error'
 
 
-def test_attach_project_rejects_unknown_domain(monkeypatch):
+def test_attach_project_rejects_unknown_domain(plan_context, monkeypatch):
     """Test attach-project rejects unknown domain."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
+    create_nested_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_skill_domains(
-            Namespace(
-                verb='attach-project',
-                domain='nonexistent',
-                skills='project:some-skill',
-            )
+    result = cmd_skill_domains(
+        Namespace(
+            verb='attach-project',
+            domain='nonexistent',
+            skills='project:some-skill',
         )
+    )
 
-        assert result['status'] == 'error'
+    assert result['status'] == 'error'
 
 
-def test_attach_project_no_duplicates(monkeypatch):
+def test_attach_project_no_duplicates(plan_context, monkeypatch):
     """Test attach-project does not add duplicate skills."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
+    create_nested_marshal_json(plan_context.fixture_dir)
 
-        # Attach first time
-        cmd_skill_domains(Namespace(verb='attach-project', domain='java', skills='project:my-skill'))
+    # Attach first time
+    cmd_skill_domains(Namespace(verb='attach-project', domain='java', skills='project:my-skill'))
 
-        # Attach same skill again
-        cmd_skill_domains(Namespace(verb='attach-project', domain='java', skills='project:my-skill'))
+    # Attach same skill again
+    cmd_skill_domains(Namespace(verb='attach-project', domain='java', skills='project:my-skill'))
 
-        # Verify no duplicate
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        updated = json.loads(marshal_path.read_text())
-        project_skills = updated['skill_domains']['java']['project_skills']
-        assert project_skills.count('project:my-skill') == 1
+    # Verify no duplicate
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    updated = json.loads(marshal_path.read_text())
+    project_skills = updated['skill_domains']['java']['project_skills']
+    assert project_skills.count('project:my-skill') == 1
 
 
-def test_configure_preserves_project_skills(monkeypatch):
+def test_configure_preserves_project_skills(plan_context, monkeypatch):
     """Test configure preserves existing project_skills when reconfiguring domains."""
-    with PlanContext() as ctx:
-        config = {
-            'skill_domains': {
-                'system': {
-                    'defaults': ['plan-marshall:dev-agent-behavior-rules'],
-                    'project_skills': ['project:system-skill'],
-                    'execute_task_skills': {'implementation': 'plan-marshall:execute-task-implementation'},
-                },
-                'java': {
-                    'bundle': 'pm-dev-java',
-                    'project_skills': ['project:java-helper'],
-                    'workflow_skill_extensions': {'triage': 'pm-dev-java:ext-triage-java'},
-                },
+    config = {
+        'skill_domains': {
+            'system': {
+                'defaults': ['plan-marshall:dev-agent-behavior-rules'],
+                'project_skills': ['project:system-skill'],
+                'execute_task_skills': {'implementation': 'plan-marshall:execute-task-implementation'},
             },
-            'system': {'retention': {}},
-            'plan': {
-                'phase-1-init': {'branch_strategy': 'direct'},
-                'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-                'phase-5-execute': {
-                    'commit_strategy': 'per_deliverable',
-                    'verification_max_iterations': 5,
-                    'steps': ['default:quality_check', 'default:build_verify'],
-                },
-                'phase-6-finalize': {
-                    'max_iterations': 3,
-                    'review_bot_buffer_seconds': 300,
-                    'steps': [
-                        'default:commit-push',
-                        'default:create-pr',
-                        'default:automated-review',
-                        'default:sonar-roundtrip',
-                        'default:lessons-capture',
-                        'default:branch-cleanup',
-                        'default:record-metrics',
-                        'default:archive-plan',
-                    ],
-                },
+            'java': {
+                'bundle': 'pm-dev-java',
+                'project_skills': ['project:java-helper'],
+                'workflow_skill_extensions': {'triage': 'pm-dev-java:ext-triage-java'},
             },
-        }
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps(config, indent=2))
+        },
+        'system': {'retention': {}},
+        'plan': {
+            'phase-1-init': {'branch_strategy': 'direct'},
+            'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+            'phase-5-execute': {
+                'commit_strategy': 'per_deliverable',
+                'verification_max_iterations': 5,
+                'steps': ['default:quality_check', 'default:build_verify'],
+            },
+            'phase-6-finalize': {
+                'max_iterations': 3,
+                'review_bot_buffer_seconds': 300,
+                'steps': [
+                    'default:commit-push',
+                    'default:create-pr',
+                    'default:automated-review',
+                    'default:sonar-roundtrip',
+                    'default:lessons-capture',
+                    'default:branch-cleanup',
+                    'default:record-metrics',
+                    'default:archive-plan',
+                ],
+            },
+        },
+    }
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
 
-        result = cmd_skill_domains(Namespace(verb='configure', domains='java'))
+    result = cmd_skill_domains(Namespace(verb='configure', domains='java'))
 
-        assert result['status'] == 'success'
+    assert result['status'] == 'success'
 
-        updated = json.loads(marshal_path.read_text())
-        assert 'project:system-skill' in updated['skill_domains']['system']['project_skills']
-        assert 'project:java-helper' in updated['skill_domains']['java']['project_skills']
+    updated = json.loads(marshal_path.read_text())
+    assert 'project:system-skill' in updated['skill_domains']['system']['project_skills']
+    assert 'project:java-helper' in updated['skill_domains']['java']['project_skills']
 
 
-def test_configure_drops_project_skills_for_removed_domains(monkeypatch):
+def test_configure_drops_project_skills_for_removed_domains(plan_context, monkeypatch):
     """Test configure drops project_skills for domains that are no longer selected."""
-    with PlanContext() as ctx:
-        config = {
-            'skill_domains': {
-                'system': {'defaults': [], 'execute_task_skills': {}},
-                'java': {'bundle': 'pm-dev-java', 'project_skills': ['project:java-helper']},
-                'javascript': {'bundle': 'pm-dev-frontend', 'project_skills': ['project:js-helper']},
+    config = {
+        'skill_domains': {
+            'system': {'defaults': [], 'execute_task_skills': {}},
+            'java': {'bundle': 'pm-dev-java', 'project_skills': ['project:java-helper']},
+            'javascript': {'bundle': 'pm-dev-frontend', 'project_skills': ['project:js-helper']},
+        },
+        'system': {'retention': {}},
+        'plan': {
+            'phase-1-init': {'branch_strategy': 'direct'},
+            'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+            'phase-5-execute': {
+                'commit_strategy': 'per_deliverable',
+                'verification_max_iterations': 5,
+                'steps': ['default:quality_check', 'default:build_verify'],
             },
-            'system': {'retention': {}},
-            'plan': {
-                'phase-1-init': {'branch_strategy': 'direct'},
-                'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-                'phase-5-execute': {
-                    'commit_strategy': 'per_deliverable',
-                    'verification_max_iterations': 5,
-                    'steps': ['default:quality_check', 'default:build_verify'],
-                },
-                'phase-6-finalize': {
-                    'max_iterations': 3,
-                    'review_bot_buffer_seconds': 300,
-                    'steps': [
-                        'default:commit-push',
-                        'default:create-pr',
-                        'default:automated-review',
-                        'default:sonar-roundtrip',
-                        'default:lessons-capture',
-                        'default:branch-cleanup',
-                        'default:record-metrics',
-                        'default:archive-plan',
-                    ],
-                },
+            'phase-6-finalize': {
+                'max_iterations': 3,
+                'review_bot_buffer_seconds': 300,
+                'steps': [
+                    'default:commit-push',
+                    'default:create-pr',
+                    'default:automated-review',
+                    'default:sonar-roundtrip',
+                    'default:lessons-capture',
+                    'default:branch-cleanup',
+                    'default:record-metrics',
+                    'default:archive-plan',
+                ],
             },
-        }
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps(config, indent=2))
+        },
+    }
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
 
-        result = cmd_skill_domains(Namespace(verb='configure', domains='java'))
+    result = cmd_skill_domains(Namespace(verb='configure', domains='java'))
 
-        assert result['status'] == 'success'
+    assert result['status'] == 'success'
 
-        updated = json.loads(marshal_path.read_text())
-        assert 'project:java-helper' in updated['skill_domains']['java'].get('project_skills', [])
-        assert 'javascript' not in updated['skill_domains']
+    updated = json.loads(marshal_path.read_text())
+    assert 'project:java-helper' in updated['skill_domains']['java'].get('project_skills', [])
+    assert 'javascript' not in updated['skill_domains']
 
 
-def test_get_nested_includes_project_skills(monkeypatch):
+def test_get_nested_includes_project_skills(plan_context, monkeypatch):
     """Test skill-domains get includes project_skills in output for nested domains."""
-    with PlanContext() as ctx:
-        config = {
-            'skill_domains': {
-                'system': {
-                    'defaults': ['plan-marshall:dev-agent-behavior-rules'],
-                    'project_skills': ['project:my-tool'],
-                    'execute_task_skills': {},
-                },
+    config = {
+        'skill_domains': {
+            'system': {
+                'defaults': ['plan-marshall:dev-agent-behavior-rules'],
+                'project_skills': ['project:my-tool'],
+                'execute_task_skills': {},
             },
-            'system': {'retention': {}},
-            'plan': {
-                'phase-1-init': {'branch_strategy': 'direct'},
-                'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
-                'phase-5-execute': {
-                    'commit_strategy': 'per_deliverable',
-                    'verification_max_iterations': 5,
-                    'steps': ['default:quality_check', 'default:build_verify'],
-                },
-                'phase-6-finalize': {
-                    'max_iterations': 3,
-                    'review_bot_buffer_seconds': 300,
-                    'steps': [
-                        'default:commit-push',
-                        'default:create-pr',
-                        'default:automated-review',
-                        'default:sonar-roundtrip',
-                        'default:lessons-capture',
-                        'default:branch-cleanup',
-                        'default:record-metrics',
-                        'default:archive-plan',
-                    ],
-                },
+        },
+        'system': {'retention': {}},
+        'plan': {
+            'phase-1-init': {'branch_strategy': 'direct'},
+            'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+            'phase-5-execute': {
+                'commit_strategy': 'per_deliverable',
+                'verification_max_iterations': 5,
+                'steps': ['default:quality_check', 'default:build_verify'],
             },
-        }
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps(config, indent=2))
+            'phase-6-finalize': {
+                'max_iterations': 3,
+                'review_bot_buffer_seconds': 300,
+                'steps': [
+                    'default:commit-push',
+                    'default:create-pr',
+                    'default:automated-review',
+                    'default:sonar-roundtrip',
+                    'default:lessons-capture',
+                    'default:branch-cleanup',
+                    'default:record-metrics',
+                    'default:archive-plan',
+                ],
+            },
+        },
+    }
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
 
-        result = cmd_skill_domains(Namespace(verb='get', domain='system'))
+    result = cmd_skill_domains(Namespace(verb='get', domain='system'))
 
-        assert result['status'] == 'success'
-        assert 'project_skills' in result
-        assert 'project:my-tool' in result['project_skills']
+    assert result['status'] == 'success'
+    assert 'project_skills' in result
+    assert 'project:my-tool' in result['project_skills']
 
 
 # =============================================================================
@@ -987,38 +950,36 @@ def test_get_nested_includes_project_skills(monkeypatch):
 # =============================================================================
 
 
-def test_list_verify_steps_returns_built_in(monkeypatch):
+def test_list_verify_steps_returns_built_in(plan_context, monkeypatch):
     """Test list-verify-steps returns built-in steps with default: prefix."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = cmd_list_verify_steps(Namespace())
+    result = cmd_list_verify_steps(Namespace())
 
-        assert result['status'] == 'success'
-        step_names = [s['name'] for s in result['steps']]
-        assert 'default:quality_check' in step_names
-        assert 'default:build_verify' in step_names
+    assert result['status'] == 'success'
+    step_names = [s['name'] for s in result['steps']]
+    assert 'default:quality_check' in step_names
+    assert 'default:build_verify' in step_names
 
 
-def test_list_verify_steps_discovers_project_skills():
+def test_list_verify_steps_discovers_project_skills(plan_context):
     """Test list-verify-steps discovers project-local verify-step-* skills.
 
     Scans .claude/skills/ relative to cwd, so keep as subprocess.
     """
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        skill_dir = ctx.fixture_dir / '.claude' / 'skills' / 'verify-step-hello-world'
-        skill_dir.mkdir(parents=True)
-        (skill_dir / 'SKILL.md').write_text(
-            '---\nname: verify-step-hello-world\ndescription: Hello World\n---\n\n# Hello World\n'
-        )
+    skill_dir = plan_context.fixture_dir / '.claude' / 'skills' / 'verify-step-hello-world'
+    skill_dir.mkdir(parents=True)
+    (skill_dir / 'SKILL.md').write_text(
+        '---\nname: verify-step-hello-world\ndescription: Hello World\n---\n\n# Hello World\n'
+    )
 
-        result = run_script(SCRIPT_PATH, 'list-verify-steps', cwd=ctx.fixture_dir)
+    result = run_script(SCRIPT_PATH, 'list-verify-steps', cwd=plan_context.fixture_dir)
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'project:verify-step-hello-world' in result.stdout
-        assert 'Hello World' in result.stdout
+    assert result.success, f'Should succeed: {result.stderr}'
+    assert 'project:verify-step-hello-world' in result.stdout
+    assert 'Hello World' in result.stdout
 
 
 # =============================================================================
@@ -1108,26 +1069,24 @@ def test_list_verify_steps_extension_order_from_return_dict(tmp_path):
 # =============================================================================
 
 
-def test_cli_skill_domains_list():
+def test_cli_skill_domains_list(plan_context):
     """Test CLI plumbing: skill-domains list outputs TOON."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'list')
+    result = run_script(SCRIPT_PATH, 'skill-domains', 'list')
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'java' in result.stdout
+    assert result.success, f'Should succeed: {result.stderr}'
+    assert 'java' in result.stdout
 
 
-def test_cli_skill_domains_get():
+def test_cli_skill_domains_get(plan_context):
     """Test CLI plumbing: skill-domains get outputs TOON."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
+    create_marshal_json(plan_context.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java')
+    result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java')
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-dev-java:java-core' in result.stdout
+    assert result.success, f'Should succeed: {result.stderr}'
+    assert 'pm-dev-java:java-core' in result.stdout
 
 
 # =============================================================================

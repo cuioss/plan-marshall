@@ -38,7 +38,6 @@ from pathlib import Path
 import pytest
 from conftest import (  # type: ignore[import-not-found]
     MARKETPLACE_ROOT,
-    PlanContext,
     get_script_path,
     run_script,
 )
@@ -239,7 +238,7 @@ def _transition(plan_id: str, completed_phase: str) -> dict:
 # =============================================================================
 
 
-def test_lifecycle_captures_handshakes_for_all_phases(stub_handshake_run_script, stub_load_status_metadata) -> None:
+def test_lifecycle_captures_handshakes_for_all_phases(stub_handshake_run_script, stub_load_status_metadata, plan_context) -> None:
     """Driving the orchestrator-shape sequence populates one row per phase.
 
     Iterates the five inter-phase boundaries (``1-init`` → ``2-refine`` …
@@ -254,48 +253,47 @@ def test_lifecycle_captures_handshakes_for_all_phases(stub_handshake_run_script,
     every core invariant non-null.
     """
     plan_id = 'e2e-handshake-lifecycle'
-    with PlanContext(plan_id=plan_id) as ctx:
-        _create_plan(plan_id)
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    _create_plan(plan_id)
 
-        prev_phase: str | None = None
-        # Capture for the five phases that have a "next phase" (1-init through
-        # 5-execute). The 6-finalize transition is the terminal one and the
-        # plan's pretasks are exhausted there — this matches the workflow
-        # wiring described in solution_outline.md.
-        capture_phases = PHASES[:5]
-        for phase in capture_phases:
-            transition_result = _transition(plan_id, phase)
-            assert transition_result['status'] == 'success', transition_result
+    prev_phase: str | None = None
+    # Capture for the five phases that have a "next phase" (1-init through
+    # 5-execute). The 6-finalize transition is the terminal one and the
+    # plan's pretasks are exhausted there — this matches the workflow
+    # wiring described in solution_outline.md.
+    capture_phases = PHASES[:5]
+    for phase in capture_phases:
+        transition_result = _transition(plan_id, phase)
+        assert transition_result['status'] == 'success', transition_result
 
-            cap = cmds.cmd_capture(_capture_args(plan_id, phase))
-            assert cap['status'] == 'success', f'capture failed at {phase}: {cap}'
+        cap = cmds.cmd_capture(_capture_args(plan_id, phase))
+        assert cap['status'] == 'success', f'capture failed at {phase}: {cap}'
 
-            if prev_phase is not None:
-                ver = cmds.cmd_verify(_verify_args(plan_id, prev_phase))
-                assert ver['status'] == 'ok', f'verify {prev_phase} returned {ver["status"]}: {ver}'
-            prev_phase = phase
+        if prev_phase is not None:
+            ver = cmds.cmd_verify(_verify_args(plan_id, prev_phase))
+            assert ver['status'] == 'ok', f'verify {prev_phase} returned {ver["status"]}: {ver}'
+        prev_phase = phase
 
-        # Inspect handshakes.toon directly via the context's plan_dir.
-        assert ctx.plan_dir is not None
-        handshakes_path = ctx.plan_dir / 'handshakes.toon'
-        assert handshakes_path.exists(), 'handshakes.toon must be written'
-        parsed = parse_toon(handshakes_path.read_text(encoding='utf-8'))
-        rows = parsed.get('handshakes') or []
-        assert len(rows) == 5, f'expected 5 handshake rows, got {len(rows)}: {rows}'
+    # Inspect handshakes.toon directly via the resolved plan_dir.
+    handshakes_path = plan_dir / 'handshakes.toon'
+    assert handshakes_path.exists(), 'handshakes.toon must be written'
+    parsed = parse_toon(handshakes_path.read_text(encoding='utf-8'))
+    rows = parsed.get('handshakes') or []
+    assert len(rows) == 5, f'expected 5 handshake rows, got {len(rows)}: {rows}'
 
-        captured_phases = [r['phase'] for r in rows]
-        assert captured_phases == capture_phases, captured_phases
+    captured_phases = [r['phase'] for r in rows]
+    assert captured_phases == capture_phases, captured_phases
 
-        for row in rows:
-            for invariant in _NON_NULL_CORE_INVARIANTS:
-                value = row.get(invariant)
-                assert value not in (None, ''), (
-                    f'phase {row["phase"]} missing non-null invariant {invariant}: row={row}'
-                )
+    for row in rows:
+        for invariant in _NON_NULL_CORE_INVARIANTS:
+            value = row.get(invariant)
+            assert value not in (None, ''), (
+                f'phase {row["phase"]} missing non-null invariant {invariant}: row={row}'
+            )
 
 
 def test_lifecycle_summarize_invariants_zero_warnings_live_mode(
-    stub_handshake_run_script, stub_load_status_metadata
+    stub_handshake_run_script, stub_load_status_metadata, plan_context
 ) -> None:
     """After a populated lifecycle, ``summarize-invariants run --mode live``
     must report zero ``phase_handshake`` findings.
@@ -306,23 +304,23 @@ def test_lifecycle_summarize_invariants_zero_warnings_live_mode(
     properly populated the warning must not appear.
     """
     plan_id = 'e2e-handshake-live'
-    with PlanContext(plan_id=plan_id):
-        _create_plan(plan_id)
-        for phase in PHASES[:5]:
-            _transition(plan_id, phase)
-            cap = cmds.cmd_capture(_capture_args(plan_id, phase))
-            assert cap['status'] == 'success', cap
+    plan_context.plan_dir_for(plan_id)
+    _create_plan(plan_id)
+    for phase in PHASES[:5]:
+        _transition(plan_id, phase)
+        cap = cmds.cmd_capture(_capture_args(plan_id, phase))
+        assert cap['status'] == 'success', cap
 
-        result = run_script(SUMMARIZE_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live')
-        assert result.success, result.stderr
-        data = result.toon()
+    result = run_script(SUMMARIZE_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live')
+    assert result.success, result.stderr
+    data = result.toon()
 
-        bulk = [f for f in data['findings'] if f.get('invariant') == 'phase_handshake']
-        assert bulk == [], f'live mode must not produce phase_handshake findings, got {bulk}'
+    bulk = [f for f in data['findings'] if f.get('invariant') == 'phase_handshake']
+    assert bulk == [], f'live mode must not produce phase_handshake findings, got {bulk}'
 
 
 def test_lifecycle_summarize_invariants_zero_warnings_archived_mode(
-    stub_handshake_run_script, stub_load_status_metadata, tmp_path: Path
+    stub_handshake_run_script, stub_load_status_metadata, plan_context, tmp_path: Path
 ) -> None:
     """Archive the populated plan and re-run ``summarize-invariants`` in
     ``archived`` mode against the archived path. Zero ``phase_handshake``
@@ -335,17 +333,16 @@ def test_lifecycle_summarize_invariants_zero_warnings_archived_mode(
     directly in archived mode, so a directory copy is sufficient.
     """
     plan_id = 'e2e-handshake-archived'
-    with PlanContext(plan_id=plan_id) as ctx:
-        _create_plan(plan_id)
-        for phase in PHASES[:5]:
-            _transition(plan_id, phase)
-            cap = cmds.cmd_capture(_capture_args(plan_id, phase))
-            assert cap['status'] == 'success', cap
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    _create_plan(plan_id)
+    for phase in PHASES[:5]:
+        _transition(plan_id, phase)
+        cap = cmds.cmd_capture(_capture_args(plan_id, phase))
+        assert cap['status'] == 'success', cap
 
-        # Snapshot the live plan dir into a separate archived path BEFORE
-        # PlanContext exits (which deletes the live plan dir).
-        archived_dir = tmp_path / 'archived' / f'2026-04-27-{plan_id}'
-        shutil.copytree(ctx.plan_dir, archived_dir)
+    # Snapshot the live plan dir into a separate archived path.
+    archived_dir = tmp_path / 'archived' / f'2026-04-27-{plan_id}'
+    shutil.copytree(plan_dir, archived_dir)
 
     result = run_script(
         SUMMARIZE_SCRIPT,
@@ -361,7 +358,7 @@ def test_lifecycle_summarize_invariants_zero_warnings_archived_mode(
     assert bulk == [], f'archived mode must not produce phase_handshake findings, got {bulk}'
 
 
-def test_regression_missing_handshakes_warns() -> None:
+def test_regression_missing_handshakes_warns(plan_context) -> None:
     """Negative regression: when capture is never invoked, the canonical
     ``No handshakes.toon found`` warning must fire.
 
@@ -370,14 +367,14 @@ def test_regression_missing_handshakes_warns() -> None:
     ``handshakes.toon`` were silently empty.
     """
     plan_id = 'e2e-handshake-missing'
-    with PlanContext(plan_id=plan_id):
-        _create_plan(plan_id)
-        # Deliberately do NOT call cmds.cmd_capture — handshakes.toon stays
-        # absent.
+    plan_context.plan_dir_for(plan_id)
+    _create_plan(plan_id)
+    # Deliberately do NOT call cmds.cmd_capture — handshakes.toon stays
+    # absent.
 
-        result = run_script(SUMMARIZE_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live')
-        assert result.success, result.stderr
-        data = result.toon()
+    result = run_script(SUMMARIZE_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live')
+    assert result.success, result.stderr
+    data = result.toon()
 
-        messages = [f.get('message', '') for f in data['findings']]
-        assert 'No handshakes.toon found' in messages, f'expected canonical warning, got messages: {messages}'
+    messages = [f.get('message', '') for f in data['findings']]
+    assert 'No handshakes.toon found' in messages, f'expected canonical warning, got messages: {messages}'

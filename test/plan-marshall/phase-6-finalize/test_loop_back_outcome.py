@@ -28,8 +28,6 @@ import importlib.util
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import PlanContext
-
 # =============================================================================
 # Module loading (mirrors test_mark_step_done.py / test_manage_status.py)
 # =============================================================================
@@ -113,7 +111,7 @@ def _args(
 # =============================================================================
 
 
-def test_iteration_1_fix_records_loop_back_outcome():
+def test_iteration_1_fix_records_loop_back_outcome(plan_context):
     """Driving the FIX-disposition path records ``loop_back`` on disk.
 
     The producer-consumer flow (see automated-review.md "Mark Step Complete"
@@ -125,40 +123,39 @@ def test_iteration_1_fix_records_loop_back_outcome():
     ``loop_back`` — not ``done``.
     """
     plan_id = 'loop-back-fix-iter1'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        result = cmd_mark_step_done(
-            _args(
-                plan_id,
-                '6-finalize',
-                'automated-review',
-                'loop_back',
-                display_detail='loop-back iteration 1 (target=5-execute)',
-                loop_back_target='5-execute',
-            )
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(
+        _args(
+            plan_id,
+            '6-finalize',
+            'automated-review',
+            'loop_back',
+            display_detail='loop-back iteration 1 (target=5-execute)',
+            loop_back_target='5-execute',
         )
+    )
 
-        assert result['status'] == 'success'
-        assert result['changed'] is True
-        assert result['outcome'] == 'loop_back'
-        assert result['display_detail'] == 'loop-back iteration 1 (target=5-execute)'
-        # The hybrid-loopback contract: every loop_back outcome carries an
-        # explicit granularity target. FIX dispositions allocate fix tasks and
-        # roll back to phase-5-execute.
-        assert result['loop_back_target'] == '5-execute'
+    assert result['status'] == 'success'
+    assert result['changed'] is True
+    assert result['outcome'] == 'loop_back'
+    assert result['display_detail'] == 'loop-back iteration 1 (target=5-execute)'
+    # The hybrid-loopback contract: every loop_back outcome carries an
+    # explicit granularity target. FIX dispositions allocate fix tasks and
+    # roll back to phase-5-execute.
+    assert result['loop_back_target'] == '5-execute'
 
-        persisted = read_status(plan_id)
-        entry = persisted['metadata']['phase_steps']['6-finalize']['automated-review']
-        # On-disk contract: outcome is loop_back, NOT done; loop_back_target is
-        # persisted alongside outcome and display_detail.
-        assert entry['outcome'] == 'loop_back', (
-            f"FIX disposition must record outcome=loop_back; got {entry['outcome']!r}"
-        )
-        assert entry['outcome'] != 'done'
-        assert entry['display_detail'] == 'loop-back iteration 1 (target=5-execute)'
-        assert entry['loop_back_target'] == '5-execute', (
-            'FIX disposition must persist loop_back_target=5-execute alongside outcome'
-        )
+    persisted = read_status(plan_id)
+    entry = persisted['metadata']['phase_steps']['6-finalize']['automated-review']
+    # On-disk contract: outcome is loop_back, NOT done; loop_back_target is
+    # persisted alongside outcome and display_detail.
+    assert entry['outcome'] == 'loop_back', (
+        f"FIX disposition must record outcome=loop_back; got {entry['outcome']!r}"
+    )
+    assert entry['outcome'] != 'done'
+    assert entry['display_detail'] == 'loop-back iteration 1 (target=5-execute)'
+    assert entry['loop_back_target'] == '5-execute', (
+        'FIX disposition must persist loop_back_target=5-execute alongside outcome'
+    )
 
 
 # =============================================================================
@@ -166,7 +163,7 @@ def test_iteration_1_fix_records_loop_back_outcome():
 # =============================================================================
 
 
-def test_dispatcher_re_fires_on_loop_back():
+def test_dispatcher_re_fires_on_loop_back(plan_context):
     """Pre-seed loop_back; verify the persisted record matches the dispatcher's
     re-fire predicate documented in phase-6-finalize/SKILL.md Resumability.
 
@@ -184,23 +181,22 @@ def test_dispatcher_re_fires_on_loop_back():
     test.
     """
     plan_id = 'loop-back-dispatcher'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        cmd_mark_step_done(
-            _args(
-                plan_id,
-                '6-finalize',
-                'automated-review',
-                'loop_back',
-                display_detail='loop-back iteration 2 (target=5-execute)',
-                loop_back_target='5-execute',
-            )
+    _make_plan(plan_id)
+    cmd_mark_step_done(
+        _args(
+            plan_id,
+            '6-finalize',
+            'automated-review',
+            'loop_back',
+            display_detail='loop-back iteration 2 (target=5-execute)',
+            loop_back_target='5-execute',
         )
+    )
 
-        persisted = read_status(plan_id)
-        entry = persisted['metadata']['phase_steps']['6-finalize']['automated-review']
-        assert entry['outcome'] == 'loop_back'
-        assert entry['loop_back_target'] == '5-execute'
+    persisted = read_status(plan_id)
+    entry = persisted['metadata']['phase_steps']['6-finalize']['automated-review']
+    assert entry['outcome'] == 'loop_back'
+    assert entry['loop_back_target'] == '5-execute'
 
     # SKILL.md Resumability table must contain a row mapping loop_back to a
     # re-fire action. We assert against the exact wording used in the file so

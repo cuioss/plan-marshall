@@ -8,7 +8,7 @@ import importlib.util
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import PlanContext, get_script_path, run_script
+from conftest import get_script_path, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-findings', 'manage-findings.py')
@@ -85,82 +85,77 @@ def _clear_ns(plan_id='test-plan', agent=None):
 # =============================================================================
 
 
-def test_assessment_add_basic():
+def test_assessment_add_basic(plan_context):
     """Test adding a basic assessment."""
-    with PlanContext():
-        result = cmd_assessment_add(
-            _add_ns(
-                file_path='marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md',
-                certainty='CERTAIN_INCLUDE',
-                confidence=95,
-            )
+    result = cmd_assessment_add(
+        _add_ns(
+            file_path='marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md',
+            certainty='CERTAIN_INCLUDE',
+            confidence=95,
         )
-        assert result['status'] == 'success'
-        assert 'hash_id' in result
-        assert result['file_path'] == 'marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md'
+    )
+    assert result['status'] == 'success'
+    assert 'hash_id' in result
+    assert result['file_path'] == 'marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md'
 
 
-def test_assessment_add_with_options():
+def test_assessment_add_with_options(plan_context):
     """Test adding assessment with all options."""
-    with PlanContext():
-        result = cmd_assessment_add(
-            _add_ns(
-                file_path='path/to/file.md',
-                certainty='CERTAIN_EXCLUDE',
-                confidence=85,
-                agent='skill-analysis-agent',
-                detail='No relevant content found',
-                evidence='Checked ## Output section',
-            )
+    result = cmd_assessment_add(
+        _add_ns(
+            file_path='path/to/file.md',
+            certainty='CERTAIN_EXCLUDE',
+            confidence=85,
+            agent='skill-analysis-agent',
+            detail='No relevant content found',
+            evidence='Checked ## Output section',
         )
-        assert result['status'] == 'success'
+    )
+    assert result['status'] == 'success'
 
 
-def test_assessment_add_uncertain():
+def test_assessment_add_uncertain(plan_context):
     """Test adding an uncertain assessment."""
-    with PlanContext():
-        result = cmd_assessment_add(
-            _add_ns(
-                file_path='path/to/ambiguous.md',
-                certainty='UNCERTAIN',
-                confidence=65,
-                detail='JSON found in workflow context - unclear if output spec',
-            )
+    result = cmd_assessment_add(
+        _add_ns(
+            file_path='path/to/ambiguous.md',
+            certainty='UNCERTAIN',
+            confidence=65,
+            detail='JSON found in workflow context - unclear if output spec',
         )
-        assert result['status'] == 'success'
+    )
+    assert result['status'] == 'success'
 
 
-def test_assessment_add_invalid_certainty():
+def test_assessment_add_invalid_certainty(plan_context):
     """Test that invalid certainty is rejected (CLI plumbing - subprocess)."""
-    with PlanContext():
-        result = run_script(
-            SCRIPT_PATH,
-            'assessment',
-            'add',
-            '--plan-id',
-            'test-plan',
-            '--file-path',
-            'path/to/file.md',
-            '--certainty',
-            'INVALID',
-            '--confidence',
-            '50',
-        )
-        # argparse should reject invalid choice
-        assert not result.success
+    result = run_script(
+        SCRIPT_PATH,
+        'assessment',
+        'add',
+        '--plan-id',
+        'test-plan',
+        '--file-path',
+        'path/to/file.md',
+        '--certainty',
+        'INVALID',
+        '--confidence',
+        '50',
+    )
+    # argparse should reject invalid choice
+    assert not result.success
 
 
-def test_assessment_add_invalid_confidence():
+def test_assessment_add_invalid_confidence(plan_context):
     """Test that out-of-range confidence is rejected."""
-    with PlanContext():
-        result = cmd_assessment_add(
-            _add_ns(
-                file_path='path/to/file.md',
-                certainty='CERTAIN_INCLUDE',
-                confidence=150,
-            )
+    result = cmd_assessment_add(
+        _add_ns(
+            file_path='path/to/file.md',
+            certainty='CERTAIN_INCLUDE',
+            confidence=150,
         )
-        assert result['status'] == 'error'
+    )
+    assert result['status'] == 'error'
 
 
 # =============================================================================
@@ -168,59 +163,54 @@ def test_assessment_add_invalid_confidence():
 # =============================================================================
 
 
-def test_assessment_query_empty():
+def test_assessment_query_empty(plan_context):
     """Test querying with no assessments."""
-    with PlanContext():
-        result = cmd_assessment_query(_query_ns())
-        assert result['status'] == 'success'
-        assert result['total_count'] == 0
+    result = cmd_assessment_query(_query_ns())
+    assert result['status'] == 'success'
+    assert result['total_count'] == 0
 
 
-def test_assessment_query_all():
+def test_assessment_query_all(plan_context):
     """Test querying all assessments."""
-    with PlanContext():
-        cmd_assessment_add(_add_ns(file_path='file1.md', certainty='CERTAIN_INCLUDE', confidence=90))
-        cmd_assessment_add(_add_ns(file_path='file2.md', certainty='CERTAIN_EXCLUDE', confidence=85))
-        cmd_assessment_add(_add_ns(file_path='file3.md', certainty='UNCERTAIN', confidence=60))
+    cmd_assessment_add(_add_ns(file_path='file1.md', certainty='CERTAIN_INCLUDE', confidence=90))
+    cmd_assessment_add(_add_ns(file_path='file2.md', certainty='CERTAIN_EXCLUDE', confidence=85))
+    cmd_assessment_add(_add_ns(file_path='file3.md', certainty='UNCERTAIN', confidence=60))
 
-        result = cmd_assessment_query(_query_ns())
-        assert result['total_count'] == 3
-        assert result['filtered_count'] == 3
+    result = cmd_assessment_query(_query_ns())
+    assert result['total_count'] == 3
+    assert result['filtered_count'] == 3
 
 
-def test_assessment_query_by_certainty():
+def test_assessment_query_by_certainty(plan_context):
     """Test filtering assessments by certainty."""
-    with PlanContext():
-        cmd_assessment_add(_add_ns(file_path='file1.md', certainty='CERTAIN_INCLUDE', confidence=90))
-        cmd_assessment_add(_add_ns(file_path='file2.md', certainty='CERTAIN_EXCLUDE', confidence=85))
-        cmd_assessment_add(_add_ns(file_path='file3.md', certainty='UNCERTAIN', confidence=60))
+    cmd_assessment_add(_add_ns(file_path='file1.md', certainty='CERTAIN_INCLUDE', confidence=90))
+    cmd_assessment_add(_add_ns(file_path='file2.md', certainty='CERTAIN_EXCLUDE', confidence=85))
+    cmd_assessment_add(_add_ns(file_path='file3.md', certainty='UNCERTAIN', confidence=60))
 
-        result = cmd_assessment_query(_query_ns(certainty='CERTAIN_INCLUDE'))
-        assert result['total_count'] == 3
-        assert result['filtered_count'] == 1
-        assert 'file1.md' in result.get('file_paths', [])
+    result = cmd_assessment_query(_query_ns(certainty='CERTAIN_INCLUDE'))
+    assert result['total_count'] == 3
+    assert result['filtered_count'] == 1
+    assert 'file1.md' in result.get('file_paths', [])
 
 
-def test_assessment_query_by_confidence():
+def test_assessment_query_by_confidence(plan_context):
     """Test filtering assessments by confidence range."""
-    with PlanContext():
-        cmd_assessment_add(_add_ns(file_path='file1.md', certainty='CERTAIN_INCLUDE', confidence=95))
-        cmd_assessment_add(_add_ns(file_path='file2.md', certainty='CERTAIN_INCLUDE', confidence=85))
-        cmd_assessment_add(_add_ns(file_path='file3.md', certainty='CERTAIN_INCLUDE', confidence=75))
+    cmd_assessment_add(_add_ns(file_path='file1.md', certainty='CERTAIN_INCLUDE', confidence=95))
+    cmd_assessment_add(_add_ns(file_path='file2.md', certainty='CERTAIN_INCLUDE', confidence=85))
+    cmd_assessment_add(_add_ns(file_path='file3.md', certainty='CERTAIN_INCLUDE', confidence=75))
 
-        result = cmd_assessment_query(_query_ns(min_confidence=80))
-        assert result['filtered_count'] == 2
+    result = cmd_assessment_query(_query_ns(min_confidence=80))
+    assert result['filtered_count'] == 2
 
 
-def test_assessment_query_file_paths_list():
+def test_assessment_query_file_paths_list(plan_context):
     """Test that query returns file_paths list."""
-    with PlanContext():
-        cmd_assessment_add(_add_ns(file_path='path/a.md', certainty='CERTAIN_INCLUDE', confidence=90))
-        cmd_assessment_add(_add_ns(file_path='path/b.md', certainty='CERTAIN_INCLUDE', confidence=90))
+    cmd_assessment_add(_add_ns(file_path='path/a.md', certainty='CERTAIN_INCLUDE', confidence=90))
+    cmd_assessment_add(_add_ns(file_path='path/b.md', certainty='CERTAIN_INCLUDE', confidence=90))
 
-        result = cmd_assessment_query(_query_ns(certainty='CERTAIN_INCLUDE'))
-        assert 'file_paths' in result
-        assert len(result['file_paths']) == 2
+    result = cmd_assessment_query(_query_ns(certainty='CERTAIN_INCLUDE'))
+    assert 'file_paths' in result
+    assert len(result['file_paths']) == 2
 
 
 # =============================================================================
@@ -228,44 +218,41 @@ def test_assessment_query_file_paths_list():
 # =============================================================================
 
 
-def test_assessment_clear_all():
+def test_assessment_clear_all(plan_context):
     """Test clearing all assessments."""
-    with PlanContext():
-        cmd_assessment_add(_add_ns(file_path='file1.md', certainty='CERTAIN_INCLUDE', confidence=90))
-        cmd_assessment_add(_add_ns(file_path='file2.md', certainty='CERTAIN_EXCLUDE', confidence=85))
+    cmd_assessment_add(_add_ns(file_path='file1.md', certainty='CERTAIN_INCLUDE', confidence=90))
+    cmd_assessment_add(_add_ns(file_path='file2.md', certainty='CERTAIN_EXCLUDE', confidence=85))
 
-        result = cmd_assessment_clear(_clear_ns())
-        assert result['status'] == 'success'
-        assert result['cleared'] == 2
+    result = cmd_assessment_clear(_clear_ns())
+    assert result['status'] == 'success'
+    assert result['cleared'] == 2
 
-        # Verify empty
-        query_result = cmd_assessment_query(_query_ns())
-        assert query_result['total_count'] == 0
+    # Verify empty
+    query_result = cmd_assessment_query(_query_ns())
+    assert query_result['total_count'] == 0
 
 
-def test_assessment_clear_by_agent():
+def test_assessment_clear_by_agent(plan_context):
     """Test clearing assessments filtered by agent name."""
-    with PlanContext():
-        cmd_assessment_add(_add_ns(file_path='file1.md', certainty='CERTAIN_INCLUDE', confidence=90, agent='agent-a'))
-        cmd_assessment_add(_add_ns(file_path='file2.md', certainty='CERTAIN_EXCLUDE', confidence=85, agent='agent-b'))
-        cmd_assessment_add(_add_ns(file_path='file3.md', certainty='CERTAIN_INCLUDE', confidence=80, agent='agent-a'))
+    cmd_assessment_add(_add_ns(file_path='file1.md', certainty='CERTAIN_INCLUDE', confidence=90, agent='agent-a'))
+    cmd_assessment_add(_add_ns(file_path='file2.md', certainty='CERTAIN_EXCLUDE', confidence=85, agent='agent-b'))
+    cmd_assessment_add(_add_ns(file_path='file3.md', certainty='CERTAIN_INCLUDE', confidence=80, agent='agent-a'))
 
-        result = cmd_assessment_clear(_clear_ns(agent='agent-a'))
-        assert result['status'] == 'success'
-        assert result['cleared'] == 2
+    result = cmd_assessment_clear(_clear_ns(agent='agent-a'))
+    assert result['status'] == 'success'
+    assert result['cleared'] == 2
 
-        # Verify only agent-b remains
-        query_result = cmd_assessment_query(_query_ns())
-        assert query_result['total_count'] == 1
-        assert 'file2.md' in query_result.get('file_paths', [])
+    # Verify only agent-b remains
+    query_result = cmd_assessment_query(_query_ns())
+    assert query_result['total_count'] == 1
+    assert 'file2.md' in query_result.get('file_paths', [])
 
 
-def test_assessment_clear_empty():
+def test_assessment_clear_empty(plan_context):
     """Test clearing when no assessments exist."""
-    with PlanContext():
-        result = cmd_assessment_clear(_clear_ns())
-        assert result['status'] == 'success'
-        assert result['cleared'] == 0
+    result = cmd_assessment_clear(_clear_ns())
+    assert result['status'] == 'success'
+    assert result['cleared'] == 0
 
 
 # =============================================================================
@@ -273,29 +260,27 @@ def test_assessment_clear_empty():
 # =============================================================================
 
 
-def test_assessment_get():
+def test_assessment_get(plan_context):
     """Test getting a specific assessment."""
-    with PlanContext():
-        add_result = cmd_assessment_add(
-            _add_ns(
-                file_path='file.md',
-                certainty='CERTAIN_INCLUDE',
-                confidence=90,
-            )
+    add_result = cmd_assessment_add(
+        _add_ns(
+            file_path='file.md',
+            certainty='CERTAIN_INCLUDE',
+            confidence=90,
         )
-        hash_id = str(add_result['hash_id'])
+    )
+    hash_id = str(add_result['hash_id'])
 
-        result = cmd_assessment_get(_get_ns(hash_id=hash_id))
-        assert result['status'] == 'success'
-        assert result['file_path'] == 'file.md'
-        assert result['certainty'] == 'CERTAIN_INCLUDE'
+    result = cmd_assessment_get(_get_ns(hash_id=hash_id))
+    assert result['status'] == 'success'
+    assert result['file_path'] == 'file.md'
+    assert result['certainty'] == 'CERTAIN_INCLUDE'
 
 
-def test_assessment_get_not_found():
+def test_assessment_get_not_found(plan_context):
     """Test getting non-existent assessment."""
-    with PlanContext():
-        result = cmd_assessment_get(_get_ns(hash_id='nonexistent'))
-        assert result['status'] == 'error'
+    result = cmd_assessment_get(_get_ns(hash_id='nonexistent'))
+    assert result['status'] == 'error'
 
 
 # =============================================================================
@@ -303,63 +288,61 @@ def test_assessment_get_not_found():
 # =============================================================================
 
 
-def test_cli_assessment_add_and_query_roundtrip():
+def test_cli_assessment_add_and_query_roundtrip(plan_context):
     """CLI plumbing: add an assessment and query it back via subprocess."""
-    with PlanContext():
-        result = run_script(
-            SCRIPT_PATH,
-            'assessment',
-            'add',
-            '--plan-id',
-            'test-plan',
-            '--file-path',
-            'cli-test.md',
-            '--certainty',
-            'CERTAIN_INCLUDE',
-            '--confidence',
-            '90',
-        )
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
+    result = run_script(
+        SCRIPT_PATH,
+        'assessment',
+        'add',
+        '--plan-id',
+        'test-plan',
+        '--file-path',
+        'cli-test.md',
+        '--certainty',
+        'CERTAIN_INCLUDE',
+        '--confidence',
+        '90',
+    )
+    assert result.success, f'Script failed: {result.stderr}'
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
 
-        query_result = run_script(SCRIPT_PATH, 'assessment', 'list', '--plan-id', 'test-plan')
-        assert query_result.success
-        query_data = parse_toon(query_result.stdout)
-        assert query_data['total_count'] == 1
+    query_result = run_script(SCRIPT_PATH, 'assessment', 'list', '--plan-id', 'test-plan')
+    assert query_result.success
+    query_data = parse_toon(query_result.stdout)
+    assert query_data['total_count'] == 1
 
 
-def test_cli_assessment_clear_roundtrip():
+def test_cli_assessment_clear_roundtrip(plan_context):
     """CLI plumbing: add assessments and clear via subprocess."""
-    with PlanContext():
-        run_script(
-            SCRIPT_PATH,
-            'assessment',
-            'add',
-            '--plan-id',
-            'test-plan',
-            '--file-path',
-            'cli-file1.md',
-            '--certainty',
-            'CERTAIN_INCLUDE',
-            '--confidence',
-            '90',
-        )
-        run_script(
-            SCRIPT_PATH,
-            'assessment',
-            'add',
-            '--plan-id',
-            'test-plan',
-            '--file-path',
-            'cli-file2.md',
-            '--certainty',
-            'UNCERTAIN',
-            '--confidence',
-            '60',
-        )
+    run_script(
+        SCRIPT_PATH,
+        'assessment',
+        'add',
+        '--plan-id',
+        'test-plan',
+        '--file-path',
+        'cli-file1.md',
+        '--certainty',
+        'CERTAIN_INCLUDE',
+        '--confidence',
+        '90',
+    )
+    run_script(
+        SCRIPT_PATH,
+        'assessment',
+        'add',
+        '--plan-id',
+        'test-plan',
+        '--file-path',
+        'cli-file2.md',
+        '--certainty',
+        'UNCERTAIN',
+        '--confidence',
+        '60',
+    )
 
-        clear_result = run_script(SCRIPT_PATH, 'assessment', 'clear', '--plan-id', 'test-plan')
-        assert clear_result.success
-        clear_data = parse_toon(clear_result.stdout)
-        assert clear_data['cleared'] == 2
+    clear_result = run_script(SCRIPT_PATH, 'assessment', 'clear', '--plan-id', 'test-plan')
+    assert clear_result.success
+    clear_data = parse_toon(clear_result.stdout)
+    assert clear_data['cleared'] == 2

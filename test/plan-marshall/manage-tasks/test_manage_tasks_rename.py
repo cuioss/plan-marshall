@@ -9,8 +9,6 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import PlanContext
-
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
     / 'marketplace'
@@ -67,137 +65,130 @@ def _build_task_toon(title='Test task', deliverable=1, steps=None):
 class TestRenamePath:
     """Tests for rename-path subcommand."""
 
-    def test_single_mapping(self):
+    def test_single_mapping(self, plan_context):
         """Adding a single rename mapping records it correctly."""
-        with PlanContext(plan_id='rename-single'):
-            result = cmd_rename_path(
-                _rename_ns(
-                    plan_id='rename-single',
-                    old_path='providers/',
-                    new_path='auth/providers/',
-                )
+        result = cmd_rename_path(
+            _rename_ns(
+                plan_id='rename-single',
+                old_path='providers/',
+                new_path='auth/providers/',
             )
-            assert result['status'] == 'success'
-            assert result['mapping']['old_path'] == 'providers'
-            assert result['mapping']['new_path'] == 'auth/providers'
-            assert result['mapping_count'] == 1
+        )
+        assert result['status'] == 'success'
+        assert result['mapping']['old_path'] == 'providers'
+        assert result['mapping']['new_path'] == 'auth/providers'
+        assert result['mapping_count'] == 1
 
-    def test_multiple_mappings(self):
+    def test_multiple_mappings(self, plan_context):
         """Adding multiple mappings accumulates them."""
-        with PlanContext(plan_id='rename-multi'):
-            cmd_rename_path(
-                _rename_ns(
-                    plan_id='rename-multi',
-                    old_path='old/a',
-                    new_path='new/a',
-                )
+        cmd_rename_path(
+            _rename_ns(
+                plan_id='rename-multi',
+                old_path='old/a',
+                new_path='new/a',
             )
-            result = cmd_rename_path(
-                _rename_ns(
-                    plan_id='rename-multi',
-                    old_path='old/b',
-                    new_path='new/b',
-                )
+        )
+        result = cmd_rename_path(
+            _rename_ns(
+                plan_id='rename-multi',
+                old_path='old/b',
+                new_path='new/b',
             )
-            assert result['status'] == 'success'
-            assert result['mapping_count'] == 2
+        )
+        assert result['status'] == 'success'
+        assert result['mapping_count'] == 2
 
-    def test_identical_paths_error(self):
+    def test_identical_paths_error(self, plan_context):
         """Error when old and new paths are identical."""
-        with PlanContext(plan_id='rename-identical'):
-            result = cmd_rename_path(
-                _rename_ns(
-                    plan_id='rename-identical',
-                    old_path='same/path',
-                    new_path='same/path',
-                )
+        result = cmd_rename_path(
+            _rename_ns(
+                plan_id='rename-identical',
+                old_path='same/path',
+                new_path='same/path',
             )
-            assert result['status'] == 'error'
+        )
+        assert result['status'] == 'error'
 
-    def test_rewrites_step_targets(self):
+    def test_rewrites_step_targets(self, plan_context):
         """Rename-path rewrites matching step targets in pending tasks."""
-        with PlanContext(plan_id='rename-rewrite'):
-            # Create a task with steps targeting old paths
-            content = _build_task_toon(
-                title='Task with old paths',
-                deliverable=1,
-                steps=['providers/config.py', 'providers/auth.py', 'unrelated/file.py'],
+        # Create a task with steps targeting old paths
+        content = _build_task_toon(
+            title='Task with old paths',
+            deliverable=1,
+            steps=['providers/config.py', 'providers/auth.py', 'unrelated/file.py'],
+        )
+        _add_task('rename-rewrite', content)
+
+        # Rename providers/ -> auth/providers/
+        result = cmd_rename_path(
+            _rename_ns(
+                plan_id='rename-rewrite',
+                old_path='providers',
+                new_path='auth/providers',
             )
-            _add_task('rename-rewrite', content)
+        )
 
-            # Rename providers/ -> auth/providers/
-            result = cmd_rename_path(
-                _rename_ns(
-                    plan_id='rename-rewrite',
-                    old_path='providers',
-                    new_path='auth/providers',
-                )
-            )
+        assert result['status'] == 'success'
+        assert result['rewritten_count'] == 2
 
-            assert result['status'] == 'success'
-            assert result['rewritten_count'] == 2
+        # Verify the rewritten entries
+        rewritten_targets = {r['new_target'] for r in result['rewritten']}
+        assert 'auth/providers/config.py' in rewritten_targets
+        assert 'auth/providers/auth.py' in rewritten_targets
 
-            # Verify the rewritten entries
-            rewritten_targets = {r['new_target'] for r in result['rewritten']}
-            assert 'auth/providers/config.py' in rewritten_targets
-            assert 'auth/providers/auth.py' in rewritten_targets
-
-    def test_does_not_rewrite_done_steps(self):
+    def test_does_not_rewrite_done_steps(self, plan_context):
         """Rename-path skips steps that are already done."""
-        with PlanContext(plan_id='rename-done-steps') as ctx:
-            content = _build_task_toon(
-                title='Task with done steps',
-                deliverable=1,
-                steps=['providers/config.py'],
+        content = _build_task_toon(
+            title='Task with done steps',
+            deliverable=1,
+            steps=['providers/config.py'],
+        )
+        _add_task('rename-done-steps', content)
+
+        # Mark the task's step as done by modifying the file directly
+        tasks_dir = plan_context.plan_dir_for('rename-done-steps') / 'tasks'
+        task_file = next(tasks_dir.glob('TASK-*.json'))
+        task_data = json.loads(task_file.read_text())
+        task_data['steps'][0]['status'] = 'done'
+        task_file.write_text(json.dumps(task_data, indent=2))
+
+        result = cmd_rename_path(
+            _rename_ns(
+                plan_id='rename-done-steps',
+                old_path='providers',
+                new_path='auth/providers',
             )
-            _add_task('rename-done-steps', content)
+        )
 
-            # Mark the task's step as done by modifying the file directly
-            tasks_dir = ctx.plan_dir / 'tasks'
-            task_file = next(tasks_dir.glob('TASK-*.json'))
-            task_data = json.loads(task_file.read_text())
-            task_data['steps'][0]['status'] = 'done'
-            task_file.write_text(json.dumps(task_data, indent=2))
+        assert result['status'] == 'success'
+        assert result['rewritten_count'] == 0
 
-            result = cmd_rename_path(
-                _rename_ns(
-                    plan_id='rename-done-steps',
-                    old_path='providers',
-                    new_path='auth/providers',
-                )
-            )
-
-            assert result['status'] == 'success'
-            assert result['rewritten_count'] == 0
-
-    def test_mapping_file_toon_format(self):
+    def test_mapping_file_toon_format(self, plan_context):
         """Mapping file is written in valid TOON format."""
-        with PlanContext(plan_id='rename-toon') as ctx:
-            cmd_rename_path(
-                _rename_ns(
-                    plan_id='rename-toon',
-                    old_path='old/path',
-                    new_path='new/path',
-                )
+        cmd_rename_path(
+            _rename_ns(
+                plan_id='rename-toon',
+                old_path='old/path',
+                new_path='new/path',
             )
+        )
 
-            mapping_path = ctx.plan_dir / 'work' / 'rename_mapping.toon'
-            assert mapping_path.exists()
-            content = mapping_path.read_text()
-            assert 'mapping_count: 1' in content
-            assert 'mappings[1]{old_path,new_path}:' in content
-            assert 'old/path,new/path' in content
+        mapping_path = plan_context.plan_dir_for('rename-toon') / 'work' / 'rename_mapping.toon'
+        assert mapping_path.exists()
+        content = mapping_path.read_text()
+        assert 'mapping_count: 1' in content
+        assert 'mappings[1]{old_path,new_path}:' in content
+        assert 'old/path,new/path' in content
 
-    def test_no_tasks_no_error(self):
+    def test_no_tasks_no_error(self, plan_context):
         """Rename-path succeeds even when no tasks exist."""
-        with PlanContext(plan_id='rename-no-tasks'):
-            result = cmd_rename_path(
-                _rename_ns(
-                    plan_id='rename-no-tasks',
-                    old_path='old/path',
-                    new_path='new/path',
-                )
+        result = cmd_rename_path(
+            _rename_ns(
+                plan_id='rename-no-tasks',
+                old_path='old/path',
+                new_path='new/path',
             )
-            assert result['status'] == 'success'
-            assert result['rewritten_count'] == 0
-            assert result['mapping_count'] == 1
+        )
+        assert result['status'] == 'success'
+        assert result['rewritten_count'] == 0
+        assert result['mapping_count'] == 1

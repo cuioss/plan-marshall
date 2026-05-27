@@ -17,7 +17,7 @@ from pathlib import Path
 
 from test_helpers import create_marshal_json, create_nested_marshal_json
 
-from conftest import PROJECT_ROOT, PlanContext
+from conftest import PROJECT_ROOT
 
 _SCRIPTS_DIR = (
     PROJECT_ROOT
@@ -56,27 +56,34 @@ def _write_request(plan_dir: Path, body: str) -> None:
     )
 
 
+def _make_plan_dir(plan_context, plan_id: str) -> Path:
+    """Create a plan directory under the fixture base for ``plan_id``."""
+    plan_dir = plan_context.fixture_dir / 'plans' / plan_id
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    return plan_dir
+
+
 # =============================================================================
 # Single-domain auto-select
 # =============================================================================
 
 
-def test_single_user_domain_auto_selects():
+def test_single_user_domain_auto_selects(plan_context):
     """One configured non-system domain always wins regardless of narrative."""
-    with PlanContext(plan_id='dd-single') as ctx:
-        single = {
-            'skill_domains': {
-                'java': {'defaults': ['pm-dev-java:java-core'], 'optionals': []},
-            }
+    plan_dir = _make_plan_dir(plan_context, 'dd-single')
+    single = {
+        'skill_domains': {
+            'java': {'defaults': ['pm-dev-java:java-core'], 'optionals': []},
         }
-        create_marshal_json(ctx.fixture_dir, single)
-        _write_request(ctx.plan_dir, 'Improve the python service.')  # unrelated narrative
+    }
+    create_marshal_json(plan_context.fixture_dir, single)
+    _write_request(plan_dir, 'Improve the python service.')  # unrelated narrative
 
-        result = cmd_domain_detect(_ns('dd-single'))
-        assert result['status'] == 'success'
-        assert result['domain'] == 'java'
-        assert result['ambiguous'] is False
-        assert result['source'] == 'single_domain_configured'
+    result = cmd_domain_detect(_ns('dd-single'))
+    assert result['status'] == 'success'
+    assert result['domain'] == 'java'
+    assert result['ambiguous'] is False
+    assert result['source'] == 'single_domain_configured'
 
 
 # =============================================================================
@@ -84,19 +91,19 @@ def test_single_user_domain_auto_selects():
 # =============================================================================
 
 
-def test_unambiguous_narrative_match_picks_winner():
+def test_unambiguous_narrative_match_picks_winner(plan_context):
     """Two domains configured; only one is mentioned → ambiguous=false."""
-    with PlanContext(plan_id='dd-unamb') as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        _write_request(
-            ctx.plan_dir,
-            'Add a new java-core CDI module for the authentication service.',
-        )
-        result = cmd_domain_detect(_ns('dd-unamb'))
-        assert result['status'] == 'success'
-        assert result['domain'] == 'java'
-        assert result['ambiguous'] is False
-        assert any(c['domain'] == 'java' for c in result['candidates'])
+    plan_dir = _make_plan_dir(plan_context, 'dd-unamb')
+    create_nested_marshal_json(plan_context.fixture_dir)
+    _write_request(
+        plan_dir,
+        'Add a new java-core CDI module for the authentication service.',
+    )
+    result = cmd_domain_detect(_ns('dd-unamb'))
+    assert result['status'] == 'success'
+    assert result['domain'] == 'java'
+    assert result['ambiguous'] is False
+    assert any(c['domain'] == 'java' for c in result['candidates'])
 
 
 # =============================================================================
@@ -104,18 +111,18 @@ def test_unambiguous_narrative_match_picks_winner():
 # =============================================================================
 
 
-def test_multi_match_returns_ambiguous():
+def test_multi_match_returns_ambiguous(plan_context):
     """Narrative mentions multiple domains → ambiguous=true with all candidates."""
-    with PlanContext(plan_id='dd-multi') as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        _write_request(
-            ctx.plan_dir,
-            'Refactor the java CDI bindings AND the javascript frontend hooks.',
-        )
-        result = cmd_domain_detect(_ns('dd-multi'))
-        assert result['ambiguous'] is True
-        candidates = {c['domain'] for c in result['candidates']}
-        assert {'java', 'javascript'}.issubset(candidates)
+    plan_dir = _make_plan_dir(plan_context, 'dd-multi')
+    create_nested_marshal_json(plan_context.fixture_dir)
+    _write_request(
+        plan_dir,
+        'Refactor the java CDI bindings AND the javascript frontend hooks.',
+    )
+    result = cmd_domain_detect(_ns('dd-multi'))
+    assert result['ambiguous'] is True
+    candidates = {c['domain'] for c in result['candidates']}
+    assert {'java', 'javascript'}.issubset(candidates)
 
 
 # =============================================================================
@@ -123,18 +130,18 @@ def test_multi_match_returns_ambiguous():
 # =============================================================================
 
 
-def test_no_match_returns_ambiguous():
+def test_no_match_returns_ambiguous(plan_context):
     """No domain mentioned in the narrative → ambiguous=true, empty candidates."""
-    with PlanContext(plan_id='dd-zero') as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        _write_request(
-            ctx.plan_dir,
-            'Update the deployment scripts to fix the release pipeline.',
-        )
-        result = cmd_domain_detect(_ns('dd-zero'))
-        assert result['ambiguous'] is True
-        assert result['candidates'] == []
-        assert result['reason'] == 'no_narrative_match'
+    plan_dir = _make_plan_dir(plan_context, 'dd-zero')
+    create_nested_marshal_json(plan_context.fixture_dir)
+    _write_request(
+        plan_dir,
+        'Update the deployment scripts to fix the release pipeline.',
+    )
+    result = cmd_domain_detect(_ns('dd-zero'))
+    assert result['ambiguous'] is True
+    assert result['candidates'] == []
+    assert result['reason'] == 'no_narrative_match'
 
 
 # =============================================================================
@@ -142,25 +149,25 @@ def test_no_match_returns_ambiguous():
 # =============================================================================
 
 
-def test_override_takes_precedence_over_narrative():
-    with PlanContext(plan_id='dd-override') as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        _write_request(ctx.plan_dir, 'Refactor the javascript hooks.')
+def test_override_takes_precedence_over_narrative(plan_context):
+    plan_dir = _make_plan_dir(plan_context, 'dd-override')
+    create_nested_marshal_json(plan_context.fixture_dir)
+    _write_request(plan_dir, 'Refactor the javascript hooks.')
 
-        result = cmd_domain_detect(_ns('dd-override', domain_override='java'))
-        assert result['domain'] == 'java'
-        assert result['ambiguous'] is False
-        assert result['source'] == 'cli_override'
+    result = cmd_domain_detect(_ns('dd-override', domain_override='java'))
+    assert result['domain'] == 'java'
+    assert result['ambiguous'] is False
+    assert result['source'] == 'cli_override'
 
 
-def test_override_unknown_domain_falls_through():
+def test_override_unknown_domain_falls_through(plan_context):
     """An unknown --domain-override is ignored; normal detection runs."""
-    with PlanContext(plan_id='dd-bad-override') as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        _write_request(ctx.plan_dir, 'Add a new javascript hook.')
+    plan_dir = _make_plan_dir(plan_context, 'dd-bad-override')
+    create_nested_marshal_json(plan_context.fixture_dir)
+    _write_request(plan_dir, 'Add a new javascript hook.')
 
-        result = cmd_domain_detect(_ns('dd-bad-override', domain_override='cobol'))
-        assert result['domain'] == 'javascript'
+    result = cmd_domain_detect(_ns('dd-bad-override', domain_override='cobol'))
+    assert result['domain'] == 'javascript'
 
 
 # =============================================================================
@@ -168,34 +175,34 @@ def test_override_unknown_domain_falls_through():
 # =============================================================================
 
 
-def test_missing_marshal_returns_ambiguous():
+def test_missing_marshal_returns_ambiguous(plan_context):
     """No marshal.json → ambiguous=true, reason=marshal_not_initialized."""
-    with PlanContext(plan_id='dd-no-marshal') as ctx:
-        _write_request(ctx.plan_dir, 'Add java code.')
-        # NO create_marshal_json — fresh fixture.
-        result = cmd_domain_detect(_ns('dd-no-marshal'))
-        assert result['ambiguous'] is True
-        assert result['reason'] in ('marshal_not_initialized', 'no_skill_domains_configured', 'no_user_domains')
+    plan_dir = _make_plan_dir(plan_context, 'dd-no-marshal')
+    _write_request(plan_dir, 'Add java code.')
+    # NO create_marshal_json — fresh fixture.
+    result = cmd_domain_detect(_ns('dd-no-marshal'))
+    assert result['ambiguous'] is True
+    assert result['reason'] in ('marshal_not_initialized', 'no_skill_domains_configured', 'no_user_domains')
 
 
-def test_plan_dir_not_found_errors():
-    with PlanContext(plan_id='dd-exists'):
-        result = cmd_domain_detect(_ns('does-not-exist'))
-        assert result['status'] == 'error'
-        assert result['error'] == 'plan_dir_not_found'
+def test_plan_dir_not_found_errors(plan_context):
+    _make_plan_dir(plan_context, 'dd-exists')
+    result = cmd_domain_detect(_ns('does-not-exist'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'plan_dir_not_found'
 
 
-def test_lesson_body_preferred_over_request_md():
-    with PlanContext(plan_id='dd-lesson') as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        _write_request(ctx.plan_dir, 'Generic narrative — javascript.')
-        (ctx.plan_dir / 'lesson-2026-05-01-12-001.md').write_text(
-            '# Java lesson\n\nFix the java CDI bindings.\n',
-            encoding='utf-8',
-        )
-        result = cmd_domain_detect(_ns('dd-lesson'))
-        assert result['source'].startswith('lesson-body:')
-        assert result['domain'] == 'java'
+def test_lesson_body_preferred_over_request_md(plan_context):
+    plan_dir = _make_plan_dir(plan_context, 'dd-lesson')
+    create_nested_marshal_json(plan_context.fixture_dir)
+    _write_request(plan_dir, 'Generic narrative — javascript.')
+    (plan_dir / 'lesson-2026-05-01-12-001.md').write_text(
+        '# Java lesson\n\nFix the java CDI bindings.\n',
+        encoding='utf-8',
+    )
+    result = cmd_domain_detect(_ns('dd-lesson'))
+    assert result['source'].startswith('lesson-body:')
+    assert result['domain'] == 'java'
 
 
 # =============================================================================

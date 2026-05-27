@@ -15,7 +15,7 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import PROJECT_ROOT, PlanContext
+from conftest import PROJECT_ROOT
 
 _SCRIPTS_DIR = (
     PROJECT_ROOT
@@ -126,90 +126,84 @@ def test_score_scope_alignment_boosts_confidence():
 # =============================================================================
 
 
-def test_known_good_documentation_request_lands_on_doc_verify():
+def test_known_good_documentation_request_lands_on_doc_verify(plan_context):
     """A request that matches recipe-doc-verify's description ranks it first."""
-    with PlanContext(plan_id='ls-docverify') as ctx:
-        assert ctx.plan_dir is not None
-        _write_request(
-            ctx.plan_dir,
-            'Verify documentation links and AsciiDoc references across the project. '
-            'Ensure no broken cross-references in standards files.',
-        )
-        _write_status(ctx.plan_dir, {'domain': 'documentation', 'scope_estimate': 'broad'})
+    pdir = plan_context.plan_dir_for('ls-docverify')
+    _write_request(
+        pdir,
+        'Verify documentation links and AsciiDoc references across the project. '
+        'Ensure no broken cross-references in standards files.',
+    )
+    _write_status(pdir, {'domain': 'documentation', 'scope_estimate': 'broad'})
 
-        result = cmd_auto_suggest(_ns('ls-docverify'))
-        assert result['status'] == 'success'
-        keys = [s['key'] for s in result['suggestions']]
-        assert 'doc-verify' in keys, f"doc-verify missing from suggestions; got {keys}"
+    result = cmd_auto_suggest(_ns('ls-docverify'))
+    assert result['status'] == 'success'
+    keys = [s['key'] for s in result['suggestions']]
+    assert 'doc-verify' in keys, f"doc-verify missing from suggestions; got {keys}"
 
 
-def test_max_suggestions_caps_returned_list():
+def test_max_suggestions_caps_returned_list(plan_context):
     """--max-suggestions caps the returned list even when more recipes match."""
-    with PlanContext(plan_id='ls-cap') as ctx:
-        assert ctx.plan_dir is not None
-        # A very generic narrative that nominally touches every recipe.
-        _write_request(
-            ctx.plan_dir,
-            'Standards documentation code refactor verify architecture diagrams logging.',
-        )
-        _write_status(ctx.plan_dir)
-        result = cmd_auto_suggest(_ns('ls-cap', max_suggestions=2))
-        assert result['count'] <= 2
+    pdir = plan_context.plan_dir_for('ls-cap')
+    # A very generic narrative that nominally touches every recipe.
+    _write_request(
+        pdir,
+        'Standards documentation code refactor verify architecture diagrams logging.',
+    )
+    _write_status(pdir)
+    result = cmd_auto_suggest(_ns('ls-cap', max_suggestions=2))
+    assert result['count'] <= 2
 
 
-def test_no_narrative_returns_empty_suggestions():
+def test_no_narrative_returns_empty_suggestions(plan_context):
     """When request.md is missing the script returns an empty list with reason."""
-    with PlanContext(plan_id='ls-no-narrative') as ctx:
-        assert ctx.plan_dir is not None
-        # No request.md, no lesson-*.md.
-        result = cmd_auto_suggest(_ns('ls-no-narrative'))
-        assert result['status'] == 'success'
-        assert result['suggestions'] == []
-        assert result['narrative_source'] is None
-        assert result['reason'] == 'narrative_unavailable'
+    plan_context.plan_dir_for('ls-no-narrative')
+    # No request.md, no lesson-*.md.
+    result = cmd_auto_suggest(_ns('ls-no-narrative'))
+    assert result['status'] == 'success'
+    assert result['suggestions'] == []
+    assert result['narrative_source'] is None
+    assert result['reason'] == 'narrative_unavailable'
 
 
-def test_lesson_body_preferred_over_request_md():
+def test_lesson_body_preferred_over_request_md(plan_context):
     """A staged lesson-{id}.md is consulted before request.md."""
-    with PlanContext(plan_id='ls-lesson') as ctx:
-        assert ctx.plan_dir is not None
-        _write_request(
-            ctx.plan_dir,
-            'Generic placeholder request that should NOT drive suggestions.',
-        )
-        (ctx.plan_dir / 'lesson-2026-05-01-12-001.md').write_text(
-            '# Verify Documentation Quality\n\nThe project documentation has drifted; verify all links and references.\n',
-            encoding='utf-8',
-        )
-        _write_status(ctx.plan_dir, {'domain': 'documentation'})
+    pdir = plan_context.plan_dir_for('ls-lesson')
+    _write_request(
+        pdir,
+        'Generic placeholder request that should NOT drive suggestions.',
+    )
+    (pdir / 'lesson-2026-05-01-12-001.md').write_text(
+        '# Verify Documentation Quality\n\nThe project documentation has drifted; verify all links and references.\n',
+        encoding='utf-8',
+    )
+    _write_status(pdir, {'domain': 'documentation'})
 
-        result = cmd_auto_suggest(_ns('ls-lesson'))
-        # The narrative_source must indicate the lesson body was consulted.
-        assert result['narrative_source'] is not None
-        assert result['narrative_source'].startswith('lesson-body:')
+    result = cmd_auto_suggest(_ns('ls-lesson'))
+    # The narrative_source must indicate the lesson body was consulted.
+    assert result['narrative_source'] is not None
+    assert result['narrative_source'].startswith('lesson-body:')
 
 
-def test_emit_writes_qgate_findings():
+def test_emit_writes_qgate_findings(plan_context):
     """With emit=True the suggestions are also recorded as Q-Gate findings."""
-    with PlanContext(plan_id='ls-emit') as ctx:
-        assert ctx.plan_dir is not None
-        _write_request(
-            ctx.plan_dir,
-            'Verify documentation links and architecture diagrams across the project.',
-        )
-        _write_status(ctx.plan_dir, {'domain': 'documentation', 'scope_estimate': 'broad'})
-        result = cmd_auto_suggest(_ns('ls-emit', no_emit=False))
-        assert result['findings_emitted'] == result['count']
-        if result['count'] > 0:
-            findings_path = ctx.plan_dir / 'artifacts' / 'findings' / 'tip.jsonl'
-            assert findings_path.exists()
+    pdir = plan_context.plan_dir_for('ls-emit')
+    _write_request(
+        pdir,
+        'Verify documentation links and architecture diagrams across the project.',
+    )
+    _write_status(pdir, {'domain': 'documentation', 'scope_estimate': 'broad'})
+    result = cmd_auto_suggest(_ns('ls-emit', no_emit=False))
+    assert result['findings_emitted'] == result['count']
+    if result['count'] > 0:
+        findings_path = pdir / 'artifacts' / 'findings' / 'tip.jsonl'
+        assert findings_path.exists()
 
 
-def test_plan_dir_not_found_errors():
-    with PlanContext(plan_id='ls-exists'):
-        result = cmd_auto_suggest(_ns('does-not-exist'))
-        assert result['status'] == 'error'
-        assert result['error'] == 'plan_dir_not_found'
+def test_plan_dir_not_found_errors(plan_context):
+    result = cmd_auto_suggest(_ns('does-not-exist'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'plan_dir_not_found'
 
 
 def test_auto_suggest_registered_in_manage_lessons_dispatch():

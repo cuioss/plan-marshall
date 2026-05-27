@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import PlanContext, get_script_path, run_script  # noqa: I001
+from conftest import get_script_path, run_script  # noqa: I001
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
 
@@ -95,48 +95,44 @@ def _ns_accumulate(
 # =============================================================================
 
 
-def test_start_phase_records_timestamp():
+def test_start_phase_records_timestamp(plan_context):
     """start-phase creates metrics.toon with phase start timestamp."""
-    with PlanContext(plan_id='metrics-start-01') as ctx:
-        result = cmd_start_phase(_ns_start_phase('metrics-start-01', '1-init'))
-        assert result['status'] == 'success'
-        assert result['phase'] == '1-init'
-        assert 'start_time' in result
+    result = cmd_start_phase(_ns_start_phase('metrics-start-01', '1-init'))
+    assert result['status'] == 'success'
+    assert result['phase'] == '1-init'
+    assert 'start_time' in result
 
-        # Verify file was written
-        metrics_file = ctx.plan_dir / 'work' / 'metrics.toon'
-        assert metrics_file.exists(), 'metrics.toon should be created'
-        content = metrics_file.read_text()
-        assert '[1-init]' in content
-        assert 'start_time:' in content
+    # Verify file was written
+    metrics_file = plan_context.plan_dir_for('metrics-start-01') / 'work' / 'metrics.toon'
+    assert metrics_file.exists(), 'metrics.toon should be created'
+    content = metrics_file.read_text()
+    assert '[1-init]' in content
+    assert 'start_time:' in content
 
 
-def test_start_phase_invalid_phase():
+def test_start_phase_invalid_phase(plan_context):
     """start-phase rejects invalid phase names."""
-    with PlanContext(plan_id='metrics-start-02'):
-        result = cmd_start_phase(_ns_start_phase('metrics-start-02', 'invalid'))
-        assert result['status'] == 'error'
-        assert 'Invalid phase' in str(result.get('message', ''))
+    result = cmd_start_phase(_ns_start_phase('metrics-start-02', 'invalid'))
+    assert result['status'] == 'error'
+    assert 'Invalid phase' in str(result.get('message', ''))
 
 
-def test_start_phase_invalid_plan_id():
+def test_start_phase_invalid_plan_id(plan_context):
     """start-phase rejects invalid plan IDs (sys.exit(1) from require_valid_plan_id)."""
-    with PlanContext(plan_id='test'):
-        with pytest.raises(SystemExit) as exc_info:
-            cmd_start_phase(_ns_start_phase('../escape', '1-init'))
-        assert exc_info.value.code == 0
+    with pytest.raises(SystemExit) as exc_info:
+        cmd_start_phase(_ns_start_phase('../escape', '1-init'))
+    assert exc_info.value.code == 0
 
 
-def test_start_phase_multiple_phases():
+def test_start_phase_multiple_phases(plan_context):
     """start-phase can record multiple phases."""
-    with PlanContext(plan_id='metrics-start-03') as ctx:
-        cmd_start_phase(_ns_start_phase('metrics-start-03', '1-init'))
-        cmd_start_phase(_ns_start_phase('metrics-start-03', '2-refine'))
+    cmd_start_phase(_ns_start_phase('metrics-start-03', '1-init'))
+    cmd_start_phase(_ns_start_phase('metrics-start-03', '2-refine'))
 
-        metrics_file = ctx.plan_dir / 'work' / 'metrics.toon'
-        content = metrics_file.read_text()
-        assert '[1-init]' in content
-        assert '[2-refine]' in content
+    metrics_file = plan_context.plan_dir_for('metrics-start-03') / 'work' / 'metrics.toon'
+    content = metrics_file.read_text()
+    assert '[1-init]' in content
+    assert '[2-refine]' in content
 
 
 # =============================================================================
@@ -144,50 +140,46 @@ def test_start_phase_multiple_phases():
 # =============================================================================
 
 
-def test_end_phase_computes_duration():
+def test_end_phase_computes_duration(plan_context):
     """end-phase computes wall-clock duration from start/end."""
-    with PlanContext(plan_id='metrics-end-01'):
-        cmd_start_phase(_ns_start_phase('metrics-end-01', '1-init'))
-        result = cmd_end_phase(_ns_end_phase('metrics-end-01', '1-init'))
-        assert result['status'] == 'success'
-        assert 'duration_seconds' in result
-        assert float(str(result['duration_seconds'])) >= 0
+    cmd_start_phase(_ns_start_phase('metrics-end-01', '1-init'))
+    result = cmd_end_phase(_ns_end_phase('metrics-end-01', '1-init'))
+    assert result['status'] == 'success'
+    assert 'duration_seconds' in result
+    assert float(str(result['duration_seconds'])) >= 0
 
 
-def test_end_phase_with_token_data():
+def test_end_phase_with_token_data(plan_context):
     """end-phase stores token data from Task agent notifications."""
-    with PlanContext(plan_id='metrics-end-02') as ctx:
-        cmd_start_phase(_ns_start_phase('metrics-end-02', '1-init'))
-        result = cmd_end_phase(
-            _ns_end_phase('metrics-end-02', '1-init', total_tokens=25514, duration_ms=181681, tool_uses=23)
-        )
-        assert result['status'] == 'success'
-        assert result['total_tokens'] == 25514
+    cmd_start_phase(_ns_start_phase('metrics-end-02', '1-init'))
+    result = cmd_end_phase(
+        _ns_end_phase('metrics-end-02', '1-init', total_tokens=25514, duration_ms=181681, tool_uses=23)
+    )
+    assert result['status'] == 'success'
+    assert result['total_tokens'] == 25514
 
-        # Verify stored in metrics.toon
-        metrics_file = ctx.plan_dir / 'work' / 'metrics.toon'
-        content = metrics_file.read_text()
-        assert 'total_tokens: 25514' in content
-        assert 'tool_uses: 23' in content
-        assert 'agent_duration_ms: 181681' in content
+    # Verify stored in metrics.toon
+    metrics_file = plan_context.plan_dir_for('metrics-end-02') / 'work' / 'metrics.toon'
+    content = metrics_file.read_text()
+    assert 'total_tokens: 25514' in content
+    assert 'tool_uses: 23' in content
+    assert 'agent_duration_ms: 181681' in content
 
 
-def test_end_phase_without_start():
+def test_end_phase_without_start(plan_context):
     """end-phase works even if start-phase wasn't called (no duration computed from timestamps)."""
-    with PlanContext(plan_id='metrics-end-03'):
-        result = cmd_end_phase(_ns_end_phase('metrics-end-03', '2-refine', total_tokens=1000))
-        assert result['status'] == 'success'
-        # No duration_seconds since no start_time
-        assert 'duration_seconds' not in result
+    result = cmd_end_phase(_ns_end_phase('metrics-end-03', '2-refine', total_tokens=1000))
+    assert result['status'] == 'success'
+    # No duration_seconds since no start_time
+    assert 'duration_seconds' not in result
 
 
-def test_end_phase_no_optional_args():
+def test_end_phase_no_optional_args(plan_context):
     """end-phase works without optional token data."""
-    with PlanContext(plan_id='metrics-end-04'):
-        cmd_start_phase(_ns_start_phase('metrics-end-04', '3-outline'))
-        result = cmd_end_phase(_ns_end_phase('metrics-end-04', '3-outline'))
-        assert result['status'] == 'success'
-        assert 'total_tokens' not in result
+    cmd_start_phase(_ns_start_phase('metrics-end-04', '3-outline'))
+    result = cmd_end_phase(_ns_end_phase('metrics-end-04', '3-outline'))
+    assert result['status'] == 'success'
+    assert 'total_tokens' not in result
 
 
 # =============================================================================
@@ -195,45 +187,44 @@ def test_end_phase_no_optional_args():
 # =============================================================================
 
 
-def test_generate_creates_metrics_md():
+def test_generate_creates_metrics_md(plan_context):
     """generate creates metrics.md with the three-column phase breakdown table."""
-    with PlanContext(plan_id='metrics-gen-01') as ctx:
-        # Record two phases
-        cmd_start_phase(_ns_start_phase('metrics-gen-01', '1-init'))
-        cmd_end_phase(_ns_end_phase('metrics-gen-01', '1-init', total_tokens=25000, tool_uses=20))
-        cmd_start_phase(_ns_start_phase('metrics-gen-01', '2-refine'))
-        cmd_end_phase(_ns_end_phase('metrics-gen-01', '2-refine'))
+    # Record two phases
+    cmd_start_phase(_ns_start_phase('metrics-gen-01', '1-init'))
+    cmd_end_phase(_ns_end_phase('metrics-gen-01', '1-init', total_tokens=25000, tool_uses=20))
+    cmd_start_phase(_ns_start_phase('metrics-gen-01', '2-refine'))
+    cmd_end_phase(_ns_end_phase('metrics-gen-01', '2-refine'))
 
-        # Generate report
-        result = cmd_generate(_ns_generate('metrics-gen-01'))
-        assert result['status'] == 'success'
-        assert result['phases_recorded'] == 2
-        assert result['total_tokens'] == 25000
-        # Pre-formatted display fields are populated alongside the raw values.
-        assert isinstance(result['total_worked_formatted'], str)
-        assert isinstance(result['total_wall_formatted'], str)
-        assert isinstance(result['total_idle_formatted'], str)
-        assert result['total_tokens_formatted'] == '25K'
+    # Generate report
+    result = cmd_generate(_ns_generate('metrics-gen-01'))
+    assert result['status'] == 'success'
+    assert result['phases_recorded'] == 2
+    assert result['total_tokens'] == 25000
+    # Pre-formatted display fields are populated alongside the raw values.
+    assert isinstance(result['total_worked_formatted'], str)
+    assert isinstance(result['total_wall_formatted'], str)
+    assert isinstance(result['total_idle_formatted'], str)
+    assert result['total_tokens_formatted'] == '25K'
 
-        # Verify metrics.md content
-        md_path = ctx.plan_dir / 'metrics.md'
-        assert md_path.exists(), 'metrics.md should be created'
-        md_content = md_path.read_text()
-        assert '# Metrics: metrics-gen-01' in md_content
-        assert '## Phase Breakdown' in md_content
-        # Header is padded to uniform per-column width; check for the column names rather
-        # than the exact unpadded string.
-        assert '| Phase' in md_content
-        assert '| Worked' in md_content
-        assert '| Reported (wall)' in md_content
-        assert '| Idle' in md_content
-        assert '| Tokens' in md_content and '| Tool Uses' in md_content
-        # The legacy single Duration column is gone.
-        assert '| Duration ' not in md_content
-        assert '1-init' in md_content
-        assert '2-refine' in md_content
-        assert '25,000' in md_content
-        assert '**Total**' in md_content
+    # Verify metrics.md content
+    md_path = plan_context.plan_dir_for('metrics-gen-01') / 'metrics.md'
+    assert md_path.exists(), 'metrics.md should be created'
+    md_content = md_path.read_text()
+    assert '# Metrics: metrics-gen-01' in md_content
+    assert '## Phase Breakdown' in md_content
+    # Header is padded to uniform per-column width; check for the column names rather
+    # than the exact unpadded string.
+    assert '| Phase' in md_content
+    assert '| Worked' in md_content
+    assert '| Reported (wall)' in md_content
+    assert '| Idle' in md_content
+    assert '| Tokens' in md_content and '| Tool Uses' in md_content
+    # The legacy single Duration column is gone.
+    assert '| Duration ' not in md_content
+    assert '1-init' in md_content
+    assert '2-refine' in md_content
+    assert '25,000' in md_content
+    assert '**Total**' in md_content
 
 
 def _phase_breakdown_header(md_content: str) -> str:
@@ -246,19 +237,18 @@ def _phase_breakdown_header(md_content: str) -> str:
     raise AssertionError('Phase Breakdown header row not found')
 
 
-def test_generate_three_column_header_order():
+def test_generate_three_column_header_order(plan_context):
     """The Phase Breakdown header lists Worked, Reported (wall), Idle in order."""
-    with PlanContext(plan_id='metrics-gen-cols') as ctx:
-        cmd_start_phase(_ns_start_phase('metrics-gen-cols', '1-init'))
-        cmd_end_phase(_ns_end_phase('metrics-gen-cols', '1-init', total_tokens=1000, tool_uses=3))
-        cmd_generate(_ns_generate('metrics-gen-cols'))
+    cmd_start_phase(_ns_start_phase('metrics-gen-cols', '1-init'))
+    cmd_end_phase(_ns_end_phase('metrics-gen-cols', '1-init', total_tokens=1000, tool_uses=3))
+    cmd_generate(_ns_generate('metrics-gen-cols'))
 
-        header = _phase_breakdown_header((ctx.plan_dir / 'metrics.md').read_text())
-        cols = [c.strip() for c in header.strip('|').split('|')]
-        assert cols == ['Phase', 'Worked', 'Reported (wall)', 'Idle', 'Tokens', 'Tool Uses']
+    header = _phase_breakdown_header((plan_context.plan_dir_for('metrics-gen-cols') / 'metrics.md').read_text())
+    cols = [c.strip() for c in header.strip('|').split('|')]
+    assert cols == ['Phase', 'Worked', 'Reported (wall)', 'Idle', 'Tokens', 'Tool Uses']
 
 
-def test_generate_worked_rollup_uses_max_not_sum():
+def test_generate_worked_rollup_uses_max_not_sum(plan_context):
     """Worked time = max(agent_duration_ms, subagent_duration_ms) — never additive.
 
     The prior additive formula double-counted the orchestrator/subagent overlap
@@ -268,35 +258,34 @@ def test_generate_worked_rollup_uses_max_not_sum():
     clamp to zero. The max(...) form lets the longer attribution subsume the
     shorter overlap.
     """
-    with PlanContext(plan_id='metrics-gen-worked') as ctx:
-        # Seed metrics.toon directly so the exact field set is deterministic.
-        # wall = 120s; agent = 60s; subagent = 90s. With the additive formula
-        # this would yield worked=150s > wall=120s (invariant violation). With
-        # max(...), worked=90s and the invariant holds.
-        manage_metrics.write_metrics(
-            'metrics-gen-worked',
-            {
-                'phases': {
-                    '5-execute': {
-                        'duration_seconds': 120,
-                        'agent_duration_ms': 60000,
-                        'subagent_duration_ms': 90000,
-                    },
+    # Seed metrics.toon directly so the exact field set is deterministic.
+    # wall = 120s; agent = 60s; subagent = 90s. With the additive formula
+    # this would yield worked=150s > wall=120s (invariant violation). With
+    # max(...), worked=90s and the invariant holds.
+    manage_metrics.write_metrics(
+        'metrics-gen-worked',
+        {
+            'phases': {
+                '5-execute': {
+                    'duration_seconds': 120,
+                    'agent_duration_ms': 60000,
+                    'subagent_duration_ms': 90000,
                 },
             },
-        )
+        },
+    )
 
-        result = cmd_generate(_ns_generate('metrics-gen-worked'))
-        assert result['status'] == 'success'
-        # worked = max(60s, 90s) = 90s; wall = 120s; idle = 30s.
-        assert result['total_worked_seconds'] == 90.0
-        assert result['total_wall_seconds'] == 120.0
-        assert result['total_idle_seconds'] == 30.0
-        toon = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
-        assert 'idle_duration_ms: 30000' in toon
+    result = cmd_generate(_ns_generate('metrics-gen-worked'))
+    assert result['status'] == 'success'
+    # worked = max(60s, 90s) = 90s; wall = 120s; idle = 30s.
+    assert result['total_worked_seconds'] == 90.0
+    assert result['total_wall_seconds'] == 120.0
+    assert result['total_idle_seconds'] == 30.0
+    toon = (plan_context.plan_dir_for('metrics-gen-worked') / 'work' / 'metrics.toon').read_text()
+    assert 'idle_duration_ms: 30000' in toon
 
 
-def test_worked_le_wall_invariant_holds_for_subagent_dispatching_phases():
+def test_worked_le_wall_invariant_holds_for_subagent_dispatching_phases(plan_context):
     """Worked <= Reported (wall) invariant — holds for every phase that
     dispatches a subagent within the phase window.
 
@@ -305,122 +294,117 @@ def test_worked_le_wall_invariant_holds_for_subagent_dispatching_phases():
     fix, every per-phase worked value MUST be <= the corresponding wall
     value and Idle MUST be non-blank (non-zero) for each.
     """
-    with PlanContext(plan_id='metrics-invariant') as ctx:
-        manage_metrics.write_metrics(
-            'metrics-invariant',
-            {
-                'phases': {
-                    '1-init': {
-                        'duration_seconds': 200,
-                        'agent_duration_ms': 80000,
-                        'subagent_duration_ms': 150000,
-                    },
-                    '3-outline': {
-                        'duration_seconds': 400,
-                        'agent_duration_ms': 120000,
-                        'subagent_duration_ms': 250000,
-                    },
-                    '5-execute': {
-                        'duration_seconds': 900,
-                        'agent_duration_ms': 300000,
-                        'subagent_duration_ms': 600000,
-                    },
+    manage_metrics.write_metrics(
+        'metrics-invariant',
+        {
+            'phases': {
+                '1-init': {
+                    'duration_seconds': 200,
+                    'agent_duration_ms': 80000,
+                    'subagent_duration_ms': 150000,
+                },
+                '3-outline': {
+                    'duration_seconds': 400,
+                    'agent_duration_ms': 120000,
+                    'subagent_duration_ms': 250000,
+                },
+                '5-execute': {
+                    'duration_seconds': 900,
+                    'agent_duration_ms': 300000,
+                    'subagent_duration_ms': 600000,
                 },
             },
-        )
+        },
+    )
 
-        result = cmd_generate(_ns_generate('metrics-invariant'))
-        assert result['status'] == 'success'
+    result = cmd_generate(_ns_generate('metrics-invariant'))
+    assert result['status'] == 'success'
 
-        toon = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
-        # Per-phase invariant: worked = max(agent, subagent), idle = wall - worked.
-        # 1-init: worked=150s, wall=200s, idle=50s.
-        # 3-outline: worked=250s, wall=400s, idle=150s.
-        # 5-execute: worked=600s, wall=900s, idle=300s.
-        assert 'idle_duration_ms: 50000' in toon
-        assert 'idle_duration_ms: 150000' in toon
-        assert 'idle_duration_ms: 300000' in toon
+    toon = (plan_context.plan_dir_for('metrics-invariant') / 'work' / 'metrics.toon').read_text()
+    # Per-phase invariant: worked = max(agent, subagent), idle = wall - worked.
+    # 1-init: worked=150s, wall=200s, idle=50s.
+    # 3-outline: worked=250s, wall=400s, idle=150s.
+    # 5-execute: worked=600s, wall=900s, idle=300s.
+    assert 'idle_duration_ms: 50000' in toon
+    assert 'idle_duration_ms: 150000' in toon
+    assert 'idle_duration_ms: 300000' in toon
 
-        # Total worked never exceeds total wall.
-        assert result['total_worked_seconds'] <= result['total_wall_seconds']
-        # Total idle is the residual.
-        assert result['total_idle_seconds'] == (
-            result['total_wall_seconds'] - result['total_worked_seconds']
-        )
+    # Total worked never exceeds total wall.
+    assert result['total_worked_seconds'] <= result['total_wall_seconds']
+    # Total idle is the residual.
+    assert result['total_idle_seconds'] == (
+        result['total_wall_seconds'] - result['total_worked_seconds']
+    )
 
 
-def test_generate_idle_residual_and_zero_clamp():
+def test_generate_idle_residual_and_zero_clamp(plan_context):
     """idle_duration_ms = max(0, wall_clock - worked), including the zero-clamp branch."""
-    with PlanContext(plan_id='metrics-gen-idle') as ctx:
-        # Phase with idle time: wall-clock (300s) > worked (agent 100s + subagent 50s).
-        manage_metrics.write_metrics(
-            'metrics-gen-idle',
-            {
-                'phases': {
-                    '5-execute': {
-                        'duration_seconds': 300,
-                        'agent_duration_ms': 100000,
-                        'subagent_duration_ms': 50000,
-                    },
+    # Phase with idle time: wall-clock (300s) > worked (agent 100s + subagent 50s).
+    manage_metrics.write_metrics(
+        'metrics-gen-idle',
+        {
+            'phases': {
+                '5-execute': {
+                    'duration_seconds': 300,
+                    'agent_duration_ms': 100000,
+                    'subagent_duration_ms': 50000,
                 },
             },
-        )
+        },
+    )
 
-        result = cmd_generate(_ns_generate('metrics-gen-idle'))
-        assert result['status'] == 'success'
-        toon = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
-        # worked = max(100000, 50000) = 100000 ms; wall = 300000 ms; idle = 200000 ms.
-        assert 'idle_duration_ms: 200000' in toon
-        assert result['total_idle_seconds'] == 200.0
-        assert result['total_worked_seconds'] == 100.0
-        assert result['total_wall_seconds'] == 300.0
+    result = cmd_generate(_ns_generate('metrics-gen-idle'))
+    assert result['status'] == 'success'
+    toon = (plan_context.plan_dir_for('metrics-gen-idle') / 'work' / 'metrics.toon').read_text()
+    # worked = max(100000, 50000) = 100000 ms; wall = 300000 ms; idle = 200000 ms.
+    assert 'idle_duration_ms: 200000' in toon
+    assert result['total_idle_seconds'] == 200.0
+    assert result['total_worked_seconds'] == 100.0
+    assert result['total_wall_seconds'] == 300.0
 
 
-def test_generate_total_row_sums_three_columns_independently():
+def test_generate_total_row_sums_three_columns_independently(plan_context):
     """The Total row sums Worked, Reported (wall), and Idle independently."""
-    with PlanContext(plan_id='metrics-gen-total'):
-        manage_metrics.write_metrics(
-            'metrics-gen-total',
-            {
-                'phases': {
-                    '1-init': {'duration_seconds': 200, 'agent_duration_ms': 120000},
-                    '2-refine': {'duration_seconds': 100, 'agent_duration_ms': 40000},
-                },
+    manage_metrics.write_metrics(
+        'metrics-gen-total',
+        {
+            'phases': {
+                '1-init': {'duration_seconds': 200, 'agent_duration_ms': 120000},
+                '2-refine': {'duration_seconds': 100, 'agent_duration_ms': 40000},
             },
-        )
+        },
+    )
 
-        result = cmd_generate(_ns_generate('metrics-gen-total'))
-        assert result['status'] == 'success'
-        # worked total = 120 + 40 = 160 s; wall total = 200 + 100 = 300 s;
-        # idle total = (200-120) + (100-40) = 80 + 60 = 140 s.
-        assert result['total_worked_seconds'] == 160.0
-        assert result['total_wall_seconds'] == 300.0
-        assert result['total_idle_seconds'] == 140.0
+    result = cmd_generate(_ns_generate('metrics-gen-total'))
+    assert result['status'] == 'success'
+    # worked total = 120 + 40 = 160 s; wall total = 200 + 100 = 300 s;
+    # idle total = (200-120) + (100-40) = 80 + 60 = 140 s.
+    assert result['total_worked_seconds'] == 160.0
+    assert result['total_wall_seconds'] == 300.0
+    assert result['total_idle_seconds'] == 140.0
 
 
-def test_generate_no_data():
+def test_generate_no_data(plan_context):
     """generate returns error when no metrics data exists."""
-    with PlanContext(plan_id='metrics-gen-02'):
-        result = cmd_generate(_ns_generate('metrics-gen-02'))
-        assert result['status'] == 'error'
-        assert 'No metrics data' in str(result.get('message', ''))
+    result = cmd_generate(_ns_generate('metrics-gen-02'))
+    assert result['status'] == 'error'
+    assert 'No metrics data' in str(result.get('message', ''))
 
 
-def test_generate_all_six_phases():
+def test_generate_all_six_phases(plan_context):
     """generate handles all 6 phases."""
-    with PlanContext(plan_id='metrics-gen-03') as ctx:
-        phases = ['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-finalize']
-        for phase in phases:
-            cmd_start_phase(_ns_start_phase('metrics-gen-03', phase))
-            cmd_end_phase(_ns_end_phase('metrics-gen-03', phase))
+    phases = ['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-finalize']
+    for phase in phases:
+        cmd_start_phase(_ns_start_phase('metrics-gen-03', phase))
+        cmd_end_phase(_ns_end_phase('metrics-gen-03', phase))
 
-        result = cmd_generate(_ns_generate('metrics-gen-03'))
-        assert result['status'] == 'success'
-        assert result['phases_recorded'] == 6
+    result = cmd_generate(_ns_generate('metrics-gen-03'))
+    assert result['status'] == 'success'
+    assert result['phases_recorded'] == 6
 
-        md_content = (ctx.plan_dir / 'metrics.md').read_text()
-        for phase in phases:
-            assert phase in md_content
+    md_content = (plan_context.plan_dir_for('metrics-gen-03') / 'metrics.md').read_text()
+    for phase in phases:
+        assert phase in md_content
 
 
 # =============================================================================
@@ -428,20 +412,18 @@ def test_generate_all_six_phases():
 # =============================================================================
 
 
-def test_enrich_missing_transcript():
+def test_enrich_missing_transcript(plan_context):
     """enrich returns gracefully when transcript is not found."""
-    with PlanContext(plan_id='metrics-enrich-01'):
-        result = cmd_enrich(_ns_enrich('metrics-enrich-01', 'nonexistent-session-id'))
-        assert result['status'] == 'success'
-        assert result.get('enriched') is False
+    result = cmd_enrich(_ns_enrich('metrics-enrich-01', 'nonexistent-session-id'))
+    assert result['status'] == 'success'
+    assert result.get('enriched') is False
 
 
-def test_enrich_with_unknown_session():
+def test_enrich_with_unknown_session(plan_context):
     """enrich handles unknown session ID gracefully."""
-    with PlanContext(plan_id='metrics-enrich-02'):
-        result = cmd_enrich(_ns_enrich('metrics-enrich-02', 'test-session-abc123'))
-        # Will be 'not found' since session doesn't exist in ~/.claude
-        assert result['status'] == 'success'
+    result = cmd_enrich(_ns_enrich('metrics-enrich-02', 'test-session-abc123'))
+    # Will be 'not found' since session doesn't exist in ~/.claude
+    assert result['status'] == 'success'
 
 
 # =============================================================================
@@ -449,15 +431,14 @@ def test_enrich_with_unknown_session():
 # =============================================================================
 
 
-def test_format_duration_seconds():
+def test_format_duration_seconds(plan_context):
     """Duration under 60s shows as seconds."""
-    with PlanContext(plan_id='metrics-fmt-01') as ctx:
-        cmd_start_phase(_ns_start_phase('metrics-fmt-01', '1-init'))
-        cmd_end_phase(_ns_end_phase('metrics-fmt-01', '1-init'))
-        cmd_generate(_ns_generate('metrics-fmt-01'))
-        md_content = (ctx.plan_dir / 'metrics.md').read_text()
-        # Should contain some duration string (likely very small since start/end are near-instant)
-        assert '1-init' in md_content
+    cmd_start_phase(_ns_start_phase('metrics-fmt-01', '1-init'))
+    cmd_end_phase(_ns_end_phase('metrics-fmt-01', '1-init'))
+    cmd_generate(_ns_generate('metrics-fmt-01'))
+    md_content = (plan_context.plan_dir_for('metrics-fmt-01') / 'metrics.md').read_text()
+    # Should contain some duration string (likely very small since start/end are near-instant)
+    assert '1-init' in md_content
 
 
 # =============================================================================
@@ -465,30 +446,28 @@ def test_format_duration_seconds():
 # =============================================================================
 
 
-def test_cli_start_phase_roundtrip():
+def test_cli_start_phase_roundtrip(plan_context):
     """CLI plumbing: start-phase subcommand produces TOON output via subprocess."""
     from toon_parser import parse_toon
 
-    with PlanContext(plan_id='cli-plumb-01'):
-        result = run_script(SCRIPT_PATH, 'start-phase', '--plan-id', 'cli-plumb-01', '--phase', '1-init')
-        assert result.success, f'Script failed: {result.stderr}'
-        parsed = parse_toon(result.stdout)
-        assert parsed['status'] == 'success'
-        assert parsed['phase'] == '1-init'
+    result = run_script(SCRIPT_PATH, 'start-phase', '--plan-id', 'cli-plumb-01', '--phase', '1-init')
+    assert result.success, f'Script failed: {result.stderr}'
+    parsed = parse_toon(result.stdout)
+    assert parsed['status'] == 'success'
+    assert parsed['phase'] == '1-init'
 
 
-def test_cli_generate_roundtrip():
+def test_cli_generate_roundtrip(plan_context):
     """CLI plumbing: generate subcommand produces TOON output via subprocess."""
     from toon_parser import parse_toon
 
-    with PlanContext(plan_id='cli-plumb-02'):
-        run_script(SCRIPT_PATH, 'start-phase', '--plan-id', 'cli-plumb-02', '--phase', '1-init')
-        run_script(SCRIPT_PATH, 'end-phase', '--plan-id', 'cli-plumb-02', '--phase', '1-init')
-        result = run_script(SCRIPT_PATH, 'generate', '--plan-id', 'cli-plumb-02')
-        assert result.success, f'Script failed: {result.stderr}'
-        parsed = parse_toon(result.stdout)
-        assert parsed['status'] == 'success'
-        assert parsed['phases_recorded'] == 1
+    run_script(SCRIPT_PATH, 'start-phase', '--plan-id', 'cli-plumb-02', '--phase', '1-init')
+    run_script(SCRIPT_PATH, 'end-phase', '--plan-id', 'cli-plumb-02', '--phase', '1-init')
+    result = run_script(SCRIPT_PATH, 'generate', '--plan-id', 'cli-plumb-02')
+    assert result.success, f'Script failed: {result.stderr}'
+    parsed = parse_toon(result.stdout)
+    assert parsed['status'] == 'success'
+    assert parsed['phases_recorded'] == 1
 
 
 # =============================================================================
@@ -499,77 +478,72 @@ def test_cli_generate_roundtrip():
 class TestAccumulateAgentUsage:
     """Cover the accumulate-agent-usage subcommand: file create, sum, isolate."""
 
-    def test_creates_file_when_absent(self):
+    def test_creates_file_when_absent(self, plan_context):
         """First call creates the per-phase accumulator file with the supplied totals."""
-        with PlanContext(plan_id='accum-create') as ctx:
-            result = cmd_accumulate_agent_usage(
-                _ns_accumulate('accum-create', '6-finalize', total_tokens=12345, tool_uses=7, duration_ms=8000)
-            )
-            assert result['status'] == 'success'
-            assert result['phase'] == '6-finalize'
-            assert result['total_tokens'] == 12345
-            assert result['tool_uses'] == 7
-            assert result['duration_ms'] == 8000
-            assert result['samples'] == 1
+        result = cmd_accumulate_agent_usage(
+            _ns_accumulate('accum-create', '6-finalize', total_tokens=12345, tool_uses=7, duration_ms=8000)
+        )
+        assert result['status'] == 'success'
+        assert result['phase'] == '6-finalize'
+        assert result['total_tokens'] == 12345
+        assert result['tool_uses'] == 7
+        assert result['duration_ms'] == 8000
+        assert result['samples'] == 1
 
-            acc_path = ctx.plan_dir / 'work' / 'metrics-accumulator-6-finalize.toon'
-            assert acc_path.exists(), 'Accumulator file should be created on first call'
-            content = acc_path.read_text()
-            assert 'plan_id: accum-create' in content
-            assert 'phase: 6-finalize' in content
-            assert 'total_tokens: 12345' in content
-            assert 'tool_uses: 7' in content
-            assert 'duration_ms: 8000' in content
-            assert 'samples: 1' in content
+        acc_path = plan_context.plan_dir_for('accum-create') / 'work' / 'metrics-accumulator-6-finalize.toon'
+        assert acc_path.exists(), 'Accumulator file should be created on first call'
+        content = acc_path.read_text()
+        assert 'plan_id: accum-create' in content
+        assert 'phase: 6-finalize' in content
+        assert 'total_tokens: 12345' in content
+        assert 'tool_uses: 7' in content
+        assert 'duration_ms: 8000' in content
+        assert 'samples: 1' in content
 
-    def test_sums_across_calls(self):
+    def test_sums_across_calls(self, plan_context):
         """Repeated calls sum the totals and increment the samples counter."""
-        with PlanContext(plan_id='accum-sum'):
-            cmd_accumulate_agent_usage(
-                _ns_accumulate('accum-sum', '6-finalize', total_tokens=100, tool_uses=2, duration_ms=1000)
-            )
-            cmd_accumulate_agent_usage(
-                _ns_accumulate('accum-sum', '6-finalize', total_tokens=250, tool_uses=5, duration_ms=2500)
-            )
-            result = cmd_accumulate_agent_usage(
-                _ns_accumulate('accum-sum', '6-finalize', total_tokens=50, duration_ms=500)
-            )
-            assert result['total_tokens'] == 400
-            assert result['tool_uses'] == 7  # third call omitted tool_uses → unchanged
-            assert result['duration_ms'] == 4000
-            assert result['samples'] == 3
+        cmd_accumulate_agent_usage(
+            _ns_accumulate('accum-sum', '6-finalize', total_tokens=100, tool_uses=2, duration_ms=1000)
+        )
+        cmd_accumulate_agent_usage(
+            _ns_accumulate('accum-sum', '6-finalize', total_tokens=250, tool_uses=5, duration_ms=2500)
+        )
+        result = cmd_accumulate_agent_usage(
+            _ns_accumulate('accum-sum', '6-finalize', total_tokens=50, duration_ms=500)
+        )
+        assert result['total_tokens'] == 400
+        assert result['tool_uses'] == 7  # third call omitted tool_uses → unchanged
+        assert result['duration_ms'] == 4000
+        assert result['samples'] == 3
 
-    def test_phase_isolation(self):
+    def test_phase_isolation(self, plan_context):
         """5-execute and 6-finalize accumulators do not collide."""
-        with PlanContext(plan_id='accum-iso') as ctx:
-            cmd_accumulate_agent_usage(_ns_accumulate('accum-iso', '5-execute', total_tokens=1000, tool_uses=10))
-            cmd_accumulate_agent_usage(_ns_accumulate('accum-iso', '6-finalize', total_tokens=2000, tool_uses=20))
+        cmd_accumulate_agent_usage(_ns_accumulate('accum-iso', '5-execute', total_tokens=1000, tool_uses=10))
+        cmd_accumulate_agent_usage(_ns_accumulate('accum-iso', '6-finalize', total_tokens=2000, tool_uses=20))
 
-            five = (ctx.plan_dir / 'work' / 'metrics-accumulator-5-execute.toon').read_text()
-            six = (ctx.plan_dir / 'work' / 'metrics-accumulator-6-finalize.toon').read_text()
-            assert 'total_tokens: 1000' in five
-            assert 'tool_uses: 10' in five
-            assert 'total_tokens: 2000' in six
-            assert 'tool_uses: 20' in six
+        five = (plan_context.plan_dir_for('accum-iso') / 'work' / 'metrics-accumulator-5-execute.toon').read_text()
+        six = (plan_context.plan_dir_for('accum-iso') / 'work' / 'metrics-accumulator-6-finalize.toon').read_text()
+        assert 'total_tokens: 1000' in five
+        assert 'tool_uses: 10' in five
+        assert 'total_tokens: 2000' in six
+        assert 'tool_uses: 20' in six
 
-    def test_invalid_phase_rejected(self):
+    def test_invalid_phase_rejected(self, plan_context):
         """Unknown phase names produce a structured error response."""
-        with PlanContext(plan_id='accum-bad'):
-            result = cmd_accumulate_agent_usage(_ns_accumulate('accum-bad', 'not-a-phase', total_tokens=1))
-            assert result['status'] == 'error'
-            assert result['error'] == 'invalid_phase'
+        result = cmd_accumulate_agent_usage(_ns_accumulate('accum-bad', 'not-a-phase', total_tokens=1))
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_phase'
 
-    def test_omitted_flags_leave_existing_totals_unchanged(self):
+    def test_omitted_flags_leave_existing_totals_unchanged(self, plan_context):
         """A no-flag call still increments samples but leaves totals untouched."""
-        with PlanContext(plan_id='accum-noop'):
-            cmd_accumulate_agent_usage(
-                _ns_accumulate('accum-noop', '6-finalize', total_tokens=42, tool_uses=3, duration_ms=999)
-            )
-            result = cmd_accumulate_agent_usage(_ns_accumulate('accum-noop', '6-finalize'))
-            assert result['total_tokens'] == 42
-            assert result['tool_uses'] == 3
-            assert result['duration_ms'] == 999
-            assert result['samples'] == 2
+        cmd_accumulate_agent_usage(
+            _ns_accumulate('accum-noop', '6-finalize', total_tokens=42, tool_uses=3, duration_ms=999)
+        )
+        result = cmd_accumulate_agent_usage(_ns_accumulate('accum-noop', '6-finalize'))
+        assert result['total_tokens'] == 42
+        assert result['tool_uses'] == 3
+        assert result['duration_ms'] == 999
+        assert result['samples'] == 2
 
 
 # =============================================================================
@@ -580,70 +554,66 @@ class TestAccumulateAgentUsage:
 class TestEndPhaseAccumulatorFallback:
     """end-phase reads the per-phase accumulator file when explicit flags are omitted."""
 
-    def test_reads_accumulator_when_flags_absent(self):
+    def test_reads_accumulator_when_flags_absent(self, plan_context):
         """end-phase without flags pulls totals from work/metrics-accumulator-{phase}.toon."""
-        with PlanContext(plan_id='ep-fallback') as ctx:
-            cmd_start_phase(_ns_start_phase('ep-fallback', '6-finalize'))
-            cmd_accumulate_agent_usage(
-                _ns_accumulate('ep-fallback', '6-finalize', total_tokens=5000, tool_uses=12, duration_ms=60000)
-            )
+        cmd_start_phase(_ns_start_phase('ep-fallback', '6-finalize'))
+        cmd_accumulate_agent_usage(
+            _ns_accumulate('ep-fallback', '6-finalize', total_tokens=5000, tool_uses=12, duration_ms=60000)
+        )
 
-            result = cmd_end_phase(_ns_end_phase('ep-fallback', '6-finalize'))
+        result = cmd_end_phase(_ns_end_phase('ep-fallback', '6-finalize'))
 
-            assert result['status'] == 'success'
-            assert result['total_tokens'] == 5000
-            assert result.get('accumulator_used') is True
+        assert result['status'] == 'success'
+        assert result['total_tokens'] == 5000
+        assert result.get('accumulator_used') is True
 
-            metrics = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
-            assert 'total_tokens: 5000' in metrics
-            assert 'tool_uses: 12' in metrics
-            assert 'agent_duration_ms: 60000' in metrics
+        metrics = (plan_context.plan_dir_for('ep-fallback') / 'work' / 'metrics.toon').read_text()
+        assert 'total_tokens: 5000' in metrics
+        assert 'tool_uses: 12' in metrics
+        assert 'agent_duration_ms: 60000' in metrics
 
-    def test_explicit_flags_override_accumulator(self):
+    def test_explicit_flags_override_accumulator(self, plan_context):
         """Explicitly passed flags always win — accumulator does not double-count."""
-        with PlanContext(plan_id='ep-override'):
-            cmd_start_phase(_ns_start_phase('ep-override', '6-finalize'))
-            cmd_accumulate_agent_usage(
-                _ns_accumulate('ep-override', '6-finalize', total_tokens=999, tool_uses=99, duration_ms=99999)
-            )
+        cmd_start_phase(_ns_start_phase('ep-override', '6-finalize'))
+        cmd_accumulate_agent_usage(
+            _ns_accumulate('ep-override', '6-finalize', total_tokens=999, tool_uses=99, duration_ms=99999)
+        )
 
-            result = cmd_end_phase(
-                _ns_end_phase('ep-override', '6-finalize', total_tokens=12345, tool_uses=42, duration_ms=8000)
-            )
+        result = cmd_end_phase(
+            _ns_end_phase('ep-override', '6-finalize', total_tokens=12345, tool_uses=42, duration_ms=8000)
+        )
 
-            assert result['total_tokens'] == 12345
-            # accumulator_used flips only when the flag was absent
-            assert result.get('accumulator_used') is None or result.get('accumulator_used') is False
+        assert result['total_tokens'] == 12345
+        # accumulator_used flips only when the flag was absent
+        assert result.get('accumulator_used') is None or result.get('accumulator_used') is False
 
-    def test_partial_explicit_flags_use_accumulator_for_missing(self):
+    def test_partial_explicit_flags_use_accumulator_for_missing(self, plan_context):
         """end-phase fills only the omitted fields from the accumulator."""
-        with PlanContext(plan_id='ep-partial') as ctx:
-            cmd_start_phase(_ns_start_phase('ep-partial', '6-finalize'))
-            cmd_accumulate_agent_usage(
-                _ns_accumulate('ep-partial', '6-finalize', total_tokens=7777, tool_uses=20, duration_ms=4000)
-            )
+        cmd_start_phase(_ns_start_phase('ep-partial', '6-finalize'))
+        cmd_accumulate_agent_usage(
+            _ns_accumulate('ep-partial', '6-finalize', total_tokens=7777, tool_uses=20, duration_ms=4000)
+        )
 
-            # Pass only --total-tokens; --tool-uses / --duration-ms must come from accumulator.
-            result = cmd_end_phase(_ns_end_phase('ep-partial', '6-finalize', total_tokens=10000))
+        # Pass only --total-tokens; --tool-uses / --duration-ms must come from accumulator.
+        result = cmd_end_phase(_ns_end_phase('ep-partial', '6-finalize', total_tokens=10000))
 
-            assert result['total_tokens'] == 10000
-            metrics = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
-            assert 'total_tokens: 10000' in metrics
-            assert 'tool_uses: 20' in metrics
-            assert 'agent_duration_ms: 4000' in metrics
+        assert result['total_tokens'] == 10000
+        metrics = (plan_context.plan_dir_for('ep-partial') / 'work' / 'metrics.toon').read_text()
+        assert 'total_tokens: 10000' in metrics
+        assert 'tool_uses: 20' in metrics
+        assert 'agent_duration_ms: 4000' in metrics
 
-    def test_no_accumulator_no_flags_records_timestamps_only(self):
+    def test_no_accumulator_no_flags_records_timestamps_only(self, plan_context):
         """When neither accumulator nor flags are present, end-phase records timestamps only."""
-        with PlanContext(plan_id='ep-bare') as ctx:
-            cmd_start_phase(_ns_start_phase('ep-bare', '6-finalize'))
-            result = cmd_end_phase(_ns_end_phase('ep-bare', '6-finalize'))
-            assert result['status'] == 'success'
-            assert 'total_tokens' not in result
+        cmd_start_phase(_ns_start_phase('ep-bare', '6-finalize'))
+        result = cmd_end_phase(_ns_end_phase('ep-bare', '6-finalize'))
+        assert result['status'] == 'success'
+        assert 'total_tokens' not in result
 
-            metrics = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
-            # No token data should be present, but end_time should be recorded
-            assert 'end_time' in metrics
-            assert 'total_tokens' not in metrics
+        metrics = (plan_context.plan_dir_for('ep-bare') / 'work' / 'metrics.toon').read_text()
+        # No token data should be present, but end_time should be recorded
+        assert 'end_time' in metrics
+        assert 'total_tokens' not in metrics
 
 
 # =============================================================================
@@ -711,66 +681,64 @@ class TestEnrichSubagentAttribution:
         metrics_path.parent.mkdir(parents=True, exist_ok=True)
         metrics_path.write_text(_DETERMINISTIC_METRICS_TOON.format(plan_id=plan_id))
 
-    def test_attributes_subagent_usage_to_matching_phase(self, monkeypatch, tmp_path):
+    def test_attributes_subagent_usage_to_matching_phase(self, plan_context, monkeypatch, tmp_path):
         """Subagent <usage> tags fall into the phase whose start/end window contains them."""
-        with PlanContext(plan_id='enrich-attr') as ctx:
-            self._seed_deterministic_metrics(ctx.plan_dir, 'enrich-attr')
+        self._seed_deterministic_metrics(plan_context.plan_dir_for('enrich-attr'), 'enrich-attr')
 
-            session_id = 'session-attr'
-            projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
-            transcript_path = projects_root / f'{session_id}.jsonl'
-            entries = [
-                _main_context_entry('2026-03-27T10:15:00+00:00', input_tokens=1000, output_tokens=200),
-                _agent_return_entry(
-                    '2026-03-27T10:15:00+00:00',
-                    '<usage>total_tokens: 4000\ntool_uses: 5\nduration_ms: 25000</usage>',
-                ),
-                _agent_return_entry(
-                    '2026-03-27T10:45:00+00:00',
-                    '<usage>total_tokens: 9000\ntool_uses: 18\nduration_ms: 90000</usage>',
-                ),
-            ]
-            _write_synthetic_transcript(transcript_path, entries)
+        session_id = 'session-attr'
+        projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
+        transcript_path = projects_root / f'{session_id}.jsonl'
+        entries = [
+            _main_context_entry('2026-03-27T10:15:00+00:00', input_tokens=1000, output_tokens=200),
+            _agent_return_entry(
+                '2026-03-27T10:15:00+00:00',
+                '<usage>total_tokens: 4000\ntool_uses: 5\nduration_ms: 25000</usage>',
+            ),
+            _agent_return_entry(
+                '2026-03-27T10:45:00+00:00',
+                '<usage>total_tokens: 9000\ntool_uses: 18\nduration_ms: 90000</usage>',
+            ),
+        ]
+        _write_synthetic_transcript(transcript_path, entries)
 
-            monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
+        monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
 
-            result = cmd_enrich(_ns_enrich('enrich-attr', session_id))
+        result = cmd_enrich(_ns_enrich('enrich-attr', session_id))
 
-            assert result['status'] == 'success'
-            assert result['enriched'] is True
-            assert result['subagent_phases_attributed'] == 2
-            assert result['subagent_calls_attributed'] == 2
+        assert result['status'] == 'success'
+        assert result['enriched'] is True
+        assert result['subagent_phases_attributed'] == 2
+        assert result['subagent_calls_attributed'] == 2
 
-            metrics_after = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
-            assert 'subagent_total_tokens: 4000' in metrics_after
-            assert 'subagent_total_tokens: 9000' in metrics_after
+        metrics_after = (plan_context.plan_dir_for('enrich-attr') / 'work' / 'metrics.toon').read_text()
+        assert 'subagent_total_tokens: 4000' in metrics_after
+        assert 'subagent_total_tokens: 9000' in metrics_after
 
-    def test_ignores_subagent_usage_outside_phase_windows(self, monkeypatch, tmp_path):
+    def test_ignores_subagent_usage_outside_phase_windows(self, plan_context, monkeypatch, tmp_path):
         """Subagent calls whose timestamps predate / postdate any phase window are dropped."""
-        with PlanContext(plan_id='enrich-out') as ctx:
-            self._seed_deterministic_metrics(ctx.plan_dir, 'enrich-out')
+        self._seed_deterministic_metrics(plan_context.plan_dir_for('enrich-out'), 'enrich-out')
 
-            session_id = 'session-out'
-            projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
-            transcript_path = projects_root / f'{session_id}.jsonl'
-            entries = [
-                # timestamp before any phase started
-                _agent_return_entry(
-                    '1999-01-01T00:00:00+00:00',
-                    '<usage>total_tokens: 9999\ntool_uses: 99\nduration_ms: 99999</usage>',
-                ),
-            ]
-            _write_synthetic_transcript(transcript_path, entries)
+        session_id = 'session-out'
+        projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
+        transcript_path = projects_root / f'{session_id}.jsonl'
+        entries = [
+            # timestamp before any phase started
+            _agent_return_entry(
+                '1999-01-01T00:00:00+00:00',
+                '<usage>total_tokens: 9999\ntool_uses: 99\nduration_ms: 99999</usage>',
+            ),
+        ]
+        _write_synthetic_transcript(transcript_path, entries)
 
-            monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
+        monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
 
-            result = cmd_enrich(_ns_enrich('enrich-out', session_id))
-            assert result['status'] == 'success'
-            assert result['subagent_calls_attributed'] == 0
-            assert result['subagent_phases_attributed'] == 0
+        result = cmd_enrich(_ns_enrich('enrich-out', session_id))
+        assert result['status'] == 'success'
+        assert result['subagent_calls_attributed'] == 0
+        assert result['subagent_phases_attributed'] == 0
 
-            metrics_after = (ctx.plan_dir / 'work' / 'metrics.toon').read_text()
-            assert 'subagent_total_tokens' not in metrics_after
+        metrics_after = (plan_context.plan_dir_for('enrich-out') / 'work' / 'metrics.toon').read_text()
+        assert 'subagent_total_tokens' not in metrics_after
 
 
 _TWO_PHASE_METRICS_TOON = """plan_id: {plan_id}
@@ -831,90 +799,87 @@ class TestEnrichSubagentTranscriptWalk:
         monkeypatch.setattr(manage_metrics, '_resolve_cwd', lambda: fake_cwd)
         return fake_cwd
 
-    def test_two_subagent_files_counted(self, monkeypatch, tmp_path):
+    def test_two_subagent_files_counted(self, plan_context, monkeypatch, tmp_path):
         """Two agent-*.jsonl files under {slug}/{sid}/subagents/ are walked and counted."""
-        with PlanContext(plan_id='enrich-sub-01') as ctx:
-            self._seed_two_phase_metrics(ctx.plan_dir, 'enrich-sub-01')
+        self._seed_two_phase_metrics(plan_context.plan_dir_for('enrich-sub-01'), 'enrich-sub-01')
 
-            fake_cwd = self._patch_session_paths(monkeypatch, tmp_path)
-            slug = fake_cwd.replace('/', '-')
-            session_id = '11111111-1111-1111-1111-111111111101'
+        fake_cwd = self._patch_session_paths(monkeypatch, tmp_path)
+        slug = fake_cwd.replace('/', '-')
+        session_id = '11111111-1111-1111-1111-111111111101'
 
-            # Parent transcript: at least one valid message to drive the walk.
-            parent_root = tmp_path / 'home' / '.claude' / 'projects' / slug
-            parent_transcript = parent_root / f'{session_id}.jsonl'
-            _write_synthetic_transcript(parent_transcript, [
-                _main_context_entry('2026-03-27T09:15:00+00:00', input_tokens=100, output_tokens=10),
-            ])
+        # Parent transcript: at least one valid message to drive the walk.
+        parent_root = tmp_path / 'home' / '.claude' / 'projects' / slug
+        parent_transcript = parent_root / f'{session_id}.jsonl'
+        _write_synthetic_transcript(parent_transcript, [
+            _main_context_entry('2026-03-27T09:15:00+00:00', input_tokens=100, output_tokens=10),
+        ])
 
-            sub_dir = parent_root / session_id / 'subagents'
-            _seed_subagent_jsonl(
-                sub_dir,
-                'agent-001.jsonl',
-                [
-                    _subagent_msg('2026-03-27T09:20:00+00:00', 500, 50),
-                    _subagent_msg('2026-03-27T09:25:00+00:00', 700, 70),
-                ],
-            )
-            _seed_subagent_jsonl(
-                sub_dir,
-                'agent-002.jsonl',
-                [
-                    _subagent_msg('2026-03-27T10:10:00+00:00', 900, 90),
-                ],
-            )
+        sub_dir = parent_root / session_id / 'subagents'
+        _seed_subagent_jsonl(
+            sub_dir,
+            'agent-001.jsonl',
+            [
+                _subagent_msg('2026-03-27T09:20:00+00:00', 500, 50),
+                _subagent_msg('2026-03-27T09:25:00+00:00', 700, 70),
+            ],
+        )
+        _seed_subagent_jsonl(
+            sub_dir,
+            'agent-002.jsonl',
+            [
+                _subagent_msg('2026-03-27T10:10:00+00:00', 900, 90),
+            ],
+        )
 
-            result = cmd_enrich(_ns_enrich('enrich-sub-01', session_id))
+        result = cmd_enrich(_ns_enrich('enrich-sub-01', session_id))
 
-            assert result['status'] == 'success'
-            assert result['subagent_transcripts_walked'] == 2
+        assert result['status'] == 'success'
+        assert result['subagent_transcripts_walked'] == 2
 
-    def test_main_context_only_fixture_walks_no_subagents(self, monkeypatch, tmp_path):
+    def test_main_context_only_fixture_walks_no_subagents(self, plan_context, monkeypatch, tmp_path):
         """No subagent directory → subagent_transcripts_walked is zero."""
-        with PlanContext(plan_id='enrich-sub-02') as ctx:
-            self._seed_two_phase_metrics(ctx.plan_dir, 'enrich-sub-02')
+        self._seed_two_phase_metrics(plan_context.plan_dir_for('enrich-sub-02'), 'enrich-sub-02')
 
-            fake_cwd = self._patch_session_paths(monkeypatch, tmp_path)
-            slug = fake_cwd.replace('/', '-')
-            session_id = '11111111-1111-1111-1111-111111111102'
+        fake_cwd = self._patch_session_paths(monkeypatch, tmp_path)
+        slug = fake_cwd.replace('/', '-')
+        session_id = '11111111-1111-1111-1111-111111111102'
 
-            parent_root = tmp_path / 'home' / '.claude' / 'projects' / slug
-            parent_transcript = parent_root / f'{session_id}.jsonl'
-            _write_synthetic_transcript(parent_transcript, [
-                _main_context_entry('2026-03-27T09:15:00+00:00', input_tokens=100, output_tokens=10),
-            ])
-            # Deliberately do NOT seed a subagents directory.
+        parent_root = tmp_path / 'home' / '.claude' / 'projects' / slug
+        parent_transcript = parent_root / f'{session_id}.jsonl'
+        _write_synthetic_transcript(parent_transcript, [
+            _main_context_entry('2026-03-27T09:15:00+00:00', input_tokens=100, output_tokens=10),
+        ])
+        # Deliberately do NOT seed a subagents directory.
 
-            result = cmd_enrich(_ns_enrich('enrich-sub-02', session_id))
+        result = cmd_enrich(_ns_enrich('enrich-sub-02', session_id))
 
-            assert result['status'] == 'success'
-            assert result['subagent_transcripts_walked'] == 0
+        assert result['status'] == 'success'
+        assert result['subagent_transcripts_walked'] == 0
 
-    def test_subagent_transcripts_walked_matches_file_count(self, monkeypatch, tmp_path):
+    def test_subagent_transcripts_walked_matches_file_count(self, plan_context, monkeypatch, tmp_path):
         """The subagent_transcripts_walked count matches the number of agent-*.jsonl files discovered."""
-        with PlanContext(plan_id='enrich-sub-04') as ctx:
-            self._seed_two_phase_metrics(ctx.plan_dir, 'enrich-sub-04')
+        self._seed_two_phase_metrics(plan_context.plan_dir_for('enrich-sub-04'), 'enrich-sub-04')
 
-            fake_cwd = self._patch_session_paths(monkeypatch, tmp_path)
-            slug = fake_cwd.replace('/', '-')
-            session_id = '11111111-1111-1111-1111-111111111104'
+        fake_cwd = self._patch_session_paths(monkeypatch, tmp_path)
+        slug = fake_cwd.replace('/', '-')
+        session_id = '11111111-1111-1111-1111-111111111104'
 
-            parent_root = tmp_path / 'home' / '.claude' / 'projects' / slug
-            parent_transcript = parent_root / f'{session_id}.jsonl'
-            _write_synthetic_transcript(parent_transcript, [
-                _main_context_entry('2026-03-27T09:15:00+00:00', input_tokens=10, output_tokens=1),
-            ])
-            sub_dir = parent_root / session_id / 'subagents'
-            for i, name in enumerate(['agent-a.jsonl', 'agent-b.jsonl', 'agent-c.jsonl']):
-                _seed_subagent_jsonl(
-                    sub_dir,
-                    name,
-                    [_subagent_msg(f'2026-03-27T09:{20 + i}:00+00:00', 10, 1)],
-                )
+        parent_root = tmp_path / 'home' / '.claude' / 'projects' / slug
+        parent_transcript = parent_root / f'{session_id}.jsonl'
+        _write_synthetic_transcript(parent_transcript, [
+            _main_context_entry('2026-03-27T09:15:00+00:00', input_tokens=10, output_tokens=1),
+        ])
+        sub_dir = parent_root / session_id / 'subagents'
+        for i, name in enumerate(['agent-a.jsonl', 'agent-b.jsonl', 'agent-c.jsonl']):
+            _seed_subagent_jsonl(
+                sub_dir,
+                name,
+                [_subagent_msg(f'2026-03-27T09:{20 + i}:00+00:00', 10, 1)],
+            )
 
-            result = cmd_enrich(_ns_enrich('enrich-sub-04', session_id))
-            assert result['status'] == 'success'
-            assert result['subagent_transcripts_walked'] == 3
+        result = cmd_enrich(_ns_enrich('enrich-sub-04', session_id))
+        assert result['status'] == 'success'
+        assert result['subagent_transcripts_walked'] == 3
 
 
 # =============================================================================
@@ -995,113 +960,111 @@ class TestRecordDispatchBoundaryAcceptsNewCauses:
         _NEW_TERMINATION_CAUSES_WITH_PHASE,
         ids=[c for c, _ in _NEW_TERMINATION_CAUSES_WITH_PHASE],
     )
-    def test_new_cause_records_row_to_per_phase_artifact(self, cause, phase):
+    def test_new_cause_records_row_to_per_phase_artifact(self, plan_context, cause, phase):
         """Each new termination cause produces a successful record and a per-phase artifact file."""
         plan_id = f'rdb-new-{cause.replace("_", "-")}'
-        with PlanContext(plan_id=plan_id) as ctx:
-            # Seed status.json so cmd_record_dispatch_boundary's require_plan_exists
-            # guard accepts the plan (lesson 2026-05-15-X: orphan-plan-dir guard).
-            (ctx.plan_dir / 'status.json').write_text('{}', encoding='utf-8')
-            result = cmd_record_dispatch_boundary(
-                _ns_record_dispatch_boundary(
-                    plan_id,
-                    phase,
-                    termination_cause=cause,
-                    total_tokens=1234,
-                    tool_uses=5,
-                    duration_ms=6789,
-                )
+        # Seed status.json so cmd_record_dispatch_boundary's require_plan_exists
+        # guard accepts the plan (lesson 2026-05-15-X: orphan-plan-dir guard).
+        pdir = plan_context.plan_dir_for(plan_id)
+        (pdir / 'status.json').write_text('{}', encoding='utf-8')
+        result = cmd_record_dispatch_boundary(
+            _ns_record_dispatch_boundary(
+                plan_id,
+                phase,
+                termination_cause=cause,
+                total_tokens=1234,
+                tool_uses=5,
+                duration_ms=6789,
             )
+        )
 
-            assert result['status'] == 'success', result
-            assert result['termination_cause'] == cause
-            assert result['phase'] == phase
-            assert result['total_tokens'] == 1234
-            assert result['tool_uses'] == 5
-            assert result['duration_ms'] == 6789
-            assert result['rows_recorded'] == 1
+        assert result['status'] == 'success', result
+        assert result['termination_cause'] == cause
+        assert result['phase'] == phase
+        assert result['total_tokens'] == 1234
+        assert result['tool_uses'] == 5
+        assert result['duration_ms'] == 6789
+        assert result['rows_recorded'] == 1
 
-            # Verify the per-phase artifact file exists at the expected path.
-            artifact = ctx.plan_dir / 'work' / f'metrics-dispatch-boundaries-{phase}.toon'
-            assert artifact.exists(), f'expected {artifact} to be created'
-            content = artifact.read_text(encoding='utf-8')
-            assert f'phase: {phase}' in content
-            # Each row is "<timestamp>,<cause>,<total>,<tools>,<duration>"; the cause
-            # token must appear on the data line.
-            assert f',{cause},1234,5,6789' in content
+        # Verify the per-phase artifact file exists at the expected path.
+        artifact = pdir / 'work' / f'metrics-dispatch-boundaries-{phase}.toon'
+        assert artifact.exists(), f'expected {artifact} to be created'
+        content = artifact.read_text(encoding='utf-8')
+        assert f'phase: {phase}' in content
+        # Each row is "<timestamp>,<cause>,<total>,<tools>,<duration>"; the cause
+        # token must appear on the data line.
+        assert f',{cause},1234,5,6789' in content
 
-    def test_phase_6_finalize_artifact_path_is_used_for_finalize_causes(self):
+    def test_phase_6_finalize_artifact_path_is_used_for_finalize_causes(self, plan_context):
         """The three phase-6-finalize causes all land in the 6-finalize artifact file."""
         plan_id = 'rdb-phase6-grouped'
-        with PlanContext(plan_id=plan_id) as ctx:
-            (ctx.plan_dir / 'status.json').write_text('{}', encoding='utf-8')
-            for cause in ('step_complete', 'blocked_user_review', 'blocked_session_restart'):
-                result = cmd_record_dispatch_boundary(
-                    _ns_record_dispatch_boundary(plan_id, '6-finalize', termination_cause=cause)
-                )
-                assert result['status'] == 'success'
+        pdir = plan_context.plan_dir_for(plan_id)
+        (pdir / 'status.json').write_text('{}', encoding='utf-8')
+        for cause in ('step_complete', 'blocked_user_review', 'blocked_session_restart'):
+            result = cmd_record_dispatch_boundary(
+                _ns_record_dispatch_boundary(plan_id, '6-finalize', termination_cause=cause)
+            )
+            assert result['status'] == 'success'
 
-            artifact = ctx.plan_dir / 'work' / 'metrics-dispatch-boundaries-6-finalize.toon'
-            assert artifact.exists()
-            content = artifact.read_text(encoding='utf-8')
-            assert ',step_complete,' in content
-            assert ',blocked_user_review,' in content
-            assert ',blocked_session_restart,' in content
-            # Three data rows were appended into the same file.
-            data_lines = [
-                line for line in content.splitlines()
-                if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))
-            ]
-            assert len(data_lines) == 3
+        artifact = pdir / 'work' / 'metrics-dispatch-boundaries-6-finalize.toon'
+        assert artifact.exists()
+        content = artifact.read_text(encoding='utf-8')
+        assert ',step_complete,' in content
+        assert ',blocked_user_review,' in content
+        assert ',blocked_session_restart,' in content
+        # Three data rows were appended into the same file.
+        data_lines = [
+            line for line in content.splitlines()
+            if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))
+        ]
+        assert len(data_lines) == 3
 
-    def test_phase_4_plan_artifact_path_is_used_for_plan_causes(self):
+    def test_phase_4_plan_artifact_path_is_used_for_plan_causes(self, plan_context):
         """The two phase-4-plan causes both land in the 4-plan artifact file."""
         plan_id = 'rdb-phase4-grouped'
-        with PlanContext(plan_id=plan_id) as ctx:
-            (ctx.plan_dir / 'status.json').write_text('{}', encoding='utf-8')
-            for cause in ('task_batch_complete', 'agent_returned'):
-                result = cmd_record_dispatch_boundary(
-                    _ns_record_dispatch_boundary(plan_id, '4-plan', termination_cause=cause)
-                )
-                assert result['status'] == 'success'
+        pdir = plan_context.plan_dir_for(plan_id)
+        (pdir / 'status.json').write_text('{}', encoding='utf-8')
+        for cause in ('task_batch_complete', 'agent_returned'):
+            result = cmd_record_dispatch_boundary(
+                _ns_record_dispatch_boundary(plan_id, '4-plan', termination_cause=cause)
+            )
+            assert result['status'] == 'success'
 
-            artifact = ctx.plan_dir / 'work' / 'metrics-dispatch-boundaries-4-plan.toon'
-            assert artifact.exists()
-            content = artifact.read_text(encoding='utf-8')
-            assert ',task_batch_complete,' in content
-            assert ',agent_returned,' in content
-            data_lines = [
-                line for line in content.splitlines()
-                if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))
-            ]
-            assert len(data_lines) == 2
+        artifact = pdir / 'work' / 'metrics-dispatch-boundaries-4-plan.toon'
+        assert artifact.exists()
+        content = artifact.read_text(encoding='utf-8')
+        assert ',task_batch_complete,' in content
+        assert ',agent_returned,' in content
+        data_lines = [
+            line for line in content.splitlines()
+            if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))
+        ]
+        assert len(data_lines) == 2
 
 
 class TestRecordDispatchBoundaryRejectsInvalidCause:
     """An unknown termination_cause still surfaces the structured error."""
 
-    def test_invalid_cause_returns_invalid_termination_cause_error(self):
+    def test_invalid_cause_returns_invalid_termination_cause_error(self, plan_context):
         """An unknown cause produces status=error with error=invalid_termination_cause."""
-        with PlanContext(plan_id='rdb-invalid-cause'):
-            result = cmd_record_dispatch_boundary(
-                _ns_record_dispatch_boundary(
-                    'rdb-invalid-cause', '6-finalize', termination_cause='not_a_real_cause'
-                )
+        result = cmd_record_dispatch_boundary(
+            _ns_record_dispatch_boundary(
+                'rdb-invalid-cause', '6-finalize', termination_cause='not_a_real_cause'
             )
-            assert result['status'] == 'error'
-            assert result['error'] == 'invalid_termination_cause'
-            assert 'not_a_real_cause' in str(result.get('message', ''))
+        )
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_termination_cause'
+        assert 'not_a_real_cause' in str(result.get('message', ''))
 
-    def test_legacy_unknown_value_still_rejected(self):
+    def test_legacy_unknown_value_still_rejected(self, plan_context):
         """The legacy fallback value 'unknown' was removed and must continue to reject."""
-        with PlanContext(plan_id='rdb-legacy-unknown'):
-            result = cmd_record_dispatch_boundary(
-                _ns_record_dispatch_boundary(
-                    'rdb-legacy-unknown', '6-finalize', termination_cause='unknown'
-                )
+        result = cmd_record_dispatch_boundary(
+            _ns_record_dispatch_boundary(
+                'rdb-legacy-unknown', '6-finalize', termination_cause='unknown'
             )
-            assert result['status'] == 'error'
-            assert result['error'] == 'invalid_termination_cause'
+        )
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_termination_cause'
 
 
 class TestRecordDispatchBoundaryLegacyCausesStillPass:
@@ -1117,16 +1080,16 @@ class TestRecordDispatchBoundaryLegacyCausesStillPass:
             'clean_exit_queue_empty',
         ],
     )
-    def test_legacy_cause_records_row(self, cause):
+    def test_legacy_cause_records_row(self, plan_context, cause):
         """Each legacy termination cause still produces a successful record."""
         plan_id = f'rdb-legacy-{cause.replace("_", "-")}'
-        with PlanContext(plan_id=plan_id) as ctx:
-            (ctx.plan_dir / 'status.json').write_text('{}', encoding='utf-8')
-            result = cmd_record_dispatch_boundary(
-                _ns_record_dispatch_boundary(plan_id, '5-execute', termination_cause=cause)
-            )
-            assert result['status'] == 'success'
-            assert result['termination_cause'] == cause
-            artifact = ctx.plan_dir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
-            assert artifact.exists()
-            assert f',{cause},' in artifact.read_text(encoding='utf-8')
+        pdir = plan_context.plan_dir_for(plan_id)
+        (pdir / 'status.json').write_text('{}', encoding='utf-8')
+        result = cmd_record_dispatch_boundary(
+            _ns_record_dispatch_boundary(plan_id, '5-execute', termination_cause=cause)
+        )
+        assert result['status'] == 'success'
+        assert result['termination_cause'] == cause
+        artifact = pdir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
+        assert artifact.exists()
+        assert f',{cause},' in artifact.read_text(encoding='utf-8')

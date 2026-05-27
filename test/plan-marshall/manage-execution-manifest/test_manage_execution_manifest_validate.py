@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""Tests for the ``validate`` subcommand of manage-execution-manifest.py.
+
+Split from test_manage_execution_manifest.py — tier 2 direct-import tests for
+the validate path plus the CLI happy-path roundtrip.
+"""
+
+import importlib.util
+from argparse import Namespace
+from pathlib import Path
+
+from conftest import get_script_path, run_script
+
+# Script path for subprocess (CLI plumbing) tests.
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py')
+
+# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime).
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-execution-manifest'
+    / 'scripts'
+)
+
+
+def _load_module(name: str, filename: str):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    assert spec is not None, f'Failed to load module spec for {filename}'
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_mem = _load_module('_mem_script', 'manage-execution-manifest.py')
+cmd_compose = _mem.cmd_compose
+cmd_validate = _mem.cmd_validate
+get_manifest_path = _mem.get_manifest_path
+DEFAULT_PHASE_5_STEPS = _mem.DEFAULT_PHASE_5_STEPS
+DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
+
+# Quiet down the best-effort decision-log subprocess.
+_mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
+
+
+# =============================================================================
+# Namespace Helpers
+# =============================================================================
+
+
+def _compose_ns(
+    plan_id: str = 'test-plan',
+    change_type: str = 'feature',
+    track: str = 'complex',
+    scope_estimate: str = 'multi_module',
+    recipe_key: str | None = None,
+    affected_files_count: int = 5,
+    phase_5_steps: str | None = 'quality-gate,module-tests',
+    phase_6_steps: str | None = ','.join(DEFAULT_PHASE_6_STEPS),
+    commit_strategy: str | None = None,
+) -> Namespace:
+    return Namespace(
+        plan_id=plan_id,
+        change_type=change_type,
+        track=track,
+        scope_estimate=scope_estimate,
+        recipe_key=recipe_key,
+        affected_files_count=affected_files_count,
+        phase_5_steps=phase_5_steps,
+        phase_6_steps=phase_6_steps,
+        commit_strategy=commit_strategy,
+    )
+
+
+def _validate_ns(
+    plan_id: str = 'test-plan',
+    phase_5_steps: str | None = 'quality-gate,module-tests,coverage',
+    phase_6_steps: str | None = ','.join(DEFAULT_PHASE_6_STEPS),
+) -> Namespace:
+    return Namespace(plan_id=plan_id, phase_5_steps=phase_5_steps, phase_6_steps=phase_6_steps)
+
+
+# =============================================================================
+# validate subcommand tests
+# =============================================================================
+
+
+def test_validate_happy_path(plan_context):
+    cmd_compose(_compose_ns(plan_id='val-ok'))
+    result = cmd_validate(_validate_ns(plan_id='val-ok'))
+    assert result is not None and result['status'] == 'success'
+    assert result['valid'] is True
+    assert result['phase_5_unknown_steps_count'] == 0
+    assert result['phase_6_unknown_steps_count'] == 0
+
+
+def test_validate_missing_manifest_returns_none(plan_context, capsys):
+    result = cmd_validate(_validate_ns(plan_id='val-missing'))
+    assert result is None
+    captured = capsys.readouterr()
+    assert 'file_not_found' in captured.out
+
+
+def test_validate_unknown_phase_5_step_flagged(plan_context):
+    cmd_compose(
+        _compose_ns(
+            plan_id='val-unknown-p5',
+            phase_5_steps='quality-gate,module-tests',
+        )
+    )
+    # Now validate with a candidate set that DOESN'T include module-tests.
+    result = cmd_validate(
+        _validate_ns(
+            plan_id='val-unknown-p5',
+            phase_5_steps='quality-gate',
+        )
+    )
+    assert result is not None and result['status'] == 'error'
+    assert result['error'] == 'invalid_manifest'
+    assert result['phase_5_unknown_steps_count'] == 1
+    assert 'module-tests' in result['phase_5_unknown_steps']
+
+
+def test_validate_without_candidate_sets_skips_step_id_check(plan_context):
+    """validate succeeds (status=success) when candidate sets aren't supplied."""
+    cmd_compose(_compose_ns(plan_id='val-no-candidates'))
+    result = cmd_validate(
+        Namespace(
+            plan_id='val-no-candidates',
+            phase_5_steps=None,
+            phase_6_steps=None,
+        )
+    )
+    assert result is not None and result['status'] == 'success'
+    assert result['valid'] is True
+
+
+def test_validate_unknown_phase_6_step_flagged(plan_context):
+    """validate flags phase_6 steps not present in the candidate set."""
+    cmd_compose(
+        _compose_ns(
+            plan_id='val-unknown-p6',
+            # Default phase_6 candidate set; manifest will contain
+            # the full DEFAULT_PHASE_6_STEPS list.
+        )
+    )
+    result = cmd_validate(
+        Namespace(
+            plan_id='val-unknown-p6',
+            phase_5_steps=None,
+            # Restrict allowed phase_6 steps to a tiny subset; everything
+            # else in the manifest becomes "unknown".
+            phase_6_steps='commit-push',
+        )
+    )
+    assert result is not None and result['status'] == 'error'
+    assert result['error'] == 'invalid_manifest'
+    assert result['phase_6_unknown_steps_count'] >= 1
+    # All non-commit-push DEFAULT_PHASE_6_STEPS entries should be flagged.
+    assert 'create-pr' in result['phase_6_unknown_steps']
+
+
+def test_validate_detects_corrupt_manifest_version(plan_context):
+    """validate flags a manifest_version mismatch from a tampered file."""
+    cmd_compose(_compose_ns(plan_id='val-bad-version'))
+    # Tamper with the on-disk manifest to flip the version.
+    path = get_manifest_path('val-bad-version')
+    text = path.read_text(encoding='utf-8')
+    # TOON top-level scalar replacement: serialize_toon emits
+    # `manifest_version: 1` — flip the literal.
+    path.write_text(text.replace('manifest_version: 1', 'manifest_version: 99'), encoding='utf-8')
+
+    result = cmd_validate(_validate_ns(plan_id='val-bad-version'))
+    assert result is not None and result['status'] == 'error'
+    assert result['error'] == 'invalid_manifest'
+    assert 'manifest_version mismatch' in result['message']
+
+
+def test_validate_detects_plan_id_mismatch(plan_context):
+    """validate flags a plan_id mismatch from a tampered file."""
+    cmd_compose(_compose_ns(plan_id='val-bad-pid'))
+    path = get_manifest_path('val-bad-pid')
+    text = path.read_text(encoding='utf-8')
+    path.write_text(text.replace('plan_id: val-bad-pid', 'plan_id: other-plan'), encoding='utf-8')
+
+    result = cmd_validate(_validate_ns(plan_id='val-bad-pid'))
+    assert result is not None and result['status'] == 'error'
+    assert result['error'] == 'invalid_manifest'
+    assert 'plan_id mismatch' in result['message']
+
+
+# =============================================================================
+# CLI plumbing (subprocess) tests for validate
+# =============================================================================
+
+
+def test_cli_validate_happy_path(plan_context):
+    """validate via CLI returns status=success TOON."""
+    compose = run_script(
+        SCRIPT_PATH,
+        'compose',
+        '--plan-id',
+        'cli-val-ok',
+        '--change-type',
+        'feature',
+        '--track',
+        'complex',
+        '--scope-estimate',
+        'multi_module',
+    )
+    assert compose.success
+
+    result = run_script(
+        SCRIPT_PATH,
+        'validate',
+        '--plan-id',
+        'cli-val-ok',
+        '--phase-5-steps',
+        ','.join(DEFAULT_PHASE_5_STEPS),
+        '--phase-6-steps',
+        ','.join(DEFAULT_PHASE_6_STEPS),
+    )
+    assert result.success
+    data = result.toon()
+    assert data['status'] == 'success'
+    # TOON parser may coerce booleans — accept both shapes defensively.
+    assert data['valid'] in (True, 'true', 1)

@@ -18,8 +18,6 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import PlanContext
-
 # =============================================================================
 # Module loading (mirrors sibling tests, avoids import ambiguity across skills)
 # =============================================================================
@@ -152,54 +150,52 @@ def test_non_positive_max_len_returns_empty_string():
 # =============================================================================
 
 
-def test_cmd_create_persists_short_description_in_status_json(monkeypatch):
+def test_cmd_create_persists_short_description_in_status_json(plan_context, monkeypatch):
     """cmd_create must call derive_short_description and store the result."""
-    with PlanContext(plan_id='short-desc-plan') as ctx:
-        # Defensive environment pinning mirrors test_manage_status.py.
-        monkeypatch.setenv('HOME', str(ctx.fixture_dir))
-        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(ctx.fixture_dir / 'creds'))
+    # Defensive environment pinning mirrors test_manage_status.py.
+    monkeypatch.setenv('HOME', str(plan_context.fixture_dir))
+    monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(plan_context.fixture_dir / 'creds'))
 
-        title = 'Improve terminal title display for running plans'
-        result = cmd_create(
-            Namespace(
-                plan_id='short-desc-plan',
-                title=title,
-                phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
-                force=False,
-            )
+    title = 'Improve terminal title display for running plans'
+    result = cmd_create(
+        Namespace(
+            plan_id='short-desc-plan',
+            title=title,
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
         )
-        assert result['status'] == 'success'
+    )
+    assert result['status'] == 'success'
 
-        # Load status.json directly and verify the persisted short_description
-        # matches what derive_short_description would produce for the title.
-        status_path = get_status_path('short-desc-plan')
-        assert status_path.exists()
-        payload = json.loads(status_path.read_text(encoding='utf-8'))
+    # Load status.json directly and verify the persisted short_description
+    # matches what derive_short_description would produce for the title.
+    status_path = get_status_path('short-desc-plan')
+    assert status_path.exists()
+    payload = json.loads(status_path.read_text(encoding='utf-8'))
 
-        expected = derive_short_description(title)
-        assert 'short_description' in payload
-        assert payload['short_description'] == expected
-        # Sanity check: the expected slug is non-empty and within the budget.
-        assert expected
-        assert len(expected) <= 36
+    expected = derive_short_description(title)
+    assert 'short_description' in payload
+    assert payload['short_description'] == expected
+    # Sanity check: the expected slug is non-empty and within the budget.
+    assert expected
+    assert len(expected) <= 36
 
 
-def test_cmd_create_persists_empty_short_description_for_lesson_id_only_title(monkeypatch):
+def test_cmd_create_persists_empty_short_description_for_lesson_id_only_title(plan_context, monkeypatch):
     """Lesson-id-only titles still create a plan; short_description is empty."""
-    with PlanContext(plan_id='lesson-id-only-plan') as ctx:
-        monkeypatch.setenv('HOME', str(ctx.fixture_dir))
-        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(ctx.fixture_dir / 'creds'))
+    monkeypatch.setenv('HOME', str(plan_context.fixture_dir))
+    monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(plan_context.fixture_dir / 'creds'))
 
-        result = cmd_create(
-            Namespace(
-                plan_id='lesson-id-only-plan',
-                title='lesson-2026-04-19-13-004',
-                phases='1-init,2-refine',
-                force=False,
-            )
+    result = cmd_create(
+        Namespace(
+            plan_id='lesson-id-only-plan',
+            title='lesson-2026-04-19-13-004',
+            phases='1-init,2-refine',
+            force=False,
         )
-        assert result['status'] == 'success'
+    )
+    assert result['status'] == 'success'
 
-        status_path = get_status_path('lesson-id-only-plan')
-        payload = json.loads(status_path.read_text(encoding='utf-8'))
-        assert payload['short_description'] == ''
+    status_path = get_status_path('lesson-id-only-plan')
+    payload = json.loads(status_path.read_text(encoding='utf-8'))
+    assert payload['short_description'] == ''

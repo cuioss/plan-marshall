@@ -7,8 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from conftest import PlanContext
-
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
     / 'marketplace'
@@ -73,49 +71,47 @@ def _args(
 # =============================================================================
 
 
-def test_mark_step_done_happy_path():
+def test_mark_step_done_happy_path(plan_context):
     """Mark a new step done; persists dict-shaped entry under metadata.phase_steps."""
     plan_id = 'mark-step-happy'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done'))
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done'))
 
-        assert result['status'] == 'success'
-        assert result['changed'] is True
-        assert result['previous_outcome'] is None
-        assert result['previous_display_detail'] is None
-        assert result['phase'] == '1-init'
-        assert result['step'] == 'step-a'
-        assert result['outcome'] == 'done'
-        assert result['display_detail'] is None
+    assert result['status'] == 'success'
+    assert result['changed'] is True
+    assert result['previous_outcome'] is None
+    assert result['previous_display_detail'] is None
+    assert result['phase'] == '1-init'
+    assert result['step'] == 'step-a'
+    assert result['outcome'] == 'done'
+    assert result['display_detail'] is None
 
-        persisted = read_status(plan_id)
-        assert persisted['metadata']['phase_steps']['1-init']['step-a'] == {
-            'outcome': 'done',
-            'display_detail': None,
-        }
+    persisted = read_status(plan_id)
+    assert persisted['metadata']['phase_steps']['1-init']['step-a'] == {
+        'outcome': 'done',
+        'display_detail': None,
+    }
 
 
-def test_mark_step_skipped_happy_path():
+def test_mark_step_skipped_happy_path(plan_context):
     """Outcome 'skipped' persists as dict with null display_detail."""
     plan_id = 'mark-step-skipped'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        result = cmd_mark_step_done(_args(plan_id, '2-refine', 'clarify', 'skipped'))
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(_args(plan_id, '2-refine', 'clarify', 'skipped'))
 
-        assert result['status'] == 'success'
-        assert result['changed'] is True
-        assert result['outcome'] == 'skipped'
-        assert result['display_detail'] is None
+    assert result['status'] == 'success'
+    assert result['changed'] is True
+    assert result['outcome'] == 'skipped'
+    assert result['display_detail'] is None
 
-        persisted = read_status(plan_id)
-        assert persisted['metadata']['phase_steps']['2-refine']['clarify'] == {
-            'outcome': 'skipped',
-            'display_detail': None,
-        }
+    persisted = read_status(plan_id)
+    assert persisted['metadata']['phase_steps']['2-refine']['clarify'] == {
+        'outcome': 'skipped',
+        'display_detail': None,
+    }
 
 
-def test_mark_step_failed_happy_path():
+def test_mark_step_failed_happy_path(plan_context):
     """Outcome 'failed' persists as dict with null display_detail.
 
     Regression guard for PR #338 review (gemini-code-assist findings 0d1782 and
@@ -124,76 +120,72 @@ def test_mark_step_failed_happy_path():
     Timeout Contract), so ``failed`` MUST be a valid persisted outcome.
     """
     plan_id = 'mark-step-failed'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'automated-review', 'failed'))
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'automated-review', 'failed'))
 
-        assert result['status'] == 'success'
-        assert result['changed'] is True
-        assert result['outcome'] == 'failed'
-        assert result['display_detail'] is None
+    assert result['status'] == 'success'
+    assert result['changed'] is True
+    assert result['outcome'] == 'failed'
+    assert result['display_detail'] is None
 
-        persisted = read_status(plan_id)
-        assert persisted['metadata']['phase_steps']['6-finalize']['automated-review'] == {
-            'outcome': 'failed',
-            'display_detail': None,
-        }
+    persisted = read_status(plan_id)
+    assert persisted['metadata']['phase_steps']['6-finalize']['automated-review'] == {
+        'outcome': 'failed',
+        'display_detail': None,
+    }
 
 
-def test_mark_step_failed_with_display_detail():
+def test_mark_step_failed_with_display_detail(plan_context):
     """Outcome 'failed' carries a display_detail describing the failure cause."""
     plan_id = 'mark-step-failed-detail'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        result = cmd_mark_step_done(
-            _args(
-                plan_id,
-                '6-finalize',
-                'automated-review',
-                'failed',
-                display_detail='timeout after 1800s',
-            )
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(
+        _args(
+            plan_id,
+            '6-finalize',
+            'automated-review',
+            'failed',
+            display_detail='timeout after 1800s',
         )
+    )
 
-        assert result['status'] == 'success'
-        assert result['outcome'] == 'failed'
-        assert result['display_detail'] == 'timeout after 1800s'
+    assert result['status'] == 'success'
+    assert result['outcome'] == 'failed'
+    assert result['display_detail'] == 'timeout after 1800s'
 
-        persisted = read_status(plan_id)
-        assert persisted['metadata']['phase_steps']['6-finalize']['automated-review'] == {
-            'outcome': 'failed',
-            'display_detail': 'timeout after 1800s',
-        }
+    persisted = read_status(plan_id)
+    assert persisted['metadata']['phase_steps']['6-finalize']['automated-review'] == {
+        'outcome': 'failed',
+        'display_detail': 'timeout after 1800s',
+    }
 
 
-def test_mark_step_persists_display_detail():
+def test_mark_step_persists_display_detail(plan_context):
     """--display-detail value is stored alongside the outcome."""
     plan_id = 'mark-step-detail'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='my detail'))
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='my detail'))
 
-        assert result['status'] == 'success'
-        assert result['changed'] is True
-        assert result['display_detail'] == 'my detail'
+    assert result['status'] == 'success'
+    assert result['changed'] is True
+    assert result['display_detail'] == 'my detail'
 
-        persisted = read_status(plan_id)
-        assert persisted['metadata']['phase_steps']['1-init']['step-a'] == {
-            'outcome': 'done',
-            'display_detail': 'my detail',
-        }
+    persisted = read_status(plan_id)
+    assert persisted['metadata']['phase_steps']['1-init']['step-a'] == {
+        'outcome': 'done',
+        'display_detail': 'my detail',
+    }
 
 
-def test_mark_step_absent_flag_persists_null_detail():
+def test_mark_step_absent_flag_persists_null_detail(plan_context):
     """Omitting --display-detail persists display_detail=None."""
     plan_id = 'mark-step-no-detail'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done'))
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done'))
 
-        assert result['display_detail'] is None
-        persisted = read_status(plan_id)
-        assert persisted['metadata']['phase_steps']['1-init']['step-a']['display_detail'] is None
+    assert result['display_detail'] is None
+    persisted = read_status(plan_id)
+    assert persisted['metadata']['phase_steps']['1-init']['step-a']['display_detail'] is None
 
 
 # =============================================================================
@@ -201,52 +193,50 @@ def test_mark_step_absent_flag_persists_null_detail():
 # =============================================================================
 
 
-def test_mark_step_done_idempotent_on_identical_outcome_and_detail():
+def test_mark_step_done_idempotent_on_identical_outcome_and_detail(plan_context):
     """Marking same step with same outcome AND same detail is a no-op."""
     plan_id = 'mark-step-idempotent'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='detail-a'))
+    _make_plan(plan_id)
+    cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='detail-a'))
 
-        persisted_before = read_status(plan_id)
-        updated_before = persisted_before['updated']
+    persisted_before = read_status(plan_id)
+    updated_before = persisted_before['updated']
 
-        second = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='detail-a'))
+    second = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='detail-a'))
 
-        assert second['status'] == 'success'
-        assert second['changed'] is False
-        assert 'previous_outcome' not in second
+    assert second['status'] == 'success'
+    assert second['changed'] is False
+    assert 'previous_outcome' not in second
 
-        persisted_after = read_status(plan_id)
-        # No file rewrite: updated timestamp unchanged.
-        assert persisted_after['updated'] == updated_before
-        assert persisted_after['metadata']['phase_steps']['1-init']['step-a'] == {
-            'outcome': 'done',
-            'display_detail': 'detail-a',
-        }
+    persisted_after = read_status(plan_id)
+    # No file rewrite: updated timestamp unchanged.
+    assert persisted_after['updated'] == updated_before
+    assert persisted_after['metadata']['phase_steps']['1-init']['step-a'] == {
+        'outcome': 'done',
+        'display_detail': 'detail-a',
+    }
 
 
-def test_mark_step_detail_only_update_rewrites_entry():
+def test_mark_step_detail_only_update_rewrites_entry(plan_context):
     """Same outcome + different detail overwrites the detail and reports changed=True."""
     plan_id = 'mark-step-detail-update'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='a'))
+    _make_plan(plan_id)
+    cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='a'))
 
-        second = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='b'))
+    second = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='b'))
 
-        assert second['status'] == 'success'
-        assert second['changed'] is True
-        assert second['outcome'] == 'done'
-        assert second['display_detail'] == 'b'
-        assert second['previous_outcome'] == 'done'
-        assert second['previous_display_detail'] == 'a'
+    assert second['status'] == 'success'
+    assert second['changed'] is True
+    assert second['outcome'] == 'done'
+    assert second['display_detail'] == 'b'
+    assert second['previous_outcome'] == 'done'
+    assert second['previous_display_detail'] == 'a'
 
-        persisted = read_status(plan_id)
-        assert persisted['metadata']['phase_steps']['1-init']['step-a'] == {
-            'outcome': 'done',
-            'display_detail': 'b',
-        }
+    persisted = read_status(plan_id)
+    assert persisted['metadata']['phase_steps']['1-init']['step-a'] == {
+        'outcome': 'done',
+        'display_detail': 'b',
+    }
 
 
 # =============================================================================
@@ -254,51 +244,49 @@ def test_mark_step_detail_only_update_rewrites_entry():
 # =============================================================================
 
 
-def test_mark_step_conflict_without_force():
+def test_mark_step_conflict_without_force(plan_context):
     """Different outcome on existing step without --force returns conflict error."""
     plan_id = 'mark-step-conflict'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='keep'))
+    _make_plan(plan_id)
+    cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='keep'))
 
-        result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'skipped'))
+    result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'skipped'))
 
-        assert result['status'] == 'error'
-        assert result['error'] == 'conflict'
-        assert result['existing_outcome'] == 'done'
-        assert result['requested_outcome'] == 'skipped'
-        assert result['phase'] == '1-init'
-        assert result['step'] == 'step-a'
+    assert result['status'] == 'error'
+    assert result['error'] == 'conflict'
+    assert result['existing_outcome'] == 'done'
+    assert result['requested_outcome'] == 'skipped'
+    assert result['phase'] == '1-init'
+    assert result['step'] == 'step-a'
 
-        # Persistence unchanged — existing detail still in place.
-        persisted = read_status(plan_id)
-        assert persisted['metadata']['phase_steps']['1-init']['step-a'] == {
-            'outcome': 'done',
-            'display_detail': 'keep',
-        }
+    # Persistence unchanged — existing detail still in place.
+    persisted = read_status(plan_id)
+    assert persisted['metadata']['phase_steps']['1-init']['step-a'] == {
+        'outcome': 'done',
+        'display_detail': 'keep',
+    }
 
 
-def test_mark_step_force_overwrites():
+def test_mark_step_force_overwrites(plan_context):
     """With --force, a differing outcome overwrites and reports previous_outcome."""
     plan_id = 'mark-step-force'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='old'))
+    _make_plan(plan_id)
+    cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='old'))
 
-        result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'skipped', force=True, display_detail='new'))
+    result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'skipped', force=True, display_detail='new'))
 
-        assert result['status'] == 'success'
-        assert result['changed'] is True
-        assert result['previous_outcome'] == 'done'
-        assert result['previous_display_detail'] == 'old'
-        assert result['outcome'] == 'skipped'
-        assert result['display_detail'] == 'new'
+    assert result['status'] == 'success'
+    assert result['changed'] is True
+    assert result['previous_outcome'] == 'done'
+    assert result['previous_display_detail'] == 'old'
+    assert result['outcome'] == 'skipped'
+    assert result['display_detail'] == 'new'
 
-        persisted = read_status(plan_id)
-        assert persisted['metadata']['phase_steps']['1-init']['step-a'] == {
-            'outcome': 'skipped',
-            'display_detail': 'new',
-        }
+    persisted = read_status(plan_id)
+    assert persisted['metadata']['phase_steps']['1-init']['step-a'] == {
+        'outcome': 'skipped',
+        'display_detail': 'new',
+    }
 
 
 # =============================================================================
@@ -306,26 +294,25 @@ def test_mark_step_force_overwrites():
 # =============================================================================
 
 
-def test_mark_step_rejects_legacy_bare_string_entry():
+def test_mark_step_rejects_legacy_bare_string_entry(plan_context):
     """A seeded bare-string entry must be rejected with legacy_string_entry error."""
     plan_id = 'mark-step-legacy'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        status = read_status(plan_id)
-        status.setdefault('metadata', {})['phase_steps'] = {'1-init': {'step-a': 'done'}}
-        write_status(plan_id, status)
+    _make_plan(plan_id)
+    status = read_status(plan_id)
+    status.setdefault('metadata', {})['phase_steps'] = {'1-init': {'step-a': 'done'}}
+    write_status(plan_id, status)
 
-        result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='ignored'))
+    result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='ignored'))
 
-        assert result['status'] == 'error'
-        assert result['error'] == 'legacy_string_entry'
-        assert result['existing_outcome'] == 'done'
-        assert result['requested_outcome'] == 'done'
-        assert result['phase'] == '1-init'
-        assert result['step'] == 'step-a'
+    assert result['status'] == 'error'
+    assert result['error'] == 'legacy_string_entry'
+    assert result['existing_outcome'] == 'done'
+    assert result['requested_outcome'] == 'done'
+    assert result['phase'] == '1-init'
+    assert result['step'] == 'step-a'
 
-        persisted = read_status(plan_id)
-        assert persisted['metadata']['phase_steps']['1-init']['step-a'] == 'done'
+    persisted = read_status(plan_id)
+    assert persisted['metadata']['phase_steps']['1-init']['step-a'] == 'done'
 
 
 # =============================================================================
@@ -333,30 +320,29 @@ def test_mark_step_rejects_legacy_bare_string_entry():
 # =============================================================================
 
 
-def test_mark_step_multi_phase_and_multi_step():
+def test_mark_step_multi_phase_and_multi_step(plan_context):
     """Independent phases and steps should coexist in phase_steps."""
     plan_id = 'mark-step-multi'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
+    _make_plan(plan_id)
 
-        cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done'))
-        cmd_mark_step_done(_args(plan_id, '1-init', 'step-b', 'skipped'))
-        cmd_mark_step_done(_args(plan_id, '2-refine', 'clarify', 'done', display_detail='clarified'))
-        cmd_mark_step_done(_args(plan_id, '3-outline', 'draft', 'done'))
+    cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done'))
+    cmd_mark_step_done(_args(plan_id, '1-init', 'step-b', 'skipped'))
+    cmd_mark_step_done(_args(plan_id, '2-refine', 'clarify', 'done', display_detail='clarified'))
+    cmd_mark_step_done(_args(plan_id, '3-outline', 'draft', 'done'))
 
-        persisted = read_status(plan_id)
-        phase_steps = persisted['metadata']['phase_steps']
+    persisted = read_status(plan_id)
+    phase_steps = persisted['metadata']['phase_steps']
 
-        assert phase_steps['1-init'] == {
-            'step-a': {'outcome': 'done', 'display_detail': None},
-            'step-b': {'outcome': 'skipped', 'display_detail': None},
-        }
-        assert phase_steps['2-refine'] == {
-            'clarify': {'outcome': 'done', 'display_detail': 'clarified'},
-        }
-        assert phase_steps['3-outline'] == {
-            'draft': {'outcome': 'done', 'display_detail': None},
-        }
+    assert phase_steps['1-init'] == {
+        'step-a': {'outcome': 'done', 'display_detail': None},
+        'step-b': {'outcome': 'skipped', 'display_detail': None},
+    }
+    assert phase_steps['2-refine'] == {
+        'clarify': {'outcome': 'done', 'display_detail': 'clarified'},
+    }
+    assert phase_steps['3-outline'] == {
+        'draft': {'outcome': 'done', 'display_detail': None},
+    }
 
 
 # =============================================================================
@@ -364,113 +350,106 @@ def test_mark_step_multi_phase_and_multi_step():
 # =============================================================================
 
 
-def test_mark_step_missing_plan():
+def test_mark_step_missing_plan(plan_context):
     """Missing plan: require_status emits TOON and returns None."""
-    with PlanContext():
-        result = cmd_mark_step_done(_args('nonexistent-plan', '1-init', 'step-a', 'done'))
-        assert result is None
+    result = cmd_mark_step_done(_args('nonexistent-plan', '1-init', 'step-a', 'done'))
+    assert result is None
 
 
-def test_mark_step_invalid_outcome():
+def test_mark_step_invalid_outcome(plan_context):
     """Invalid outcome value returns invalid_outcome error without writing."""
     plan_id = 'mark-step-bad-outcome'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'bogus'))
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'bogus'))
 
-        assert result['status'] == 'error'
-        assert result['error'] == 'invalid_outcome'
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_outcome'
 
-        persisted = read_status(plan_id)
-        assert 'phase_steps' not in persisted.get('metadata', {})
+    persisted = read_status(plan_id)
+    assert 'phase_steps' not in persisted.get('metadata', {})
 
 
-def test_mark_step_failed_idempotent():
+def test_mark_step_failed_idempotent(plan_context):
     """Re-marking a step 'failed' with same detail is a no-op (changed=False)."""
     plan_id = 'mark-step-failed-idempotent'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        cmd_mark_step_done(
-            _args(plan_id, '6-finalize', 'automated-review', 'failed', display_detail='timeout')
-        )
+    _make_plan(plan_id)
+    cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'automated-review', 'failed', display_detail='timeout')
+    )
 
-        second = cmd_mark_step_done(
-            _args(plan_id, '6-finalize', 'automated-review', 'failed', display_detail='timeout')
-        )
+    second = cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'automated-review', 'failed', display_detail='timeout')
+    )
 
-        assert second['status'] == 'success'
-        assert second['changed'] is False
-        assert second['outcome'] == 'failed'
+    assert second['status'] == 'success'
+    assert second['changed'] is False
+    assert second['outcome'] == 'failed'
 
 
-def test_mark_step_failed_then_done_with_force():
+def test_mark_step_failed_then_done_with_force(plan_context):
     """After a 'failed' marker, dispatcher can re-fire and overwrite with 'done' under --force."""
     plan_id = 'mark-step-failed-then-done'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        cmd_mark_step_done(
-            _args(plan_id, '6-finalize', 'automated-review', 'failed', display_detail='timeout')
+    _make_plan(plan_id)
+    cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'automated-review', 'failed', display_detail='timeout')
+    )
+
+    # Without --force, a different outcome on an existing step is a conflict.
+    conflict = cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'automated-review', 'done', display_detail='retry green')
+    )
+    assert conflict['status'] == 'error'
+    assert conflict['error'] == 'conflict'
+    assert conflict['existing_outcome'] == 'failed'
+    assert conflict['requested_outcome'] == 'done'
+
+    # With --force, the retry overwrite succeeds.
+    retry = cmd_mark_step_done(
+        _args(
+            plan_id,
+            '6-finalize',
+            'automated-review',
+            'done',
+            force=True,
+            display_detail='retry green',
         )
+    )
+    assert retry['status'] == 'success'
+    assert retry['changed'] is True
+    assert retry['outcome'] == 'done'
+    assert retry['previous_outcome'] == 'failed'
 
-        # Without --force, a different outcome on an existing step is a conflict.
-        conflict = cmd_mark_step_done(
-            _args(plan_id, '6-finalize', 'automated-review', 'done', display_detail='retry green')
-        )
-        assert conflict['status'] == 'error'
-        assert conflict['error'] == 'conflict'
-        assert conflict['existing_outcome'] == 'failed'
-        assert conflict['requested_outcome'] == 'done'
-
-        # With --force, the retry overwrite succeeds.
-        retry = cmd_mark_step_done(
-            _args(
-                plan_id,
-                '6-finalize',
-                'automated-review',
-                'done',
-                force=True,
-                display_detail='retry green',
-            )
-        )
-        assert retry['status'] == 'success'
-        assert retry['changed'] is True
-        assert retry['outcome'] == 'done'
-        assert retry['previous_outcome'] == 'failed'
-
-        persisted = read_status(plan_id)
-        assert persisted['metadata']['phase_steps']['6-finalize']['automated-review'] == {
-            'outcome': 'done',
-            'display_detail': 'retry green',
-        }
+    persisted = read_status(plan_id)
+    assert persisted['metadata']['phase_steps']['6-finalize']['automated-review'] == {
+        'outcome': 'done',
+        'display_detail': 'retry green',
+    }
 
 
-def test_mark_step_empty_phase():
+def test_mark_step_empty_phase(plan_context):
     """Empty phase is rejected with invalid_argument."""
     plan_id = 'mark-step-empty-phase'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        result = cmd_mark_step_done(_args(plan_id, '', 'step-a', 'done'))
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(_args(plan_id, '', 'step-a', 'done'))
 
-        assert result['status'] == 'error'
-        assert result['error'] == 'invalid_argument'
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_argument'
 
 
-def test_mark_step_empty_step():
+def test_mark_step_empty_step(plan_context):
     """Empty step is rejected with invalid_argument."""
     plan_id = 'mark-step-empty-step'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        result = cmd_mark_step_done(_args(plan_id, '1-init', '', 'done'))
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(_args(plan_id, '1-init', '', 'done'))
 
-        assert result['status'] == 'error'
-        assert result['error'] == 'invalid_argument'
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_argument'
 
 
-def test_mark_step_invalid_plan_id():
+def test_mark_step_invalid_plan_id(plan_context):
     """Invalid plan_id format triggers require_valid_plan_id exit."""
-    with PlanContext():
-        with pytest.raises(SystemExit):
-            cmd_mark_step_done(_args('Invalid_Plan', '1-init', 'step-a', 'done'))
+    with pytest.raises(SystemExit):
+        cmd_mark_step_done(_args('Invalid_Plan', '1-init', 'step-a', 'done'))
 
 
 # =============================================================================
@@ -478,142 +457,138 @@ def test_mark_step_invalid_plan_id():
 # =============================================================================
 
 
-def test_mark_step_persists_head_at_completion_on_first_call():
+def test_mark_step_persists_head_at_completion_on_first_call(plan_context):
     """--head-at-completion is persisted as a third key alongside outcome+display_detail."""
     plan_id = 'mark-step-head-first'
     sha = 'abc1234567890abcdef1234567890abcdef1234'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        result = cmd_mark_step_done(
-            _args(
-                plan_id,
-                '6-finalize',
-                'pre-push-quality-gate',
-                'done',
-                head_at_completion=sha,
-            )
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(
+        _args(
+            plan_id,
+            '6-finalize',
+            'pre-push-quality-gate',
+            'done',
+            head_at_completion=sha,
         )
+    )
 
-        assert result['status'] == 'success'
-        assert result['changed'] is True
-        assert result['head_at_completion'] == sha
-        assert result['outcome'] == 'done'
-        assert result['display_detail'] is None
+    assert result['status'] == 'success'
+    assert result['changed'] is True
+    assert result['head_at_completion'] == sha
+    assert result['outcome'] == 'done'
+    assert result['display_detail'] is None
 
-        persisted = read_status(plan_id)
-        assert persisted['metadata']['phase_steps']['6-finalize']['pre-push-quality-gate'] == {
-            'outcome': 'done',
-            'display_detail': None,
-            'head_at_completion': sha,
-        }
+    persisted = read_status(plan_id)
+    assert persisted['metadata']['phase_steps']['6-finalize']['pre-push-quality-gate'] == {
+        'outcome': 'done',
+        'display_detail': None,
+        'head_at_completion': sha,
+    }
 
 
-def test_mark_step_idempotent_when_head_at_completion_matches():
+def test_mark_step_idempotent_when_head_at_completion_matches(plan_context):
     """Re-call with same outcome+display_detail+head_at_completion is a no-op."""
     plan_id = 'mark-step-head-idempotent'
     sha = 'deadbeefcafebabe0123456789abcdef01234567'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        cmd_mark_step_done(
-            _args(
-                plan_id,
-                '6-finalize',
-                'pre-push-quality-gate',
-                'done',
-                display_detail='gate green',
-                head_at_completion=sha,
-            )
+    _make_plan(plan_id)
+    cmd_mark_step_done(
+        _args(
+            plan_id,
+            '6-finalize',
+            'pre-push-quality-gate',
+            'done',
+            display_detail='gate green',
+            head_at_completion=sha,
         )
+    )
 
-        persisted_before = read_status(plan_id)
-        updated_before = persisted_before['updated']
+    persisted_before = read_status(plan_id)
+    updated_before = persisted_before['updated']
 
-        second = cmd_mark_step_done(
-            _args(
-                plan_id,
-                '6-finalize',
-                'pre-push-quality-gate',
-                'done',
-                display_detail='gate green',
-                head_at_completion=sha,
-            )
+    second = cmd_mark_step_done(
+        _args(
+            plan_id,
+            '6-finalize',
+            'pre-push-quality-gate',
+            'done',
+            display_detail='gate green',
+            head_at_completion=sha,
         )
+    )
 
-        assert second['status'] == 'success'
-        assert second['changed'] is False
-        assert second['head_at_completion'] == sha
-        assert 'previous_outcome' not in second
+    assert second['status'] == 'success'
+    assert second['changed'] is False
+    assert second['head_at_completion'] == sha
+    assert 'previous_outcome' not in second
 
-        persisted_after = read_status(plan_id)
-        # No file rewrite: updated timestamp unchanged.
-        assert persisted_after['updated'] == updated_before
-        assert persisted_after['metadata']['phase_steps']['6-finalize']['pre-push-quality-gate'] == {
-            'outcome': 'done',
-            'display_detail': 'gate green',
-            'head_at_completion': sha,
-        }
+    persisted_after = read_status(plan_id)
+    # No file rewrite: updated timestamp unchanged.
+    assert persisted_after['updated'] == updated_before
+    assert persisted_after['metadata']['phase_steps']['6-finalize']['pre-push-quality-gate'] == {
+        'outcome': 'done',
+        'display_detail': 'gate green',
+        'head_at_completion': sha,
+    }
 
 
-def test_mark_step_head_at_completion_change_overwrites_without_force():
+def test_mark_step_head_at_completion_change_overwrites_without_force(plan_context):
     """Re-call with same outcome+display_detail but different SHA is a 'changed' overwrite, no --force."""
     plan_id = 'mark-step-head-overwrite'
     sha_old = '1111111111111111111111111111111111111111'
     sha_new = '2222222222222222222222222222222222222222'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        cmd_mark_step_done(
-            _args(
-                plan_id,
-                '6-finalize',
-                'pre-push-quality-gate',
-                'done',
-                display_detail='gate green',
-                head_at_completion=sha_old,
-            )
+    _make_plan(plan_id)
+    cmd_mark_step_done(
+        _args(
+            plan_id,
+            '6-finalize',
+            'pre-push-quality-gate',
+            'done',
+            display_detail='gate green',
+            head_at_completion=sha_old,
         )
+    )
 
-        # Same outcome and display_detail, different SHA, no --force.
-        second = cmd_mark_step_done(
-            _args(
-                plan_id,
-                '6-finalize',
-                'pre-push-quality-gate',
-                'done',
-                display_detail='gate green',
-                head_at_completion=sha_new,
-            )
+    # Same outcome and display_detail, different SHA, no --force.
+    second = cmd_mark_step_done(
+        _args(
+            plan_id,
+            '6-finalize',
+            'pre-push-quality-gate',
+            'done',
+            display_detail='gate green',
+            head_at_completion=sha_new,
         )
+    )
 
-        assert second['status'] == 'success'
-        assert second['changed'] is True
-        assert second['outcome'] == 'done'
-        assert second['display_detail'] == 'gate green'
-        assert second['head_at_completion'] == sha_new
-        assert second['previous_outcome'] == 'done'
-        assert second['previous_display_detail'] == 'gate green'
-        assert second['previous_head_at_completion'] == sha_old
+    assert second['status'] == 'success'
+    assert second['changed'] is True
+    assert second['outcome'] == 'done'
+    assert second['display_detail'] == 'gate green'
+    assert second['head_at_completion'] == sha_new
+    assert second['previous_outcome'] == 'done'
+    assert second['previous_display_detail'] == 'gate green'
+    assert second['previous_head_at_completion'] == sha_old
 
-        persisted = read_status(plan_id)
-        assert persisted['metadata']['phase_steps']['6-finalize']['pre-push-quality-gate'] == {
-            'outcome': 'done',
-            'display_detail': 'gate green',
-            'head_at_completion': sha_new,
-        }
+    persisted = read_status(plan_id)
+    assert persisted['metadata']['phase_steps']['6-finalize']['pre-push-quality-gate'] == {
+        'outcome': 'done',
+        'display_detail': 'gate green',
+        'head_at_completion': sha_new,
+    }
 
 
-def test_mark_step_omits_head_at_completion_key_when_flag_absent():
+def test_mark_step_omits_head_at_completion_key_when_flag_absent(plan_context):
     """Caller omitting --head-at-completion produces the legacy two-key dict shape."""
     plan_id = 'mark-step-head-omitted'
-    with PlanContext(plan_id=plan_id):
-        _make_plan(plan_id)
-        result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='legacy'))
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'done', display_detail='legacy'))
 
-        assert result['status'] == 'success'
-        assert result['changed'] is True
-        # Result echoes the field as None, but persistence omits the key entirely.
-        assert result['head_at_completion'] is None
+    assert result['status'] == 'success'
+    assert result['changed'] is True
+    # Result echoes the field as None, but persistence omits the key entirely.
+    assert result['head_at_completion'] is None
 
-        persisted = read_status(plan_id)
-        entry = persisted['metadata']['phase_steps']['1-init']['step-a']
-        assert entry == {'outcome': 'done', 'display_detail': 'legacy'}
-        assert 'head_at_completion' not in entry
+    persisted = read_status(plan_id)
+    entry = persisted['metadata']['phase_steps']['1-init']['step-a']
+    assert entry == {'outcome': 'done', 'display_detail': 'legacy'}
+    assert 'head_at_completion' not in entry

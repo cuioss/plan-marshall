@@ -22,7 +22,7 @@ import types
 from pathlib import Path
 
 import pytest
-from conftest import PlanContext, get_script_path  # type: ignore[import-not-found]
+from conftest import get_script_path  # type: ignore[import-not-found]
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake.py')
 SCRIPTS_DIR = SCRIPT_PATH.parent
@@ -223,12 +223,12 @@ def test_assertion_fails_on_stale_toplevel(monkeypatch: pytest.MonkeyPatch, tmp_
 # =============================================================================
 
 
-def test_cmd_capture_refuses_on_unresolved_worktree(stubbed_invariants, stub_metadata) -> None:
+def test_cmd_capture_refuses_on_unresolved_worktree(stubbed_invariants, stub_metadata, plan_context) -> None:
     """``cmd_capture`` surfaces the assertion error verbatim, with plan_id/phase."""
     stub_metadata['use_worktree'] = True
     # No worktree_path → unresolved.
-    with PlanContext(plan_id='cap-wt-missing'):
-        result = cmds.cmd_capture(_ns(plan_id='cap-wt-missing', phase='5-execute'))
+    plan_context.plan_dir_for('cap-wt-missing')
+    result = cmds.cmd_capture(_ns(plan_id='cap-wt-missing', phase='5-execute'))
     assert result['status'] == 'error'
     assert result['error'] == 'worktree_unresolved'
     assert result['reason'] == 'worktree_path_missing'
@@ -237,18 +237,18 @@ def test_cmd_capture_refuses_on_unresolved_worktree(stubbed_invariants, stub_met
 
 
 def test_cmd_verify_refuses_on_filesystem_missing_worktree(
-    stubbed_invariants, stub_metadata, tmp_path: Path
+    stubbed_invariants, stub_metadata, tmp_path: Path, plan_context
 ) -> None:
     """``cmd_verify`` refuses when the persisted worktree path no longer exists."""
     ghost = tmp_path / 'gone'
     # First capture with a valid (no-worktree) state so a row exists.
-    with PlanContext(plan_id='ver-wt-missing'):
-        cap = cmds.cmd_capture(_ns(plan_id='ver-wt-missing', phase='5-execute'))
-        assert cap['status'] == 'success'
-        # Now flip status metadata to "use worktree, but it's gone".
-        stub_metadata['use_worktree'] = True
-        stub_metadata['worktree_path'] = str(ghost)
-        result = cmds.cmd_verify(_ns(plan_id='ver-wt-missing', phase='5-execute'))
+    plan_context.plan_dir_for('ver-wt-missing')
+    cap = cmds.cmd_capture(_ns(plan_id='ver-wt-missing', phase='5-execute'))
+    assert cap['status'] == 'success'
+    # Now flip status metadata to "use worktree, but it's gone".
+    stub_metadata['use_worktree'] = True
+    stub_metadata['worktree_path'] = str(ghost)
+    result = cmds.cmd_verify(_ns(plan_id='ver-wt-missing', phase='5-execute'))
     assert result['status'] == 'error'
     assert result['error'] == 'worktree_unresolved'
     assert result['reason'] == 'worktree_path_not_found'
@@ -256,26 +256,26 @@ def test_cmd_verify_refuses_on_filesystem_missing_worktree(
     assert result['phase'] == '5-execute'
 
 
-def test_cmd_capture_succeeds_on_main_checkout(stubbed_invariants, stub_metadata) -> None:
+def test_cmd_capture_succeeds_on_main_checkout(stubbed_invariants, stub_metadata, plan_context) -> None:
     """``use_worktree=false`` path: assertion passes, capture proceeds normally."""
     stub_metadata['use_worktree'] = False
-    with PlanContext(plan_id='cap-main'):
-        result = cmds.cmd_capture(_ns(plan_id='cap-main', phase='5-execute'))
+    plan_context.plan_dir_for('cap-main')
+    result = cmds.cmd_capture(_ns(plan_id='cap-main', phase='5-execute'))
     assert result['status'] == 'success'
     assert result['phase'] == '5-execute'
     assert result['worktree_applicable'] is False
 
 
 def test_cmd_capture_succeeds_on_resolved_worktree(
-    stubbed_invariants, stub_metadata, git_worktree: Path
+    stubbed_invariants, stub_metadata, git_worktree: Path, plan_context
 ) -> None:
     """Valid worktree + ``use_worktree=true`` → assertion passes, capture proceeds."""
     stub_metadata['use_worktree'] = True
     stub_metadata['worktree_path'] = str(git_worktree)
     stubbed_invariants['worktree_sha'] = 'wt-sha'
     stubbed_invariants['worktree_dirty'] = 0
-    with PlanContext(plan_id='cap-wt-ok'):
-        result = cmds.cmd_capture(_ns(plan_id='cap-wt-ok', phase='5-execute'))
+    plan_context.plan_dir_for('cap-wt-ok')
+    result = cmds.cmd_capture(_ns(plan_id='cap-wt-ok', phase='5-execute'))
     assert result['status'] == 'success'
     assert result['worktree_applicable'] is True
 
@@ -335,7 +335,7 @@ def _load_phase_handshake_module():
 
 
 def test_cli_strict_propagates_nonzero_exit_on_worktree_unresolved(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, plan_context,
 ) -> None:
     """``verify --strict`` returns non-zero when assertion fails.
 
@@ -353,27 +353,27 @@ def test_cli_strict_propagates_nonzero_exit_on_worktree_unresolved(
         lambda _pid: {'use_worktree': True},
     )
 
-    with PlanContext(plan_id=plan_id):
-        _capture_row_for_strict_test(plan_id)
-        monkeypatch.setattr(
-            sys,
-            'argv',
-            [
-                'phase_handshake.py',
-                'verify',
-                '--plan-id',
-                plan_id,
-                '--phase',
-                '5-execute',
-                '--strict',
-            ],
-        )
-        main_fn = _load_phase_handshake_module()
-        with pytest.raises(SystemExit) as excinfo:
-            main_fn()
-        assert excinfo.value.code == 1, (
-            f'--strict must exit non-zero on worktree_unresolved, got {excinfo.value.code}'
-        )
+    plan_context.plan_dir_for(plan_id)
+    _capture_row_for_strict_test(plan_id)
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'phase_handshake.py',
+            'verify',
+            '--plan-id',
+            plan_id,
+            '--phase',
+            '5-execute',
+            '--strict',
+        ],
+    )
+    main_fn = _load_phase_handshake_module()
+    with pytest.raises(SystemExit) as excinfo:
+        main_fn()
+    assert excinfo.value.code == 1, (
+        f'--strict must exit non-zero on worktree_unresolved, got {excinfo.value.code}'
+    )
 
 
 # =============================================================================
@@ -396,7 +396,7 @@ def _make_orphan_worktree(plan_id: str, monkeypatch: pytest.MonkeyPatch, tmp_pat
     orphan worktree dir at ``.plan/local/worktrees/{plan_id}``.
 
     Returns the orphan path so tests can assert it appears in the error
-    payload. The base_path module is monkeypatched so PlanContext usage
+    payload. The base_path module is monkeypatched so plan_context usage
     remains independent of the orphan-detection setup.
     """
     monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
@@ -500,6 +500,7 @@ def test_cmd_capture_surfaces_worktree_metadata_drift(
     stubbed_invariants,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    plan_context,
 ) -> None:
     """``cmd_capture`` translates WorktreeMetadataDrift into structured TOON error.
 
@@ -515,8 +516,8 @@ def test_cmd_capture_surfaces_worktree_metadata_drift(
     monkeypatch.setattr(cmds, 'INVARIANTS', narrowed)
     monkeypatch.setattr(cmds, '_load_status_metadata', lambda _pid: {'use_worktree': False})
 
-    with PlanContext(plan_id=plan_id):
-        result = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+    plan_context.plan_dir_for(plan_id)
+    result = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
 
     assert result['status'] == 'error'
     assert result['error'] == 'worktree_metadata_drift'
@@ -531,6 +532,7 @@ def test_cmd_verify_surfaces_worktree_metadata_drift(
     monkeypatch: pytest.MonkeyPatch,
     git_worktree: Path,
     tmp_path: Path,
+    plan_context,
 ) -> None:
     """``cmd_verify`` surfaces orphan drift after a clean capture.
 
@@ -551,22 +553,22 @@ def test_cmd_verify_surfaces_worktree_metadata_drift(
     # Use the stubbed_invariants registry for the initial capture so
     # _capture_worktree_orphan does not fire on capture (metadata.use_worktree
     # is True at that point).
-    with PlanContext(plan_id=plan_id):
-        cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
-        assert cap['status'] == 'success', cap
+    plan_context.plan_dir_for(plan_id)
+    cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+    assert cap['status'] == 'success', cap
 
-        # Now flip metadata to drop use_worktree, create the orphan dir
-        # under tmp_path (NOT git_worktree — orphan-detection compares
-        # against ``_repo_root()`` which we now monkeypatch to tmp_path),
-        # narrow INVARIANTS to just the orphan check, and verify.
-        md_state.clear()
-        md_state['use_worktree'] = False
-        orphan = _make_orphan_worktree(plan_id, monkeypatch, tmp_path)
-        narrowed = [('worktree_orphan', inv._always, inv._capture_worktree_orphan)]
-        monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
-        monkeypatch.setattr(cmds, 'INVARIANTS', narrowed)
+    # Now flip metadata to drop use_worktree, create the orphan dir
+    # under tmp_path (NOT git_worktree — orphan-detection compares
+    # against ``_repo_root()`` which we now monkeypatch to tmp_path),
+    # narrow INVARIANTS to just the orphan check, and verify.
+    md_state.clear()
+    md_state['use_worktree'] = False
+    orphan = _make_orphan_worktree(plan_id, monkeypatch, tmp_path)
+    narrowed = [('worktree_orphan', inv._always, inv._capture_worktree_orphan)]
+    monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
+    monkeypatch.setattr(cmds, 'INVARIANTS', narrowed)
 
-        result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
+    result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
 
     assert result['status'] == 'error'
     assert result['error'] == 'worktree_metadata_drift'
@@ -580,7 +582,7 @@ def test_cmd_verify_surfaces_worktree_metadata_drift(
 
 
 def test_cli_strict_propagates_nonzero_exit_on_worktree_metadata_drift(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, plan_context,
 ) -> None:
     """``verify --strict`` exits non-zero on the inverse-direction drift error.
 
@@ -595,36 +597,36 @@ def test_cli_strict_propagates_nonzero_exit_on_worktree_metadata_drift(
     md_state = {'use_worktree': True, 'worktree_path': str(tmp_path / 'placeholder')}
     monkeypatch.setattr(cmds, '_load_status_metadata', lambda _pid: md_state)
 
-    with PlanContext(plan_id=plan_id):
-        _capture_row_for_strict_test(plan_id)
+    plan_context.plan_dir_for(plan_id)
+    _capture_row_for_strict_test(plan_id)
 
-        md_state.clear()
-        md_state['use_worktree'] = False
-        _make_orphan_worktree(plan_id, monkeypatch, tmp_path)
-        narrowed = [('worktree_orphan', inv._always, inv._capture_worktree_orphan)]
-        monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
-        monkeypatch.setattr(cmds, 'INVARIANTS', narrowed)
+    md_state.clear()
+    md_state['use_worktree'] = False
+    _make_orphan_worktree(plan_id, monkeypatch, tmp_path)
+    narrowed = [('worktree_orphan', inv._always, inv._capture_worktree_orphan)]
+    monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
+    monkeypatch.setattr(cmds, 'INVARIANTS', narrowed)
 
-        monkeypatch.setattr(
-            sys,
-            'argv',
-            [
-                'phase_handshake.py',
-                'verify',
-                '--plan-id',
-                plan_id,
-                '--phase',
-                '5-execute',
-                '--strict',
-            ],
-        )
-        main_fn = _load_phase_handshake_module()
-        with pytest.raises(SystemExit) as excinfo:
-            main_fn()
-        assert excinfo.value.code == 1, (
-            '--strict must exit non-zero on worktree_metadata_drift, '
-            f'got {excinfo.value.code}'
-        )
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'phase_handshake.py',
+            'verify',
+            '--plan-id',
+            plan_id,
+            '--phase',
+            '5-execute',
+            '--strict',
+        ],
+    )
+    main_fn = _load_phase_handshake_module()
+    with pytest.raises(SystemExit) as excinfo:
+        main_fn()
+    assert excinfo.value.code == 1, (
+        '--strict must exit non-zero on worktree_metadata_drift, '
+        f'got {excinfo.value.code}'
+    )
 
 
 # =============================================================================
@@ -633,7 +635,7 @@ def test_cli_strict_propagates_nonzero_exit_on_worktree_metadata_drift(
 
 
 def test_cli_strict_exits_zero_when_worktree_resolves(
-    stubbed_invariants, monkeypatch: pytest.MonkeyPatch, git_worktree: Path
+    stubbed_invariants, monkeypatch: pytest.MonkeyPatch, git_worktree: Path, plan_context,
 ) -> None:
     """Counterpart to the unresolved case: clean worktree → exit 0 under --strict.
 
@@ -654,29 +656,29 @@ def test_cli_strict_exits_zero_when_worktree_resolves(
     }
     monkeypatch.setattr(cmds, '_load_status_metadata', lambda _pid: md_for_capture)
 
-    with PlanContext(plan_id=plan_id):
-        # Capture real invariants (under the stub) so verify finds no drift.
-        cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
-        assert cap['status'] == 'success', cap
-        monkeypatch.setattr(
-            sys,
-            'argv',
-            [
-                'phase_handshake.py',
-                'verify',
-                '--plan-id',
-                plan_id,
-                '--phase',
-                '5-execute',
-                '--strict',
-            ],
-        )
-        main_fn = _load_phase_handshake_module()
-        with pytest.raises(SystemExit) as excinfo:
-            main_fn()
-        assert excinfo.value.code == 0, (
-            f'--strict on a resolved worktree must exit 0, got {excinfo.value.code}'
-        )
+    plan_context.plan_dir_for(plan_id)
+    # Capture real invariants (under the stub) so verify finds no drift.
+    cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+    assert cap['status'] == 'success', cap
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'phase_handshake.py',
+            'verify',
+            '--plan-id',
+            plan_id,
+            '--phase',
+            '5-execute',
+            '--strict',
+        ],
+    )
+    main_fn = _load_phase_handshake_module()
+    with pytest.raises(SystemExit) as excinfo:
+        main_fn()
+    assert excinfo.value.code == 0, (
+        f'--strict on a resolved worktree must exit 0, got {excinfo.value.code}'
+    )
 
 
 # =============================================================================
@@ -745,7 +747,7 @@ def _layer_d_invariants() -> list:
 
 
 def test_layer_d_clean_baseline_and_live_succeeds(
-    monkeypatch: pytest.MonkeyPatch, git_worktree: Path
+    monkeypatch: pytest.MonkeyPatch, git_worktree: Path, plan_context,
 ) -> None:
     """(a) Worktree-routed plan, no dirty paths at either capture → verify ok."""
     plan_id = 'layer-d-clean'
@@ -756,16 +758,16 @@ def test_layer_d_clean_baseline_and_live_succeeds(
     monkeypatch.setattr(cmds, 'INVARIANTS', narrowed)
     _patch_main_dirty_files(monkeypatch, [[], []])
 
-    with PlanContext(plan_id=plan_id):
-        cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
-        assert cap['status'] == 'success', cap
-        result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
+    plan_context.plan_dir_for(plan_id)
+    cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+    assert cap['status'] == 'success', cap
+    result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
 
     assert result['status'] == 'ok', f'clean baseline+live must verify ok, got {result}'
 
 
 def test_layer_d_proper_superset_drift_raises_with_payload(
-    monkeypatch: pytest.MonkeyPatch, git_worktree: Path
+    monkeypatch: pytest.MonkeyPatch, git_worktree: Path, plan_context,
 ) -> None:
     """(b) Worktree plan, live set is a proper superset → structured error."""
     plan_id = 'layer-d-drift'
@@ -779,10 +781,10 @@ def test_layer_d_proper_superset_drift_raises_with_payload(
     live = ['existing.txt', 'leaked-readme.md', 'src/leaked.py']
     _patch_main_dirty_files(monkeypatch, [baseline, live])
 
-    with PlanContext(plan_id=plan_id):
-        cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
-        assert cap['status'] == 'success', cap
-        result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
+    plan_context.plan_dir_for(plan_id)
+    cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+    assert cap['status'] == 'success', cap
+    result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
 
     assert result['status'] == 'error'
     assert result['error'] == 'main_checkout_dirtied_during_plan'
@@ -797,7 +799,7 @@ def test_layer_d_proper_superset_drift_raises_with_payload(
 
 
 def test_layer_d_main_checkout_plan_is_gated_off(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, plan_context,
 ) -> None:
     """(c) ``use_worktree=false`` plan dirties main freely → no drift error."""
     plan_id = 'layer-d-main-checkout'
@@ -814,10 +816,10 @@ def test_layer_d_main_checkout_plan_is_gated_off(
         [['baseline.txt'], ['baseline.txt', 'new-leak-1.py', 'new-leak-2.py']],
     )
 
-    with PlanContext(plan_id=plan_id):
-        cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
-        assert cap['status'] == 'success', cap
-        result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
+    plan_context.plan_dir_for(plan_id)
+    cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+    assert cap['status'] == 'success', cap
+    result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
 
     assert result['status'] == 'ok', (
         'main-checkout plans must not trip the layer-D drift invariant '
@@ -826,7 +828,7 @@ def test_layer_d_main_checkout_plan_is_gated_off(
 
 
 def test_layer_d_dot_plan_paths_are_filtered_and_do_not_trip(
-    monkeypatch: pytest.MonkeyPatch, git_worktree: Path
+    monkeypatch: pytest.MonkeyPatch, git_worktree: Path, plan_context,
 ) -> None:
     """(d) ``.plan/`` artifacts in main MUST be filtered before drift check.
 
@@ -858,10 +860,10 @@ def test_layer_d_dot_plan_paths_are_filtered_and_do_not_trip(
 
     monkeypatch.setattr(inv, 'git_dirty_files', _git_dirty_files_stub)
 
-    with PlanContext(plan_id=plan_id):
-        cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
-        assert cap['status'] == 'success', cap
-        result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
+    plan_context.plan_dir_for(plan_id)
+    cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+    assert cap['status'] == 'success', cap
+    result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
 
     assert result['status'] == 'ok', (
         '``.plan/`` paths must be filtered before the drift check fires, '
@@ -870,7 +872,7 @@ def test_layer_d_dot_plan_paths_are_filtered_and_do_not_trip(
 
 
 def test_layer_d_baseline_equal_live_yields_no_drift(
-    monkeypatch: pytest.MonkeyPatch, git_worktree: Path
+    monkeypatch: pytest.MonkeyPatch, git_worktree: Path, plan_context,
 ) -> None:
     """(e) Pre-existing dirty file unchanged across boundaries → no drift.
 
@@ -891,10 +893,10 @@ def test_layer_d_baseline_equal_live_yields_no_drift(
     live = ['preexisting-dirty.txt']
     _patch_main_dirty_files(monkeypatch, [baseline, live])
 
-    with PlanContext(plan_id=plan_id):
-        cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
-        assert cap['status'] == 'success', cap
-        result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
+    plan_context.plan_dir_for(plan_id)
+    cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+    assert cap['status'] == 'success', cap
+    result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
 
     assert result['status'] == 'ok', (
         'baseline-equal main-dirty (identical sets across boundaries) '
@@ -903,7 +905,7 @@ def test_layer_d_baseline_equal_live_yields_no_drift(
 
 
 def test_cli_strict_propagates_nonzero_exit_on_main_dirty_drift(
-    monkeypatch: pytest.MonkeyPatch, git_worktree: Path
+    monkeypatch: pytest.MonkeyPatch, git_worktree: Path, plan_context,
 ) -> None:
     """``verify --strict`` exits non-zero on layer-D drift.
 
@@ -923,28 +925,28 @@ def test_cli_strict_propagates_nonzero_exit_on_main_dirty_drift(
         [['existing.txt'], ['existing.txt', 'leaked.md']],
     )
 
-    with PlanContext(plan_id=plan_id):
-        # Capture establishes the baseline row.
-        cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
-        assert cap['status'] == 'success', cap
+    plan_context.plan_dir_for(plan_id)
+    # Capture establishes the baseline row.
+    cap = cmds.cmd_capture(_ns(plan_id=plan_id, phase='5-execute'))
+    assert cap['status'] == 'success', cap
 
-        monkeypatch.setattr(
-            sys,
-            'argv',
-            [
-                'phase_handshake.py',
-                'verify',
-                '--plan-id',
-                plan_id,
-                '--phase',
-                '5-execute',
-                '--strict',
-            ],
-        )
-        main_fn = _load_phase_handshake_module()
-        with pytest.raises(SystemExit) as excinfo:
-            main_fn()
-        assert excinfo.value.code == 1, (
-            '--strict must exit non-zero on main_checkout_dirtied_during_plan, '
-            f'got {excinfo.value.code}'
-        )
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'phase_handshake.py',
+            'verify',
+            '--plan-id',
+            plan_id,
+            '--phase',
+            '5-execute',
+            '--strict',
+        ],
+    )
+    main_fn = _load_phase_handshake_module()
+    with pytest.raises(SystemExit) as excinfo:
+        main_fn()
+    assert excinfo.value.code == 1, (
+        '--strict must exit non-zero on main_checkout_dirtied_during_plan, '
+        f'got {excinfo.value.code}'
+    )

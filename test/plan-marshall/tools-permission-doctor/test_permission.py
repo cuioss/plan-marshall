@@ -11,6 +11,7 @@ Tier 3 (subprocess) retained for CLI plumbing and --scope tests.
 """
 
 import json
+import os
 from argparse import Namespace
 
 from permission_doctor import (  # type: ignore[import-not-found]
@@ -20,7 +21,7 @@ from permission_doctor import (  # type: ignore[import-not-found]
 )
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
+from conftest import MARKETPLACE_ROOT, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = (
@@ -32,23 +33,19 @@ SCRIPT_PATH = (
 # =============================================================================
 
 
-class TestDetectRedundant(ScriptTestCase):
+class TestDetectRedundant:
     """Test permission_doctor.py detect-redundant subcommand via direct import."""
 
-    bundle = 'plan-marshall'
-    skill = 'tools-permission-doctor'
-    script = 'permission_doctor.py'
-
-    def test_detect_exact_duplicate(self):
+    def test_detect_exact_duplicate(self, tmp_path):
         """Should detect when same permission exists in both global and local."""
-        global_file = self.temp_dir / 'global.json'
+        global_file = tmp_path / 'global.json'
         global_file.write_text(
             json.dumps(
                 {'permissions': {'allow': ['Bash(git:*)', 'Bash(npm:*)', 'Read(//~/git/**)'], 'deny': [], 'ask': []}}
             )
         )
 
-        local_file = self.temp_dir / 'local.json'
+        local_file = tmp_path / 'local.json'
         local_file.write_text(
             json.dumps({'permissions': {'allow': ['Bash(git:*)', 'Edit(.plan/**)'], 'deny': [], 'ask': []}})
         )
@@ -57,18 +54,18 @@ class TestDetectRedundant(ScriptTestCase):
             Namespace(scope=None, global_settings=str(global_file), local_settings=str(local_file))
         )
 
-        self.assertEqual(result['status'], 'success')
-        self.assertIn('redundant', result)
+        assert result['status'] == 'success'
+        assert 'redundant' in result
         redundant_perms = [r['permission'] for r in result['redundant']]
-        self.assertIn('Bash(git:*)', redundant_perms)
-        self.assertNotIn('Edit(.plan/**)', redundant_perms)
+        assert 'Bash(git:*)' in redundant_perms
+        assert 'Edit(.plan/**)' not in redundant_perms
 
-    def test_detect_marketplace_in_local(self):
+    def test_detect_marketplace_in_local(self, tmp_path):
         """Should flag marketplace permissions in local as belonging in global."""
-        global_file = self.temp_dir / 'global.json'
+        global_file = tmp_path / 'global.json'
         global_file.write_text(json.dumps({'permissions': {'allow': ['Skill(builder:*)'], 'deny': [], 'ask': []}}))
 
-        local_file = self.temp_dir / 'local.json'
+        local_file = tmp_path / 'local.json'
         local_file.write_text(
             json.dumps({'permissions': {'allow': ['Skill(pm-dev-java:*)', 'Edit(.plan/**)'], 'deny': [], 'ask': []}})
         )
@@ -77,12 +74,12 @@ class TestDetectRedundant(ScriptTestCase):
             Namespace(scope=None, global_settings=str(global_file), local_settings=str(local_file))
         )
 
-        self.assertEqual(result['status'], 'success')
-        self.assertIn('marketplace_in_local', result)
+        assert result['status'] == 'success'
+        assert 'marketplace_in_local' in result
         marketplace_perms = [m['permission'] for m in result['marketplace_in_local']]
-        self.assertIn('Skill(pm-dev-java:*)', marketplace_perms)
+        assert 'Skill(pm-dev-java:*)' in marketplace_perms
 
-    def test_project_local_command_not_flagged_as_marketplace(self):
+    def test_project_local_command_not_flagged_as_marketplace(self, tmp_path):
         """Project-local commands should NOT be flagged as marketplace_in_local.
 
         When a SlashCommand permission exists for a command defined in
@@ -90,7 +87,7 @@ class TestDetectRedundant(ScriptTestCase):
         should NOT be flagged as belonging in global settings.
         """
         # Create project structure with local command
-        claude_dir = self.temp_dir / '.claude'
+        claude_dir = tmp_path / '.claude'
         claude_dir.mkdir()
         commands_dir = claude_dir / 'commands'
         commands_dir.mkdir()
@@ -107,7 +104,7 @@ description: A project-local command
 This is a project-local command.
 """)
 
-        global_file = self.temp_dir / 'global.json'
+        global_file = tmp_path / 'global.json'
         global_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
         local_file = claude_dir / 'settings.local.json'
@@ -126,33 +123,31 @@ This is a project-local command.
             )
         )
 
-        import os
-
         original_cwd = os.getcwd()
         try:
-            os.chdir(self.temp_dir)
+            os.chdir(tmp_path)
             result = cmd_detect_redundant(
                 Namespace(scope=None, global_settings=str(global_file), local_settings=str(local_file))
             )
         finally:
             os.chdir(original_cwd)
 
-        self.assertEqual(result['status'], 'success')
-        self.assertIn('marketplace_in_local', result)
+        assert result['status'] == 'success'
+        assert 'marketplace_in_local' in result
         marketplace_perms = [m['permission'] for m in result['marketplace_in_local']]
 
         # Project-local command should NOT be flagged
-        self.assertNotIn('SlashCommand(/my-local-command)', marketplace_perms)
+        assert 'SlashCommand(/my-local-command)' not in marketplace_perms
 
         # Marketplace skill SHOULD still be flagged
-        self.assertIn('Skill(pm-dev-java:*)', marketplace_perms)
+        assert 'Skill(pm-dev-java:*)' in marketplace_perms
 
-    def test_output_includes_summary(self):
+    def test_output_includes_summary(self, tmp_path):
         """Output should include summary counts."""
-        global_file = self.temp_dir / 'global.json'
+        global_file = tmp_path / 'global.json'
         global_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
-        local_file = self.temp_dir / 'local.json'
+        local_file = tmp_path / 'local.json'
         local_file.write_text(
             json.dumps({'permissions': {'allow': ['Bash(git:*)', 'Skill(builder:*)'], 'deny': [], 'ask': []}})
         )
@@ -161,10 +156,10 @@ This is a project-local command.
             Namespace(scope=None, global_settings=str(global_file), local_settings=str(local_file))
         )
 
-        self.assertEqual(result['status'], 'success')
-        self.assertIn('summary', result)
-        self.assertIn('redundant_count', result['summary'])
-        self.assertIn('marketplace_in_local_count', result['summary'])
+        assert result['status'] == 'success'
+        assert 'summary' in result
+        assert 'redundant_count' in result['summary']
+        assert 'marketplace_in_local_count' in result['summary']
 
 
 # =============================================================================
@@ -172,75 +167,71 @@ This is a project-local command.
 # =============================================================================
 
 
-class TestDetectSuspicious(ScriptTestCase):
+class TestDetectSuspicious:
     """Test permission_doctor.py detect-suspicious subcommand via direct import."""
 
-    bundle = 'plan-marshall'
-    skill = 'tools-permission-doctor'
-    script = 'permission_doctor.py'
-
-    def test_detect_sudo_permission(self):
+    def test_detect_sudo_permission(self, tmp_path):
         """Should flag sudo permissions as suspicious."""
-        settings_file = self.temp_dir / 'settings.json'
+        settings_file = tmp_path / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(sudo:*)'], 'deny': [], 'ask': []}}))
 
         result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
 
-        self.assertEqual(result['status'], 'success')
-        self.assertIn('suspicious', result)
+        assert result['status'] == 'success'
+        assert 'suspicious' in result
         suspicious_perms = [s['permission'] for s in result['suspicious']]
-        self.assertIn('Bash(sudo:*)', suspicious_perms)
+        assert 'Bash(sudo:*)' in suspicious_perms
 
-    def test_detect_system_path_access(self):
+    def test_detect_system_path_access(self, tmp_path):
         """Should flag system path access as suspicious."""
-        settings_file = self.temp_dir / 'settings.json'
+        settings_file = tmp_path / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Write(/etc/**)'], 'deny': [], 'ask': []}}))
 
         result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
 
-        self.assertEqual(result['status'], 'success')
+        assert result['status'] == 'success'
         suspicious_perms = [s['permission'] for s in result['suspicious']]
-        self.assertIn('Write(/etc/**)', suspicious_perms)
+        assert 'Write(/etc/**)' in suspicious_perms
 
-    def test_output_includes_severity(self):
+    def test_output_includes_severity(self, tmp_path):
         """Suspicious permissions should include severity."""
-        settings_file = self.temp_dir / 'settings.json'
+        settings_file = tmp_path / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(rm:-rf:*)'], 'deny': [], 'ask': []}}))
 
         result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
 
-        self.assertEqual(result['status'], 'success')
+        assert result['status'] == 'success'
         if result['suspicious']:
             for item in result['suspicious']:
-                self.assertIn('severity', item)
+                assert 'severity' in item
 
-    def test_detect_dangerous_command_dd(self):
+    def test_detect_dangerous_command_dd(self, tmp_path):
         """Should flag low-level disk operations like dd."""
-        settings_file = self.temp_dir / 'settings.json'
+        settings_file = tmp_path / 'settings.json'
         settings_file.write_text(
             json.dumps({'permissions': {'allow': ['Bash(dd:if=/dev/zero)'], 'deny': [], 'ask': []}})
         )
 
         result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
 
-        self.assertEqual(result['status'], 'success')
+        assert result['status'] == 'success'
         suspicious_perms = [s['permission'] for s in result['suspicious']]
-        self.assertIn('Bash(dd:if=/dev/zero)', suspicious_perms)
+        assert 'Bash(dd:if=/dev/zero)' in suspicious_perms
 
-    def test_detect_broad_write_all_users(self):
+    def test_detect_broad_write_all_users(self, tmp_path):
         """Should flag broad write access to all users' directories."""
-        settings_file = self.temp_dir / 'settings.json'
+        settings_file = tmp_path / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Write(//Users/**)'], 'deny': [], 'ask': []}}))
 
         result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
 
-        self.assertEqual(result['status'], 'success')
+        assert result['status'] == 'success'
         suspicious_perms = [s['permission'] for s in result['suspicious']]
-        self.assertIn('Write(//Users/**)', suspicious_perms)
+        assert 'Write(//Users/**)' in suspicious_perms
 
-    def test_clean_settings_no_suspicious(self):
+    def test_clean_settings_no_suspicious(self, tmp_path):
         """Normal permissions should not be flagged as suspicious."""
-        settings_file = self.temp_dir / 'settings.json'
+        settings_file = tmp_path / 'settings.json'
         settings_file.write_text(
             json.dumps(
                 {'permissions': {'allow': ['Bash(git:*)', 'Read(.plan/**)', 'Edit(src/**)'], 'deny': [], 'ask': []}}
@@ -249,20 +240,20 @@ class TestDetectSuspicious(ScriptTestCase):
 
         result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
 
-        self.assertEqual(result['status'], 'success')
-        self.assertEqual(len(result.get('suspicious', [])), 0)
+        assert result['status'] == 'success'
+        assert len(result.get('suspicious', [])) == 0
 
-    def test_detect_env_variable_access(self):
+    def test_detect_env_variable_access(self, tmp_path):
         """Should flag broad environment variable access."""
-        settings_file = self.temp_dir / 'settings.json'
+        settings_file = tmp_path / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(env:*)'], 'deny': [], 'ask': []}}))
 
         result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
 
-        self.assertEqual(result['status'], 'success')
+        assert result['status'] == 'success'
         # env access may or may not be flagged depending on patterns
         # At minimum, the command should succeed
-        self.assertIn('suspicious', result)
+        assert 'suspicious' in result
 
 
 # =============================================================================
@@ -270,40 +261,36 @@ class TestDetectSuspicious(ScriptTestCase):
 # =============================================================================
 
 
-class TestScopeOption(ScriptTestCase):
+class TestScopeOption:
     """Test permission_doctor.py --scope option (subprocess - needs path resolution)."""
 
-    bundle = 'plan-marshall'
-    skill = 'tools-permission-doctor'
-    script = 'permission_doctor.py'
-
-    def test_detect_redundant_with_scope_both(self):
+    def test_detect_redundant_with_scope_both(self, tmp_path):
         """detect-redundant should work with --scope both."""
-        result = run_script(SCRIPT_PATH, 'detect-redundant', '--scope', 'both', cwd=self.temp_dir)
+        result = run_script(SCRIPT_PATH, 'detect-redundant', '--scope', 'both', cwd=tmp_path)
         # May succeed or fail depending on whether settings exist
         # Just verify it doesn't crash with unexpected error
-        self.assertIn(result.returncode, [0, 1])
+        assert result.returncode in [0, 1]
 
-    def test_detect_suspicious_with_scope_project(self):
+    def test_detect_suspicious_with_scope_project(self, tmp_path):
         """detect-suspicious should work with --scope project."""
-        claude_dir = self.temp_dir / '.claude'
+        claude_dir = tmp_path / '.claude'
         claude_dir.mkdir()
         settings_file = claude_dir / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(sudo:*)'], 'deny': [], 'ask': []}}))
 
-        result = run_script(SCRIPT_PATH, 'detect-suspicious', '--scope', 'project', cwd=self.temp_dir)
-        self.assert_success(result)
+        result = run_script(SCRIPT_PATH, 'detect-suspicious', '--scope', 'project', cwd=tmp_path)
+        assert result.success, f'Script failed: {result.stderr}'
         data = result.toon()
 
-        self.assertIn('suspicious', data)
+        assert 'suspicious' in data
         suspicious_perms = [s['permission'] for s in data['suspicious']]
-        self.assertIn('Bash(sudo:*)', suspicious_perms)
+        assert 'Bash(sudo:*)' in suspicious_perms
 
     def test_scope_and_settings_mutually_exclusive(self):
         """--scope and --settings should be mutually exclusive."""
         result = run_script(SCRIPT_PATH, 'detect-suspicious', '--scope', 'project', '--settings', '/tmp/test.json')
         # Should fail due to mutual exclusivity
-        self.assertEqual(result.returncode, 2)
+        assert result.returncode == 2
 
 
 # =============================================================================
@@ -311,105 +298,102 @@ class TestScopeOption(ScriptTestCase):
 # =============================================================================
 
 
-class TestDetectMissingProjectStepPermissions(ScriptTestCase):
+class TestDetectMissingProjectStepPermissions:
     """Test permission_doctor.py detect-missing-project-step-permissions subcommand."""
 
-    bundle = 'plan-marshall'
-    skill = 'tools-permission-doctor'
-    script = 'permission_doctor.py'
-
-    def _write_marshal(self, phase_steps: dict[str, list[str]]) -> str:
+    def _write_marshal(self, tmp_path, phase_steps: dict[str, list[str]]) -> str:
         """Write a marshal.json with the given phase step configuration."""
         marshal = {'plan': {phase: {'steps': steps} for phase, steps in phase_steps.items()}}
-        marshal_file = self.temp_dir / 'marshal.json'
+        marshal_file = tmp_path / 'marshal.json'
         marshal_file.write_text(json.dumps(marshal))
         return str(marshal_file)
 
-    def _write_settings(self, allow: list[str]) -> str:
+    def _write_settings(self, tmp_path, allow: list[str]) -> str:
         """Write a .claude/settings.json with the given allow list."""
         settings = {'permissions': {'allow': allow, 'deny': [], 'ask': []}}
-        settings_file = self.temp_dir / 'settings.json'
+        settings_file = tmp_path / 'settings.json'
         settings_file.write_text(json.dumps(settings))
         return str(settings_file)
 
-    def test_missing_project_step_permission_detected(self):
+    def test_missing_project_step_permission_detected(self, tmp_path):
         """Project:{skill} step with no matching Skill() rule is reported missing."""
-        marshal = self._write_marshal({'phase-6-finalize': ['project:finalize-step-plugin-doctor']})
-        settings = self._write_settings(['Edit(.plan/**)'])
+        marshal = self._write_marshal(tmp_path, {'phase-6-finalize': ['project:finalize-step-plugin-doctor']})
+        settings = self._write_settings(tmp_path, ['Edit(.plan/**)'])
 
         result = cmd_detect_missing_project_step_permissions(Namespace(marshal=marshal, settings=settings, scope=None))
 
-        self.assertEqual(result['status'], 'success')
-        self.assertEqual(len(result['missing']), 1)
-        self.assertEqual(result['missing'][0]['skill'], 'finalize-step-plugin-doctor')
-        self.assertEqual(result['missing'][0]['phase'], 'phase-6-finalize')
+        assert result['status'] == 'success'
+        assert len(result['missing']) == 1
+        assert result['missing'][0]['skill'] == 'finalize-step-plugin-doctor'
+        assert result['missing'][0]['phase'] == 'phase-6-finalize'
 
-    def test_exact_skill_rule_covers_project_step(self):
+    def test_exact_skill_rule_covers_project_step(self, tmp_path):
         """Exact Skill({skill}) rule marks the step as present."""
-        marshal = self._write_marshal({'phase-6-finalize': ['project:sync-plugin-cache']})
-        settings = self._write_settings(['Skill(sync-plugin-cache)'])
+        marshal = self._write_marshal(tmp_path, {'phase-6-finalize': ['project:sync-plugin-cache']})
+        settings = self._write_settings(tmp_path, ['Skill(sync-plugin-cache)'])
 
         result = cmd_detect_missing_project_step_permissions(Namespace(marshal=marshal, settings=settings, scope=None))
 
-        self.assertEqual(result['status'], 'success')
-        self.assertEqual(len(result['missing']), 0)
-        self.assertEqual(len(result['present']), 1)
-        self.assertEqual(result['present'][0]['covered_by'], 'Skill(sync-plugin-cache)')
+        assert result['status'] == 'success'
+        assert len(result['missing']) == 0
+        assert len(result['present']) == 1
+        assert result['present'][0]['covered_by'] == 'Skill(sync-plugin-cache)'
 
-    def test_wildcard_skill_rule_covers_project_step(self):
+    def test_wildcard_skill_rule_covers_project_step(self, tmp_path):
         """Covering wildcard Skill({skill}:*) counts as coverage for bare Skill({skill})."""
-        marshal = self._write_marshal({'phase-5-execute': ['project:verify-workflow']})
-        settings = self._write_settings(['Skill(verify-workflow:*)'])
+        marshal = self._write_marshal(tmp_path, {'phase-5-execute': ['project:verify-workflow']})
+        settings = self._write_settings(tmp_path, ['Skill(verify-workflow:*)'])
 
         result = cmd_detect_missing_project_step_permissions(Namespace(marshal=marshal, settings=settings, scope=None))
 
-        self.assertEqual(result['status'], 'success')
-        self.assertEqual(len(result['missing']), 0)
-        self.assertEqual(result['present'][0]['covered_by'], 'Skill(verify-workflow:*)')
+        assert result['status'] == 'success'
+        assert len(result['missing']) == 0
+        assert result['present'][0]['covered_by'] == 'Skill(verify-workflow:*)'
 
-    def test_no_project_steps_returns_empty(self):
+    def test_no_project_steps_returns_empty(self, tmp_path):
         """Marshal without project: steps reports empty missing/present lists."""
-        marshal = self._write_marshal({'phase-6-finalize': ['default:commit-push', 'default:create-pr']})
-        settings = self._write_settings([])
+        marshal = self._write_marshal(tmp_path, {'phase-6-finalize': ['default:commit-push', 'default:create-pr']})
+        settings = self._write_settings(tmp_path, [])
 
         result = cmd_detect_missing_project_step_permissions(Namespace(marshal=marshal, settings=settings, scope=None))
 
-        self.assertEqual(result['status'], 'success')
-        self.assertEqual(len(result['missing']), 0)
-        self.assertEqual(len(result['present']), 0)
-        self.assertEqual(result['summary']['project_steps_checked'], 0)
+        assert result['status'] == 'success'
+        assert len(result['missing']) == 0
+        assert len(result['present']) == 0
+        assert result['summary']['project_steps_checked'] == 0
 
-    def test_scans_both_phase5_and_phase6(self):
+    def test_scans_both_phase5_and_phase6(self, tmp_path):
         """Detection aggregates project: steps across both phase-5-execute and phase-6-finalize."""
         marshal = self._write_marshal(
+            tmp_path,
             {
                 'phase-5-execute': ['project:verify-workflow'],
                 'phase-6-finalize': ['project:finalize-step-plugin-doctor'],
-            }
+            },
         )
-        settings = self._write_settings(['Skill(verify-workflow)'])
+        settings = self._write_settings(tmp_path, ['Skill(verify-workflow)'])
 
         result = cmd_detect_missing_project_step_permissions(Namespace(marshal=marshal, settings=settings, scope=None))
 
-        self.assertEqual(result['status'], 'success')
-        self.assertEqual(result['summary']['project_steps_checked'], 2)
-        self.assertEqual(len(result['missing']), 1)
-        self.assertEqual(result['missing'][0]['skill'], 'finalize-step-plugin-doctor')
-        self.assertEqual(len(result['present']), 1)
-        self.assertEqual(result['present'][0]['skill'], 'verify-workflow')
+        assert result['status'] == 'success'
+        assert result['summary']['project_steps_checked'] == 2
+        assert len(result['missing']) == 1
+        assert result['missing'][0]['skill'] == 'finalize-step-plugin-doctor'
+        assert len(result['present']) == 1
+        assert result['present'][0]['skill'] == 'verify-workflow'
 
-    def test_malformed_marshal_returns_error(self):
+    def test_malformed_marshal_returns_error(self, tmp_path):
         """Malformed marshal.json returns a structured error, not a raise."""
-        marshal_file = self.temp_dir / 'bad-marshal.json'
+        marshal_file = tmp_path / 'bad-marshal.json'
         marshal_file.write_text('{not valid json')
-        settings = self._write_settings([])
+        settings = self._write_settings(tmp_path, [])
 
         result = cmd_detect_missing_project_step_permissions(
             Namespace(marshal=str(marshal_file), settings=settings, scope=None)
         )
 
-        self.assertEqual(result['status'], 'error')
-        self.assertIn('Invalid JSON', result['error'])
+        assert result['status'] == 'error'
+        assert 'Invalid JSON' in result['error']
 
 
 # =============================================================================

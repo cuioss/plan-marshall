@@ -8,11 +8,12 @@ finding per surviving issue via ``manage-findings add``.
 
 import importlib.util
 import sys
-import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from conftest import PlanContext, get_script_path, run_script
+import pytest
+
+from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-sonar', 'sonar.py')
 
@@ -33,36 +34,36 @@ cmd_fetch_and_store = sonar_mod.cmd_fetch_and_store
 # =============================================================================
 
 
-class TestIsSuppressable(unittest.TestCase):
+class TestIsSuppressable:
     """The pre-filter drops issues already documented as suppressable."""
 
     def test_always_fix_type_never_suppressed(self):
         # VULNERABILITY is in always_fix_types — it must NEVER be suppressed
         # even if the rule appears in suppressable_rules.
-        self.assertFalse(_is_suppressable('java:S2076', 'src/X.java', 'VULNERABILITY'))
+        assert not _is_suppressable('java:S2076', 'src/X.java', 'VULNERABILITY')
 
     def test_unknown_rule_passes_through(self):
-        self.assertFalse(_is_suppressable('java:S99999', 'src/X.java', 'CODE_SMELL'))
+        assert not _is_suppressable('java:S99999', 'src/X.java', 'CODE_SMELL')
 
 
-class TestMapSeverity(unittest.TestCase):
+class TestMapSeverity:
     def test_blocker_maps_to_error(self):
-        self.assertEqual(_map_severity('BLOCKER'), 'error')
+        assert _map_severity('BLOCKER') == 'error'
 
     def test_critical_maps_to_error(self):
-        self.assertEqual(_map_severity('CRITICAL'), 'error')
+        assert _map_severity('CRITICAL') == 'error'
 
     def test_major_maps_to_error(self):
-        self.assertEqual(_map_severity('MAJOR'), 'error')
+        assert _map_severity('MAJOR') == 'error'
 
     def test_minor_maps_to_warning(self):
-        self.assertEqual(_map_severity('MINOR'), 'warning')
+        assert _map_severity('MINOR') == 'warning'
 
     def test_info_maps_to_info(self):
-        self.assertEqual(_map_severity('INFO'), 'info')
+        assert _map_severity('INFO') == 'info'
 
     def test_unknown_maps_to_none(self):
-        self.assertIsNone(_map_severity('OTHER'))
+        assert _map_severity('OTHER') is None
 
 
 # =============================================================================
@@ -70,22 +71,23 @@ class TestMapSeverity(unittest.TestCase):
 # =============================================================================
 
 
-class TestFetchAndStore(unittest.TestCase):
+def _make_args(plan_id, project='com.example:proj', pr=None, severities=None, types=None):
+    class _Args:
+        pass
+
+    a = _Args()
+    a.plan_id = plan_id
+    a.project = project
+    a.pr = pr
+    a.severities = severities
+    a.types = types
+    return a
+
+
+class TestFetchAndStore:
     """fetch-and-store writes one sonar-issue finding per surviving issue."""
 
-    def _make_args(self, plan_id, project='com.example:proj', pr=None, severities=None, types=None):
-        class _Args:
-            pass
-
-        a = _Args()
-        a.plan_id = plan_id
-        a.project = project
-        a.pr = pr
-        a.severities = severities
-        a.types = types
-        return a
-
-    def test_fetch_and_store_persists_findings(self):
+    def test_fetch_and_store_persists_findings(self, plan_context):
         issues_payload = [
             {
                 'key': 'ISSUE-1',
@@ -98,28 +100,28 @@ class TestFetchAndStore(unittest.TestCase):
                 'component': 'com.example:proj:src/Main.java',
             },
         ]
-        with PlanContext(plan_id='sonar-stage-1') as ctx:
-            with patch('sonar_mod._fetch_issues') as mock_fetch:
-                mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
-                result = cmd_fetch_and_store(self._make_args(ctx.plan_id))
+        plan_context.plan_dir_for('sonar-stage-1')
+        with patch('sonar_mod._fetch_issues') as mock_fetch:
+            mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
+            result = cmd_fetch_and_store(_make_args('sonar-stage-1'))
 
-            self.assertEqual(result['status'], 'success')
-            self.assertEqual(result['count_fetched'], 1)
-            self.assertEqual(result['count_skipped_suppressable'], 0)
-            self.assertEqual(result['count_stored'], 1)
+        assert result['status'] == 'success'
+        assert result['count_fetched'] == 1
+        assert result['count_skipped_suppressable'] == 0
+        assert result['count_stored'] == 1
 
-            from _findings_core import query_findings  # type: ignore[import-not-found]
+        from _findings_core import query_findings  # type: ignore[import-not-found]
 
-            q = query_findings(ctx.plan_id, finding_type='sonar-issue')
-            self.assertEqual(q['filtered_count'], 1)
-            stored = q['findings'][0]
-            self.assertEqual(stored['type'], 'sonar-issue')
-            self.assertEqual(stored['rule'], 'java:S99999')
-            self.assertEqual(stored['severity'], 'error')  # MAJOR → error
-            self.assertEqual(stored['module'], 'com.example:proj')
-            self.assertIn('Possible null dereference', stored['detail'])
+        q = query_findings('sonar-stage-1', finding_type='sonar-issue')
+        assert q['filtered_count'] == 1
+        stored = q['findings'][0]
+        assert stored['type'] == 'sonar-issue'
+        assert stored['rule'] == 'java:S99999'
+        assert stored['severity'] == 'error'  # MAJOR → error
+        assert stored['module'] == 'com.example:proj'
+        assert 'Possible null dereference' in stored['detail']
 
-    def test_fetch_and_store_skips_suppressable(self):
+    def test_fetch_and_store_skips_suppressable(self, plan_context):
         # First find a rule from the live SUPPRESSABLE_RULES dict to ensure
         # the test exercises real configuration. If the dict is empty the
         # test trivially passes; that is acceptable because the assertion
@@ -127,7 +129,7 @@ class TestFetchAndStore(unittest.TestCase):
         from sonar_mod import SUPPRESSABLE_RULES  # type: ignore[import-not-found]
 
         if not SUPPRESSABLE_RULES:
-            self.skipTest('No suppressable rules configured in sonar-rules.json')
+            pytest.skip('No suppressable rules configured in sonar-rules.json')
         rule = next(iter(SUPPRESSABLE_RULES.keys()))
 
         issues_payload = [
@@ -142,23 +144,23 @@ class TestFetchAndStore(unittest.TestCase):
                 'component': 'com.example:proj:src/Main.java',
             },
         ]
-        with PlanContext(plan_id='sonar-stage-skip') as ctx:
-            with patch('sonar_mod._fetch_issues') as mock_fetch:
-                mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
-                result = cmd_fetch_and_store(self._make_args(ctx.plan_id))
+        plan_context.plan_dir_for('sonar-stage-skip')
+        with patch('sonar_mod._fetch_issues') as mock_fetch:
+            mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
+            result = cmd_fetch_and_store(_make_args('sonar-stage-skip'))
 
-            self.assertEqual(result['count_fetched'], 1)
-            self.assertEqual(result['count_skipped_suppressable'], 1)
-            self.assertEqual(result['count_stored'], 0)
+        assert result['count_fetched'] == 1
+        assert result['count_skipped_suppressable'] == 1
+        assert result['count_stored'] == 0
 
-    def test_fetch_and_store_propagates_provider_error(self):
-        with PlanContext(plan_id='sonar-stage-err') as ctx:
-            with patch('sonar_mod._fetch_issues') as mock_fetch:
-                mock_fetch.return_value = {'status': 'error', 'message': 'HTTP 401'}
-                result = cmd_fetch_and_store(self._make_args(ctx.plan_id))
-            self.assertEqual(result['status'], 'error')
+    def test_fetch_and_store_propagates_provider_error(self, plan_context):
+        plan_context.plan_dir_for('sonar-stage-err')
+        with patch('sonar_mod._fetch_issues') as mock_fetch:
+            mock_fetch.return_value = {'status': 'error', 'message': 'HTTP 401'}
+            result = cmd_fetch_and_store(_make_args('sonar-stage-err'))
+        assert result['status'] == 'error'
 
-    def test_fetch_and_store_count_mismatch_produces_qgate_finding(self):
+    def test_fetch_and_store_count_mismatch_produces_qgate_finding(self, plan_context):
         """When count_stored != expected_stored, a (producer-mismatch) Q-Gate
         finding must be recorded with type=sonar-issue and source=qgate."""
         issues_payload = [
@@ -183,31 +185,31 @@ class TestFetchAndStore(unittest.TestCase):
                 'component': 'com.example:proj:src/Other.java',
             },
         ]
-        with PlanContext(plan_id='sonar-stage-mismatch') as ctx:
-            with patch('sonar_mod._fetch_issues') as mock_fetch:
-                mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
-                with patch('_findings_core.add_finding') as mock_add:
-                    def _side_effect(**kwargs):
-                        if mock_add.call_count == 1:
-                            return {'status': 'error', 'message': 'simulated store failure'}
-                        return {'status': 'success', 'hash_id': 'h-' + str(mock_add.call_count)}
+        plan_context.plan_dir_for('sonar-stage-mismatch')
+        with patch('sonar_mod._fetch_issues') as mock_fetch:
+            mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
+            with patch('_findings_core.add_finding') as mock_add:
+                def _side_effect(**kwargs):
+                    if mock_add.call_count == 1:
+                        return {'status': 'error', 'message': 'simulated store failure'}
+                    return {'status': 'success', 'hash_id': 'h-' + str(mock_add.call_count)}
 
-                    mock_add.side_effect = _side_effect
-                    result = cmd_fetch_and_store(self._make_args(ctx.plan_id))
+                mock_add.side_effect = _side_effect
+                result = cmd_fetch_and_store(_make_args('sonar-stage-mismatch'))
 
-            self.assertEqual(result['status'], 'success')
-            self.assertEqual(result['count_fetched'], 2)
-            self.assertEqual(result['count_skipped_suppressable'], 0)
-            self.assertEqual(result['count_stored'], 1)
+        assert result['status'] == 'success'
+        assert result['count_fetched'] == 2
+        assert result['count_skipped_suppressable'] == 0
+        assert result['count_stored'] == 1
 
-            from _findings_core import query_qgate_findings  # type: ignore[import-not-found]
+        from _findings_core import query_qgate_findings  # type: ignore[import-not-found]
 
-            q = query_qgate_findings(ctx.plan_id, phase='5-execute')
-            self.assertEqual(q['filtered_count'], 1)
-            qf = q['findings'][0]
-            self.assertTrue(qf['title'].startswith('(producer-mismatch)'))
-            self.assertEqual(qf['source'], 'qgate')
-            self.assertEqual(qf['type'], 'sonar-issue')
+        q = query_qgate_findings('sonar-stage-mismatch', phase='5-execute')
+        assert q['filtered_count'] == 1
+        qf = q['findings'][0]
+        assert qf['title'].startswith('(producer-mismatch)')
+        assert qf['source'] == 'qgate'
+        assert qf['type'] == 'sonar-issue'
 
 
 # =============================================================================
@@ -215,21 +217,17 @@ class TestFetchAndStore(unittest.TestCase):
 # =============================================================================
 
 
-class TestSonarMain(unittest.TestCase):
+class TestSonarMain:
     def test_help_lists_only_supported_subcommand(self):
         result = run_script(SCRIPT_PATH, '--help')
-        self.assertEqual(result.returncode, 0)
-        self.assertIn('fetch-and-store', result.stdout)
-        self.assertNotIn('triage-batch', result.stdout)
+        assert result.returncode == 0
+        assert 'fetch-and-store' in result.stdout
+        assert 'triage-batch' not in result.stdout
 
     def test_retired_triage_subcommand_rejected(self):
         result = run_script(SCRIPT_PATH, 'triage', '--issue', '{}')
-        self.assertNotEqual(result.returncode, 0)
+        assert result.returncode != 0
 
     def test_retired_triage_batch_subcommand_rejected(self):
         result = run_script(SCRIPT_PATH, 'triage-batch', '--issues', '[]')
-        self.assertNotEqual(result.returncode, 0)
-
-
-if __name__ == '__main__':
-    unittest.main()
+        assert result.returncode != 0

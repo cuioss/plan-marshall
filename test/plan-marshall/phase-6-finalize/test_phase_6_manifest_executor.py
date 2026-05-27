@@ -28,7 +28,7 @@ from argparse import Namespace
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT, PlanContext
+from conftest import MARKETPLACE_ROOT
 
 # ---------------------------------------------------------------------------
 # Manifest module (Tier 2 direct import via importlib because of the hyphen)
@@ -133,18 +133,18 @@ def _derive_executor_dispatch(
 class TestManifestApiContract:
     """The shape phase-6-finalize reads via ``manage-execution-manifest read``."""
 
-    def test_read_returns_phase_6_block_with_executor_fields(self):
-        with PlanContext(plan_id='p6-read-shape'):
-            cmd_compose(_compose_ns('p6-read-shape'))
-            result = cmd_read(_read_ns('p6-read-shape'))
+    def test_read_returns_phase_6_block_with_executor_fields(self, plan_context):
+        plan_context.plan_dir_for('p6-read-shape')
+        cmd_compose(_compose_ns('p6-read-shape'))
+        result = cmd_read(_read_ns('p6-read-shape'))
 
-            assert result is not None
-            assert result['status'] == 'success'
-            assert result['plan_id'] == 'p6-read-shape'
-            assert 'phase_6' in result, 'phase-6-finalize Step 2 reads phase_6 — must be present in read output'
-            phase_6 = result['phase_6']
-            assert isinstance(phase_6, dict)
-            assert isinstance(phase_6.get('steps'), list)
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['plan_id'] == 'p6-read-shape'
+        assert 'phase_6' in result, 'phase-6-finalize Step 2 reads phase_6 — must be present in read output'
+        phase_6 = result['phase_6']
+        assert isinstance(phase_6, dict)
+        assert isinstance(phase_6.get('steps'), list)
 
 
 # ===========================================================================
@@ -154,27 +154,27 @@ class TestManifestApiContract:
 
 
 class TestExecutorDispatchScenarios:
-    def test_listed_steps_fire_in_manifest_order(self):
+    def test_listed_steps_fire_in_manifest_order(self, plan_context):
         """Every step in manifest.phase_6.steps must dispatch, in order."""
-        with PlanContext(plan_id='p6-full'):
-            cmd_compose(
-                _compose_ns(
-                    'p6-full',
-                    change_type='feature',
-                    scope_estimate='multi_module',
-                    affected_files_count=12,
-                )
+        plan_context.plan_dir_for('p6-full')
+        cmd_compose(
+            _compose_ns(
+                'p6-full',
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=12,
             )
-            manifest = read_manifest('p6-full')
-            assert manifest is not None
+        )
+        manifest = read_manifest('p6-full')
+        assert manifest is not None
 
-            dispatched = _derive_executor_dispatch(manifest)
-            assert dispatched == manifest['phase_6']['steps'], (
-                'Dispatcher must iterate manifest.phase_6.steps verbatim, '
-                f'got {dispatched} vs manifest {manifest["phase_6"]["steps"]}'
-            )
+        dispatched = _derive_executor_dispatch(manifest)
+        assert dispatched == manifest['phase_6']['steps'], (
+            'Dispatcher must iterate manifest.phase_6.steps verbatim, '
+            f'got {dispatched} vs manifest {manifest["phase_6"]["steps"]}'
+        )
 
-    def test_unlisted_steps_never_fire(self):
+    def test_unlisted_steps_never_fire(self, plan_context):
         """A step absent from the manifest list MUST NOT appear in dispatch.
 
         Under the new precondition-resolver model (lesson 2026-05-15-14-002),
@@ -183,44 +183,44 @@ class TestExecutorDispatchScenarios:
         and ``sonar-roundtrip`` are kept. ``knowledge-capture`` is unrelated
         to this lesson's contract; it stays out of the candidate list here.
         """
-        with PlanContext(plan_id='p6-pruned'):
-            # Inject legacy ci-wait (not in default set after the lesson)
-            # to test that the defensive narrowing drops it from dispatch.
-            candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
-            cmd_compose(
-                _compose_ns(
-                    'p6-pruned',
-                    change_type='bug_fix',
-                    scope_estimate='surgical',
-                    affected_files_count=2,
-                    phase_6_steps=','.join(candidates),
-                )
+        plan_context.plan_dir_for('p6-pruned')
+        # Inject legacy ci-wait (not in default set after the lesson)
+        # to test that the defensive narrowing drops it from dispatch.
+        candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
+        cmd_compose(
+            _compose_ns(
+                'p6-pruned',
+                change_type='bug_fix',
+                scope_estimate='surgical',
+                affected_files_count=2,
+                phase_6_steps=','.join(candidates),
             )
-            manifest = read_manifest('p6-pruned')
-            assert manifest is not None
-            steps = manifest['phase_6']['steps']
-            # Row 5 retains the review gates under the new contract.
-            assert 'automated-review' in steps, (
-                'surgical bug_fix MUST retain automated-review under the new '
-                'precondition-resolver contract'
-            )
-            assert 'sonar-roundtrip' in steps, (
-                'surgical bug_fix MUST retain sonar-roundtrip under the new '
-                'precondition-resolver contract'
-            )
-            # ci-wait is defensively narrowed out.
-            assert 'ci-wait' not in steps
+        )
+        manifest = read_manifest('p6-pruned')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        # Row 5 retains the review gates under the new contract.
+        assert 'automated-review' in steps, (
+            'surgical bug_fix MUST retain automated-review under the new '
+            'precondition-resolver contract'
+        )
+        assert 'sonar-roundtrip' in steps, (
+            'surgical bug_fix MUST retain sonar-roundtrip under the new '
+            'precondition-resolver contract'
+        )
+        # ci-wait is defensively narrowed out.
+        assert 'ci-wait' not in steps
 
-            dispatched = _derive_executor_dispatch(manifest)
-            # Pruned step must NOT appear in dispatch.
-            assert 'ci-wait' not in dispatched
-            # Retained steps DO appear.
-            assert 'commit-push' in dispatched
-            assert 'lessons-capture' in dispatched
-            assert 'automated-review' in dispatched
-            assert 'sonar-roundtrip' in dispatched
+        dispatched = _derive_executor_dispatch(manifest)
+        # Pruned step must NOT appear in dispatch.
+        assert 'ci-wait' not in dispatched
+        # Retained steps DO appear.
+        assert 'commit-push' in dispatched
+        assert 'lessons-capture' in dispatched
+        assert 'automated-review' in dispatched
+        assert 'sonar-roundtrip' in dispatched
 
-    def test_recipe_path_dispatches_only_recipe_steps(self):
+    def test_recipe_path_dispatches_only_recipe_steps(self, plan_context):
         """Recipe-driven manifest must yield a slim dispatch list.
 
         Under the new precondition-resolver contract (lesson 2026-05-15-14-002)
@@ -228,33 +228,33 @@ class TestExecutorDispatchScenarios:
         ``sonar-roundtrip`` survive. Only the legacy ``ci-wait`` step ID is
         defensively narrowed out when present in the candidate list.
         """
-        with PlanContext(plan_id='p6-recipe'):
-            candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
-            cmd_compose(
-                _compose_ns(
-                    'p6-recipe',
-                    change_type='tech_debt',
-                    scope_estimate='surgical',
-                    affected_files_count=4,
-                    recipe_key='lesson_cleanup',
-                    phase_6_steps=','.join(candidates),
-                )
+        plan_context.plan_dir_for('p6-recipe')
+        candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
+        cmd_compose(
+            _compose_ns(
+                'p6-recipe',
+                change_type='tech_debt',
+                scope_estimate='surgical',
+                affected_files_count=4,
+                recipe_key='lesson_cleanup',
+                phase_6_steps=','.join(candidates),
             )
-            manifest = read_manifest('p6-recipe')
-            assert manifest is not None
-            steps = manifest['phase_6']['steps']
-            # Review gates RETAINED under the new contract.
-            assert 'automated-review' in steps, (
-                'recipe row MUST retain automated-review under the new contract'
-            )
-            assert 'sonar-roundtrip' in steps, (
-                'recipe row MUST retain sonar-roundtrip under the new contract'
-            )
-            # Legacy ci-wait defensively dropped.
-            assert 'ci-wait' not in steps
+        )
+        manifest = read_manifest('p6-recipe')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        # Review gates RETAINED under the new contract.
+        assert 'automated-review' in steps, (
+            'recipe row MUST retain automated-review under the new contract'
+        )
+        assert 'sonar-roundtrip' in steps, (
+            'recipe row MUST retain sonar-roundtrip under the new contract'
+        )
+        # Legacy ci-wait defensively dropped.
+        assert 'ci-wait' not in steps
 
-            dispatched = _derive_executor_dispatch(manifest)
-            assert dispatched == steps
+        dispatched = _derive_executor_dispatch(manifest)
+        assert dispatched == steps
 
 
 # ===========================================================================
@@ -263,70 +263,70 @@ class TestExecutorDispatchScenarios:
 
 
 class TestResumableReentry:
-    def test_done_step_skipped_on_reentry(self):
+    def test_done_step_skipped_on_reentry(self, plan_context):
         """A step marked outcome=done MUST be skipped on the next dispatch."""
-        with PlanContext(plan_id='p6-resume-done'):
-            cmd_compose(_compose_ns('p6-resume-done'))
-            manifest = read_manifest('p6-resume-done')
-            assert manifest is not None
+        plan_context.plan_dir_for('p6-resume-done')
+        cmd_compose(_compose_ns('p6-resume-done'))
+        manifest = read_manifest('p6-resume-done')
+        assert manifest is not None
 
-            # Simulate a prior run that completed commit-push and create-pr.
-            state = {
-                'commit-push': {'outcome': 'done', 'display_detail': '-> abc1234'},
-                'create-pr': {'outcome': 'done', 'display_detail': '#42'},
-            }
-            dispatched = _derive_executor_dispatch(manifest, state)
+        # Simulate a prior run that completed commit-push and create-pr.
+        state = {
+            'commit-push': {'outcome': 'done', 'display_detail': '-> abc1234'},
+            'create-pr': {'outcome': 'done', 'display_detail': '#42'},
+        }
+        dispatched = _derive_executor_dispatch(manifest, state)
 
-            assert 'commit-push' not in dispatched, 'done-marked commit-push must be skipped on re-entry'
-            assert 'create-pr' not in dispatched, 'done-marked create-pr must be skipped on re-entry'
-            # Steps with no prior record must still dispatch.
-            for step_id in manifest['phase_6']['steps']:
-                if step_id not in state:
-                    assert step_id in dispatched
+        assert 'commit-push' not in dispatched, 'done-marked commit-push must be skipped on re-entry'
+        assert 'create-pr' not in dispatched, 'done-marked create-pr must be skipped on re-entry'
+        # Steps with no prior record must still dispatch.
+        for step_id in manifest['phase_6']['steps']:
+            if step_id not in state:
+                assert step_id in dispatched
 
-    def test_failed_step_is_retried(self):
+    def test_failed_step_is_retried(self, plan_context):
         """A step marked outcome=failed MUST be retried (dispatched again)."""
-        with PlanContext(plan_id='p6-resume-failed'):
-            cmd_compose(_compose_ns('p6-resume-failed'))
-            manifest = read_manifest('p6-resume-failed')
-            assert manifest is not None
+        plan_context.plan_dir_for('p6-resume-failed')
+        cmd_compose(_compose_ns('p6-resume-failed'))
+        manifest = read_manifest('p6-resume-failed')
+        assert manifest is not None
 
-            state = {
-                'sonar-roundtrip': {
-                    'outcome': 'failed',
-                    'display_detail': 'timed out after 900s',
-                },
-            }
-            dispatched = _derive_executor_dispatch(manifest, state)
+        state = {
+            'sonar-roundtrip': {
+                'outcome': 'failed',
+                'display_detail': 'timed out after 900s',
+            },
+        }
+        dispatched = _derive_executor_dispatch(manifest, state)
 
-            assert 'sonar-roundtrip' in dispatched, 'failed-marked sonar-roundtrip must be retried on re-entry'
+        assert 'sonar-roundtrip' in dispatched, 'failed-marked sonar-roundtrip must be retried on re-entry'
 
-    def test_mixed_done_and_failed_state(self):
+    def test_mixed_done_and_failed_state(self, plan_context):
         """Mixed state: done-skipped, failed-retried, fresh-dispatched all
         coexist on a single re-entry."""
-        with PlanContext(plan_id='p6-resume-mixed'):
-            cmd_compose(_compose_ns('p6-resume-mixed'))
-            manifest = read_manifest('p6-resume-mixed')
-            assert manifest is not None
-            steps = manifest['phase_6']['steps']
-            # Pick the first three real steps to construct mixed state.
-            done_step = steps[0]
-            failed_step = steps[1] if len(steps) > 1 else steps[0]
+        plan_context.plan_dir_for('p6-resume-mixed')
+        cmd_compose(_compose_ns('p6-resume-mixed'))
+        manifest = read_manifest('p6-resume-mixed')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        # Pick the first three real steps to construct mixed state.
+        done_step = steps[0]
+        failed_step = steps[1] if len(steps) > 1 else steps[0]
 
-            state = {
-                done_step: {'outcome': 'done', 'display_detail': 'previously done'},
-                failed_step: {'outcome': 'failed', 'display_detail': 'previously failed'},
-            }
-            dispatched = _derive_executor_dispatch(manifest, state)
+        state = {
+            done_step: {'outcome': 'done', 'display_detail': 'previously done'},
+            failed_step: {'outcome': 'failed', 'display_detail': 'previously failed'},
+        }
+        dispatched = _derive_executor_dispatch(manifest, state)
 
-            # done is skipped, failed is retried.
-            if done_step != failed_step:
-                assert done_step not in dispatched
-                assert failed_step in dispatched
+        # done is skipped, failed is retried.
+        if done_step != failed_step:
+            assert done_step not in dispatched
+            assert failed_step in dispatched
 
-            # Steps with no prior record dispatch as fresh runs.
-            for step_id in steps[2:]:
-                assert step_id in dispatched
+        # Steps with no prior record dispatch as fresh runs.
+        for step_id in steps[2:]:
+            assert step_id in dispatched
 
 
 # ===========================================================================
@@ -335,49 +335,49 @@ class TestResumableReentry:
 
 
 class TestLessonsCaptureUnconditional:
-    def test_lessons_capture_fires_when_manifested(self):
+    def test_lessons_capture_fires_when_manifested(self, plan_context):
         """Whenever lessons-capture is in manifest.phase_6.steps, the
         dispatcher MUST fire it on every Phase 6 entry. It is not gated on
         PR state, CI state, Sonar gate, or any earlier step's outcome."""
-        with PlanContext(plan_id='p6-lessons-default'):
-            cmd_compose(_compose_ns('p6-lessons-default'))
-            manifest = read_manifest('p6-lessons-default')
-            assert manifest is not None
-            assert 'lessons-capture' in manifest['phase_6']['steps'], (
-                'Default-row composer must include lessons-capture in the manifest'
-            )
-            dispatched = _derive_executor_dispatch(manifest)
-            assert 'lessons-capture' in dispatched
+        plan_context.plan_dir_for('p6-lessons-default')
+        cmd_compose(_compose_ns('p6-lessons-default'))
+        manifest = read_manifest('p6-lessons-default')
+        assert manifest is not None
+        assert 'lessons-capture' in manifest['phase_6']['steps'], (
+            'Default-row composer must include lessons-capture in the manifest'
+        )
+        dispatched = _derive_executor_dispatch(manifest)
+        assert 'lessons-capture' in dispatched
 
-    def test_lessons_capture_fires_even_when_other_steps_failed(self):
+    def test_lessons_capture_fires_even_when_other_steps_failed(self, plan_context):
         """A failed sonar-roundtrip or automated-review must NOT prevent
         lessons-capture from firing — it is dispatched independently."""
-        with PlanContext(plan_id='p6-lessons-with-failures'):
-            cmd_compose(_compose_ns('p6-lessons-with-failures'))
-            manifest = read_manifest('p6-lessons-with-failures')
-            assert manifest is not None
+        plan_context.plan_dir_for('p6-lessons-with-failures')
+        cmd_compose(_compose_ns('p6-lessons-with-failures'))
+        manifest = read_manifest('p6-lessons-with-failures')
+        assert manifest is not None
 
-            state = {
-                'sonar-roundtrip': {'outcome': 'failed', 'display_detail': 'gate failed'},
-                'automated-review': {'outcome': 'failed', 'display_detail': 'timed out'},
-            }
-            dispatched = _derive_executor_dispatch(manifest, state)
-            assert 'lessons-capture' in dispatched, 'lessons-capture must dispatch even when prior steps failed'
+        state = {
+            'sonar-roundtrip': {'outcome': 'failed', 'display_detail': 'gate failed'},
+            'automated-review': {'outcome': 'failed', 'display_detail': 'timed out'},
+        }
+        dispatched = _derive_executor_dispatch(manifest, state)
+        assert 'lessons-capture' in dispatched, 'lessons-capture must dispatch even when prior steps failed'
 
-    def test_lessons_capture_present_in_surgical_bug_fix(self):
+    def test_lessons_capture_present_in_surgical_bug_fix(self, plan_context):
         """Even the slim surgical bug_fix manifest keeps lessons-capture."""
-        with PlanContext(plan_id='p6-lessons-surgical'):
-            cmd_compose(
-                _compose_ns(
-                    'p6-lessons-surgical',
-                    change_type='bug_fix',
-                    scope_estimate='surgical',
-                    affected_files_count=2,
-                )
+        plan_context.plan_dir_for('p6-lessons-surgical')
+        cmd_compose(
+            _compose_ns(
+                'p6-lessons-surgical',
+                change_type='bug_fix',
+                scope_estimate='surgical',
+                affected_files_count=2,
             )
-            manifest = read_manifest('p6-lessons-surgical')
-            assert manifest is not None
-            assert 'lessons-capture' in manifest['phase_6']['steps']
+        )
+        manifest = read_manifest('p6-lessons-surgical')
+        assert manifest is not None
+        assert 'lessons-capture' in manifest['phase_6']['steps']
 
 
 # ===========================================================================
@@ -507,120 +507,120 @@ class TestCIPreconditionContract:
             '[ci-complete]; got head=\n' + head
         )
 
-    def test_composer_does_not_emit_ci_wait_before_automated_review(self):
+    def test_composer_does_not_emit_ci_wait_before_automated_review(self, plan_context):
         """On a default-row plan, the composed manifest MUST NOT carry
         ``ci-wait`` anywhere — the legacy sibling-step ordering is gone.
         """
-        with PlanContext(plan_id='p6-precond-default'):
-            cmd_compose(
-                _compose_ns(
-                    'p6-precond-default',
-                    change_type='feature',
-                    scope_estimate='multi_module',
-                    affected_files_count=8,
-                )
+        plan_context.plan_dir_for('p6-precond-default')
+        cmd_compose(
+            _compose_ns(
+                'p6-precond-default',
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=8,
             )
-            manifest = read_manifest('p6-precond-default')
-            assert manifest is not None
-            steps = manifest['phase_6']['steps']
-            assert 'ci-wait' not in steps, (
-                f'default-row composer MUST NOT emit ci-wait; got steps {steps}'
-            )
-            assert 'automated-review' in steps, (
-                'default-row composer must still include automated-review'
-            )
+        )
+        manifest = read_manifest('p6-precond-default')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        assert 'ci-wait' not in steps, (
+            f'default-row composer MUST NOT emit ci-wait; got steps {steps}'
+        )
+        assert 'automated-review' in steps, (
+            'default-row composer must still include automated-review'
+        )
 
-    def test_recipe_path_retains_review_gates(self):
+    def test_recipe_path_retains_review_gates(self, plan_context):
         """Row 2 (recipe) — review gates RETAINED. The legacy ``ci-wait``
         step ID is defensively narrowed out when present in the candidate
         list, but ``automated-review`` and ``sonar-roundtrip`` are never
         silently suppressed by the planner.
         """
-        with PlanContext(plan_id='p6-precond-recipe'):
-            # Inject legacy ci-wait to test defensive narrowing.
-            candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
-            cmd_compose(
-                _compose_ns(
-                    'p6-precond-recipe',
-                    change_type='tech_debt',
-                    scope_estimate='surgical',
-                    affected_files_count=4,
-                    recipe_key='lesson_cleanup',
-                    phase_6_steps=','.join(candidates),
-                )
+        plan_context.plan_dir_for('p6-precond-recipe')
+        # Inject legacy ci-wait to test defensive narrowing.
+        candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
+        cmd_compose(
+            _compose_ns(
+                'p6-precond-recipe',
+                change_type='tech_debt',
+                scope_estimate='surgical',
+                affected_files_count=4,
+                recipe_key='lesson_cleanup',
+                phase_6_steps=','.join(candidates),
             )
-            manifest = read_manifest('p6-precond-recipe')
-            assert manifest is not None
-            steps = manifest['phase_6']['steps']
-            assert 'automated-review' in steps, (
-                'recipe row MUST retain automated-review — review gates are '
-                'never silently suppressed'
-            )
-            assert 'sonar-roundtrip' in steps, (
-                'recipe row MUST retain sonar-roundtrip — review gates are '
-                'never silently suppressed'
-            )
-            assert 'ci-wait' not in steps, (
-                'recipe row MUST defensively drop legacy ci-wait step ID'
-            )
+        )
+        manifest = read_manifest('p6-precond-recipe')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        assert 'automated-review' in steps, (
+            'recipe row MUST retain automated-review — review gates are '
+            'never silently suppressed'
+        )
+        assert 'sonar-roundtrip' in steps, (
+            'recipe row MUST retain sonar-roundtrip — review gates are '
+            'never silently suppressed'
+        )
+        assert 'ci-wait' not in steps, (
+            'recipe row MUST defensively drop legacy ci-wait step ID'
+        )
 
-    def test_docs_only_retains_review_gates(self):
+    def test_docs_only_retains_review_gates(self, plan_context):
         """Row 3 (docs_only) — review gates RETAINED. Same retention contract
         as Rules 2 and 5: review bots run even on docs-only plans.
         """
-        with PlanContext(plan_id='p6-precond-docs'):
-            candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
-            cmd_compose(
-                _compose_ns(
-                    'p6-precond-docs',
-                    change_type='tech_debt',
-                    scope_estimate='surgical',
-                    affected_files_count=3,
-                    phase_5_steps='quality-gate',
-                    phase_6_steps=','.join(candidates),
-                )
+        plan_context.plan_dir_for('p6-precond-docs')
+        candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
+        cmd_compose(
+            _compose_ns(
+                'p6-precond-docs',
+                change_type='tech_debt',
+                scope_estimate='surgical',
+                affected_files_count=3,
+                phase_5_steps='quality-gate',
+                phase_6_steps=','.join(candidates),
             )
-            manifest = read_manifest('p6-precond-docs')
-            assert manifest is not None
-            steps = manifest['phase_6']['steps']
-            assert 'automated-review' in steps, (
-                'docs_only row MUST retain automated-review'
-            )
-            assert 'sonar-roundtrip' in steps, (
-                'docs_only row MUST retain sonar-roundtrip'
-            )
-            assert 'ci-wait' not in steps, (
-                'docs_only row MUST defensively drop legacy ci-wait step ID'
-            )
+        )
+        manifest = read_manifest('p6-precond-docs')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        assert 'automated-review' in steps, (
+            'docs_only row MUST retain automated-review'
+        )
+        assert 'sonar-roundtrip' in steps, (
+            'docs_only row MUST retain sonar-roundtrip'
+        )
+        assert 'ci-wait' not in steps, (
+            'docs_only row MUST defensively drop legacy ci-wait step ID'
+        )
 
-    def test_surgical_bug_fix_retains_review_gates(self):
+    def test_surgical_bug_fix_retains_review_gates(self, plan_context):
         """Row 5 (surgical_bug_fix / surgical_tech_debt) — review gates
         RETAINED. The bots' job is to catch what humans miss on one-line
         fixes; silently dropping the review gates would defeat that.
         """
-        with PlanContext(plan_id='p6-precond-surgical-bug'):
-            candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
-            cmd_compose(
-                _compose_ns(
-                    'p6-precond-surgical-bug',
-                    change_type='bug_fix',
-                    scope_estimate='surgical',
-                    affected_files_count=2,
-                    phase_6_steps=','.join(candidates),
-                )
+        plan_context.plan_dir_for('p6-precond-surgical-bug')
+        candidates = list(DEFAULT_PHASE_6_STEPS) + ['ci-wait']
+        cmd_compose(
+            _compose_ns(
+                'p6-precond-surgical-bug',
+                change_type='bug_fix',
+                scope_estimate='surgical',
+                affected_files_count=2,
+                phase_6_steps=','.join(candidates),
             )
-            manifest = read_manifest('p6-precond-surgical-bug')
-            assert manifest is not None
-            steps = manifest['phase_6']['steps']
-            assert 'automated-review' in steps, (
-                'surgical_bug_fix row MUST retain automated-review'
-            )
-            assert 'sonar-roundtrip' in steps, (
-                'surgical_bug_fix row MUST retain sonar-roundtrip'
-            )
-            assert 'ci-wait' not in steps, (
-                'surgical_bug_fix row MUST defensively drop legacy ci-wait step ID'
-            )
+        )
+        manifest = read_manifest('p6-precond-surgical-bug')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        assert 'automated-review' in steps, (
+            'surgical_bug_fix row MUST retain automated-review'
+        )
+        assert 'sonar-roundtrip' in steps, (
+            'surgical_bug_fix row MUST retain sonar-roundtrip'
+        )
+        assert 'ci-wait' not in steps, (
+            'surgical_bug_fix row MUST defensively drop legacy ci-wait step ID'
+        )
 
     def test_automated_review_md_does_not_read_ci_wait_outcome(self):
         """The ``automated-review.md`` body MUST NOT include the legacy

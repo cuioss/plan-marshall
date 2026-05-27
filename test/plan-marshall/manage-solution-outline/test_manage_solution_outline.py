@@ -11,7 +11,7 @@ from argparse import Namespace
 
 import pytest
 
-from conftest import PlanContext, get_script_path, run_script
+from conftest import get_script_path, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-solution-outline', 'manage-solution-outline.py')
@@ -204,48 +204,44 @@ def _get_field_ns(plan_id='test-plan', field='scope_estimate'):
 # =============================================================================
 
 
-def test_validate_success():
+def test_validate_success(plan_context):
     """Test validating a well-formed solution document."""
-    with PlanContext(plan_id='solution-valid') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('solution-valid') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = cmd_validate(_validate_ns(plan_id='solution-valid'))
-        assert result['status'] == 'success'
-        assert 'validation' in result
-        assert result['validation']['deliverable_count'] == 3
-        assert '1. Create JwtValidationService class' in result['validation']['deliverables']
+    result = cmd_validate(_validate_ns(plan_id='solution-valid'))
+    assert result['status'] == 'success'
+    assert 'validation' in result
+    assert result['validation']['deliverable_count'] == 3
+    assert '1. Create JwtValidationService class' in result['validation']['deliverables']
 
 
-def test_validate_extracts_compatibility():
+def test_validate_extracts_compatibility(plan_context):
     """Test that validate extracts compatibility from header metadata."""
-    with PlanContext(plan_id='solution-compat') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('solution-compat') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = cmd_validate(_validate_ns(plan_id='solution-compat'))
-        assert result['status'] == 'success'
-        assert 'compatibility' in result['validation']
-        compat = result['validation']['compatibility']
-        assert 'breaking' in compat
+    result = cmd_validate(_validate_ns(plan_id='solution-compat'))
+    assert result['status'] == 'success'
+    assert 'compatibility' in result['validation']
+    compat = result['validation']['compatibility']
+    assert 'breaking' in compat
 
 
-def test_validate_without_compatibility():
+def test_validate_without_compatibility(plan_context):
     """Test that validate succeeds when compatibility header is absent."""
     solution_no_compat = VALID_SOLUTION.replace(
         'compatibility: breaking \u2014 Clean-slate approach, no deprecation nor transitionary comments\n', ''
     )
-    with PlanContext(plan_id='solution-no-compat') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(solution_no_compat)
+    (plan_context.plan_dir_for('solution-no-compat') / 'solution_outline.md').write_text(solution_no_compat)
 
-        result = cmd_validate(_validate_ns(plan_id='solution-no-compat'))
-        assert result['status'] == 'success'
-        # compatibility should not be present when header lacks it
-        assert 'compatibility' not in result.get('validation', {})
+    result = cmd_validate(_validate_ns(plan_id='solution-no-compat'))
+    assert result['status'] == 'success'
+    # compatibility should not be present when header lacks it
+    assert 'compatibility' not in result.get('validation', {})
 
 
-def test_validate_missing_overview():
+def test_validate_missing_overview(plan_context):
     """Test validation fails when Overview section is missing."""
-    with PlanContext(plan_id='solution-missing-overview') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text("""# Solution: Test
+    (plan_context.plan_dir_for('solution-missing-overview') / 'solution_outline.md').write_text("""# Solution: Test
 
 ## Summary
 
@@ -258,16 +254,15 @@ Brief summary
 Description
 """)
 
-        result = cmd_validate(_validate_ns(plan_id='solution-missing-overview'))
-        assert result['status'] == 'error'
-        assert result['error'] == 'validation_failed'
-        assert any('Overview' in issue for issue in result['issues'])
+    result = cmd_validate(_validate_ns(plan_id='solution-missing-overview'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'validation_failed'
+    assert any('Overview' in issue for issue in result['issues'])
 
 
-def test_validate_no_deliverables():
+def test_validate_no_deliverables(plan_context):
     """Test validation fails when no numbered deliverables found."""
-    with PlanContext(plan_id='solution-no-deliverables') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text("""# Solution: Test
+    (plan_context.plan_dir_for('solution-no-deliverables') / 'solution_outline.md').write_text("""# Solution: Test
 
 ## Summary
 
@@ -282,16 +277,15 @@ Architecture diagram here
 Some text but no ### N. Title items
 """)
 
-        result = cmd_validate(_validate_ns(plan_id='solution-no-deliverables'))
-        assert result['status'] == 'error'
-        assert any('numbered deliverables' in issue for issue in result['issues'])
+    result = cmd_validate(_validate_ns(plan_id='solution-no-deliverables'))
+    assert result['status'] == 'error'
+    assert any('numbered deliverables' in issue for issue in result['issues'])
 
 
-def test_validate_document_not_found():
+def test_validate_document_not_found(plan_context):
     """Test validation fails when document doesn't exist."""
-    with PlanContext(plan_id='no-solution'):
-        result = cmd_validate(_validate_ns(plan_id='no-solution'))
-        assert result['error'] == 'document_not_found'
+    result = cmd_validate(_validate_ns(plan_id='no-solution'))
+    assert result['error'] == 'document_not_found'
 
 
 # =============================================================================
@@ -299,34 +293,32 @@ def test_validate_document_not_found():
 # =============================================================================
 
 
-def test_list_deliverables():
+def test_list_deliverables(plan_context):
     """Test listing deliverables from solution document."""
-    with PlanContext(plan_id='solution-list') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('solution-list') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = cmd_list_deliverables(_list_deliverables_ns(plan_id='solution-list'))
-        assert result['status'] == 'success'
-        assert result['deliverable_count'] == 3
-        assert len(result['deliverables']) == 3
-        # Check structure of deliverables
-        first = result['deliverables'][0]
-        assert first['number'] == 1
-        assert first['title'] == 'Create JwtValidationService class'
-        assert first['reference'] == '1. Create JwtValidationService class'
+    result = cmd_list_deliverables(_list_deliverables_ns(plan_id='solution-list'))
+    assert result['status'] == 'success'
+    assert result['deliverable_count'] == 3
+    assert len(result['deliverables']) == 3
+    # Check structure of deliverables
+    first = result['deliverables'][0]
+    assert first['number'] == 1
+    assert first['title'] == 'Create JwtValidationService class'
+    assert first['reference'] == '1. Create JwtValidationService class'
 
 
-def test_list_deliverables_empty():
+def test_list_deliverables_empty(plan_context):
     """Test list-deliverables with no deliverables section."""
-    with PlanContext(plan_id='solution-empty') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text("""# Solution: Test
+    (plan_context.plan_dir_for('solution-empty') / 'solution_outline.md').write_text("""# Solution: Test
 
 ## Summary
 
 Just summary, no deliverables section
 """)
 
-        result = cmd_list_deliverables(_list_deliverables_ns(plan_id='solution-empty'))
-        assert result['error'] == 'section_not_found'
+    result = cmd_list_deliverables(_list_deliverables_ns(plan_id='solution-empty'))
+    assert result['error'] == 'section_not_found'
 
 
 # =============================================================================
@@ -334,108 +326,99 @@ Just summary, no deliverables section
 # =============================================================================
 
 
-def test_read():
+def test_read(plan_context):
     """Test reading a solution document."""
-    with PlanContext(plan_id='solution-read') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('solution-read') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = cmd_read(_read_ns(plan_id='solution-read'))
-        assert result['status'] == 'success'
-        # Content is a nested dict with parsed sections
-        assert 'content' in result
-        assert 'summary' in result['content']
-        assert 'overview' in result['content']
-        assert 'deliverables' in result['content']
+    result = cmd_read(_read_ns(plan_id='solution-read'))
+    assert result['status'] == 'success'
+    # Content is a nested dict with parsed sections
+    assert 'content' in result
+    assert 'summary' in result['content']
+    assert 'overview' in result['content']
+    assert 'deliverables' in result['content']
 
 
-def test_read_not_found():
+def test_read_not_found(plan_context):
     """Test read fails when document doesn't exist."""
-    with PlanContext(plan_id='no-solution'):
-        result = cmd_read(_read_ns(plan_id='no-solution'))
-        assert result['error'] == 'document_not_found'
+    result = cmd_read(_read_ns(plan_id='no-solution'))
+    assert result['error'] == 'document_not_found'
 
 
-def test_read_deliverable_by_number():
+def test_read_deliverable_by_number(plan_context):
     """Test reading a specific deliverable by number."""
-    with PlanContext(plan_id='deliverable-num') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('deliverable-num') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = cmd_read(_read_ns(plan_id='deliverable-num', deliverable_number=1))
-        assert result['status'] == 'success'
-        assert result['deliverable']['number'] == 1
-        assert 'JwtValidationService' in result['deliverable']['title']
+    result = cmd_read(_read_ns(plan_id='deliverable-num', deliverable_number=1))
+    assert result['status'] == 'success'
+    assert result['deliverable']['number'] == 1
+    assert 'JwtValidationService' in result['deliverable']['title']
 
 
-def test_read_deliverable_by_number_second():
+def test_read_deliverable_by_number_second(plan_context):
     """Test reading the second deliverable by number."""
-    with PlanContext(plan_id='deliverable-num-2') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('deliverable-num-2') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = cmd_read(_read_ns(plan_id='deliverable-num-2', deliverable_number=2))
-        assert result['status'] == 'success'
-        assert result['deliverable']['number'] == 2
-        assert 'configuration properties' in result['deliverable']['title']
+    result = cmd_read(_read_ns(plan_id='deliverable-num-2', deliverable_number=2))
+    assert result['status'] == 'success'
+    assert result['deliverable']['number'] == 2
+    assert 'configuration properties' in result['deliverable']['title']
 
 
-def test_read_deliverable_not_found():
+def test_read_deliverable_not_found(plan_context):
     """Test reading non-existent deliverable number."""
-    with PlanContext(plan_id='deliverable-notfound') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('deliverable-notfound') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = cmd_read(_read_ns(plan_id='deliverable-notfound', deliverable_number=999))
-        assert result['error'] == 'deliverable_not_found'
-        assert 'available' in result  # Should list available deliverable numbers
+    result = cmd_read(_read_ns(plan_id='deliverable-notfound', deliverable_number=999))
+    assert result['error'] == 'deliverable_not_found'
+    assert 'available' in result  # Should list available deliverable numbers
 
 
-def test_read_section_summary():
+def test_read_section_summary(plan_context):
     """--section summary returns the Summary section body in the content field."""
-    with PlanContext(plan_id='section-summary') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('section-summary') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = cmd_read(_read_ns(plan_id='section-summary', section='summary'))
-        assert result['status'] == 'success'
-        assert result['section'] == 'summary'
-        assert result['requested_section'] == 'summary'
-        assert 'Implement JWT validation service' in result['content']
-        # Body should be the section body only, with no ## heading and no subsequent sections
-        assert '## Summary' not in result['content']
-        assert '## Overview' not in result['content']
+    result = cmd_read(_read_ns(plan_id='section-summary', section='summary'))
+    assert result['status'] == 'success'
+    assert result['section'] == 'summary'
+    assert result['requested_section'] == 'summary'
+    assert 'Implement JWT validation service' in result['content']
+    # Body should be the section body only, with no ## heading and no subsequent sections
+    assert '## Summary' not in result['content']
+    assert '## Overview' not in result['content']
 
 
-def test_read_section_overview():
+def test_read_section_overview(plan_context):
     """--section overview returns the Overview section body (diagram)."""
-    with PlanContext(plan_id='section-overview') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('section-overview') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = cmd_read(_read_ns(plan_id='section-overview', section='overview'))
-        assert result['status'] == 'success'
-        assert result['section'] == 'overview'
-        assert result['requested_section'] == 'overview'
-        # Overview contains the ASCII diagram's box-drawing text
-        assert 'JwtConfiguration' in result['content']
+    result = cmd_read(_read_ns(plan_id='section-overview', section='overview'))
+    assert result['status'] == 'success'
+    assert result['section'] == 'overview'
+    assert result['requested_section'] == 'overview'
+    # Overview contains the ASCII diagram's box-drawing text
+    assert 'JwtConfiguration' in result['content']
 
 
-def test_read_section_case_insensitive():
+def test_read_section_case_insensitive(plan_context):
     """--section matching is case-insensitive."""
-    with PlanContext(plan_id='section-case') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('section-case') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = cmd_read(_read_ns(plan_id='section-case', section='Summary'))
-        assert result['status'] == 'success'
-        assert result['section'] == 'summary'
-        assert result['requested_section'] == 'Summary'
+    result = cmd_read(_read_ns(plan_id='section-case', section='Summary'))
+    assert result['status'] == 'success'
+    assert result['section'] == 'summary'
+    assert result['requested_section'] == 'Summary'
 
 
-def test_read_section_not_found():
+def test_read_section_not_found(plan_context):
     """--section for a section that does not exist returns section_not_found."""
-    with PlanContext(plan_id='section-missing') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('section-missing') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = cmd_read(_read_ns(plan_id='section-missing', section='does-not-exist'))
-        assert result['status'] == 'error'
-        assert result['error'] == 'section_not_found'
-        assert result['requested_section'] == 'does-not-exist'
-        assert 'does-not-exist' in result['message']
+    result = cmd_read(_read_ns(plan_id='section-missing', section='does-not-exist'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'section_not_found'
+    assert result['requested_section'] == 'does-not-exist'
+    assert 'does-not-exist' in result['message']
 
 
 # =============================================================================
@@ -443,22 +426,20 @@ def test_read_section_not_found():
 # =============================================================================
 
 
-def test_exists_present():
+def test_exists_present(plan_context):
     """Test exists returns true when document exists."""
-    with PlanContext(plan_id='solution-exists') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('solution-exists') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = cmd_exists(_exists_ns(plan_id='solution-exists'))
-        assert result['status'] == 'success'
-        assert result['exists'] is True
+    result = cmd_exists(_exists_ns(plan_id='solution-exists'))
+    assert result['status'] == 'success'
+    assert result['exists'] is True
 
 
-def test_exists_absent():
+def test_exists_absent(plan_context):
     """Test exists returns success with exists=false when document doesn't exist."""
-    with PlanContext(plan_id='no-solution'):
-        result = cmd_exists(_exists_ns(plan_id='no-solution'))
-        assert result['status'] == 'success'
-        assert result['exists'] is False
+    result = cmd_exists(_exists_ns(plan_id='no-solution'))
+    assert result['status'] == 'success'
+    assert result['exists'] is False
 
 
 # =============================================================================
@@ -466,19 +447,18 @@ def test_exists_absent():
 # =============================================================================
 
 
-def test_resolve_path():
+def test_resolve_path(plan_context):
     """Test resolve-path returns correct path."""
-    with PlanContext(plan_id='solution-resolve') as ctx:
-        result = cmd_resolve_path(_resolve_path_ns(plan_id='solution-resolve'))
-        assert result['status'] == 'success'
-        assert result['plan_id'] == 'solution-resolve'
-        assert 'solution_outline.md' in result['path']
-        assert result['exists'] is False
+    result = cmd_resolve_path(_resolve_path_ns(plan_id='solution-resolve'))
+    assert result['status'] == 'success'
+    assert result['plan_id'] == 'solution-resolve'
+    assert 'solution_outline.md' in result['path']
+    assert result['exists'] is False
 
-        # Write a file and check exists becomes True
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
-        result = cmd_resolve_path(_resolve_path_ns(plan_id='solution-resolve'))
-        assert result['exists'] is True
+    # Write a file and check exists becomes True
+    (plan_context.plan_dir_for('solution-resolve') / 'solution_outline.md').write_text(VALID_SOLUTION)
+    result = cmd_resolve_path(_resolve_path_ns(plan_id='solution-resolve'))
+    assert result['exists'] is True
 
 
 # =============================================================================
@@ -486,47 +466,43 @@ def test_resolve_path():
 # =============================================================================
 
 
-def test_write_new():
+def test_write_new(plan_context):
     """Test validating a new solution outline written to disk."""
-    with PlanContext(plan_id='solution-write') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('solution-write') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = cmd_write(_write_ns(plan_id='solution-write'))
-        assert result['status'] == 'success'
-        assert result['file'] == 'solution_outline.md'
-        assert 'validation' in result
-        assert result['validation']['deliverable_count'] == 3
+    result = cmd_write(_write_ns(plan_id='solution-write'))
+    assert result['status'] == 'success'
+    assert result['file'] == 'solution_outline.md'
+    assert 'validation' in result
+    assert result['validation']['deliverable_count'] == 3
 
 
-def test_write_includes_compatibility():
+def test_write_includes_compatibility(plan_context):
     """Test that write output includes compatibility when present in header."""
-    with PlanContext(plan_id='solution-write-compat') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('solution-write-compat') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = cmd_write(_write_ns(plan_id='solution-write-compat'))
-        assert result['status'] == 'success'
-        assert 'compatibility' in result['validation']
-        assert 'breaking' in result['validation']['compatibility']
+    result = cmd_write(_write_ns(plan_id='solution-write-compat'))
+    assert result['status'] == 'success'
+    assert 'compatibility' in result['validation']
+    assert 'breaking' in result['validation']['compatibility']
 
 
-def test_write_validates_existing_file(monkeypatch):
+def test_write_validates_existing_file(plan_context, monkeypatch):
     """Test that write detects validation errors in file on disk."""
-    with PlanContext(plan_id='solution-invalid') as ctx:
-        # Pin HOME and credentials dir for defense-in-depth against any
-        # path resolution that might hit real ~/.plan-marshall-credentials.
-        monkeypatch.setenv('HOME', str(ctx.fixture_dir))
-        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(ctx.fixture_dir / 'creds'))
-        (ctx.plan_dir / 'solution_outline.md').write_text('# Just a title\n\nNo required sections here.')
+    # Pin HOME and credentials dir for defense-in-depth against any
+    # path resolution that might hit real ~/.plan-marshall-credentials.
+    monkeypatch.setenv('HOME', str(plan_context.fixture_dir))
+    monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(plan_context.fixture_dir / 'creds'))
+    (plan_context.plan_dir_for('solution-invalid') / 'solution_outline.md').write_text('# Just a title\n\nNo required sections here.')
 
-        result = cmd_write(_write_ns(plan_id='solution-invalid'))
-        assert result['error'] == 'validation_failed'
+    result = cmd_write(_write_ns(plan_id='solution-invalid'))
+    assert result['error'] == 'validation_failed'
 
 
-def test_write_file_not_found():
+def test_write_file_not_found(plan_context):
     """Test that write fails when file not on disk."""
-    with PlanContext(plan_id='solution-missing'):
-        result = cmd_write(_write_ns(plan_id='solution-missing'))
-        assert result['error'] == 'document_not_found'
+    result = cmd_write(_write_ns(plan_id='solution-missing'))
+    assert result['error'] == 'document_not_found'
 
 
 # =============================================================================
@@ -534,26 +510,24 @@ def test_write_file_not_found():
 # =============================================================================
 
 
-def test_update_existing():
+def test_update_existing(plan_context):
     """Test validating an updated solution outline."""
-    with PlanContext(plan_id='solution-update') as ctx:
-        updated_solution = VALID_SOLUTION.replace(
-            'Implement JWT validation service for authentication.',
-            'Implement enhanced JWT validation with key rotation support.',
-        )
-        (ctx.plan_dir / 'solution_outline.md').write_text(updated_solution)
+    updated_solution = VALID_SOLUTION.replace(
+        'Implement JWT validation service for authentication.',
+        'Implement enhanced JWT validation with key rotation support.',
+    )
+    (plan_context.plan_dir_for('solution-update') / 'solution_outline.md').write_text(updated_solution)
 
-        result = cmd_update(_update_ns(plan_id='solution-update'))
-        assert result['status'] == 'success'
-        assert result['action'] == 'updated'
-        assert result['validation']['deliverable_count'] == 3
+    result = cmd_update(_update_ns(plan_id='solution-update'))
+    assert result['status'] == 'success'
+    assert result['action'] == 'updated'
+    assert result['validation']['deliverable_count'] == 3
 
 
-def test_update_nonexistent():
+def test_update_nonexistent(plan_context):
     """Test that update fails when solution outline does not exist."""
-    with PlanContext(plan_id='solution-no-update'):
-        result = cmd_update(_update_ns(plan_id='solution-no-update'))
-        assert result['error'] == 'document_not_found'
+    result = cmd_update(_update_ns(plan_id='solution-no-update'))
+    assert result['error'] == 'document_not_found'
 
 
 # =============================================================================
@@ -561,7 +535,7 @@ def test_update_nonexistent():
 # =============================================================================
 
 
-def test_validate_warns_module_testing_without_test_files():
+def test_validate_warns_module_testing_without_test_files(plan_context):
     """Test that module_testing profile with production-only paths generates a warning."""
     solution_with_bad_profile = VALID_SOLUTION.replace(
         """### 2. Add configuration properties
@@ -598,27 +572,25 @@ Add JWT configuration to application.properties.
 **Affected files:**
 - `src/main/resources/application.properties`""",
     )
-    with PlanContext(plan_id='solution-warn-profile') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(solution_with_bad_profile)
+    (plan_context.plan_dir_for('solution-warn-profile') / 'solution_outline.md').write_text(solution_with_bad_profile)
 
-        result = cmd_validate(_validate_ns(plan_id='solution-warn-profile'))
-        assert result['status'] == 'success'
-        # Should have a warning about module_testing without test files
-        assert 'warnings' in result
-        assert any('module_testing profile but no test files' in w for w in result['warnings'])
+    result = cmd_validate(_validate_ns(plan_id='solution-warn-profile'))
+    assert result['status'] == 'success'
+    # Should have a warning about module_testing without test files
+    assert 'warnings' in result
+    assert any('module_testing profile but no test files' in w for w in result['warnings'])
 
 
-def test_validate_no_warning_module_testing_with_test_files():
+def test_validate_no_warning_module_testing_with_test_files(plan_context):
     """Test that module_testing profile with test file paths does not generate a warning."""
-    with PlanContext(plan_id='solution-no-warn-profile') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('solution-no-warn-profile') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = cmd_validate(_validate_ns(plan_id='solution-no-warn-profile'))
-        assert result['status'] == 'success'
-        # D3 has module_testing + test file path, so no warning expected for it
-        warnings = result.get('warnings', [])
-        d3_warnings = [w for w in warnings if 'D3' in w and 'module_testing' in w]
-        assert len(d3_warnings) == 0, f'Unexpected module_testing warning for D3: {d3_warnings}'
+    result = cmd_validate(_validate_ns(plan_id='solution-no-warn-profile'))
+    assert result['status'] == 'success'
+    # D3 has module_testing + test file path, so no warning expected for it
+    warnings = result.get('warnings', [])
+    d3_warnings = [w for w in warnings if 'D3' in w and 'module_testing' in w]
+    assert len(d3_warnings) == 0, f'Unexpected module_testing warning for D3: {d3_warnings}'
 
 
 # =============================================================================
@@ -626,20 +598,18 @@ def test_validate_no_warning_module_testing_with_test_files():
 # =============================================================================
 
 
-def test_invalid_plan_id_uppercase():
+def test_invalid_plan_id_uppercase(plan_context):
     """Test that uppercase plan IDs are rejected."""
-    with PlanContext():
-        with pytest.raises(SystemExit) as exc_info:
-            cmd_validate(_validate_ns(plan_id='My-Plan'))
-        assert exc_info.value.code == 0
+    with pytest.raises(SystemExit) as exc_info:
+        cmd_validate(_validate_ns(plan_id='My-Plan'))
+    assert exc_info.value.code == 0
 
 
-def test_invalid_plan_id_underscore():
+def test_invalid_plan_id_underscore(plan_context):
     """Test that underscores in plan IDs are rejected."""
-    with PlanContext():
-        with pytest.raises(SystemExit) as exc_info:
-            cmd_validate(_validate_ns(plan_id='my_plan'))
-        assert exc_info.value.code == 0
+    with pytest.raises(SystemExit) as exc_info:
+        cmd_validate(_validate_ns(plan_id='my_plan'))
+    assert exc_info.value.code == 0
 
 
 # =============================================================================
@@ -688,139 +658,128 @@ def _solution_with_scope(value: str) -> str:
     return VALID_SOLUTION.replace('- scope_estimate: surgical', f'- scope_estimate: {value}')
 
 
-def test_validate_surfaces_scope_estimate():
+def test_validate_surfaces_scope_estimate(plan_context):
     """Validate exposes scope_estimate from the Solution Metadata block."""
-    with PlanContext(plan_id='scope-surface') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('scope-surface') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = cmd_validate(_validate_ns(plan_id='scope-surface'))
-        assert result['status'] == 'success'
-        assert result['validation']['scope_estimate'] == 'surgical'
-        # solution_metadata listed first in sections_found
-        assert 'solution_metadata' in result['validation']['sections_found']
+    result = cmd_validate(_validate_ns(plan_id='scope-surface'))
+    assert result['status'] == 'success'
+    assert result['validation']['scope_estimate'] == 'surgical'
+    # solution_metadata listed first in sections_found
+    assert 'solution_metadata' in result['validation']['sections_found']
 
 
-def test_validate_rejects_missing_solution_metadata():
+def test_validate_rejects_missing_solution_metadata(plan_context):
     """Validate fails when the Solution Metadata section is absent."""
-    with PlanContext(plan_id='scope-missing-section') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(SOLUTION_NO_METADATA)
+    (plan_context.plan_dir_for('scope-missing-section') / 'solution_outline.md').write_text(SOLUTION_NO_METADATA)
 
-        result = cmd_validate(_validate_ns(plan_id='scope-missing-section'))
-        assert result['status'] == 'error'
-        assert result['error'] == 'validation_failed'
-        assert any('Solution Metadata' in issue for issue in result['issues'])
+    result = cmd_validate(_validate_ns(plan_id='scope-missing-section'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'validation_failed'
+    assert any('Solution Metadata' in issue for issue in result['issues'])
 
 
-def test_validate_rejects_missing_scope_estimate_field():
+def test_validate_rejects_missing_scope_estimate_field(plan_context):
     """Validate fails when Solution Metadata exists but scope_estimate is absent."""
     no_field = VALID_SOLUTION.replace(
         '## Solution Metadata\n\n- scope_estimate: surgical',
         '## Solution Metadata\n\n- something_else: foo',
     )
-    with PlanContext(plan_id='scope-missing-field') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(no_field)
+    (plan_context.plan_dir_for('scope-missing-field') / 'solution_outline.md').write_text(no_field)
 
-        result = cmd_validate(_validate_ns(plan_id='scope-missing-field'))
-        assert result['status'] == 'error'
-        assert any('Missing scope_estimate' in issue for issue in result['issues'])
+    result = cmd_validate(_validate_ns(plan_id='scope-missing-field'))
+    assert result['status'] == 'error'
+    assert any('Missing scope_estimate' in issue for issue in result['issues'])
 
 
-def test_validate_rejects_invalid_scope_estimate_enum():
+def test_validate_rejects_invalid_scope_estimate_enum(plan_context):
     """Validate fails when scope_estimate is not in the enum."""
     bad_value = _solution_with_scope('huge')
-    with PlanContext(plan_id='scope-bad-enum') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(bad_value)
+    (plan_context.plan_dir_for('scope-bad-enum') / 'solution_outline.md').write_text(bad_value)
 
-        result = cmd_validate(_validate_ns(plan_id='scope-bad-enum'))
-        assert result['status'] == 'error'
-        joined = ' '.join(result['issues'])
-        assert "Invalid scope_estimate 'huge'" in joined
-        for v in SCOPE_ESTIMATE_VALUES:
-            assert v in joined
+    result = cmd_validate(_validate_ns(plan_id='scope-bad-enum'))
+    assert result['status'] == 'error'
+    joined = ' '.join(result['issues'])
+    assert "Invalid scope_estimate 'huge'" in joined
+    for v in SCOPE_ESTIMATE_VALUES:
+        assert v in joined
 
 
-def test_write_rejects_missing_scope_estimate():
+def test_write_rejects_missing_scope_estimate(plan_context):
     """write rejects a document missing the scope_estimate field."""
-    with PlanContext(plan_id='scope-write-missing') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(SOLUTION_NO_METADATA)
+    (plan_context.plan_dir_for('scope-write-missing') / 'solution_outline.md').write_text(SOLUTION_NO_METADATA)
 
-        result = cmd_write(_write_ns(plan_id='scope-write-missing'))
-        assert result['status'] == 'error'
-        assert result['error'] == 'validation_failed'
-        # Either Solution Metadata section absent OR scope_estimate missing
-        assert any('scope_estimate' in issue or 'Solution Metadata' in issue for issue in result['issues'])
+    result = cmd_write(_write_ns(plan_id='scope-write-missing'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'validation_failed'
+    # Either Solution Metadata section absent OR scope_estimate missing
+    assert any('scope_estimate' in issue or 'Solution Metadata' in issue for issue in result['issues'])
 
 
-def test_update_rejects_invalid_scope_estimate_enum():
+def test_update_rejects_invalid_scope_estimate_enum(plan_context):
     """update rejects a document whose scope_estimate is out of enum."""
-    with PlanContext(plan_id='scope-update-bad') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(_solution_with_scope('massive'))
+    (plan_context.plan_dir_for('scope-update-bad') / 'solution_outline.md').write_text(_solution_with_scope('massive'))
 
-        result = cmd_update(_update_ns(plan_id='scope-update-bad'))
-        assert result['status'] == 'error'
-        assert result['error'] == 'validation_failed'
-        assert any("Invalid scope_estimate 'massive'" in issue for issue in result['issues'])
+    result = cmd_update(_update_ns(plan_id='scope-update-bad'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'validation_failed'
+    assert any("Invalid scope_estimate 'massive'" in issue for issue in result['issues'])
 
 
-def test_read_surfaces_scope_estimate():
+def test_read_surfaces_scope_estimate(plan_context):
     """Reading the full document surfaces scope_estimate at the top level."""
-    with PlanContext(plan_id='scope-read') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('scope-read') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = cmd_read(_read_ns(plan_id='scope-read'))
-        assert result['status'] == 'success'
-        assert result['scope_estimate'] == 'surgical'
+    result = cmd_read(_read_ns(plan_id='scope-read'))
+    assert result['status'] == 'success'
+    assert result['scope_estimate'] == 'surgical'
 
 
-def test_get_field_scope_estimate_success():
+def test_get_field_scope_estimate_success(plan_context):
     """get-field returns the persisted scope_estimate value."""
-    with PlanContext(plan_id='get-field-ok') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('get-field-ok') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = cmd_get_field(_get_field_ns(plan_id='get-field-ok', field='scope_estimate'))
-        assert result['status'] == 'success'
-        assert result['field'] == 'scope_estimate'
-        assert result['value'] == 'surgical'
+    result = cmd_get_field(_get_field_ns(plan_id='get-field-ok', field='scope_estimate'))
+    assert result['status'] == 'success'
+    assert result['field'] == 'scope_estimate'
+    assert result['value'] == 'surgical'
 
 
-def test_get_field_scope_estimate_not_found():
+def test_get_field_scope_estimate_not_found(plan_context):
     """get-field returns field_not_found when scope_estimate is absent from disk."""
-    with PlanContext(plan_id='get-field-missing') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(SOLUTION_NO_METADATA)
+    (plan_context.plan_dir_for('get-field-missing') / 'solution_outline.md').write_text(SOLUTION_NO_METADATA)
 
-        result = cmd_get_field(_get_field_ns(plan_id='get-field-missing', field='scope_estimate'))
-        assert result['status'] == 'error'
-        assert result['error'] == 'field_not_found'
-        assert result['field'] == 'scope_estimate'
+    result = cmd_get_field(_get_field_ns(plan_id='get-field-missing', field='scope_estimate'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'field_not_found'
+    assert result['field'] == 'scope_estimate'
 
 
-def test_get_field_unknown_field():
+def test_get_field_unknown_field(plan_context):
     """get-field rejects unsupported field names."""
-    with PlanContext(plan_id='get-field-unknown') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('get-field-unknown') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = cmd_get_field(_get_field_ns(plan_id='get-field-unknown', field='not_a_field'))
-        assert result['status'] == 'error'
-        assert result['error'] == 'unknown_field'
+    result = cmd_get_field(_get_field_ns(plan_id='get-field-unknown', field='not_a_field'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'unknown_field'
 
 
-def test_get_field_document_not_found():
+def test_get_field_document_not_found(plan_context):
     """get-field returns document_not_found when the solution outline does not exist."""
-    with PlanContext(plan_id='get-field-no-doc'):
-        result = cmd_get_field(_get_field_ns(plan_id='get-field-no-doc', field='scope_estimate'))
-        assert result['status'] == 'error'
-        assert result['error'] == 'document_not_found'
+    result = cmd_get_field(_get_field_ns(plan_id='get-field-no-doc', field='scope_estimate'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'document_not_found'
 
 
 @pytest.mark.parametrize('value', list(SCOPE_ESTIMATE_VALUES))
-def test_validate_accepts_each_enum_value(value):
+def test_validate_accepts_each_enum_value(plan_context, value):
     """Every documented scope_estimate enum value validates successfully."""
-    with PlanContext(plan_id=f'scope-enum-{value.replace("_", "-")}') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(_solution_with_scope(value))
+    plan_id = f'scope-enum-{value.replace("_", "-")}'
+    (plan_context.plan_dir_for(plan_id) / 'solution_outline.md').write_text(_solution_with_scope(value))
 
-        result = cmd_validate(_validate_ns(plan_id=f'scope-enum-{value.replace("_", "-")}'))
-        assert result['status'] == 'success', f"Enum value '{value}' should validate"
-        assert result['validation']['scope_estimate'] == value
+    result = cmd_validate(_validate_ns(plan_id=plan_id))
+    assert result['status'] == 'success', f"Enum value '{value}' should validate"
+    assert result['validation']['scope_estimate'] == value
 
 
 # =============================================================================
@@ -828,63 +787,59 @@ def test_validate_accepts_each_enum_value(value):
 # =============================================================================
 
 
-def test_cli_validate_success(monkeypatch):
+def test_cli_validate_success(plan_context, monkeypatch):
     """CLI plumbing: validate subcommand works end-to-end."""
-    with PlanContext(plan_id='cli-validate') as ctx:
-        # Pin HOME and credentials dir for the subprocess so solution-outline
-        # CLI side-effects cannot touch the real host paths.
-        monkeypatch.setenv('HOME', str(ctx.fixture_dir))
-        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(ctx.fixture_dir / 'creds'))
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    # Pin HOME and credentials dir for the subprocess so solution-outline
+    # CLI side-effects cannot touch the real host paths.
+    monkeypatch.setenv('HOME', str(plan_context.fixture_dir))
+    monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(plan_context.fixture_dir / 'creds'))
+    (plan_context.plan_dir_for('cli-validate') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'cli-validate')
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['validation']['deliverable_count'] == 3
+    result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'cli-validate')
+    assert result.success, f'Script failed: {result.stderr}'
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
+    assert data['validation']['deliverable_count'] == 3
 
 
-def test_cli_read_raw():
+def test_cli_read_raw(plan_context):
     """CLI plumbing: read --raw outputs raw markdown to stdout."""
-    with PlanContext(plan_id='cli-raw') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    (plan_context.plan_dir_for('cli-raw') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'cli-raw', '--raw')
-        assert result.success, f'Script failed: {result.stderr}'
-        # Raw mode outputs the actual markdown before the TOON result
-        assert '# Solution: JWT Validation Service' in result.stdout
-        assert '## Overview' in result.stdout
-        assert '## Deliverables' in result.stdout
-        assert '### 1. Create JwtValidationService class' in result.stdout
+    result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'cli-raw', '--raw')
+    assert result.success, f'Script failed: {result.stderr}'
+    # Raw mode outputs the actual markdown before the TOON result
+    assert '# Solution: JWT Validation Service' in result.stdout
+    assert '## Overview' in result.stdout
+    assert '## Deliverables' in result.stdout
+    assert '### 1. Create JwtValidationService class' in result.stdout
 
 
-def test_cli_invalid_plan_id():
+def test_cli_invalid_plan_id(plan_context):
     """CLI plumbing: invalid plan ID exits with code 0 and TOON error."""
-    with PlanContext():
-        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'My-Plan')
-        assert result.success, 'Expected exit 0 with TOON error for invalid plan ID'
-        data = parse_toon(result.stdout)
-        assert data['error'] == 'invalid_plan_id'
+    result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'My-Plan')
+    assert result.success, 'Expected exit 0 with TOON error for invalid plan ID'
+    data = parse_toon(result.stdout)
+    assert data['error'] == 'invalid_plan_id'
 
 
-def test_cli_read_section_and_deliverable_mutually_exclusive(monkeypatch):
+def test_cli_read_section_and_deliverable_mutually_exclusive(plan_context, monkeypatch):
     """CLI plumbing: --section and --deliverable-number cannot be combined."""
-    with PlanContext(plan_id='cli-section-mutex') as ctx:
-        # Pin HOME and credentials dir for the subprocess so any eager
-        # initialization cannot touch the real host paths.
-        monkeypatch.setenv('HOME', str(ctx.fixture_dir))
-        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(ctx.fixture_dir / 'creds'))
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+    # Pin HOME and credentials dir for the subprocess so any eager
+    # initialization cannot touch the real host paths.
+    monkeypatch.setenv('HOME', str(plan_context.fixture_dir))
+    monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(plan_context.fixture_dir / 'creds'))
+    (plan_context.plan_dir_for('cli-section-mutex') / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = run_script(
-            SCRIPT_PATH,
-            'read',
-            '--plan-id',
-            'cli-section-mutex',
-            '--section',
-            'summary',
-            '--deliverable-number',
-            '1',
-        )
-        # argparse mutually exclusive group errors exit with code 2
-        assert not result.success, 'Expected failure when combining --section and --deliverable-number'
+    result = run_script(
+        SCRIPT_PATH,
+        'read',
+        '--plan-id',
+        'cli-section-mutex',
+        '--section',
+        'summary',
+        '--deliverable-number',
+        '1',
+    )
+    # argparse mutually exclusive group errors exit with code 2
+    assert not result.success, 'Expected failure when combining --section and --deliverable-number'

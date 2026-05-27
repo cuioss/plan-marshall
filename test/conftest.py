@@ -6,7 +6,7 @@ This module provides base classes, fixtures, and utilities for testing
 Python scripts in the marketplace bundles. Uses only Python stdlib.
 
 Usage:
-    from conftest import ScriptTestCase, run_script, create_temp_file
+    from conftest import run_script, create_temp_file
 
 See test/README.md for full documentation.
 """
@@ -19,7 +19,6 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any
-from unittest import TestCase
 
 # =============================================================================
 # Path Constants
@@ -39,12 +38,12 @@ TEST_FIXTURE_BASE = PROJECT_ROOT / PLAN_DIR_NAME / 'temp' / 'test-fixture'
 # Pytest Collection Configuration
 # =============================================================================
 
-# Integration tests with unresolvable import dependencies (integration_common, extension)
+# Integration tests with unresolvable import dependencies (``integration_common``,
+# pm-dev-java ``extension`` module) — never resolvable in the unit-test
+# PYTHONPATH and therefore always excluded from default collection.
 collect_ignore = [
-    # Imports integration_common and pm-dev-java extension module not on PYTHONPATH
-    'plan-marshall/integration/discover_modules/test_gradle_discover_modules.py',
+    'plan-marshall/integration/discover_modules/test_gradle_discover_modules_integration.py',
     'plan-marshall/integration/discover_modules/test_maven_discover_modules.py',
-    # Imports integration_common and extension.discover_project_modules (ambiguous)
     'plan-marshall/integration/module_aggregation/test_hybrid_merge.py',
 ]
 
@@ -356,100 +355,6 @@ def create_temp_dir() -> Path:
 
 
 # =============================================================================
-# Base Test Case
-# =============================================================================
-
-
-class ScriptTestCase(TestCase):
-    """
-    Base class for script tests with common setup/teardown.
-
-    Provides:
-        - Automatic temp directory management
-        - Script path resolution
-        - Common assertion helpers
-
-    Example:
-        class TestParseConfig(ScriptTestCase):
-            bundle = 'plan-marshall'
-            skill = 'plan-files'
-            script = 'parse-config.py'
-
-            def test_basic_config(self):
-                result = self.run_script_with_file(CONFIG_CONTENT)
-                self.assert_success(result)
-                data = result.json()
-                self.assertEqual(data['plan_type'], 'implementation')
-    """
-
-    # Override in subclass
-    bundle: str = ''
-    skill: str = ''
-    script: str = ''
-    # Set dynamically by setUpClass/setUp
-    script_path: Path | None = None
-    temp_dir: Path
-    temp_files: list[Path]
-
-    @classmethod
-    def setUpClass(cls):
-        """Resolve script path once per test class."""
-        if cls.bundle and cls.skill and cls.script:
-            cls.script_path = get_script_path(cls.bundle, cls.skill, cls.script)
-        else:
-            cls.script_path = None
-
-    def setUp(self):
-        """Create temp directory for each test."""
-        self.temp_dir = create_temp_dir()
-        self.temp_files = []
-
-    def tearDown(self):
-        """Clean up temp files and directory."""
-        for f in self.temp_files:
-            try:
-                f.unlink()
-            except FileNotFoundError:
-                pass
-        try:
-            shutil.rmtree(self.temp_dir)
-        except FileNotFoundError:
-            pass
-
-    def create_temp_file(self, content: str, suffix: str = '.md') -> Path:
-        """Create temp file tracked for cleanup."""
-        path = create_temp_file(content, suffix=suffix, dir=self.temp_dir)
-        self.temp_files.append(path)
-        return path
-
-    def run_script(self, *args: str, **kwargs) -> ScriptResult:
-        """Run the test script with arguments."""
-        if not self.script_path:
-            raise ValueError('Set bundle, skill, script class attributes')
-        return run_script(self.script_path, *args, **kwargs)
-
-    def run_script_with_file(self, content: str, *extra_args: str, suffix: str = '.md') -> ScriptResult:
-        """Create temp file with content and run script with it as first arg."""
-        temp_file = self.create_temp_file(content, suffix=suffix)
-        return self.run_script(str(temp_file), *extra_args)
-
-    # Assertion helpers
-    def assert_success(self, result: ScriptResult, msg: str | None = None):
-        """Assert script succeeded."""
-        self.assertEqual(result.returncode, 0, msg or f'Script failed: {result.stderr}')
-
-    def assert_failure(self, result: ScriptResult, msg: str | None = None):
-        """Assert script failed."""
-        self.assertNotEqual(result.returncode, 0, msg or 'Expected script to fail')
-
-    def assert_json_field(self, result: ScriptResult, field: str, expected: Any):
-        """Assert JSON output has field with expected value."""
-        data = result.json()
-        self.assertIn(field, data, f'Missing field: {field}')
-        self.assertEqual(data[field], expected, f'Field {field} mismatch')
-
-
-# =============================================================================
 # Pytest Fixtures
 # =============================================================================
 
@@ -530,62 +435,29 @@ def pytest_configure(config):
 
 
 @pytest.fixture
-def fixture_dir(tmp_path):
-    """
-    Pytest-native temp directory fixture.
-
-    Provides a temporary directory that is automatically cleaned up after the test.
-    Use tmp_path directly for simple cases, or this fixture for consistency with
-    legacy code.
-
-    Returns:
-        Path: Temporary directory path
-    """
-    return tmp_path
-
-
-@pytest.fixture
-def isolated_credentials(tmp_path, monkeypatch):
-    """Redirect credential writes to a per-test tmp directory.
-
-    Patches ``_providers_core.CREDENTIALS_DIR`` via ``monkeypatch.setattr`` so
-    in-process calls to ``save_credential()`` / ``load_credential()`` resolve
-    against ``tmp_path/credentials/``. Also redirects the ``HOME`` env var so
-    subprocess invocations that compute ``Path.home() / '.plan-marshall-credentials'``
-    at import time land under tmp_path as well.
-
-    Yields the credentials directory path (not eagerly created — production
-    code creates it on first write).
-    """
-    creds_dir = tmp_path / 'credentials'
-    import _providers_core  # type: ignore[import-not-found]
-
-    monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', creds_dir)
-    monkeypatch.setenv('HOME', str(tmp_path))
-    return creds_dir
-
-
-@pytest.fixture
 def plan_context(tmp_path, monkeypatch):
     """
     Pytest fixture for plan-based tests.
 
-    Creates a plan directory structure and sets up the PLAN_BASE_DIR environment
-    variable. Also redirects ``_config_core.PLAN_BASE_DIR``, ``_config_core.MARSHAL_PATH``
-    and ``_config_core.RUN_CONFIG_PATH`` via ``monkeypatch.setattr`` so in-process
-    callers resolve against ``tmp_path`` instead of the real repo-local paths.
-    Automatically cleans up after the test.
+    Sets up isolation primitives (PLAN_BASE_DIR redirect to tmp_path) without
+    hardcoding any specific plan_id. Tests pass their own plan_id strings into
+    script calls and resolve the corresponding plan directory via
+    ``plan_context.plan_dir_for(plan_id)``.
+
+    Redirects ``_config_core.PLAN_BASE_DIR``, ``_config_core.MARSHAL_PATH``
+    and ``_config_core.RUN_CONFIG_PATH`` via ``monkeypatch.setattr`` so
+    in-process callers resolve against ``tmp_path`` instead of the real
+    repo-local paths.
 
     ``_config_core`` is imported lazily inside the fixture body to avoid
     top-level import cycles during test bootstrap.
 
     Yields:
-        Context: Context object with fixture_dir, plan_id, and plan_dir attributes
+        Context: Context object with ``fixture_dir`` (= tmp_path), ``plans_dir``
+            (= tmp_path / 'plans'), and a ``plan_dir_for(plan_id)`` helper that
+            returns ``plans_dir / plan_id`` (creating the parent on demand,
+            idempotent).
     """
-    plan_id = 'pytest-test'
-    plan_dir = tmp_path / 'plans' / plan_id
-    plan_dir.mkdir(parents=True)
-
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     monkeypatch.setenv('PLAN_DIR_NAME', PLAN_DIR_NAME)
 
@@ -595,32 +467,31 @@ def plan_context(tmp_path, monkeypatch):
     monkeypatch.setattr(_config_core, 'MARSHAL_PATH', tmp_path / 'marshal.json')
     monkeypatch.setattr(_config_core, 'RUN_CONFIG_PATH', tmp_path / 'run-configuration.json')
 
+    plans_dir = tmp_path / 'plans'
+    plans_dir.mkdir(parents=True, exist_ok=True)
+
+    # Default plan_id used by tests that pass plan_context.plan_id verbatim into
+    # script calls and read plan_context.plan_dir back. Tests that pass arbitrary
+    # plan_id strings into script calls (e.g. 'batch-3', 'nf-add-prof') MUST
+    # resolve their own dir via plan_context.plan_dir_for(<literal_plan_id>).
+    DEFAULT_PLAN_ID = 'pytest-test'
+    default_plan_dir = plans_dir / DEFAULT_PLAN_ID
+    default_plan_dir.mkdir(parents=True, exist_ok=True)
+
     class Context:
         def __init__(self):
             self.fixture_dir = tmp_path
-            self.plan_id = plan_id
-            self.plan_dir = plan_dir
+            self.plans_dir = plans_dir
+            self.plan_id = DEFAULT_PLAN_ID
+            self.plan_dir = default_plan_dir
+
+        def plan_dir_for(self, plan_id):
+            """Return ``plans_dir / plan_id``, creating it on demand (idempotent)."""
+            d = self.plans_dir / plan_id
+            d.mkdir(parents=True, exist_ok=True)
+            return d
 
     yield Context()
-
-
-@pytest.fixture
-def build_context(tmp_path):
-    """
-    Pytest fixture for build-operations tests.
-
-    Creates a complete test environment with .plan directory and marshal.json.
-    Automatically cleans up after the test.
-
-    Yields:
-        BuildContext: Context object with temp_dir, plan_dir, and helper methods
-    """
-    ctx = BuildContext()
-    ctx.temp_dir = tmp_path
-    ctx.plan_dir = tmp_path / '.plan'
-    ctx.plan_dir.mkdir()
-    create_marshal_json(tmp_path)
-    yield ctx
 
 
 # =============================================================================

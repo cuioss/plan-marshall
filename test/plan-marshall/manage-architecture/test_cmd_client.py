@@ -13,6 +13,11 @@ import tempfile
 from argparse import Namespace
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+
+from _arch_fixtures import create_test_project  # noqa: E402
+from _arch_fixtures import seed_project as _seed_project  # noqa: E402
+
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
     / 'marketplace'
@@ -35,9 +40,6 @@ def _load_module(name, filename):
 _architecture_core = _load_module('_architecture_core', '_architecture_core.py')
 _cmd_client = _load_module('_cmd_client', '_cmd_client.py')
 
-save_project_meta = _architecture_core.save_project_meta
-save_module_derived = _architecture_core.save_module_derived
-
 cmd_modules = _cmd_client.cmd_modules
 cmd_resolve = _cmd_client.cmd_resolve
 cmd_files = _cmd_client.cmd_files
@@ -57,53 +59,6 @@ ModuleNotFoundInProjectError = _architecture_core.ModuleNotFoundInProjectError
 
 
 # =============================================================================
-# Helper Functions
-# =============================================================================
-
-
-def _seed_project(tmpdir: str, modules: dict[str, dict]) -> None:
-    """Write ``_project.json`` plus per-module ``derived.json`` files."""
-    save_project_meta(
-        {
-            'name': 'test-project',
-            'description': '',
-            'description_reasoning': '',
-            'extensions_used': [],
-            'modules': {name: {} for name in modules},
-        },
-        tmpdir,
-    )
-    for name, data in modules.items():
-        save_module_derived(name, data, tmpdir)
-
-
-def create_test_project(tmpdir: str) -> dict:
-    """Three modules with varying command sets — used by cmd_modules tests."""
-    modules = {
-        'module-a': {
-            'name': 'module-a',
-            'build_systems': ['maven'],
-            'paths': {'module': 'module-a'},
-            'commands': {'module-tests': 'python3 ...', 'verify': 'python3 ...', 'quality-gate': 'python3 ...'},
-        },
-        'module-b': {
-            'name': 'module-b',
-            'build_systems': ['maven'],
-            'paths': {'module': 'module-b'},
-            'commands': {'module-tests': 'python3 ...', 'verify': 'python3 ...'},
-        },
-        'module-c': {
-            'name': 'module-c',
-            'build_systems': ['npm'],
-            'paths': {'module': 'module-c'},
-            'commands': {'build': 'npm run build'},
-        },
-    }
-    _seed_project(tmpdir, modules)
-    return modules
-
-
-# =============================================================================
 # Tests for get_modules_list
 # =============================================================================
 
@@ -111,7 +66,7 @@ def create_test_project(tmpdir: str) -> dict:
 def test_get_modules_list_returns_all():
     """get_modules_list returns every module name from ``_project.json``."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='command_variety')
         modules = get_modules_list(tmpdir)
         assert set(modules) == {'module-a', 'module-b', 'module-c'}
 
@@ -124,7 +79,7 @@ def test_get_modules_list_returns_all():
 def test_get_modules_with_command_verify():
     """get_modules_with_command returns modules that declare 'verify'."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='command_variety')
         modules = get_modules_with_command('verify', tmpdir)
         assert set(modules) == {'module-a', 'module-b'}
 
@@ -132,7 +87,7 @@ def test_get_modules_with_command_verify():
 def test_get_modules_with_command_module_tests():
     """get_modules_with_command returns modules with 'module-tests'."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='command_variety')
         modules = get_modules_with_command('module-tests', tmpdir)
         assert set(modules) == {'module-a', 'module-b'}
 
@@ -140,7 +95,7 @@ def test_get_modules_with_command_module_tests():
 def test_get_modules_with_command_quality_gate_only_module_a():
     """get_modules_with_command returns only module-a for 'quality-gate'."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='command_variety')
         modules = get_modules_with_command('quality-gate', tmpdir)
         assert modules == ['module-a']
 
@@ -148,7 +103,7 @@ def test_get_modules_with_command_quality_gate_only_module_a():
 def test_get_modules_with_command_build_only_module_c():
     """get_modules_with_command returns only module-c for 'build'."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='command_variety')
         modules = get_modules_with_command('build', tmpdir)
         assert modules == ['module-c']
 
@@ -156,7 +111,7 @@ def test_get_modules_with_command_build_only_module_c():
 def test_get_modules_with_command_unknown_returns_empty():
     """get_modules_with_command returns [] for an unknown command name."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='command_variety')
         modules = get_modules_with_command('nonexistent-command', tmpdir)
         assert modules == []
 
@@ -174,7 +129,7 @@ def test_cmd_modules_naming_collision_regression():
     cannot resurface.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='command_variety')
 
         args = Namespace(
             project_dir=tmpdir,
@@ -195,7 +150,7 @@ def test_cmd_modules_naming_collision_regression():
 def test_cmd_modules_without_filter_lists_all():
     """cmd_modules without --command filter returns every module."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='command_variety')
 
         args = Namespace(project_dir=tmpdir, command='modules', filter_command=None)
         result = cmd_modules(args)
@@ -208,7 +163,7 @@ def test_cmd_modules_without_filter_lists_all():
 def test_cmd_modules_with_filter_returns_matches():
     """cmd_modules --command verify returns only matching modules."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='command_variety')
 
         args = Namespace(project_dir=tmpdir, command='modules', filter_command='verify')
         result = cmd_modules(args)
@@ -223,7 +178,7 @@ def test_cmd_modules_with_filter_returns_matches():
 def test_cmd_modules_with_filter_quality_gate():
     """cmd_modules --command quality-gate returns only module-a."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='command_variety')
 
         args = Namespace(project_dir=tmpdir, command='modules', filter_command='quality-gate')
         result = cmd_modules(args)
@@ -1062,7 +1017,7 @@ def test_modules_from_exception_or_fallback_falls_back_to_get_modules_list():
     """
     # Arrange
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_project(tmpdir)
+        create_test_project(tmpdir, shape='command_variety')
         # One-arg construction — no embedded list.
         exc = ModuleNotFoundInProjectError('Module not found: nope')
 

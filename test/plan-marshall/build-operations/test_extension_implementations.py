@@ -72,7 +72,19 @@ def skill_exists(skill_ref: str) -> bool:
 
 
 def create_test_project(build_system: str) -> Path:
-    """Create a temporary test project for a given build system."""
+    """Create a temporary test project for a given build system.
+
+    Intentionally NOT hoisted to ``test/plan-marshall/manage-architecture/_fixtures.py``
+    (D5 in solution_outline.md). This helper shares only its name with the
+    ``manage-architecture`` ``create_test_project`` family — the signature
+    is ``(build_system: str) -> Path`` (returns a filesystem path seeded
+    with a build-system descriptor file) rather than the
+    ``(tmpdir: str, *, shape: str) -> dict`` shape used in the hoisted
+    fixture. The two helpers occupy different domains (build-system
+    fixtures vs. ``_project.json`` / ``derived.json`` fixtures); merging
+    them would conflate concepts. The D5 outline explicitly permits this
+    file to retain its local copy with a justification comment.
+    """
     temp_dir = Path(tempfile.mkdtemp())
 
     if build_system == 'maven':

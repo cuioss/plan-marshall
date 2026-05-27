@@ -101,7 +101,7 @@ def _expanded_preset(preset: dict) -> dict:
     return {'default': default_level, 'roles': roles_view}
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import PlanContext, run_script  # noqa: E402
+from conftest import run_script  # noqa: E402
 
 
 def _write_marshal_with_models(fixture_dir: Path, models_block: dict | None) -> None:
@@ -202,54 +202,53 @@ def _expected_overrides_count(preset: dict) -> int:
     return count
 
 
-def test_apply_preset_economic_writes_expanded_payload():
-    with PlanContext() as ctx:
-        # Initialise marshal.json with no models block.
-        _write_marshal_with_models(ctx.fixture_dir, None)
+def test_apply_preset_economic_writes_expanded_payload(plan_context):
+    # Initialise marshal.json with no models block.
+    _write_marshal_with_models(plan_context.fixture_dir, None)
 
-        result = cmd_effort_apply_preset(Namespace(preset='economic'))
+    result = cmd_effort_apply_preset(Namespace(preset='economic'))
 
-        assert result['status'] == 'success'
-        assert result['preset'] == 'economic'
-        assert result['default'] == 'medium'
-        # roles_count reflects the leaf-level EXPANDED set (flat groups
-        # contribute 1, nested groups contribute len(subkeys)). Overrides
-        # count is the per-leaf override count from the preset payload.
-        assert result['roles_count'] == _expected_roles_count(EffortPresets.ECONOMIC)
-        assert result['overrides_count'] == _expected_overrides_count(
-            EffortPresets.ECONOMIC
+    assert result['status'] == 'success'
+    assert result['preset'] == 'economic'
+    assert result['default'] == 'medium'
+    # roles_count reflects the leaf-level EXPANDED set (flat groups
+    # contribute 1, nested groups contribute len(subkeys)). Overrides
+    # count is the per-leaf override count from the preset payload.
+    assert result['roles_count'] == _expected_roles_count(EffortPresets.ECONOMIC)
+    assert result['overrides_count'] == _expected_overrides_count(
+        EffortPresets.ECONOMIC
+    )
+
+    # Disk state matches the EXPANDED ECONOMIC payload.
+    on_disk = _read_marshal_models(plan_context.fixture_dir)
+    assert on_disk == _expanded_preset(EffortPresets.ECONOMIC)
+
+    # Self-documenting on-disk shape: every group is present (either as
+    # a string shorthand or as a dict; the writer picks the compact
+    # shape that fits the preset).
+    for group, schema in KNOWN_ROLES.items():
+        assert group in on_disk['roles'], (
+            f"group '{group}' missing from expanded on-disk roles map"
         )
+        value = on_disk['roles'][group]
+        if isinstance(value, dict):
+            for subkey in schema:
+                assert subkey in value, (
+                    f"subkey '{group}.{subkey}' missing from on-disk map"
+                )
 
-        # Disk state matches the EXPANDED ECONOMIC payload.
-        on_disk = _read_marshal_models(ctx.fixture_dir)
-        assert on_disk == _expanded_preset(EffortPresets.ECONOMIC)
-
-        # Self-documenting on-disk shape: every group is present (either as
-        # a string shorthand or as a dict; the writer picks the compact
-        # shape that fits the preset).
-        for group, schema in KNOWN_ROLES.items():
-            assert group in on_disk['roles'], (
-                f"group '{group}' missing from expanded on-disk roles map"
-            )
-            value = on_disk['roles'][group]
-            if isinstance(value, dict):
-                for subkey in schema:
-                    assert subkey in value, (
-                        f"subkey '{group}.{subkey}' missing from on-disk map"
-                    )
-
-        # ECONOMIC carries `phase-6-finalize` as a dict-valued override
-        # ({'verification-feedback': 'high'}); the writer expands the
-        # dict so every sub-key is explicit on disk (overrides win,
-        # missing sub-keys receive the ECONOMIC default of 'medium').
-        # The resolver returns the sub-key-specific source path because
-        # the on-disk phase-6-finalize entry is a dict.
-        read_result = cmd_effort(
-            Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False)
-        )
-        assert read_result['status'] == 'success'
-        assert read_result['level'] == 'high'
-        assert read_result['source'] == 'plan.phase-6-finalize.effort.verification-feedback'
+    # ECONOMIC carries `phase-6-finalize` as a dict-valued override
+    # ({'verification-feedback': 'high'}); the writer expands the
+    # dict so every sub-key is explicit on disk (overrides win,
+    # missing sub-keys receive the ECONOMIC default of 'medium').
+    # The resolver returns the sub-key-specific source path because
+    # the on-disk phase-6-finalize entry is a dict.
+    read_result = cmd_effort(
+        Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False)
+    )
+    assert read_result['status'] == 'success'
+    assert read_result['level'] == 'high'
+    assert read_result['source'] == 'plan.phase-6-finalize.effort.verification-feedback'
 
 
 # =============================================================================
@@ -258,18 +257,17 @@ def test_apply_preset_economic_writes_expanded_payload():
 # =============================================================================
 
 
-def test_apply_preset_balanced_then_read_phase_6_verification_feedback_returns_high():
-    with PlanContext() as ctx:
-        _write_marshal_with_models(ctx.fixture_dir, None)
+def test_apply_preset_balanced_then_read_phase_6_verification_feedback_returns_high(plan_context):
+    _write_marshal_with_models(plan_context.fixture_dir, None)
 
-        cmd_effort_apply_preset(Namespace(preset='balanced'))
+    cmd_effort_apply_preset(Namespace(preset='balanced'))
 
-        read_result = cmd_effort(
-            Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False)
-        )
-        assert read_result['status'] == 'success'
-        assert read_result['level'] == 'high'
-        assert read_result['source'] == 'plan.phase-6-finalize.effort.verification-feedback'
+    read_result = cmd_effort(
+        Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False)
+    )
+    assert read_result['status'] == 'success'
+    assert read_result['level'] == 'high'
+    assert read_result['source'] == 'plan.phase-6-finalize.effort.verification-feedback'
 
 
 # =============================================================================
@@ -277,44 +275,43 @@ def test_apply_preset_balanced_then_read_phase_6_verification_feedback_returns_h
 # =============================================================================
 
 
-def test_apply_preset_high_end_overwrites_pre_seeded_block():
-    with PlanContext() as ctx:
-        # Pre-seed every KNOWN_ROLES phase with a non-HIGH_END value.
-        # apply-preset must overwrite each of those with HIGH_END's
-        # per-phase value — the seeded "before" state shouldn't survive
-        # under any KNOWN_ROLES key.
-        seeded = {
-            'default': 'xxhigh',
-            'roles': {
-                'phase-1-init': 'low',
-                'phase-2-refine': 'low',
-                'phase-3-outline': 'low',
-                'phase-4-plan': 'low',
-                'phase-5-execute': {'default': 'low', 'verification-feedback': 'low'},
-                'phase-6-finalize': {
-                    'default': 'low',
-                    'verification-feedback': 'low',
-                    'post-run-review': 'low',
-                },
+def test_apply_preset_high_end_overwrites_pre_seeded_block(plan_context):
+    # Pre-seed every KNOWN_ROLES phase with a non-HIGH_END value.
+    # apply-preset must overwrite each of those with HIGH_END's
+    # per-phase value — the seeded "before" state shouldn't survive
+    # under any KNOWN_ROLES key.
+    seeded = {
+        'default': 'xxhigh',
+        'roles': {
+            'phase-1-init': 'low',
+            'phase-2-refine': 'low',
+            'phase-3-outline': 'low',
+            'phase-4-plan': 'low',
+            'phase-5-execute': {'default': 'low', 'verification-feedback': 'low'},
+            'phase-6-finalize': {
+                'default': 'low',
+                'verification-feedback': 'low',
+                'post-run-review': 'low',
             },
-        }
-        _write_marshal_with_models(ctx.fixture_dir, seeded)
+        },
+    }
+    _write_marshal_with_models(plan_context.fixture_dir, seeded)
 
-        cmd_effort_apply_preset(Namespace(preset='high-end'))
+    cmd_effort_apply_preset(Namespace(preset='high-end'))
 
-        on_disk = _read_marshal_models(ctx.fixture_dir)
+    on_disk = _read_marshal_models(plan_context.fixture_dir)
 
-        # Disk state is the EXPANDED HIGH_END payload — every KNOWN_ROLES
-        # entry is overwritten with HIGH_END's per-phase value.
-        assert on_disk == _expanded_preset(EffortPresets.HIGH_END)
+    # Disk state is the EXPANDED HIGH_END payload — every KNOWN_ROLES
+    # entry is overwritten with HIGH_END's per-phase value.
+    assert on_disk == _expanded_preset(EffortPresets.HIGH_END)
 
-        # phase-6-finalize.verification-feedback is set to its HIGH_END
-        # override level (no longer 'low').
-        assert on_disk['roles']['phase-6-finalize']['verification-feedback'] == 'xhigh'
+    # phase-6-finalize.verification-feedback is set to its HIGH_END
+    # override level (no longer 'low').
+    assert on_disk['roles']['phase-6-finalize']['verification-feedback'] == 'xhigh'
 
-        # phase-1-init has no overrides in HIGH_END; it is written as the
-        # global default shorthand ('high').
-        assert on_disk['roles']['phase-1-init'] == 'high'
+    # phase-1-init has no overrides in HIGH_END; it is written as the
+    # global default shorthand ('high').
+    assert on_disk['roles']['phase-1-init'] == 'high'
 
 
 # =============================================================================
@@ -323,20 +320,19 @@ def test_apply_preset_high_end_overwrites_pre_seeded_block():
 # =============================================================================
 
 
-def test_apply_preset_bogus_rejected_by_argparse():
-    with PlanContext() as ctx:
-        _write_marshal_with_models(ctx.fixture_dir, None)
+def test_apply_preset_bogus_rejected_by_argparse(plan_context):
+    _write_marshal_with_models(plan_context.fixture_dir, None)
 
-        result = run_script(
-            SCRIPT_PATH, 'effort', 'apply-preset', '--preset', 'bogus'
-        )
+    result = run_script(
+        SCRIPT_PATH, 'effort', 'apply-preset', '--preset', 'bogus'
+    )
 
-        assert not result.success, 'argparse should reject unknown preset'
-        # argparse choices= produces an error mentioning the valid options.
-        combined = (result.stdout + result.stderr).lower()
-        assert 'economic' in combined
-        assert 'balanced' in combined
-        assert 'high-end' in combined
+    assert not result.success, 'argparse should reject unknown preset'
+    # argparse choices= produces an error mentioning the valid options.
+    combined = (result.stdout + result.stderr).lower()
+    assert 'economic' in combined
+    assert 'balanced' in combined
+    assert 'high-end' in combined
 
 
 # =============================================================================
@@ -344,34 +340,32 @@ def test_apply_preset_bogus_rejected_by_argparse():
 # =============================================================================
 
 
-def test_apply_preset_uppercase_underscore_alias_succeeds():
+def test_apply_preset_uppercase_underscore_alias_succeeds(plan_context):
     # argparse `choices=` is the public restriction — but EffortPresets.get
     # accepts the underscore alias internally. The handler delegates to
     # EffortPresets.get, so an alias passed past argparse (e.g. via direct
     # cmd_effort_apply_preset call) must resolve to HIGH_END.
-    with PlanContext() as ctx:
-        _write_marshal_with_models(ctx.fixture_dir, None)
+    _write_marshal_with_models(plan_context.fixture_dir, None)
 
-        result = cmd_effort_apply_preset(Namespace(preset='HIGH_END'))
+    result = cmd_effort_apply_preset(Namespace(preset='HIGH_END'))
 
-        assert result['status'] == 'success'
-        assert result['default'] == 'high'
+    assert result['status'] == 'success'
+    assert result['default'] == 'high'
 
-        on_disk = _read_marshal_models(ctx.fixture_dir)
-        assert on_disk == _expanded_preset(EffortPresets.HIGH_END)
+    on_disk = _read_marshal_models(plan_context.fixture_dir)
+    assert on_disk == _expanded_preset(EffortPresets.HIGH_END)
 
 
-def test_apply_preset_lowercase_underscore_alias_succeeds():
-    with PlanContext() as ctx:
-        _write_marshal_with_models(ctx.fixture_dir, None)
+def test_apply_preset_lowercase_underscore_alias_succeeds(plan_context):
+    _write_marshal_with_models(plan_context.fixture_dir, None)
 
-        result = cmd_effort_apply_preset(Namespace(preset='high_end'))
+    result = cmd_effort_apply_preset(Namespace(preset='high_end'))
 
-        assert result['status'] == 'success'
-        assert result['default'] == 'high'
+    assert result['status'] == 'success'
+    assert result['default'] == 'high'
 
-        on_disk = _read_marshal_models(ctx.fixture_dir)
-        assert on_disk == _expanded_preset(EffortPresets.HIGH_END)
+    on_disk = _read_marshal_models(plan_context.fixture_dir)
+    assert on_disk == _expanded_preset(EffortPresets.HIGH_END)
 
 
 # =============================================================================
@@ -380,19 +374,18 @@ def test_apply_preset_lowercase_underscore_alias_succeeds():
 # =============================================================================
 
 
-def test_apply_preset_creates_models_block_when_absent():
-    with PlanContext() as ctx:
-        _write_marshal_with_models(ctx.fixture_dir, None)
+def test_apply_preset_creates_models_block_when_absent(plan_context):
+    _write_marshal_with_models(plan_context.fixture_dir, None)
 
-        # Sanity: no models block on disk yet.
-        config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
-        assert 'models' not in config
+    # Sanity: no models block on disk yet.
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    assert 'models' not in config
 
-        result = cmd_effort_apply_preset(Namespace(preset='balanced'))
+    result = cmd_effort_apply_preset(Namespace(preset='balanced'))
 
-        assert result['status'] == 'success'
-        on_disk = _read_marshal_models(ctx.fixture_dir)
-        assert on_disk == _expanded_preset(EffortPresets.BALANCED)
+    assert result['status'] == 'success'
+    on_disk = _read_marshal_models(plan_context.fixture_dir)
+    assert on_disk == _expanded_preset(EffortPresets.BALANCED)
 
 
 # =============================================================================
@@ -401,30 +394,29 @@ def test_apply_preset_creates_models_block_when_absent():
 # =============================================================================
 
 
-def test_apply_preset_round_trip_no_residue():
-    with PlanContext() as ctx:
-        _write_marshal_with_models(ctx.fixture_dir, None)
+def test_apply_preset_round_trip_no_residue(plan_context):
+    _write_marshal_with_models(plan_context.fixture_dir, None)
 
-        cmd_effort_apply_preset(Namespace(preset='balanced'))
-        balanced_on_disk = _read_marshal_models(ctx.fixture_dir)
-        assert balanced_on_disk == _expanded_preset(EffortPresets.BALANCED)
+    cmd_effort_apply_preset(Namespace(preset='balanced'))
+    balanced_on_disk = _read_marshal_models(plan_context.fixture_dir)
+    assert balanced_on_disk == _expanded_preset(EffortPresets.BALANCED)
 
-        cmd_effort_apply_preset(Namespace(preset='economic'))
-        on_disk = _read_marshal_models(ctx.fixture_dir)
-        assert on_disk == _expanded_preset(EffortPresets.ECONOMIC)
+    cmd_effort_apply_preset(Namespace(preset='economic'))
+    on_disk = _read_marshal_models(plan_context.fixture_dir)
+    assert on_disk == _expanded_preset(EffortPresets.ECONOMIC)
 
-        # BALANCED's per-phase entries must not survive the swap.
-        # ECONOMIC's clean-slate write replaces every per-phase entry
-        # with the ECONOMIC payload after writer-expansion: phase-6-finalize
-        # is a dict-valued override in ECONOMIC ({'verification-feedback':
-        # 'high'}), so the writer emits a dict with the ECONOMIC default
-        # ('medium') filling every other sub-key.
-        assert on_disk['roles']['phase-6-finalize'] == {
-            'default': 'medium',
-            'verification-feedback': 'high',
-            'post-run-review': 'medium',
-        }
-        # phase-2-refine is bumped to 'high' in both BALANCED and ECONOMIC
-        # (the new ladder pushes the three analytical phases up); the
-        # writer keeps the string shorthand for flat-group overrides.
-        assert on_disk['roles']['phase-2-refine'] == 'high'
+    # BALANCED's per-phase entries must not survive the swap.
+    # ECONOMIC's clean-slate write replaces every per-phase entry
+    # with the ECONOMIC payload after writer-expansion: phase-6-finalize
+    # is a dict-valued override in ECONOMIC ({'verification-feedback':
+    # 'high'}), so the writer emits a dict with the ECONOMIC default
+    # ('medium') filling every other sub-key.
+    assert on_disk['roles']['phase-6-finalize'] == {
+        'default': 'medium',
+        'verification-feedback': 'high',
+        'post-run-review': 'medium',
+    }
+    # phase-2-refine is bumped to 'high' in both BALANCED and ECONOMIC
+    # (the new ladder pushes the three analytical phases up); the
+    # writer keeps the string shorthand for flat-group overrides.
+    assert on_disk['roles']['phase-2-refine'] == 'high'

@@ -34,7 +34,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT, PlanContext
+from conftest import MARKETPLACE_ROOT
 
 # -----------------------------------------------------------------------------
 # Tier 2 direct import — load manage-references CRUD module via importlib so
@@ -281,7 +281,7 @@ def test_scope_estimate_derivation_rules(mapping: dict, expected: str) -> None:
 
 
 @pytest.mark.parametrize('value', list(_VALID_ENUM))
-def test_scope_estimate_persists_to_references_json(value: str) -> None:
+def test_scope_estimate_persists_to_references_json(value: str, plan_context) -> None:
     """``manage-references set --field scope_estimate --value {value}``
     round-trips for every canonical enum value.
 
@@ -293,65 +293,63 @@ def test_scope_estimate_persists_to_references_json(value: str) -> None:
     # plan_id MUST be kebab-case — underscores in enum values (single_module,
     # multi_module) are translated to hyphens for the plan_id alone.
     plan_id = f'phase2-scope-estimate-{value.replace("_", "-")}'
-    with PlanContext(plan_id=plan_id):
-        # Bootstrap references.json — phase-1-init does this for real plans;
-        # we replicate the minimum here so the persistence call has a target.
-        create_result = cmd_create(
-            Namespace(
-                plan_id=plan_id,
-                branch='feature/test',
-                issue_url=None,
-                build_system=None,
-                domains=None,
-            )
+    # Bootstrap references.json — phase-1-init does this for real plans;
+    # we replicate the minimum here so the persistence call has a target.
+    create_result = cmd_create(
+        Namespace(
+            plan_id=plan_id,
+            branch='feature/test',
+            issue_url=None,
+            build_system=None,
+            domains=None,
         )
-        assert create_result['status'] == 'success', create_result
+    )
+    assert create_result['status'] == 'success', create_result
 
-        # Step 13 contract: persist scope_estimate
-        set_result = cmd_set(Namespace(plan_id=plan_id, field='scope_estimate', value=value))
-        assert set_result['status'] == 'success'
-        assert set_result['field'] == 'scope_estimate'
-        assert set_result['value'] == value
+    # Step 13 contract: persist scope_estimate
+    set_result = cmd_set(Namespace(plan_id=plan_id, field='scope_estimate', value=value))
+    assert set_result['status'] == 'success'
+    assert set_result['field'] == 'scope_estimate'
+    assert set_result['value'] == value
 
-        # Read-back: phase-3-outline / manifest composer / Q-Gate bypass
-        # consumers all rely on cmd_get returning the persisted value.
-        get_result = cmd_get(Namespace(plan_id=plan_id, field='scope_estimate'))
-        assert get_result is not None
-        assert get_result['status'] == 'success'
-        assert get_result['field'] == 'scope_estimate'
-        assert get_result['value'] == value
+    # Read-back: phase-3-outline / manifest composer / Q-Gate bypass
+    # consumers all rely on cmd_get returning the persisted value.
+    get_result = cmd_get(Namespace(plan_id=plan_id, field='scope_estimate'))
+    assert get_result is not None
+    assert get_result['status'] == 'success'
+    assert get_result['field'] == 'scope_estimate'
+    assert get_result['value'] == value
 
 
-def test_scope_estimate_overwrite_records_previous() -> None:
+def test_scope_estimate_overwrite_records_previous(plan_context) -> None:
     """phase-3-outline MAY overwrite the value via the same set call (e.g.,
     downgrading single_module → surgical after deliverables crystalize).
     The contract: subsequent set calls overwrite cleanly and report the
     prior value via the ``previous`` field.
     """
     plan_id = 'phase2-scope-estimate-overwrite'
-    with PlanContext(plan_id=plan_id):
-        cmd_create(
-            Namespace(
-                plan_id=plan_id,
-                branch='feature/test',
-                issue_url=None,
-                build_system=None,
-                domains=None,
-            )
+    cmd_create(
+        Namespace(
+            plan_id=plan_id,
+            branch='feature/test',
+            issue_url=None,
+            build_system=None,
+            domains=None,
         )
-        cmd_set(Namespace(plan_id=plan_id, field='scope_estimate', value='single_module'))
-        overwrite = cmd_set(Namespace(plan_id=plan_id, field='scope_estimate', value='surgical'))
+    )
+    cmd_set(Namespace(plan_id=plan_id, field='scope_estimate', value='single_module'))
+    overwrite = cmd_set(Namespace(plan_id=plan_id, field='scope_estimate', value='surgical'))
 
-        assert overwrite['status'] == 'success'
-        assert overwrite['value'] == 'surgical'
-        assert overwrite.get('previous') == 'single_module', (
-            'Overwrite must report previous value so downstream phases can '
-            'audit refinements (phase-3-outline downgrades, manifest revisions).'
-        )
+    assert overwrite['status'] == 'success'
+    assert overwrite['value'] == 'surgical'
+    assert overwrite.get('previous') == 'single_module', (
+        'Overwrite must report previous value so downstream phases can '
+        'audit refinements (phase-3-outline downgrades, manifest revisions).'
+    )
 
-        final = cmd_get(Namespace(plan_id=plan_id, field='scope_estimate'))
-        assert final is not None
-        assert final['value'] == 'surgical'
+    final = cmd_get(Namespace(plan_id=plan_id, field='scope_estimate'))
+    assert final is not None
+    assert final['value'] == 'surgical'
 
 
 # -----------------------------------------------------------------------------

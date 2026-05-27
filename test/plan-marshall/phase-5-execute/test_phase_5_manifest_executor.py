@@ -27,7 +27,7 @@ from argparse import Namespace
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT, PlanContext
+from conftest import MARKETPLACE_ROOT
 
 # ---------------------------------------------------------------------------
 # Manifest module (Tier 2 direct import via importlib because of the hyphen)
@@ -125,19 +125,19 @@ def _derive_executor_dispatch(manifest: dict) -> list[str]:
 class TestManifestApiContract:
     """The shape phase-5-execute reads via ``manage-execution-manifest read``."""
 
-    def test_read_returns_phase_5_block_with_executor_fields(self):
-        with PlanContext(plan_id='p5-read-shape'):
-            cmd_compose(_compose_ns('p5-read-shape'))
-            result = cmd_read(_read_ns('p5-read-shape'))
+    def test_read_returns_phase_5_block_with_executor_fields(self, plan_context):
+        plan_context.plan_dir_for('p5-read-shape')
+        cmd_compose(_compose_ns('p5-read-shape'))
+        result = cmd_read(_read_ns('p5-read-shape'))
 
-            assert result is not None
-            assert result['status'] == 'success'
-            assert result['plan_id'] == 'p5-read-shape'
-            assert 'phase_5' in result, 'phase-5-execute Step 2 reads phase_5 — must be present in read output'
-            phase_5 = result['phase_5']
-            assert isinstance(phase_5, dict)
-            assert isinstance(phase_5.get('early_terminate'), bool)
-            assert isinstance(phase_5.get('verification_steps'), list)
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['plan_id'] == 'p5-read-shape'
+        assert 'phase_5' in result, 'phase-5-execute Step 2 reads phase_5 — must be present in read output'
+        phase_5 = result['phase_5']
+        assert isinstance(phase_5, dict)
+        assert isinstance(phase_5.get('early_terminate'), bool)
+        assert isinstance(phase_5.get('verification_steps'), list)
 
 
 # ===========================================================================
@@ -149,7 +149,7 @@ class TestManifestApiContract:
 class TestExecutorDispatchScenarios:
     """Synthetic manifests of various shapes — assert the dispatched steps."""
 
-    def test_full_verification_list_appends_one_quality_sweep(self):
+    def test_full_verification_list_appends_one_quality_sweep(self, plan_context):
         """verification_steps non-empty → all steps fire **in declared order**
         + exactly one canonical 'quality-gate' sweep appended at end.
 
@@ -157,42 +157,42 @@ class TestExecutorDispatchScenarios:
         [quality-gate, module-tests, coverage] dispatches all three steps in
         that order, then Step 11b appends a single quality-gate sweep.
         """
-        with PlanContext(plan_id='p5-full'):
-            cmd_compose(
-                _compose_ns(
-                    'p5-full',
-                    change_type='feature',
-                    scope_estimate='multi_module',
-                    affected_files_count=12,
-                    phase_5_steps='quality-gate,module-tests,coverage',
-                )
+        plan_context.plan_dir_for('p5-full')
+        cmd_compose(
+            _compose_ns(
+                'p5-full',
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=12,
+                phase_5_steps='quality-gate,module-tests,coverage',
             )
-            manifest = read_manifest('p5-full')
-            assert manifest is not None
-            # Manifest preserves declared order — Rule 7 default path passes
-            # the candidates through verbatim.
-            assert manifest['phase_5']['verification_steps'] == [
-                'quality-gate',
-                'module-tests',
-                'coverage',
-            ]
+        )
+        manifest = read_manifest('p5-full')
+        assert manifest is not None
+        # Manifest preserves declared order — Rule 7 default path passes
+        # the candidates through verbatim.
+        assert manifest['phase_5']['verification_steps'] == [
+            'quality-gate',
+            'module-tests',
+            'coverage',
+        ]
 
-            dispatched = _derive_executor_dispatch(manifest)
+        dispatched = _derive_executor_dispatch(manifest)
 
-            # Exact ordered dispatch: the three manifest steps fire in
-            # declared order, then the Step 11b sweep is appended at the end.
-            assert dispatched == [
-                'quality-gate',
-                'module-tests',
-                'coverage',
-                'quality-gate',
-            ], f'Full-list manifest must dispatch in declared order with one appended Step 11b sweep, got {dispatched}'
-            # Defensive cross-check: the sweep is unconditional when the list
-            # is non-empty, even though 'quality-gate' is already in the list.
-            assert dispatched.count('quality-gate') == 2
-            assert dispatched[-1] == 'quality-gate'
+        # Exact ordered dispatch: the three manifest steps fire in
+        # declared order, then the Step 11b sweep is appended at the end.
+        assert dispatched == [
+            'quality-gate',
+            'module-tests',
+            'coverage',
+            'quality-gate',
+        ], f'Full-list manifest must dispatch in declared order with one appended Step 11b sweep, got {dispatched}'
+        # Defensive cross-check: the sweep is unconditional when the list
+        # is non-empty, even though 'quality-gate' is already in the list.
+        assert dispatched.count('quality-gate') == 2
+        assert dispatched[-1] == 'quality-gate'
 
-    def test_just_module_tests_fires_module_tests_then_quality_sweep(self):
+    def test_just_module_tests_fires_module_tests_then_quality_sweep(self, plan_context):
         """Tests-only candidate set (role-based intersection) → only the
         candidate with ``role: module-tests`` survives Row 4's intersection;
         then Step 11b appends a single quality-gate sweep.
@@ -202,55 +202,55 @@ class TestExecutorDispatchScenarios:
         Only ``build_verify`` declares that role; ``quality_check`` and
         ``coverage_check`` are dropped.
         """
-        with PlanContext(plan_id='p5-tests-only'):
-            cmd_compose(
-                _compose_ns(
-                    'p5-tests-only',
-                    change_type='verification',
-                    scope_estimate='single_module',
-                    affected_files_count=4,
-                    phase_5_steps='quality_check,build_verify,coverage_check',
-                )
+        plan_context.plan_dir_for('p5-tests-only')
+        cmd_compose(
+            _compose_ns(
+                'p5-tests-only',
+                change_type='verification',
+                scope_estimate='single_module',
+                affected_files_count=4,
+                phase_5_steps='quality_check,build_verify,coverage_check',
             )
-            manifest = read_manifest('p5-tests-only')
-            assert manifest is not None
-            assert manifest['phase_5']['verification_steps'] == ['build_verify']
+        )
+        manifest = read_manifest('p5-tests-only')
+        assert manifest is not None
+        assert manifest['phase_5']['verification_steps'] == ['build_verify']
 
-            dispatched = _derive_executor_dispatch(manifest)
-            assert dispatched == ['build_verify', 'quality-gate'], (
-                f'tests-only manifest must dispatch [build_verify, quality-gate] '
-                f'(per-task + Step 11b sweep), got {dispatched}'
-            )
-            # Exactly ONE quality-gate sweep — Step 11b never doubles up.
-            assert dispatched.count('quality-gate') == 1
+        dispatched = _derive_executor_dispatch(manifest)
+        assert dispatched == ['build_verify', 'quality-gate'], (
+            f'tests-only manifest must dispatch [build_verify, quality-gate] '
+            f'(per-task + Step 11b sweep), got {dispatched}'
+        )
+        # Exactly ONE quality-gate sweep — Step 11b never doubles up.
+        assert dispatched.count('quality-gate') == 1
 
-    def test_empty_verification_list_skips_final_quality_sweep(self):
+    def test_empty_verification_list_skips_final_quality_sweep(self, plan_context):
         """Docs-only plans: verification_steps == [] → no per-task verification
         and **no** Step 11b sweep. Phase 11b skip rule fires."""
-        with PlanContext(plan_id='p5-docs-only'):
-            cmd_compose(
-                _compose_ns(
-                    'p5-docs-only',
-                    change_type='tech_debt',
-                    scope_estimate='surgical',
-                    affected_files_count=3,
-                    # Docs-only candidate set: no module-tests/coverage.
-                    phase_5_steps='quality-gate',
-                )
+        plan_context.plan_dir_for('p5-docs-only')
+        cmd_compose(
+            _compose_ns(
+                'p5-docs-only',
+                change_type='tech_debt',
+                scope_estimate='surgical',
+                affected_files_count=3,
+                # Docs-only candidate set: no module-tests/coverage.
+                phase_5_steps='quality-gate',
             )
-            manifest = read_manifest('p5-docs-only')
-            assert manifest is not None
-            # Docs-only row of the matrix produces an empty verification list.
-            assert manifest['phase_5']['verification_steps'] == []
-            assert manifest['phase_5']['early_terminate'] is False
+        )
+        manifest = read_manifest('p5-docs-only')
+        assert manifest is not None
+        # Docs-only row of the matrix produces an empty verification list.
+        assert manifest['phase_5']['verification_steps'] == []
+        assert manifest['phase_5']['early_terminate'] is False
 
-            dispatched = _derive_executor_dispatch(manifest)
-            assert dispatched == [], (
-                'Empty verification_steps must skip Step 11b sweep entirely '
-                f'(no quality-gate appended), got {dispatched}'
-            )
+        dispatched = _derive_executor_dispatch(manifest)
+        assert dispatched == [], (
+            'Empty verification_steps must skip Step 11b sweep entirely '
+            f'(no quality-gate appended), got {dispatched}'
+        )
 
-    def test_quality_gate_already_last_still_appends_sweep(self):
+    def test_quality_gate_already_last_still_appends_sweep(self, plan_context):
         """Pins SKILL.md Step 11b contract: when verification_steps is
         non-empty, the final sweep is appended UNCONDITIONALLY — even when
         'quality-gate' is already the last entry in the list.
@@ -260,63 +260,63 @@ class TestExecutorDispatchScenarios:
         this test catches any future drift toward a "skip if already last"
         optimization that would silently change end-of-phase semantics.
         """
-        with PlanContext(plan_id='p5-qg-last'):
-            cmd_compose(
-                _compose_ns(
-                    'p5-qg-last',
-                    change_type='feature',
-                    scope_estimate='multi_module',
-                    affected_files_count=8,
-                    # Order matters — the Rule 7 default path passes
-                    # candidates through verbatim, so this manifest will end
-                    # with 'quality-gate'.
-                    phase_5_steps='module-tests,quality-gate',
-                )
+        plan_context.plan_dir_for('p5-qg-last')
+        cmd_compose(
+            _compose_ns(
+                'p5-qg-last',
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=8,
+                # Order matters — the Rule 7 default path passes
+                # candidates through verbatim, so this manifest will end
+                # with 'quality-gate'.
+                phase_5_steps='module-tests,quality-gate',
             )
-            manifest = read_manifest('p5-qg-last')
-            assert manifest is not None
-            assert manifest['phase_5']['verification_steps'] == [
-                'module-tests',
-                'quality-gate',
-            ], 'Manifest must preserve declared candidate order'
+        )
+        manifest = read_manifest('p5-qg-last')
+        assert manifest is not None
+        assert manifest['phase_5']['verification_steps'] == [
+            'module-tests',
+            'quality-gate',
+        ], 'Manifest must preserve declared candidate order'
 
-            dispatched = _derive_executor_dispatch(manifest)
+        dispatched = _derive_executor_dispatch(manifest)
 
-            # Sweep is appended even though the list already ends with
-            # 'quality-gate' — two quality-gate occurrences in total.
-            assert dispatched == [
-                'module-tests',
-                'quality-gate',
-                'quality-gate',
-            ], f'Step 11b sweep must append even when manifest list already ends with quality-gate, got {dispatched}'
-            assert dispatched.count('quality-gate') == 2
+        # Sweep is appended even though the list already ends with
+        # 'quality-gate' — two quality-gate occurrences in total.
+        assert dispatched == [
+            'module-tests',
+            'quality-gate',
+            'quality-gate',
+        ], f'Step 11b sweep must append even when manifest list already ends with quality-gate, got {dispatched}'
+        assert dispatched.count('quality-gate') == 2
 
-    def test_early_terminate_skips_entire_execute_loop(self):
+    def test_early_terminate_skips_entire_execute_loop(self, plan_context):
         """early_terminate=true (analysis with empty affected files) → executor
         transitions directly to phase-6-finalize. ZERO steps fire (no per-task
         verification, no Step 11b sweep)."""
-        with PlanContext(plan_id='p5-early-term'):
-            cmd_compose(
-                _compose_ns(
-                    'p5-early-term',
-                    change_type='analysis',
-                    scope_estimate='none',
-                    affected_files_count=0,
-                )
+        plan_context.plan_dir_for('p5-early-term')
+        cmd_compose(
+            _compose_ns(
+                'p5-early-term',
+                change_type='analysis',
+                scope_estimate='none',
+                affected_files_count=0,
             )
-            manifest = read_manifest('p5-early-term')
-            assert manifest is not None
-            assert manifest['phase_5']['early_terminate'] is True
+        )
+        manifest = read_manifest('p5-early-term')
+        assert manifest is not None
+        assert manifest['phase_5']['early_terminate'] is True
 
-            dispatched = _derive_executor_dispatch(manifest)
-            assert dispatched == [], (
-                'early_terminate=true must skip entire execute loop including '
-                f'Step 11b sweep, got dispatch={dispatched}'
-            )
-            # Defensive: zero quality-gate dispatches under early_terminate —
-            # the sweep is gated on verification_steps non-empty, which is
-            # vacuously false here.
-            assert 'quality-gate' not in dispatched
+        dispatched = _derive_executor_dispatch(manifest)
+        assert dispatched == [], (
+            'early_terminate=true must skip entire execute loop including '
+            f'Step 11b sweep, got dispatch={dispatched}'
+        )
+        # Defensive: zero quality-gate dispatches under early_terminate —
+        # the sweep is gated on verification_steps non-empty, which is
+        # vacuously false here.
+        assert 'quality-gate' not in dispatched
 
 
 # ===========================================================================

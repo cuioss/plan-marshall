@@ -20,7 +20,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
-from conftest import PlanContext, get_script_path  # type: ignore[import-not-found]
+from conftest import get_script_path  # type: ignore[import-not-found]
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'phase-5-execute', 'scope_creep_check.py')
 SCRIPTS_DIR = SCRIPT_PATH.parent
@@ -37,25 +37,25 @@ import scope_creep_check as scc  # noqa: E402
 
 
 @pytest.fixture
-def plan_with_refs():
+def plan_with_refs(plan_context):
     """Plan context pre-populated with references.json and one TASK file."""
-    with PlanContext(plan_id='scope-creep-test') as ctx:
-        refs = {
-            'plan_creation_sha': 'deadbeef',
-            'affected_files': [
-                'src/a.py',
-                'src/b.py',
-            ],
-            'modified_files': [],
-        }
-        assert ctx.plan_dir is not None
-        (ctx.plan_dir / 'references.json').write_text(json.dumps(refs))
-        task = {
-            'number': 1,
-            'steps': [{'number': 1, 'target': 'src/c.py'}],
-        }
-        (ctx.plan_dir / 'TASK-001.json').write_text(json.dumps(task))
-        yield ctx
+    plan_dir = plan_context.plan_dir_for('scope-creep-test')
+    refs = {
+        'plan_creation_sha': 'deadbeef',
+        'affected_files': [
+            'src/a.py',
+            'src/b.py',
+        ],
+        'modified_files': [],
+    }
+    (plan_dir / 'references.json').write_text(json.dumps(refs))
+    task = {
+        'number': 1,
+        'steps': [{'number': 1, 'target': 'src/c.py'}],
+    }
+    (plan_dir / 'TASK-001.json').write_text(json.dumps(task))
+    plan_context.plan_dir = plan_dir
+    yield plan_context
 
 
 # ---------------------------------------------------------------------------

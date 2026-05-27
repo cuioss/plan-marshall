@@ -25,7 +25,7 @@ from argparse import Namespace
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT, PlanContext
+from conftest import MARKETPLACE_ROOT
 
 # ---------------------------------------------------------------------------
 # Manifest module (Tier 2 direct import via importlib because of the hyphen)
@@ -210,90 +210,86 @@ class TestStandardsTimeoutContract:
 
 
 class TestHungAgentSimulation:
-    def test_hung_sonar_marks_failed_and_continues(self):
+    def test_hung_sonar_marks_failed_and_continues(self, plan_context):
         """A simulated hung sonar-roundtrip (16 min > 15 min budget) yields
         outcome=failed and the dispatcher continues with subsequent steps."""
-        with PlanContext(plan_id='p6-timeout-sonar'):
-            cmd_compose(_compose_ns('p6-timeout-sonar'))
-            manifest = read_manifest('p6-timeout-sonar')
-            assert manifest is not None
+        cmd_compose(_compose_ns('p6-timeout-sonar'))
+        manifest = read_manifest('p6-timeout-sonar')
+        assert manifest is not None
 
-            durations = {
-                'sonar-roundtrip': 901,  # one second over the 900s budget
-            }
-            dispatched, final_state = _simulate_dispatch_with_timeout(
-                manifest,
-                durations,
-            )
+        durations = {
+            'sonar-roundtrip': 901,  # one second over the 900s budget
+        }
+        dispatched, final_state = _simulate_dispatch_with_timeout(
+            manifest,
+            durations,
+        )
 
-            assert 'sonar-roundtrip' in dispatched
-            assert final_state['sonar-roundtrip']['outcome'] == 'failed'
-            assert 'timed out' in final_state['sonar-roundtrip']['display_detail']
+        assert 'sonar-roundtrip' in dispatched
+        assert final_state['sonar-roundtrip']['outcome'] == 'failed'
+        assert 'timed out' in final_state['sonar-roundtrip']['display_detail']
 
-            # Subsequent steps STILL fire — no abort.
-            steps = manifest['phase_6']['steps']
-            sonar_idx = steps.index('sonar-roundtrip')
-            for later in steps[sonar_idx + 1 :]:
-                assert later in dispatched, f'{later} must still dispatch after sonar timeout (continuation)'
+        # Subsequent steps STILL fire — no abort.
+        steps = manifest['phase_6']['steps']
+        sonar_idx = steps.index('sonar-roundtrip')
+        for later in steps[sonar_idx + 1 :]:
+            assert later in dispatched, f'{later} must still dispatch after sonar timeout (continuation)'
 
-    def test_hung_automated_review_marks_failed_and_continues(self):
-        with PlanContext(plan_id='p6-timeout-review'):
-            cmd_compose(_compose_ns('p6-timeout-review'))
-            manifest = read_manifest('p6-timeout-review')
-            assert manifest is not None
+    def test_hung_automated_review_marks_failed_and_continues(self, plan_context):
+        cmd_compose(_compose_ns('p6-timeout-review'))
+        manifest = read_manifest('p6-timeout-review')
+        assert manifest is not None
 
-            durations = {'automated-review': 1500}
-            dispatched, final_state = _simulate_dispatch_with_timeout(
-                manifest,
-                durations,
-            )
+        durations = {'automated-review': 1500}
+        dispatched, final_state = _simulate_dispatch_with_timeout(
+            manifest,
+            durations,
+        )
 
-            assert final_state['automated-review']['outcome'] == 'failed'
-            steps = manifest['phase_6']['steps']
-            ar_idx = steps.index('automated-review')
-            # All later steps still fire.
-            for later in steps[ar_idx + 1 :]:
-                assert later in dispatched
+        assert final_state['automated-review']['outcome'] == 'failed'
+        steps = manifest['phase_6']['steps']
+        ar_idx = steps.index('automated-review')
+        # All later steps still fire.
+        for later in steps[ar_idx + 1 :]:
+            assert later in dispatched
 
-    def test_hung_lessons_capture_marks_failed_and_continues(self):
+    def test_hung_lessons_capture_marks_failed_and_continues(self, plan_context):
         """A simulated hung lessons-capture (6 min > 5 min budget) yields
         outcome=failed; the pipeline never aborts on advisory-step timeout."""
-        with PlanContext(plan_id='p6-timeout-lessons'):
-            cmd_compose(_compose_ns('p6-timeout-lessons'))
-            manifest = read_manifest('p6-timeout-lessons')
-            assert manifest is not None
+        cmd_compose(_compose_ns('p6-timeout-lessons'))
+        manifest = read_manifest('p6-timeout-lessons')
+        assert manifest is not None
 
-            durations = {'lessons-capture': 360}  # > 300s budget
-            dispatched, final_state = _simulate_dispatch_with_timeout(
-                manifest,
-                durations,
-            )
+        durations = {'lessons-capture': 360}  # > 300s budget
+        dispatched, final_state = _simulate_dispatch_with_timeout(
+            manifest,
+            durations,
+        )
 
-            assert final_state['lessons-capture']['outcome'] == 'failed'
-            steps = manifest['phase_6']['steps']
-            lc_idx = steps.index('lessons-capture')
-            for later in steps[lc_idx + 1 :]:
-                assert later in dispatched
+        assert final_state['lessons-capture']['outcome'] == 'failed'
+        steps = manifest['phase_6']['steps']
+        lc_idx = steps.index('lessons-capture')
+        for later in steps[lc_idx + 1 :]:
+            assert later in dispatched
 
-    def test_within_budget_marks_done(self):
+    def test_within_budget_marks_done(self, plan_context):
         """An agent that completes inside the budget marks done."""
-        with PlanContext(plan_id='p6-within-budget'):
-            cmd_compose(_compose_ns('p6-within-budget'))
-            manifest = read_manifest('p6-within-budget')
-            assert manifest is not None
+        cmd_compose(_compose_ns('p6-within-budget'))
+        manifest = read_manifest('p6-within-budget')
+        assert manifest is not None
 
-            durations = {
-                'sonar-roundtrip': 100,
-                'automated-review': 200,
-                'lessons-capture': 30,
-            }
-            _, final_state = _simulate_dispatch_with_timeout(
-                manifest,
-                durations,
-            )
-            # Every step that ran finished done.
-            for _step_id, record in final_state.items():
-                assert record['outcome'] == 'done'
+        durations = {
+            'sonar-roundtrip': 100,
+            'automated-review': 200,
+            'lessons-capture': 30,
+        }
+        _, final_state = _simulate_dispatch_with_timeout(
+            manifest,
+            durations,
+        )
+        # Every step that ran finished done.
+        for _step_id, record in final_state.items():
+            assert record['outcome'] == 'done'
 
 
 # ===========================================================================
@@ -302,36 +298,35 @@ class TestHungAgentSimulation:
 
 
 class TestTimeoutRetryOnReentry:
-    def test_failed_timeout_step_retried_on_next_entry(self):
+    def test_failed_timeout_step_retried_on_next_entry(self, plan_context):
         """A step left at outcome=failed by a timeout MUST be retried on the
         next Phase 6 entry (one fresh attempt per invocation)."""
-        with PlanContext(plan_id='p6-retry-after-timeout'):
-            cmd_compose(_compose_ns('p6-retry-after-timeout'))
-            manifest = read_manifest('p6-retry-after-timeout')
-            assert manifest is not None
+        cmd_compose(_compose_ns('p6-retry-after-timeout'))
+        manifest = read_manifest('p6-retry-after-timeout')
+        assert manifest is not None
 
-            # First entry: sonar-roundtrip times out.
-            first_dispatch, first_state = _simulate_dispatch_with_timeout(
-                manifest,
-                {'sonar-roundtrip': 901},
-            )
-            assert first_state['sonar-roundtrip']['outcome'] == 'failed'
+        # First entry: sonar-roundtrip times out.
+        first_dispatch, first_state = _simulate_dispatch_with_timeout(
+            manifest,
+            {'sonar-roundtrip': 901},
+        )
+        assert first_state['sonar-roundtrip']['outcome'] == 'failed'
 
-            # Second entry: sonar runs fast this time.
-            second_dispatch, second_state = _simulate_dispatch_with_timeout(
-                manifest,
-                {'sonar-roundtrip': 60},
-                initial_state=first_state,
-            )
+        # Second entry: sonar runs fast this time.
+        second_dispatch, second_state = _simulate_dispatch_with_timeout(
+            manifest,
+            {'sonar-roundtrip': 60},
+            initial_state=first_state,
+        )
 
-            # The previously-done steps must be SKIPPED on the second entry.
-            # The previously-failed sonar step must be RETRIED.
-            assert 'sonar-roundtrip' in second_dispatch
-            for step_id, record in first_state.items():
-                if record['outcome'] == 'done':
-                    assert step_id not in second_dispatch, f'done-marked {step_id} must not re-dispatch on re-entry'
-            # And on the retry it succeeds.
-            assert second_state['sonar-roundtrip']['outcome'] == 'done'
+        # The previously-done steps must be SKIPPED on the second entry.
+        # The previously-failed sonar step must be RETRIED.
+        assert 'sonar-roundtrip' in second_dispatch
+        for step_id, record in first_state.items():
+            if record['outcome'] == 'done':
+                assert step_id not in second_dispatch, f'done-marked {step_id} must not re-dispatch on re-entry'
+        # And on the retry it succeeds.
+        assert second_state['sonar-roundtrip']['outcome'] == 'done'
 
 
 # ===========================================================================
@@ -340,20 +335,19 @@ class TestTimeoutRetryOnReentry:
 
 
 class TestLessonsCaptureUnconditional:
-    def test_lessons_capture_fires_even_when_sonar_timed_out(self):
+    def test_lessons_capture_fires_even_when_sonar_timed_out(self, plan_context):
         """A sonar timeout must NOT prevent lessons-capture from dispatching
         on the same Phase 6 invocation — lessons-capture is unconditional
         whenever it appears in the manifest."""
-        with PlanContext(plan_id='p6-lessons-after-sonar-timeout'):
-            cmd_compose(_compose_ns('p6-lessons-after-sonar-timeout'))
-            manifest = read_manifest('p6-lessons-after-sonar-timeout')
-            assert manifest is not None
-            assert 'lessons-capture' in manifest['phase_6']['steps']
+        cmd_compose(_compose_ns('p6-lessons-after-sonar-timeout'))
+        manifest = read_manifest('p6-lessons-after-sonar-timeout')
+        assert manifest is not None
+        assert 'lessons-capture' in manifest['phase_6']['steps']
 
-            dispatched, final_state = _simulate_dispatch_with_timeout(
-                manifest,
-                {'sonar-roundtrip': 901},
-            )
+        dispatched, final_state = _simulate_dispatch_with_timeout(
+            manifest,
+            {'sonar-roundtrip': 901},
+        )
 
-            assert 'lessons-capture' in dispatched, 'lessons-capture must dispatch even after a sonar timeout'
-            assert final_state['sonar-roundtrip']['outcome'] == 'failed'
+        assert 'lessons-capture' in dispatched, 'lessons-capture must dispatch even after a sonar timeout'
+        assert final_state['sonar-roundtrip']['outcome'] == 'failed'

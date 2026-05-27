@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from conftest import PROJECT_ROOT, PlanContext
+from conftest import PROJECT_ROOT
 
 # Load the cmd module via importlib (mirrors the batch-add test bootstrap).
 _SCRIPTS_DIR = (
@@ -116,50 +116,49 @@ def _write_outline(plan_dir: Path, deliverables: list[dict[str, Any]]) -> None:
 # =============================================================================
 
 
-def test_qgate_mechanical_clean_plan_passes_all_checks():
+def test_qgate_mechanical_clean_plan_passes_all_checks(plan_context):
     """A consistent plan with two deliverables × one task each reports zero failures."""
-    with PlanContext(plan_id='qgate-clean') as ctx:
-        assert ctx.plan_dir is not None
-        _write_outline(
-            ctx.plan_dir,
-            [
-                {'number': 1, 'title': 'Add foo', 'affected_files': ['src/A.java']},
-                {'number': 2, 'title': 'Add bar', 'affected_files': ['src/B.java']},
-            ],
-        )
-        # Use real repo files so files_exist passes.
-        existing_file = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
-        task_dir = ctx.plan_dir / 'tasks'
-        _write_task(
-            task_dir,
-            1,
-            deliverable=1,
-            skills=['plan-marshall:manage-tasks'],
-            steps=[{'number': 1, 'target': existing_file, 'status': 'pending'}],
-        )
-        _write_task(
-            task_dir,
-            2,
-            deliverable=2,
-            skills=['plan-marshall:manage-tasks'],
-            steps=[{'number': 1, 'target': existing_file, 'status': 'pending'}],
-        )
+    plan_dir = plan_context.plan_dir_for('qgate-clean')
+    _write_outline(
+        plan_dir,
+        [
+            {'number': 1, 'title': 'Add foo', 'affected_files': ['src/A.java']},
+            {'number': 2, 'title': 'Add bar', 'affected_files': ['src/B.java']},
+        ],
+    )
+    # Use real repo files so files_exist passes.
+    existing_file = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
+    task_dir = plan_dir / 'tasks'
+    _write_task(
+        task_dir,
+        1,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        steps=[{'number': 1, 'target': existing_file, 'status': 'pending'}],
+    )
+    _write_task(
+        task_dir,
+        2,
+        deliverable=2,
+        skills=['plan-marshall:manage-tasks'],
+        steps=[{'number': 1, 'target': existing_file, 'status': 'pending'}],
+    )
 
-        result = cmd_qgate_mechanical(_ns('qgate-clean'))
+    result = cmd_qgate_mechanical(_ns('qgate-clean'))
 
-        assert result['status'] == 'success'
-        assert result['total_failed'] == 0
-        assert result['findings_emitted'] == 0  # --no-emit path
-        assert result['ambiguous'] is False
-        for name in (
-            'coverage',
-            'skill_resolution',
-            'acyclic',
-            'files_exist',
-            'keyword_drift',
-            'structural_token_drift',
-        ):
-            assert result['checks'][name]['failed'] == 0, name
+    assert result['status'] == 'success'
+    assert result['total_failed'] == 0
+    assert result['findings_emitted'] == 0  # --no-emit path
+    assert result['ambiguous'] is False
+    for name in (
+        'coverage',
+        'skill_resolution',
+        'acyclic',
+        'files_exist',
+        'keyword_drift',
+        'structural_token_drift',
+    ):
+        assert result['checks'][name]['failed'] == 0, name
 
 
 # =============================================================================
@@ -167,86 +166,83 @@ def test_qgate_mechanical_clean_plan_passes_all_checks():
 # =============================================================================
 
 
-def test_qgate_mechanical_coverage_missing_deliverable():
+def test_qgate_mechanical_coverage_missing_deliverable(plan_context):
     """A deliverable with no tasks is flagged."""
-    with PlanContext(plan_id='qgate-cov-missing') as ctx:
-        assert ctx.plan_dir is not None
-        _write_outline(
-            ctx.plan_dir,
-            [
-                {'number': 1, 'title': 'Add foo', 'affected_files': ['src/A.java']},
-                {'number': 2, 'title': 'Add bar', 'affected_files': ['src/B.java']},
-            ],
-        )
-        # Only deliverable 1 has a task; deliverable 2 is uncovered.
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            1,
-            deliverable=1,
-            skills=['plan-marshall:manage-tasks'],
-            steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
-        )
+    plan_dir = plan_context.plan_dir_for('qgate-cov-missing')
+    _write_outline(
+        plan_dir,
+        [
+            {'number': 1, 'title': 'Add foo', 'affected_files': ['src/A.java']},
+            {'number': 2, 'title': 'Add bar', 'affected_files': ['src/B.java']},
+        ],
+    )
+    # Only deliverable 1 has a task; deliverable 2 is uncovered.
+    _write_task(
+        plan_dir / 'tasks',
+        1,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
+    )
 
-        result = cmd_qgate_mechanical(_ns('qgate-cov-missing'))
-        assert result['checks']['coverage']['failed'] == 1
+    result = cmd_qgate_mechanical(_ns('qgate-cov-missing'))
+    assert result['checks']['coverage']['failed'] == 1
 
 
-def test_qgate_mechanical_coverage_orphan_task():
+def test_qgate_mechanical_coverage_orphan_task(plan_context):
     """A task referencing a non-existent deliverable is flagged."""
-    with PlanContext(plan_id='qgate-cov-orphan') as ctx:
-        assert ctx.plan_dir is not None
-        _write_outline(
-            ctx.plan_dir,
-            [{'number': 1, 'title': 'Add foo', 'affected_files': ['src/A.java']}],
-        )
-        # deliverable=2 references unknown deliverable -> orphan.
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            1,
-            deliverable=1,
-            skills=['plan-marshall:manage-tasks'],
-            steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
-        )
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            2,
-            deliverable=42,
-            skills=['plan-marshall:manage-tasks'],
-            steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
-        )
+    plan_dir = plan_context.plan_dir_for('qgate-cov-orphan')
+    _write_outline(
+        plan_dir,
+        [{'number': 1, 'title': 'Add foo', 'affected_files': ['src/A.java']}],
+    )
+    # deliverable=2 references unknown deliverable -> orphan.
+    _write_task(
+        plan_dir / 'tasks',
+        1,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
+    )
+    _write_task(
+        plan_dir / 'tasks',
+        2,
+        deliverable=42,
+        skills=['plan-marshall:manage-tasks'],
+        steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
+    )
 
-        result = cmd_qgate_mechanical(_ns('qgate-cov-orphan'))
-        # One orphan task; deliverable 1 is covered.
-        assert result['checks']['coverage']['failed'] == 1
+    result = cmd_qgate_mechanical(_ns('qgate-cov-orphan'))
+    # One orphan task; deliverable 1 is covered.
+    assert result['checks']['coverage']['failed'] == 1
 
 
-def test_qgate_mechanical_holistic_task_not_orphan():
+def test_qgate_mechanical_holistic_task_not_orphan(plan_context):
     """deliverable=0 (holistic) does not count as an orphan."""
-    with PlanContext(plan_id='qgate-cov-holistic') as ctx:
-        assert ctx.plan_dir is not None
-        _write_outline(
-            ctx.plan_dir,
-            [{'number': 1, 'title': 'Add foo', 'affected_files': ['src/A.java']}],
-        )
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            1,
-            deliverable=1,
-            skills=['plan-marshall:manage-tasks'],
-            steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
-        )
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            2,
-            deliverable=0,
-            profile='verification',
-            domain='',
-            skills=[],
-            steps=[{'number': 1, 'target': 'pw verify', 'status': 'pending'}],
-        )
+    plan_dir = plan_context.plan_dir_for('qgate-cov-holistic')
+    _write_outline(
+        plan_dir,
+        [{'number': 1, 'title': 'Add foo', 'affected_files': ['src/A.java']}],
+    )
+    _write_task(
+        plan_dir / 'tasks',
+        1,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
+    )
+    _write_task(
+        plan_dir / 'tasks',
+        2,
+        deliverable=0,
+        profile='verification',
+        domain='',
+        skills=[],
+        steps=[{'number': 1, 'target': 'pw verify', 'status': 'pending'}],
+    )
 
-        result = cmd_qgate_mechanical(_ns('qgate-cov-holistic'))
-        assert result['checks']['coverage']['failed'] == 0
+    result = cmd_qgate_mechanical(_ns('qgate-cov-holistic'))
+    assert result['checks']['coverage']['failed'] == 0
 
 
 # =============================================================================
@@ -254,66 +250,63 @@ def test_qgate_mechanical_holistic_task_not_orphan():
 # =============================================================================
 
 
-def test_qgate_mechanical_skill_resolution_missing_domain():
+def test_qgate_mechanical_skill_resolution_missing_domain(plan_context):
     """Non-verification tasks without a domain are flagged."""
-    with PlanContext(plan_id='qgate-skill-nodomain') as ctx:
-        assert ctx.plan_dir is not None
-        _write_outline(
-            ctx.plan_dir,
-            [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
-        )
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            1,
-            deliverable=1,
-            domain='',  # missing
-            skills=['plan-marshall:manage-tasks'],
-            steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
-        )
+    plan_dir = plan_context.plan_dir_for('qgate-skill-nodomain')
+    _write_outline(
+        plan_dir,
+        [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
+    )
+    _write_task(
+        plan_dir / 'tasks',
+        1,
+        deliverable=1,
+        domain='',  # missing
+        skills=['plan-marshall:manage-tasks'],
+        steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
+    )
 
-        result = cmd_qgate_mechanical(_ns('qgate-skill-nodomain'))
-        assert result['checks']['skill_resolution']['failed'] >= 1
+    result = cmd_qgate_mechanical(_ns('qgate-skill-nodomain'))
+    assert result['checks']['skill_resolution']['failed'] >= 1
 
 
-def test_qgate_mechanical_skill_resolution_bad_shape():
+def test_qgate_mechanical_skill_resolution_bad_shape(plan_context):
     """Skill strings not matching ``bundle:skill`` shape are flagged."""
-    with PlanContext(plan_id='qgate-skill-shape') as ctx:
-        assert ctx.plan_dir is not None
-        _write_outline(
-            ctx.plan_dir,
-            [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
-        )
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            1,
-            deliverable=1,
-            skills=['no-colon-here', 'plan-marshall:manage-tasks'],
-            steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
-        )
+    plan_dir = plan_context.plan_dir_for('qgate-skill-shape')
+    _write_outline(
+        plan_dir,
+        [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
+    )
+    _write_task(
+        plan_dir / 'tasks',
+        1,
+        deliverable=1,
+        skills=['no-colon-here', 'plan-marshall:manage-tasks'],
+        steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
+    )
 
-        result = cmd_qgate_mechanical(_ns('qgate-skill-shape'))
-        # Exactly one bad skill.
-        assert result['checks']['skill_resolution']['failed'] == 1
+    result = cmd_qgate_mechanical(_ns('qgate-skill-shape'))
+    # Exactly one bad skill.
+    assert result['checks']['skill_resolution']['failed'] == 1
 
 
-def test_qgate_mechanical_skill_resolution_empty_skills_allowed():
+def test_qgate_mechanical_skill_resolution_empty_skills_allowed(plan_context):
     """Empty skills list is permitted (Step 5 records its own finding)."""
-    with PlanContext(plan_id='qgate-skill-empty') as ctx:
-        assert ctx.plan_dir is not None
-        _write_outline(
-            ctx.plan_dir,
-            [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
-        )
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            1,
-            deliverable=1,
-            skills=[],
-            steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
-        )
+    plan_dir = plan_context.plan_dir_for('qgate-skill-empty')
+    _write_outline(
+        plan_dir,
+        [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
+    )
+    _write_task(
+        plan_dir / 'tasks',
+        1,
+        deliverable=1,
+        skills=[],
+        steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
+    )
 
-        result = cmd_qgate_mechanical(_ns('qgate-skill-empty'))
-        assert result['checks']['skill_resolution']['failed'] == 0
+    result = cmd_qgate_mechanical(_ns('qgate-skill-empty'))
+    assert result['checks']['skill_resolution']['failed'] == 0
 
 
 # =============================================================================
@@ -321,63 +314,61 @@ def test_qgate_mechanical_skill_resolution_empty_skills_allowed():
 # =============================================================================
 
 
-def test_qgate_mechanical_acyclic_simple_cycle():
+def test_qgate_mechanical_acyclic_simple_cycle(plan_context):
     """TASK-1 -> TASK-2 -> TASK-1 produces one finding."""
-    with PlanContext(plan_id='qgate-cycle') as ctx:
-        assert ctx.plan_dir is not None
-        _write_outline(
-            ctx.plan_dir,
-            [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
-        )
-        existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            1,
-            deliverable=1,
-            skills=['plan-marshall:manage-tasks'],
-            depends_on=['TASK-2'],
-            steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
-        )
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            2,
-            deliverable=1,
-            skills=['plan-marshall:manage-tasks'],
-            depends_on=['TASK-1'],
-            steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
-        )
+    plan_dir = plan_context.plan_dir_for('qgate-cycle')
+    _write_outline(
+        plan_dir,
+        [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
+    )
+    existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
+    _write_task(
+        plan_dir / 'tasks',
+        1,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        depends_on=['TASK-2'],
+        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+    )
+    _write_task(
+        plan_dir / 'tasks',
+        2,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        depends_on=['TASK-1'],
+        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+    )
 
-        result = cmd_qgate_mechanical(_ns('qgate-cycle'))
-        assert result['checks']['acyclic']['failed'] == 1
+    result = cmd_qgate_mechanical(_ns('qgate-cycle'))
+    assert result['checks']['acyclic']['failed'] == 1
 
 
-def test_qgate_mechanical_acyclic_dag_passes():
+def test_qgate_mechanical_acyclic_dag_passes(plan_context):
     """A linear dependency chain is a DAG and passes."""
-    with PlanContext(plan_id='qgate-dag') as ctx:
-        assert ctx.plan_dir is not None
-        _write_outline(
-            ctx.plan_dir,
-            [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
-        )
-        existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            1,
-            deliverable=1,
-            skills=['plan-marshall:manage-tasks'],
-            steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
-        )
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            2,
-            deliverable=1,
-            skills=['plan-marshall:manage-tasks'],
-            depends_on=['TASK-1'],
-            steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
-        )
+    plan_dir = plan_context.plan_dir_for('qgate-dag')
+    _write_outline(
+        plan_dir,
+        [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
+    )
+    existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
+    _write_task(
+        plan_dir / 'tasks',
+        1,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+    )
+    _write_task(
+        plan_dir / 'tasks',
+        2,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        depends_on=['TASK-1'],
+        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+    )
 
-        result = cmd_qgate_mechanical(_ns('qgate-dag'))
-        assert result['checks']['acyclic']['failed'] == 0
+    result = cmd_qgate_mechanical(_ns('qgate-dag'))
+    assert result['checks']['acyclic']['failed'] == 0
 
 
 # =============================================================================
@@ -385,54 +376,52 @@ def test_qgate_mechanical_acyclic_dag_passes():
 # =============================================================================
 
 
-def test_qgate_mechanical_files_exist_missing_step_target():
+def test_qgate_mechanical_files_exist_missing_step_target(plan_context):
     """A step target that doesn't exist on disk is flagged."""
-    with PlanContext(plan_id='qgate-files-missing') as ctx:
-        assert ctx.plan_dir is not None
-        _write_outline(
-            ctx.plan_dir,
-            [{'number': 1, 'title': 'X', 'affected_files': ['src/Missing.java']}],
-        )
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            1,
-            deliverable=1,
-            skills=['plan-marshall:manage-tasks'],
-            steps=[{'number': 1, 'target': 'src/does-not-exist.java', 'status': 'pending'}],
-        )
+    plan_dir = plan_context.plan_dir_for('qgate-files-missing')
+    _write_outline(
+        plan_dir,
+        [{'number': 1, 'title': 'X', 'affected_files': ['src/Missing.java']}],
+    )
+    _write_task(
+        plan_dir / 'tasks',
+        1,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        steps=[{'number': 1, 'target': 'src/does-not-exist.java', 'status': 'pending'}],
+    )
 
-        result = cmd_qgate_mechanical(_ns('qgate-files-missing'))
-        assert result['checks']['files_exist']['failed'] == 1
+    result = cmd_qgate_mechanical(_ns('qgate-files-missing'))
+    assert result['checks']['files_exist']['failed'] == 1
 
 
-def test_qgate_mechanical_files_exist_skips_verification_profile():
+def test_qgate_mechanical_files_exist_skips_verification_profile(plan_context):
     """Verification profile steps are commands, not files, so are skipped."""
-    with PlanContext(plan_id='qgate-files-verify') as ctx:
-        assert ctx.plan_dir is not None
-        _write_outline(
-            ctx.plan_dir,
-            [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
-        )
-        existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            1,
-            deliverable=1,
-            skills=['plan-marshall:manage-tasks'],
-            steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
-        )
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            2,
-            deliverable=0,
-            profile='verification',
-            domain='',
-            skills=[],
-            steps=[{'number': 1, 'target': 'pw verify --module plan-marshall', 'status': 'pending'}],
-        )
+    plan_dir = plan_context.plan_dir_for('qgate-files-verify')
+    _write_outline(
+        plan_dir,
+        [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
+    )
+    existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
+    _write_task(
+        plan_dir / 'tasks',
+        1,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+    )
+    _write_task(
+        plan_dir / 'tasks',
+        2,
+        deliverable=0,
+        profile='verification',
+        domain='',
+        skills=[],
+        steps=[{'number': 1, 'target': 'pw verify --module plan-marshall', 'status': 'pending'}],
+    )
 
-        result = cmd_qgate_mechanical(_ns('qgate-files-verify'))
-        assert result['checks']['files_exist']['failed'] == 0
+    result = cmd_qgate_mechanical(_ns('qgate-files-verify'))
+    assert result['checks']['files_exist']['failed'] == 0
 
 
 # =============================================================================
@@ -440,56 +429,54 @@ def test_qgate_mechanical_files_exist_skips_verification_profile():
 # =============================================================================
 
 
-def test_qgate_mechanical_keyword_drift_planning_keyword_in_description():
+def test_qgate_mechanical_keyword_drift_planning_keyword_in_description(plan_context):
     """A planning-domain keyword absent from the deliverable haystack is flagged."""
-    with PlanContext(plan_id='qgate-kw-drift') as ctx:
-        assert ctx.plan_dir is not None
-        _write_outline(
-            ctx.plan_dir,
-            [{'number': 1, 'title': 'Implement foo', 'affected_files': ['src/A.java']}],
-        )
-        existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            1,
-            deliverable=1,
-            skills=['plan-marshall:manage-tasks'],
-            description="'Implement foo'. Update PR review workflow for CI compliance.",
-            steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
-        )
+    plan_dir = plan_context.plan_dir_for('qgate-kw-drift')
+    _write_outline(
+        plan_dir,
+        [{'number': 1, 'title': 'Implement foo', 'affected_files': ['src/A.java']}],
+    )
+    existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
+    _write_task(
+        plan_dir / 'tasks',
+        1,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        description="'Implement foo'. Update PR review workflow for CI compliance.",
+        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+    )
 
-        result = cmd_qgate_mechanical(_ns('qgate-kw-drift'))
-        # "PR review" and "CI" both fire.
-        assert result['checks']['keyword_drift']['failed'] >= 2
+    result = cmd_qgate_mechanical(_ns('qgate-kw-drift'))
+    # "PR review" and "CI" both fire.
+    assert result['checks']['keyword_drift']['failed'] >= 2
 
 
-def test_qgate_mechanical_keyword_drift_keyword_in_haystack_is_ok():
+def test_qgate_mechanical_keyword_drift_keyword_in_haystack_is_ok(plan_context):
     """A planning keyword present in the deliverable haystack is not flagged."""
-    with PlanContext(plan_id='qgate-kw-ok') as ctx:
-        assert ctx.plan_dir is not None
-        _write_outline(
-            ctx.plan_dir,
-            [
-                {
-                    'number': 1,
-                    'title': 'Wire CI pipeline',
-                    'affected_files': ['ci/main.yml'],
-                    'metadata': {'change_type': 'feature'},
-                }
-            ],
-        )
-        existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            1,
-            deliverable=1,
-            skills=['plan-marshall:manage-tasks'],
-            description="'Wire CI pipeline'. Update CI configuration to use the new runner.",
-            steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
-        )
+    plan_dir = plan_context.plan_dir_for('qgate-kw-ok')
+    _write_outline(
+        plan_dir,
+        [
+            {
+                'number': 1,
+                'title': 'Wire CI pipeline',
+                'affected_files': ['ci/main.yml'],
+                'metadata': {'change_type': 'feature'},
+            }
+        ],
+    )
+    existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
+    _write_task(
+        plan_dir / 'tasks',
+        1,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        description="'Wire CI pipeline'. Update CI configuration to use the new runner.",
+        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+    )
 
-        result = cmd_qgate_mechanical(_ns('qgate-kw-ok'))
-        assert result['checks']['keyword_drift']['failed'] == 0
+    result = cmd_qgate_mechanical(_ns('qgate-kw-ok'))
+    assert result['checks']['keyword_drift']['failed'] == 0
 
 
 # =============================================================================
@@ -497,55 +484,53 @@ def test_qgate_mechanical_keyword_drift_keyword_in_haystack_is_ok():
 # =============================================================================
 
 
-def test_qgate_mechanical_structural_token_gap():
+def test_qgate_mechanical_structural_token_gap(plan_context):
     """A gap in TASK-NNN numbering is flagged."""
-    with PlanContext(plan_id='qgate-numbering-gap') as ctx:
-        assert ctx.plan_dir is not None
-        _write_outline(
-            ctx.plan_dir,
-            [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
-        )
-        existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            1,
-            deliverable=1,
-            skills=['plan-marshall:manage-tasks'],
-            steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
-        )
-        # Skip TASK-2 to leave a gap.
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            3,
-            deliverable=1,
-            skills=['plan-marshall:manage-tasks'],
-            steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
-        )
+    plan_dir = plan_context.plan_dir_for('qgate-numbering-gap')
+    _write_outline(
+        plan_dir,
+        [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
+    )
+    existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
+    _write_task(
+        plan_dir / 'tasks',
+        1,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+    )
+    # Skip TASK-2 to leave a gap.
+    _write_task(
+        plan_dir / 'tasks',
+        3,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+    )
 
-        result = cmd_qgate_mechanical(_ns('qgate-numbering-gap'))
-        assert result['checks']['structural_token_drift']['failed'] >= 1
+    result = cmd_qgate_mechanical(_ns('qgate-numbering-gap'))
+    assert result['checks']['structural_token_drift']['failed'] >= 1
 
 
-def test_qgate_mechanical_structural_token_does_not_start_at_001():
+def test_qgate_mechanical_structural_token_does_not_start_at_001(plan_context):
     """Lowest task being TASK-002 is flagged."""
-    with PlanContext(plan_id='qgate-numbering-start') as ctx:
-        assert ctx.plan_dir is not None
-        _write_outline(
-            ctx.plan_dir,
-            [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
-        )
-        existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            2,
-            deliverable=1,
-            skills=['plan-marshall:manage-tasks'],
-            steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
-        )
+    plan_dir = plan_context.plan_dir_for('qgate-numbering-start')
+    _write_outline(
+        plan_dir,
+        [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
+    )
+    existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
+    _write_task(
+        plan_dir / 'tasks',
+        2,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+    )
 
-        result = cmd_qgate_mechanical(_ns('qgate-numbering-start'))
-        # Both "doesn't start at 001" and the gap at TASK-001 are reported.
-        assert result['checks']['structural_token_drift']['failed'] >= 1
+    result = cmd_qgate_mechanical(_ns('qgate-numbering-start'))
+    # Both "doesn't start at 001" and the gap at TASK-001 are reported.
+    assert result['checks']['structural_token_drift']['failed'] >= 1
 
 
 # =============================================================================
@@ -553,30 +538,28 @@ def test_qgate_mechanical_structural_token_does_not_start_at_001():
 # =============================================================================
 
 
-def test_qgate_mechanical_missing_outline_marks_ambiguous():
+def test_qgate_mechanical_missing_outline_marks_ambiguous(plan_context):
     """When solution_outline.md is missing, ``ambiguous`` flips to True."""
-    with PlanContext(plan_id='qgate-no-outline') as ctx:
-        assert ctx.plan_dir is not None
-        existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            1,
-            deliverable=1,
-            skills=['plan-marshall:manage-tasks'],
-            steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
-        )
+    plan_dir = plan_context.plan_dir_for('qgate-no-outline')
+    existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
+    _write_task(
+        plan_dir / 'tasks',
+        1,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+    )
 
-        result = cmd_qgate_mechanical(_ns('qgate-no-outline'))
-        assert result['ambiguous'] is True
+    result = cmd_qgate_mechanical(_ns('qgate-no-outline'))
+    assert result['ambiguous'] is True
 
 
-def test_qgate_mechanical_plan_dir_not_found_errors():
+def test_qgate_mechanical_plan_dir_not_found_errors(plan_context):
     """Missing plan dir returns a structured error."""
-    with PlanContext(plan_id='qgate-clean-2'):
-        # PlanContext creates the plan dir; query a different id that doesn't exist.
-        result = cmd_qgate_mechanical(_ns('does-not-exist'))
-        assert result['status'] == 'error'
-        assert result['error'] == 'plan_dir_not_found'
+    # PlanContext creates the plan dir; query a different id that doesn't exist.
+    result = cmd_qgate_mechanical(_ns('does-not-exist'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'plan_dir_not_found'
 
 
 # =============================================================================
@@ -584,38 +567,37 @@ def test_qgate_mechanical_plan_dir_not_found_errors():
 # =============================================================================
 
 
-def test_qgate_mechanical_emit_writes_findings():
+def test_qgate_mechanical_emit_writes_findings(plan_context):
     """With emit=True (default), failures land in the phase-4-plan Q-Gate findings store."""
-    with PlanContext(plan_id='qgate-emit') as ctx:
-        assert ctx.plan_dir is not None
-        _write_outline(
-            ctx.plan_dir,
-            [
-                {'number': 1, 'title': 'Has tasks', 'affected_files': ['src/A.java']},
-                {'number': 2, 'title': 'No tasks', 'affected_files': ['src/B.java']},
-            ],
-        )
-        existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
-        _write_task(
-            ctx.plan_dir / 'tasks',
-            1,
-            deliverable=1,
-            skills=['plan-marshall:manage-tasks'],
-            steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
-        )
+    plan_dir = plan_context.plan_dir_for('qgate-emit')
+    _write_outline(
+        plan_dir,
+        [
+            {'number': 1, 'title': 'Has tasks', 'affected_files': ['src/A.java']},
+            {'number': 2, 'title': 'No tasks', 'affected_files': ['src/B.java']},
+        ],
+    )
+    existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
+    _write_task(
+        plan_dir / 'tasks',
+        1,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+    )
 
-        result = cmd_qgate_mechanical(_ns('qgate-emit', no_emit=False))
-        assert result['status'] == 'success'
-        assert result['findings_emitted'] == 1
-        assert result['emit'] is True
-        # The Q-Gate JSONL store records the finding under phase 4-plan.
-        findings_path = ctx.plan_dir / 'artifacts' / 'findings' / 'qgate-4-plan.jsonl'
-        assert findings_path.exists(), 'qgate findings file was not created'
-        records = [json.loads(line) for line in findings_path.read_text().splitlines() if line.strip()]
-        assert len(records) == 1
-        assert records[0]['source'] == 'qgate'
-        assert records[0]['type'] == 'triage'
-        assert 'coverage' in records[0]['title']
+    result = cmd_qgate_mechanical(_ns('qgate-emit', no_emit=False))
+    assert result['status'] == 'success'
+    assert result['findings_emitted'] == 1
+    assert result['emit'] is True
+    # The Q-Gate JSONL store records the finding under phase 4-plan.
+    findings_path = plan_dir / 'artifacts' / 'findings' / 'qgate-4-plan.jsonl'
+    assert findings_path.exists(), 'qgate findings file was not created'
+    records = [json.loads(line) for line in findings_path.read_text().splitlines() if line.strip()]
+    assert len(records) == 1
+    assert records[0]['source'] == 'qgate'
+    assert records[0]['type'] == 'triage'
+    assert 'coverage' in records[0]['title']
 
 
 # =============================================================================

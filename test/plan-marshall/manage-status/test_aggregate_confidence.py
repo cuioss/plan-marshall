@@ -15,7 +15,7 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import PROJECT_ROOT, PlanContext
+from conftest import PROJECT_ROOT
 
 _SCRIPTS_DIR = (
     PROJECT_ROOT
@@ -79,91 +79,91 @@ def _write_status(plan_dir: Path) -> None:
 # =============================================================================
 
 
-def test_equal_max_scores_yield_100():
+def test_equal_max_scores_yield_100(plan_context):
     """Every dimension at 100 → overall 100."""
-    with PlanContext(plan_id='ac-max'):
-        result = cmd_aggregate_confidence(
-            _ns(
-                'ac-max',
-                correctness=100,
-                completeness=100,
-                consistency=100,
-                non_duplication=100,
-                ambiguity=100,
-                module_mapping=100,
-            )
+    plan_context.plan_dir_for('ac-max')
+    result = cmd_aggregate_confidence(
+        _ns(
+            'ac-max',
+            correctness=100,
+            completeness=100,
+            consistency=100,
+            non_duplication=100,
+            ambiguity=100,
+            module_mapping=100,
         )
-        assert result['status'] == 'success'
-        assert result['confidence'] == 100.0
-        assert result['missing_dimensions'] == []
+    )
+    assert result['status'] == 'success'
+    assert result['confidence'] == 100.0
+    assert result['missing_dimensions'] == []
 
 
-def test_zero_scores_yield_zero():
-    with PlanContext(plan_id='ac-zero'):
-        result = cmd_aggregate_confidence(
-            _ns(
-                'ac-zero',
-                correctness=0,
-                completeness=0,
-                consistency=0,
-                non_duplication=0,
-                ambiguity=0,
-                module_mapping=0,
-            )
+def test_zero_scores_yield_zero(plan_context):
+    plan_context.plan_dir_for('ac-zero')
+    result = cmd_aggregate_confidence(
+        _ns(
+            'ac-zero',
+            correctness=0,
+            completeness=0,
+            consistency=0,
+            non_duplication=0,
+            ambiguity=0,
+            module_mapping=0,
         )
-        assert result['confidence'] == 0.0
+    )
+    assert result['confidence'] == 0.0
 
 
-def test_specific_weights_apply():
+def test_specific_weights_apply(plan_context):
     """Manual hand-computed example confirms the weighted formula."""
-    with PlanContext(plan_id='ac-weights'):
-        # 80*0.2 + 70*0.2 + 90*0.2 + 100*0.1 + 60*0.2 + 50*0.1
-        # = 16 + 14 + 18 + 10 + 12 + 5 = 75.0
-        result = cmd_aggregate_confidence(
-            _ns(
-                'ac-weights',
-                correctness=80,
-                completeness=70,
-                consistency=90,
-                non_duplication=100,
-                ambiguity=60,
-                module_mapping=50,
-            )
+    # 80*0.2 + 70*0.2 + 90*0.2 + 100*0.1 + 60*0.2 + 50*0.1
+    # = 16 + 14 + 18 + 10 + 12 + 5 = 75.0
+    plan_context.plan_dir_for('ac-weights')
+    result = cmd_aggregate_confidence(
+        _ns(
+            'ac-weights',
+            correctness=80,
+            completeness=70,
+            consistency=90,
+            non_duplication=100,
+            ambiguity=60,
+            module_mapping=50,
         )
-        assert result['confidence'] == 75.0
-        # Each breakdown entry has score, weight, weighted.
-        weighted_sum = sum(b['weighted'] for b in result['breakdown'])
-        assert abs(weighted_sum - 75.0) < 1e-6
+    )
+    assert result['confidence'] == 75.0
+    # Each breakdown entry has score, weight, weighted.
+    weighted_sum = sum(b['weighted'] for b in result['breakdown'])
+    assert abs(weighted_sum - 75.0) < 1e-6
 
 
-def test_missing_dimensions_default_to_zero_and_are_listed():
-    with PlanContext(plan_id='ac-missing'):
-        result = cmd_aggregate_confidence(_ns('ac-missing', correctness=100, completeness=100))
-        # Only two dimensions set → 100*0.2 + 100*0.2 = 40
-        assert result['confidence'] == 40.0
-        assert set(result['missing_dimensions']) == {
-            'consistency',
-            'non_duplication',
-            'ambiguity',
-            'module_mapping',
-        }
+def test_missing_dimensions_default_to_zero_and_are_listed(plan_context):
+    plan_context.plan_dir_for('ac-missing')
+    result = cmd_aggregate_confidence(_ns('ac-missing', correctness=100, completeness=100))
+    # Only two dimensions set → 100*0.2 + 100*0.2 = 40
+    assert result['confidence'] == 40.0
+    assert set(result['missing_dimensions']) == {
+        'consistency',
+        'non_duplication',
+        'ambiguity',
+        'module_mapping',
+    }
 
 
-def test_out_of_range_scores_are_clamped():
-    with PlanContext(plan_id='ac-clamp'):
-        result = cmd_aggregate_confidence(
-            _ns(
-                'ac-clamp',
-                correctness=150,  # clamped to 100
-                completeness=-10,  # clamped to 0
-                consistency=50,
-                non_duplication=50,
-                ambiguity=50,
-                module_mapping=50,
-            )
+def test_out_of_range_scores_are_clamped(plan_context):
+    plan_context.plan_dir_for('ac-clamp')
+    result = cmd_aggregate_confidence(
+        _ns(
+            'ac-clamp',
+            correctness=150,  # clamped to 100
+            completeness=-10,  # clamped to 0
+            consistency=50,
+            non_duplication=50,
+            ambiguity=50,
+            module_mapping=50,
         )
-        # 100*0.2 + 0*0.2 + 50*0.2 + 50*0.1 + 50*0.2 + 50*0.1 = 20 + 0 + 10 + 5 + 10 + 5 = 50
-        assert result['confidence'] == 50.0
+    )
+    # 100*0.2 + 0*0.2 + 50*0.2 + 50*0.1 + 50*0.2 + 50*0.1 = 20 + 0 + 10 + 5 + 10 + 5 = 50
+    assert result['confidence'] == 50.0
 
 
 # =============================================================================
@@ -171,66 +171,60 @@ def test_out_of_range_scores_are_clamped():
 # =============================================================================
 
 
-def test_scores_file_kebab_keys_supported():
-    with PlanContext(plan_id='ac-file') as ctx:
-        assert ctx.plan_dir is not None
-        path = ctx.plan_dir / 'scores.json'
-        path.write_text(
-            json.dumps(
-                {
-                    'correctness': 100,
-                    'completeness': 100,
-                    'consistency': 100,
-                    'non-duplication': 100,  # kebab-case
-                    'ambiguity': 100,
-                    'module-mapping': 100,
-                }
-            ),
-            encoding='utf-8',
-        )
-        result = cmd_aggregate_confidence(_ns('ac-file', scores_file=str(path)))
-        assert result['confidence'] == 100.0
+def test_scores_file_kebab_keys_supported(plan_context):
+    path = plan_context.plan_dir_for('ac-file') / 'scores.json'
+    path.write_text(
+        json.dumps(
+            {
+                'correctness': 100,
+                'completeness': 100,
+                'consistency': 100,
+                'non-duplication': 100,  # kebab-case
+                'ambiguity': 100,
+                'module-mapping': 100,
+            }
+        ),
+        encoding='utf-8',
+    )
+    result = cmd_aggregate_confidence(_ns('ac-file', scores_file=str(path)))
+    assert result['confidence'] == 100.0
 
 
-def test_scores_file_missing_raises_error():
-    with PlanContext(plan_id='ac-no-file'):
-        result = cmd_aggregate_confidence(_ns('ac-no-file', scores_file='/nonexistent/path.json'))
-        assert result['status'] == 'error'
-        assert result['error'] == 'invalid_input'
+def test_scores_file_missing_raises_error(plan_context):
+    plan_context.plan_dir_for('ac-no-file')
+    result = cmd_aggregate_confidence(_ns('ac-no-file', scores_file='/nonexistent/path.json'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_input'
 
 
-def test_scores_file_invalid_json_raises_error():
-    with PlanContext(plan_id='ac-bad-json') as ctx:
-        assert ctx.plan_dir is not None
-        path = ctx.plan_dir / 'scores.json'
-        path.write_text('{not valid', encoding='utf-8')
-        result = cmd_aggregate_confidence(_ns('ac-bad-json', scores_file=str(path)))
-        assert result['status'] == 'error'
-        assert result['error'] == 'invalid_input'
+def test_scores_file_invalid_json_raises_error(plan_context):
+    path = plan_context.plan_dir_for('ac-bad-json') / 'scores.json'
+    path.write_text('{not valid', encoding='utf-8')
+    result = cmd_aggregate_confidence(_ns('ac-bad-json', scores_file=str(path)))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_input'
 
 
-def test_cli_flags_override_scores_file_values():
-    with PlanContext(plan_id='ac-override') as ctx:
-        assert ctx.plan_dir is not None
-        path = ctx.plan_dir / 'scores.json'
-        path.write_text(
-            json.dumps(
-                {
-                    'correctness': 50,
-                    'completeness': 50,
-                    'consistency': 50,
-                    'non_duplication': 50,
-                    'ambiguity': 50,
-                    'module_mapping': 50,
-                }
-            ),
-            encoding='utf-8',
-        )
-        # Override correctness via CLI to 100 — overall lifts by (100-50)*0.2 = 10.
-        result = cmd_aggregate_confidence(
-            _ns('ac-override', scores_file=str(path), correctness=100)
-        )
-        assert result['confidence'] == 60.0
+def test_cli_flags_override_scores_file_values(plan_context):
+    path = plan_context.plan_dir_for('ac-override') / 'scores.json'
+    path.write_text(
+        json.dumps(
+            {
+                'correctness': 50,
+                'completeness': 50,
+                'consistency': 50,
+                'non_duplication': 50,
+                'ambiguity': 50,
+                'module_mapping': 50,
+            }
+        ),
+        encoding='utf-8',
+    )
+    # Override correctness via CLI to 100 — overall lifts by (100-50)*0.2 = 10.
+    result = cmd_aggregate_confidence(
+        _ns('ac-override', scores_file=str(path), correctness=100)
+    )
+    assert result['confidence'] == 60.0
 
 
 # =============================================================================
@@ -238,25 +232,24 @@ def test_cli_flags_override_scores_file_values():
 # =============================================================================
 
 
-def test_persist_writes_status_metadata_confidence():
-    with PlanContext(plan_id='ac-persist') as ctx:
-        assert ctx.plan_dir is not None
-        _write_status(ctx.plan_dir)
-        result = cmd_aggregate_confidence(
-            _ns(
-                'ac-persist',
-                correctness=100,
-                completeness=100,
-                consistency=100,
-                non_duplication=100,
-                ambiguity=100,
-                module_mapping=100,
-                persist=True,
-            )
+def test_persist_writes_status_metadata_confidence(plan_context):
+    plan_dir = plan_context.plan_dir_for('ac-persist')
+    _write_status(plan_dir)
+    result = cmd_aggregate_confidence(
+        _ns(
+            'ac-persist',
+            correctness=100,
+            completeness=100,
+            consistency=100,
+            non_duplication=100,
+            ambiguity=100,
+            module_mapping=100,
+            persist=True,
         )
-        assert result['persisted'] is True
-        status = json.loads((ctx.plan_dir / 'status.json').read_text())
-        assert status['metadata']['confidence'] == 100.0
+    )
+    assert result['persisted'] is True
+    status = json.loads((plan_dir / 'status.json').read_text())
+    assert status['metadata']['confidence'] == 100.0
 
 
 # =============================================================================
@@ -264,11 +257,10 @@ def test_persist_writes_status_metadata_confidence():
 # =============================================================================
 
 
-def test_plan_dir_not_found_errors():
-    with PlanContext(plan_id='ac-exists'):
-        result = cmd_aggregate_confidence(_ns('does-not-exist', correctness=50))
-        assert result['status'] == 'error'
-        assert result['error'] == 'plan_dir_not_found'
+def test_plan_dir_not_found_errors(plan_context):
+    result = cmd_aggregate_confidence(_ns('does-not-exist', correctness=50))
+    assert result['status'] == 'error'
+    assert result['error'] == 'plan_dir_not_found'
 
 
 # =============================================================================
