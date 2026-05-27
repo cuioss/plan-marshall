@@ -494,6 +494,40 @@ class TestInstallTerminalTitleHooks:
         assert setup_settings["statusLine"] == install_settings["statusLine"]
         assert setup_settings["env"] == install_settings["env"]
 
+    # ------------------------------------------------------------------
+    # (g) Target argument shape — platform identifier vs absolute path.
+    # ------------------------------------------------------------------
+
+    def test_target_claude_resolves_to_project_settings_path(self, rt, tmp_path, monkeypatch):
+        """``--target claude`` MUST resolve via _claude_project_settings_path(), NOT be treated as a literal ./claude file path."""
+        monkeypatch.chdir(tmp_path)
+        # Ensure .claude/settings.json does NOT exist so the helper falls
+        # through to .claude/settings.local.json (the preferred-on-absence path).
+        result = _parsed(rt.project_install_hook("claude"))
+        assert result["status"] == "success"
+        # The resolved path lives under .claude/ — never a stray ./claude file.
+        resolved = Path(result["settings_path"])
+        assert resolved.is_absolute()
+        assert resolved.parent.name == ".claude"
+        assert resolved.name in ("settings.json", "settings.local.json")
+        # No stray ./claude file in cwd.
+        assert not (tmp_path / "claude").exists()
+        # The actual settings file got the wiring.
+        assert resolved.is_file()
+        wiring = json.loads(resolved.read_text())
+        assert "hooks" in wiring
+        assert "UserPromptSubmit" in wiring["hooks"]
+
+    def test_target_relative_path_or_bare_identifier_rejected(self, rt, tmp_path, monkeypatch):
+        """Any target value that is neither 'claude' nor an absolute .json path MUST be rejected with unknown_target."""
+        monkeypatch.chdir(tmp_path)
+        for invalid in ("opencode", "settings.local.json", "./settings.json", "/tmp/no-extension"):
+            result = _parsed(rt.project_install_hook(invalid))
+            assert result["status"] == "error", f"expected error for target={invalid!r}, got {result}"
+            assert result["error"] == "unknown_target", f"target={invalid!r}: {result}"
+            # No stray file ever created.
+            assert not (tmp_path / invalid).exists()
+
 
 # =============================================================================
 # 4b. session_render_title --statusline mode
@@ -509,7 +543,7 @@ class TestSessionRenderTitleStatusline:
     """
 
     def test_statusline_emits_plain_text_on_success(self, rt, tmp_path, monkeypatch, capsys):
-        """In statusline mode, success branch writes plain ``{icon} {title_body}`` — no JSON envelope, no OSC."""
+        """In statusline mode, success branch writes plain ``{icon} {title_body}`` — no JSON envelope, no OSC, no TOON tail."""
         import claude_runtime as _cr
 
         session_id = "sess-statusline-ok"
@@ -530,15 +564,17 @@ class TestSessionRenderTitleStatusline:
         monkeypatch.chdir(tmp_path)
 
         capsys.readouterr()  # discard prior capture
-        result = _parsed(rt.session_render_title(statusline=True))
-        assert result["status"] == "success"
-        assert result["title_body"] == title_body
+        # Function MUST return empty string in statusline mode so the caller's
+        # print(result) does not append a TOON envelope after the title.
+        returned = rt.session_render_title(statusline=True)
+        assert returned == ""
 
         captured = capsys.readouterr().out
-        # Plain text — no JSON envelope, no OSC escape sequence.
+        # Plain text — no JSON envelope, no OSC escape sequence, no TOON.
         assert captured == f"➤ {title_body}"
         assert "terminalSequence" not in captured
         assert "\x1b]0;" not in captured
+        assert "status:" not in captured
 
     def test_default_mode_still_emits_json_envelope(self, rt, tmp_path, monkeypatch, capsys):
         """statusline=False (default) emits a JSON envelope — confirms the two modes are distinct."""
@@ -568,26 +604,27 @@ class TestSessionRenderTitleStatusline:
         assert payload["terminalSequence"] == f"\x1b]0;➤ {title_body}\x07"
 
     def test_statusline_missing_session_id_writes_nothing(self, rt, monkeypatch, capsys):
-        """statusline noop: missing $CLAUDE_CODE_SESSION_ID — nothing written to stdout."""
+        """statusline noop: missing $CLAUDE_CODE_SESSION_ID — nothing written to stdout, empty return."""
         monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
         capsys.readouterr()
-        result = _parsed(rt.session_render_title(statusline=True))
-        assert result["status"] == "no-op"
+        # statusline noop returns empty string (NOT a TOON noop) so the
+        # caller's print(result) does not paint a noop envelope into the
+        # statusLine slot.
+        assert rt.session_render_title(statusline=True) == ""
         assert capsys.readouterr().out == ""
 
     def test_statusline_no_active_plan_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
-        """statusline noop: session has no registered plan — nothing written to stdout."""
+        """statusline noop: session has no registered plan — nothing written to stdout, empty return."""
         import claude_runtime as _cr
 
         monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-without-plan")
         capsys.readouterr()
-        result = _parsed(rt.session_render_title(statusline=True))
-        assert result["status"] == "no-op"
+        assert rt.session_render_title(statusline=True) == ""
         assert capsys.readouterr().out == ""
 
     def test_statusline_missing_title_body_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
-        """statusline noop: session resolves to plan but title-body.txt is missing."""
+        """statusline noop: session resolves to plan but title-body.txt is missing — empty return."""
         import claude_runtime as _cr
 
         session_id = "sess-no-title"
@@ -602,7 +639,14 @@ class TestSessionRenderTitleStatusline:
         monkeypatch.chdir(tmp_path)
 
         capsys.readouterr()
-        result = _parsed(rt.session_render_title(statusline=True))
+        assert rt.session_render_title(statusline=True) == ""
+        assert capsys.readouterr().out == ""
+
+    def test_hook_mode_noops_still_emit_toon(self, rt, monkeypatch, capsys):
+        """Hook (non-statusline) mode noops still return TOON for observability — the contract only shifts in statusline mode."""
+        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+        capsys.readouterr()
+        result = _parsed(rt.session_render_title(statusline=False))
         assert result["status"] == "no-op"
         assert capsys.readouterr().out == ""
 
