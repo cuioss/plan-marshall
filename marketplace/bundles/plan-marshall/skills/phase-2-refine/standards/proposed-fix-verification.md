@@ -85,7 +85,7 @@ If every extracted fix passes its probe, log the result and continue to Step 4 w
 
 The motivating case for this step:
 
-**Symptom** (from lesson `2026-04-18-15-001`): `manage-references` only captures committed changes when the execute phase transition runs at `HEAD == base_branch`. Uncommitted working-tree state is missed.
+**Symptom**: `manage-references` only captures committed changes when the execute phase transition runs at `HEAD == base_branch`. Uncommitted working-tree state is missed.
 
 **Proposed fix** (from the lesson): change the range `{base_branch}...HEAD` to `{base_branch}` (no dots) so `git diff --name-only` reports working-tree modifications.
 

@@ -87,4 +87,4 @@ Two callers reference this standard. When the deviation taxonomy or the AskUserQ
 ## Related
 
 - `plan-marshall:ref-workflow-architecture/standards/self-modifying-classification.md` — outline-time/plan-time classification for plans whose edits touch their own runtime infrastructure; covers the structural half of the failure mode that motivates this escalation rule.
-- Lesson `2026-05-08-09-004` — original failure case (PR #346 silently descoped a "no transition window" requirement to a two-state contract; the deferral was logged to `work.log` without an `AskUserQuestion`).
+- Rationale: Plans have silently descoped hard requirements by deferring them to `work.log` entries without an `AskUserQuestion` — this standard makes the escalation contract explicit so silent softening is structurally prevented.

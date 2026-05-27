@@ -9,7 +9,7 @@ Outline-time procedure that ensures every cross-bundle consumer of a deleted or 
 Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
 
 - **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
-- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the failure mode documented in lesson `2026-04-29-23-002` (silent swallowing of `wrong_parameters` rejections). "Log and continue" is the prohibited anti-pattern.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
 
 Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., `manage-files exists` returning `exists: false`) — are documented inline in the step that issues them.
 
@@ -154,4 +154,4 @@ With the consumer sweep applied at outline time, TASK-9 would never have hit the
 - `change-feature.md` and `change-tech_debt.md` — discovery sub-sections cross-reference this standard.
 - `plan-marshall:phase-3-outline/SKILL.md` — Complex Track table row for Step 10 has a one-line callout pointing here.
 - `plan-marshall:plan-marshall/workflow/q-gate-validation.md` (dispatched under `--phase phase-3-outline` from outline or `--phase phase-4-plan` from plan) — `consumer_sweep_completeness` check enforces the trigger and output requirements at Q-Gate time.
-- Driving lesson: `2026-04-30-23-001` (TASK-9 scope expanded silently — pm-dev-java profiles.py needed migration to per-module layout).
+- Rationale: scope expansions discovered late (after deliverable finalization) silently miss consumer-site migrations in multi-module layouts. Running this sweep before deliverable finalization prevents those gaps.

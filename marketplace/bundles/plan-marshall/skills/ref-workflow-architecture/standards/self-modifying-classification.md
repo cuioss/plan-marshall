@@ -81,4 +81,4 @@ Three callers reference this standard. When the standard's path heuristic, class
 
 - `plan-marshall:phase-4-plan/standards/breaking-refactor-task-split.md` — task-allocation pattern for breaking refactors that need a separate test-rewrite task; complementary to (not a replacement for) the split-into-two-plans pattern documented here.
 - `plan-marshall:ref-workflow-architecture/standards/scope-deviation-escalation.md` — execute-time escalation rule for any decision that softens a request-level hard requirement; covers the procedural half of the failure mode that motivates this classification.
-- Lesson `2026-05-08-09-004` — original failure case (PR #346 shipped with 430 `--project-dir` references after the breaking-flag deletion was silently descoped).
+- Rationale: Self-modifying plans that lack an explicit phasing strategy have shipped with breaking-flag deletions silently descoped, leaving both the old and new surfaces active simultaneously — this classification makes the phasing contract explicit.

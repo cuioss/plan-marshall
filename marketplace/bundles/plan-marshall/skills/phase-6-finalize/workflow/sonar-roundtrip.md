@@ -17,7 +17,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
 
 - **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
-- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the failure mode documented in lesson `2026-04-29-23-002` (silent swallowing of `wrong_parameters` rejections). "Log and continue" is the prohibited anti-pattern.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
 
 ## Timeout Contract
 
@@ -233,7 +233,7 @@ Note: there is no "config disabled" branch — when the manifest excludes `sonar
 
 ## Resumability
 
-`sonar-roundtrip` is one of the three HEAD-dependent steps in `HEAD_DEPENDENT_STEPS` (`pre-push-quality-gate`, `automated-review`, `sonar-roundtrip`) — see [`phase-6-finalize/SKILL.md`](../SKILL.md) Step 3 "Special case — HEAD-dependent steps". The HEAD comparison guards against false-clean re-entry after a downstream loop-back commit (typically produced by `automated-review` opening a fix task that produces a new commit, or by an earlier `sonar-roundtrip` iteration's own FIX dispositions) advances HEAD past the validated tree:
+`sonar-roundtrip` is one of the three HEAD-dependent steps in `HEAD_DEPENDENT_STEPS` (`pre-push-quality-gate`, `automated-review`, `sonar-roundtrip`) — see [`phase-6-finalize/SKILL.md`](../SKILL.md) Step 3 "Special case — HEAD-dependent steps". The HEAD comparison guards against false-clean re-entry after a downstream loop-back commit (typically produced by `automated-review` opening a fix task that produces a new commit, or by a `sonar-roundtrip` iteration's own FIX dispositions on a previous pass) advances HEAD past the validated tree:
 
 | Persisted state | Live worktree HEAD | Action |
 |-----------------|--------------------|--------|

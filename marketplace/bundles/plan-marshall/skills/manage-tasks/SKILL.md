@@ -119,8 +119,8 @@ back to a pruned worktree-root walk otherwise — see "Algorithm" below). The
 two guards are complementary, not redundant: queue-emptiness and
 verify-freshness must BOTH be true before any pre-commit transition.
 
-See lesson `2026-05-24-22-001` for the seed observation (PR #456 — orchestrator
-dispatched `commit-push` against a tree no full `verify` had observed).
+The gap this closes: the orchestrator can dispatch `commit-push` against a tree
+that no full `verify` has observed if the loop-exit guard is the only gate checked.
 
 **Question answered:** is the most recent `verify` log entry newer than the
 worktree state it would re-verify?
@@ -197,11 +197,10 @@ canonical work-log entry **before returning**:
 
 This emission is **unconditional and lives inside the script boundary** — it
 fires for every task completion regardless of which orchestrator dispatched
-the closing call. The motivating gap (lesson `2026-05-08-14-001`) was that the
-caller-side emission in `phase-5-execute` was lost whenever a per-task
-`phase-5-execute` dispatch was re-fired and the original envelope's working context
-was discarded before its `[OUTCOME]` line could be written. Moving the emission into the script
-removes the dependency on the caller's working context.
+the closing call. The emission lives inside the script boundary so it fires for every task completion
+regardless of which orchestrator dispatched the closing call — a caller-side emission
+is lost whenever the caller envelope is re-fired and its working context is discarded
+before the `[OUTCOME]` line can be written.
 
 **Defaults** (used when the optional overrides below are omitted):
 

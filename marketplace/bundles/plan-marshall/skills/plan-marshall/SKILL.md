@@ -17,7 +17,7 @@ Unified entry point for plan lifecycle management covering all 6 phases.
 - Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
 - Never implement tasks directly — this skill creates and manages plans only
 - Do not invent script notations — use only those documented in workflow files
-- Never spawn an unconstrained generic subagent (e.g. `Task: general-purpose`) for any work inside a phase (1-init through 6-finalize). Use `plan-marshall:execution-context-{level}` with a `workflow:` notation pointing at the workflow doc, or inline main-context execution. A generic subagent has no plan-marshall enforcement context, inherits broad tool access, and will violate workflow hard rules. Subagent rules propagate through the agent definition, not through the caller's prompt. (Lesson: `2026-04-24-12-001`.)
+- Never spawn an unconstrained generic subagent (e.g. `Task: general-purpose`) for any work inside a phase (1-init through 6-finalize). Use `plan-marshall:execution-context-{level}` with a `workflow:` notation pointing at the workflow doc, or inline main-context execution. A generic subagent has no plan-marshall enforcement context, inherits broad tool access, and will violate workflow hard rules. Subagent rules propagate through the agent definition, not through the caller's prompt.
 
 **Constraints:**
 - Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
@@ -180,7 +180,7 @@ Main-context skill calls that need the current session ID (e.g., `phase-6-finali
 
 ## Phase Handshake & Blocking-Finding Invariant
 
-Phase transitions are guarded by a registry of **invariants** captured at every phase boundary; see [`references/phase-handshake.md`](references/phase-handshake.md) for the full narrative, the registry table, and the resolution rules. Two registry rows (added in TASK-007 of plan `lesson-2026-05-05-11-001`) drive the blocking-finding gate:
+Phase transitions are guarded by a registry of **invariants** captured at every phase boundary; see [`references/phase-handshake.md`](references/phase-handshake.md) for the full narrative, the registry table, and the resolution rules. Two registry rows drive the blocking-finding gate:
 
 | Row | Behavior at every boundary | Behavior at guarded boundaries |
 |-----|----------------------------|--------------------------------|

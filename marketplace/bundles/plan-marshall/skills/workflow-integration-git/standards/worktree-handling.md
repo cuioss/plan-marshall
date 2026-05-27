@@ -154,7 +154,7 @@ Layers A/B/C cover structured tooling (manage-* scripts, build wrappers, raw too
 
 ### Why Not a `PreToolUse` Hook
 
-An earlier proposal (lesson `2026-05-08-08-001`) suggested intercepting `Edit` / `Write` / `Read` via Claude Code's `PreToolUse` hook to reject any tool call whose path resolves outside `{worktree_path}`. That approach was **rejected during refine** for two reasons:
+A `PreToolUse` hook approach for intercepting `Edit` / `Write` / `Read` tool calls and rejecting any call whose path resolves outside `{worktree_path}` is not viable for two structural reasons:
 
 1. **Host-platform-specific.** Hooks live in `.claude/settings.json` and only fire under the Claude Code CLI host. The same plan running under OpenCode (or any future adapter target) silently loses the enforcement — the hook config is not portable across hosts. This violates the bundle's multi-host design contract.
 2. **Brittle in practice.** Hook configurations require absolute-path matching, settings.json mutation by `marshall-steward` (with version drift between bundle releases), and case-by-case allow-list tuning for legitimate `.plan/` writes. Operators routinely disable misbehaving hooks, training muscle memory that masks legitimate violations later.
@@ -220,7 +220,7 @@ A user-side hook (the original lesson's proposal) would need a complex allow-lis
 
 ### Baseline-Equal Paths Are Not Drift
 
-The proper-superset rule explicitly tolerates **baseline-equal main-dirty state**: a file that was dirty at boundary N and remains dirty (with the same path) at boundary N+1 is not a leak — it predates the current phase boundary and either pre-dated the plan or was previously surfaced by an earlier boundary. Only **newly-dirty** paths count.
+The proper-superset rule explicitly tolerates **baseline-equal main-dirty state**: a file that was dirty at boundary N and remains dirty (with the same path) at boundary N+1 is not a leak — it predates the current phase boundary and either pre-dated the plan or was already surfaced at a prior boundary. Only **newly-dirty** paths count.
 
 This matches the operator's mental model ("only flag what changed") and keeps the failure payload focused on the paths that actually need attention.
 

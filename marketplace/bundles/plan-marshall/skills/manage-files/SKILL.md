@@ -216,7 +216,7 @@ message: At least one --glob pattern is required
 
 #### Resolver Pattern
 
-Driven by lesson `2026-04-27-18-005`: consumer skills should call `manage-files discover` rather than instructing the LLM to use the `Glob` tool. Routing discovery through this subcommand makes path resolution **deterministic** (the script always returns the same set for a given root + patterns), **auditable** (the call is logged via the executor), and **decoupled** from a particular harness's tool surface. The `Glob` tool is appropriate for ad-hoc exploration during a conversation; `discover` is appropriate for skill workflows that depend on a stable, reproducible set of paths.
+Consumer skills should call `manage-files discover` rather than instructing the LLM to use the `Glob` tool. Routing discovery through this subcommand makes path resolution **deterministic** (the script always returns the same set for a given root + patterns), **auditable** (the call is logged via the executor), and **decoupled** from a particular harness's tool surface. The `Glob` tool is appropriate for ad-hoc exploration during a conversation; `discover` is appropriate for skill workflows that depend on a stable, reproducible set of paths.
 
 ### open-in-ide
 

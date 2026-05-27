@@ -259,7 +259,7 @@ Task: plan-marshall:{target}
 
 The agent returns `qgate_pending_count` in its TOON. ADD that value to the `qgate_pending_count` already returned by phase-2-refine so the combined aggregate drives the existing 3-iteration auto-loop predicate uniformly. Fold the q-gate-validation `<usage>` data into the per-phase running totals so it lands in the fused `phase-boundary` metrics call below.
 
-**Post-dispatch contract assertion**: phase-2-refine's contract restricts writes to `.plan/local/plans/{plan_id}/**` and `.plan/local/worktrees/{plan_id}/**` (see `plan-marshall:phase-2-refine` § Enforcement → Allowed write paths). Refine reaching for `Edit` / `Write` against the main checkout is a recurring failure mode (lesson `2026-05-16-14-001`, `feedback_phase2_refine_never_implements`) that silently advances the orchestrator into phase-3-outline with main-checkout drift. Assert structurally that the main checkout is clean before advancing:
+**Post-dispatch contract assertion**: phase-2-refine's contract restricts writes to `.plan/local/plans/{plan_id}/**` and `.plan/local/worktrees/{plan_id}/**` (see `plan-marshall:phase-2-refine` § Enforcement → Allowed write paths). Refine reaching for `Edit` / `Write` against the main checkout is a recurring failure mode (see `feedback_phase2_refine_never_implements`) that silently advances the orchestrator into phase-3-outline with main-checkout drift. Assert structurally that the main checkout is clean before advancing:
 
 ```bash
 git -C . status --porcelain
@@ -299,7 +299,7 @@ Do NOT call `manage-status transition` to 3-outline. Do NOT proceed with the met
 
 **Cross-references**:
 - `plan-marshall:phase-2-refine` § Enforcement → Allowed write paths — the prohibition this assertion enforces (Deliverable 3)
-- Lesson `2026-05-16-14-001` (consolidated recurrence) — driving failure history
+- `feedback_phase2_refine_never_implements` — driving failure history
 - `pm-plugin-development:plugin-doctor` analyzer `REFINE_CONTRACT_VIOLATION` (Deliverable 5) — edit-time complement to this runtime assertion
 
 **Metrics**: After refine completes, record the `2-refine → 3-outline` boundary in a single fused call (forwarding the aggregated `<usage>` data from every dispatch that fired inside this phase — the `phase-2-refine` envelope itself plus any q-gate-validation sub-dispatch at Step 13.5 for lesson-derived plans). Sum `total_tokens`, `tool_uses`, and `duration_ms` across each dispatch's `<usage>` tag:

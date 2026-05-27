@@ -240,7 +240,7 @@ cancellation, error, or clean exit on an empty queue — together with the
 dispatched agent's `<usage>` totals at termination time. The accumulating
 file is the audit trail that `plan-retrospective` correlates with
 `[OUTCOME]`-log coverage gaps to detect agent-initiated re-dispatch
-(lesson `2026-05-08-14-001`).
+See `plan-retrospective` for the correlation logic.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \

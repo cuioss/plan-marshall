@@ -9,7 +9,7 @@ For the high-level overview, input/output contract, and track routing logic, see
 Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
 
 - **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
-- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the failure mode documented in lesson `2026-04-29-23-002` (silent swallowing of `wrong_parameters` rejections). "Log and continue" is the prohibited anti-pattern.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
 
 Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., `manage-files exists` returning `exists: false`) — are documented inline in the step that issues them.
 
@@ -58,7 +58,7 @@ For each pending finding:
    a. **Trigger predicate (tier-agnostic justification)**: ask "would the justification for this fix change if I were looking at `$peer_element` instead?" If the answer is no, the fix is symmetric and MUST propagate to every peer in the same enumerated structure.
    b. **Audit action**: enumerate every peer of the flagged element within the same file/deliverable scope. Examples of symmetric structures: presets like `ECONOMIC` / `BALANCED` / `HIGH_END` in an `effort-preset ladder`; rows of a `parallel-array constant`; entries in a `peer-set enum`; tiers of a `level matrix`. The audit MUST include every peer named in the same enumerated structure, not only the one(s) flagged by the finding.
    c. **Required revision behavior**: apply the same fix to every peer in the same `outline revision`. Do NOT defer peer fixes to a follow-up plan, do NOT split into successor lessons, and do NOT mark the original finding `taken_into_account` until every peer has been corrected in `solution_outline.md`. The single `outline revision` is the contract — partial application is the failure mode this rule exists to prevent.
-   d. **Back-reference**: this rule originates from lesson `lesson-2026-05-18-10-001` and the post-PR review of `PR #407` (`reanchor-effort-presets-ladder`), where a literal-expansion fix to the `BALANCED` preset was not applied to `ECONOMIC` and `HIGH_END` until an automated review forced a loop-back iteration.
+   d. **Scope rule**: a fix to one tier of a symmetric structure MUST propagate to every peer in the same structure in the same outline revision — defer or partial application is the failure mode this rule exists to prevent.
 6. For other finding types: address by revising deliverables, adjusting scope, or removing false positives
 7. Resolve:
 ```bash
@@ -561,7 +561,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
    The "documented going forward" half is required: a divergence that does not update the skill's own design-intent declaration silently creates two design models in the same skill, which is worse than the original gap. The deliverable's task list MUST include an edit to the skill's design-intent doc (or to SKILL.md's `Role` paragraph) that records the new model.
 
-**Validator linkage**: the `architecture-mismatch-validator` in `plan-marshall/workflow/q-gate-validation.md` (§2.17 — added by deliverable 9 of this plan) parses the `**Design notes:**` block on every deliverable that touches an existing skill and emits an `architecture-mismatch` finding with `severity: blocking` when the block is absent, generic, or contradicts the skill's documented design model. Phase-3-outline's Step 11 auto-loops on blocking findings (see "Step 11: Q-Gate Verification" below), so a missing or contradictory `**Design notes:**` block forces a re-outline pass before phase transition.
+**Validator linkage**: the `architecture-mismatch-validator` in `plan-marshall/workflow/q-gate-validation.md` (§2.17) parses the `**Design notes:**` block on every deliverable that touches an existing skill and emits an `architecture-mismatch` finding with `severity: blocking` when the block is absent, generic, or contradicts the skill's documented design model. Phase-3-outline's Step 11 auto-loops on blocking findings (see "Step 11: Q-Gate Verification" below), so a missing or contradictory `**Design notes:**` block forces a re-outline pass before phase transition.
 
 ### Step 10: Execute Change-Type Workflow and Write Solution
 

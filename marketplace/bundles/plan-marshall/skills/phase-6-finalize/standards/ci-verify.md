@@ -3,8 +3,7 @@
 Standards counterpart to [`../workflow/ci-verify.md`](../workflow/ci-verify.md).
 Codifies the multi-failure-mode taxonomy, the build-profile match rule,
 the precondition mode contract, and the eager-fetch persistence
-guarantee. Lesson `2026-05-18-16-001` deliverable 6 is the authoritative
-source.
+guarantee.
 
 ## Placement
 
@@ -180,4 +179,4 @@ per `run_id`, not per plan), so the audit trail accumulates.
   and the row-(a) finding there both reference the same upstream
   defect; the operator triages the row-(c) finding as "duplicate of
   sonar-roundtrip" or accepts via the policy producer.
-- Lesson `2026-05-18-16-001` deliverable 6 — original design notes.
+- [`../workflow/ci-verify.md`](../workflow/ci-verify.md) — execution workflow that applies these standards.

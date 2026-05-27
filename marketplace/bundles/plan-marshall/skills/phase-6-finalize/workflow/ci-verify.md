@@ -8,8 +8,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 # ci-verify
 
-Dispatched body for the `default:ci-verify` finalize step (lesson
-`2026-05-18-16-001` deliverable 6). Placement: AFTER `create-pr`,
+Dispatched body for the `default:ci-verify` finalize step. Placement: AFTER `create-pr`,
 BEFORE `architecture-refresh`. The standards counterpart is
 [`../standards/ci-verify.md`](../standards/ci-verify.md).
 
@@ -37,7 +36,7 @@ failing check.
 Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
 
 - **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
-- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the failure mode documented in lesson `2026-04-29-23-002` (silent swallowing of `wrong_parameters` rejections). "Log and continue" is the prohibited anti-pattern.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
 
 ## Steps
 
@@ -50,7 +49,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
 
 The returned envelope carries `checks[]` (the full per-job array),
 `failing_checks[]`, `run_id`, `head_sha`, `wait_outcome`, and
-`final_status` (post lesson `2026-05-18-16-001` deliverable 1).
+`final_status`.
 Extract these fields. The `checks[]` array enumerates **every** job —
 green and red — and is the input to the jobs-capture step below.
 

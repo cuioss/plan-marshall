@@ -49,7 +49,7 @@ The Complex Track per-deliverable loop (Steps 9c + 10 + 10b) iterates over the d
 - The resolved domain outline skill notation (resolved once via Step 9 domain-resolution).
 
 **Prohibited actions:**
-- Never re-read loop-invariant inputs inside the per-deliverable loop body — re-reading is the recurring envelope-cost waste documented in lesson `2026-05-20-15-007`.
+- Never re-read loop-invariant inputs inside the per-deliverable loop body — re-reading inside the loop is envelope-cost waste; resolve all invariant inputs before the loop begins.
 
 See [`extension-api/standards/dispatch-granularity.md`](../extension-api/standards/dispatch-granularity.md) § 5.1 (Heuristic 2 — bundle when steps share context) for the granularity rationale.
 
@@ -62,7 +62,7 @@ See [`extension-api/standards/dispatch-granularity.md`](../extension-api/standar
 Every `manage-*` script call documented below carries the following exit-code contract unless a step explicitly states otherwise:
 
 - **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
-- **`exit_code != 0`**: STOP the phase and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the failure mode documented in lesson `2026-04-29-23-002` (silent swallowing of `wrong_parameters` rejections). The phase MUST NOT proceed on a non-zero exit; "log and continue" is the prohibited anti-pattern.
+- **`exit_code != 0`**: STOP the phase and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern. The phase MUST NOT proceed on a non-zero exit; "log and continue" is equally forbidden.
 
 Step-level exceptions to this default — calls whose non-zero exit is itself the signal (e.g., `manage-files exists` returning `exists: false`, or `manage-status get-worktree-path` returning an empty `worktree_path`) — are documented inline in the step that issues them. Treat the absence of an inline exception as the default "hard-stop" behaviour above.
 
@@ -105,7 +105,7 @@ Step 2: Load Inputs → Step 3: Recipe Detection → Step 4: Detect Change Type 
 
 **Purpose**: On re-entry (after Q-Gate or user review flagged issues), address unresolved findings before re-running the outline.
 
-Query pending findings for phase `3-outline`. For each finding: analyze context, verify file paths exist on disk, create assessments or update deliverables as needed, then resolve the finding with `taken_into_account`. Continue with normal Steps 2..12 after corrections are applied. When a finding scopes to one peer of a symmetric data structure (ladder, parallel-array, peer-set, matrix), apply the **symmetric-peer-audit rule**: audit every peer in the same structure for the same defect and apply the same fix in the same outline revision — see [`standards/outline-workflow-detail.md` § symmetric-peer-audit](standards/outline-workflow-detail.md#step-1-check-for-unresolved-q-gate-findings-detail) (lesson `lesson-2026-05-18-10-001`, PR #407).
+Query pending findings for phase `3-outline`. For each finding: analyze context, verify file paths exist on disk, create assessments or update deliverables as needed, then resolve the finding with `taken_into_account`. Continue with normal Steps 2..12 after corrections are applied. When a finding scopes to one peer of a symmetric data structure (ladder, parallel-array, peer-set, matrix), apply the **symmetric-peer-audit rule**: audit every peer in the same structure for the same defect and apply the same fix in the same outline revision — see [`standards/outline-workflow-detail.md` § symmetric-peer-audit](standards/outline-workflow-detail.md#step-1-check-for-unresolved-q-gate-findings-detail).
 
 For detailed procedures (query commands, finding-type handling, resolution logging), see [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md#step-1-check-for-unresolved-q-gate-findings-detail).
 

@@ -298,4 +298,4 @@ Foundation utilities — argument-parser wrappers, identifier validators, format
 
 The three corresponding `pm-plugin-development:plugin-doctor` rules — [`unique-fixture-basenames`](../../../../pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md#unique-fixture-basenames), [`subprocess-pythonpath`](../../../../pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md#subprocess-pythonpath), and [`identifier-validator-corpus`](../../../../pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md#identifier-validator-corpus) — enforce these recommendations as build-failing lints across the `test/` tree. A developer hitting one of those lints can read the rationale here; a developer reading this section discovers the enforcement that catches drift.
 
-Driving lessons: `2026-04-29-22-001` (umbrella), `2026-04-29-22-002` (fixture basenames), `2026-05-02-01-001` (subprocess PYTHONPATH propagation), `2026-04-29-10-001` (regex-vs-corpus).
+See the corresponding plugin-doctor rules linked above for the canonical enforcement rationale.

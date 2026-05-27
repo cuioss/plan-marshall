@@ -103,8 +103,7 @@ boundary by calling `manage-metrics record-dispatch-boundary` with parsed
 `<usage>` totals and a classified termination cause. The accumulating
 artifact at `work/metrics-dispatch-boundaries-5-execute.toon` is the
 audit trail that `plan-retrospective` correlates with `[OUTCOME]`-log
-coverage gaps to detect agent-initiated re-dispatch (lesson
-`2026-05-08-14-001`).
+coverage gaps to detect agent-initiated re-dispatch.
 
 **Termination-cause classification** — the orchestrator MUST classify every
 return into exactly one of the five values below. The detection rules apply
@@ -146,7 +145,7 @@ pending work remains. This fence is the control-flow analogue of the
 Step 12a "Pending-tasks transition guard" in `phase-5-execute` SKILL.md
 (which now points to the same `loop-exit-guard` verb as its authoritative
 enforcement) and is the structural complement to the script-level `[OUTCOME]`
-guard introduced in `manage-tasks finalize-step`.
+guard in `manage-tasks finalize-step`.
 
 ### Baseline drift recovery (non-zero overlap)
 
