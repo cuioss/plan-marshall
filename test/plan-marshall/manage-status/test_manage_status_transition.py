@@ -838,7 +838,7 @@ def _stubbed_invariants(monkeypatch):
         'task_state_hash': 'hash-tasks',
         'qgate_open_count': 0,
         'config_hash': 'hash-cfg',
-        'pending_tasks_count': 2,
+        'unfinished_tasks_count': 2,
         'phase_steps_complete': None,
         'pending_findings_by_type': '',
         'pending_findings_blocking_count': 0,
@@ -860,7 +860,7 @@ def _stubbed_invariants(monkeypatch):
         ('task_state_hash', always, make_capture('task_state_hash')),
         ('qgate_open_count', always, make_capture('qgate_open_count')),
         ('config_hash', always, make_capture('config_hash')),
-        ('pending_tasks_count', always, make_capture('pending_tasks_count')),
+        ('unfinished_tasks_count', always, make_capture('unfinished_tasks_count')),
         ('pending_findings_by_type', always, make_capture('pending_findings_by_type')),
         ('pending_findings_blocking_count', always, make_capture('pending_findings_blocking_count')),
     ]

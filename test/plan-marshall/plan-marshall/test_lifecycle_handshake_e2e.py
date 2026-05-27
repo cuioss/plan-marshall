@@ -75,7 +75,7 @@ _NON_NULL_CORE_INVARIANTS = (
     'task_state_hash',
     'qgate_open_count',
     'config_hash',
-    'pending_tasks_count',
+    'unfinished_tasks_count',
 )
 
 

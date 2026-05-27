@@ -9,6 +9,7 @@ emits in production.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -28,6 +29,18 @@ from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
 SCRIPT_PATH = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'summarize-invariants.py'
 )
+
+
+def _load_summarize_module():
+    """Import ``summarize-invariants.py`` as a module for function-level tests."""
+    spec = importlib.util.spec_from_file_location('summarize_invariants_module', SCRIPT_PATH)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_summarize = _load_summarize_module()
 
 
 class TestHappyPath:
@@ -162,8 +175,8 @@ class TestDriftDetection:
         # main_dirty is in the exclusion set inside detect_drift.
         assert not any(d.get('invariant') == 'main_dirty' for d in data['drift'])
 
-    def test_pending_tasks_count_excluded_from_drift(self, tmp_path, monkeypatch):
-        """``pending_tasks_count`` naturally drains across phases — not drift.
+    def test_unfinished_tasks_count_excluded_from_drift(self, tmp_path, monkeypatch):
+        """``unfinished_tasks_count`` naturally drains across phases — not drift.
 
         The capture column is meaningful for the phase-5-execute transition
         guard and as a retrospective signal of orphaned fix tasks, but a
@@ -172,13 +185,13 @@ class TestDriftDetection:
         """
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         rows = [dict(r) for r in _HAPPY_HANDSHAKE_ROWS]
-        rows[0]['pending_tasks_count'] = '5'
-        rows[1]['pending_tasks_count'] = '0'
+        rows[0]['unfinished_tasks_count'] = '5'
+        rows[1]['unfinished_tasks_count'] = '0'
         write_handshakes(plan_dir, plan_id=plan_id, rows=rows)
 
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         data = result.toon()
-        assert not any(d.get('invariant') == 'pending_tasks_count' for d in data['drift']), data['drift']
+        assert not any(d.get('invariant') == 'unfinished_tasks_count' for d in data['drift']), data['drift']
 
 
 class TestExpectedInvariants:
@@ -301,3 +314,149 @@ class TestConditionalPhaseStepsExpectation:
             'phase_steps_complete must not appear in top-level expected_invariants '
             'when no phase is in context'
         )
+
+
+class TestDeferredMaterializationWindow:
+    """Tests for the deferred-materialization fix in ``expected_invariants``.
+
+    Phase-5-execute is the worktree materialization phase for worktree-bearing
+    plans; phases 1-init through 4-plan declare the worktree intent but the
+    directory itself is not created until phase-5-execute Step 2.5. Before the
+    fix, ``expected_invariants`` consulted only the plan's current metadata
+    and required ``worktree_sha`` / ``worktree_dirty`` for every phase,
+    producing 8 spurious ERROR findings (2 per pre-5-execute phase) for every
+    worktree-bearing plan. The fix makes the predicate row-aware: include
+    worktree invariants only when the captured row carries them OR when the
+    phase is at/after materialization.
+    """
+
+    def test_expected_invariants_excludes_worktree_for_deferred_materialization_window(self):
+        """Function-level contract: pre-5-execute phase + empty row values → no worktree invariants."""
+        metadata = {'worktree_path': '/some/worktree'}
+        # The phase ran during the deferred-materialization window — its
+        # captured row carries no worktree values yet.
+        phase_values = {'main_sha': 'abc123', 'worktree_sha': None, 'worktree_dirty': ''}
+
+        expected = _summarize.expected_invariants(metadata, '3-outline', phase_values)
+
+        assert 'worktree_sha' not in expected, (
+            f'worktree_sha must be excluded for deferred phase, got {expected}'
+        )
+        assert 'worktree_dirty' not in expected, (
+            f'worktree_dirty must be excluded for deferred phase, got {expected}'
+        )
+        # Core invariants must still be present.
+        assert 'main_sha' in expected
+
+    def test_expected_invariants_includes_worktree_when_row_carries_value(self):
+        """Function-level contract: row carries worktree_sha → include worktree invariants regardless of phase."""
+        metadata = {'worktree_path': '/some/worktree'}
+        phase_values = {'main_sha': 'abc123', 'worktree_sha': 'def456'}
+
+        expected = _summarize.expected_invariants(metadata, '5-execute', phase_values)
+
+        assert 'worktree_sha' in expected
+        assert 'worktree_dirty' in expected
+
+    def test_expected_invariants_includes_worktree_for_post_materialization_phase(self):
+        """Function-level contract: 5-execute / 6-finalize phase + worktree metadata → expect worktree invariants."""
+        metadata = {'worktree_path': '/some/worktree'}
+        # Even when the row's worktree values are empty (a real capture gap),
+        # phases at/after materialization MUST expect them.
+        phase_values = {'main_sha': 'abc123', 'worktree_sha': None}
+
+        for materialized_phase in ('5-execute', '6-finalize'):
+            expected = _summarize.expected_invariants(metadata, materialized_phase, phase_values)
+            assert 'worktree_sha' in expected, (
+                f'{materialized_phase} must still expect worktree_sha as a real gap signal'
+            )
+
+    def test_run_emits_no_worktree_findings_in_pre_5_execute_phases_when_unmaterialized(
+        self, tmp_path, monkeypatch
+    ):
+        """Integration contract: a worktree-bearing plan's pre-5-execute phases produce zero worktree ERROR findings.
+
+        Reproduces the empirical 8-spurious-findings case from the originating
+        lesson: a worktree-bearing plan captured 1-init through 4-plan during
+        the deferred-materialization window (empty worktree_sha / worktree_dirty)
+        and 5-execute / 6-finalize after materialization.
+        """
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+
+        # Mark the plan as worktree-bearing in status.
+        status_path = plan_dir / 'status.json'
+        status = json.loads(status_path.read_text())
+        status['metadata']['worktree_path'] = '/tmp/some/worktree'
+        status_path.write_text(json.dumps(status))
+
+        # Synthesize a six-phase handshake history with the deferred shape:
+        # phases 1-init..4-plan have empty worktree_* values (pre-materialization),
+        # phases 5-execute and 6-finalize have populated values.
+        deferred_phases = ['1-init', '2-refine', '3-outline', '4-plan']
+        materialized_phases = ['5-execute', '6-finalize']
+        rows = []
+        for i, phase in enumerate(deferred_phases):
+            rows.append(
+                {
+                    'phase': phase,
+                    'captured_at': f'2026-04-17T1{i}:00:00Z',
+                    'worktree_applicable': False,
+                    'override': False,
+                    'override_reason': '',
+                    'main_sha': 'abc123',
+                    'main_dirty': '0',
+                    'worktree_sha': '',
+                    'worktree_dirty': '',
+                    'task_state_hash': 'hash1',
+                    'qgate_open_count': '0',
+                    'config_hash': 'cfg1',
+                    'unfinished_tasks_count': '0',
+                    'phase_steps_complete': '',
+                }
+            )
+        for i, phase in enumerate(materialized_phases):
+            rows.append(
+                {
+                    'phase': phase,
+                    'captured_at': f'2026-04-17T2{i}:00:00Z',
+                    'worktree_applicable': True,
+                    'override': False,
+                    'override_reason': '',
+                    'main_sha': 'abc123',
+                    'main_dirty': '0',
+                    'worktree_sha': 'wsha-' + str(i),
+                    'worktree_dirty': '0',
+                    'task_state_hash': 'hash1',
+                    'qgate_open_count': '0',
+                    'config_hash': 'cfg1',
+                    'unfinished_tasks_count': '0',
+                    'phase_steps_complete': 'sha-' + phase,
+                }
+            )
+        write_handshakes(plan_dir, plan_id=plan_id, rows=rows)
+
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+
+        findings = data.get('findings', [])
+        worktree_findings_in_deferred_phases = [
+            f
+            for f in findings
+            if f.get('severity') == 'error'
+            and f.get('invariant') in ('worktree_sha', 'worktree_dirty')
+            and f.get('phase') in deferred_phases
+        ]
+        assert worktree_findings_in_deferred_phases == [], (
+            f'Expected zero worktree ERROR findings for pre-5-execute phases in deferred window, '
+            f'got {worktree_findings_in_deferred_phases}'
+        )
+
+        # Sanity check: the materialized phases must still include the worktree
+        # invariants in their expected set (so any real capture gap would be flagged).
+        materialized_phase_entries = [p for p in data['phases'] if p['phase'] in materialized_phases]
+        for entry in materialized_phase_entries:
+            present = entry.get('invariants_present', [])
+            assert 'worktree_sha' in present, (
+                f'{entry["phase"]} must list worktree_sha in invariants_present, got {present}'
+            )

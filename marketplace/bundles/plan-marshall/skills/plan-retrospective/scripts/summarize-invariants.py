@@ -50,7 +50,7 @@ _CORE_INVARIANTS = (
     'task_state_hash',
     'qgate_open_count',
     'config_hash',
-    'pending_tasks_count',
+    'unfinished_tasks_count',
 )
 
 _WORKTREE_INVARIANTS = ('worktree_sha', 'worktree_dirty')
@@ -169,19 +169,77 @@ def project_rows_to_phase_map(
     return phase_map
 
 
-def expected_invariants(metadata: dict[str, Any], phase: str | None = None) -> tuple[str, ...]:
+# Phases for which a worktree-bearing plan has materialized the worktree on
+# disk. Earlier phases (1-init through 4-plan) declare `metadata.use_worktree`
+# but the worktree directory itself is not created until phase-5-execute
+# Step 2.5 — the deferred-materialization window.
+_WORKTREE_MATERIALIZED_PHASES: frozenset[str] = frozenset({'5-execute', '6-finalize'})
+
+
+def expected_invariants(
+    metadata: dict[str, Any],
+    phase: str | None = None,
+    phase_values: dict[str, Any] | None = None,
+) -> tuple[str, ...]:
     """Return the tuple of invariants expected for this plan and phase.
 
-    Worktree-only invariants are included whenever the plan has a
-    ``worktree_path`` recorded in its metadata.
+    Worktree-only invariants are included only for phases where the
+    worktree was materialized on disk *at the time the phase ran*. Two
+    signals decide this — the captured row's values come first, the plan's
+    current metadata is the fallback:
 
-    ``phase_steps_complete`` is appended only when ``phase`` is provided and
-    ``_phase_steps_complete_applies(phase)`` returns ``True`` — i.e. the phase
-    has opted in via a ``standards/required-steps.md`` file.  When ``phase``
-    is ``None`` (the no-handshakes fallback path), the invariant is omitted.
+    1. If ``phase_values`` carries a non-empty ``worktree_sha`` OR
+       ``worktree_dirty`` value, the row itself proves the worktree was
+       materialized when the phase captured. Include
+       ``_WORKTREE_INVARIANTS``.
+    2. Otherwise, if ``phase`` is one of the materialized phases
+       (``5-execute`` / ``6-finalize``) AND the plan's current metadata
+       carries a non-empty ``worktree_path``, the worktree exists now and
+       the row's empty values represent a real capture gap rather than
+       deferred materialization. Include ``_WORKTREE_INVARIANTS``.
+    3. Otherwise (the deferred-materialization window — phases 1-init
+       through 4-plan when materialization happens at phase-5-execute
+       Step 2.5, OR a non-worktree plan), omit them.
+
+    The un-phased fallback path (no ``phase`` / no ``phase_values``) uses
+    the metadata-only check for the no-handshakes-found path; that path is
+    informational only and not a per-phase ERROR producer, so the
+    over-inclusion was the source of the 8 spurious findings the row-aware
+    branch fixes.
+
+    ``phase_steps_complete`` is appended only when ``phase`` is provided
+    and ``_phase_steps_complete_applies(phase)`` returns ``True`` — i.e.
+    the phase has opted in via a ``standards/required-steps.md`` file.
+    When ``phase`` is ``None`` (the no-handshakes fallback path), the
+    invariant is omitted.
     """
     base: tuple[str, ...] = _CORE_INVARIANTS
-    if isinstance(metadata, dict) and metadata.get('worktree_path'):
+
+    include_worktree = False
+    if isinstance(phase_values, dict):
+        # Signal 1: the captured row carries a worktree value.
+        for key in _WORKTREE_INVARIANTS:
+            value = phase_values.get(key)
+            if value not in (None, ''):
+                include_worktree = True
+                break
+    if (
+        not include_worktree
+        and phase is None
+        and isinstance(metadata, dict)
+        and metadata.get('worktree_path')
+    ):
+        # Un-phased fallback: no row context to consult, so we fall back to
+        # the historical metadata-only check (used by the no-handshakes
+        # informational summary path).
+        include_worktree = True
+    elif not include_worktree and phase in _WORKTREE_MATERIALIZED_PHASES:
+        # Signal 2: post-materialization phase + current metadata says a
+        # worktree exists → the absence is a real capture gap.
+        if isinstance(metadata, dict) and metadata.get('worktree_path'):
+            include_worktree = True
+
+    if include_worktree:
         base = base + _WORKTREE_INVARIANTS
     if phase is not None and _phase_steps_complete_applies(phase):
         base = base + ('phase_steps_complete',)
@@ -193,10 +251,10 @@ def detect_drift(phase_map: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
 
     Emits a drift entry whenever a named invariant's value changes between
     consecutive phases in declaration order. ``main_dirty`` /
-    ``worktree_dirty`` / ``qgate_open_count`` / ``pending_tasks_count`` are
+    ``worktree_dirty`` / ``qgate_open_count`` / ``unfinished_tasks_count`` are
     excluded — they naturally vary as work progresses.
     """
-    excluded = {'main_dirty', 'worktree_dirty', 'qgate_open_count', 'pending_tasks_count'}
+    excluded = {'main_dirty', 'worktree_dirty', 'qgate_open_count', 'unfinished_tasks_count'}
     # Preserve insertion order — it matches handshakes.toon row order.
     phases = list(phase_map.keys())
     if len(phases) < 2:
@@ -250,7 +308,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         phase_map = project_rows_to_phase_map(rows)
 
     for phase, values in phase_map.items():
-        expected = expected_invariants(metadata, phase)
+        expected = expected_invariants(metadata, phase, values)
         present = sorted(k for k, v in values.items() if v not in (None, ''))
         missing = sorted(set(expected) - set(present))
         phases_out.append(

@@ -287,37 +287,63 @@ def cmd_next(args) -> dict:
 def cmd_loop_exit_guard(args) -> dict:
     """Handle 'loop-exit-guard' subcommand.
 
-    Script-level enforcement of the phase-5-execute "pending > 0 → must
-    continue" invariant. Returns a non-``success`` status (``continue``) when
-    pending tasks remain so the orchestrator MUST re-dispatch; returns
-    ``success`` with ``pending_count: 0`` only when the queue is genuinely
-    empty.
+    Script-level enforcement of the phase-5-execute "unfinished > 0 → must
+    continue" invariant. The predicate is the union of two unfinished
+    terminal-state buckets: ``pending`` (task never started) AND
+    ``in_progress`` (task started but not finalized — e.g., the dispatch
+    that began it terminated mid-flight). Returns ``status: continue`` when
+    EITHER bucket is non-empty so the orchestrator MUST re-dispatch;
+    returns ``status: success`` only when BOTH counts are zero.
 
-    The pending-count logic reuses the same ``get_all_tasks`` traversal as
-    ``cmd_list``/``cmd_next_tasks``; no behaviour change to existing query
-    commands. The guard is intentionally narrow — it answers exactly one
-    question (are there pending tasks?) and never tries to classify why a
-    task is pending or whether its dependencies are satisfied. The skill
-    prose at ``phase-5-execute/SKILL.md`` § Step 12a names the contract;
-    authoritative enforcement lives here.
+    The TOON return carries both axis counts/ids in BOTH branches so callers
+    can log which axis was non-empty and so downstream consumers (e.g., the
+    ``unfinished_tasks_count`` handshake invariant) can read either field
+    without conditional presence checks. The bucket traversal reuses the
+    same ``get_all_tasks`` walk as ``cmd_list``/``cmd_next_tasks``; no
+    behaviour change to existing query commands. The guard remains
+    intentionally narrow — it answers exactly one question (is the queue
+    empty by the broadened predicate?) and never tries to classify why a
+    task is pending/in_progress or whether its dependencies are satisfied.
+    The skill prose at ``phase-5-execute/SKILL.md`` § Step 12a names the
+    contract; authoritative enforcement lives here.
     """
     task_dir = get_tasks_dir(args.plan_id)
     all_tasks = get_all_tasks(task_dir)
 
     pending_ids = [t['number'] for _, t in all_tasks if t.get('status') == 'pending']
+    in_progress_ids = [
+        t['number'] for _, t in all_tasks if t.get('status') == 'in_progress'
+    ]
     pending_count = len(pending_ids)
+    in_progress_count = len(in_progress_ids)
 
-    if pending_count > 0:
+    if pending_count > 0 or in_progress_count > 0:
+        if pending_count > 0 and in_progress_count > 0:
+            message = (
+                f'{pending_count} pending and {in_progress_count} in_progress '
+                f'task(s) remain — orchestrator MUST re-dispatch the '
+                f'execution-context before transitioning out of phase-5-execute.'
+            )
+        elif pending_count > 0:
+            message = (
+                f'{pending_count} pending task(s) remain — orchestrator MUST '
+                f're-dispatch the execution-context before transitioning out '
+                f'of phase-5-execute.'
+            )
+        else:
+            message = (
+                f'{in_progress_count} in_progress task(s) remain — orchestrator '
+                f'MUST re-dispatch the execution-context before transitioning '
+                f'out of phase-5-execute.'
+            )
         return {
             'status': 'continue',
             'plan_id': args.plan_id,
             'pending_count': pending_count,
             'pending_ids': pending_ids,
-            'message': (
-                f'{pending_count} pending task(s) remain — orchestrator MUST '
-                f're-dispatch the execution-context before transitioning out '
-                f'of phase-5-execute.'
-            ),
+            'in_progress_count': in_progress_count,
+            'in_progress_ids': in_progress_ids,
+            'message': message,
         }
 
     return {
@@ -325,7 +351,9 @@ def cmd_loop_exit_guard(args) -> dict:
         'plan_id': args.plan_id,
         'pending_count': 0,
         'pending_ids': [],
-        'message': 'Pending queue empty — clean exit permitted.',
+        'in_progress_count': 0,
+        'in_progress_ids': [],
+        'message': 'Unfinished queue empty — clean exit permitted.',
     }
 
 

@@ -82,7 +82,7 @@ The invariant registry lives in link:../../marketplace/bundles/plan-marshall/ski
 | `task_state_hash` | Silent mutation of `TASK-*.json` between phases (number, status, step outcomes, dependencies).
 | `qgate_open_count` | Q-Gate findings still pending — the integer counterpart to Layer 3's structural check.
 | `config_hash` | `marshal.json` config swapped mid-run.
-| `pending_tasks_count` | A premature transition while fix tasks are still pending.
+| `unfinished_tasks_count` | A premature transition while fix tasks are still pending OR a mid-flight task has been abandoned. Sum of `pending + in_progress` per the broadened `loop-exit-guard` predicate.
 | `phase_steps_complete` | **Raises.** Required intra-phase steps silently skipped — reads each phase's static `standards/required-steps.md` and refuses capture when any required step is missing or recorded as anything other than `done`.
 | `task_graph_valid` | **Raises.** The task dependency graph is acyclic, every referenced module exists, and every `depends_on` target resolves. Raises `TaskGraphInvalid` on any structural violation.
 | `pending_findings_by_type` | Per-type retrospective count of pending findings across the finding-type taxonomy.
