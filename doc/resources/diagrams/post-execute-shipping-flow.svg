@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Post-execute shipping flow — the fixed arc from in-flight plan to landed mainline state.
+
+  theme-handling: A (theme-neutral)
+  see  pm-documents:ref-svg-diagrams/standards/theme-handling.md
+
+  Four-stage left-to-right pipeline showing the closing arc of a plan: from
+  the in-flight worktree, through the PR cycle (push -> CI -> reviewers ->
+  fold-back commits), through the merge to main, into cleanup (remove
+  worktree, switch the main checkout to main, pull the new tip). The
+  PR-cycle stage carries an internal loop arrow to indicate review-feedback
+  commits accumulate on the same branch before merge.
+
+  diagram-type-block reference standard:
+  pm-documents:ref-svg-diagrams/standards/diagram-type-block.md
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 500"
+     role="img" aria-labelledby="title desc"
+     font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
+  <title id="title">Post-execute shipping flow</title>
+  <desc id="desc">A four-stage left-to-right pipeline showing how a plan transitions from in-flight work to landed mainline state. Stage 1 is the in-flight plan: worktree on its feature branch with the execute phase just completed. Stage 2 is the PR cycle: the branch is pushed, a pull request is opened against main, CI runs, automated and human reviewers comment, and feedback is folded back as additional commits on the same branch; an internal loop arrow indicates this cycle can repeat. Stage 3 is the merge: once the PR is approved, the branch is merged into main. Stage 4 is cleanup: the plan's worktree is removed (its paired feature branch goes with it), the developer's main checkout is switched back to main, and the latest tip is pulled. The end state is main carrying the plan's commits and the developer back at the main checkout with a clean tree.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" class="arrow-fill"/>
+    </marker>
+    <style>
+      .col-header { font-size: 15px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
+      .col-sub    { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .item       { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+      .item-bold  { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-weight: 700; }
+      .item-c     { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; text-anchor: middle; }
+      .arrow-lbl  { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .stroke     { stroke: #6e7681; stroke-width: 1.2; fill: none; }
+      .arrow      { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+      .arrow-fill { fill: #6e7681; }
+      .sep        { stroke: #6e7681; stroke-width: 0.6; stroke-dasharray: 3 3; }
+      .caption    { font-size: 12px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+    </style>
+  </defs>
+
+  <!-- ============================================================ -->
+  <!-- STAGE 1 — In-flight plan                                      -->
+  <!-- ============================================================ -->
+  <text x="140" y="28" class="col-header">IN-FLIGHT PLAN</text>
+  <text x="140" y="44" class="col-sub">execute phase complete</text>
+  <rect class="stroke" x="20" y="60" width="240" height="360" rx="6" ry="6"/>
+
+  <text x="140" y="104" class="item-c">worktree</text>
+  <text x="140" y="124" class="col-sub">isolated tree</text>
+  <line class="sep" x1="60" y1="150" x2="220" y2="150"/>
+  <text x="140" y="184" class="item-c">branch</text>
+  <text x="140" y="204" class="item-c">feature/{plan-id}</text>
+  <line class="sep" x1="60" y1="230" x2="220" y2="230"/>
+  <text x="36"  y="264" class="item-bold">contains</text>
+  <text x="36"  y="284" class="item">all plan commits</text>
+  <text x="36"  y="304" class="item">no other work</text>
+
+  <text x="140" y="400" class="col-sub">ready to ship</text>
+
+  <!-- ============================================================ -->
+  <!-- STAGE 2 — PR cycle                                            -->
+  <!-- ============================================================ -->
+  <text x="430" y="28" class="col-header">PR CYCLE</text>
+  <text x="430" y="44" class="col-sub">push -&gt; open -&gt; review</text>
+  <rect class="stroke" x="310" y="60" width="240" height="360" rx="6" ry="6"/>
+
+  <text x="326" y="100" class="item-bold">push</text>
+  <text x="326" y="120" class="item">feature branch</text>
+  <text x="326" y="140" class="item">to origin</text>
+
+  <text x="326" y="180" class="item-bold">open PR</text>
+  <text x="326" y="200" class="item">target: main</text>
+
+  <text x="326" y="240" class="item-bold">wait on CI</text>
+  <text x="326" y="260" class="item">+ reviewers</text>
+
+  <text x="326" y="300" class="item-bold">fold back</text>
+  <text x="326" y="320" class="item">comments as</text>
+  <text x="326" y="340" class="item">commits on branch</text>
+
+  <text x="430" y="400" class="col-sub">repeat until approved</text>
+
+  <!-- internal loop arrow inside PR cycle column (right side, curving down then up) -->
+  <path class="arrow" d="M 525 260 Q 545 280 525 300" marker-end="url(#arrow)"/>
+  <text x="555" y="285" class="arrow-lbl">loop</text>
+
+  <!-- ============================================================ -->
+  <!-- STAGE 3 — Merge                                               -->
+  <!-- ============================================================ -->
+  <text x="720" y="28" class="col-header">MERGE</text>
+  <text x="720" y="44" class="col-sub">single transition</text>
+  <rect class="stroke" x="600" y="60" width="240" height="360" rx="6" ry="6"/>
+
+  <text x="720" y="124" class="item-c">PR approved</text>
+  <text x="720" y="156" class="item-c">|</text>
+  <text x="720" y="180" class="item-c">squash + merge</text>
+  <text x="720" y="212" class="item-c">|</text>
+  <line class="sep" x1="640" y1="234" x2="800" y2="234"/>
+  <text x="720" y="270" class="item-c">main now carries</text>
+  <text x="720" y="290" class="item-c">plan's commits</text>
+
+  <text x="720" y="400" class="col-sub">work has landed</text>
+
+  <!-- ============================================================ -->
+  <!-- STAGE 4 — Cleanup + return                                    -->
+  <!-- ============================================================ -->
+  <text x="1010" y="28" class="col-header">CLEANUP + RETURN</text>
+  <text x="1010" y="44" class="col-sub">back to main checkout</text>
+  <rect class="stroke" x="890" y="60" width="190" height="360" rx="6" ry="6"/>
+
+  <text x="906" y="100" class="item-bold">remove</text>
+  <text x="906" y="120" class="item">worktree</text>
+  <text x="906" y="140" class="col-sub">(branch goes too)</text>
+
+  <text x="906" y="184" class="item-bold">switch</text>
+  <text x="906" y="204" class="item">main checkout</text>
+  <text x="906" y="224" class="item">to main</text>
+
+  <text x="906" y="268" class="item-bold">pull</text>
+  <text x="906" y="288" class="item">latest tip</text>
+  <text x="906" y="308" class="col-sub">(now contains plan)</text>
+
+  <line class="sep" x1="910" y1="340" x2="1060" y2="340"/>
+  <text x="1010" y="372" class="item-c">clean tree</text>
+
+  <text x="1010" y="400" class="col-sub">end state</text>
+
+  <!-- ============================================================ -->
+  <!-- Inter-stage arrows                                            -->
+  <!-- ============================================================ -->
+
+  <!-- Stage 1 -> Stage 2 -->
+  <line class="arrow" x1="260" y1="240" x2="306" y2="240" marker-end="url(#arrow)"/>
+  <text x="283" y="232" class="arrow-lbl">push</text>
+
+  <!-- Stage 2 -> Stage 3 -->
+  <line class="arrow" x1="550" y1="240" x2="596" y2="240" marker-end="url(#arrow)"/>
+  <text x="573" y="232" class="arrow-lbl">approved</text>
+
+  <!-- Stage 3 -> Stage 4 -->
+  <line class="arrow" x1="840" y1="240" x2="886" y2="240" marker-end="url(#arrow)"/>
+  <text x="863" y="232" class="arrow-lbl">merged</text>
+
+  <!-- ============================================================ -->
+  <!-- Footer caption (whole-diagram)                                -->
+  <!-- ============================================================ -->
+  <text x="550" y="468" class="caption">A fixed shipping arc — PR review and merge are first-class steps, not separate manual rituals.</text>
+
+</svg>
