@@ -9,10 +9,10 @@ relies exclusively on git's native primitives:
   the configured prefix (default ``marketplace/bundles``). Untracked
   files, build artefacts, and gitignored paths are excluded by git itself
   — no custom filter logic.
-* ``git -C {repo_root} hash-object {path}`` returns the blob SHA over the
-  WORKTREE bytes of ``path`` (not HEAD, not INDEX). Uncommitted edits
-  therefore change the digest, which is the property the staleness guard
-  depends on.
+* ``git -C {repo_root} hash-object --stdin-paths`` returns blob SHAs over
+  the WORKTREE bytes of all tracked paths in a single subprocess invocation
+  (not HEAD, not INDEX). Uncommitted edits therefore change the digest,
+  which is the property the staleness guard depends on.
 * ``hashlib.sha1`` folds the sorted ``{path}:{blob_sha}\\n`` lines into a
   single hex digest. SHA-1 mirrors git's own blob primitive; the choice
   is anchored to the rest of the system instead of inventing a new hash.
@@ -82,22 +82,38 @@ def list_tracked_files(repo_root: Path, prefix: str = DEFAULT_PREFIX) -> list[st
     return paths
 
 
-def hash_object(repo_root: Path, path: str) -> str:
-    """Return the git blob SHA over the WORKTREE bytes of ``path``.
+def hash_objects(repo_root: Path, paths: list[str]) -> list[str]:
+    """Return the git blob SHAs over the WORKTREE bytes of multiple paths.
 
-    Wraps ``git hash-object {path}``. The output is git's native SHA-1
-    over ``blob {size}\\0{content}`` — the same primitive git uses to
-    address content internally, but computed over the worktree file
-    rather than any committed object. Uncommitted edits therefore change
-    the returned digest.
+    Uses ``git hash-object --stdin-paths`` to hash all paths in a single
+    subprocess invocation, avoiding the overhead of spawning a process per
+    file. This is especially significant on Windows or in repositories with
+    many tracked files.
+
+    Returns a list of 40-character hex SHA-1 strings in the same order as
+    ``paths``. Raises :class:`FingerprintError` when git is unavailable,
+    any subprocess fails, or the output line count does not match the input.
     """
-    raw = _run_git(repo_root, 'hash-object', path)
-    sha = raw.strip()
-    if len(sha) != 40 or not all(c in '0123456789abcdef' for c in sha):
+    if not paths:
+        return []
+    git = _require_git()
+    result = subprocess.run(
+        [git, '-C', str(repo_root), 'hash-object', '--stdin-paths'],
+        input='\n'.join(paths),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.strip() or result.stdout.strip()
         raise FingerprintError(
-            f'git hash-object returned unexpected output for {path!r}: {sha!r}'
+            f'git hash-object --stdin-paths (cwd={repo_root}) exited {result.returncode}: {stderr}'
         )
-    return sha
+    shas = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if len(shas) != len(paths):
+        raise FingerprintError(
+            f'git hash-object returned {len(shas)} hashes for {len(paths)} paths'
+        )
+    return shas
 
 
 def compute_source_tree_fingerprint(
@@ -108,8 +124,8 @@ def compute_source_tree_fingerprint(
     Procedure:
 
     1. ``git ls-files {prefix}`` -> tracked path list (sorted).
-    2. For each path, ``git hash-object {path}`` -> blob SHA over the
-       worktree bytes.
+    2. ``git hash-object --stdin-paths`` -> blob SHAs over the worktree bytes
+       for all paths in a single subprocess invocation.
     3. ``hashlib.sha1`` of the sorted ``{path}:{blob_sha}\\n`` lines.
 
     Returns the SHA-1 hex digest. Raises :class:`FingerprintError` when
@@ -117,8 +133,8 @@ def compute_source_tree_fingerprint(
     must refuse rather than compare against a non-deterministic value.
     """
     paths = list_tracked_files(repo_root, prefix)
+    shas = hash_objects(repo_root, paths)
     digest = hashlib.sha1()
-    for path in paths:
-        blob_sha = hash_object(repo_root, path)
+    for path, blob_sha in zip(paths, shas, strict=True):
         digest.update(f'{path}:{blob_sha}\n'.encode())
     return digest.hexdigest()

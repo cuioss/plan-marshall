@@ -42,7 +42,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from marketplace.targets.claude.source_fingerprint import (  # noqa: E402
     FingerprintError,
     compute_source_tree_fingerprint,
-    hash_object,
+    hash_objects,
     list_tracked_files,
 )
 
@@ -320,8 +320,8 @@ def test_fingerprint_sorts_paths_before_folding(tmp_path: Path) -> None:
     assert paths == sorted(paths), 'list_tracked_files MUST return sorted paths'
 
     expected = hashlib.sha1()
-    for path in paths:
-        blob_sha = hash_object(cwd, path)
+    shas = hash_objects(cwd, paths)
+    for path, blob_sha in zip(paths, shas, strict=True):
         expected.update(f'{path}:{blob_sha}\n'.encode())
     assert compute_source_tree_fingerprint(cwd) == expected.hexdigest()
 
@@ -373,7 +373,7 @@ def test_fingerprint_changes_when_tracked_worktree_file_mutates(tmp_path: Path) 
 
 
 @pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
-def test_hash_object_matches_git_native_invocation(tmp_path: Path) -> None:
+def test_hash_objects_matches_git_native_invocation(tmp_path: Path) -> None:
     """(v) Per-file blob SHA must equal ``git hash-object`` invoked independently.
 
     Locks the contract that the helper delegates to git's primitive
@@ -386,7 +386,7 @@ def test_hash_object_matches_git_native_invocation(tmp_path: Path) -> None:
     _git_init_and_commit(cwd)
 
     path = 'marketplace/bundles/demo/README.md'
-    helper_sha = hash_object(cwd, path)
+    helper_sha = hash_objects(cwd, [path])[0]
     native = subprocess.run(
         ['git', '-C', str(cwd), 'hash-object', path],
         capture_output=True, text=True, check=True,
