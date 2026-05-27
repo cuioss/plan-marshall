@@ -32,6 +32,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from _analyze_argument_naming import analyze_argument_naming
+from _analyze_bash_chain_shapes_in_skills import analyze_bash_chain_shapes_in_skills
 from _analyze_lesson_id_in_skill_prose import analyze_lesson_id_in_skill_prose
 from _analyze_role_field import analyze_role_field
 from _analyze_script_call_drift import analyze_script_call_drift
@@ -41,6 +42,7 @@ from _analyze_test_conventions import (
     analyze_unique_fixture_basenames,
     analyze_validator_regex_vs_corpus,
 )
+from _analyze_tmp_redirect_in_skills import analyze_tmp_redirect_in_skills
 from _cmd_apply import apply_single_fix, load_templates
 from _cmd_extension import validate_extension_contracts
 from _doctor_analysis import analyze_component, scan_argparse_safety
@@ -347,6 +349,22 @@ def cmd_analyze(args) -> dict:
     all_issues.extend(shell_substitution_issues)
     total_issues += len(shell_substitution_issues)
 
+    # Marketplace-wide bash-chain-shapes-in-skills rule. Unconditionally
+    # active — detects compound Bash command sequences (&&, ;, trailing &)
+    # inside fenced bash/sh blocks in plan-marshall skill markdown.  Enforces
+    # the dev-agent-behavior-rules "Bash: one command per call" hard rule.
+    bash_chain_issues = analyze_bash_chain_shapes_in_skills(marketplace_root)
+    all_issues.extend(bash_chain_issues)
+    total_issues += len(bash_chain_issues)
+
+    # Marketplace-wide tmp-redirect-in-skills rule. Unconditionally active —
+    # detects > / >> redirects targeting /tmp/ or /var/tmp/ inside fenced
+    # bash/sh blocks in plan-marshall skill markdown.  Enforces the project
+    # policy that temporary files must live under .plan/temp/.
+    tmp_redirect_issues = analyze_tmp_redirect_in_skills(marketplace_root)
+    all_issues.extend(tmp_redirect_issues)
+    total_issues += len(tmp_redirect_issues)
+
     # Marketplace-wide no-lesson-id-in-skill-prose rule. Unconditionally
     # active — strips narrative lesson-ID citations from skill prose while
     # exempting structural-provenance contexts and the lesson-domain
@@ -477,8 +495,13 @@ def cmd_quality_gate(args) -> dict:
       - analyze_shell_substitution_in_skills (forbidden ``$(`` patterns in
                                     plan-marshall skill markdown — enforces
                                     the dev-agent-behavior-rules "no shell
-                                    constructs" hard rule per lesson
-                                    ``2026-05-15-13-001``)
+                                    constructs" hard rule)
+
+    Note: ``analyze_bash_chain_shapes_in_skills`` and
+    ``analyze_tmp_redirect_in_skills`` are NOT included in quality-gate because
+    the existing marketplace tree pre-dates these rules and would require a
+    large upfront cleanup sweep.  They are unconditionally active in ``analyze``
+    mode and can be run explicitly via ``doctor-marketplace.py analyze``.
     """
     marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
     if not marketplace_root:
@@ -517,6 +540,13 @@ def cmd_quality_gate(args) -> dict:
     rule_summaries.append(
         {'rule': 'analyze_shell_substitution_in_skills', 'findings': len(shell_substitution_findings)}
     )
+
+    # bash-chain-shapes and tmp-redirect are intentionally NOT in quality-gate —
+    # the existing marketplace tree pre-dates these rules and contains legitimate
+    # documented examples of the forbidden patterns inside bash fences.  Adding
+    # them to quality-gate would require a large upfront cleanup sweep before the
+    # rules could enforce.  Invoke via ``analyze`` for explicit drift sweeps;
+    # new code written after this plan is checked by the analyze path.
 
     lesson_id_findings = analyze_lesson_id_in_skill_prose(marketplace_root)
     all_issues.extend(lesson_id_findings)
