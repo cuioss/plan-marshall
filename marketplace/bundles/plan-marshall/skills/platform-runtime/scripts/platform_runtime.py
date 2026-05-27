@@ -535,7 +535,14 @@ def main(argv: list[str] | None = None) -> int:
     # Dispatch to the runtime implementation.
     # ------------------------------------------------------------------
     result = _dispatch(runtime, operation, remaining)
-    print(result)
+    # An empty-string return is the statusLine-mode sentinel: the runtime
+    # already wrote the verbatim statusLine content to stdout (or wrote
+    # nothing on the noop branches), and the caller MUST NOT append a
+    # trailing newline that would render as an empty row under the prompt.
+    # Every TOON return path produces a non-empty string, so the truthiness
+    # check is sufficient.
+    if result:
+        print(result)
     return 0
 
 

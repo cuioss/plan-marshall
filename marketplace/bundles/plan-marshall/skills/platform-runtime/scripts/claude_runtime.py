@@ -841,6 +841,18 @@ class ClaudeRuntime(Runtime):
         events, the ``statusLine`` command, and
         ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE``. Each block is idempotent.
 
+        The ``target`` argument is one of two shapes:
+
+        - ``"claude"`` — the platform identifier. Resolves to the project's
+          Claude Code settings file via ``_claude_project_settings_path()``
+          (``.claude/settings.json`` when present, else ``.claude/settings.local.json``).
+          This is the canonical invocation from the marshall-steward menu.
+        - An absolute path ending in ``.json`` — explicit settings file path.
+          Used by tests and recovery flows that need to target a specific file.
+
+        Any other value (relative path, unknown identifier) is rejected with
+        ``unknown_target`` rather than silently creating a stray file.
+
         The two ``overwrite_*`` flags govern conflict resolution when an
         existing ``statusLine`` or env value differs from ours:
 
@@ -852,7 +864,18 @@ class ClaudeRuntime(Runtime):
 
         ``overwrite_env_disable`` carries identical semantics for the env entry.
         """
-        settings_path = Path(target)
+        if target == "claude":
+            settings_path = _claude_project_settings_path()
+        elif target.startswith("/") and target.endswith(".json"):
+            settings_path = Path(target)
+        else:
+            return toon_error(
+                "project install-hook",
+                "unknown_target",
+                f"target {target!r} must be the platform identifier 'claude' "
+                f"or an absolute path to a .json settings file",
+            )
+
         install_result = _install_terminal_title_hooks(
             settings_path,
             overwrite_statusline=overwrite_statusline,
@@ -862,7 +885,7 @@ class ClaudeRuntime(Runtime):
             return toon_error(
                 "project install-hook",
                 "io_error",
-                f"Failed to install terminal-title hooks into {target}",
+                f"Failed to install terminal-title hooks into {settings_path}",
             )
 
         installed_events = install_result["installed_events"]
@@ -881,6 +904,7 @@ class ClaudeRuntime(Runtime):
             "project install-hook",
             {
                 "target": target,
+                "settings_path": str(settings_path),
                 "hook_installed": True,
                 "already_present": all_already_present,
                 "installed_events": installed_events,
@@ -917,16 +941,23 @@ class ClaudeRuntime(Runtime):
     def session_render_title(self, statusline: bool = False) -> str:
         """5-step read + OSC emit for the terminal title.
 
-        When ``statusline`` is True, the success branch emits plain text
-        (``f"{icon} {title_body}"``) instead of the JSON envelope, matching the
-        ``statusLine`` hook contract (no envelope). Noop branches continue to
-        emit nothing on stdout in both modes.
+        When ``statusline`` is True, both the success branch and every noop
+        branch return an empty string — Claude Code reads the entire process
+        stdout as the statusLine text, so a TOON noop envelope would render
+        verbatim under the prompt. In the default (hook-driven) mode, noop
+        branches return TOON for observability; Claude Code ignores stdout
+        that lacks a ``terminalSequence`` key.
         """
+
+        def _noop(reason: str, recovery: str) -> str:
+            if statusline:
+                return ""
+            return toon_noop("session render-title", reason, recovery)
+
         # Step 1: Read $CLAUDE_CODE_SESSION_ID.
         session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
         if not session_id:
-            return toon_noop(
-                "session render-title",
+            return _noop(
                 "$CLAUDE_CODE_SESSION_ID is unset; session capture has not run",
                 "run marshall-steward to install the SessionStart hook, then re-enter the plan phase",
             )
@@ -934,8 +965,7 @@ class ClaudeRuntime(Runtime):
         # Step 2: Resolve session_id → plan_id via session cache.
         plan_id = _read_active_plan(session_id)
         if not plan_id:
-            return toon_noop(
-                "session render-title",
+            return _noop(
                 "no active plan registered for this session",
                 "start a plan phase so manage-status can register the session",
             )
@@ -943,8 +973,7 @@ class ClaudeRuntime(Runtime):
         # Step 3: Resolve plan_id → title body via title-body.txt.
         title_body_path = Path(_PLAN_DIR_NAME) / "local" / "plans" / plan_id / "title-body.txt"
         if not title_body_path.is_file():
-            return toon_noop(
-                "session render-title",
+            return _noop(
                 "no plan-title to render; writer has determined the plan is in a terminal or archived state",
                 "the title will resume when manage-status publishes a new title-body.txt",
             )
@@ -952,15 +981,13 @@ class ClaudeRuntime(Runtime):
         try:
             title_body = title_body_path.read_text(encoding="utf-8").strip()
         except OSError:
-            return toon_noop(
-                "session render-title",
+            return _noop(
                 "no plan-title to render; writer has determined the plan is in a terminal or archived state",
                 "the title will resume when manage-status publishes a new title-body.txt",
             )
 
         if not title_body:
-            return toon_noop(
-                "session render-title",
+            return _noop(
                 "no plan-title to render; writer has determined the plan is in a terminal or archived state",
                 "the title will resume when manage-status publishes a new title-body.txt",
             )
@@ -970,18 +997,24 @@ class ClaudeRuntime(Runtime):
 
         # Step 5: Emit the title.
         # In statusLine mode (``statusline=True``), emit plain text directly to
-        # stdout — Claude Code reads it verbatim and renders it as the status
-        # line, no envelope expected. In the default hook-driven mode, emit a
-        # JSON envelope carrying the OSC title sequence — Claude Code reads
-        # ``terminalSequence`` from the hook stdout and writes the inner ESC ]0;…
-        # BEL sequence to the terminal itself (raw-OSC emission from the hook
-        # process is swallowed).
-        try:
-            if statusline:
+        # stdout AND return an empty string so the caller's ``print(result)``
+        # adds at most a trailing newline. Claude Code reads the entire process
+        # stdout as the statusLine text — any TOON envelope appended after the
+        # title body would render verbatim under the prompt. In the default
+        # hook-driven mode, emit a JSON envelope carrying the OSC title sequence
+        # AND return the TOON success row for observability (Claude Code reads
+        # ``terminalSequence`` from the hook stdout and ignores the TOON tail).
+        if statusline:
+            try:
                 sys.stdout.write(f"{icon} {title_body}")
-            else:
-                osc_seq = f"\x1b]0;{icon} {title_body}\x07"
-                sys.stdout.write(json.dumps({"terminalSequence": osc_seq}))
+                sys.stdout.flush()
+            except OSError:
+                pass
+            return ""
+
+        try:
+            osc_seq = f"\x1b]0;{icon} {title_body}\x07"
+            sys.stdout.write(json.dumps({"terminalSequence": osc_seq}))
             sys.stdout.flush()
             emitted = True
         except OSError:
