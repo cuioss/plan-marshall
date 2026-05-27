@@ -296,7 +296,7 @@ Every step row — including `record-metrics` — emits unchanged. The renderer 
 
 <!-- self-review: keep phase_breakdown_override_content -->
 
-> **Renderer reimplementation note**: any future renderer reimplementation MUST preserve the exact-then-strip-prefix lookup contract above. A reimplementation that only attempts the exact match will silently re-introduce the failure mode documented in lesson `2026-05-20-08-005` (manifest entry IDs vs `phase_steps` recorded keys diverge by a `project:` prefix, the renderer emits `<missing display_detail>`, and the `[FAILED]` precedence chain trips even though every step actually succeeded).
+> **Renderer reimplementation note**: any future renderer reimplementation MUST preserve the exact-then-strip-prefix lookup contract above. A reimplementation that only attempts the exact match silently re-introduces the failure mode where manifest entry IDs vs `phase_steps` recorded keys diverge by a `project:` prefix, the renderer emits `<missing display_detail>`, and the `[FAILED]` precedence chain trips even though every step actually succeeded.
 
 
 **Appended `Phase Breakdown` supplement**: after the per-step iteration completes, if the supplement toggle is active (see `## Phase Breakdown Supplement` above for the toggle activation conditions and the verbatim emission shape of `phase_breakdown_override_content` — the single source of truth for both), append the supplement section as documented there. The Repository trailer (step 6 emission) then follows after the appended section, separated by a blank line per the standard block separator (Emission Procedure step 7).

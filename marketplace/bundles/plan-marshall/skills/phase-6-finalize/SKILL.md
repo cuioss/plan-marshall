@@ -489,7 +489,7 @@ git -C {worktree_path} status --porcelain
 
 A non-empty result selects the dirty-tree row in the table above (RE-FIRE); an empty result selects the steady-state row (SKIP). The porcelain call is gated on `step_id == "commit-push"` — the other four `HEAD_DEPENDENT_STEPS` members do not invoke it, so a dirty worktree does NOT re-fire them.
 
-Do NOT cache the live HEAD across loop iterations — read it fresh per step so a step that advances HEAD mid-loop (e.g., an inline commit produced by an earlier loop-back fix task) is observed correctly by every later step's check. All other finalize steps keep the general rule above verbatim; this special case applies only to the four steps named in `HEAD_DEPENDENT_STEPS`.
+Do NOT cache the live HEAD across loop iterations — read it fresh per step so a step that advances HEAD mid-loop (e.g., an inline commit produced by a loop-back fix task) is observed correctly by every later step's check. All other finalize steps keep the general rule above verbatim; this special case applies only to the four steps named in `HEAD_DEPENDENT_STEPS`.
 
 **Per-agent timeout wrapper**: Every Task agent dispatch in this loop runs under a per-agent timeout budget. If the dispatch does not return inside the budget, the wrapper logs an ERROR, marks the step `failed` via `manage-status mark-step-done`, and continues with the next step in the list (no abort, no re-throw). Inline-only steps are not timeout-wrapped because they execute in the main context where the host platform already manages call timeouts. Budgets:
 
