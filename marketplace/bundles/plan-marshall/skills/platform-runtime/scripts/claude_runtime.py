@@ -63,40 +63,78 @@ _SESSION_ID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
 
-# Hook command installed by project initial-setup.
+# Hook command installed by project initial-setup. Captures $CLAUDE_CODE_SESSION_ID
+# and stores it via manage-status; the renderer reads this cache to resolve the
+# active plan for the current session.
 _HOOK_COMMAND = "python3 .plan/execute-script.py plan-marshall:platform-runtime:claude_hook"
 
-# pre-prompt JS for terminal title display.
-_PRE_PROMPT_JS_TEMPLATE = """\
-// claude_pre_prompt.js — Terminal title renderer for plan-marshall.
-// Written by platform-runtime session configure-display.
-// Invoked by Claude Code on every UserPromptSubmit.
-const {{ execSync }} = require('child_process');
-try {{
-  const result = execSync(
-    'python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session render-title',
-    {{ encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }}
-  );
-}} catch (_) {{}}
-"""
+# Render-title hook command installed across all five render-trigger events plus
+# statusLine. Invoked by Claude Code on SessionStart (matcher-less + matcher
+# "clear"), UserPromptSubmit, Notification, Stop, and PostToolUse:AskUserQuestion;
+# the statusLine variant appends ``--statusline`` for plain-text emission.
+_RENDER_HOOK_COMMAND = (
+    "python3 .plan/execute-script.py "
+    "plan-marshall:platform-runtime:platform_runtime session render-title"
+)
+_STATUSLINE_COMMAND = f"{_RENDER_HOOK_COMMAND} --statusline"
+
+# Render-trigger hook events that each receive a single matcher-less entry
+# invoking the renderer. SessionStart receives BOTH a matcher-less entry AND a
+# ``matcher: "clear"`` entry, so it is handled separately below.
+_RENDER_TRIGGER_EVENTS: tuple[str, ...] = (
+    "UserPromptSubmit",
+    "Notification",
+    "Stop",
+)
 
 
-def _install_session_start_hook(settings_path: Path) -> bool:
-    """Insert the SessionStart hook entry into a settings file if absent.
+def _has_render_entry(entries: list[Any], matcher: str | None = None) -> bool:
+    """Return True when *entries* already contains a render-hook entry.
 
-    Reads (or creates) ``settings_path``, appends the SessionStart hook entry
-    when no entry with the canonical ``_HOOK_COMMAND`` is already present, and
-    writes the file back. The duplicate-detection scan over ``SessionStart``
-    makes the call idempotent.
-
-    Args:
-        settings_path: Path to the settings JSON file to install the hook into.
-
-    Returns:
-        ``True`` when the hook is present after the call (whether it was
-        already there or freshly inserted); ``False`` on an I/O failure.
+    When *matcher* is None, any entry whose ``hooks[].command`` matches the
+    renderer command counts. When *matcher* is a string, the entry's
+    ``matcher`` field must equal it as well (used to disambiguate the
+    matcher-less and matcher:"clear" SessionStart variants).
     """
-    hook_entry: dict[str, Any] = {
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if matcher is not None and entry.get("matcher", "") != matcher:
+            continue
+        for h in entry.get("hooks", []):
+            if isinstance(h, dict) and h.get("command") == _RENDER_HOOK_COMMAND:
+                return True
+    return False
+
+
+def _has_capture_entry(entries: list[Any]) -> bool:
+    """Return True when *entries* already contains the session-capture hook."""
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        for h in entry.get("hooks", []):
+            if isinstance(h, dict) and h.get("command") == _HOOK_COMMAND:
+                return True
+    return False
+
+
+def _render_entry(matcher: str = "") -> dict[str, Any]:
+    """Build a render-hook entry with the given matcher."""
+    return {
+        "matcher": matcher,
+        "hooks": [
+            {
+                "type": "command",
+                "command": _RENDER_HOOK_COMMAND,
+                "timeout": 5000,
+            }
+        ],
+    }
+
+
+def _capture_entry() -> dict[str, Any]:
+    """Build the session-id-capture SessionStart entry."""
+    return {
         "matcher": "",
         "hooks": [
             {
@@ -106,43 +144,182 @@ def _install_session_start_hook(settings_path: Path) -> bool:
             }
         ],
     }
+
+
+def _install_terminal_title_hooks(
+    settings_path: Path,
+    overwrite_statusline: bool = False,
+    overwrite_env_disable: bool = False,
+) -> dict[str, Any]:
+    """Install the full terminal-title hook wiring into *settings_path*.
+
+    Installs (each block dedup-idempotent on the canonical command string):
+
+    - ``hooks.SessionStart`` — the existing ``claude_hook`` session-capture
+      entry (preserved when present, inserted when absent) **and** two render
+      entries (matcher-less + ``matcher: "clear"``).
+    - ``hooks.UserPromptSubmit``, ``hooks.Notification``, ``hooks.Stop`` —
+      single matcher-less render entries each.
+    - ``hooks.PostToolUse`` — one render entry with ``matcher: "AskUserQuestion"``.
+    - ``statusLine`` — ``{"type": "command", "command": _STATUSLINE_COMMAND}``.
+      Preserves a foreign existing value unless ``overwrite_statusline`` is True.
+    - ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE`` — set to ``"1"``. Preserves a
+      foreign existing value unless ``overwrite_env_disable`` is True.
+
+    Args:
+        settings_path: Path to the JSON settings file to install into. Created
+            (with parent dirs) when absent.
+        overwrite_statusline: When True, overwrite an existing ``statusLine``
+            whose command differs from ours. When False, the foreign value is
+            preserved and reported via ``statusLine_status: already_present_other``.
+        overwrite_env_disable: Same semantics for
+            ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE``.
+
+    Returns:
+        Dict with keys:
+
+        - ``io_ok`` (bool): True iff the file was read AND written successfully.
+        - ``installed_events`` (list[str]): event names whose render entry was
+          freshly added on this call. SessionStart appears at most once even
+          though it gets two render entries.
+        - ``already_present_events`` (list[str]): event names where our render
+          entry was already present (no write).
+        - ``statusLine_status`` (str): one of ``installed``, ``already_present``,
+          ``already_present_other``, ``overwritten``.
+        - ``env_status`` (str): same enum for the env entry.
+
+        Returns ``io_ok: False`` (with the per-event lists empty and the
+        statuses set to ``error``) on any I/O failure.
+    """
+    failure: dict[str, Any] = {
+        "io_ok": False,
+        "installed_events": [],
+        "already_present_events": [],
+        "statusLine_status": "error",
+        "env_status": "error",
+    }
+
     try:
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         settings_data = _read_json(settings_path) or {}
+
         hooks_block = settings_data.setdefault("hooks", {})
         if not isinstance(hooks_block, dict):
             hooks_block = {}
             settings_data["hooks"] = hooks_block
+
+        installed_events: list[str] = []
+        already_present_events: list[str] = []
+
+        # --- SessionStart: capture entry + two render entries. ---
         session_start = hooks_block.setdefault("SessionStart", [])
         if not isinstance(session_start, list):
             session_start = []
             hooks_block["SessionStart"] = session_start
 
-        already_present = any(
-            any(h.get("command") == _HOOK_COMMAND for h in entry.get("hooks", []))
-            for entry in session_start
-            if isinstance(entry, dict)
-        )
-        if not already_present:
-            session_start.append(hook_entry)
-            _write_json(settings_path, settings_data)
-        return True
+        # Capture entry: preserve when already present, insert when absent.
+        # This is the existing claude_hook session-id-capture entry; it must
+        # coexist with the new render entries.
+        if not _has_capture_entry(session_start):
+            session_start.append(_capture_entry())
+
+        session_start_changed = False
+        if not _has_render_entry(session_start, matcher=""):
+            session_start.append(_render_entry(matcher=""))
+            session_start_changed = True
+        if not _has_render_entry(session_start, matcher="clear"):
+            session_start.append(_render_entry(matcher="clear"))
+            session_start_changed = True
+
+        if session_start_changed:
+            installed_events.append("SessionStart")
+        else:
+            already_present_events.append("SessionStart")
+
+        # --- Single matcher-less render-trigger events. ---
+        for event_name in _RENDER_TRIGGER_EVENTS:
+            event_entries = hooks_block.setdefault(event_name, [])
+            if not isinstance(event_entries, list):
+                event_entries = []
+                hooks_block[event_name] = event_entries
+            if not _has_render_entry(event_entries, matcher=""):
+                event_entries.append(_render_entry(matcher=""))
+                installed_events.append(event_name)
+            else:
+                already_present_events.append(event_name)
+
+        # --- PostToolUse with matcher:"AskUserQuestion". ---
+        post_tool_use = hooks_block.setdefault("PostToolUse", [])
+        if not isinstance(post_tool_use, list):
+            post_tool_use = []
+            hooks_block["PostToolUse"] = post_tool_use
+        if not _has_render_entry(post_tool_use, matcher="AskUserQuestion"):
+            post_tool_use.append(_render_entry(matcher="AskUserQuestion"))
+            installed_events.append("PostToolUse")
+        else:
+            already_present_events.append("PostToolUse")
+
+        # --- statusLine: command entry with overwrite-on-request semantics. ---
+        statusline_block: dict[str, Any] = {
+            "type": "command",
+            "command": _STATUSLINE_COMMAND,
+        }
+        existing_statusline = settings_data.get("statusLine")
+        if existing_statusline is None:
+            settings_data["statusLine"] = statusline_block
+            statusline_status = "installed"
+        elif (
+            isinstance(existing_statusline, dict)
+            and existing_statusline.get("command") == _STATUSLINE_COMMAND
+        ):
+            statusline_status = "already_present"
+        elif overwrite_statusline:
+            settings_data["statusLine"] = statusline_block
+            statusline_status = "overwritten"
+        else:
+            statusline_status = "already_present_other"
+
+        # --- env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE: "1" with overwrite-on-request. ---
+        env_block = settings_data.setdefault("env", {})
+        if not isinstance(env_block, dict):
+            env_block = {}
+            settings_data["env"] = env_block
+        existing_env = env_block.get("CLAUDE_CODE_DISABLE_TERMINAL_TITLE")
+        if existing_env is None:
+            env_block["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] = "1"
+            env_status = "installed"
+        elif existing_env == "1":
+            env_status = "already_present"
+        elif overwrite_env_disable:
+            env_block["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] = "1"
+            env_status = "overwritten"
+        else:
+            env_status = "already_present_other"
+
+        write_ok = _write_json(settings_path, settings_data)
+        if not write_ok:
+            return failure
+
+        return {
+            "io_ok": True,
+            "installed_events": installed_events,
+            "already_present_events": already_present_events,
+            "statusLine_status": statusline_status,
+            "env_status": env_status,
+        }
     except (OSError, ValueError):
-        return False
+        return failure
 
 
 def _session_start_hook_present(settings_path: Path) -> bool:
-    """Return True when the SessionStart hook entry exists in ``settings_path``."""
+    """Return True when the SessionStart capture hook entry exists in ``settings_path``."""
     if not settings_path.is_file():
         return False
     settings_data = _read_json(settings_path) or {}
     session_start = settings_data.get("hooks", {}).get("SessionStart", [])
-    for entry in session_start:
-        if isinstance(entry, dict):
-            for h in entry.get("hooks", []):
-                if isinstance(h, dict) and h.get("command") == _HOOK_COMMAND:
-                    return True
-    return False
+    if not isinstance(session_start, list):
+        return False
+    return _has_capture_entry(session_start)
 
 
 def _project_dir_path(project_dir: str) -> Path:
@@ -643,8 +820,9 @@ class ClaudeRuntime(Runtime):
                 f"Failed to write marshal.json at {marshal_path}",
             )
 
-        # Install SessionStart hook in .claude/settings.json.
-        hook_installed = _install_session_start_hook(settings_path)
+        # Install the full terminal-title hook wiring into .claude/settings.json.
+        install_result = _install_terminal_title_hooks(settings_path)
+        hook_installed = install_result["io_ok"]
 
         return toon_success(
             "project initial-setup",
@@ -656,33 +834,64 @@ class ClaudeRuntime(Runtime):
             },
         )
 
-    def project_install_hook(self, target: str) -> str:
-        """Install only the SessionStart hook into the named settings file."""
-        settings_path = Path(target)
-        already_present = _session_start_hook_present(settings_path)
-        if already_present:
-            return toon_success(
-                "project install-hook",
-                {
-                    "target": target,
-                    "hook_installed": True,
-                    "already_present": True,
-                },
-            )
+    def project_install_hook(
+        self,
+        target: str,
+        overwrite_statusline: bool = False,
+        overwrite_env_disable: bool = False,
+    ) -> str:
+        """Install the full terminal-title hook wiring into the named settings file.
 
-        if not _install_session_start_hook(settings_path):
+        Installs the SessionStart capture entry, five render-trigger hook
+        events, the ``statusLine`` command, and
+        ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE``. Each block is idempotent.
+
+        The two ``overwrite_*`` flags govern conflict resolution when an
+        existing ``statusLine`` or env value differs from ours:
+
+        - ``overwrite_statusline=False`` (default): preserve the foreign value
+          and report ``statusLine_status: already_present_other`` so the
+          marshall-steward menu can surface an AskUserQuestion.
+        - ``overwrite_statusline=True``: overwrite with our command and report
+          ``statusLine_status: overwritten``.
+
+        ``overwrite_env_disable`` carries identical semantics for the env entry.
+        """
+        settings_path = Path(target)
+        install_result = _install_terminal_title_hooks(
+            settings_path,
+            overwrite_statusline=overwrite_statusline,
+            overwrite_env_disable=overwrite_env_disable,
+        )
+        if not install_result["io_ok"]:
             return toon_error(
                 "project install-hook",
                 "io_error",
-                f"Failed to install SessionStart hook into {target}",
+                f"Failed to install terminal-title hooks into {target}",
             )
+
+        installed_events = install_result["installed_events"]
+        already_present_events = install_result["already_present_events"]
+        # Top-level convenience signal: True iff nothing fresh was installed
+        # AND no overwrite-other signal needs the caller's attention.
+        all_already_present = (
+            not installed_events
+            and install_result["statusLine_status"]
+            in ("already_present", "already_present_other")
+            and install_result["env_status"]
+            in ("already_present", "already_present_other")
+        )
 
         return toon_success(
             "project install-hook",
             {
                 "target": target,
                 "hook_installed": True,
-                "already_present": False,
+                "already_present": all_already_present,
+                "installed_events": installed_events,
+                "already_present_events": already_present_events,
+                "statusLine_status": install_result["statusLine_status"],
+                "env_status": install_result["env_status"],
             },
         )
 
@@ -710,62 +919,14 @@ class ClaudeRuntime(Runtime):
             },
         )
 
-    def session_configure_display(self, display_type: str, style: str) -> str:
-        """Configure terminal title display for Claude Code via claude_pre_prompt.js."""
-        valid_types = ("terminal-title", "status-line", "none")
-        if display_type not in valid_types:
-            return toon_error(
-                "session configure-display",
-                "invalid_type",
-                f"--type must be one of {valid_types}; got {display_type!r}",
-            )
-        valid_styles = ("unicode", "ascii")
-        if style not in valid_styles:
-            return toon_error(
-                "session configure-display",
-                "invalid_style",
-                f"--style must be one of {valid_styles}; got {style!r}",
-            )
+    def session_render_title(self, statusline: bool = False) -> str:
+        """5-step read + OSC emit for the terminal title.
 
-        hook_file_path = Path(".claude") / "claude_pre_prompt.js"
-
-        if display_type == "none":
-            # Remove the hook file if it exists.
-            try:
-                hook_file_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-            return toon_success(
-                "session configure-display",
-                {
-                    "type": display_type,
-                    "style": style,
-                    "hook_file": str(hook_file_path),
-                    "written": False,
-                },
-            )
-
-        # Write the pre-prompt JS hook.
-        js_content = _PRE_PROMPT_JS_TEMPLATE
-        try:
-            hook_file_path.parent.mkdir(parents=True, exist_ok=True)
-            hook_file_path.write_text(js_content, encoding="utf-8")
-            written = True
-        except OSError:
-            written = False
-
-        return toon_success(
-            "session configure-display",
-            {
-                "type": display_type,
-                "style": style,
-                "hook_file": str(hook_file_path),
-                "written": written,
-            },
-        )
-
-    def session_render_title(self) -> str:
-        """5-step read + OSC emit for the terminal title."""
+        When ``statusline`` is True, the success branch emits plain text
+        (``f"{icon} {title_body}"``) instead of the JSON envelope, matching the
+        ``statusLine`` hook contract (no envelope). Noop branches continue to
+        emit nothing on stdout in both modes.
+        """
         # Step 1: Read $CLAUDE_CODE_SESSION_ID.
         session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
         if not session_id:
@@ -812,10 +973,20 @@ class ClaudeRuntime(Runtime):
         # Step 4: Pick platform icon (Claude Code palette).
         icon = "➤"  # ➤
 
-        # Step 5: Emit OSC title sequence.
-        osc_seq = f"\x1b]0;{icon} {title_body}\x07"
+        # Step 5: Emit the title.
+        # In statusLine mode (``statusline=True``), emit plain text directly to
+        # stdout — Claude Code reads it verbatim and renders it as the status
+        # line, no envelope expected. In the default hook-driven mode, emit a
+        # JSON envelope carrying the OSC title sequence — Claude Code reads
+        # ``terminalSequence`` from the hook stdout and writes the inner ESC ]0;…
+        # BEL sequence to the terminal itself (raw-OSC emission from the hook
+        # process is swallowed).
         try:
-            sys.stdout.write(osc_seq)
+            if statusline:
+                sys.stdout.write(f"{icon} {title_body}")
+            else:
+                osc_seq = f"\x1b]0;{icon} {title_body}\x07"
+                sys.stdout.write(json.dumps({"terminalSequence": osc_seq}))
             sys.stdout.flush()
             emitted = True
         except OSError:
@@ -1568,12 +1739,26 @@ class ClaudeRuntime(Runtime):
                 all_healthy = False
 
         if "display" in checks_to_run:
-            hook_js = Path(".claude") / "claude_pre_prompt.js"
-            healthy = hook_js.is_file()
+            settings_local = Path(".claude") / "settings.local.json"
+            sd = _read_json(settings_local) or {}
+            session_starts = sd.get("hooks", {}).get("SessionStart", [])
+            healthy = False
+            if isinstance(session_starts, list):
+                for entry in session_starts:
+                    if isinstance(entry, dict):
+                        for h in entry.get("hooks", []):
+                            if isinstance(h, dict) and h.get("command") == _RENDER_HOOK_COMMAND:
+                                healthy = True
+                                break
+                    if healthy:
+                        break
             detail = (
-                "claude_pre_prompt.js present"
+                "render-title hook entry present in .claude/settings.local.json"
                 if healthy
-                else "claude_pre_prompt.js not found; run session configure-display"
+                else (
+                    "render-title hook entry missing from .claude/settings.local.json; "
+                    "run marshall-steward or project install-hook to install"
+                )
             )
             results.append({"check": "display", "healthy": healthy, "detail": detail})
             if not healthy:

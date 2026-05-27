@@ -4,8 +4,7 @@
 Covers every method defined by the Runtime ABC:
   1.  project_initial_setup       — creates dirs, writes marshal.json, installs hook
   2.  session_capture             — reads $CLAUDE_CODE_SESSION_ID, stores via manage-status
-  3.  session_configure_display   — writes / removes claude_pre_prompt.js
-  4.  session_render_title        — resolves session → plan → OSC emit
+  3.  session_render_title        — resolves session → plan → OSC emit
   5.  permission_configure        — overwrites allow list in settings
   6.  permission_analyze          — audits redundant / suspicious / missing-steps
   7.  permission_fix              — normalize / add / remove / ensure / consolidate
@@ -34,7 +33,12 @@ import pytest
 
 # conftest.py sets up PYTHONPATH so cross-skill imports resolve without manual
 # sys.path manipulation.
-from claude_runtime import ClaudeRuntime, _HOOK_COMMAND  # type: ignore[import-not-found]
+from claude_runtime import (  # type: ignore[import-not-found]
+    ClaudeRuntime,
+    _HOOK_COMMAND,
+    _RENDER_HOOK_COMMAND,
+    _STATUSLINE_COMMAND,
+)
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 
@@ -196,53 +200,256 @@ class TestProjectInitialSetupFreshInit:
 
 
 # =============================================================================
-# 1b. project_install_hook
+# 1b. project_install_hook — terminal-title wiring (render hooks + statusLine + env)
 # =============================================================================
 
 
-class TestProjectInstallHook:
-    """Tests for ClaudeRuntime.project_install_hook."""
+def _collect_commands(entries: list[dict[str, Any]]) -> list[str]:
+    """Return the list of hook commands inside a hooks-event entry list."""
+    return [
+        h.get("command")
+        for entry in entries
+        if isinstance(entry, dict)
+        for h in entry.get("hooks", [])
+        if isinstance(h, dict)
+    ]
 
-    def test_fresh_file_creation_installs_hook(self, rt, tmp_path):
-        """Installing into a non-existent settings file creates it with the hook."""
+
+def _count_command(entries: list[dict[str, Any]], command: str) -> int:
+    """Count how many times *command* appears across a hooks-event entry list."""
+    return sum(1 for c in _collect_commands(entries) if c == command)
+
+
+class TestInstallTerminalTitleHooks:
+    """Tests for ClaudeRuntime.project_install_hook covering the full terminal-title wiring.
+
+    Covers (a) fresh install creates all five render-trigger hook events plus
+    statusLine plus env entry; (b) re-running is idempotent; (c) existing
+    statusLine with a different command yields already_present_other; (d)
+    existing env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE with a different value
+    yields already_present_other; (e) --overwrite-statusline /
+    --overwrite-env-disable flags overwrite; (f) existing claude_hook
+    SessionStart entry is preserved.
+    """
+
+    # ------------------------------------------------------------------
+    # (a) Fresh install wires all five render-trigger events + statusLine + env.
+    # ------------------------------------------------------------------
+
+    def test_fresh_install_creates_all_five_render_events(self, rt, tmp_path):
+        """Fresh install populates SessionStart (matcher-less + clear), UserPromptSubmit,
+        Notification, Stop, and PostToolUse:AskUserQuestion with the renderer command."""
         target = tmp_path / ".claude" / "settings.local.json"
         result = _parsed(rt.project_install_hook(str(target)))
         assert result["status"] == "success"
         assert result["hook_installed"] is True
-        assert result["already_present"] is False
-        assert result["target"] == str(target)
-        assert target.is_file()
-        settings = json.loads(target.read_text())
-        session_starts = settings.get("hooks", {}).get("SessionStart", [])
-        commands = [
-            h.get("command")
-            for entry in session_starts
-            if isinstance(entry, dict)
-            for h in entry.get("hooks", [])
-            if isinstance(h, dict)
-        ]
-        assert _HOOK_COMMAND in commands
 
-    def test_idempotent_reinstall_reports_already_present(self, rt, tmp_path):
-        """Re-invoking when the hook is present reports already_present and adds nothing."""
+        settings = json.loads(target.read_text())
+        hooks_block = settings["hooks"]
+
+        # SessionStart has BOTH the existing capture entry AND two render entries
+        # (matcher-less + matcher:"clear").
+        session_start = hooks_block["SessionStart"]
+        # Render command appears exactly twice (one per matcher variant).
+        assert _count_command(session_start, _RENDER_HOOK_COMMAND) == 2
+        # And one matcher-less render entry, one matcher:"clear" render entry.
+        matchers_with_render = [
+            entry.get("matcher", "")
+            for entry in session_start
+            if isinstance(entry, dict)
+            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+        ]
+        assert "" in matchers_with_render
+        assert "clear" in matchers_with_render
+
+        # UserPromptSubmit, Notification, Stop — each one matcher-less render entry.
+        for event_name in ("UserPromptSubmit", "Notification", "Stop"):
+            event_entries = hooks_block[event_name]
+            assert _count_command(event_entries, _RENDER_HOOK_COMMAND) == 1
+            # The single entry is matcher-less.
+            assert event_entries[0].get("matcher", "") == ""
+
+        # PostToolUse: matcher="AskUserQuestion" + render command.
+        post_tool_use = hooks_block["PostToolUse"]
+        assert _count_command(post_tool_use, _RENDER_HOOK_COMMAND) == 1
+        ask_entries = [
+            entry
+            for entry in post_tool_use
+            if isinstance(entry, dict) and entry.get("matcher") == "AskUserQuestion"
+        ]
+        assert len(ask_entries) == 1
+
+    def test_fresh_install_writes_statusline_command(self, rt, tmp_path):
+        """Fresh install writes statusLine = {type: command, command: _STATUSLINE_COMMAND}."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        result = _parsed(rt.project_install_hook(str(target)))
+        assert result["statusLine_status"] == "installed"
+
+        settings = json.loads(target.read_text())
+        assert settings["statusLine"]["type"] == "command"
+        assert settings["statusLine"]["command"] == _STATUSLINE_COMMAND
+
+    def test_fresh_install_writes_env_disable_entry(self, rt, tmp_path):
+        """Fresh install writes env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE = "1"."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        result = _parsed(rt.project_install_hook(str(target)))
+        assert result["env_status"] == "installed"
+
+        settings = json.loads(target.read_text())
+        assert settings["env"]["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] == "1"
+
+    def test_fresh_install_response_lists_installed_events(self, rt, tmp_path):
+        """installed_events lists every event freshly wired (SessionStart counted once)."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        result = _parsed(rt.project_install_hook(str(target)))
+        installed = result["installed_events"]
+        # SessionStart appears once even though two render entries were added.
+        assert set(installed) == {
+            "SessionStart",
+            "UserPromptSubmit",
+            "Notification",
+            "Stop",
+            "PostToolUse",
+        }
+
+    # ------------------------------------------------------------------
+    # (b) Re-running is idempotent across all hook blocks.
+    # ------------------------------------------------------------------
+
+    def test_idempotent_second_run_adds_nothing(self, rt, tmp_path):
+        """Re-invoking after a fresh install reports already_present and adds no new entries."""
         target = tmp_path / ".claude" / "settings.local.json"
         rt.project_install_hook(str(target))
+        first_settings = json.loads(target.read_text())
+
         result = _parsed(rt.project_install_hook(str(target)))
-        assert result["status"] == "success"
-        assert result["hook_installed"] is True
         assert result["already_present"] is True
+        assert result["installed_events"] == []
+        assert result["statusLine_status"] == "already_present"
+        assert result["env_status"] == "already_present"
+
+        second_settings = json.loads(target.read_text())
+        # File contents are byte-identical: no duplicate entries, no toggles.
+        assert first_settings == second_settings
+
+    def test_idempotent_render_commands_not_duplicated(self, rt, tmp_path):
+        """Across two installs, each render-hook event still contains exactly one render command
+        (SessionStart still has exactly two — matcher-less + clear)."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        rt.project_install_hook(str(target))
 
         settings = json.loads(target.read_text())
-        session_starts = settings.get("hooks", {}).get("SessionStart", [])
-        hook_count = sum(
-            sum(1 for h in entry.get("hooks", []) if h.get("command") == _HOOK_COMMAND)
-            for entry in session_starts
-            if isinstance(entry, dict)
-        )
-        assert hook_count == 1
+        hooks_block = settings["hooks"]
+        assert _count_command(hooks_block["SessionStart"], _RENDER_HOOK_COMMAND) == 2
+        for event_name in ("UserPromptSubmit", "Notification", "Stop", "PostToolUse"):
+            assert _count_command(hooks_block[event_name], _RENDER_HOOK_COMMAND) == 1
 
-    def test_insertion_preserves_existing_unrelated_hooks_block(self, rt, tmp_path):
-        """Installing into a file with an unrelated hooks block keeps that block intact."""
+    # ------------------------------------------------------------------
+    # (c) Existing foreign statusLine yields already_present_other (preserved).
+    # ------------------------------------------------------------------
+
+    def test_foreign_statusline_returns_already_present_other(self, rt, tmp_path):
+        """A pre-existing statusLine whose command differs from ours is preserved and reported
+        as already_present_other (no overwrite without the flag)."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        target.parent.mkdir(parents=True)
+        existing = {"statusLine": {"type": "command", "command": "echo hello-world"}}
+        target.write_text(json.dumps(existing), encoding="utf-8")
+
+        result = _parsed(rt.project_install_hook(str(target)))
+        assert result["statusLine_status"] == "already_present_other"
+
+        settings = json.loads(target.read_text())
+        # Foreign value preserved untouched.
+        assert settings["statusLine"]["command"] == "echo hello-world"
+
+    # ------------------------------------------------------------------
+    # (d) Existing foreign env value yields already_present_other (preserved).
+    # ------------------------------------------------------------------
+
+    def test_foreign_env_disable_returns_already_present_other(self, rt, tmp_path):
+        """A pre-existing env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE with a non-'1' value is
+        preserved and reported as already_present_other."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        target.parent.mkdir(parents=True)
+        existing = {"env": {"CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "0"}}
+        target.write_text(json.dumps(existing), encoding="utf-8")
+
+        result = _parsed(rt.project_install_hook(str(target)))
+        assert result["env_status"] == "already_present_other"
+
+        settings = json.loads(target.read_text())
+        # Foreign value preserved untouched.
+        assert settings["env"]["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] == "0"
+
+    # ------------------------------------------------------------------
+    # (e) --overwrite-statusline / --overwrite-env-disable replace foreign values.
+    # ------------------------------------------------------------------
+
+    def test_overwrite_statusline_flag_replaces_foreign_command(self, rt, tmp_path):
+        """overwrite_statusline=True replaces a foreign statusLine command with ours."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        target.parent.mkdir(parents=True)
+        existing = {"statusLine": {"type": "command", "command": "echo hello-world"}}
+        target.write_text(json.dumps(existing), encoding="utf-8")
+
+        result = _parsed(
+            rt.project_install_hook(str(target), overwrite_statusline=True)
+        )
+        assert result["statusLine_status"] == "overwritten"
+
+        settings = json.loads(target.read_text())
+        assert settings["statusLine"]["command"] == _STATUSLINE_COMMAND
+
+    def test_overwrite_env_disable_flag_replaces_foreign_value(self, rt, tmp_path):
+        """overwrite_env_disable=True replaces a foreign env value with '1'."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        target.parent.mkdir(parents=True)
+        existing = {"env": {"CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "0"}}
+        target.write_text(json.dumps(existing), encoding="utf-8")
+
+        result = _parsed(
+            rt.project_install_hook(str(target), overwrite_env_disable=True)
+        )
+        assert result["env_status"] == "overwritten"
+
+        settings = json.loads(target.read_text())
+        assert settings["env"]["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] == "1"
+
+    # ------------------------------------------------------------------
+    # (f) Existing claude_hook SessionStart entry is preserved.
+    # ------------------------------------------------------------------
+
+    def test_existing_claude_hook_session_start_preserved(self, rt, tmp_path):
+        """A pre-existing claude_hook capture entry is preserved when render entries are added."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        target.parent.mkdir(parents=True)
+        existing = {
+            "hooks": {
+                "SessionStart": [
+                    {
+                        "matcher": "",
+                        "hooks": [{"type": "command", "command": _HOOK_COMMAND, "timeout": 5000}],
+                    }
+                ]
+            }
+        }
+        target.write_text(json.dumps(existing), encoding="utf-8")
+
+        result = _parsed(rt.project_install_hook(str(target)))
+        assert result["status"] == "success"
+
+        settings = json.loads(target.read_text())
+        session_start = settings["hooks"]["SessionStart"]
+        # Capture entry still present.
+        assert _count_command(session_start, _HOOK_COMMAND) == 1
+        # Render entries (matcher-less + clear) added without disturbing the capture entry.
+        assert _count_command(session_start, _RENDER_HOOK_COMMAND) == 2
+
+    def test_preserves_unrelated_existing_hooks_block(self, rt, tmp_path):
+        """Existing unrelated hooks (e.g. UserPromptSubmit with a foreign command) are preserved
+        alongside the inserted render entry."""
         target = tmp_path / ".claude" / "settings.local.json"
         target.parent.mkdir(parents=True)
         existing = {
@@ -257,25 +464,18 @@ class TestProjectInstallHook:
 
         result = _parsed(rt.project_install_hook(str(target)))
         assert result["status"] == "success"
-        assert result["already_present"] is False
 
         settings = json.loads(target.read_text())
-        # Unrelated content preserved.
+        # Unrelated permission block preserved.
         assert settings["permissions"]["allow"] == ["Read(**)"]
-        assert "UserPromptSubmit" in settings["hooks"]
-        # New SessionStart hook present.
-        session_starts = settings["hooks"].get("SessionStart", [])
-        commands = [
-            h.get("command")
-            for entry in session_starts
-            if isinstance(entry, dict)
-            for h in entry.get("hooks", [])
-            if isinstance(h, dict)
-        ]
-        assert _HOOK_COMMAND in commands
+        # Foreign UserPromptSubmit hook preserved.
+        ups_commands = _collect_commands(settings["hooks"]["UserPromptSubmit"])
+        assert "echo hi" in ups_commands
+        # Our render entry added alongside the foreign one.
+        assert _RENDER_HOOK_COMMAND in ups_commands
 
     def test_shared_helper_parity_with_initial_setup(self, rt, tmp_path):
-        """project_install_hook installs the same hook entry as project_initial_setup."""
+        """project_install_hook produces the same SessionStart wiring as project_initial_setup."""
         # project_initial_setup writes to .claude/settings.json.
         setup_project = tmp_path / "setup-proj"
         setup_project.mkdir()
@@ -283,16 +483,128 @@ class TestProjectInstallHook:
         setup_settings = json.loads(
             (setup_project / ".claude" / "settings.json").read_text()
         )
-        setup_session_starts = setup_settings["hooks"]["SessionStart"]
 
         # project_install_hook writes to an arbitrary target file.
         install_target = tmp_path / "install" / "settings.local.json"
         rt.project_install_hook(str(install_target))
         install_settings = json.loads(install_target.read_text())
-        install_session_starts = install_settings["hooks"]["SessionStart"]
 
-        # Both code paths produce the identical SessionStart hook entry.
-        assert setup_session_starts == install_session_starts
+        # Both code paths produce identical hooks / statusLine / env wiring.
+        assert setup_settings["hooks"] == install_settings["hooks"]
+        assert setup_settings["statusLine"] == install_settings["statusLine"]
+        assert setup_settings["env"] == install_settings["env"]
+
+
+# =============================================================================
+# 4b. session_render_title --statusline mode
+# =============================================================================
+
+
+class TestSessionRenderTitleStatusline:
+    """Tests for ClaudeRuntime.session_render_title(statusline=True).
+
+    Covers plain-text emission on the success branch (no JSON envelope) and the
+    no-op branches (missing session-id / no active plan / missing title-body)
+    which must still write nothing on stdout in statusline mode.
+    """
+
+    def test_statusline_emits_plain_text_on_success(self, rt, tmp_path, monkeypatch, capsys):
+        """In statusline mode, success branch writes plain ``{icon} {title_body}`` — no JSON envelope, no OSC."""
+        import claude_runtime as _cr
+
+        session_id = "sess-statusline-ok"
+        plan_id = "active-plan"
+        title_body = "phase-5-execute | my-task"
+
+        cache_dir = tmp_path / "sessions" / session_id
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
+
+        plan_titles_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        plan_titles_dir.mkdir(parents=True)
+        (plan_titles_dir / "title-body.txt").write_text(title_body, encoding="utf-8")
+
+        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
+        monkeypatch.chdir(tmp_path)
+
+        capsys.readouterr()  # discard prior capture
+        result = _parsed(rt.session_render_title(statusline=True))
+        assert result["status"] == "success"
+        assert result["title_body"] == title_body
+
+        captured = capsys.readouterr().out
+        # Plain text — no JSON envelope, no OSC escape sequence.
+        assert captured == f"➤ {title_body}"
+        assert "terminalSequence" not in captured
+        assert "\x1b]0;" not in captured
+
+    def test_default_mode_still_emits_json_envelope(self, rt, tmp_path, monkeypatch, capsys):
+        """statusline=False (default) emits a JSON envelope — confirms the two modes are distinct."""
+        import claude_runtime as _cr
+
+        session_id = "sess-envelope-mode"
+        plan_id = "active-plan"
+        title_body = "phase-1 | foo"
+
+        cache_dir = tmp_path / "sessions" / session_id
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
+        plan_titles_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        plan_titles_dir.mkdir(parents=True)
+        (plan_titles_dir / "title-body.txt").write_text(title_body, encoding="utf-8")
+
+        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
+        monkeypatch.chdir(tmp_path)
+
+        capsys.readouterr()
+        _parsed(rt.session_render_title(statusline=False))
+        captured = capsys.readouterr().out
+        # JSON envelope present in default mode.
+        payload = json.loads(captured)
+        assert payload["terminalSequence"] == f"\x1b]0;➤ {title_body}\x07"
+
+    def test_statusline_missing_session_id_writes_nothing(self, rt, monkeypatch, capsys):
+        """statusline noop: missing $CLAUDE_CODE_SESSION_ID — nothing written to stdout."""
+        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+        capsys.readouterr()
+        result = _parsed(rt.session_render_title(statusline=True))
+        assert result["status"] == "no-op"
+        assert capsys.readouterr().out == ""
+
+    def test_statusline_no_active_plan_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
+        """statusline noop: session has no registered plan — nothing written to stdout."""
+        import claude_runtime as _cr
+
+        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-without-plan")
+        capsys.readouterr()
+        result = _parsed(rt.session_render_title(statusline=True))
+        assert result["status"] == "no-op"
+        assert capsys.readouterr().out == ""
+
+    def test_statusline_missing_title_body_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
+        """statusline noop: session resolves to plan but title-body.txt is missing."""
+        import claude_runtime as _cr
+
+        session_id = "sess-no-title"
+        plan_id = "plan-no-title"
+        cache_dir = tmp_path / "sessions" / session_id
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
+
+        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
+        monkeypatch.chdir(tmp_path)
+
+        capsys.readouterr()
+        result = _parsed(rt.session_render_title(statusline=True))
+        assert result["status"] == "no-op"
+        assert capsys.readouterr().out == ""
 
 
 # =============================================================================
@@ -328,131 +640,357 @@ class TestSessionCapture:
 
 
 # =============================================================================
-# 3. session_configure_display
+# 3. session_render_title
 # =============================================================================
 
 
-class TestSessionConfigureDisplay:
-    """Tests for ClaudeRuntime.session_configure_display."""
+# ---------------------------------------------------------------------------
+# session_render_title matrix scaffolding
+# ---------------------------------------------------------------------------
+#
+# The post-Deliverable-2 hook chain resolves a terminal title across an
+# ordered partial-order resolver of four input tiers, each of which may
+# yield one of three outcomes (hit / miss / stale).  The matrix below
+# encodes every {tier × outcome} cell exactly once.
+#
+# Input-tier definitions (in resolver order):
+#   1. plan_id-only       — $CLAUDE_CODE_SESSION_ID is present in the env.
+#                           hit   = valid session-id string is exported.
+#                           miss  = env var is unset entirely.
+#                           stale = env var is present but the empty string
+#                                   (a hook fired with no payload).
+#   2. title-from-status  — Session cache resolves to a plan via the
+#                           ``$_SESSION_CACHE_BASE/{session}/active-plan``
+#                           pointer file.
+#                           hit   = pointer file exists with a plan id.
+#                           miss  = pointer file is absent.
+#                           stale = pointer file exists but is empty
+#                                   (manage-status cleared but did not delete).
+#   3. branch-from-git    — Plan dir resolves to a non-empty
+#                           ``title-body.txt`` (the rendered title body).
+#                           hit   = title-body.txt exists with content.
+#                           miss  = title-body.txt is absent.
+#                           stale = title-body.txt exists but is empty
+#                                   (writer published an empty file because
+#                                   the plan is in a terminal/archived state).
+#   4. fallback           — Final emission branch when every resolver tier
+#                           upstream produced a hit; the helper writes the
+#                           OSC envelope and returns ``success``.
+#                           hit   = full chain resolves and stdout receives
+#                                   the JSON envelope.
+#                           miss  = upstream tier produced a miss
+#                                   (no fallback hit reached).
+#                           stale = upstream tier produced a stale value
+#                                   (no fallback hit reached; renderer
+#                                   reports no-op without writing stdout).
+#
+# Production-dominant cell (named below):  TIER ``branch-from-git`` × HIT.
+# That is the cell exercised on the developer's machine on every hook fire
+# during normal plan execution — main session at repo root, populated
+# session cache, non-empty title-body.txt.  Documented inline so future
+# editors see it before running tests.
+#
+# Cross-tab isolation cells:  The two ``branch-from-git`` × ``hit`` rows
+# (``branch-from-git-hit-session-A`` and ``branch-from-git-hit-session-B``)
+# exercise two distinct session ids (sess-tab-A, sess-tab-B) each pointing
+# at distinct plan dirs (plan-tab-A, plan-tab-B).  Each cell asserts that
+# the OSC envelope embeds the partner session's title-body, proving per-
+# session state isolation across the resolver chain.
 
-    def test_invalid_type_returns_error(self, rt):
-        """An unknown display_type returns status=error."""
-        result = _parsed(rt.session_configure_display("invalid-type", "unicode"))
-        assert result["status"] == "error"
-        assert result["error"] == "invalid_type"
-
-    def test_invalid_style_returns_error(self, rt):
-        """An unknown style returns status=error."""
-        result = _parsed(rt.session_configure_display("terminal-title", "bold"))
-        assert result["status"] == "error"
-        assert result["error"] == "invalid_style"
-
-    def test_none_type_removes_hook_file(self, rt, tmp_path, monkeypatch):
-        """display_type='none' removes the hook file when it exists."""
-        hook_file = tmp_path / ".claude" / "claude_pre_prompt.js"
-        hook_file.parent.mkdir(parents=True, exist_ok=True)
-        hook_file.write_text("existing content", encoding="utf-8")
-        # Run from tmp_path so relative paths resolve there.
-        monkeypatch.chdir(tmp_path)
-        result = _parsed(rt.session_configure_display("none", "unicode"))
-        assert result["status"] == "success"
-        assert result["written"] is False
-        assert not hook_file.exists()
-
-    def test_terminal_title_writes_hook_file(self, rt, tmp_path, monkeypatch):
-        """terminal-title type writes claude_pre_prompt.js."""
-        monkeypatch.chdir(tmp_path)
-        result = _parsed(rt.session_configure_display("terminal-title", "unicode"))
-        assert result["status"] == "success"
-        assert result["written"] is True
-        hook_file = tmp_path / ".claude" / "claude_pre_prompt.js"
-        assert hook_file.is_file()
-        content = hook_file.read_text(encoding="utf-8")
-        assert "render-title" in content
-
-    def test_status_line_type_writes_hook_file(self, rt, tmp_path, monkeypatch):
-        """status-line type is valid and writes the hook file."""
-        monkeypatch.chdir(tmp_path)
-        result = _parsed(rt.session_configure_display("status-line", "ascii"))
-        assert result["status"] == "success"
-
-    def test_response_includes_hook_file_path(self, rt, tmp_path, monkeypatch):
-        """Response includes hook_file, type, and style fields."""
-        monkeypatch.chdir(tmp_path)
-        result = _parsed(rt.session_configure_display("terminal-title", "ascii"))
-        assert "hook_file" in result
-        assert result["type"] == "terminal-title"
-        assert result["style"] == "ascii"
+# Matrix cell schema:
+#   id           — pytest parametrize id (kebab-case)
+#   tier         — one of {plan_id-only, title-from-status, branch-from-git,
+#                          fallback}
+#   outcome      — one of {hit, miss, stale}
+#   session_id   — env value to export (None ⇒ delenv)
+#   plan_id      — active-plan pointer content (None ⇒ no file written;
+#                  "" ⇒ empty pointer)
+#   title_body   — title-body.txt content (None ⇒ no file;
+#                  "" ⇒ empty file)
+#   expected     — "success" or "no-op"
+#   emits_stdout — True iff stdout receives the JSON envelope
 
 
-# =============================================================================
-# 4. session_render_title
-# =============================================================================
+_RENDER_MATRIX = [
+    # ─── Tier 1: plan_id-only ────────────────────────────────────────────
+    {
+        "id": "plan_id-only-hit",
+        "tier": "plan_id-only",
+        "outcome": "hit",
+        "session_id": "sess-tier1-hit",
+        "plan_id": "tier1-hit-plan",
+        "title_body": "phase-5-execute | t1-hit",
+        "expected": "success",
+        "emits_stdout": True,
+    },
+    {
+        "id": "plan_id-only-miss",
+        "tier": "plan_id-only",
+        "outcome": "miss",
+        "session_id": None,  # env unset
+        "plan_id": None,
+        "title_body": None,
+        "expected": "no-op",
+        "emits_stdout": False,
+    },
+    {
+        "id": "plan_id-only-stale",
+        "tier": "plan_id-only",
+        "outcome": "stale",
+        "session_id": "",  # env present but empty
+        "plan_id": None,
+        "title_body": None,
+        "expected": "no-op",
+        "emits_stdout": False,
+    },
+    # ─── Tier 2: title-from-status ───────────────────────────────────────
+    {
+        "id": "title-from-status-hit",
+        "tier": "title-from-status",
+        "outcome": "hit",
+        "session_id": "sess-tier2-hit",
+        "plan_id": "tier2-hit-plan",
+        "title_body": "phase-3-outline | t2-hit",
+        "expected": "success",
+        "emits_stdout": True,
+    },
+    {
+        "id": "title-from-status-miss",
+        "tier": "title-from-status",
+        "outcome": "miss",
+        "session_id": "sess-tier2-miss",
+        "plan_id": None,  # no active-plan pointer
+        "title_body": None,
+        "expected": "no-op",
+        "emits_stdout": False,
+    },
+    {
+        "id": "title-from-status-stale",
+        "tier": "title-from-status",
+        "outcome": "stale",
+        "session_id": "sess-tier2-stale",
+        "plan_id": "",  # empty pointer file
+        "title_body": None,
+        "expected": "no-op",
+        "emits_stdout": False,
+    },
+    # ─── Tier 3: branch-from-git ─────────────────────────────────────────
+    # PRODUCTION-DOMINANT CELL — main session at repo root + worktree
+    # active + populated session cache + non-empty title-body.txt + phase
+    # running + UserPromptSubmit trigger.  This is the cell that fires on
+    # every hook during normal plan execution.  Do NOT remove or rename
+    # without auditing every other test that references this naming.
+    {
+        "id": "branch-from-git-hit-session-A",  # PRODUCTION-DOMINANT (session A)
+        "tier": "branch-from-git",
+        "outcome": "hit",
+        "session_id": "sess-tab-A",
+        "plan_id": "plan-tab-A",
+        "title_body": "phase-5-execute | session-A-task",
+        "expected": "success",
+        "emits_stdout": True,
+    },
+    {
+        "id": "branch-from-git-hit-session-B",  # cross-tab isolation partner
+        "tier": "branch-from-git",
+        "outcome": "hit",
+        "session_id": "sess-tab-B",
+        "plan_id": "plan-tab-B",
+        "title_body": "phase-3-outline | session-B-task",
+        "expected": "success",
+        "emits_stdout": True,
+    },
+    {
+        "id": "branch-from-git-miss",
+        "tier": "branch-from-git",
+        "outcome": "miss",
+        "session_id": "sess-tier3-miss",
+        "plan_id": "tier3-miss-plan",
+        "title_body": None,  # no title-body.txt
+        "expected": "no-op",
+        "emits_stdout": False,
+    },
+    {
+        "id": "branch-from-git-stale",
+        "tier": "branch-from-git",
+        "outcome": "stale",
+        "session_id": "sess-tier3-stale",
+        "plan_id": "tier3-stale-plan",
+        "title_body": "",  # empty title-body.txt
+        "expected": "no-op",
+        "emits_stdout": False,
+    },
+    # ─── Tier 4: fallback (final emission branch) ────────────────────────
+    {
+        "id": "fallback-hit",
+        "tier": "fallback",
+        "outcome": "hit",
+        "session_id": "sess-fallback-hit",
+        "plan_id": "fallback-hit-plan",
+        "title_body": "phase-1-init | fallback-emit",
+        "expected": "success",
+        "emits_stdout": True,
+    },
+    {
+        "id": "fallback-miss",
+        "tier": "fallback",
+        "outcome": "miss",
+        "session_id": None,  # upstream miss prevents fallback reach
+        "plan_id": None,
+        "title_body": None,
+        "expected": "no-op",
+        "emits_stdout": False,
+    },
+    {
+        "id": "fallback-stale",
+        "tier": "fallback",
+        "outcome": "stale",
+        "session_id": "sess-fallback-stale",
+        "plan_id": "fallback-stale-plan",
+        "title_body": "",  # upstream stale prevents fallback emit
+        "expected": "no-op",
+        "emits_stdout": False,
+    },
+]
+
+
+def _arrange_render_cell(
+    cell: dict[str, Any], tmp_path: Path, monkeypatch
+) -> None:
+    """Materialize the on-disk + env state for one matrix cell.
+
+    Writes session cache pointer + plan title-body.txt according to the
+    cell's ``plan_id`` / ``title_body`` values, then redirects module-
+    level constants and exports ``$CLAUDE_CODE_SESSION_ID`` per the cell.
+    """
+    import claude_runtime as _cr
+
+    monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+    monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+    monkeypatch.chdir(tmp_path)
+
+    session_id = cell["session_id"]
+    if session_id is None:
+        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    else:
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
+
+    # Skip on-disk arrangement when the env var is unusable.
+    if not session_id:
+        return
+
+    plan_pointer = cell["plan_id"]
+    if plan_pointer is not None:
+        cache_dir = tmp_path / "sessions" / session_id
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        (cache_dir / "active-plan").write_text(plan_pointer, encoding="utf-8")
+
+    title_body = cell["title_body"]
+    # Only materialize title-body.txt when we have a non-empty plan
+    # pointer to anchor the path.  An empty pointer would yield
+    # ``.plan/local/plans//title-body.txt`` which is incoherent.
+    if title_body is not None and plan_pointer:
+        plan_titles_dir = tmp_path / ".plan" / "local" / "plans" / plan_pointer
+        plan_titles_dir.mkdir(parents=True, exist_ok=True)
+        (plan_titles_dir / "title-body.txt").write_text(title_body, encoding="utf-8")
 
 
 class TestSessionRenderTitle:
-    """Tests for ClaudeRuntime.session_render_title."""
+    """Matrix-parametrized tests for ClaudeRuntime.session_render_title.
 
-    def test_missing_session_id_env_returns_noop(self, rt, monkeypatch):
-        """When $CLAUDE_CODE_SESSION_ID is unset, render_title returns no-op."""
-        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    Single parametrized class covering every {input-tier × hit/miss/stale}
+    cell of the post-Deliverable-2 hook chain.  See ``_RENDER_MATRIX``
+    above for the cell definitions and the production-dominant /
+    cross-tab-isolation annotations.
+
+    The four input tiers are:
+      - plan_id-only        — $CLAUDE_CODE_SESSION_ID present in env
+      - title-from-status   — active-plan pointer resolves a plan
+      - branch-from-git     — title-body.txt resolves to non-empty content
+      - fallback            — final emission branch (OSC envelope write)
+
+    Each tier yields one of three outcomes: hit, miss, stale.
+    """
+
+    @pytest.mark.parametrize(
+        "cell",
+        _RENDER_MATRIX,
+        ids=[c["id"] for c in _RENDER_MATRIX],
+    )
+    def test_resolver_matrix(self, cell, rt, tmp_path, monkeypatch, capsys):
+        """Every {tier × outcome} cell asserts status + stdout emission."""
+        _arrange_render_cell(cell, tmp_path, monkeypatch)
+        capsys.readouterr()  # discard prior captures
+
         result = _parsed(rt.session_render_title())
-        assert result["status"] == "no-op"
+        captured = capsys.readouterr().out
 
-    def test_no_active_plan_returns_noop(self, rt, tmp_path, monkeypatch):
-        """When session has no registered plan, render_title returns no-op."""
+        assert result["status"] == cell["expected"], (
+            f"cell {cell['id']!r}: expected status={cell['expected']!r}, got {result['status']!r}"
+        )
+
+        if cell["emits_stdout"]:
+            # Success branch emits the JSON envelope; assert OSC payload
+            # references the expected title body for this cell.
+            payload = json.loads(captured)
+            expected_osc = f"\x1b]0;➤ {cell['title_body']}\x07"
+            assert payload["terminalSequence"] == expected_osc, (
+                f"cell {cell['id']!r}: OSC payload mismatch"
+            )
+            assert result["plan_id"] == cell["plan_id"]
+            assert result["title_body"] == cell["title_body"]
+        else:
+            # No-op branches must write nothing to stdout.
+            assert captured == "", (
+                f"cell {cell['id']!r}: expected no stdout, got {captured!r}"
+            )
+
+    def test_cross_tab_isolation_session_A_does_not_leak_into_session_B(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """The two production-dominant cells (session A and session B) must
+        resolve to distinct title bodies — proving per-session state
+        isolation across the resolver chain.
+
+        Both sessions are arranged simultaneously; the renderer is invoked
+        once per session and each invocation MUST observe only its own
+        session's title body.
+        """
         import claude_runtime as _cr
 
-        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-without-plan")
-        result = _parsed(rt.session_render_title())
-        assert result["status"] == "no-op"
-
-    def test_no_title_body_file_returns_noop(self, rt, tmp_path, monkeypatch):
-        """When title-body.txt does not exist, render_title returns no-op."""
-        import claude_runtime as _cr
-
-        session_id = "sess-with-plan"
-        plan_id = "my-plan"
-        cache_dir = tmp_path / "sessions" / session_id
-        cache_dir.mkdir(parents=True)
-        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
+        cell_a = next(c for c in _RENDER_MATRIX if c["id"] == "branch-from-git-hit-session-A")
+        cell_b = next(c for c in _RENDER_MATRIX if c["id"] == "branch-from-git-hit-session-B")
 
         monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
         monkeypatch.chdir(tmp_path)
 
-        result = _parsed(rt.session_render_title())
-        assert result["status"] == "no-op"
+        # Materialize BOTH sessions' on-disk state side by side.
+        for cell in (cell_a, cell_b):
+            cache_dir = tmp_path / "sessions" / cell["session_id"]
+            cache_dir.mkdir(parents=True)
+            (cache_dir / "active-plan").write_text(cell["plan_id"], encoding="utf-8")
+            plan_dir = tmp_path / ".plan" / "local" / "plans" / cell["plan_id"]
+            plan_dir.mkdir(parents=True)
+            (plan_dir / "title-body.txt").write_text(cell["title_body"], encoding="utf-8")
 
-    def test_emits_osc_sequence_on_success(self, rt, tmp_path, monkeypatch):
-        """When session → plan → title-body chain resolves, render_title emits OSC and returns success."""
-        import claude_runtime as _cr
+        # Session A invocation — must see session A's title body only.
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", cell_a["session_id"])
+        capsys.readouterr()
+        result_a = _parsed(rt.session_render_title())
+        captured_a = capsys.readouterr().out
+        assert result_a["plan_id"] == cell_a["plan_id"]
+        assert result_a["title_body"] == cell_a["title_body"]
+        assert cell_b["title_body"] not in captured_a
 
-        session_id = "sess-full"
-        plan_id = "active-plan"
-        title_body = "phase-5-execute | my-task"
-
-        # Set up session cache.
-        cache_dir = tmp_path / "sessions" / session_id
-        cache_dir.mkdir(parents=True)
-        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
-
-        # Set up title-body.txt in .plan/local/plans/{plan_id}/.
-        plan_titles_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
-        plan_titles_dir.mkdir(parents=True)
-        (plan_titles_dir / "title-body.txt").write_text(title_body, encoding="utf-8")
-
-        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
-        monkeypatch.chdir(tmp_path)
-
-        result = _parsed(rt.session_render_title())
-        assert result["status"] == "success"
-        assert result["plan_id"] == plan_id
-        assert result["title_body"] == title_body
+        # Session B invocation — must see session B's title body only.
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", cell_b["session_id"])
+        capsys.readouterr()
+        result_b = _parsed(rt.session_render_title())
+        captured_b = capsys.readouterr().out
+        assert result_b["plan_id"] == cell_b["plan_id"]
+        assert result_b["title_body"] == cell_b["title_body"]
+        assert cell_a["title_body"] not in captured_b
 
 
 # =============================================================================
@@ -1114,19 +1652,31 @@ class TestHealthCheck:
         perm_result = next(r for r in result["results"] if r["check"] == "permissions")
         assert perm_result["healthy"] is True
 
-    def test_display_healthy_when_hook_file_present(self, rt, tmp_path, monkeypatch):
-        """display check is healthy when .claude/claude_pre_prompt.js exists."""
-        hook_file = tmp_path / ".claude" / "claude_pre_prompt.js"
-        hook_file.parent.mkdir(parents=True)
-        hook_file.write_text("// hook", encoding="utf-8")
+    def test_display_healthy_when_render_hook_present(self, rt, tmp_path, monkeypatch):
+        """display check is healthy when settings.local.json contains a render-title hook entry."""
+        settings_path = tmp_path / ".claude" / "settings.local.json"
+        settings_path.parent.mkdir(parents=True)
+        settings_data = {
+            "hooks": {
+                "SessionStart": [
+                    {
+                        "matcher": "",
+                        "hooks": [
+                            {"type": "command", "command": _RENDER_HOOK_COMMAND}
+                        ],
+                    }
+                ]
+            }
+        }
+        settings_path.write_text(json.dumps(settings_data), encoding="utf-8")
         monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("display"))
         display_result = next(r for r in result["results"] if r["check"] == "display")
         assert display_result["healthy"] is True
 
-    def test_display_unhealthy_when_hook_file_absent(self, rt, tmp_path, monkeypatch):
-        """display check is unhealthy when claude_pre_prompt.js does not exist."""
+    def test_display_unhealthy_when_render_hook_absent(self, rt, tmp_path, monkeypatch):
+        """display check is unhealthy when no render-title hook entry is present."""
         monkeypatch.chdir(tmp_path)
         result = _parsed(rt.health_check("display"))
         display_result = next(r for r in result["results"] if r["check"] == "display")

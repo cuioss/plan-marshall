@@ -35,6 +35,7 @@ from _analyze_argument_naming import analyze_argument_naming
 from _analyze_bash_chain_shapes_in_skills import analyze_bash_chain_shapes_in_skills
 from _analyze_historical_prose_in_skills import analyze_historical_prose_in_skills
 from _analyze_lesson_id_in_skill_prose import analyze_lesson_id_in_skill_prose
+from _analyze_resolver_matrix_coverage import analyze_resolver_matrix_coverage
 from _analyze_role_field import analyze_role_field
 from _analyze_script_call_drift import analyze_script_call_drift
 from _analyze_shell_substitution_in_skills import analyze_shell_substitution_in_skills
@@ -391,6 +392,16 @@ def cmd_analyze(args) -> dict:
     role_field_issues = analyze_role_field(marketplace_root)
     all_issues.extend(role_field_issues)
     total_issues += len(role_field_issues)
+
+    # Marketplace-wide resolver-matrix-coverage rule. Unconditionally active —
+    # AST scan over scripts is cheap and the rule emits ``tip``-severity
+    # findings only (advisory, not build-failing). Detects N-input skip-on-
+    # miss resolvers (>=3 tiers) whose test files lack a full
+    # ``tier x {hit, miss}`` parametrize matrix. See
+    # ``_analyze_resolver_matrix_coverage.py`` for the detection contract.
+    resolver_matrix_issues = analyze_resolver_matrix_coverage(marketplace_root)
+    all_issues.extend(resolver_matrix_issues)
+    total_issues += len(resolver_matrix_issues)
 
     # Marketplace-wide script-call-drift rule. Gated OFF by default — opt in
     # via ``--rules script_call_drift``. The analyzer probes --help via

@@ -60,7 +60,6 @@ def _mock_runtime() -> MagicMock:
     rt.project_initial_setup.return_value = toon_success("project initial-setup")
     rt.project_install_hook.return_value = toon_success("project install-hook")
     rt.session_capture.return_value = toon_success("session capture")
-    rt.session_configure_display.return_value = toon_success("session configure-display")
     rt.session_render_title.return_value = toon_success("session render-title")
     rt.permission_configure.return_value = toon_success("permission configure")
     rt.permission_analyze.return_value = toon_success("permission analyze")
@@ -136,7 +135,6 @@ class TestBuildOperation:
     def test_all_standard_groups_produce_two_part_operations(self):
         """All documented operation groups produce two-part identifiers."""
         groups = [
-            ("session", "configure-display"),
             ("session", "render-title"),
             ("permission", "configure"),
             ("permission", "analyze"),
@@ -363,9 +361,31 @@ class TestDispatch:
     # ---- project install-hook -------------------------------------------------
 
     def test_dispatch_project_install_hook(self, rt):
-        """project install-hook forwards --target to runtime.project_install_hook."""
+        """project install-hook forwards --target and overwrite flags to runtime.project_install_hook."""
         _dispatch(rt, "project install-hook", ["--target", ".claude/settings.local.json"])
-        rt.project_install_hook.assert_called_once_with(".claude/settings.local.json")
+        rt.project_install_hook.assert_called_once_with(
+            ".claude/settings.local.json",
+            overwrite_statusline=False,
+            overwrite_env_disable=False,
+        )
+
+    def test_dispatch_project_install_hook_with_overwrite_flags(self, rt):
+        """project install-hook forwards both overwrite flags when supplied."""
+        _dispatch(
+            rt,
+            "project install-hook",
+            [
+                "--target",
+                ".claude/settings.local.json",
+                "--overwrite-statusline",
+                "--overwrite-env-disable",
+            ],
+        )
+        rt.project_install_hook.assert_called_once_with(
+            ".claude/settings.local.json",
+            overwrite_statusline=True,
+            overwrite_env_disable=True,
+        )
 
     def test_dispatch_project_install_hook_missing_target_rejected(self, rt):
         """project install-hook without --target is rejected by argparse (SystemExit)."""
@@ -380,28 +400,17 @@ class TestDispatch:
         _dispatch(rt, "session capture", ["--plan-id", "my-plan"])
         rt.session_capture.assert_called_once_with("my-plan")
 
-    # ---- session configure-display --------------------------------------------
-
-    def test_dispatch_session_configure_display(self, rt):
-        """session configure-display forwards --type and --style to runtime."""
-        _dispatch(
-            rt,
-            "session configure-display",
-            ["--type", "terminal-title", "--style", "unicode"],
-        )
-        rt.session_configure_display.assert_called_once_with("terminal-title", "unicode")
-
     # ---- session render-title -------------------------------------------------
 
     def test_dispatch_session_render_title(self, rt):
-        """session render-title calls runtime.session_render_title with no args."""
+        """session render-title defaults to statusline=False."""
         _dispatch(rt, "session render-title", [])
-        rt.session_render_title.assert_called_once_with()
+        rt.session_render_title.assert_called_once_with(statusline=False)
 
-    def test_dispatch_session_render_title_ignores_trailing_tokens(self, rt):
-        """session render-title ignores any trailing tokens."""
-        _dispatch(rt, "session render-title", ["--extra", "value"])
-        rt.session_render_title.assert_called_once_with()
+    def test_dispatch_session_render_title_with_statusline(self, rt):
+        """session render-title --statusline forwards statusline=True."""
+        _dispatch(rt, "session render-title", ["--statusline"])
+        rt.session_render_title.assert_called_once_with(statusline=True)
 
     # ---- permission configure -------------------------------------------------
 

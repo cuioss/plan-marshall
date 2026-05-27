@@ -411,32 +411,6 @@ message: --scope must be 'project' or 'global'; got 'both'
 
 ---
 
-### `session configure-display`
-
-Configure terminal title display mode for the current plan.
-
-**Arguments**: `--type terminal-title|status-line|none` (required), `--style unicode|ascii` (required)
-
-**Success (Claude)**:
-```toon
-status: success
-operation: session configure-display
-type: terminal-title
-style: unicode
-hook_file: .claude/claude_pre_prompt.js
-written: true
-```
-
-**No-op (OpenCode)**:
-```toon
-status: no-op
-operation: session configure-display
-reason: OpenCode has no plugin-driven status-line hook (issue anomalyco/opencode#8619)
-alternative: Use --type none, or use OpenCode's built-in /statusline TUI command for an interactive status line
-```
-
----
-
 ### `session render-title`
 
 Emit the current plan title as an OSC terminal title sequence. Takes no arguments; all resolution is internal.
@@ -601,7 +575,7 @@ all_healthy: true
 
 results[4]{check,healthy,detail}:
 permissions	true	settings.local.json present; allow array has 12 entries
-display	true	claude_pre_prompt.js present
+display	true	render-title hook entry present in .claude/settings.local.json
 mcp-diagnostics	true	MCP server reachable at 127.0.0.1:64342
 hook	true	SessionStart hook entry present in .claude/settings.json
 ```

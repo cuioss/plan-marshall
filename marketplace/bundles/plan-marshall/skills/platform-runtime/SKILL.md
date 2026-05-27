@@ -39,7 +39,6 @@ Fourteen operations covering the full platform lifecycle:
 | `permission ensure-steps` | Add missing skill permissions for `marshal.json` phase steps |
 | `permission web-analyze` | Read-only analysis of WebFetch/webfetch domain permissions |
 | `permission web-apply` | Add or remove web domain permissions |
-| `session configure-display` | Configure terminal title display; no-op on OpenCode |
 | `session render-title` | Emit OSC title sequence from writer artifact; no-op on OpenCode |
 | `metrics capture` | Record token consumption for a planning phase |
 | `subagent dispatch` | Return platform-specific subagent invocation parameters |

@@ -132,25 +132,6 @@ def test_session_capture_noop_has_reason_and_alternative(runtime: OpenCodeRuntim
 
 
 # =============================================================================
-# 3. session_configure_display — always no-op
-# =============================================================================
-
-
-def test_session_configure_display_is_noop(runtime: OpenCodeRuntime) -> None:
-    """session_configure_display returns no-op for all display_type/style combinations."""
-    result = _parse(runtime.session_configure_display("terminal-title", "unicode"))
-    assert result["status"] == "no-op"
-    assert result["operation"] == "session configure-display"
-
-
-def test_session_configure_display_noop_references_opencode(runtime: OpenCodeRuntime) -> None:
-    """session_configure_display no-op reason mentions OpenCode limitation."""
-    result = _parse(runtime.session_configure_display("status-line", "ascii"))
-    assert "OpenCode" in result["reason"]
-    assert "alternative" in result
-
-
-# =============================================================================
 # 4. session_render_title — always no-op
 # =============================================================================
 

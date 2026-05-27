@@ -123,25 +123,39 @@ class Runtime(ABC):
         """
 
     @abstractmethod
-    def project_install_hook(self, target: str) -> str:
-        """Install only the SessionStart hook into a named settings file.
+    def project_install_hook(
+        self,
+        target: str,
+        overwrite_statusline: bool = False,
+        overwrite_env_disable: bool = False,
+    ) -> str:
+        """Install the full terminal-title hook wiring into a named settings file.
 
-        Targeted hook-installation primitive: reads (or creates) the *target*
-        settings file, inserts the SessionStart hook entry when absent, and
-        writes it back.  Idempotent — re-invocation when the hook is already
-        present makes no change and reports ``already_present: true``.
+        Reads (or creates) *target* and idempotently installs the SessionStart
+        capture entry, render entries across all five render-trigger hook events
+        (SessionStart matcher-less + matcher:"clear", UserPromptSubmit,
+        Notification, Stop, PostToolUse:AskUserQuestion), the ``statusLine``
+        command, and ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE = "1"``.
 
-        Unlike ``project_initial_setup``, this operation touches only the hook
-        in the caller-specified file; it does not create ``.plan/`` or seed
-        ``marshal.json``.
+        Unlike ``project_initial_setup``, this operation does not create
+        ``.plan/`` or seed ``marshal.json`` — it only mutates the named file.
 
         Args:
-            target: Path to the settings file the hook is installed into
+            target: Path to the settings file the hooks are installed into
                 (e.g. ``.claude/settings.local.json``).
+            overwrite_statusline: When True, overwrite an existing
+                ``statusLine`` whose command differs from the renderer; when
+                False, preserve the foreign value and surface
+                ``statusLine_status: already_present_other`` so the caller
+                can prompt.
+            overwrite_env_disable: Same semantics for
+                ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE``.
 
         Returns:
             Serialized TOON string (success, error, or no-op) carrying
-            ``target``, ``hook_installed``, and ``already_present`` fields.
+            ``target``, ``hook_installed``, ``already_present``,
+            ``installed_events``, ``already_present_events``,
+            ``statusLine_status``, and ``env_status`` fields.
         """
 
     # ------------------------------------------------------------------
@@ -167,25 +181,18 @@ class Runtime(ABC):
         """
 
     @abstractmethod
-    def session_configure_display(self, display_type: str, style: str) -> str:
-        """Configure terminal / status-line display of the current plan phase.
-
-        Args:
-            display_type: One of ``"terminal-title"``, ``"status-line"``,
-                ``"none"``.
-            style: One of ``"unicode"``, ``"ascii"``.
-
-        Returns:
-            Serialized TOON string (success or no-op).
-        """
-
-    @abstractmethod
-    def session_render_title(self) -> str:
+    def session_render_title(self, statusline: bool = False) -> str:
         """Render the current plan title in the terminal.
 
         Resolves session → plan → body using the internal 5-step contract and
-        emits the platform-appropriate sequence.  Takes no caller arguments;
-        all resolution is internal.
+        emits the platform-appropriate sequence.
+
+        Args:
+            statusline: When True, the success branch emits plain text
+                (``f"{icon} {body}"``) instead of the JSON envelope, matching
+                the ``statusLine`` hook contract. Noop branches still emit
+                nothing on stdout. Default ``False`` preserves the
+                hook-driven JSON-envelope contract.
 
         Returns:
             Serialized TOON string (success or no-op).
