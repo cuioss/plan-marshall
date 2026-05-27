@@ -51,7 +51,7 @@ See `workflow-integration-git/standards/worktree-handling.md` for the worktree-s
 
 The Phase Entry Protocol's `phase_handshake verify --phase {previous_phase_key} --strict` call (see [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md#phase-handshake-verify-phases-2-6)) asserts the worktree-resolution contract before any phase-5-execute work begins: when `metadata.use_worktree==true`, `metadata.worktree_path` MUST be non-empty AND filesystem-resolvable (the directory exists AND `git -C {path} rev-parse --show-toplevel` returns the same canonical path). When the assertion fails, the script returns `status: error, error: worktree_unresolved` and (under `--strict`) exits 1 — phase entry refuses to advance until the persisted metadata is repaired. Plans with `metadata.use_worktree==false` skip the assertion (main-checkout flow). The assertion fires uniformly at every phase boundary; see deliverable 8 in the originating lesson plan for the full contract.
 
-**Phase 5 is the materialization phase.** Phases 1–4 only *declare* the worktree intent (`metadata.use_worktree` and `metadata.worktree_branch` written by `phase-1-init`); Step 2.5 below is the single point where the worktree directory and feature branch are actually created on disk. Re-entry semantics: when phase-4-plan's capture ran without a populated `metadata.worktree_path` (because Step 2.5 had not yet executed), the `phase_handshake verify --phase 4-plan --strict` call MUST tolerate the still-empty value at phase-5 entry, then Step 2.5 populates `worktree_path` in both `references.json` and `status.metadata` before any task dispatch. On every subsequent phase-5 re-entry (orchestrator re-dispatch), Step 2.5's idempotence guard observes the populated `worktree_path` and short-circuits — no re-creation, no duplicate `git checkout -b`.
+**Phase 5 is the materialization phase.** Phases 1–4 only *declare* the worktree intent (`metadata.use_worktree` and `metadata.worktree_branch` written by `phase-1-init`); Step 2.5 below is the single point where the worktree directory and feature branch are actually created on disk. **Step 2.5 is unconditional and runs BEFORE the `early_terminate` short-circuit evaluation (Step 2.6 below).** Hoisting Step 2.5 above the short-circuit guarantees that `metadata.worktree_path` is always backfilled regardless of the manifest's `early_terminate` flag — otherwise an analysis-only plan that the composer marks `early_terminate=true` would transition to finalize without ever populating the worktree path, and the `phase_handshake verify` assertion at the 5→6 boundary would fail with `worktree_unresolved`. See lesson `2026-05-24-17-001` for the failure mode this ordering rules out. Re-entry semantics: when phase-4-plan's capture ran without a populated `metadata.worktree_path` (because Step 2.5 had not yet executed), the `phase_handshake verify --phase 4-plan --strict` call MUST tolerate the still-empty value at phase-5 entry, then Step 2.5 populates `worktree_path` in both `references.json` and `status.metadata` before any task dispatch. On every subsequent phase-5 re-entry (orchestrator re-dispatch), Step 2.5's idempotence guard observes the populated `worktree_path` and short-circuits — no re-creation, no duplicate `git checkout -b`.
 
 ## Dispatch Protocol (Worktree Header)
 
@@ -169,19 +169,9 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   read --plan-id {plan_id}
 ```
 
-Extract `phase_5.early_terminate` (bool) and `phase_5.verification_steps` (list[string]) from the output.
+Extract `phase_5.early_terminate` (bool) and `phase_5.verification_steps` (list[string]) from the output. **Do NOT evaluate `early_terminate` yet** — Step 2 only reads the manifest and caches the values. Step 2.5 (worktree materialization) MUST run before the `early_terminate` short-circuit fires, so the short-circuit evaluation is deferred to Step 2.6 below.
 
-**Early-terminate decision**: If `phase_5.early_terminate == true`, log the decision and transition directly to `phase-6-finalize` — skip the entire execute loop including Steps 3 through 12:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-5-execute) Early terminate — manifest.phase_5.early_terminate=true; skipping execute loop and transitioning directly to phase-6-finalize"
-```
-
-Then jump directly to **Phase Transition** (below) to advance to finalize. Do NOT execute Steps 3–12.
-
-**Otherwise** (`early_terminate == false`): the verification steps to execute at end of phase come from `phase_5.verification_steps` — this **replaces** today's lookup of `marshal.json`'s `phase-5-execute.steps`. The list is consumed by Step 11b (Final Quality Sweep) and the verification dispatch loop. See **Verification Step Types** below for dispatch rules.
+The verification steps to execute at end of phase come from `phase_5.verification_steps` — this **replaces** today's lookup of `marshal.json`'s `phase-5-execute.steps`. The list is consumed by Step 11b (Final Quality Sweep) and the verification dispatch loop. See **Verification Step Types** below for dispatch rules.
 
 The step IDs in the manifest are **bare** (e.g., `quality-gate`, `module-tests`, `coverage`) — translate them to the `default:` prefixed names used by the Built-in Step Dispatch Table by prepending `default:` for built-in steps. Steps that already contain `:` are passed through verbatim (project/skill steps).
 
@@ -318,7 +308,23 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[STATUS] (plan-marshall:phase-5-execute) Step 2.5 materialized worktree at {worktree_path} on branch {worktree_branch}"
 ```
 
-Proceed to Step 3.
+Proceed to Step 2.6.
+
+### Step 2.6: Evaluate `early_terminate` Short-Circuit (Once at start)
+
+This step evaluates the `phase_5.early_terminate` flag cached at Step 2 and is intentionally placed AFTER Step 2.5 so the worktree directory and `metadata.worktree_path` are always populated before any early-exit path runs. The manifest composer narrows `early_terminate=true` to plans where BOTH `verification_steps == []` AND the task queue is empty (no pending or in-progress tasks); see lesson `2026-05-24-17-001`.
+
+**Early-terminate decision**: If `phase_5.early_terminate == true`, log the decision and transition directly to `phase-6-finalize` — skip the entire execute loop including Steps 3 through 12:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-5-execute) Early terminate — manifest.phase_5.early_terminate=true; skipping execute loop and transitioning directly to phase-6-finalize"
+```
+
+Then jump directly to **Phase Transition** (below) to advance to finalize. Do NOT execute Steps 3–12. Because Step 2.5 already ran unconditionally, `metadata.worktree_path` is populated and the 5→6 `phase_handshake verify` assertion will succeed.
+
+**Otherwise** (`early_terminate == false`): proceed to Step 3.
 
 ### Step 3: Baseline Fast-Path Check (Once per phase)
 

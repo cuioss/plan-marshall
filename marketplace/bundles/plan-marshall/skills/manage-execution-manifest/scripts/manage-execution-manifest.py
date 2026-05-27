@@ -212,6 +212,7 @@ def _decide(
     affected_files_count: int,
     phase_5_candidates: list[str],
     phase_6_candidates: list[str],
+    task_queue_active: bool = False,
 ) -> tuple[dict[str, Any], str]:
     """Apply the seven-row decision matrix.
 
@@ -225,16 +226,27 @@ def _decide(
     their role explicitly (e.g., ``role: quality-gate``) and the matrix
     matches against a set of role names. See ``_role_of`` and
     ``standards/decision-rules.md`` § Role-Field Intersection.
+
+    Rule 1's ``early_terminate`` predicate also requires ``task_queue_active``
+    to be ``False``. When the implementation task queue carries any pending or
+    in-progress task, Rule 1 falls through to Rule 7 (default) so phase-5
+    iterates the queue normally. Without this guard, an analysis-only plan
+    that produces zero affected files but still queues at least one
+    deliverable task would short-circuit before TASK-001 runs and skip the
+    Step 2.5 worktree materialization as a cascade. See lesson
+    ``2026-05-24-17-001``.
     """
 
     # Per-compose role-lookup cache: avoid re-reading a candidate's source file
     # when it appears in multiple intersection sites.
     role_cache: dict[str, str | None] = {}
 
-    # Rule 1: early_terminate — analysis without affected files. Phase 5 is
-    # skipped entirely; Phase 6 still runs lessons capture so the analysis
-    # doesn't leak insights silently.
-    if change_type == 'analysis' and affected_files_count == 0:
+    # Rule 1: early_terminate — analysis without affected files AND no pending
+    # / in-progress tasks. Phase 5 is skipped entirely; Phase 6 still runs
+    # lessons capture so the analysis doesn't leak insights silently. When the
+    # task queue is non-empty, fall through to Rule 7 (default) so phase-5
+    # iterates the queue normally — see ``task_queue_active`` rationale above.
+    if change_type == 'analysis' and affected_files_count == 0 and not task_queue_active:
         body = {
             'phase_5': {
                 'early_terminate': True,
@@ -347,6 +359,37 @@ def _decide(
         'phase_6': {'steps': list(phase_6_candidates)},
     }
     return body, 'default'
+
+
+def _read_task_queue_active(plan_id: str) -> bool:
+    """Return ``True`` when the plan has at least one pending or in-progress task.
+
+    Reads ``TASK-*.json`` files from ``get_plan_dir(plan_id) / 'tasks'`` and
+    checks the ``status`` field on each. The check is intentionally direct
+    file I/O — invoking ``manage-tasks list`` as a subprocess would couple
+    composer behaviour to the executor and would add cross-script logging
+    noise. Returns ``False`` when the tasks directory is missing (no plan
+    structure yet) or contains no parseable task files; the composer treats
+    that as "no work queued, the analysis-only short-circuit is safe to
+    fire". Lesson ``2026-05-24-17-001``: this predicate is the gate that
+    keeps Rule 1 from short-circuiting plans where deliverables exist but
+    affected_files happens to be empty at compose time.
+    """
+    tasks_dir = get_plan_dir(plan_id) / 'tasks'
+    if not tasks_dir.is_dir():
+        return False
+    active_statuses = {'pending', 'in_progress'}
+    for task_path in tasks_dir.glob('TASK-*.json'):
+        try:
+            data = read_json(task_path, default=None)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        status = data.get('status')
+        if isinstance(status, str) and status in active_statuses:
+            return True
+    return False
 
 
 def _read_bundle_change_paths(plan_id: str) -> list[str]:
@@ -1059,6 +1102,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
 
     affected_files_count = max(0, int(args.affected_files_count or 0))
     recipe_key = args.recipe_key or None
+    task_queue_active = _read_task_queue_active(plan_id)
 
     body, rule = _decide(
         change_type=args.change_type,
@@ -1068,6 +1112,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         affected_files_count=affected_files_count,
         phase_5_candidates=phase_5_candidates,
         phase_6_candidates=phase_6_candidates,
+        task_queue_active=task_queue_active,
     )
 
     # Bot-enforcement guard runs AFTER the seven-row matrix and BEFORE manifest

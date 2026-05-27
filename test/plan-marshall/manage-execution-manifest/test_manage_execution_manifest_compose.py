@@ -124,6 +124,32 @@ def test_early_terminate_analysis_with_empty_files(plan_context):
     assert result['phase_6']['steps_count'] == 2
 
 
+def test_early_terminate_analysis_falls_through_when_task_queue_pending(plan_context):
+    """Row 1 task-queue guard — analysis + 0 files + pending task → Rule 7 default.
+
+    End-to-end exercise of the task-queue-aware predicate (lesson
+    ``2026-05-24-17-001``): a pending TASK-001 on disk forces Rule 1 to fall
+    through to Rule 7 so phase-5 iterates the queue normally. The fixture
+    seeds a stub task file in ``{plan_dir}/tasks/TASK-001.json``.
+    """
+    plan_id = 'matrix-analysis-pending-task'
+    tasks_dir = plan_context.plan_dir_for(plan_id) / 'tasks'
+    tasks_dir.mkdir(parents=True, exist_ok=True)
+    (tasks_dir / 'TASK-001.json').write_text(
+        json.dumps({'number': 1, 'status': 'pending', 'steps': []}, indent=2)
+    )
+    result = cmd_compose(
+        _compose_ns(
+            plan_id=plan_id,
+            change_type='analysis',
+            scope_estimate='none',
+            affected_files_count=0,
+        )
+    )
+    assert result is not None and result['rule_fired'] == 'default'
+    assert result['phase_5']['early_terminate'] is False
+
+
 def test_recipe_path_retains_review_gates_drops_only_legacy_ci_wait(plan_context):
     """Row 2 — recipe_key present → ONLY defensively drop legacy 'ci-wait'.
 
