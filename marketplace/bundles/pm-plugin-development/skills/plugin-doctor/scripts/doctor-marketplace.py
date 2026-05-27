@@ -33,6 +33,7 @@ from pathlib import Path
 
 from _analyze_argument_naming import analyze_argument_naming
 from _analyze_bash_chain_shapes_in_skills import analyze_bash_chain_shapes_in_skills
+from _analyze_historical_prose_in_skills import analyze_historical_prose_in_skills
 from _analyze_lesson_id_in_skill_prose import analyze_lesson_id_in_skill_prose
 from _analyze_role_field import analyze_role_field
 from _analyze_script_call_drift import analyze_script_call_drift
@@ -373,6 +374,15 @@ def cmd_analyze(args) -> dict:
     all_issues.extend(lesson_id_issues)
     total_issues += len(lesson_id_issues)
 
+    # Marketplace-wide no-historical-prose-in-skills rule. Unconditionally
+    # active — detects historical/transitional narrative (driving-lesson
+    # prefixes, back-references, earlier-proposal descriptions, seed-failure
+    # citations, plan-authorship annotations, guard-introduction prose) in
+    # skill markdown. Skills must document present-tense rules, not history.
+    historical_prose_issues = analyze_historical_prose_in_skills(marketplace_root)
+    all_issues.extend(historical_prose_issues)
+    total_issues += len(historical_prose_issues)
+
     # Phase-5 step standards files MUST declare a ``role:`` frontmatter field
     # so the manage-execution-manifest composer's role-based intersection
     # (Rows 2/3/4/5) can resolve candidates correctly. Unconditionally active;
@@ -552,6 +562,12 @@ def cmd_quality_gate(args) -> dict:
     all_issues.extend(lesson_id_findings)
     rule_summaries.append(
         {'rule': 'analyze_lesson_id_in_skill_prose', 'findings': len(lesson_id_findings)}
+    )
+
+    historical_prose_findings = analyze_historical_prose_in_skills(marketplace_root)
+    all_issues.extend(historical_prose_findings)
+    rule_summaries.append(
+        {'rule': 'analyze_historical_prose_in_skills', 'findings': len(historical_prose_findings)}
     )
 
     role_field_findings = analyze_role_field(marketplace_root)

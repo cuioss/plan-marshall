@@ -103,8 +103,7 @@ boundary by calling `manage-metrics record-dispatch-boundary` with parsed
 `<usage>` totals and a classified termination cause. The accumulating
 artifact at `work/metrics-dispatch-boundaries-5-execute.toon` is the
 audit trail that `plan-retrospective` correlates with `[OUTCOME]`-log
-coverage gaps to detect agent-initiated re-dispatch (lesson
-`2026-05-08-14-001`).
+coverage gaps to detect agent-initiated re-dispatch.
 
 **Termination-cause classification** — the orchestrator MUST classify every
 return into exactly one of the five values below. The detection rules apply
@@ -156,7 +155,7 @@ Inspect the returned TOON:
 
 - **`status: continue`** — at least one task is `pending` OR `in_progress`. The broadened predicate (Deliverable 2 of the originating plan) treats both axes as blocking; the `message` field of the guard return names which axis was non-empty so the orchestrator's log surfaces the reason. Proceed with the normal re-dispatch path below.
 
-The peek is the same `loop-exit-guard` verb that the **Boundary-call fence** below uses as its post-classification enforcement. Relocating one invocation to the pre-dispatch decision point lets the orchestrator avoid paying the full envelope cost when the queue is already drained — the structural fix for the empty-queue waste documented in lesson `2026-05-26-17-002` (empirical evidence: two consecutive wasted dispatches at 12:08:07Z and 12:36:09Z during the `fix-1-init-phase-boundary-bootstrap-bug` plan, both returning identical zero-task summaries after a full envelope round-trip).
+The peek is the same `loop-exit-guard` verb that the **Boundary-call fence** below uses as its post-classification enforcement. Relocating one invocation to the pre-dispatch decision point lets the orchestrator avoid paying the full envelope cost when the queue is already drained — the structural fix for the empty-queue waste failure mode (two consecutive zero-task dispatches return identical zero-task summaries after a full envelope round-trip).
 
 **Boundary-call fence** — the existing `5-execute → 6-finalize` fused
 `phase-boundary` call MUST only fire on a clean exit, defined as
@@ -169,7 +168,7 @@ pending work remains. This fence is the control-flow analogue of the
 Step 12a "Pending-tasks transition guard" in `phase-5-execute` SKILL.md
 (which now points to the same `loop-exit-guard` verb as its authoritative
 enforcement) and is the structural complement to the script-level `[OUTCOME]`
-guard introduced in `manage-tasks finalize-step`.
+guard in `manage-tasks finalize-step`.
 
 ### Baseline drift recovery (non-zero overlap)
 

@@ -84,7 +84,7 @@ Four detection modes:
 
 The `ARGUMENT_NAMING_*` rule cluster cross-checks marketplace prose against the actual argparse declarations of the scripts that prose references. The cluster also cross-checks the Canonical Forms table in `marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/argument-naming.md` against the same argparse declarations. All four rules emit findings with `severity: error` and `fixable: false`, mirroring the `DISPLAY_DETAIL_*` finding shape used elsewhere in plugin-doctor.
 
-**Activation**: This cluster is unconditionally active. See lesson `2026-04-29-23-002` for the rationale (three recurrences of stale-flag drift in skill workflows within ~3 days drove the move from a gated transitional period to default-on enforcement). Tests exercise the cluster directly against synthetic fixtures.
+**Activation**: This cluster is unconditionally active. Multiple recurrences of stale-flag drift in skill workflows drove the move from a gated transitional period to default-on enforcement. Tests exercise the cluster directly against synthetic fixtures.
 
 **Scope**: every `python3 .plan/execute-script.py {notation} ...` token across SKILL.md, agents/*.md, commands/*.md, skills/*/standards/*.md, skills/*/references/*.md, skills/*/recipes/*.md within `marketplace/bundles/*/`. The Canonical Forms cross-check additionally reads the table at `marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/argument-naming.md`.
 
@@ -125,7 +125,7 @@ The `ARGUMENT_NAMING_*` rule cluster cross-checks marketplace prose against the 
 
 - **Discovery approach**: Pure static analysis — `ast.parse` walk of each in-scope script (whitelisted in `IN_SCOPE_SCRIPTS`) builds a canonical tree `{subcommand: {sub_verb_or_none: {flags, required_flags}}}`. The markdown scan is line-anchored regex extraction of `python3 .plan/execute-script.py {bundle}:{skill}:{script}` invocations from `SKILL.md`, `standards/*.md`, `references/*.md`, `workflow/*.md`, and `recipes/*.md`. Each occurrence is tokenized into positional + flag args and cross-checked against the canonical tree. No subprocess execution, no import of the target scripts. Mirrors the `_analyze_argument_naming.py` and `_analyze_manage_findings_invocation.py` precedents. The implementation lives in `_analyze_manage_invocation.py` (analyzer module) — see the canonical-block convention published in each in-scope SKILL.md's `## Canonical invocations` section for the authoritative spelling reference.
 - **Fix**: Update the markdown invocation to match the script's canonical argparse surface. The finding's `details.canonical_hint` names the closest correct subcommand / sub-verb / flag spelling; the corresponding `## Canonical invocations` section in the script's owning SKILL.md is the full reference.
-- **Rationale**: Argparse-surface drift in LLM-authored prose has surfaced as a recurring failure mode (lesson `2026-04-29-23-002` plus the recurrence chain that triggered this remediation plan). The `manage-findings-invocation-invalid` rule covers one script; this rule generalizes the same structural guard across the seven heaviest-referenced `manage-*` and `workflow-integration-*` families. Catching token-tree mismatches at edit time moves a class of runtime argparse rejections to review time.
+- **Rationale**: Argparse-surface drift in LLM-authored prose is a recurring failure mode that produces silent `exit_code: 2` rejections at runtime. The `manage-findings-invocation-invalid` rule covers one script; this rule generalizes the same structural guard across the seven heaviest-referenced `manage-*` and `workflow-integration-*` families. Catching token-tree mismatches at edit time moves a class of runtime argparse rejections to review time.
 - **Exemptions**: Notations outside `IN_SCOPE_SCRIPTS` are skipped silently — the rule does not expand its scope automatically when new scripts land. Adding a family requires a deliberate edit to `IN_SCOPE_SCRIPTS` in `_analyze_manage_invocation.py`. Scripts whose AST cannot be parsed (syntax error, missing file) are dropped from the index silently; the notation-validity rule (`ARGUMENT_NAMING_*` cluster) reports the missing-script case independently.
 
 **missing-canonical-block** (severity: warning): Emitted when a SKILL.md that owns an in-scope `manage-*` / `workflow-integration-*` script (from the enumerated `IN_SCOPE_SCRIPTS` list) lacks a `## Canonical invocations` section. The section is the documented source-of-truth contract published by D1 of the argparse-surface-drift remediation plan: it carries one `### {subcommand}` heading per registered top-level subcommand with a fenced bash block showing the canonical invocation shape (positional sub-verbs + required flags + optional flags). Authors consult the block when writing prose that invokes the script; missing it leaves them with no in-skill reference. Findings carry `details.notation` (the in-scope notation triple owned by the skill) and `details.canonical_hint` (the relative path to repair).
@@ -246,7 +246,7 @@ Seven forward-looking lint rules.
 1. **Inline-code span** — A `$(` inside a markdown inline-code span (`` `…` ``). Subagents do not execute inline-code tokens; these are structural token references (e.g., when a standards doc says "the `$(...)` form is forbidden"), not runnable commands.
 2. **Verbatim-source fenced block** — A `$(` inside a fenced block whose info-string is `markdown` or `text`. These fences hold verbatim source examples (before/after illustrations) that subagents do not interpret as instructions.
 
-**Rationale**: The two-call + text-substitution pattern (run the script as a bare command, then use a `{placeholder}` slot in the next command's narrative substitution) is the documented safe alternative — see `dev-agent-behavior-rules/SKILL.md` § "Bash: One command per call" and the request body for lesson `2026-05-15-13-001`. The exemption logic is purely structural (inline-code span or `markdown`/`text` fence) so the rule does not depend on a fragile keyword heuristic in the surrounding prose.
+**Rationale**: The two-call + text-substitution pattern (run the script as a bare command, then use a `{placeholder}` slot in the next command's narrative substitution) is the documented safe alternative — see `dev-agent-behavior-rules/SKILL.md` § "Bash: One command per call". The exemption logic is purely structural (inline-code span or `markdown`/`text` fence) so the rule does not depend on a fragile keyword heuristic in the surrounding prose.
 
 **Recommended fix**: Replace `target=$(python3 .plan/execute-script.py …)` with the bare `python3 .plan/execute-script.py …` invocation followed by a one-sentence narrative ("Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below."). Replace `$var` references in subsequent bash blocks with `{var}` placeholders.
 
@@ -345,7 +345,8 @@ Seven forward-looking lint rules.
 
 | Rule ID | Intent | False-positive policy | Suppression |
 |---------|--------|-----------------------|-------------|
-| `no-lesson-id-in-skill-prose` | Forbid narrative lesson-ID citations in skill prose — strip the ID and trivia, keep the rule content | Five structural exemptions: allowlisted skill paths (manage-lessons/**, phase-6-finalize/workflow/lessons-*.md, phase-6-finalize/standards/lessons-*.md, plugin-doctor/references/rule-provenance.md), YAML frontmatter, fenced code blocks, `Source:` provenance lines, and inline-code spans | Inline marker `<!-- doctor-ignore: lesson-id-prose -->` (same line or immediately preceding line) suppresses the finding on the marked line only |
+| `no-lesson-id-in-skill-prose` | Forbid narrative lesson-ID citations in skill prose — strip the ID and trivia, keep the rule content | Five structural exemptions: allowlisted skill paths (manage-lessons/**, phase-6-finalize/workflow/lessons-*.md, phase-6-finalize/standards/lessons-*.md, plugin-doctor/references/rule-provenance.md), YAML frontmatter, fenced code blocks, `Source:` provenance lines, and bare inline-code spans (without a prose "lesson" prefix) | Inline marker `<!-- doctor-ignore: lesson-id-prose -->` (same line or immediately preceding line) suppresses the finding on the marked line only |
+| `no-historical-prose-in-skills` | Forbid historical/transitional narrative in skill prose — driving-lesson prefixes, back-references, earlier-proposal descriptions, seed-failure citations, plan-authorship annotations, guard-introduction prose | Seven allowlisted file paths; YAML frontmatter, fenced code blocks, `Source:` provenance lines, and inline-code spans are exempt per-line | Inline marker `<!-- doctor-ignore: historical-prose -->` (same line or immediately preceding line) suppresses the finding on the marked line only |
 
 ### no-lesson-id-in-skill-prose
 
@@ -355,9 +356,9 @@ Seven forward-looking lint rules.
 
 **Scope**: All `*.md` files under `marketplace/bundles/*/{skills,agents,commands}/**`.
 
-**Intent**: Strip narrative lesson-ID citations and recurrence trivia from skill prose so the surface documents present-tense rules rather than the historical incidents that motivated them. The rule recognises two lesson-ID format families — `YYYY-MM-DD-NNN` and `YYYY-MM-DD-HH-NNN` — and the prose-prefixed forms `lesson XXX` and `lesson-XXX`.
+**Intent**: Strip narrative lesson-ID citations and recurrence trivia from skill prose so the surface documents present-tense rules rather than the historical incidents that motivated them. The rule recognises two lesson-ID format families — `YYYY-MM-DD-NNN` and `YYYY-MM-DD-HH-NNN` — and the prose-prefixed forms `lesson XXX` and `lesson-XXX`. It also catches the backtick-wrapped form `` lesson `YYYY-...` `` where "lesson" is prose context outside the backtick — this is a narrative citation regardless of the backtick, since the word "lesson" establishes the reader-navigation intent.
 
-**Detection logic**: Scans every line of every in-scope markdown file. Each lesson-ID token occurrence is a candidate finding unless it falls into one of the five structural exemptions listed below.
+**Detection logic**: Two-pass scan per line. Pass 1 detects non-backtick prose forms using the main regex and skips bare IDs inside inline-code spans. Pass 2 detects the `` lesson `YYYY-...` `` backtick-prefixed form using a dedicated regex — this form is never exempt, because "lesson" outside the backtick is always prose context.
 
 **Allowlist** (file-level skip — the entire file is exempt because it operates ON lessons as domain content):
 
@@ -371,11 +372,47 @@ Seven forward-looking lint rules.
 1. **YAML frontmatter** — between the leading `---` fences at the start of a markdown file.
 2. **Fenced code block** — any line inside a ``` ``` ``` fence regardless of info-string.
 3. **`Source:` line** — provenance citation marker (e.g., `Source: lesson-XXX`).
-4. **Inline-code span** — a lesson-ID inside backticks (`` `…` `` ). Token references are not narrative prose.
+4. **Bare inline-code span** — a lesson-ID inside backticks WITHOUT a prose `lesson` prefix immediately before the span. Token references in code spans are not narrative prose. The `` lesson `YYYY-...` `` form is NOT exempt: "lesson" is prose context and signals a narrative citation.
 
 **Suppression mechanism**: Place `<!-- doctor-ignore: lesson-id-prose -->` on the same line as the match, or on the immediately preceding line, to suppress the finding on the marked line only. Use sparingly — the marker is for genuinely structural citations whose context the analyzer cannot detect (extremely rare; nearly every legitimate citation already qualifies as `Source:` or inline-code).
 
-**Recommended fix**: Locate the line cited by the finding. If the lesson-ID + trivia is parenthetical or sits in its own sentence whose only payload is the citation, remove the entire sentence/parenthetical. Otherwise, strip the lesson-ID, the bracketed citation form (`(lesson XXX)`, `lesson-XXX`, `see lesson XXX`), and the recurrence-trivia phrases (`three recurrences in ~3 days`, `within ~3 days`, `N recurrences in M days`, etc.) while preserving the surrounding rule/decision content. The rule remains; the citation goes.
+**Recommended fix**: Locate the line cited by the finding. If the lesson-ID + trivia is parenthetical or sits in its own sentence whose only payload is the citation, remove the entire sentence/parenthetical. Otherwise, strip the lesson-ID, the bracketed citation form (`(lesson XXX)`, `lesson-XXX`, `see lesson XXX`), and the recurrence-trivia phrases while preserving the surrounding rule/decision content. The rule remains; the citation goes.
+
+---
+
+### no-historical-prose-in-skills
+
+**Rule ID**: `no-historical-prose-in-skills`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_historical_prose_in_skills.py`
+
+**Scope**: All `*.md` files under `marketplace/bundles/*/{skills,agents,commands}/**`.
+
+**Intent**: Strip historical and transitional narrative from skill prose so skill documents describe current requirements rather than the events that motivated them. Seven pattern families are detected:
+
+1. **driving_lesson_prefix** — `Driving lesson:` used as a bullet or inline annotation.
+2. **back_reference_prefix** — `Back-reference:` or `Back-reference—` citing the originating plan/lesson/PR.
+3. **earlier_proposal** — "An earlier proposal", "the earlier approach", "earlier version", etc.
+4. **historical_activation** — "activated end-to-end by lesson", "introduced by plan", etc.
+5. **seed_failure_observation** — "seed failure", "seed observation", "seed defect", "seed gap".
+6. **plan_task_authorship** — "added in TASK-NNN of plan", "added by deliverable N of this plan", etc.
+7. **guard_introduction** — "guard introduced in", "rule introduced in", "validator introduced in", etc.
+
+**Allowlist** (file-level skip — historical context is intrinsic to the file's purpose):
+
+- `marketplace/bundles/plan-marshall/skills/manage-lessons/**`
+- `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/lessons-*.md`
+- `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/lessons-*.md`
+- `marketplace/bundles/plan-marshall/skills/plan-retrospective/**`
+- `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-provenance.md`
+- `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md`
+- `marketplace/bundles/plan-marshall/skills/plan-doctor/standards/**`
+
+**Per-line structural exemptions**: YAML frontmatter, fenced code blocks, `Source:` provenance lines, inline-code spans.
+
+**Suppression mechanism**: Place `<!-- doctor-ignore: historical-prose -->` on the same line as the match, or on the immediately preceding line.
+
+**Recommended fix**: Rewrite the sentence as a present-tense rule without the historical context. If the entire sentence's value is "this is why the rule exists", remove it — the rule statement itself is the durable artifact. If a brief rationale is genuinely needed, state the principle rather than citing the incident: replace "Driving lesson: `2026-04-30-23-001` (TASK-9 scope expanded silently)" with "Check sibling directories when scope changes touch a shared symbol."
 
 ---
 

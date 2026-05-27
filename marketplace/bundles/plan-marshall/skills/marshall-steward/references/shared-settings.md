@@ -236,7 +236,7 @@ This returns all discoverable steps from:
 3. **Extension steps**: Discovered via `provides_finalize_steps()` on domain extensions
 4. **Bundle-optional steps**: Declared in `_config_defaults.OPTIONAL_BUNDLE_FINALIZE_STEPS` (e.g., `plan-marshall:plan-retrospective`). These surface in the discovery list but are intentionally omitted from `DEFAULT_PLAN_FINALIZE['steps']`, so projects must explicitly select them here to opt in.
 
-Precedence: extension steps > project steps > built-in steps (names must be unique). Bundle-optional entries are deduplicated against the earlier three sources and appended last.
+Precedence: extension steps > project steps > built-in steps (names must be unique). Bundle-optional entries are deduplicated against those three sources and appended last.
 
 Present the merged list as a multi-select. If total steps exceed 4, use paging (4 options per page with "More..." option).
 

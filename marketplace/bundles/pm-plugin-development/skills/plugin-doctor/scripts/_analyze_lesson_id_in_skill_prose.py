@@ -23,7 +23,11 @@ Two lesson-ID format families are recognised:
 1. ``YYYY-MM-DD-NNN`` (e.g., ``2026-04-17-012``)
 2. ``YYYY-MM-DD-HH-NNN`` (e.g., ``2026-04-29-23-002``)
 
-Prose-prefixed forms ``lesson XXX`` and ``lesson-XXX`` are also recognised.
+Prose-prefixed forms ``lesson XXX`` and ``lesson-XXX`` are also recognised,
+including the backtick-wrapped form ``lesson `YYYY-...``` where "lesson" is
+prose context but the ID itself sits inside an inline-code span. That form is
+a narrative citation — the reader is pointed at an ephemeral lesson file for
+context — and must be stripped exactly like the non-backtick form.
 
 Five structurally-defined documentary contexts are exempt:
 
@@ -37,8 +41,11 @@ Five structurally-defined documentary contexts are exempt:
 3. **Fenced code block** — between ``` ``` ``` fences (any info-string).
 4. **Source: line** — lines whose payload is a structured provenance source
    declaration.
-5. **Inline-code span** — a lesson-ID inside an inline-code span
-   (`` `…` ``). Token references in code spans are not narrative prose.
+5. **Bare inline-code span** — a lesson-ID inside an inline-code span WITHOUT
+   a prose ``lesson`` prefix immediately before the span. Bare IDs in code spans
+   are token references, not narrative prose. The ``lesson `YYYY-...``` form is
+   NOT exempt: "lesson" is prose context and signals a narrative citation
+   regardless of whether the ID token itself is backtick-wrapped.
 
 In addition, an inline suppression marker
 ``<!-- doctor-ignore: lesson-id-prose -->`` placed on the same line as a
@@ -81,8 +88,18 @@ FINDING_TYPE = 'lesson_id_in_skill_prose'
 
 # Lesson-ID token: optional `lesson ` or `lesson-` prefix + date-based id.
 # Two format families: YYYY-MM-DD-NNN and YYYY-MM-DD-HH-NNN.
+# This regex matches the non-backtick prose form.
 _LESSON_ID_RE = re.compile(
     r'\b(?:lesson[- ])?(\d{4}-\d{2}-\d{2}(?:-\d{2})?-\d{3})\b',
+    re.IGNORECASE,
+)
+
+# Backtick-prefixed form: ``lesson `YYYY-MM-DD-HH-NNN` `` where "lesson"
+# is outside the backtick and the ID is inside. Two format families.
+# This is a narrative citation regardless of the backtick — the prose word
+# "lesson" establishes the context.
+_LESSON_BACKTICK_ID_RE = re.compile(
+    r'\blesson[- ]`(\d{4}-\d{2}-\d{2}(?:-\d{2})?-\d{3})`',
     re.IGNORECASE,
 )
 
@@ -114,6 +131,19 @@ def _is_allowlisted(rel_to_bundles: str) -> bool:
     if rel_to_bundles.startswith('plan-marshall/skills/phase-6-finalize/standards/lessons-'):
         return True
     if rel_to_bundles == 'pm-plugin-development/skills/plugin-doctor/references/rule-provenance.md':
+        return True
+    # plan-retrospective analyses historical log data and emits findings that
+    # cite specific lesson IDs — lesson IDs are domain content here, not prose
+    # narrative drift.
+    if rel_to_bundles.startswith('plan-marshall/skills/plan-retrospective/'):
+        return True
+    # plan-doctor works with lesson IDs as domain content (the skill validates
+    # that task JSON files reference real lesson IDs).
+    if rel_to_bundles.startswith('plan-marshall/skills/plan-doctor/'):
+        return True
+    # plugin-doctor doctor-test-conventions.md cites lesson IDs as provenance
+    # for testing rules — these are authoritative design references, not prose narrative.
+    if rel_to_bundles == 'pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md':
         return True
     return False
 
@@ -226,9 +256,10 @@ def _scan_file(path: Path, rel_to_bundles: str) -> list[dict]:
         # Skip Source: provenance lines.
         if _SOURCE_LINE_RE.match(line):
             continue
-        # Quick pre-check before regex scan.
-        matches = list(_LESSON_ID_RE.finditer(line))
-        if not matches:
+        # Quick pre-check: does this line contain any candidate?
+        has_bare = bool(_LESSON_ID_RE.search(line))
+        has_backtick_prefix = bool(_LESSON_BACKTICK_ID_RE.search(line))
+        if not has_bare and not has_backtick_prefix:
             continue
 
         # Suppression marker:
@@ -240,18 +271,29 @@ def _scan_file(path: Path, rel_to_bundles: str) -> list[dict]:
         suppressed = _line_has_suppress_marker(line)
         if not suppressed and idx > 0:
             prev = lines[idx - 1]
-            if _line_has_suppress_marker(prev) and not _LESSON_ID_RE.search(prev):
+            prev_has_lesson = (
+                bool(_LESSON_ID_RE.search(prev))
+                or bool(_LESSON_BACKTICK_ID_RE.search(prev))
+            )
+            if _line_has_suppress_marker(prev) and not prev_has_lesson:
                 suppressed = True
         if suppressed:
             continue
 
         spans = _inline_code_spans(line)
 
-        for m in matches:
+        # Pass 1: bare prose form (non-backtick IDs, or bare IDs not inside
+        # inline-code spans).
+        for m in _LESSON_ID_RE.finditer(line):
             offset = m.start()
-
-            # Skip matches inside inline-code spans.
+            # Skip matches inside inline-code spans ONLY when there is no
+            # "lesson" prose prefix on the match (bare code-token reference).
             if _offset_in_inline_code(offset, spans):
+                # The lesson prefix (if any) starts the match; if the prefix
+                # is absent the entire match is a bare date token inside
+                # backticks — legitimately exempt.
+                # If "lesson" appears immediately before the backtick, the
+                # backtick-prefixed branch below will catch it.
                 continue
 
             findings.append(
@@ -267,6 +309,28 @@ def _scan_file(path: Path, rel_to_bundles: str) -> list[dict]:
                     'description': (
                         'Narrative lesson-ID citation — strip the ID and trivia, '
                         'keep the rule content. See rule-catalog.md.'
+                    ),
+                }
+            )
+
+        # Pass 2: backtick-prefixed form — ``lesson `YYYY-...` ``.
+        # "lesson" is outside the backtick; the ID is inside.
+        # This is a narrative citation regardless of the backtick.
+        for m in _LESSON_BACKTICK_ID_RE.finditer(line):
+            findings.append(
+                {
+                    'rule_id': RULE_ID,
+                    'type': FINDING_TYPE,
+                    'rule': RULE_NAME,
+                    'file': str(path),
+                    'line': idx + 1,
+                    'severity': 'warning',
+                    'fixable': False,
+                    'snippet': m.group(0),
+                    'description': (
+                        'Narrative lesson-ID citation (backtick form) — '
+                        'strip the ID and "lesson" prefix, keep the rule content. '
+                        'See rule-catalog.md.'
                     ),
                 }
             )

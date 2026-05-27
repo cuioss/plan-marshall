@@ -315,7 +315,6 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Cross-references**:
 - [`consumer-sweep.md`](../../phase-3-outline/standards/consumer-sweep.md) — outline-time procedure this check enforces
-- Driving lesson: `2026-04-30-23-001` (TASK-9 scope expanded silently — pm-dev-java profiles.py needed migration to per-module layout)
 
 #### 2.10 Argparse Validator
 
@@ -353,7 +352,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Negative example**: Outline cites `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id X`. Live help shows `list` is a registered subcommand and `--plan-id` is a registered flag. Silent pass — no finding.
 
-**Driving lesson**: `2026-05-04-09-001` (validate verification commands against argparse before plan execution).
+**Rationale**: Verification commands embedded in `solution_outline.md` that reference non-existent subcommands or flags fail silently during phase-5-execute; catching the mismatch at design time avoids wasted execute iterations.
 
 #### 2.11 Module-Mapping Validator
 
@@ -387,7 +386,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Negative example**: Deliverable D1's implementation targets `.../scripts/manage-tasks.py` (module `plan-marshall`). Its module_testing sibling targets `test/plan-marshall/manage-tasks/test_manage_tasks.py` (module `plan-marshall`). Silent pass — modules match.
 
-**Driving lesson**: `2026-05-04-09-002` (task scope must match the actual code path under change, not adjacent test files).
+**Rationale**: Pairing a module_testing task with a test file from a different architecture module means the test executes without exercising the changed production code path — a coverage gap that surfaces only as a missed regression, not a test failure.
 
 #### 2.12 Scope-Criterion Validator
 
@@ -406,7 +405,7 @@ Verify that every deliverable's `success_criterion` is operationalized by a stru
 3. Compute the symmetric difference between the query result set and `affected_files`:
    - Files in query result but missing from `affected_files` → under-coverage
    - Files in `affected_files` but absent from query result → over-coverage (possibly intentional; flag as warning)
-4. When the criterion implies marketplace-wide coverage (per `2026-04-30-23-001`), the query MUST sweep all bundles. Bundle-scoped queries on marketplace-wide criteria emit an under-coverage finding for each consumer in a different bundle.
+4. When the criterion implies marketplace-wide coverage (e.g., deleting or renaming a shared public symbol), the query MUST sweep all bundles. Bundle-scoped queries on marketplace-wide criteria emit an under-coverage finding for each consumer in a different bundle.
 
 **Finding emission template**:
 
@@ -425,7 +424,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Negative example**: Deliverable's success criterion is "user can authenticate via JWT" — a behavioral criterion not operationalizable as a structured query. Silent pass — validator does not activate.
 
-**Driving lessons**: `2026-05-03-16-002` (keep deliverable success_criterion scope aligned with affected_files scope), `2026-05-03-16-001` (sweep sibling-group directories instead of transcribing deliverable lists), `2026-04-30-23-001` (sweep marketplace-wide when deleting/renaming a shared symbol).
+**Rationale**: A `success_criterion` whose operationalized query returns a different file set than `affected_files` indicates either under-coverage (files the plan will leave un-migrated) or over-coverage (files the criterion implies but the plan does not intend to touch). Either mismatch is a scope-specification error caught cheaply at outline time.
 
 #### 2.13 Tier-Delta Validator
 
@@ -460,7 +459,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Negative example**: Outline contains a single, untiered specification with no variant labels. Silent pass — validator does not activate.
 
-**Driving lesson**: `2026-05-03-12-002` (cross-tier rationale drift in commit-message specs missed at outline/plan time).
+**Rationale**: A tiered specification without a delta table allows cross-tier contradictions (e.g., one tier's explicit `MUST NOT` silently overridden by another tier's `MUST`) to survive outline → plan → execute undetected, surfacing only during implementation or review.
 
 #### 2.14 Narrative-vs-Code Validator
 
@@ -493,11 +492,11 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 `{classification}` is one of `stale`, `invalid`. `{classification_detail}` adds context: e.g., "Lesson was authored 2026-04-08; the cited symbol was renamed in PR #199 (2026-04-15)" for `stale`, or "No file matching the cited path was found in the worktree" for `invalid`.
 
-**Positive example**: Lesson `2026-05-03-21-003` claims "implementation profile runs `module-tests`". Validator queries `manage-config plan phase-2-refine get --field profile_command_map`, finds `implementation` profile maps to `compile`, not `module-tests`. Validator emits `invalid` finding — the narrative was wrong about the baseline.
+**Positive example**: A lesson-derived plan claims "implementation profile runs `module-tests`". Validator queries `manage-config plan phase-2-refine get --field profile_command_map`, finds `implementation` profile maps to `compile`, not `module-tests`. Validator emits `invalid` finding — the narrative was wrong about the baseline.
 
 **Negative example**: Lesson cites `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/q-gate-validation.md` and the file exists with the cited Section 2.9 still present. Silent pass — narrative matches code.
 
-**Driving lesson**: `2026-05-04-08-001` (validate lesson narrative against current code during refine).
+**Rationale**: A lesson narrative authored against one code state and executed against a later state that has been renamed, refactored, or removed produces no-ops or regressions; validating the narrative at refine time surfaces the drift before outline and plan lock the intent.
 
 #### 2.15 Worktree-Linter Validator
 
@@ -583,7 +582,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 - Authoritative source: [`worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) (created TASK-3 of plan `lesson-2026-05-07-11-001`)
 - WL-B migration source: TASK-4 of plan `lesson-2026-05-07-11-001` (`.claude/worktrees/` → `.plan/local/worktrees/`)
 - WL-C contract source: TASK-10 of plan `lesson-2026-05-07-11-001` (auto-routing `--plan-id` extension)
-- Driving lesson: `2026-05-07-11-001` (worktree-handling rules were duplicated and silently drifted across 10+ skill files; centralizing them caught a class of regressions invisible to per-skill review).
+- Rationale: Worktree-handling rules duplicated across skill files drift independently; the centralized standard is the single authoritative source and this validator enforces it at Q-Gate time so per-skill drift is caught before execute.
 
 #### 2.16 Self-Modifying Phased-Rollout Validator
 
@@ -607,7 +606,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} --phase 3-outline \
   --source qgate --type triage \
   --title "Q-Gate: self-modifying-rollout — deliverable {N} ({title}) lacks phasing rationale" \
-  --detail "Deliverable {N} matches the self-modifying path heuristic ({matched_paths}) AND the plan declares compatibility: breaking AND the deliverable describes a hard cutover ({cutover_phrase}). Without a documented phasing rationale, this combination historically descopes silently mid-execution (lesson 2026-05-08-09-004 / PR #346 reference). Add a **Phasing Rationale:** block to the deliverable addressing all three points from self-modifying-classification.md (cache-sync ordering, verification-gate target, narrative consistency), OR split the deletion portion into a follow-up plan per the PLAN A / PLAN B pattern, OR switch the plan-level compatibility from breaking to deprecation." \
+  --detail "Deliverable {N} matches the self-modifying path heuristic ({matched_paths}) AND the plan declares compatibility: breaking AND the deliverable describes a hard cutover ({cutover_phrase}). Without a documented phasing rationale, this combination can descope silently mid-execution when the deletion edit lands before in-flight tasks that reference the old surface. Add a **Phasing Rationale:** block to the deliverable addressing all three points from self-modifying-classification.md (cache-sync ordering, verification-gate target, narrative consistency), OR split the deletion portion into a follow-up plan per the PLAN A / PLAN B pattern, OR switch the plan-level compatibility from breaking to deprecation." \
   --audit-plan-id {plan_id}
 ```
 
@@ -632,7 +631,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 - Authoritative source: [`self-modifying-classification.md`](../../ref-workflow-architecture/standards/self-modifying-classification.md)
 - Companion validator: § 2.15 Worktree-Linter Validator (covers stale worktree-handling patterns; this validator covers the orthogonal phasing concern)
 - Companion procedure: phase-3-outline Step 10b (Self-Modifying Classification) — outline-time author prompt that this validator backstops at q-gate time
-- Driving lesson: `2026-05-08-09-004` (PR #346 silently descoped a "no transition window" requirement because no q-gate validator caught the missing phasing rationale)
+- Rationale: A `compatibility: breaking` plan that hard-cuts a public surface without a documented phasing rationale has historically caused silent scope descoping mid-execution, where the deletion edit lands before any in-flight task that would invoke the old surface — this validator catches the missing rationale at outline time before execute begins.
 
 #### 2.17 Architecture-Mismatch Validator
 
@@ -685,7 +684,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 - Authoritative source: [`phase-3-outline/standards/outline-workflow-detail.md` § Step 9c](../../phase-3-outline/standards/outline-workflow-detail.md#step-9c-read-target-skill-design-intent) (the procedure this validator enforces)
 - Companion validator: § 2.10 Argparse Validator (script-shape compliance) and § 2.16 Self-Modifying Phased-Rollout Validator (orthogonal — phasing rationale for breaking plans)
 - Companion rule: phase-4-plan SKILL.md § "Integration Deliverable Narrative Constraint" (xref-vs-inline) — operates on a different axis but compose with this validator when a single deliverable both integrates a central standard AND adds capability to an existing skill
-- Driving lessons: outline-discipline aggregate `2026-05-04-20-002` (recurring mismatch between proposed implementation strategy and target skill's documented design model)
+- Rationale: Deliverables that propose a design model inconsistent with the target skill's documented design intent produce implementation conflicts that are cheap to fix at outline time but expensive after plan and task creation lock the approach.
 
 ---
 

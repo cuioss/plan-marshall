@@ -87,7 +87,7 @@ The **`pr-comment-overflow` finding** files when the consumer's 900 s triage bud
 
 The pipeline is structurally enforced: producers can never bypass the store (no inline-JSON batch surfaces remain in LLM-callable scope), consumers can never bypass the per-domain decision-grounding knowledge (every triage decision loads `ext-triage-{domain}`), and boundaries can never be crossed with unresolved blocking findings (the invariant raises `BlockingFindingsPresent`).
 
-The contract was activated end-to-end by lesson `2026-05-05-11-001` ("Activate manage-findings as universal finding pipeline"). The two boundary defects (qgate aggregation, intra-finalize re-capture wiring) the lesson left under-wired are tracked by follow-up plan `findings-pipeline-blocking-fixes` and reflected in the diagram above.
+The pipeline is the canonical finding store for all plan-marshall phases. The two boundary areas most likely to need wiring in a fresh installation are qgate aggregation and intra-finalize re-capture; see plan `findings-pipeline-blocking-fixes` for tracked follow-up work, and the diagram above for the current wiring state.
 
 ## Producers
 

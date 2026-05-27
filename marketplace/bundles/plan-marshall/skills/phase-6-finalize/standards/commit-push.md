@@ -13,7 +13,7 @@ Pure executor for the `commit-push` finalize step. Commits all changes and pushe
 Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
 
 - **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
-- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — the failure mode documented in lesson `2026-04-29-23-002` (silent swallowing of `wrong_parameters` rejections). "Log and continue" is the prohibited anti-pattern.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
 
 This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `commit-push` in `manifest.phase_6.steps`. When the dispatcher runs this step, the executor always runs to completion and records `outcome=done` regardless of whether a commit was produced — the `display_detail` payload distinguishes the branches. The `commit_strategy == none` case is handled at composition time by the manifest's `commit_strategy_none` pre-filter (see `manage-execution-manifest/standards/decision-rules.md`), so this step is never dispatched in that case.
 
@@ -39,7 +39,7 @@ Parse `status` from the returned TOON. The contract is **fail-closed**: only `st
 | `stale` | Halt. Record `outcome=failed` with `display_detail` `"stale: newest={newest_mtime_path} t_build={t_build_iso} t_worktree={t_worktree_iso}"`. Do NOT push. |
 | `undecidable` | Halt. Record `outcome=failed` with `display_detail` `"undecidable: {reason}"`. Do NOT push. |
 
-The freshness gate is **complementary to**, NOT redundant with, the `pre-push-quality-gate` step. The quality-gate verifies *what the code is* (mypy + ruff + tests on the on-disk tree); freshness verifies *that the most recent `verify` run actually observed this version of the code*. A worktree that was modified after the most recent build-runner log line passes neither: the quality-gate may pass against the new tree if the orchestrator re-runs it, but the freshness gate fails because no `verify` log line post-dates the mutation. The two gates together close the gap that `loop-exit-guard` cannot close on its own — see lesson `2026-05-24-22-001` for the seed failure and the necessary-but-not-sufficient framing.
+The freshness gate is **complementary to**, NOT redundant with, the `pre-push-quality-gate` step. The quality-gate verifies *what the code is* (mypy + ruff + tests on the on-disk tree); freshness verifies *that the most recent `verify` run actually observed this version of the code*. A worktree that was modified after the most recent build-runner log line passes neither: the quality-gate may pass against the new tree if the orchestrator re-runs it, but the freshness gate fails because no `verify` log line post-dates the mutation. The two gates together close the gap that `loop-exit-guard` cannot close on its own — `loop-exit-guard` answers "is the queue empty?" while freshness answers "has a `verify` run actually observed this version of the code?"
 
 The `--force` escape mirrors phase-5 Step 12a's escape — orchestrator-only, log-recorded, never auto-invoked. When the orchestrator drives finalize with `--force` AND the freshness gate returned a non-`fresh` status, the dispatcher records a `decision`-level WARNING (`(plan-marshall:phase-6-finalize:commit-push) Worktree-freshness precondition overridden via --force — proceeding with status={status}` — append `reason={reason}` only when status is `undecidable`; the `stale` branch does not emit a `reason` field) and then allows `commit-push` to proceed.
 
@@ -76,7 +76,7 @@ Execute the git_workflow skill's **Workflow: Commit Changes** with:
 
 ## Capture HEAD and Mark Step Complete
 
-`commit-push` is a member of `HEAD_DEPENDENT_STEPS` (see `phase-6-finalize/SKILL.md` § HEAD-dependent steps). A loop-back fix task may produce a fresh commit *after* an earlier `commit-push` recorded `outcome=done` against the prior HEAD; without HEAD-comparison the dispatcher would skip `commit-push` on re-entry and leave the fix-task changes staged-but-uncommitted. To make the comparison meaningful, capture the live HEAD before `mark-step-done`:
+`commit-push` is a member of `HEAD_DEPENDENT_STEPS` (see `phase-6-finalize/SKILL.md` § HEAD-dependent steps). A loop-back fix task may produce a fresh commit *after* a prior `commit-push` recorded `outcome=done` against the now-stale HEAD; without HEAD-comparison the dispatcher would skip `commit-push` on re-entry and leave the fix-task changes staged-but-uncommitted. To make the comparison meaningful, capture the live HEAD before `mark-step-done`:
 
 ```bash
 git -C {worktree_path} rev-parse HEAD

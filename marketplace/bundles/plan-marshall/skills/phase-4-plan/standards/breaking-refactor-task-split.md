@@ -62,7 +62,7 @@ When the custom-surface target count crosses **N > ~10**, the planner MUST addit
 
 **Why the second plan** — keeping all N consumers in a single plan would produce one of two failure modes:
 
-1. **One huge implementation task** that the model cannot keep in working context — the diff exceeds the context window, the agent loses track of which consumers it has already touched, and silently leaves some unchanged. This is the failure mode lesson `2026-05-04-20-002` originally surfaced: a single implementation task tried to update > 10 custom-surface consumer sites in one diff and lost coverage on two of them.
+1. **One huge implementation task** that the model cannot keep in working context — the diff exceeds the context window, the agent loses track of which consumers it has already touched, and silently leaves some unchanged. A single implementation task that tries to update more than ~10 custom-surface consumer sites in one diff risks losing coverage on some of them.
 2. **N + 1 separate tasks in one plan** that overflow the plan's task budget and create cross-task dependency tangles. Phase-5-execute can serialise large task counts, but the orchestrator's review surface, the PR diff, and the reviewer's cognitive load do not scale linearly. A 30-task PR is harder to review than three 10-task PRs.
 
 Splitting into a foundation plan + a sweep plan keeps each plan's task count bounded, each PR's review surface bounded, and each agent's working context bounded. The foundation plan's merged state is the contract the sweep plan operates against, so the sweep plan's individual deliverables are independent and parallelisable.

@@ -320,12 +320,36 @@ class TestSkipContextExemption:
         findings = analyze_lesson_id_in_skill_prose(marketplace_root)
         assert findings == []
 
-    def test_inline_code_span_is_exempt(self, tmp_path: Path) -> None:
-        """A lesson ID inside an inline-code span is exempt."""
+    def test_bare_inline_code_span_is_exempt(self, tmp_path: Path) -> None:
+        """A bare lesson ID inside an inline-code span (no prose prefix) is exempt."""
         content = 'Driving lessons: `2026-04-17-012`, `2026-04-29-23-002`.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         findings = analyze_lesson_id_in_skill_prose(marketplace_root)
         assert findings == []
+
+    def test_lesson_backtick_prefix_form_triggers_finding(
+        self, tmp_path: Path
+    ) -> None:
+        """``lesson `YYYY-...` `` where 'lesson' is outside the backtick is flagged.
+
+        This is the common prose pattern that the original rule missed because the
+        ID token itself is inside backticks. The word 'lesson' outside the backtick
+        establishes narrative context — the reader is being pointed at an ephemeral
+        lesson file — so the citation must be stripped regardless of the backtick.
+        """
+        content = 'The motivating gap (lesson `2026-05-08-14-001`) was that the emission was lost.\n'
+        marketplace_root, _ = _make_skill_md(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert len(findings) >= 1
+
+    def test_lesson_backtick_long_format_triggers_finding(
+        self, tmp_path: Path
+    ) -> None:
+        """Long format ``lesson `YYYY-MM-DD-HH-NNN` `` is also flagged."""
+        content = 'Unconditionally active per lesson `2026-04-29-23-002`.\n'
+        marketplace_root, _ = _make_skill_md(tmp_path, content)
+        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
+        assert len(findings) >= 1
 
     def test_bare_id_outside_inline_code_on_same_line_is_flagged(
         self, tmp_path: Path

@@ -107,7 +107,7 @@ boundary lookarounds so adjacent digits don't bleed into a match.
 
 ### Live-Anchor Discipline
 
-Per lesson `2026-04-29-10-001`, the canonical regex shape is asserted
+The canonical regex shape is asserted
 against actual repo data at runtime — not only in the test suite. On
 first invocation per process, `scan_lesson_id_tokens` and
 `verify_lesson_ids_exist` call `verify_lesson_id_regex_against_inventory`,
