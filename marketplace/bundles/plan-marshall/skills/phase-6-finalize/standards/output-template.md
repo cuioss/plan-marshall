@@ -274,19 +274,31 @@ Deliverable numbering starts at `1.` and pads width to accommodate up to 99 deli
 
 Header: `Finalize steps ({N_done}/{N_total} done)` where `N_total` = count of steps in `manifest.phase_6.steps` and `N_done` = count with `outcome == done`.
 
-Iterate the manifest `phase_6.steps` list in order. For each step, emit:
+Iterate the manifest `phase_6.steps` list in order. For each step, look the step entry up in the `phase_steps` map (captured in Snapshot Procedure step 1) using the **exact-then-strip-prefix lookup rule**:
+
+1. Attempt an exact match against the manifest step ID (e.g. `project:finalize-step-pre-submission-self-review`). If found, use that record.
+2. If the exact match misses AND the manifest step ID begins with `project:` or `default:`, strip the prefix and retry the lookup against the bare suffix (e.g. `finalize-step-pre-submission-self-review` or `commit-push`). If found, use that record.
+3. Only if BOTH lookups miss does the renderer treat the entry as a missing record — emit `<missing display_detail>` for the detail column and surface the row in the `[FAILED]` precedence decision (Emission Procedure step 1).
+
+The strip-prefix retry is a **transitional defense** against legacy `mark-step-done` call sites that record under bare step names while the manifest carries the canonical prefixed form. The manifest-ID spelling is the canonical form (see `## display_detail Contract for Step Authors` below); step authors MUST record under the canonical manifest ID. The strip-prefix retry exists so a future drift between manifest and recorded keys surfaces as a recoverable lookup rather than a false `<missing display_detail>` row.
+
+Then emit:
 
 ```
   {icon}  {step_name_padded}  {display_detail}
 ```
 
-- `{step_name_padded}` = step name left-justified to a fixed column width of **33 characters** (pad with spaces, no truncation). Long step names overflow and push the detail column one space to the right — accepted.
-- `{display_detail}` = the verbatim detail string authored by the step. If `display_detail` is missing or empty, emit the literal placeholder `<missing display_detail>` (this is a contract violation and should be surfaced).
+- `{step_name_padded}` = step name left-justified to a fixed column width of **33 characters** (pad with spaces, no truncation). The padded name is the **manifest step ID as written** (do NOT substitute the bare suffix used to resolve the lookup — the manifest spelling is the authoritative display). Long step names overflow and push the detail column one space to the right — accepted.
+- `{display_detail}` = the verbatim detail string authored by the step. If `display_detail` is missing or empty after BOTH lookups miss, emit the literal placeholder `<missing display_detail>` (this is a contract violation and should be surfaced).
 - Two spaces separate the icon from the step name; two spaces separate the padded name from the detail.
 
 Every step row — including `record-metrics` — emits unchanged. The renderer does NOT substitute or skip any row inside the Finalize-steps block.
 
 <!-- self-review: keep phase_breakdown_override_content -->
+
+> **Renderer reimplementation note**: any future renderer reimplementation MUST preserve the exact-then-strip-prefix lookup contract above. A reimplementation that only attempts the exact match will silently re-introduce the failure mode documented in lesson `2026-05-20-08-005` (manifest entry IDs vs `phase_steps` recorded keys diverge by a `project:` prefix, the renderer emits `<missing display_detail>`, and the `[FAILED]` precedence chain trips even though every step actually succeeded).
+
+
 **Appended `Phase Breakdown` supplement**: after the per-step iteration completes, if the supplement toggle is active (see `## Phase Breakdown Supplement` above for the toggle activation conditions and the verbatim emission shape of `phase_breakdown_override_content` — the single source of truth for both), append the supplement section as documented there. The Repository trailer (step 6 emission) then follows after the appended section, separated by a blank line per the standard block separator (Emission Procedure step 7).
 
 ### 6. Build repository trailer
@@ -320,6 +332,8 @@ No trailing whitespace. No ANSI color codes. Plain text only.
 ## display_detail Contract for Step Authors
 
 Every finalize step — built-in (`default:*`), project (`project:*`), and fully-qualified skill — MUST pass `--display-detail "{one-line}"` to its `mark-step-done` invocation. This is required, not optional. There is NO fallback to the raw step name.
+
+**Canonical step-ID spelling**: the `--step` argument MUST use the manifest-entry-ID spelling (`project:finalize-step-pre-submission-self-review`, not the bare `pre-submission-self-review`; `default:commit-push` is normalized by `mark-step-done` to the bare `commit-push` form used in `phase_steps`). The renderer's exact-then-strip-prefix lookup (Emission Procedure step 5 above) is a transitional defense against legacy call sites, not a license to drift — record under the canonical manifest ID so the exact-match branch wins and the strip-prefix retry stays dormant.
 
 Detail string rules:
 

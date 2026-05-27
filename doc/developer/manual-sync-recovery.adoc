@@ -1,0 +1,72 @@
+= Manual Sync Recovery
+:nofooter:
+:toc: left
+:toclevels: 3
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
+
+How to recover the build target (`target/claude/`) and the host plugin cache (`~/.claude/plugins/cache/plan-marshall/`) when a commit landed on the marketplace source without running phase-6-finalize. This page is a recovery surface — the canonical sync path during normal plan execution is the local-finalize chain (`project:finalize-step-deploy-target` followed by `project:finalize-step-sync-plugin-cache`). Empirical motivation: lesson `2026-05-20-08-005`.
+
+== Overview
+
+The meta-project ships through a two-tier sync model:
+
+1. **SOURCE → TARGET**: `marketplace/bundles/` is the authoritative source. `marketplace/targets/generate.py` regenerates `target/claude/` from that source, expanding role-eligible agents into per-level variants and emitting a variant-aware `plugin.json` per bundle plus the top-level `target/claude/.claude-plugin/marketplace.json`.
+2. **TARGET → CACHE**: `~/.claude/plugins/cache/plan-marshall/` is what Claude Code actually loads after install. The `/sync-plugin-cache` slash command rsyncs `target/claude/` into the host cache with `--delete` for exact mirroring.
+
+Both tiers exist because Claude Code's plugin loader reads from the cache, not from `target/claude/` directly. `target/claude/` is the registered marketplace path the loader consults at install time; the cache is the runtime load path.
+
+The two slash commands `/finalize-step-deploy-target` and `/sync-plugin-cache` are meta-project-only — consumer projects of Plan Marshall do not get this surface.
+
+== Symptom → Command decision table
+
+[cols="3,2,4", options="header"]
+|===
+| Symptom | Command(s) to run | Why
+
+| Modified marketplace bundle source and want changes live in the current session.
+| `/finalize-step-deploy-target` then `/sync-plugin-cache`
+| Deploy regenerates `target/claude/` from the new source; sync mirrors `target/claude/` into the host cache so Claude Code loads the new version.
+
+| Manual commit to marketplace source landed without running phase-6-finalize (e.g. lesson `2026-05-20-08-005`).
+| `/finalize-step-deploy-target` then `/sync-plugin-cache`
+| Deploy reconciles `target/claude/` with the committed HEAD; sync mirrors that reconciled tree into the cache. Both tiers were bypassed by the manual commit, so both must be reconciled.
+
+| Plugin cache looks stale but `target/claude/` matches source.
+| `/sync-plugin-cache`
+| Target is already current — only the cache mirror is stale. Skip the deploy step.
+
+| Variant agent dispatch fails with `Agent type not found` (e.g. a `Task:` to `execution-context-xhigh` fails immediately).
+| `/finalize-step-deploy-target`
+| Per-level variants live only in `target/claude/`; the source carries canonicals only. The deploy step is what materialises the variant files Claude Code's agent registry needs.
+
+| Skill changes do not take effect at runtime despite a clean `target/claude/`.
+| `/sync-plugin-cache`
+| The cache mirror is the actual load path. `target/claude/` being current is necessary but not sufficient.
+|===
+
+== What each command does
+
+`/finalize-step-deploy-target`::
+Runs `python3 marketplace/targets/generate.py --target claude --output target/claude` to regenerate the build target from `marketplace/bundles/`. Generates per-level agent variants (`{name}-low.md` through `{name}-xxhigh.md`), expands the variant-aware `plugin.json` per bundle, and emits the top-level `target/claude/.claude-plugin/marketplace.json`. Reads source, writes `target/claude/`. Does NOT touch `~/.claude/plugins/cache/`.
+
+`/sync-plugin-cache`::
+Runs `rsync --delete` from `target/claude/` into `~/.claude/plugins/cache/plan-marshall/`. Refuses to run when `target/claude/` is missing or stale relative to `marketplace/bundles/` — the staleness guard is the structural reason to run `/finalize-step-deploy-target` first whenever the source has advanced. Reads `target/claude/`, writes the host plugin cache. Does NOT regenerate from source.
+
+== Authoritative path vs manual recovery
+
+The local-finalize chain — `project:finalize-step-deploy-target` followed by `project:finalize-step-sync-plugin-cache`, both running automatically as phase-6-finalize steps — is the canonical sync path during normal plan execution. Both steps run on every phase-6-finalize entry that completes; no developer action is required when a plan ships through the standard flow.
+
+Manual `/finalize-step-deploy-target` and `/sync-plugin-cache` invocations are recovery surfaces for the rare cases where a commit bypassed the finalize chain. Lesson `2026-05-20-08-005` is the empirical motivation for documenting this path: a manual commit landed on the marketplace registry without running phase-6-finalize, leaving `target/claude/` out of sync with the committed source and the host cache out of sync with `target/claude/`. Operator awareness of which command resolves which symptom is the cheapest mitigation; a CI gate was considered and explicitly declined in favour of this documentation surface.
+
+== When NOT to run these
+
+During an active plan flow these commands run automatically as finalize steps — do not invoke them manually mid-plan. Manual invocation mid-plan can race against the dispatcher's HEAD-dependent re-entry logic for the finalize steps themselves, leaving `phase_steps` records that disagree with the on-disk state of `target/claude/` and the cache. Wait for the plan to reach phase-6-finalize, and let the dispatcher run the steps.
+
+Manual invocation outside a plan flow is the supported recovery surface — that is the entire reason this page exists. The constraint is only against mixing manual invocation with an in-flight plan.
+
+== Related
+
+* xref:marketplace-build.adoc[Marketplace Build] — the canonical two-tier sync pipeline this page recovers when bypassed.
+* link:../../.claude/skills/finalize-step-deploy-target/SKILL.md[`project:finalize-step-deploy-target`] — the finalize step that runs `/finalize-step-deploy-target` automatically.
+* link:../../.claude/skills/finalize-step-sync-plugin-cache/SKILL.md[`project:finalize-step-sync-plugin-cache`] — the finalize step that runs `/sync-plugin-cache` automatically.

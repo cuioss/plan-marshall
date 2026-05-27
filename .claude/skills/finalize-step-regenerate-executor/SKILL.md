@@ -60,12 +60,18 @@ Deduplicate the result.
 
 ### Step 3: Skip-clean exit
 
-If zero script paths remain after filtering, log and return success:
+If zero script paths remain after filtering, log, record the step as done, and return success:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
   --message "[STATUS] (project:finalize-step-regenerate-executor) No marketplace script changes detected; skipping executor regeneration"
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-regenerate-executor --outcome done \
+  --display-detail "no script additions detected"
 ```
 
 ### Step 4: Invoke generator
@@ -76,7 +82,7 @@ python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_exe
 
 Parse the returned TOON:
 
-- `status: success` → log:
+- `status: success` → log and record step done:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -84,7 +90,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[STATUS] (project:finalize-step-regenerate-executor) Executor regenerated: {script_count} scripts mapped"
 ```
 
-- `status: error` or non-zero exit → log WARN and exit success (non-fatal, matching `finalize-step-sync-plugin-cache`):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-regenerate-executor --outcome done \
+  --display-detail "executor regenerated: {script_count} scripts mapped"
+```
+
+- `status: error` or non-zero exit → log WARN, record step done (non-fatal — the WARN path records `done` to satisfy the `phase_steps_complete` handshake invariant, matching `finalize-step-sync-plugin-cache`), and exit success:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -92,13 +104,20 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[WARN] (project:finalize-step-regenerate-executor) Executor regeneration failed — run /marshall-steward manually to recover"
 ```
 
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-regenerate-executor --outcome done \
+  --display-detail "executor regeneration WARN — run /marshall-steward manually"
+```
+
 ## Error Handling
 
 | Scenario | Action |
 |----------|--------|
-| Empty `modified_files` | Skip-clean exit (no work to do) |
-| No script additions in `modified_files` | Skip-clean exit |
-| Generator returns `status: error` | Log `[WARN]`, exit success — finalize must not block on mapping drift |
+| Empty `modified_files` | Skip-clean exit — record `mark-step-done --outcome done --display-detail "no script additions detected"` |
+| No script additions in `modified_files` | Skip-clean exit — record `mark-step-done --outcome done --display-detail "no script additions detected"` |
+| Generator returns `status: success` | Record `mark-step-done --outcome done --display-detail "executor regenerated: {script_count} scripts mapped"` |
+| Generator returns `status: error` | Log `[WARN]`, record `mark-step-done --outcome done --display-detail "executor regeneration WARN — run /marshall-steward manually"`, exit success — finalize must not block on mapping drift (WARN records `done`, matching `finalize-step-sync-plugin-cache`'s non-fatal contract) |
 | Generator raises unhandled exception | Same as above — non-fatal |
 
 ## Related

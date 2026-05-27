@@ -462,11 +462,14 @@ The precondition resolver is dispatcher-internal — it produces no `phase_steps
 | Persisted state | Live worktree HEAD | Action |
 |-----------------|--------------------|--------|
 | `outcome == done` AND `head_at_completion == HEAD` | matches | SKIP (steady-state — gate already validated this exact tree) |
+| `outcome == done` AND `head_at_completion == HEAD` | dirty (porcelain non-empty) | RE-FIRE (worktree has uncommitted changes — commit-push must re-run) |
 | `outcome == done` AND `head_at_completion != HEAD` | differs | RE-FIRE (treat as no record — HEAD has advanced past the validated SHA) |
 | `outcome == done` AND `head_at_completion` absent | n/a | RE-FIRE (record is incomplete without a SHA; safe default is to re-run) |
 | `outcome == failed` | n/a | RETRY (unchanged — same as the general rule) |
 | `outcome == loop_back` | n/a | RE-FIRE (treat as no record — same as the general rule for loop_back) |
 | no record OR any other value | n/a | DISPATCH (unchanged — same as the general rule) |
+
+The comparison consults both HEAD-advance AND `git status --porcelain` non-emptiness; the dirty-tree branch is scoped narrowly. **`commit-push` is the only step in `HEAD_DEPENDENT_STEPS` for which dirty-tree re-fire is meaningful** — the other four members (`pre-push-quality-gate`, `automated-review`, `sonar-roundtrip`, `ci-verify`) are read-only validators that do not produce commits, so a dirty tree at their re-entry indicates an upstream contract violation (a loop-back fix task mutated the worktree without invoking `commit-push`) rather than a re-fire trigger; those four continue to follow the HEAD-only table. The dispatcher block resolves the `git status --porcelain` call only when `step_id == "commit-push"` AND the persisted record matches HEAD (`outcome == done AND head_at_completion == HEAD`); the porcelain check is skipped entirely for the other four steps.
 
 `HEAD_DEPENDENT_STEPS = {"pre-push-quality-gate", "automated-review", "sonar-roundtrip", "commit-push", "ci-verify"}`. All four steps MUST persist `head_at_completion` on their terminal `--outcome done` `mark-step-done` call so the comparison above is meaningful. The standards docs for each step (`pre-push-quality-gate.md`, `automated-review.md`, `sonar-roundtrip.md`, `commit-push.md`) carry the per-step instructions for capturing `git rev-parse HEAD` immediately before the `mark-step-done` invocation and forwarding it via `--head-at-completion {sha}`. Branches that mark `loop_back` or `failed` do not need to persist the SHA — the dispatcher's general resumability handling for those outcomes does not consult it. CI completion is a separate dispatcher-resolved precondition (`requires: [ci-complete]`) — its cache key is the same `git rev-parse HEAD` SHA, so the same HEAD-advance signal that invalidates a stale `done` record also invalidates the precondition cache.
 
@@ -478,7 +481,15 @@ Resolve the comparison HEAD inside the dispatcher block at the moment of the per
 git -C {worktree_path} rev-parse HEAD
 ```
 
-Do NOT cache the live HEAD across loop iterations — read it fresh per step so a step that advances HEAD mid-loop (e.g., an inline commit produced by a loop-back fix task) is observed correctly by every later step's check. All other finalize steps keep the general rule above verbatim; this special case applies only to the four steps named in `HEAD_DEPENDENT_STEPS`.
+When `step_id == "commit-push"` AND the persisted record matches HEAD (`outcome == done AND head_at_completion == HEAD`), the dispatcher MUST additionally consult the worktree's porcelain status before deciding SKIP vs RE-FIRE:
+
+```bash
+git -C {worktree_path} status --porcelain
+```
+
+A non-empty result selects the dirty-tree row in the table above (RE-FIRE); an empty result selects the steady-state row (SKIP). The porcelain call is gated on `step_id == "commit-push"` — the other four `HEAD_DEPENDENT_STEPS` members do not invoke it, so a dirty worktree does NOT re-fire them.
+
+Do NOT cache the live HEAD across loop iterations — read it fresh per step so a step that advances HEAD mid-loop (e.g., an inline commit produced by an earlier loop-back fix task) is observed correctly by every later step's check. All other finalize steps keep the general rule above verbatim; this special case applies only to the four steps named in `HEAD_DEPENDENT_STEPS`.
 
 **Per-agent timeout wrapper**: Every Task agent dispatch in this loop runs under a per-agent timeout budget. If the dispatch does not return inside the budget, the wrapper logs an ERROR, marks the step `failed` via `manage-status mark-step-done`, and continues with the next step in the list (no abort, no re-throw). Inline-only steps are not timeout-wrapped because they execute in the main context where the host platform already manages call timeouts. Budgets:
 
