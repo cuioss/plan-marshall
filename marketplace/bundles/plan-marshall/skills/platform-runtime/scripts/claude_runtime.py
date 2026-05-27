@@ -101,7 +101,10 @@ def _has_render_entry(entries: list[Any], matcher: str | None = None) -> bool:
             continue
         if matcher is not None and entry.get("matcher", "") != matcher:
             continue
-        for h in entry.get("hooks", []):
+        hooks = entry.get("hooks", [])
+        if not isinstance(hooks, list):
+            continue
+        for h in hooks:
             if isinstance(h, dict) and h.get("command") == _RENDER_HOOK_COMMAND:
                 return True
     return False
@@ -112,7 +115,10 @@ def _has_capture_entry(entries: list[Any]) -> bool:
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        for h in entry.get("hooks", []):
+        hooks = entry.get("hooks", [])
+        if not isinstance(hooks, list):
+            continue
+        for h in hooks:
             if isinstance(h, dict) and h.get("command") == _HOOK_COMMAND:
                 return True
     return False
@@ -309,17 +315,6 @@ def _install_terminal_title_hooks(
         }
     except (OSError, ValueError):
         return failure
-
-
-def _session_start_hook_present(settings_path: Path) -> bool:
-    """Return True when the SessionStart capture hook entry exists in ``settings_path``."""
-    if not settings_path.is_file():
-        return False
-    settings_data = _read_json(settings_path) or {}
-    session_start = settings_data.get("hooks", {}).get("SessionStart", [])
-    if not isinstance(session_start, list):
-        return False
-    return _has_capture_entry(session_start)
 
 
 def _project_dir_path(project_dir: str) -> Path:

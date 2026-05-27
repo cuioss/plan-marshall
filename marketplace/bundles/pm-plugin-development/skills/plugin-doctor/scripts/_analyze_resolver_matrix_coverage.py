@@ -269,14 +269,23 @@ def _count_parametrize_cells(decorator: ast.Call) -> int:
     """Count the cell rows in a ``@pytest.mark.parametrize(names, values)`` call.
 
     The cell-bearing argument is the SECOND positional argument (the
-    ``values`` iterable). When the values argument is an ``ast.List`` or
-    ``ast.Tuple``, returns ``len(values.elts)``. Otherwise (dynamic
-    expression — comprehension, function call, name reference), returns 0
-    so the analyzer falls back to counting distinct test methods instead.
+    ``values`` iterable) or, when callers pass it by keyword, the
+    ``argvalues=...`` keyword argument. When the values argument is an
+    ``ast.List`` or ``ast.Tuple``, returns ``len(values.elts)``. Otherwise
+    (dynamic expression — comprehension, function call, name reference),
+    returns 0 so the analyzer falls back to counting distinct test methods
+    instead.
     """
-    if len(decorator.args) < 2:
+    values: ast.expr | None = None
+    if len(decorator.args) >= 2:
+        values = decorator.args[1]
+    else:
+        for kw in decorator.keywords:
+            if kw.arg == 'argvalues':
+                values = kw.value
+                break
+    if values is None:
         return 0
-    values = decorator.args[1]
     if isinstance(values, ast.List | ast.Tuple):
         return len(values.elts)
     return 0
@@ -286,12 +295,17 @@ def _count_test_coverage(test_tree: ast.AST, function_name: str) -> int:
     """Count parametrize cells + distinct test methods mentioning ``function_name``.
 
     Walks ``test_tree`` looking for ``def test_*`` (sync or async) at any
-    nesting level. For each test function:
+    nesting level. A test function contributes to coverage ONLY if it
+    references ``function_name`` (via ``ast.Name`` / ``ast.Attribute``
+    lookups in the function body or its decorators). For each such
+    referencing test function:
 
     - sum the cell counts of its ``@pytest.mark.parametrize`` decorators,
-    - if the test function or any of its decorators textually mentions
-      ``function_name`` (via ``ast.Name`` / ``ast.Attribute`` lookups),
-      add 1 (a discrete test method directly exercises the resolver).
+    - add 1 (a discrete test method directly exercises the resolver).
+
+    Test functions that do not reference ``function_name`` are ignored —
+    their parametrize cells do not inflate coverage for the resolver
+    under review.
 
     Returns the sum.
     """
@@ -301,6 +315,11 @@ def _count_test_coverage(test_tree: ast.AST, function_name: str) -> int:
             continue
         if not node.name.startswith('test_'):
             continue
+        # Only count test functions that reference the resolver name.
+        # Otherwise unrelated parametrize matrices in the same file would
+        # inflate this resolver's coverage count.
+        if not _references_name(node, function_name):
+            continue
         # Sum parametrize cells across all parametrize decorators.
         parametrize_total = 0
         for decorator in node.decorator_list:
@@ -309,12 +328,11 @@ def _count_test_coverage(test_tree: ast.AST, function_name: str) -> int:
                 assert isinstance(decorator, ast.Call)
                 parametrize_total += _count_parametrize_cells(decorator)
         total_cells += parametrize_total
-        # Independent: if this test function references the resolver name,
-        # count it as one discrete coverage point. This handles the
-        # transitional state where a parametrize matrix has not yet been
-        # introduced but per-scenario point tests already exist.
-        if _references_name(node, function_name):
-            total_cells += 1
+        # Count this test function as one discrete coverage point. This
+        # handles the transitional state where a parametrize matrix has
+        # not yet been introduced but per-scenario point tests already
+        # exist.
+        total_cells += 1
     return total_cells
 
 
