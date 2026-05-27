@@ -120,7 +120,7 @@ _DRIVING_LESSON_RE = re.compile(
 # colon/dash so "**Back-reference**:" is detected alongside plain
 # "Back-reference:".
 _BACK_REFERENCE_RE = re.compile(
-    r'\bback[- ]?reference\*{0,2}\s*[:\-]',
+    r'\bback[- ]?reference\*{0,2}\s*[:\-—–]',
     re.IGNORECASE,
 )
 
@@ -146,7 +146,7 @@ _SEED_RE = re.compile(
 # Family 6: Plan/task-authorship pattern.
 # "added in TASK-NNN of plan", "added by deliverable N of this plan".
 _PLAN_AUTHORSHIP_RE = re.compile(
-    r'\badded\s+(?:in|by)\s+(?:TASK-\w+|deliverable\s+\d+)\s+(?:of|in)',
+    r'\badded\s+(?:in|by)\s+(?:TASK-\w+|deliverable\s+\d+)(?:\s+(?:of|in))?\b',
     re.IGNORECASE,
 )
 
@@ -384,7 +384,7 @@ def _skill_markdown_targets(marketplace_root: Path) -> list[tuple[Path, str]]:
                 continue
             for md in sorted(sub_dir.rglob('*.md')):
                 if md.is_file():
-                    rel = str(md.relative_to(marketplace_root))
+                    rel = str(md.relative_to(marketplace_root)).replace('\\', '/')
                     results.append((md, rel))
     return results
 
