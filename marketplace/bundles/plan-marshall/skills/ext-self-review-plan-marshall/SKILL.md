@@ -27,9 +27,28 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 
 Invoked exclusively by `default:pre-submission-self-review` (see `phase-6-finalize/workflow/pre-submission-self-review.md` Step 1). No other caller is supported. The script is registered as `plan-marshall:ext-self-review-plan-marshall:self_review` and is NOT user-invocable from a slash command — `user-invocable: false` per the script-only registration convention; this skill is intentionally absent from `plan-marshall/.claude-plugin/plugin.json`.
 
+## Keep-Identifier Markers
+
+Authors can flag identifiers that are load-bearing for grep-based external tests, downstream parsers, or any other consumer that asserts a token's literal presence in the source. The marker tells the LLM cognitive review pass that the identifier MUST remain grep-able in the post-image — prose consolidation, rename, or refactor MUST NOT remove it.
+
+**Syntax**: `<!-- self-review: keep <identifier> -->`
+
+- `<identifier>` is a single whitespace-free token (e.g. `phase_breakdown_override_content`, `--body`, `triage_helpers`). Whitespace inside the identifier is not supported — use one marker per identifier.
+- Whitespace around `self-review:`, around `keep`, and between `keep` and the identifier is tolerant.
+- The marker is an HTML comment, so it is invisible in rendered Markdown but visible to the deterministic surface scan.
+
+**Placement**: any line within the file or section that authoritatively owns the identifier. The detector scans the diff's added/post-image lines for marker matches — placing the marker on or near the line that defines or references the protected token gives the LLM review the strongest navigational anchor. Multiple markers on the same file are allowed and each emit an independent candidate.
+
+**Semantics**: for each recognized marker in an added hunk, the surface scan checks whether the protected identifier still appears anywhere in the file's post-image OUTSIDE the marker line itself (the marker comment's own copy of the identifier is excluded from the grep so it cannot mask a removal):
+
+- **Identifier still grep-able** → candidate kind `keep_protected`. The identifier joins the surface's `protected_identifiers` set so the LLM review knows to refuse any consolidation that would drop the token in a subsequent revision.
+- **Identifier no longer grep-able** → candidate kind `keep_violation`. The marker is orphaned — the consolidation under review has already removed the protected token. The LLM review surfaces this as a refusal-grade defect.
+
+The marker is a pure structural signal — no LLM call is added to the surface scan; the detector emits a `keep_markers` candidate list and a `protected_identifiers` set alongside the existing four heuristic lists. See the `keep_markers[]` and `protected_identifiers[]` shapes under § Output below.
+
 ## Subcommand: `surface`
 
-Surfaces six candidate lists from the worktree's staged diff against the base branch.
+Surfaces seven candidate lists from the worktree's staged diff against the base branch.
 
 ### Inputs
 
@@ -56,7 +75,9 @@ counts:
   symmetric_pairs: N4
   contract_sources: N5
   schema_bearing_files: N6
-  total: N1+N2+N3+N4
+  keep_markers: N7
+  protected_identifiers: N8
+  total: N1+N2+N3+N4+N7
 
 regexes[N1]{file,line,pattern}:
   {repo-relative-path},{line},{regex-pattern-string}
@@ -75,9 +96,15 @@ contract_sources[N5]{file,sources}:
 
 schema_bearing_files[N6]{file,format}:
   {repo-relative-path},{json|toon}
+
+keep_markers[N7]{file,line,identifier,kind}:
+  {repo-relative-path},{line},{identifier},{keep_protected|keep_violation}
+
+protected_identifiers[N8]:
+  {identifier}
 ```
 
-> The `total` count covers the four line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`) only. `contract_sources` and `schema_bearing_files` are review-anchor categories with their own counts; they are not summed into `total` because each modified file contributes at most one `contract_sources` entry whose payload is references rather than candidates.
+> The `total` count covers the five line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `keep_markers`) only. `contract_sources` and `schema_bearing_files` are review-anchor categories with their own counts; they are not summed into `total` because each modified file contributes at most one `contract_sources` entry whose payload is references rather than candidates. `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` — it does not contribute to `total` either.
 
 ### Detection Rules
 
@@ -109,6 +136,8 @@ schema_bearing_files[N6]{file,format}:
 
 6. **Schema-bearing files** — `*.md` files within `--contract-radius` directory levels of any modified file (default 3 levels up, bounded by `--project-dir`) whose content contains a fenced JSON or TOON block (`` ``` ``json` or `` ``` ``toon`). The list is deduplicated; the `format` field reports the first fence type found. Schema-bearing files surface schema/contract documents the LLM pass must cross-reference against hunks that touch the same schema (e.g., a helper output schema declared in a markdown reference).
 
+7. **Keep-identifier markers** — added lines containing `<!-- self-review: keep <identifier> -->` (see § Keep-Identifier Markers above for the marker contract). For each match the detector emits an entry with `identifier`, `file`, `line`, and `kind`. The `kind` is `keep_protected` when the identifier is still present elsewhere in the file's post-image (the marker line itself is excluded from the grep) and `keep_violation` when the identifier is no longer present — the second case is an orphaned marker that signals the consolidation removed a protected token. The deduplicated, sorted set of every identifier whose marker resolved to `keep_protected` is emitted as `protected_identifiers` so the LLM cognitive review can refuse a consolidation that would drop one of them.
+
 ### Errors
 
 | Condition | Output |
@@ -134,6 +163,7 @@ This script is **Bucket B** (per `tools-script-executor/standards/cwd-policy.md`
 - Symmetric-pair detection across all 6 pairings
 - Empty-diff edge case (no `modified_files` → empty candidate lists)
 - `--project-dir` honoring (script does not discover root from cwd)
+- Keep-identifier marker detection: `keep_protected` when the identifier is still grep-able in the post-image; `keep_violation` when the consolidation removed the token; marker syntax variations (whitespace tolerance, multiple markers per file) all recognized
 
 ## Related
 

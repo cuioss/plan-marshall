@@ -4,7 +4,7 @@
 
 ## Overview
 
-Self-review surfacing extensions provide the deterministic candidate-surface phase of the `default:pre-submission-self-review` finalize step. Each implementor inspects the worktree's staged diff in a domain-appropriate way (regex literals in `.py`/`.md`, Java imports + JavaDoc strings, JSX template literals, AsciiDoc include directives, etc.) and emits a TOON envelope carrying six candidate sub-lists for the LLM cognitive review pass to consume.
+Self-review surfacing extensions provide the deterministic candidate-surface phase of the `default:pre-submission-self-review` finalize step. Each implementor inspects the worktree's staged diff in a domain-appropriate way (regex literals in `.py`/`.md`, Java imports + JavaDoc strings, JSX template literals, AsciiDoc include directives, etc.) and emits a TOON envelope carrying seven candidate sub-lists for the LLM cognitive review pass to consume.
 
 The plan-marshall-domain implementor is the in-repo skill `ext-self-review-plan-marshall`; its script notation is `plan-marshall:ext-self-review-plan-marshall:self_review`. Consumer projects (Java, frontend, application code) MAY contribute their own implementor by following the contract below.
 
@@ -32,7 +32,7 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 
 | Subcommand | Description |
 |------------|-------------|
-| `surface` | Emit the six candidate sub-lists from the worktree diff as TOON. |
+| `surface` | Emit the seven candidate sub-lists from the worktree diff as TOON. |
 
 ## Runtime Invocation Contract
 
@@ -52,7 +52,7 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 
 ### Post-Conditions
 
-- TOON to stdout carrying the six candidate sub-lists below (some MAY be empty).
+- TOON to stdout carrying the seven candidate sub-lists below (some MAY be empty).
 - Non-zero exit on git-unavailable, base-branch-missing, or plan-not-found.
 
 ### Output Schema
@@ -69,7 +69,8 @@ counts:
   symmetric_pairs: N4
   contract_sources: N5
   schema_bearing_files: N6
-  total: N1+N2+N3+N4
+  keep_markers: N7
+  total: N1+N2+N3+N4+N7
 
 regexes[N1]{file,line,pattern}:
   ...
@@ -88,11 +89,18 @@ contract_sources[N5]{file,sources}:
 
 schema_bearing_files[N6]{file,format}:
   ...
+
+keep_markers[N7]{file,line,identifier,kind}:
+  ...
+
+protected_identifiers[M]:
+  - <identifier>
+  - ...
 ```
 
 ### Required Candidate Sub-Lists
 
-All six keys MUST appear in the output (possibly with empty payloads). The five LLM cognitive checks consume:
+All seven keys MUST appear in the output (possibly with empty payloads). The five LLM cognitive checks consume:
 
 | Sub-list | Purpose | Consumed By |
 |----------|---------|-------------|
@@ -102,12 +110,13 @@ All six keys MUST appear in the output (possibly with empty payloads). The five 
 | `symmetric_pairs` | Symmetric pair test coverage | Check 1 (symmetric pair) |
 | `contract_sources` | Contract cross-reference anchor | Step 2a (cross-reference setup) and Check 5 (contract drift) |
 | `schema_bearing_files` | Contract drift detection anchor | Step 2a (cross-reference setup) and Check 5 (contract drift) |
+| `keep_markers` | Identifiers flagged as load-bearing by `<!-- self-review: keep <id> -->` markers in the post-image; their values are mirrored into the top-level `protected_identifiers` set so the cognitive review can refuse consolidations that drop the token. | Check 4 (duplication) refuses to drop any protected identifier |
 
-Each entry MUST carry `file` (repo-relative path) AND `line` (1-based line number in the post-diff file content) — these are the only fields the LLM cognitive review consumes for navigation. Additional per-domain sub-lists are allowed and ignored by the five canonical checks.
+Each entry MUST carry `file` (repo-relative path) AND `line` (1-based line number in the post-diff file content) — these are the only fields the LLM cognitive review consumes for navigation. Additional per-domain sub-lists beyond the seven canonical keys are allowed and ignored by the five canonical checks.
 
 ### Detection Rules (Plan-Marshall Domain Reference)
 
-The `ext-self-review-plan-marshall` implementor's detection heuristics are documented in [`../../ext-self-review-plan-marshall/SKILL.md`](../../ext-self-review-plan-marshall/SKILL.md) (six numbered detection rules covering regex literals, user-facing strings, markdown headings, symmetric-pair function names, contract-source skills, and schema-bearing markdown files). Consumer-domain implementors MAY adapt these rules for their language/format but MUST keep the output schema identical so the LLM cognitive review remains domain-agnostic.
+The `ext-self-review-plan-marshall` implementor's detection heuristics are documented in [`../../ext-self-review-plan-marshall/SKILL.md`](../../ext-self-review-plan-marshall/SKILL.md) (seven numbered detection rules covering regex literals, user-facing strings, markdown headings, symmetric-pair function names, contract-source skills, schema-bearing markdown files, and `<!-- self-review: keep <id> -->` markers). Consumer-domain implementors MAY adapt these rules for their language/format but MUST keep the output schema identical so the LLM cognitive review remains domain-agnostic.
 
 ## Failure Mode Contract
 

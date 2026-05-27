@@ -6,6 +6,8 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
+from conftest import PlanContext
+
 # =============================================================================
 # Module loading (script has hyphens in filename → load via importlib)
 # =============================================================================
@@ -240,3 +242,116 @@ def result_phase_6_steps(result: dict) -> list[str]:
     manifest = read_manifest(plan_id)
     assert manifest is not None
     return list(manifest.get('phase_6', {}).get('steps', []))
+
+
+# =============================================================================
+# Test: task-queue-aware early_terminate predicate (lesson 2026-05-24-17-001)
+# =============================================================================
+
+
+def _seed_task_file(plan_id: str, task_number: int, status: str) -> None:
+    """Write a minimal TASK-{NNN}.json with the given status under the plan's tasks/ dir.
+
+    Used to exercise the composer's task-queue read: Rule 1's
+    ``early_terminate`` predicate now ANDs the existing
+    ``affected_files_count==0`` condition with "no pending or in-progress task
+    on disk". A test that seeds at least one pending task forces the
+    short-circuit to fall through to Rule 7 (default).
+    """
+    from file_ops import get_plan_dir  # type: ignore[import-not-found]
+
+    tasks_dir = get_plan_dir(plan_id) / 'tasks'
+    tasks_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        'number': task_number,
+        'title': f'stub task {task_number}',
+        'status': status,
+        'steps': [],
+    }
+    (tasks_dir / f'TASK-{task_number:03d}.json').write_text(json.dumps(payload, indent=2))
+
+
+class TestEarlyTerminateTaskQueueGuard:
+    """Rule 1 (early_terminate_analysis) now requires the task queue to be empty.
+
+    Lesson ``2026-05-24-17-001``: an analysis-only plan that produces zero
+    affected files but still queues at least one deliverable task must NOT
+    short-circuit phase-5 before TASK-001 runs. The composer reads
+    ``tasks/TASK-*.json`` directly and ANDs the existing
+    ``affected_files_count==0`` condition with "no pending or in-progress
+    task". Genuine no-op plans (no task files on disk) preserve the prior
+    early-terminate behaviour.
+    """
+
+    def test_early_terminate_when_task_queue_empty(self):
+        """Case (i): analysis + affected_files=0 + task_queue empty → early_terminate=True."""
+        with PlanContext('et-queue-empty'):
+            # No tasks/TASK-*.json seeded — queue is empty.
+            ns = _compose_ns(
+                plan_id='et-queue-empty',
+                change_type='analysis',
+                scope_estimate='none',
+                affected_files_count=0,
+            )
+            result = cmd_compose(ns)
+            assert result is not None
+            assert result['rule_fired'] == 'early_terminate_analysis'
+            assert result['phase_5']['early_terminate'] is True
+
+    def test_falls_through_to_default_when_task_queue_non_empty(self):
+        """Case (ii): analysis + affected_files=0 + task_queue pending → Rule 7 default."""
+        with PlanContext('et-queue-pending'):
+            _seed_task_file('et-queue-pending', task_number=1, status='pending')
+            ns = _compose_ns(
+                plan_id='et-queue-pending',
+                change_type='analysis',
+                scope_estimate='none',
+                affected_files_count=0,
+            )
+            result = cmd_compose(ns)
+            assert result is not None
+            assert result['rule_fired'] == 'default'
+            assert result['phase_5']['early_terminate'] is False
+
+    def test_rule_label_preserved_for_genuine_early_terminate(self):
+        """Case (iii): the ``early_terminate_analysis`` rule label still appears for case (i)."""
+        with PlanContext('et-queue-label'):
+            ns = _compose_ns(
+                plan_id='et-queue-label',
+                change_type='analysis',
+                scope_estimate='none',
+                affected_files_count=0,
+            )
+            result = cmd_compose(ns)
+            assert result is not None
+            assert result['rule_fired'] == 'early_terminate_analysis'
+
+    def test_falls_through_when_task_queue_in_progress(self):
+        """An in_progress task also blocks the short-circuit (symmetric to pending)."""
+        with PlanContext('et-queue-inprogress'):
+            _seed_task_file('et-queue-inprogress', task_number=1, status='in_progress')
+            ns = _compose_ns(
+                plan_id='et-queue-inprogress',
+                change_type='analysis',
+                scope_estimate='none',
+                affected_files_count=0,
+            )
+            result = cmd_compose(ns)
+            assert result is not None
+            assert result['rule_fired'] == 'default'
+            assert result['phase_5']['early_terminate'] is False
+
+    def test_done_tasks_do_not_block_short_circuit(self):
+        """A queue containing ONLY done tasks does NOT block early_terminate."""
+        with PlanContext('et-queue-done'):
+            _seed_task_file('et-queue-done', task_number=1, status='done')
+            ns = _compose_ns(
+                plan_id='et-queue-done',
+                change_type='analysis',
+                scope_estimate='none',
+                affected_files_count=0,
+            )
+            result = cmd_compose(ns)
+            assert result is not None
+            assert result['rule_fired'] == 'early_terminate_analysis'
+            assert result['phase_5']['early_terminate'] is True

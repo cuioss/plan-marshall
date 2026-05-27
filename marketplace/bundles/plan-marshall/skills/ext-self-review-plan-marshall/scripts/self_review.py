@@ -2,9 +2,9 @@
 """Deterministic candidate surfacing for the pre-submission-self-review finalize step.
 
 Reads the worktree's diff against the base branch, scans added lines in modified
-files, and emits four candidate lists (regexes, user-facing strings, markdown
-sections, symmetric-pair functions) as TOON for the LLM cognitive review pass to
-consume.
+files, and emits seven candidate lists (regexes, user-facing strings, markdown
+sections, symmetric-pair functions, contract sources, schema-bearing files,
+keep-identifier markers) as TOON for the LLM cognitive review pass to consume.
 
 Storage: stateless — reads the worktree diff and the plan's references.modified_files.
 Output: TOON to stdout.
@@ -79,6 +79,16 @@ _PAIR_TOKENS: list[tuple[str, str]] = [
     ('open', 'close'),
     ('start', 'stop'),
 ]
+
+# Keep-identifier marker detection
+# Shape: <!-- self-review: keep <identifier> -->
+# - whitespace around `self-review:` and the identifier is tolerant
+# - the identifier is a single whitespace-free token; the regex stops at the
+#   first whitespace or at the closing `-->` sentinel (the `(?=...)` lookahead
+#   ensures the token boundary is the marker terminator, not part of the id)
+_KEEP_MARKER = re.compile(
+    r'<!--\s*self-review:\s*keep\s+(\S+?)\s*-->'
+)
 
 
 # =============================================================================
@@ -484,6 +494,67 @@ def _detect_contract_sources(
     return contract_entries, schema_entries
 
 
+def _detect_keep_markers(
+    added: list[tuple[str, int, str]], project_dir: Path
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Scan added lines for ``<!-- self-review: keep <id> -->`` markers.
+
+    Returns ``(candidates, protected_identifiers)``:
+
+    - ``candidates``: one entry per recognized marker. Each entry carries
+      ``identifier``, ``file``, ``line``, and ``kind``. ``kind`` is
+      ``keep_protected`` when the identifier is still grep-able in the
+      file's post-image (outside the marker line itself), or
+      ``keep_violation`` when the consolidation removed the protected
+      token and the marker is now orphaned.
+    - ``protected_identifiers``: the deduplicated, sorted set of every
+      identifier whose marker resolved to ``keep_protected``. The LLM
+      cognitive review consumes this list to refuse consolidations that
+      drop a protected token.
+
+    The marker line itself is excluded from the grep-ability check, so the
+    marker token's presence in its own comment never counts as evidence
+    that the protected identifier still exists.
+    """
+    # Group markers by file so each post-image is read at most once.
+    by_file: dict[str, list[tuple[int, str]]] = {}
+    for path, lineno, content in added:
+        for m in _KEEP_MARKER.finditer(content):
+            identifier = m.group(1)
+            by_file.setdefault(path, []).append((lineno, identifier))
+
+    candidates: list[dict[str, Any]] = []
+    protected: set[str] = set()
+
+    for path, markers in by_file.items():
+        post_image = _read_post_image(project_dir, path)
+        # Lines holding a marker are excluded from the grep so the marker
+        # comment's own copy of the identifier is not counted as evidence.
+        marker_line_numbers = {lineno for lineno, _ in markers}
+        non_marker_lines = [
+            line
+            for idx, line in enumerate(post_image, start=1)
+            if idx not in marker_line_numbers
+        ]
+        non_marker_blob = '\n'.join(non_marker_lines)
+
+        for lineno, identifier in markers:
+            still_present = identifier in non_marker_blob
+            kind = 'keep_protected' if still_present else 'keep_violation'
+            candidates.append(
+                {
+                    'file': path,
+                    'line': lineno,
+                    'identifier': identifier,
+                    'kind': kind,
+                }
+            )
+            if still_present:
+                protected.add(identifier)
+
+    return candidates, sorted(protected)
+
+
 def _detect_symmetric_pairs(added: list[tuple[str, int, str]]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for path, lineno, content in added:
@@ -584,6 +655,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
     md_sections = _detect_markdown_sections(added, project_dir)
     sym_pairs = _detect_symmetric_pairs(added)
     contract_sources, schema_bearing = _detect_contract_sources(modified_files, project_dir, args.contract_radius)
+    keep_markers, protected_identifiers = _detect_keep_markers(added, project_dir)
 
     output = {
         'status': 'success',
@@ -597,7 +669,9 @@ def _cmd_surface(args: argparse.Namespace) -> int:
             'symmetric_pairs': len(sym_pairs),
             'contract_sources': len(contract_sources),
             'schema_bearing_files': len(schema_bearing),
-            'total': len(regexes) + len(user_facing) + len(md_sections) + len(sym_pairs),
+            'keep_markers': len(keep_markers),
+            'protected_identifiers': len(protected_identifiers),
+            'total': len(regexes) + len(user_facing) + len(md_sections) + len(sym_pairs) + len(keep_markers),
         },
         'regexes': regexes,
         'user_facing_strings': user_facing,
@@ -605,6 +679,8 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'symmetric_pairs': sym_pairs,
         'contract_sources': contract_sources,
         'schema_bearing_files': schema_bearing,
+        'keep_markers': keep_markers,
+        'protected_identifiers': protected_identifiers,
     }
     output_toon(output)
     return 0
@@ -624,7 +700,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_surface = sub.add_parser(
         'surface',
-        help='Emit the four candidate lists from the worktree diff as TOON.',
+        help='Emit candidate lists (regexes, user-facing strings, markdown sections, symmetric pairs, contract sources, schema-bearing files, keep markers) from the worktree diff as TOON.',
         allow_abbrev=False,
     )
     add_plan_id_arg(p_surface)

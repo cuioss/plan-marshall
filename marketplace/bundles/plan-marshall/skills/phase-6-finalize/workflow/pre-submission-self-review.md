@@ -22,7 +22,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Domain-Aware Candidate Surfacing
 
-The deterministic surfacer is pluggable via the `ext-self-review-{domain}` extension point — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) for the contract. Each implementor exposes a `surface --plan-id {plan_id}` script that emits the six candidate sub-lists below as TOON. The plan-marshall-domain implementor is the renamed skill `ext-self-review-plan-marshall`; its script notation is `plan-marshall:ext-self-review-plan-marshall:self_review`. Step 1 resolves the implementor via `manage-config skill-domains` against the plan's declared domain.
+The deterministic surfacer is pluggable via the `ext-self-review-{domain}` extension point — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) for the contract. Each implementor exposes a `surface --plan-id {plan_id}` script that emits the seven candidate sub-lists below as TOON. The plan-marshall-domain implementor is the renamed skill `ext-self-review-plan-marshall`; its script notation is `plan-marshall:ext-self-review-plan-marshall:self_review`. Step 1 resolves the implementor via `manage-config skill-domains` against the plan's declared domain.
 
 ## Inputs (inline step — Step 1)
 
@@ -35,7 +35,7 @@ The deterministic surfacer is pluggable via the `ext-self-review-{domain}` exten
 |-------------------|:--------:|-------------|
 | `plan_id` | Yes | Plan identifier. |
 | `WORKTREE` | Yes | Repo-relative working-directory path. |
-| `candidates` | Yes | TOON envelope from the resolved `ext-self-review-{domain}` surface helper — carries the six candidate sub-lists below. The orchestrator runs the surface helper in Step 1 and forwards its output verbatim; the workflow body does NOT re-invoke the surface helper. |
+| `candidates` | Yes | TOON envelope from the resolved `ext-self-review-{domain}` surface helper — carries the seven candidate sub-lists below. The orchestrator runs the surface helper in Step 1 and forwards its output verbatim; the workflow body does NOT re-invoke the surface helper. |
 
 | `candidates` sub-list | Schema | Purpose |
 |-----------------------|--------|---------|
@@ -45,6 +45,7 @@ The deterministic surfacer is pluggable via the `ext-self-review-{domain}` exten
 | `symmetric_pairs[N]{file,line,name,partner}` | Functions whose names match save/load, init/restore, push/pop, acquire/release, open/close, start/stop pairings | Symmetric pair test-coverage check |
 | `contract_sources[N]{file,sources}` | Per modified file: nearby `SKILL.md` and `standards/*.md` paths | Contract cross-reference anchor |
 | `schema_bearing_files[N]{file,format}` | Markdown files within the contract radius whose content contains a fenced JSON or TOON block | Contract drift detection |
+| `keep_markers[N]{file,line,identifier,kind}` + `protected_identifiers[M]` | `<!-- self-review: keep <id> -->` markers in the post-image; the top-level `protected_identifiers` set mirrors the identifier values for fast membership checks | Duplication scan refuses to drop any protected identifier |
 
 Skills the caller MUST forward in `skills[]`: none (the workflow reads files with the `Read` tool and emits no script calls).
 
@@ -52,7 +53,7 @@ Skills the caller MUST forward in `skills[]`: none (the workflow reads files wit
 
 ### Step 1: Deterministic surface (inline)
 
-Resolve the domain implementor via `manage-config skill-domains`, then invoke its `surface` subcommand. The implementor reads `references.modified_files` for the active plan, computes the staged diff against the worktree's base branch, and emits the six candidate sub-lists in a single TOON document on stdout.
+Resolve the domain implementor via `manage-config skill-domains`, then invoke its `surface` subcommand. The implementor reads `references.modified_files` for the active plan, computes the staged diff against the worktree's base branch, and emits the seven candidate sub-lists in a single TOON document on stdout.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \

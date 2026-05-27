@@ -6,6 +6,7 @@ from pathlib import Path  # noqa: I001
 import pytest
 from self_review import (  # type: ignore[import-not-found]
     _detect_contract_sources,
+    _detect_keep_markers,
     _detect_markdown_sections,
     _detect_regexes,
     _detect_symmetric_pairs,
@@ -343,3 +344,81 @@ class TestDetectContractSources:
         _, schema = _detect_contract_sources([rel], project, radius=3)
         files = {entry['file']: entry['format'] for entry in schema}
         assert files.get('marketplace/bundles/b1/skills/my-skill/standards/toon-schema.md') == 'toon'
+
+
+# =============================================================================
+# Test: _detect_keep_markers
+# =============================================================================
+
+
+class TestDetectKeepMarkers:
+    def test_marker_with_token_still_in_post_image_emits_keep_protected(self, tmp_path: Path):
+        # Post-image contains both the marker and the protected identifier on
+        # another line. The detector should emit a keep_protected candidate
+        # and the identifier should appear in protected_identifiers.
+        md = tmp_path / 'doc.md'
+        md.write_text(
+            '# Doc\n'
+            '<!-- self-review: keep my_token -->\n'
+            'The token my_token must remain.\n'
+        )
+        added = [('doc.md', 2, '<!-- self-review: keep my_token -->')]
+        candidates, protected = _detect_keep_markers(added, tmp_path)
+        assert len(candidates) == 1
+        entry = candidates[0]
+        assert entry['file'] == 'doc.md'
+        assert entry['line'] == 2
+        assert entry['identifier'] == 'my_token'
+        assert entry['kind'] == 'keep_protected'
+        assert protected == ['my_token']
+
+    def test_marker_with_token_removed_from_post_image_emits_keep_violation(self, tmp_path: Path):
+        # Post-image contains the marker only; the protected identifier no
+        # longer appears anywhere outside the marker comment. Detector should
+        # emit a keep_violation candidate at the marker line and the
+        # identifier should NOT appear in protected_identifiers.
+        md = tmp_path / 'doc.md'
+        md.write_text(
+            '# Doc\n'
+            '<!-- self-review: keep dropped_token -->\n'
+            'Some prose that no longer references it.\n'
+        )
+        added = [('doc.md', 2, '<!-- self-review: keep dropped_token -->')]
+        candidates, protected = _detect_keep_markers(added, tmp_path)
+        assert len(candidates) == 1
+        entry = candidates[0]
+        assert entry['file'] == 'doc.md'
+        assert entry['line'] == 2
+        assert entry['identifier'] == 'dropped_token'
+        assert entry['kind'] == 'keep_violation'
+        assert protected == []
+
+    def test_marker_syntax_variations_and_multiple_markers_in_same_file(self, tmp_path: Path):
+        # Three markers on different lines:
+        #   1. extra whitespace inside the marker
+        #   2. canonical syntax
+        #   3. another marker, same file
+        # All three identifiers remain grep-able in the post-image. All three
+        # must be recognized and appear in protected_identifiers (deduped,
+        # sorted).
+        md = tmp_path / 'doc.md'
+        md.write_text(
+            '# Doc\n'
+            '<!--  self-review:   keep   alpha_token   -->\n'
+            '<!-- self-review: keep beta_token -->\n'
+            'Refers to alpha_token and beta_token and gamma_token.\n'
+            '<!-- self-review: keep gamma_token -->\n'
+        )
+        added = [
+            ('doc.md', 2, '<!--  self-review:   keep   alpha_token   -->'),
+            ('doc.md', 3, '<!-- self-review: keep beta_token -->'),
+            ('doc.md', 5, '<!-- self-review: keep gamma_token -->'),
+        ]
+        candidates, protected = _detect_keep_markers(added, tmp_path)
+        assert len(candidates) == 3
+        identifiers = {c['identifier'] for c in candidates}
+        assert identifiers == {'alpha_token', 'beta_token', 'gamma_token'}
+        # Every candidate must be keep_protected (all tokens grep-able).
+        assert all(c['kind'] == 'keep_protected' for c in candidates)
+        # protected_identifiers is sorted and deduplicated.
+        assert protected == ['alpha_token', 'beta_token', 'gamma_token']
