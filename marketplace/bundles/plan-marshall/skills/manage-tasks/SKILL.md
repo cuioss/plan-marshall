@@ -74,35 +74,71 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `remove-step` | `--plan-id --task-number --step` | Remove step from task |
 | `rename-path` | `--plan-id --old-path --new-path` | Record path rename and rewrite step targets |
 | `qgate-mechanical-checks` | `--plan-id [--no-emit]` | Run the six deterministic Q-Gate checks for phase-4-plan Step 9 (coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Pure regex + graph + filesystem; no LLM dispatch. Each failure becomes a Q-Gate finding under `--source qgate` so phase-4-plan's existing aggregate consumes it. Returns `total_failed`, per-check counts, and an `ambiguous` flag the caller uses to decide whether the LLM q-gate-validation dispatch still needs to fire. |
-| `loop-exit-guard` | `--plan-id` | Script-level enforcement of the phase-5-execute "pending > 0 → must continue" invariant. Emits `status: continue` (with `pending_count` and `pending_ids`) when pending tasks remain — the non-success status forces the orchestrator to re-dispatch the execution-context. Emits `status: success` with `pending_count: 0` only when the queue is genuinely empty. See "Loop-Exit Guard" below for the contract. |
+| `loop-exit-guard` | `--plan-id` | Script-level enforcement of the phase-5-execute "unfinished > 0 → must continue" invariant. The predicate is the union of `pending` AND `in_progress` tasks. Emits `status: continue` (with `pending_count`, `pending_ids`, `in_progress_count`, `in_progress_ids`) when EITHER bucket is non-empty — the non-success status forces the orchestrator to re-dispatch the execution-context. Emits `status: success` (with all four count/id fields present and zero-valued) only when BOTH counts are zero. See "Loop-Exit Guard" below for the contract. |
 | `pre-commit-verify-freshness` | `--plan-id` | Script-level enforcement that the worktree state has been observed by a fresh `verify` run before any pre-commit transition. Emits `status: fresh` (verify entry post-dates the worktree mtime), `status: stale` (worktree mutated since the last observed verify), or `status: undecidable` (no positive freshness proof exists — either no matching log entry, or no mtime baseline). Fail-closed contract: only `fresh` permits transition. See "Pre-Commit Verify Freshness" below for the contract. |
 
 ### Loop-Exit Guard (`loop-exit-guard`)
 
 `loop-exit-guard` is the script-level enforcement of the phase-5-execute
-dispatch loop's "pending > 0 → must continue" invariant. The orchestrator
+dispatch loop's "unfinished > 0 → must continue" invariant. The predicate
+is the union of two unfinished terminal-state buckets: `pending` (task
+never started) AND `in_progress` (task started but not finalized — e.g.,
+the dispatch that began it terminated mid-flight). The orchestrator
 (`plan-marshall:plan-marshall:execution.md`) consults this verb on every
 loop-exit decision before classifying a dispatch as a clean exit; the
 phase-5-execute SKILL.md § Step 12a (Pending-tasks transition guard) is a
-thin pointer to this verb — the authoritative pending-count is here, not in
-skill prose.
+thin pointer to this verb — the authoritative unfinished-count is here,
+not in skill prose.
 
-**Behaviour:**
+**Blocking states (resumability):**
 
-- `status: continue` with `pending_count > 0` and `pending_ids: [N, ...]` —
-  pending tasks remain in the queue. The orchestrator MUST re-dispatch the
-  execution-context and MUST NOT classify the return as `clean_exit_queue_empty`.
-- `status: success` with `pending_count: 0` and `pending_ids: []` — queue
-  empty, clean exit permitted. The boundary-call fence in
-  `plan-marshall/workflow/execution.md` may now record
-  `termination-cause == clean_exit_queue_empty`.
+| Status | Blocks clean exit? |
+|--------|--------------------|
+| `pending` | Yes — task never started |
+| `in_progress` | Yes — task started but not finalized (mid-flight) |
+| `done` | No — terminal success |
+| `failed` | No — terminal failure |
+| `blocked` | No — explicit triage outcome |
+
+Both `pending` and `in_progress` are unfinished terminal states by the
+broadened predicate. Either non-empty bucket forces `status: continue`.
+
+**TOON return contract:**
+
+Both `continue` and `success` branches emit all four count/id fields so
+callers can read either axis without conditional presence checks:
+
+```toon
+status: continue | success
+plan_id: {plan_id}
+pending_count: N
+pending_ids[N]: [task_numbers]
+in_progress_count: M
+in_progress_ids[M]: [task_numbers]
+message: "..."
+```
+
+- `status: continue` with `pending_count > 0` OR `in_progress_count > 0` —
+  at least one unfinished task remains. The orchestrator MUST re-dispatch
+  the execution-context and MUST NOT classify the return as
+  `clean_exit_queue_empty`. The `message` field names which axis was
+  non-empty so the orchestrator's log surfaces the reason.
+- `status: success` with `pending_count: 0` AND `in_progress_count: 0` —
+  queue empty by the broadened predicate, clean exit permitted. The
+  boundary-call fence in `plan-marshall/workflow/execution.md` may now
+  record `termination-cause == clean_exit_queue_empty`.
 
 **Rationale:** before this verb, the loop-exit decision was driven by the
 dispatched agent's terminal payload, which the agent could echo verbatim
 (e.g. `task_complete`) without the orchestrator distinguishing "one task
 done out of three" from "the queue is empty". Moving the decision to a
 script-level read of disk state — the same `get_all_tasks` machinery as
-`list --status pending` — closes the control-flow gap.
+`list --status pending` — closes the control-flow gap. The original
+predicate considered only `pending`, which left a residual seam: a task
+that flipped to `in_progress` and was abandoned mid-dispatch would leave
+the queue "empty by the pending bucket" while the task itself was still
+unfinished. Broadening the predicate to `pending OR in_progress` closes
+that residual seam.
 
 ### Pre-Commit Verify Freshness (`pre-commit-verify-freshness`)
 

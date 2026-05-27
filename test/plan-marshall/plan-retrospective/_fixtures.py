@@ -41,7 +41,7 @@ _HANDSHAKE_FIELDS = [
     'task_state_hash',
     'qgate_open_count',
     'config_hash',
-    'pending_tasks_count',
+    'unfinished_tasks_count',
     'phase_steps_complete',
 ]
 
@@ -73,7 +73,7 @@ _HAPPY_HANDSHAKE_ROWS = [
         'task_state_hash': 'hash1',
         'qgate_open_count': '0',
         'config_hash': 'cfg1',
-        'pending_tasks_count': '0',
+        'unfinished_tasks_count': '0',
         'phase_steps_complete': 'sha-init',
     },
     {
@@ -87,7 +87,7 @@ _HAPPY_HANDSHAKE_ROWS = [
         'task_state_hash': 'hash1',
         'qgate_open_count': '0',
         'config_hash': 'cfg1',
-        'pending_tasks_count': '0',
+        'unfinished_tasks_count': '0',
         'phase_steps_complete': 'sha-final',
     },
 ]

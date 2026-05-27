@@ -197,7 +197,7 @@ def _make_stub_run_script():
     def _stub(args: list[str]) -> str | None:
         # args shape per _invariants._capture_task_graph_valid:
         #   [notation, subcommand, '--plan-id', plan_id, ...]
-        # Or per _capture_pending_tasks_count:
+        # Or per _capture_unfinished_tasks_count:
         #   [notation, 'list', '--status', 'pending', '--plan-id', plan_id]
         if len(args) < 4:
             return None
@@ -546,7 +546,7 @@ def test_state_hash_empty_plan_returns_stable_hash(plan_context, stub_run_script
 
 
 # =============================================================================
-# pending_tasks_count — registry tuple drives the phase-5-execute guard
+# unfinished_tasks_count — registry tuple drives the phase-5-execute guard
 # =============================================================================
 #
 # The capture function counts tasks currently in ``status: pending`` for the
@@ -558,8 +558,8 @@ def test_state_hash_empty_plan_returns_stable_hash(plan_context, stub_run_script
 
 
 @pytest.mark.parametrize('pending_count', [0, 1, 2, 3])
-def test_pending_tasks_count_returns_pending_row_count(plan_context, stub_run_script, pending_count: int) -> None:
-    """``_capture_pending_tasks_count`` must return the count of pending tasks.
+def test_unfinished_tasks_count_returns_pending_row_count(plan_context, stub_run_script, pending_count: int) -> None:
+    """``_capture_unfinished_tasks_count`` must return the count of pending tasks.
 
     Seeds N tasks via the manage-tasks fixture flow, optionally marks some
     done (so they leave ``pending``), then drives the capture function
@@ -576,13 +576,13 @@ def test_pending_tasks_count_returns_pending_row_count(plan_context, stub_run_sc
     for n in range(1, to_mark_done + 1):
         _set_status(plan_id, n, 'done')
 
-    result = inv._capture_pending_tasks_count(plan_id, {}, '5-execute')
+    result = inv._capture_unfinished_tasks_count(plan_id, {}, '5-execute')
 
     assert isinstance(result, int), f'expected int count, got {type(result).__name__}: {result!r}'
     assert result == pending_count, f'expected {pending_count} pending, got {result}'
 
 
-def test_pending_tasks_count_drift_across_phases(plan_context, stub_run_script) -> None:
+def test_unfinished_tasks_count_drift_across_phases(plan_context, stub_run_script) -> None:
     """Drift case: count changes between phases as tasks complete.
 
     Captured during 5-execute with 2 pending; after marking some done (e.g.
@@ -591,23 +591,23 @@ def test_pending_tasks_count_drift_across_phases(plan_context, stub_run_script) 
     plan_id = 'inv-pending-drift'
     _add_task(plan_id, 'T1', 1)
     _add_task(plan_id, 'T2', 2)
-    during_execute = inv._capture_pending_tasks_count(plan_id, {}, '5-execute')
+    during_execute = inv._capture_unfinished_tasks_count(plan_id, {}, '5-execute')
 
     # Complete every task — pending queue drains to zero.
     _set_status(plan_id, 1, 'done')
     _set_status(plan_id, 2, 'done')
-    after_execute = inv._capture_pending_tasks_count(plan_id, {}, '6-finalize')
+    after_execute = inv._capture_unfinished_tasks_count(plan_id, {}, '6-finalize')
 
     assert during_execute == 2, f'expected 2 pending mid-execute, got {during_execute}'
     assert after_execute == 0, f'expected 0 pending after completion, got {after_execute}'
     assert during_execute != after_execute, (
-        'pending_tasks_count must reflect drift between phases — '
+        'unfinished_tasks_count must reflect drift between phases — '
         'a non-changing value would mean the capture is reading stale data'
     )
 
 
-def test_pending_tasks_count_reachable_via_capture_all(plan_context, stub_run_script, monkeypatch: pytest.MonkeyPatch) -> None:
-    """``capture_all`` must surface ``pending_tasks_count`` from the registry.
+def test_unfinished_tasks_count_reachable_via_capture_all(plan_context, stub_run_script, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``capture_all`` must surface ``unfinished_tasks_count`` from the registry.
 
     Narrows ``INVARIANTS`` to just the pending entry so the other invariants
     don't try to shell out, then exercises the registry-driven capture path
@@ -615,9 +615,9 @@ def test_pending_tasks_count_reachable_via_capture_all(plan_context, stub_run_sc
     """
     narrowed = [
         (
-            'pending_tasks_count',
+            'unfinished_tasks_count',
             inv._always,
-            inv._capture_pending_tasks_count,
+            inv._capture_unfinished_tasks_count,
         ),
     ]
     monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
@@ -626,25 +626,61 @@ def test_pending_tasks_count_reachable_via_capture_all(plan_context, stub_run_sc
     _add_task('inv-pending-capture-all', 'T2', 2)
     captured = inv.capture_all('inv-pending-capture-all', {}, '5-execute')
 
-    assert 'pending_tasks_count' in captured, (
-        f'capture_all must include pending_tasks_count, got keys: {list(captured)}'
+    assert 'unfinished_tasks_count' in captured, (
+        f'capture_all must include unfinished_tasks_count, got keys: {list(captured)}'
     )
-    assert captured['pending_tasks_count'] == 2
+    assert captured['unfinished_tasks_count'] == 2
 
 
-def test_pending_tasks_count_registry_tuple_present() -> None:
-    """The registry must wire ``pending_tasks_count`` to the capture function.
+def test_unfinished_tasks_count_registry_tuple_present() -> None:
+    """The registry must wire ``unfinished_tasks_count`` to the capture function.
 
     Guards against accidental removal of the tuple from ``INVARIANTS`` —
     without this entry the phase-5-execute transition guard cannot fire.
     """
     names = [name for name, _, _ in inv.INVARIANTS]
-    assert 'pending_tasks_count' in names, f'pending_tasks_count must be registered, got {names}'
-    entry = next(t for t in inv.INVARIANTS if t[0] == 'pending_tasks_count')
+    assert 'unfinished_tasks_count' in names, f'unfinished_tasks_count must be registered, got {names}'
+    entry = next(t for t in inv.INVARIANTS if t[0] == 'unfinished_tasks_count')
     name, applies_fn, capture_fn = entry
-    assert capture_fn is inv._capture_pending_tasks_count
+    assert capture_fn is inv._capture_unfinished_tasks_count
     # Always-applicable: every phase should record the queue size.
     assert applies_fn('any-plan', {}) is True
+
+
+def test_unfinished_tasks_count_sums_pending_and_in_progress(plan_context, stub_run_script) -> None:
+    """Broadened predicate: invariant counts ``pending`` PLUS ``in_progress``.
+
+    Seeds two tasks, marks one ``in_progress`` and leaves one ``pending``, then
+    asserts the capture returns 2 (not 1). Mirrors the broadened
+    ``loop-exit-guard`` predicate that treats both buckets as blocking.
+    """
+    plan_id = 'inv-unfinished-sum'
+    _add_task(plan_id, 'T1', 1)
+    _add_task(plan_id, 'T2', 2)
+    _set_status(plan_id, 1, 'in_progress')
+
+    result = inv._capture_unfinished_tasks_count(plan_id, {}, '5-execute')
+
+    assert isinstance(result, int), f'expected int count, got {type(result).__name__}: {result!r}'
+    assert result == 2, (
+        f'unfinished_tasks_count must count pending + in_progress, expected 2, got {result}'
+    )
+
+
+def test_unfinished_tasks_count_zero_when_all_done(plan_context, stub_run_script) -> None:
+    """Both buckets empty → invariant returns 0."""
+    plan_id = 'inv-unfinished-zero'
+    _add_task(plan_id, 'T1', 1)
+    _set_status(plan_id, 1, 'done')
+
+    result = inv._capture_unfinished_tasks_count(plan_id, {}, '6-finalize')
+
+    assert result == 0, f'expected 0 unfinished when all done, got {result}'
+
+
+def test_unfinished_tasks_count_partition_blocking_at_every_boundary() -> None:
+    """The renamed key keeps the ``blocking_at_every_boundary`` classification."""
+    assert inv.INVARIANT_BLOCKING_SCOPE['unfinished_tasks_count'] == 'blocking_at_every_boundary'
 
 
 # =============================================================================

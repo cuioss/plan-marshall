@@ -35,6 +35,7 @@ expected_vs_actual[*]{category,expected_min,observed}:
   RE_ENTRY_COVERAGE,{re_entry_count},{re_entry_count}
   ARTIFACT_EMISSION,{outcome_with_changes},{artifacts_after_outcome}
   DISPATCH_TERMINATION_CAUSE,{dispatch_rows},{dispatch_rows}
+  VOLUNTARY_CHECKPOINT_POLLING,0,{polling_pairs_count}
 gaps[*]{skill_or_phase,category,detail}:
   phase-3-outline,DECISION,"0 decision entries — deliverable packaging decisions not logged"
   phase-5-execute,OUTCOME_COVERAGE,"3 tasks done but only 1 [OUTCOME] line — likely lost on agent-initiated re-dispatch"
@@ -125,12 +126,34 @@ deliverable. When the precondition is absent, the rule emits no finding.
 
   Plans without the artifact skip the rule entirely.
 
+### VOLUNTARY_CHECKPOINT_POLLING (phase-5 invariant, precondition-guarded)
+
+- **VOLUNTARY_CHECKPOINT_POLLING** (category: `VOLUNTARY_CHECKPOINT_POLLING`) —
+  **Precondition**: at least one `[ATTEMPT]` work-log line exists in `work.log`
+  (i.e. the plan ran on a build that includes execute-task's mandatory `[ATTEMPT]`
+  guard, added in the `bash-compound-command-with-tmp-redirect-triggered` deliverable).
+  When the precondition holds, scan `work.log` for consecutive-line pairs where an
+  `[ATTEMPT]` line is followed within the next 5 lines by any line that contains
+  a polling-language keyword: `sleeping`, `polling`, `wait`, `background`, `sleep`,
+  or `run_in_background`. Each such pair is a candidate signal that the agent
+  dispatched a subagent (the `[ATTEMPT]` line) but then attempted to poll for its
+  result rather than running synchronously or using `run_in_background` correctly.
+  When `polling_pairs_count > 0`, emit a `warning`-severity finding citing the
+  source lesson and the number of candidate pairs detected. Plans without any
+  `[ATTEMPT]` line skip this rule entirely.
+
+  The rule is a heuristic: not every `[ATTEMPT]` + polling-keyword pair is a defect
+  (e.g. a fire-and-forget background process with `run_in_background: true` that
+  logs "dispatching background task"), so the LLM applies judgement when reviewing
+  the surfaced candidates. The fact extractor counts candidates only — no
+  auto-classification.
+
 ## Finding Shape
 
 ```toon
 aspect: logging_gap_analysis
 severity: info|warning|error
-category: STATUS|DECISION|ARTIFACT|VERIFY|ERROR|OUTCOME_COVERAGE|RE_ENTRY_COVERAGE|ARTIFACT_EMISSION|DISPATCH_TERMINATION_CAUSE
+category: STATUS|DECISION|ARTIFACT|VERIFY|ERROR|OUTCOME_COVERAGE|RE_ENTRY_COVERAGE|ARTIFACT_EMISSION|DISPATCH_TERMINATION_CAUSE|VOLUNTARY_CHECKPOINT_POLLING
 skill_or_phase: "{scope}"
 message: "{one-line}"
 ```

@@ -103,7 +103,13 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
 
-Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+Emit the standardized pre-dispatch attempt log line and the post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id none --level INFO \
+  --message "[ATTEMPT] (plan-marshall:plan-marshall) dispatching target={target} role=phase-1-init"
+```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -196,7 +202,13 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
 
 Extract the `worktree_path` field from the TOON output. Use that value as `{worktree_path}` in the dispatch's `WORKTREE:` header below.
 
-Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract for the field semantics and placement rule:
+Emit the standardized pre-dispatch attempt log line and the post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract for the field semantics and placement rule:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[ATTEMPT] (plan-marshall:plan-marshall) dispatching target={target} role=phase-2-refine plan_id={plan_id}"
+```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -228,7 +240,13 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   effort resolve-target --role phase-2-refine
 ```
 
-Extract the `target` field. Emit the standardized post-resolve dispatch log line:
+Extract the `target` field. Emit the standardized pre-dispatch attempt log line and the post-resolve dispatch log line:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[ATTEMPT] (plan-marshall:plan-marshall) dispatching target={target} role=q-gate-validation plan_id={plan_id}"
+```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -545,7 +563,13 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
 
-Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+Emit the standardized pre-dispatch attempt log line and the post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id none --level INFO \
+  --message "[ATTEMPT] (plan-marshall:plan-marshall) dispatching target={target} role=phase-1-init (lesson conversion)"
+```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

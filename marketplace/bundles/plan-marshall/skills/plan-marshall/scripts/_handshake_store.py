@@ -38,7 +38,7 @@ HANDSHAKE_FIELDS = [
     'task_state_hash',
     'qgate_open_count',
     'config_hash',
-    'pending_tasks_count',
+    'unfinished_tasks_count',
     'phase_steps_complete',
     'pending_findings_by_type',
     'pending_findings_blocking_count',

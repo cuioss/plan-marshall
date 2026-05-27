@@ -23,11 +23,16 @@ Skill: plan-marshall:dev-agent-behavior-rules
 **Prohibited actions:**
 - Never target file paths outside the active git worktree. The authoritative source for the worktree root is `manage-status get-worktree-path --plan-id {plan_id}` (resolved internally from the **Input Contract** below); every Edit/Write/Read tool call during task execution MUST resolve against the returned path.
 - Never run git as a `cd {worktree_path} && git ...` compound. All git commands during task execution MUST use the `git -C {resolved_worktree_path} <subcommand>` form, where `{resolved_worktree_path}` is the value returned by `manage-status get-worktree-path --plan-id {plan_id}`.
+- Never combine Bash commands with `&&`, `;`, `&`, or newlines in a single Bash tool call. Each Bash tool call MUST contain exactly ONE command. The compound form trips the host platform's permission UI and produces silent swallowing of intermediate exit codes — both are load-bearing failure modes during task execution.
+- Never run polling loops (`for`/`while`/`until` loops, `$()` substitution, subshells, heredocs with `#` lines) inside a Bash tool call. Poll conditions belong in a `Monitor` tool call or are eliminated by running commands synchronously with an explicit timeout. Polling loops trip the host platform's security heuristics and are a structural signal that the verification step is wrong.
+- Never use background-wait patterns (`command &`, then `wait` or `sleep` loops) to track a running step. Run verification commands synchronously via Bash with `timeout` set high enough; use `run_in_background: true` only when the task description explicitly requires a background process AND the step does not need to read the result.
+- Never suppress errors in Bash tool calls (`2>/dev/null`, `|| true`, `|| :`, `-q` flags that hide exit codes). Every Bash tool call MUST surface its exit code cleanly so the verification loop can detect failures.
 
 **Constraints:**
 - Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
 - Never bypass the manage-tasks next/finalize-step loop — if parallelization is needed, it must happen at the TASK level, not at the STEP level within a task
 - A task in `implementation` or `module_testing` profile MUST NOT be marked `done` until the resolved canonical command (`quality-gate` or `verify` respectively) exits cleanly. Module-tests passing alone is necessary but not sufficient — mypy and ruff must also pass.
+- Before every Bash tool call, emit an `[ATTEMPT]` work-log line that names the command being run. Use: `python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging work --plan-id {plan_id} --level INFO --message "[ATTEMPT] (plan-marshall:execute-task) {short description of command}"`. This provides an auditable trail when a Bash call hangs or produces unexpected output.
 
 See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (never-edit-main-checkout invariant, `git -C` rule, dispatch header propagation).
 

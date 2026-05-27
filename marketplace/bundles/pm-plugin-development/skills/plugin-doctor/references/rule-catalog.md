@@ -254,6 +254,61 @@ Seven forward-looking lint rules.
 
 ---
 
+## Rule Pack: Bash chain-shape invariant
+
+**Activation**: Unconditionally active in `doctor-marketplace.py analyze` mode. NOT included in `quality-gate` — the existing marketplace tree pre-dates these rules and contains documented examples of the forbidden patterns inside bash fences; a cleanup sweep is required before these rules can be promoted to quality-gate level. Invoke via `analyze` for explicit drift sweeps; new code written after this plan is checked by the analyze path.
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `bash-chain-shapes-in-skills` | Detect compound Bash command sequences (`&&`, `;`, trailing `&`) inside fenced `bash`/`sh` blocks in plan-marshall skill/agent/command markdown — violates the dev-agent-behavior-rules "Bash: one command per call" hard rule | Comment lines (`#`) and inline-code spans are exempt; only `bash`/`sh`-fenced blocks are scanned | None — split the compound command into separate Bash tool calls |
+| `tmp-redirect-in-skills` | Detect `>` / `>>` redirect targets pointing at `/tmp/` or `/var/tmp/` inside fenced `bash`/`sh` blocks in plan-marshall skill/agent/command markdown — violates the project policy that temporary files must live under `.plan/temp/` | Comment lines (`#`) and inline-code spans are exempt; only `bash`/`sh`-fenced blocks are scanned | None — replace with a `Write` tool call targeting `.plan/temp/{plan_id}-<name>` or pass the value through a TOON field |
+
+### bash-chain-shapes-in-skills
+
+**Rule ID**: `bash-chain-shapes-in-skills`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_bash_chain_shapes_in_skills.py`
+
+**Scope**: All `*.md` files under `marketplace/bundles/plan-marshall/{skills,agents,commands}/`.
+
+**Intent**: Enforce the dev-agent-behavior-rules "Bash: one command per call" hard rule at the skill-documentation layer. A `&&`, `;`, or trailing `&` in a workflow doc gets interpreted by subagents that copy the snippet into a Bash call literally — the host platform's permission UI then either pops a security prompt or rejects the dispatch outright. The rule prevents regressions of the class of violation documented by the originating source (compound-Bash + tmp-redirect pattern that triggered a 25-minute permission-prompt pause).
+
+**Detection logic**: Scans every line of fenced `bash` or `sh` blocks in every in-scope markdown file. Each occurrence of `&&`, `;`, or a trailing `&` (not preceded by `\`) on a non-comment line is a candidate finding, unless it falls into one of the exempt contexts below.
+
+**Permitted contexts**:
+1. **Comment lines** — Lines whose first non-whitespace character is `#` are treated as shell comments and skipped.
+2. **Inline-code span** — A compound operator inside a backtick span (`` `…` ``). Token references are not runnable commands.
+3. **Lines outside bash/sh fenced blocks** — Only lines inside fenced blocks whose info-string is `bash` or `sh` are scanned. Prose, Python fences, and so on are not checked.
+
+**Recommended fix**: Split the compound command into two or more separate Bash tool calls. Each Bash call must contain exactly one command.
+
+**Suppression mechanism**: None — convert to separate Bash calls. If the occurrence is genuinely documentary (a standards doc naming the forbidden pattern), wrap it in an inline-code span (`` `…` ``) or a `markdown`/`text` fence so the structural exemption applies.
+
+---
+
+### tmp-redirect-in-skills
+
+**Rule ID**: `tmp-redirect-in-skills`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_tmp_redirect_in_skills.py`
+
+**Scope**: All `*.md` files under `marketplace/bundles/plan-marshall/{skills,agents,commands}/`.
+
+**Intent**: Enforce the project policy that all temporary files must live under `.plan/temp/` (covered by `Write(.plan/**)` permission, which avoids permission prompts and ensures the file tree is self-consistent). A `> /tmp/` redirect in a workflow doc signals that the subagent will write a temp file outside the pre-approved `.plan/temp/` tree, which either triggers a permission prompt or leaves an unreachable artefact. The rule also catches the compound-violation pattern (redirect + chain) documented by the originating source, where the `/tmp/` write was paired with a `; grep` chain on the same line.
+
+**Detection logic**: Scans every line of fenced `bash` or `sh` blocks in every in-scope markdown file. Each occurrence of `>` or `>>` followed (optionally with whitespace) by `/tmp/` or `/var/tmp/` on a non-comment line is a candidate finding, unless it falls into one of the exempt contexts below.
+
+**Permitted contexts**:
+1. **Comment lines** — Lines whose first non-whitespace character is `#` are treated as shell comments and skipped.
+2. **Inline-code span** — A redirect inside a backtick span (`` `…` ``). Token references are not runnable commands.
+3. **Lines outside bash/sh fenced blocks** — Only lines inside fenced blocks whose info-string is `bash` or `sh` are scanned.
+
+**Recommended fix**: Replace the `/tmp/` write with a `Write` tool call targeting `.plan/temp/{plan_id}-<descriptive-name>` (the `.plan/temp/` prefix is covered by the `Write(.plan/**)` pre-approved permission). Alternatively, if the value is small, pass it through a TOON field in the previous command's stdout instead of writing it to a file.
+
+**Suppression mechanism**: None — fix the redirect target. If the occurrence is genuinely documentary (a standards doc naming the forbidden pattern), wrap it in an inline-code span or a `markdown`/`text` fence.
+
+---
+
 ## Rule Pack: Script-call drift
 
 | Rule ID | Intent | False-positive policy | Suppression |
