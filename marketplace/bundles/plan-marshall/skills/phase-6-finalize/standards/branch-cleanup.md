@@ -32,6 +32,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 - **No improvisation**: Do not add git cleanup steps beyond what is explicitly documented in the execution sections below.
 - **Worktree removal is non-force**: Never pass `--force` to `git worktree remove`. Only clean worktrees may be removed. If the worktree has uncommitted changes, abort cleanup and surface the error — the user may still want to salvage the work.
 - **Failure leaves worktree in place**: On any plan abort or failure path, do NOT auto-remove the worktree. Worktree removal happens only during successful branch-cleanup.
+- **Confirmation gate is conditional on conflict severity**: The PR-mode `AskUserQuestion` confirmation gate is no longer mandatory on every `state == open` invocation. It is now driven by the **Conflict-Severity Classifier** section below, which dispatches `plan-marshall:workflow-integration-git:git-workflow baseline-reconcile --no-emit` to classify the rebase as `no_overlap`, `overlap_no_content_conflict`, or `overlap_with_content_conflict`. The classifier's safety properties: `baseline-reconcile --no-emit` is idempotent, performs only `fetch + diff + merge-tree` (with an internal `git merge` probe that is always aborted before any working-tree mutation persists — see the `auto_reconciled: false` downgrade path inside the script), and emits no Q-Gate findings under `--no-emit`. The auto-proceed threshold is tunable via `plan.phase-6-finalize.branch_cleanup_auto_proceed_threshold` (default `no_overlap_only`; opt-in `auto_resolvable`; opt-out `never`). All other safety properties (`--force-with-lease` only, worktree-first removal, targeted ref prune) remain unchanged on every code path.
 
 ## Worktree Awareness
 
@@ -86,9 +87,90 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 
 Extract count and details of other open PRs (excluding the current PR).
 
+### Conflict-Severity Classifier
+
+**Only runs when `state == open`** (when `state == merged` no rebase is planned and the classifier is skipped — proceed directly to the User Confirmation Gate, which the merged branch already treats as a routine local-cleanup confirmation).
+
+This section dispatches the existing `baseline-reconcile` probe to classify the upcoming rebase against `origin/{base_branch}` and decide whether the User Confirmation Gate below must fire interactively or may be bypassed.
+
+#### Read the auto-proceed threshold
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize get --field branch_cleanup_auto_proceed_threshold --audit-plan-id {plan_id}
+```
+
+Extract `value` as `{threshold}`. Default: `no_overlap_only`. Accepted values:
+
+- `no_overlap_only` — auto-proceed only when classifier returns `classification: no_overlap`.
+- `auto_resolvable` — also auto-proceed when classifier returns `classification: overlap_no_content_conflict` AND `auto_reconciled: true`.
+- `never` — always prompt the user; skip the classifier entirely. This is the legacy opt-out for users who prefer the unconditional gate.
+
+#### Threshold-driven bypass (when `{threshold} == never`)
+
+When `{threshold} == never`, skip the classifier dispatch entirely and force `{decision} = needs_user`. Log the bypass:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: classifier bypassed (threshold=never), confirmation gate will fire"
+```
+
+Then proceed directly to the **User Confirmation Gate**.
+
+#### Dispatch the classifier (when `{threshold}` != `never`)
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow \
+  baseline-reconcile --plan-id {plan_id} --no-emit
+```
+
+`--no-emit` suppresses Q-Gate finding emission (those are a phase-2-refine concern; branch-cleanup consumes the classification directly).
+
+Parse the TOON return for fields `classification`, `auto_reconciled`, `conflict_count`, `conflicts[]`, `upstream_commit_count`.
+
+If the script exits non-zero (per the **Exit-code convention** at the top of this document) → STOP and return an error TOON to the dispatcher carrying the stderr verbatim. Do NOT silently fall back to `needs_user` on classifier failure — a broken probe is a different signal than a real conflict and must surface as an error so the user can repair the environment.
+
+#### Compute the gate decision
+
+Apply the following rules in order; the first match wins:
+
+- `classification == no_overlap` → `{decision} = auto_proceed` (regardless of threshold, except `never` which already short-circuited above).
+- `classification == overlap_no_content_conflict` AND `auto_reconciled == true` AND `{threshold} == auto_resolvable` → `{decision} = auto_proceed`.
+- `classification == overlap_no_content_conflict` AND (`auto_reconciled == false` OR `{threshold} == no_overlap_only`) → `{decision} = needs_user` (the script downgraded auto-resolution OR the threshold opts out even for auto-resolvable overlaps).
+- `classification == overlap_with_content_conflict` → `{decision} = needs_user` (genuine conflict requiring human resolution).
+
+#### Log the classifier decision
+
+Emit both a `[STATUS]` work-log entry (for grep-ability during a run) and a `decision` log entry (so the retrospective phase can audit the call):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: classifier={classification}, auto_reconciled={auto_reconciled}, threshold={threshold}, decision={decision}, conflict_count={conflict_count}"
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup classifier: classification={classification}, auto_reconciled={auto_reconciled}, threshold={threshold}, decision={decision}, upstream_commits={upstream_commit_count}"
+```
+
 ### User Confirmation Gate
 
-**MANDATORY**: Present all context and ask user before any destructive action.
+The gate is **mandatory when `{decision} == needs_user`** (genuine conflict, classifier-bypassed threshold, or `state == merged` re-entry path) and **bypassed when `{decision} == auto_proceed`** (clean or auto-resolvable rebase under a permissive threshold).
+
+#### Auto-proceed path (`{decision} == auto_proceed`)
+
+When the classifier returned `{decision} == auto_proceed`, skip the `AskUserQuestion` block entirely and log the bypass:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: auto-proceed (classification={classification}), confirmation gate bypassed"
+```
+
+Then proceed directly to **Safety Check: Other Open PRs**.
+
+#### Interactive path (`{decision} == needs_user` OR `state == merged`)
+
+Present all context and ask the user before any destructive action.
 
 Determine planned actions based on PR state. Local cleanup (switch to base branch, pull, delete local feature branch) is uniform across both paths; only the remote-side action differs (`--delete-branch` deletes the remote branch only when we merge this run):
 
@@ -150,24 +232,33 @@ Extract `value` as `{pr_merge_strategy}` (default: `squash`). Valid values: `squ
 
 **Only if `state == open`**: Rebase the feature branch onto the latest base branch before merging so the merge lands as a linear-history append. This step is unconditional — it runs every time the PR is still open, regardless of whether the branch was already up to date. A uniform rebase guarantees the merged history is linear and that CI runs against the exact commits that will land on the base branch.
 
-Fetch the base branch, rebase the worktree branch onto it, and force-push the result:
+Dispatch the rebase via the structured `worktree-rebase-to` verb so the result is consumed as a TOON payload (rather than ad-hoc shell parsing):
 
 ```bash
-git -C {worktree_path} fetch origin {base_branch}
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow \
+  worktree-rebase-to --plan-id {plan_id} --base {base_branch}
 ```
 
-```bash
-git -C {worktree_path} rebase origin/{base_branch}
-```
+Parse the returned TOON and branch on `status`:
 
-If `git rebase` exits with a non-zero status → ABORT cleanup with a fatal error. Conflicts must be resolved manually; the rebase is too destructive to recover automatically:
+- `status: success` (including `action: noop` when the branch was already at the base, or `action: rebased` when the rebase produced a new history) → continue to force-push-with-lease below.
+- `status: conflict` → ABORT cleanup with a fatal error. The rebase is left in progress with conflict markers so the user can inspect or abort manually. The classifier's merge-tree probe is best-effort — overlapping renames and a few other rare cases produce a clean probe but a real-rebase conflict. Log the returned `conflicts[]` file list and the conflict state:
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: rebase onto origin/{base_branch} failed — resolve conflicts in {worktree_path} manually and re-run finalize"
-```
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: worktree-rebase-to onto {base_branch} produced conflicts in {conflicts} — resolve manually in the worktree (rebase is left in progress) and re-run finalize"
+  ```
 
-Then return — do NOT proceed with force-push or merge.
+  Do NOT proceed with force-push, merge, or any cleanup. The conflicted rebase state is intentionally preserved so the user can run `git -C {worktree_path} rebase --continue` or `git -C {worktree_path} rebase --abort` as appropriate.
+
+- `status: error` → ABORT cleanup with a fatal error using the returned `error` and `message` fields:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: worktree-rebase-to failed - {error}: {message}"
+  ```
+
+  Then return — do NOT proceed with force-push or merge.
 
 On a successful rebase, push the rewritten history to the remote with a lease guard:
 
