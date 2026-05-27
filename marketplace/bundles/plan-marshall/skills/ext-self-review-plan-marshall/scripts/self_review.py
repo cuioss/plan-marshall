@@ -2,7 +2,6 @@
 """Deterministic candidate surfacing for the pre-submission-self-review finalize step.
 
 Reads the worktree's diff against the base branch, scans added lines in modified
-<<<<<<< HEAD
 files, and emits seven candidate lists (regexes, user-facing strings, markdown
 sections, symmetric-pair functions, contract sources, schema-bearing files,
 keep-identifier markers) as TOON for the LLM cognitive review pass to consume.

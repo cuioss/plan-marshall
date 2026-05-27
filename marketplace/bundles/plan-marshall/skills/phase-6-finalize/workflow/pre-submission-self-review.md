@@ -160,7 +160,7 @@ Record the outcome on the live plan so the `phase_steps_complete` handshake inva
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step pre-submission-self-review --outcome done \
+  --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-pre-submission-self-review --outcome done \
   --display-detail "{display_detail_from_workflow}"
 ```
 
@@ -168,7 +168,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step pre-submission-self-review --outcome failed \
+  --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-pre-submission-self-review --outcome failed \
   --display-detail "{display_detail_from_workflow}"
 ```
 

@@ -217,6 +217,8 @@ This synchronizes all bundles from `marketplace/bundles/` to `~/.claude/plugins/
 
 Cluster 02 onward, the slash command and its finalize-step counterpart are project-local under `.claude/skills/` (`.claude/skills/sync-plugin-cache/` for the engine + `/sync-plugin-cache` invocable, `.claude/skills/finalize-step-{deploy-target,sync-plugin-cache}/` for the phase-6 bodies). They read from `target/claude/` (populated by `python3 marketplace/targets/generate.py --target claude --output target/claude`, or by the project-local `project:finalize-step-deploy-target` step) and refuse to sync when that directory is missing or stale relative to `marketplace/bundles/`. Consumer projects of plan-marshall do not get any of this surface — it is meta-project-only.
 
+For manual recovery scenarios where a commit landed without running phase-6-finalize (e.g. lesson `2026-05-20-08-005`), see [`doc/developer/manual-sync-recovery.adoc`](doc/developer/manual-sync-recovery.adoc) for the symptom → command decision table.
+
 ### Registered Marketplace Path
 
 The Claude Code marketplace registration MUST point at `target/claude/`, not at the source `marketplace/` directory. The source `marketplace/bundles/<bundle>/.claude-plugin/plugin.json` declares only the canonical agent files; the build target expands each role-eligible agent into per-level variants (`{name}-low.md` through `{name}-xxhigh.md`) under `target/claude/<bundle>/agents/` and emits a variant-aware `plugin.json` plus a top-level `target/claude/.claude-plugin/marketplace.json`. Registering the source path makes Claude Code's plugin loader install only the canonicals, so every dispatch site that resolves to `execution-context-{level}` fails with `Agent type not found`.

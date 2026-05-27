@@ -78,6 +78,8 @@ Execute the git_workflow skill's **Workflow: Commit Changes** with:
 
 `commit-push` is a member of `HEAD_DEPENDENT_STEPS` (see `phase-6-finalize/SKILL.md` § HEAD-dependent steps). A loop-back fix task may produce a fresh commit *after* a prior `commit-push` recorded `outcome=done` against the now-stale HEAD; without HEAD-comparison the dispatcher would skip `commit-push` on re-entry and leave the fix-task changes staged-but-uncommitted. To make the comparison meaningful, capture the live HEAD before `mark-step-done`:
 
+**Dirty-tree re-entry**: the dispatcher's re-entry check for `commit-push` additionally consults `git status --porcelain` — see the `outcome == done AND head_at_completion == HEAD` (dirty) row of the HEAD-dependent re-entry table in `phase-6-finalize/SKILL.md` § HEAD-dependent steps. When a loop-back fix task mutates the worktree without producing a commit (e.g., the fix step ran but its commit step was deferred), the persisted `commit-push` record matches HEAD but the worktree is dirty — the dirty-tree row forces RE-FIRE so the staged changes are committed instead of silently skipping `commit-push`. `commit-push` is the **only** `HEAD_DEPENDENT_STEPS` member for which this dirty-tree branch is meaningful; the other four members (`pre-push-quality-gate`, `automated-review`, `sonar-roundtrip`, `ci-verify`) are read-only validators that do not produce commits and continue to follow the HEAD-only rows of the table.
+
 ```bash
 git -C {worktree_path} rev-parse HEAD
 ```

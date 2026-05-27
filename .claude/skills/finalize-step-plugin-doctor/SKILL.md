@@ -46,12 +46,18 @@ Example: `marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md` →
 
 ### Step 3: Skip-clean exit
 
-If zero skill paths remain after filtering, log and return success:
+If zero skill paths remain after filtering, log, record the step as done, and return success:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
   --message "[STATUS] (project:finalize-step-plugin-doctor) No skill changes detected; skipping plugin-doctor scan"
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-plugin-doctor --outcome done \
+  --display-detail "no skill changes detected"
 ```
 
 ### Step 4: Invoke plugin-doctor
@@ -61,17 +67,30 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marke
   scan --paths {space-separated skill directory paths}
 ```
 
-On non-zero exit code or any rule violation in the output, log the failure and exit with status: error so phase-6-finalize aborts before the next step.
+On non-zero exit code or any rule violation in the output, log the failure, record the step outcome, and exit with status: error so phase-6-finalize aborts before the next step:
 
-On success, log and exit success.
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-plugin-doctor --outcome failed \
+  --display-detail "plugin-doctor: {N} violations"
+```
+
+On success, log, record the step as done, and exit success:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-plugin-doctor --outcome done \
+  --display-detail "plugin-doctor clean: {N} skills scanned"
+```
 
 ## Error Handling
 
 | Scenario | Action |
 |----------|--------|
 | Missing `pm-plugin-development` bundle | Fatal config error — the project opted into the wrapper without the dependency |
-| Empty modified_files | Skip-clean exit (no work to do) |
-| plugin-doctor rule violations | Fatal — verification step, violations must block finalize |
+| Empty modified_files | Skip-clean exit — record `mark-step-done --outcome done --display-detail "no skill changes detected"` so the `phase_steps_complete` handshake invariant counts the step as done |
+| plugin-doctor rule violations | Fatal — record `mark-step-done --outcome failed --display-detail "plugin-doctor: {N} violations"`, then abort finalize before the next step |
+| plugin-doctor clean | Record `mark-step-done --outcome done --display-detail "plugin-doctor clean: {N} skills scanned"` |
 
 ## Related
 
