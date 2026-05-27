@@ -1,6 +1,7 @@
 """Tests for the Claude verbatim emitter."""
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,22 @@ from marketplace.targets.claude.emitter import (
     emit_bundle_verbatim,
     iter_bundle_dirs,
 )
+from marketplace.targets.claude.target import EMIT_MARKER_FILENAME, ClaudeTarget
+
+# SHA-1 of empty input — the regression signal that the sentinel writer
+# computed the fingerprint against the wrong repo_root (one level too
+# deep), causing ``git ls-files`` to find zero tracked files under the
+# nonexistent ``marketplace/bundles`` prefix and SHA-1-ing the empty
+# stream. See marketplace/targets/claude/target.py line 153.
+_EMPTY_INPUT_SHA1 = 'da39a3ee5e6b4b0d3255bfef95601890afd80709'
+
+# Repository root: the directory that contains ``marketplace/``. The
+# test invokes ClaudeTarget().generate(...) with marketplace_dir pointing
+# at this repo's actual ``marketplace/bundles/`` so the sentinel writer
+# exercises the real git work tree (uncommitted edits are part of the
+# fingerprint by design — see source_fingerprint.py).
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_REAL_MARKETPLACE_BUNDLES = _REPO_ROOT / 'marketplace' / 'bundles'
 
 
 def _write_bundle(bundle_root: Path, bundle_name: str, files: dict[str, str | bytes]) -> Path:
@@ -176,3 +193,55 @@ def test_emit_bundle_verbatim_does_not_touch_sibling_bundles(tmp_path: Path):
     assert sibling_file.is_file()
     assert top_marketplace.is_file()
     assert (out_dir / 'a' / 'agents' / 'a-agent.md').is_file()
+
+
+def test_emit_marker_fingerprint_non_empty_for_real_worktree(tmp_path: Path):
+    """Regression test for the sentinel writer's repo_root resolution.
+
+    Before the fix, ``ClaudeTarget.generate`` resolved ``repo_root`` as
+    ``marketplace_dir.parent`` (i.e. ``marketplace/``), so the worktree
+    fingerprint helper ran ``git ls-files marketplace/bundles`` from
+    inside ``marketplace/`` — a prefix that does not exist relative to
+    that cwd. ``ls-files`` matched zero paths and the fingerprint became
+    the SHA-1 of empty input
+    (``da39a3ee5e6b4b0d3255bfef95601890afd80709``), silently breaking
+    the sync-plugin-cache staleness guard. The fix is
+    ``repo_root = marketplace_dir.parent.parent`` so the prefix resolves
+    against the project root that contains ``marketplace/``.
+
+    The test invokes the target against the *real* worktree so the
+    fingerprint is computed against the actual repository contents.
+    Skipped when ``git`` is unavailable (the fingerprint helper raises
+    ``FingerprintError`` in that case and the sentinel writer falls
+    through to ``source_tree_fingerprint: null``, which would mask the
+    regression signal).
+    """
+    if shutil.which('git') is None:
+        pytest.skip('git binary not on PATH — fingerprint cannot be computed')
+    if not _REAL_MARKETPLACE_BUNDLES.is_dir():
+        pytest.skip(f'real marketplace/bundles not found at {_REAL_MARKETPLACE_BUNDLES}')
+
+    output_dir = tmp_path / 'out'
+    ClaudeTarget().generate(_REAL_MARKETPLACE_BUNDLES, output_dir)
+
+    marker_path = output_dir / EMIT_MARKER_FILENAME
+    assert marker_path.is_file(), 'sentinel marker was not written'
+
+    payload = json.loads(marker_path.read_text(encoding='utf-8'))
+    fingerprint = payload.get('source_tree_fingerprint')
+    assert fingerprint is not None, (
+        'source_tree_fingerprint is None — the sentinel writer fell through '
+        'the FingerprintError branch. This indicates ``git`` is unavailable '
+        'OR ``marketplace_dir`` is outside a git work tree. The regression '
+        'test cannot exercise the empty-input signal when the fingerprint is '
+        'null.'
+    )
+    assert fingerprint != _EMPTY_INPUT_SHA1, (
+        f'source_tree_fingerprint == SHA-1 of empty input ({_EMPTY_INPUT_SHA1}). '
+        'The sentinel writer computed the fingerprint against the wrong '
+        'repo_root — ``git ls-files marketplace/bundles`` found zero tracked '
+        'files and SHA-1-ed the empty stream. Check that '
+        'marketplace/targets/claude/target.py line 153 reads '
+        '``repo_root = marketplace_dir.parent.parent`` (NOT '
+        '``marketplace_dir.parent``).'
+    )

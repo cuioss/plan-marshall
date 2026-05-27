@@ -138,8 +138,9 @@ class ClaudeTarget(TargetBase):
         # desired behavior). The fingerprint is computed against the
         # WORKTREE source tree under ``marketplace/bundles/`` via git's
         # own ``hash-object`` primitive so uncommitted edits change the
-        # digest. ``repo_root`` is the parent of ``marketplace_dir``
-        # (i.e., the project root that contains ``marketplace/``).
+        # digest. ``repo_root`` is the grandparent of ``marketplace_dir``
+        # (``marketplace_dir`` points at ``marketplace/bundles/``, so the
+        # project root that contains ``marketplace/`` is two levels up).
         #
         # When ``marketplace_dir`` is not inside a git work tree (ad-hoc
         # fixtures, tests with synthetic marketplaces), the fingerprint
@@ -149,7 +150,7 @@ class ClaudeTarget(TargetBase):
         # missing-fingerprint branch then refuses, which is the correct
         # behavior for a non-repo emit (it should never feed the host
         # plugin cache anyway).
-        repo_root = marketplace_dir.parent
+        repo_root = marketplace_dir.parent.parent
         fingerprint: str | None
         try:
             fingerprint = compute_source_tree_fingerprint(repo_root)
