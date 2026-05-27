@@ -34,7 +34,7 @@ Every consumer of `worktree_path` MUST treat it as a **tri-state** signal (opt-o
 
 == Parallel Plans
 
-Multiple plans can run simultaneously without contending for the main checkout's HEAD. Each worktree carries its own branch and index; the only shared state is the `.git/` repository (commits, refs, objects) and the `.plan/` metadata directory. Rebasing a long-running plan onto a moving baseline is handled by `worktree-rebase-to`, whose 8-state outcome matrix (clean-fast-forward, conflict-on-rebase, divergent-tags, …) is documented in link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md[`worktree-handling.md`] § `worktree-rebase-to`.
+Multiple plans can run simultaneously without contending for the main checkout's HEAD. Each worktree carries its own branch and index; the only shared state is the `.git/` repository (commits, refs, objects) and the `.plan/` metadata directory. Rebasing a long-running plan onto a moving baseline is handled by `worktree-rebase-to`, whose 8-state outcome matrix (clean, dirty, ahead, behind, conflict, …) is documented in link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md[`worktree-handling.md`] § `worktree-rebase-to`.
 
 == Cleanup
 
