@@ -91,7 +91,8 @@ def _read_plugin_json(bundle_dir: Path) -> dict:
     plugin_json = bundle_dir / '.claude-plugin' / 'plugin.json'
     if not plugin_json.exists():
         return {}
-    return json.loads(plugin_json.read_text(encoding='utf-8'))
+    parsed: dict = json.loads(plugin_json.read_text(encoding='utf-8'))
+    return parsed
 
 
 def _safe_rmtree(path: Path, output_dir: Path) -> None:

@@ -300,9 +300,10 @@ def _load_mapping(mapping_path: Path) -> dict:
     if not mapping_path.exists():
         return {}
     try:
-        return json.loads(mapping_path.read_text(encoding='utf-8'))
+        parsed: dict = json.loads(mapping_path.read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError):
         return {}
+    return parsed
 
 
 def supports_xhigh_effort(model_alias: str, mapping_path: Path) -> bool:

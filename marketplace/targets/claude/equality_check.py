@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field as _dc_field
 from pathlib import Path
 
 from marketplace.targets.claude.marketplace_json_gen import build_marketplace_json
@@ -56,8 +56,8 @@ class BundleDiff:
     field: str
     committed: list[str] | None
     generated: list[str] | None
-    only_in_committed: list[str] = field(default_factory=list)
-    only_in_generated: list[str] = field(default_factory=list)
+    only_in_committed: list[str] = _dc_field(default_factory=list)
+    only_in_generated: list[str] = _dc_field(default_factory=list)
 
 
 @dataclass
@@ -67,7 +67,7 @@ class EqualityResult:
     passed: bool
     diffs: list[BundleDiff]
     summary: str
-    missing_target_bundles: list[str] = field(default_factory=list)
+    missing_target_bundles: list[str] = _dc_field(default_factory=list)
     marketplace_json_drift: bool = False
 
 
@@ -110,7 +110,8 @@ def _read_emitted_plugin_json(bundle_dir: Path, target_dir: Path) -> dict:
     here.
     """
     plugin_json = _emitted_plugin_json_path(target_dir, bundle_dir.name)
-    return json.loads(plugin_json.read_text(encoding='utf-8'))
+    parsed: dict = json.loads(plugin_json.read_text(encoding='utf-8'))
+    return parsed
 
 
 def _diff_array(bundle: str, field_name: str, committed: list[str], generated: list[str]) -> BundleDiff | None:

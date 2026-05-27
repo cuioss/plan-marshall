@@ -58,7 +58,8 @@ def _read_committed(bundle_dir: Path) -> dict:
     plugin_json = bundle_dir / '.claude-plugin' / 'plugin.json'
     if not plugin_json.exists():
         raise FileNotFoundError(f'Bundle missing plugin.json: {plugin_json}')
-    return json.loads(plugin_json.read_text(encoding='utf-8'))
+    parsed: dict = json.loads(plugin_json.read_text(encoding='utf-8'))
+    return parsed
 
 
 _OPENCODE_MAPPING = Path(__file__).resolve().parent.parent / 'opencode' / 'mapping.json'
