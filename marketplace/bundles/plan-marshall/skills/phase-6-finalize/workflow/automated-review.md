@@ -135,6 +135,18 @@ The subagent's return TOON carries `findings_processed`, `findings_resolved`, `f
 
 When the subagent returns `status: loop_back` it has either created fix tasks (FIX outcomes) or filed an overflow envelope — both require the manifest dispatcher to re-fire `automated-review` on next phase-6-finalize entry.
 
+#### Heartbeat-emission contract (consumer-side observability)
+
+The dispatched `verification-feedback` subagent (with `producer=pr-comment`) MUST emit a `[STATUS] processing comment thread N/M` work-log line every 3-5 comment threads it processes, where `N` is the current thread index (1-based) and `M` is the total pending `pr-comment` count returned by the gate-keeping `manage-findings list` query above. The cadence is normative — emission MAY occur on any thread within the 3-5 window (e.g., every 3rd, 4th, or 5th thread), but the orchestrator MUST observe at least one heartbeat per 5-thread span. The line is written via the standard work-log surface so it lands in the same `work.log` sink the orchestrator polls:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[STATUS] (plan-marshall:phase-6-finalize:verification-feedback) processing comment thread {N}/{M}"
+```
+
+This contract lets the orchestrator distinguish between an in-progress triage run and a stalled subagent without waiting for the 15-minute dispatch timeout to fire. The instruction is consumer-side documentation — the runtime emission lives in the dispatched triage workflow body, but `automated-review.md` is the doc that names the marker shape, the cadence, and the `N`/`M` semantics so a reader following the phase-6 orchestration flow encounters the contract in context.
+
 ### Handle findings (loop-back)
 
 The triage subagent above allocated fix tasks and posted reviewer-facing thread replies inline (see the FIX action body in [`triage.md`](triage.md)). This section only handles the loop-back bookkeeping.

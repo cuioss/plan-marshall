@@ -42,12 +42,34 @@ Before loading `manage-lessons` and BEFORE any `Task:` dispatch, evaluate three 
 
 **Signal 1 — pending Q-Gate findings**:
 
+`manage-findings qgate list` requires `--phase` — the argument is intentionally required by `manage-findings.py` and is NOT being relaxed by this gate. To sample all phases that can carry pending Q-Gate findings, issue five per-phase invocations and sum the returned `total_count` values; the gate decision is based on the **sum** of the five counts:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  qgate list --plan-id {plan_id} --resolution pending
+  qgate list --plan-id {plan_id} --phase 2-refine --resolution pending
 ```
 
-Parse `total_count` from the TOON output. Non-zero ⇒ continue past the gate.
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate list --plan-id {plan_id} --phase 3-outline --resolution pending
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate list --plan-id {plan_id} --phase 4-plan --resolution pending
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate list --plan-id {plan_id} --phase 5-execute --resolution pending
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate list --plan-id {plan_id} --phase 6-finalize --resolution pending
+```
+
+Parse `total_count` from each TOON output and sum the five values. Non-zero sum ⇒ continue past the gate.
 
 **Signal 2 — `automated-review` step outcome**:
 
