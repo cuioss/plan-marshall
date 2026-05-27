@@ -31,17 +31,11 @@ contamination (per project memory note on test isolation).
 
 from __future__ import annotations
 
-import json
-import os
-import shutil
-import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
 from conftest import (  # type: ignore[import-not-found]
-    PROJECT_ROOT,
     get_script_path,
 )
 
@@ -55,22 +49,6 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import _invariants as inv  # noqa: E402
-
-_SYNC_PY = PROJECT_ROOT / '.claude' / 'skills' / 'sync-plugin-cache' / 'scripts' / 'sync.py'
-
-
-# =============================================================================
-# Helpers
-# =============================================================================
-
-
-def _set_mtime(path: Path, mtime: float) -> None:
-    os.utime(path, (mtime, mtime))
-
-
-def _write(path: Path, content: str = '') -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding='utf-8')
 
 
 # =============================================================================
@@ -228,114 +206,12 @@ def test_b_worktree_orphan_no_op_when_no_orphan_dir(
 # C. sync-plugin-cache staleness guard
 # =============================================================================
 #
-# End-to-end scenario: drive sync.py via subprocess on a synthetic project
-# tree, then assert the rewritten staleness walk ignores transient
-# artifacts but trips on tracked source-file drift.
-
-
-def _make_marketplace(cwd: Path, bundles: dict[str, str]) -> None:
-    for name, version in bundles.items():
-        plugin_doc = json.dumps({'name': name, 'version': version}, indent=2) + '\n'
-        _write(
-            cwd / 'marketplace' / 'bundles' / name / '.claude-plugin' / 'plugin.json',
-            plugin_doc,
-        )
-        _write(cwd / 'marketplace' / 'bundles' / name / 'README.md', f'# {name}\n')
-
-
-def _make_target(cwd: Path, bundles: dict[str, str]) -> None:
-    for name, version in bundles.items():
-        plugin_doc = json.dumps({'name': name, 'version': version}, indent=2) + '\n'
-        _write(
-            cwd / 'target' / 'claude' / name / '.claude-plugin' / 'plugin.json',
-            plugin_doc,
-        )
-        _write(cwd / 'target' / 'claude' / name / 'README.md', f'# {name}\n')
-
-
-def _git_init(cwd: Path) -> None:
-    subprocess.run(['git', 'init', '-q'], cwd=cwd, check=True)
-    subprocess.run(['git', 'config', 'user.email', 't@t.test'], cwd=cwd, check=True)
-    subprocess.run(['git', 'config', 'user.name', 'Test'], cwd=cwd, check=True)
-    subprocess.run(['git', 'config', 'commit.gpgsign', 'false'], cwd=cwd, check=True)
-    subprocess.run(['git', 'add', '-A'], cwd=cwd, check=True)
-    subprocess.run(['git', 'commit', '-q', '-m', 'init'], cwd=cwd, check=True)
-
-
-def _run_sync(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(_SYNC_PY), *args],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        cwd=cwd,
-    )
-
-
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
-def test_c_staleness_guard_ignores_transient_pycache(tmp_path: Path) -> None:
-    """Pytest-style ``__pycache__/*.pyc`` newer than target MUST NOT trip the guard.
-
-    Reproduces the original failure mode: an operator runs ``pytest`` then
-    ``/sync-plugin-cache`` and the guard refused even though no source
-    drift occurred. The fix filters via the git-ignored probe AND the
-    transient denylist; this regression locks both paths in.
-    """
-    cwd = tmp_path / 'project'
-    cwd.mkdir()
-    _write(cwd / '.gitignore', '__pycache__/\n*.pyc\n')
-    _make_marketplace(cwd, {'demo': '0.1.0'})
-    _make_target(cwd, {'demo': '0.1.0'})
-    _git_init(cwd)
-
-    old = time.time() - 86400
-    new = time.time()
-    for path in (cwd / 'marketplace').rglob('*'):
-        if path.is_file():
-            _set_mtime(path, old)
-    for path in (cwd / 'target').rglob('*'):
-        if path.is_file():
-            _set_mtime(path, new)
-
-    # Drop a fresh .pyc inside __pycache__/.
-    pyc = cwd / 'marketplace' / 'bundles' / 'demo' / '__pycache__' / 'demo.cpython-311.pyc'
-    _write(pyc, 'fake bytecode')
-    _set_mtime(pyc, new + 60)
-
-    cache = tmp_path / 'cache'
-    result = _run_sync('--cache-root', str(cache), cwd=cwd)
-    assert result.returncode == 0, (
-        f'guard tripped on transient artifact (rc={result.returncode}): {result.stdout}'
-    )
-
-
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
-def test_c_staleness_guard_trips_on_tracked_source_drift(tmp_path: Path) -> None:
-    """Tracked ``.md`` source newer than target MUST trip the guard.
-
-    Belt-and-suspenders: filtering must NOT mask legitimate source-file
-    edits. Operators expect the staleness guard to refuse so they
-    regenerate before sync.
-    """
-    cwd = tmp_path / 'project'
-    cwd.mkdir()
-    _write(cwd / '.gitignore', '__pycache__/\n*.pyc\n')
-    _make_marketplace(cwd, {'demo': '0.1.0'})
-    _make_target(cwd, {'demo': '0.1.0'})
-    _git_init(cwd)
-
-    old = time.time() - 86400
-    new = time.time()
-    for path in (cwd / 'target').rglob('*'):
-        if path.is_file():
-            _set_mtime(path, old)
-    # Tracked source file gets a fresh mtime → drift.
-    tracked = cwd / 'marketplace' / 'bundles' / 'demo' / 'README.md'
-    _set_mtime(tracked, new)
-
-    result = _run_sync(cwd=cwd)
-    assert result.returncode == 2, (
-        f'guard failed to trip on tracked source change (rc={result.returncode}): {result.stdout}'
-    )
+# The mtime-based end-to-end scenarios that previously lived here were
+# removed as part of the sentinel-file staleness-guard cutover. The
+# sentinel-based equivalents — covering fresh emit / missing sentinel /
+# fingerprint mismatch / --skip-staleness-guard escape — live in
+# ``test/sync-plugin-cache/test_staleness_guard.py`` next to the script
+# under test. Locking the same behavior twice would create drift if one
+# side ever rewrites; the sync-side suite is authoritative.
 
 

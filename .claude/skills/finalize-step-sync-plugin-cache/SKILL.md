@@ -22,6 +22,35 @@ This step runs on the main checkout post-merge, after
 from the merged source tree. Syncing the host cache here means the
 next session boot and this sync read the same authoritative content.
 
+## Staleness guard
+
+`sync.py` refuses to mirror `target/claude/` into the cache unless the
+emit sentinel proves the target tree is current. The sentinel is a
+JSON file written by `project:finalize-step-deploy-target` at
+`target/claude/.emit-marker.json`. It carries an ISO-8601
+`emit_completed_at` timestamp and a `source_tree_fingerprint` computed
+from git's native `ls-files` / `hash-object` primitives over
+`marketplace/bundles/`.
+
+The guard refuses (exit code 2, `status: error`) in three cases:
+
+| Case | Cause | `summary_message` shape |
+|------|-------|-------------------------|
+| Sentinel absent | `project:finalize-step-deploy-target` was not run | `staleness_guard: sentinel missing or unreadable at {path} — run finalize-step-deploy-target first.` |
+| Sentinel unparseable / missing fingerprint | Corrupted or hand-edited sentinel | `staleness_guard: sentinel ... is missing source_tree_fingerprint.` |
+| Fingerprint mismatch | Source tree changed since last emit | `staleness_guard: source tree changed since last emit — re-run finalize-step-deploy-target.` |
+
+The Phase 6 ordering (`project:finalize-step-deploy-target` at 80 →
+`project:finalize-step-sync-plugin-cache` at 85) means the sentinel is
+written immediately before this step reads it, so the guard normally
+passes on the first try. A failure here points at deploy-target having
+been skipped, or at concurrent edits to `marketplace/bundles/` between
+emit and sync (which would also invalidate the cached output).
+
+The `--skip-staleness-guard` flag remains the escape hatch for tests and
+recovery flows. Phase 6 never invokes it; only operators do, after
+diagnosing why the sentinel is stale.
+
 ## Ordering
 
 The canonical Phase 6 ordering surrounding this step is:

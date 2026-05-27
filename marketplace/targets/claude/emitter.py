@@ -119,8 +119,6 @@ def emit_bundle_verbatim(bundle_dir: Path, output_dir: Path) -> list[Path]:
                 continue
 
         shutil.copyfile(source, dest)
-        # Preserve mtime to keep equality / staleness comparisons honest.
-        shutil.copystat(source, dest, follow_symlinks=False)
         written.append(dest)
     return written
 

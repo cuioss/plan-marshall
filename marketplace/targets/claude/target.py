@@ -24,6 +24,8 @@ The TOON return contains ``status``, ``emitted_count``,
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from marketplace.targets.base import TargetBase
@@ -31,6 +33,15 @@ from marketplace.targets.claude.emitter import emit_bundle_verbatim, iter_bundle
 from marketplace.targets.claude.equality_check import run_equality_check
 from marketplace.targets.claude.marketplace_json_gen import generate_marketplace_json
 from marketplace.targets.claude.plugin_json_gen import generate_plugin_json
+from marketplace.targets.claude.source_fingerprint import (
+    FingerprintError,
+    compute_source_tree_fingerprint,
+)
+
+# Sentinel file written at the end of every successful emit. The
+# project-local ``sync-plugin-cache`` skill reads it to decide whether
+# ``target/claude/`` is fresh relative to the worktree source tree.
+EMIT_MARKER_FILENAME = '.emit-marker.json'
 
 # Default ``target/claude/`` location used by validate mode when no
 # ``--output`` is provided. Resolved against the project root at import
@@ -120,5 +131,38 @@ class ClaudeTarget(TargetBase):
             # Mirror validate mode: equality failure must propagate so the
             # CLI returns EXIT_ERROR rather than a silent emit-and-pass.
             raise RuntimeError(equality.summary)
+
+        # Sentinel write — LAST step of the successful emit path. If
+        # anything above raises, the sentinel is not written and the
+        # staleness guard will refuse on the next sync (which is the
+        # desired behavior). The fingerprint is computed against the
+        # WORKTREE source tree under ``marketplace/bundles/`` via git's
+        # own ``hash-object`` primitive so uncommitted edits change the
+        # digest. ``repo_root`` is the parent of ``marketplace_dir``
+        # (i.e., the project root that contains ``marketplace/``).
+        #
+        # When ``marketplace_dir`` is not inside a git work tree (ad-hoc
+        # fixtures, tests with synthetic marketplaces), the fingerprint
+        # cannot be computed deterministically. Write the sentinel with
+        # ``source_tree_fingerprint: null`` so the file's presence is
+        # honest about its missing fingerprint — the sync guard's
+        # missing-fingerprint branch then refuses, which is the correct
+        # behavior for a non-repo emit (it should never feed the host
+        # plugin cache anyway).
+        repo_root = marketplace_dir.parent
+        fingerprint: str | None
+        try:
+            fingerprint = compute_source_tree_fingerprint(repo_root)
+        except FingerprintError:
+            fingerprint = None
+        marker_payload: dict[str, str | None] = {
+            'emit_completed_at': datetime.now(timezone.utc).isoformat(),
+            'source_tree_fingerprint': fingerprint,
+        }
+        marker_path = output_dir / EMIT_MARKER_FILENAME
+        marker_path.write_text(
+            json.dumps(marker_payload, indent=2) + '\n', encoding='utf-8'
+        )
+        emitted.append(marker_path)
 
         return emitted
