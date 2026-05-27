@@ -866,15 +866,17 @@ class ClaudeRuntime(Runtime):
         """
         if target == "claude":
             settings_path = _claude_project_settings_path()
-        elif target.startswith("/") and target.endswith(".json"):
-            settings_path = Path(target)
         else:
-            return toon_error(
-                "project install-hook",
-                "unknown_target",
-                f"target {target!r} must be the platform identifier 'claude' "
-                f"or an absolute path to a .json settings file",
-            )
+            candidate = Path(target)
+            if candidate.is_absolute() and candidate.suffix == ".json":
+                settings_path = candidate
+            else:
+                return toon_error(
+                    "project install-hook",
+                    "unknown_target",
+                    f"target {target!r} must be the platform identifier 'claude' "
+                    f"or an absolute path to a .json settings file",
+                )
 
         install_result = _install_terminal_title_hooks(
             settings_path,
