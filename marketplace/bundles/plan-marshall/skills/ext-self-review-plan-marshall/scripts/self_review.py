@@ -528,18 +528,25 @@ def _detect_keep_markers(
 
     for path, markers in by_file.items():
         post_image = _read_post_image(project_dir, path)
-        # Lines holding a marker are excluded from the grep so the marker
-        # comment's own copy of the identifier is not counted as evidence.
-        marker_line_numbers = {lineno for lineno, _ in markers}
+        # Exclude ALL lines containing a keep marker so no marker comment's
+        # own copy of the identifier (whether added in this diff or pre-existing)
+        # can mask a removal.  Using line-number exclusion was insufficient
+        # because it only covered markers added in the current diff, not
+        # pre-existing markers that also carry the identifier text.
         non_marker_lines = [
             line
-            for idx, line in enumerate(post_image, start=1)
-            if idx not in marker_line_numbers
+            for line in post_image
+            if not _KEEP_MARKER.search(line)
         ]
         non_marker_blob = '\n'.join(non_marker_lines)
 
         for lineno, identifier in markers:
-            still_present = identifier in non_marker_blob
+            # Use word-boundary guards to avoid false-positive substring matches
+            # (e.g. identifier 'body' matching inside 'nobody' or 'method_body').
+            pattern = re.compile(
+                r'(?<![a-zA-Z0-9_-])' + re.escape(identifier) + r'(?![a-zA-Z0-9_-])'
+            )
+            still_present = bool(pattern.search(non_marker_blob))
             kind = 'keep_protected' if still_present else 'keep_violation'
             candidates.append(
                 {
