@@ -31,7 +31,7 @@ Survey of every configuration surface a project author touches when running Plan
 
 | `.gitignore`
 | ✅ committed
-| The `.plan/*` block plus `!.plan/marshal.json` and `!.plan/project-architecture/` re-includes. See xref:getting-started.adoc#_where_things_live[Getting Started → Where things live].
+| The `.plan/*` block plus `!.plan/marshal.json` and `!.plan/project-architecture/` re-includes (the `.plan/*` exclusion also covers `.plan/local/worktrees/{plan-id}/` — no separate carve-out needed). See xref:getting-started.adoc#_where_things_live[Getting Started → Where things live].
 
 | VS Code user settings
 | n/a
@@ -115,6 +115,18 @@ Canonical contracts: link:../../marketplace/bundles/plan-marshall/skills/manage-
 
 Tune via `/marshall-steward` → Configuration → Skill Domains.
 
+[#worktrees]
+=== Branch strategy and worktrees
+
+How a plan decides whether to allocate a feature branch + isolated worktree, where the worktree lives on disk, and when materialization happens. Plan Marshall reads `plan.phase-1-init.branch_strategy` to drive the decision:
+
+* `feature` (default for new plans) — the orchestrator allocates a feature branch named `feature/{plan-id}` and an isolated worktree at `<project_root>/.plan/local/worktrees/{plan-id}/`. `status.metadata.use_worktree` is set to `true`.
+* `main` — the plan runs against the main checkout without a worktree (intended for docs-only patches that do not need isolation).
+
+Worktrees are **deferred-materialized**: `phase-1-init` records the intent (`use_worktree`, `worktree_branch`) but does not allocate the directory. The worktree is created during `phase-5-execute` Step 2.5, immediately before the first task dispatch. Phases 2-4 (refine, outline, plan) run against the main checkout because they only produce `.plan/` artifacts and have no source-code changes to isolate.
+
+The `.plan/*` exclusion in `.gitignore` covers `.plan/local/worktrees/{plan-id}/` automatically — no per-worktree carve-out is needed. The conceptual overview (lifecycle states, tri-state assertion contract, parallel-plan rebase semantics) lives in xref:../concepts/branches-and-worktrees.adoc[Concepts › Branches and Worktrees]; the canonical contract (path resolution, dispatch protocol, `git -C` rule, cleanup ordering) lives in link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md[`workflow-integration-git/standards/worktree-handling.md`].
+
 == Configuration outside `.plan/`
 
 === `CLAUDE.md` and `agents.md`
@@ -145,6 +157,7 @@ Three paths, in increasing order of automation:
 
 * xref:../concepts/execution-context.adoc#per-role-model-selection[Concepts › Execution Context › Per-Role Model Selection] — three-layer overview (levels, roles, variants)
 * xref:../concepts/execution-context.adoc[Concepts › Execution Context] — why edits take effect on the next dispatch
+* xref:../concepts/branches-and-worktrees.adoc[Concepts › Branches and Worktrees] — `branch_strategy`, deferred materialization, the `.plan/local/worktrees/` path layout
 * link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] — canonical marshal.json schema
 * link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/api-reference.md[`api-reference.md`] — `manage-config` CLI reference
 * link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md[`effort-variants.md`] — canonical user-facing effort/model guide
