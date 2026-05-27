@@ -37,7 +37,7 @@ from _resolve_project_dir_fixtures import (  # type: ignore[import-not-found]
     patch_query_worktree_path,
 )
 
-from conftest import PlanContext, get_script_path, run_script  # type: ignore[import-not-found]
+from conftest import get_script_path, run_script  # type: ignore[import-not-found]
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-references', 'manage-references.py')
 
@@ -92,28 +92,27 @@ def test_diff_files_requires_worktree_path():
 # =============================================================================
 
 
-def test_diff_files_returns_structured_error_for_missing_worktree(tmp_path):
+def test_diff_files_returns_structured_error_for_missing_worktree(plan_context, tmp_path):
     """A non-existent --worktree-path must yield a structured TOON error."""
-    with PlanContext(plan_id='diff-files-bogus-worktree'):
-        # Seed a minimal references.json so the script reaches the worktree check.
-        # We bypass that detail by deliberately picking a path that does not exist.
-        result = run_script(
-            SCRIPT_PATH,
-            'diff-files',
-            '--plan-id',
-            'diff-files-bogus-worktree',
-            '--worktree-path',
-            str(tmp_path / 'does-not-exist'),
-        )
-        # The handler returns a TOON error — exit code is non-zero.
-        assert result.returncode != 0
-        # Either worktree_not_found (path missing) or references_not_found
-        # (no references.json yet) — both exercise the structured error path.
-        assert (
-            'worktree_not_found' in result.stdout
-            or 'references_not_found' in result.stdout
-            or 'invalid_plan_id' in result.stdout
-        ), f'Expected structured error TOON, got: {result.stdout!r}'
+    # Seed a minimal references.json so the script reaches the worktree check.
+    # We bypass that detail by deliberately picking a path that does not exist.
+    result = run_script(
+        SCRIPT_PATH,
+        'diff-files',
+        '--plan-id',
+        'diff-files-bogus-worktree',
+        '--worktree-path',
+        str(tmp_path / 'does-not-exist'),
+    )
+    # The handler returns a TOON error — exit code is non-zero.
+    assert result.returncode != 0
+    # Either worktree_not_found (path missing) or references_not_found
+    # (no references.json yet) — both exercise the structured error path.
+    assert (
+        'worktree_not_found' in result.stdout
+        or 'references_not_found' in result.stdout
+        or 'invalid_plan_id' in result.stdout
+    ), f'Expected structured error TOON, got: {result.stdout!r}'
 
 
 # =============================================================================

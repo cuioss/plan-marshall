@@ -12,6 +12,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+
+from _arch_fixtures import setup_test_project  # noqa: E402
+
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
     / 'marketplace'
@@ -35,9 +39,6 @@ _architecture_core = _load_module('_architecture_core', '_architecture_core.py')
 _cmd_enrich = _load_module('_cmd_enrich', '_cmd_enrich.py')
 
 ModuleNotFoundInProjectError = _architecture_core.ModuleNotFoundInProjectError
-save_project_meta = _architecture_core.save_project_meta
-save_module_derived = _architecture_core.save_module_derived
-save_module_enriched = _architecture_core.save_module_enriched
 load_module_enriched = _architecture_core.load_module_enriched
 enrich_add_domain = _cmd_enrich.enrich_add_domain
 
@@ -56,46 +57,7 @@ def _extract_skill_names(profile_data: dict) -> list[str]:
     return skills
 
 
-def _empty_enrichment_stub() -> dict:
-    return {
-        'responsibility': '',
-        'purpose': '',
-        'key_packages': {},
-        'skills_by_profile': {},
-        'skills_by_profile_reasoning': '',
-    }
-
-
-def setup_test_project(tmpdir: str, modules: dict | None = None) -> None:
-    """Seed ``_project.json`` plus per-module ``derived.json`` and empty
-    ``enriched.json`` stubs for every module."""
-    if modules is None:
-        modules = {
-            'module-a': {
-                'name': 'module-a',
-                'build_systems': ['maven'],
-                'paths': {'module': 'module-a', 'sources': ['src/main/java'], 'tests': ['src/test/java']},
-                'metadata': {},
-                'packages': {},
-                'dependencies': ['jakarta.enterprise.cdi-api:jakarta.enterprise:compile'],
-                'commands': {},
-                'stats': {'source_files': 10, 'test_files': 5},
-            }
-        }
-
-    save_project_meta(
-        {
-            'name': 'test-project',
-            'description': '',
-            'description_reasoning': '',
-            'extensions_used': [],
-            'modules': {name: {} for name in modules},
-        },
-        tmpdir,
-    )
-    for name, data in modules.items():
-        save_module_derived(name, data, tmpdir)
-        save_module_enriched(name, _empty_enrichment_stub(), tmpdir)
+# ``setup_test_project`` hoisted to ``_fixtures.py`` (see top-of-file import).
 
 
 # =============================================================================

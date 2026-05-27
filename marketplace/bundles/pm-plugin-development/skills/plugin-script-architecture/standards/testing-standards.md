@@ -76,43 +76,44 @@ if __name__ == '__main__':
     sys.exit(runner.run())
 ```
 
-### Option 2: Class-Based Style (For complex scripts with setup/teardown)
+### Option 2: Pytest Class Style (For grouping related tests)
 
 ```python
 #!/usr/bin/env python3
 """Tests for manage-adr.py script."""
 
 import sys
-import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import ScriptTestCase
+import pytest
 
-class TestManageAdr(ScriptTestCase):
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from conftest import get_script_path, run_script
+
+SCRIPT_PATH = get_script_path('pm-documents', 'manage-adr', 'manage-adr.py')
+
+
+class TestManageAdr:
     """Test ADR management script."""
 
-    bundle = 'pm-documents'
-    skill = 'manage-adr'
-    script = 'manage-adr.py'
-
-    def test_create_adr(self):
+    def test_create_adr(self, tmp_path):
         """Test creating a new ADR."""
-        result = self.run_script('create', '--title', 'Use PostgreSQL')
-        self.assert_success(result)
+        result = run_script(SCRIPT_PATH, 'create', '--title', 'Use PostgreSQL', cwd=tmp_path)
+        assert result.success, f'Script failed: {result.stderr}'
         data = result.json()
-        self.assertEqual(data['number'], 1)
-        self.assertIn('001-Use_PostgreSQL.adoc', data['path'])
+        assert data['number'] == 1
+        assert '001-Use_PostgreSQL.adoc' in data['path']
 
-    def test_list_empty(self):
+    def test_list_empty(self, tmp_path):
         """Test listing ADRs when none exist."""
-        result = self.run_script('list')
-        self.assert_success(result)
+        result = run_script(SCRIPT_PATH, 'list', cwd=tmp_path)
+        assert result.success, f'Script failed: {result.stderr}'
         data = result.json()
-        self.assertEqual(data['count'], 0)
+        assert data['count'] == 0
+
 
 if __name__ == '__main__':
-    unittest.main()
+    pytest.main([__file__, '-v'])
 ```
 
 ## Required Test Categories
@@ -408,21 +409,6 @@ path = get_script_path('planning', 'plan-files', 'parse-plan.py')
 ### `conftest.create_temp_file(content, suffix='.md', dir=None)`
 
 Create a temporary file with content. Caller must delete.
-
-### `conftest.ScriptTestCase`
-
-Base class for unittest-style tests with automatic cleanup.
-
-**Class attributes**:
-- `bundle` - Bundle name
-- `skill` - Skill name
-- `script` - Script filename
-
-**Methods**:
-- `run_script(*args)` - Run the configured script
-- `run_script_with_file(content, *args)` - Create temp file and run
-- `assert_success(result)` - Assert returncode == 0
-- `assert_failure(result)` - Assert returncode != 0
 
 ### `conftest.TestRunner`
 

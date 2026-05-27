@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
-from conftest import PlanContext, get_script_path, run_script  # type: ignore[import-not-found]
+from conftest import get_script_path, run_script  # type: ignore[import-not-found]
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
 
@@ -90,43 +90,43 @@ def _data_rows(content: str) -> list[str]:
 # =============================================================================
 
 
-def test_first_invocation_creates_file_with_one_row():
+def test_first_invocation_creates_file_with_one_row(plan_context):
     """The first record-dispatch-boundary call writes the header and exactly one data row."""
-    with PlanContext(plan_id='disp-first') as ctx:
-        _seed_status_json(ctx.plan_dir)
-        result = cmd_record_dispatch_boundary(
-            _ns(
-                'disp-first',
-                phase='5-execute',
-                termination_cause='voluntary_checkpoint',
-                total_tokens=12345,
-                tool_uses=10,
-                duration_ms=60000,
-            )
+    plan_dir = plan_context.plan_dir_for('disp-first')
+    _seed_status_json(plan_dir)
+    result = cmd_record_dispatch_boundary(
+        _ns(
+            'disp-first',
+            phase='5-execute',
+            termination_cause='voluntary_checkpoint',
+            total_tokens=12345,
+            tool_uses=10,
+            duration_ms=60000,
         )
+    )
 
-        assert result['status'] == 'success'
-        assert result['phase'] == '5-execute'
-        assert result['termination_cause'] == 'voluntary_checkpoint'
-        assert result['total_tokens'] == 12345
-        assert result['tool_uses'] == 10
-        assert result['duration_ms'] == 60000
-        assert result['rows_recorded'] == 1
-        assert result['dispatch_boundary_file'] == 'work/metrics-dispatch-boundaries-5-execute.toon'
+    assert result['status'] == 'success'
+    assert result['phase'] == '5-execute'
+    assert result['termination_cause'] == 'voluntary_checkpoint'
+    assert result['total_tokens'] == 12345
+    assert result['tool_uses'] == 10
+    assert result['duration_ms'] == 60000
+    assert result['rows_recorded'] == 1
+    assert result['dispatch_boundary_file'] == 'work/metrics-dispatch-boundaries-5-execute.toon'
 
-        path = _boundary_path(ctx.plan_dir, '5-execute')
-        assert path.exists()
-        content = path.read_text(encoding='utf-8')
+    path = _boundary_path(plan_dir, '5-execute')
+    assert path.exists()
+    content = path.read_text(encoding='utf-8')
 
-        # Header lines present
-        assert 'plan_id: disp-first' in content
-        assert 'phase: 5-execute' in content
-        assert 'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:' in content
+    # Header lines present
+    assert 'plan_id: disp-first' in content
+    assert 'phase: 5-execute' in content
+    assert 'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:' in content
 
-        # Exactly one data row
-        rows = _data_rows(content)
-        assert len(rows) == 1
-        assert ',voluntary_checkpoint,12345,10,60000' in rows[0]
+    # Exactly one data row
+    rows = _data_rows(content)
+    assert len(rows) == 1
+    assert ',voluntary_checkpoint,12345,10,60000' in rows[0]
 
 
 # =============================================================================
@@ -134,41 +134,41 @@ def test_first_invocation_creates_file_with_one_row():
 # =============================================================================
 
 
-def test_subsequent_invocations_append_rows_in_order_with_monotonic_timestamps():
+def test_subsequent_invocations_append_rows_in_order_with_monotonic_timestamps(plan_context):
     """Successive invocations append rows in chronological order, header preserved."""
-    with PlanContext(plan_id='disp-append') as ctx:
-        _seed_status_json(ctx.plan_dir)
-        cmd_record_dispatch_boundary(
-            _ns('disp-append', termination_cause='voluntary_checkpoint', total_tokens=100)
-        )
-        # Force a measurable timestamp delta so monotonicity is observable even on
-        # platforms where the iso-second granularity is coarse.
-        time.sleep(1.05)
-        cmd_record_dispatch_boundary(
-            _ns('disp-append', termination_cause='task_complete_returned_verbatim', total_tokens=200)
-        )
-        time.sleep(1.05)
-        result = cmd_record_dispatch_boundary(
-            _ns('disp-append', termination_cause='harness_cancellation', total_tokens=300)
-        )
+    plan_dir = plan_context.plan_dir_for('disp-append')
+    _seed_status_json(plan_dir)
+    cmd_record_dispatch_boundary(
+        _ns('disp-append', termination_cause='voluntary_checkpoint', total_tokens=100)
+    )
+    # Force a measurable timestamp delta so monotonicity is observable even on
+    # platforms where the iso-second granularity is coarse.
+    time.sleep(1.05)
+    cmd_record_dispatch_boundary(
+        _ns('disp-append', termination_cause='task_complete_returned_verbatim', total_tokens=200)
+    )
+    time.sleep(1.05)
+    result = cmd_record_dispatch_boundary(
+        _ns('disp-append', termination_cause='harness_cancellation', total_tokens=300)
+    )
 
-        assert result['rows_recorded'] == 3
+    assert result['rows_recorded'] == 3
 
-        path = _boundary_path(ctx.plan_dir)
-        content = path.read_text(encoding='utf-8')
-        rows = _data_rows(content)
-        assert len(rows) == 3
+    path = _boundary_path(plan_dir)
+    content = path.read_text(encoding='utf-8')
+    rows = _data_rows(content)
+    assert len(rows) == 3
 
-        # Order preserved by termination_cause column
-        assert ',voluntary_checkpoint,100,' in rows[0]
-        assert ',task_complete_returned_verbatim,200,' in rows[1]
-        assert ',harness_cancellation,300,' in rows[2]
+    # Order preserved by termination_cause column
+    assert ',voluntary_checkpoint,100,' in rows[0]
+    assert ',task_complete_returned_verbatim,200,' in rows[1]
+    assert ',harness_cancellation,300,' in rows[2]
 
-        # Timestamps strictly non-decreasing across appended rows
-        timestamps = [row.split(',', 1)[0] for row in rows]
-        assert timestamps == sorted(timestamps), (
-            f'Timestamps not monotonic across appended rows: {timestamps}'
-        )
+    # Timestamps strictly non-decreasing across appended rows
+    timestamps = [row.split(',', 1)[0] for row in rows]
+    assert timestamps == sorted(timestamps), (
+        f'Timestamps not monotonic across appended rows: {timestamps}'
+    )
 
 
 # =============================================================================
@@ -177,31 +177,31 @@ def test_subsequent_invocations_append_rows_in_order_with_monotonic_timestamps()
 
 
 @pytest.mark.parametrize('cause', list(DISPATCH_TERMINATION_CAUSES))
-def test_all_five_termination_causes_accepted(cause):
+def test_all_five_termination_causes_accepted(plan_context, cause):
     """Each member of the documented termination-cause enum is accepted as-is."""
     # plan_id slugs use kebab-case; map underscores → hyphens for the slug.
     plan_id = f'disp-cause-{cause.replace("_", "-")}'
-    with PlanContext(plan_id=plan_id) as ctx:
-        _seed_status_json(ctx.plan_dir)
-        result = cmd_record_dispatch_boundary(
-            _ns(
-                plan_id,
-                phase='5-execute',
-                termination_cause=cause,
-                total_tokens=1,
-                tool_uses=1,
-                duration_ms=1,
-            )
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    _seed_status_json(plan_dir)
+    result = cmd_record_dispatch_boundary(
+        _ns(
+            plan_id,
+            phase='5-execute',
+            termination_cause=cause,
+            total_tokens=1,
+            tool_uses=1,
+            duration_ms=1,
         )
-        assert result['status'] == 'success'
-        assert result['termination_cause'] == cause
+    )
+    assert result['status'] == 'success'
+    assert result['termination_cause'] == cause
 
-        path = _boundary_path(ctx.plan_dir, '5-execute')
-        content = path.read_text(encoding='utf-8')
-        # Only one data row, and it carries the requested cause verbatim.
-        rows = _data_rows(content)
-        assert len(rows) == 1
-        assert f',{cause},1,1,1' in rows[0]
+    path = _boundary_path(plan_dir, '5-execute')
+    content = path.read_text(encoding='utf-8')
+    # Only one data row, and it carries the requested cause verbatim.
+    rows = _data_rows(content)
+    assert len(rows) == 1
+    assert f',{cause},1,1,1' in rows[0]
 
 
 # =============================================================================
@@ -209,22 +209,21 @@ def test_all_five_termination_causes_accepted(cause):
 # =============================================================================
 
 
-def test_invalid_termination_cause_rejected_subprocess_no_file_written():
+def test_invalid_termination_cause_rejected_subprocess_no_file_written(plan_context):
     """An out-of-enum termination_cause value rejects the run before any file write."""
-    with PlanContext(plan_id='disp-bad-cause') as ctx:
-        result = run_script(
-            SCRIPT_PATH,
-            'record-dispatch-boundary',
-            '--plan-id',
-            'disp-bad-cause',
-            '--phase',
-            '5-execute',
-            '--termination-cause',
-            'definitely-not-a-real-cause',
-        )
-        assert result.returncode != 0, 'argparse rejection MUST yield non-zero exit'
-        # No artifact created.
-        assert not _boundary_path(ctx.plan_dir, '5-execute').exists()
+    result = run_script(
+        SCRIPT_PATH,
+        'record-dispatch-boundary',
+        '--plan-id',
+        'disp-bad-cause',
+        '--phase',
+        '5-execute',
+        '--termination-cause',
+        'definitely-not-a-real-cause',
+    )
+    assert result.returncode != 0, 'argparse rejection MUST yield non-zero exit'
+    # No artifact created.
+    assert not _boundary_path(plan_context.plan_dir_for('disp-bad-cause'), '5-execute').exists()
 
 
 # =============================================================================
@@ -232,19 +231,18 @@ def test_invalid_termination_cause_rejected_subprocess_no_file_written():
 # =============================================================================
 
 
-def test_missing_required_flag_rejected_subprocess_no_file_written():
+def test_missing_required_flag_rejected_subprocess_no_file_written(plan_context):
     """Omitting --termination-cause rejects the run before any file write."""
-    with PlanContext(plan_id='disp-missing-cause') as ctx:
-        result = run_script(
-            SCRIPT_PATH,
-            'record-dispatch-boundary',
-            '--plan-id',
-            'disp-missing-cause',
-            '--phase',
-            '5-execute',
-        )
-        assert result.returncode != 0, 'argparse rejection MUST yield non-zero exit'
-        assert not _boundary_path(ctx.plan_dir, '5-execute').exists()
+    result = run_script(
+        SCRIPT_PATH,
+        'record-dispatch-boundary',
+        '--plan-id',
+        'disp-missing-cause',
+        '--phase',
+        '5-execute',
+    )
+    assert result.returncode != 0, 'argparse rejection MUST yield non-zero exit'
+    assert not _boundary_path(plan_context.plan_dir_for('disp-missing-cause'), '5-execute').exists()
 
 
 # =============================================================================
@@ -252,35 +250,35 @@ def test_missing_required_flag_rejected_subprocess_no_file_written():
 # =============================================================================
 
 
-def test_toon_layout_parseable_by_parse_toon():
+def test_toon_layout_parseable_by_parse_toon(plan_context):
     """The header section parses cleanly via the canonical parse_toon helper."""
-    with PlanContext(plan_id='disp-parse') as ctx:
-        _seed_status_json(ctx.plan_dir)
-        cmd_record_dispatch_boundary(
-            _ns(
-                'disp-parse',
-                phase='5-execute',
-                termination_cause='voluntary_checkpoint',
-                total_tokens=42,
-                tool_uses=2,
-                duration_ms=4242,
-            )
+    plan_dir = plan_context.plan_dir_for('disp-parse')
+    _seed_status_json(plan_dir)
+    cmd_record_dispatch_boundary(
+        _ns(
+            'disp-parse',
+            phase='5-execute',
+            termination_cause='voluntary_checkpoint',
+            total_tokens=42,
+            tool_uses=2,
+            duration_ms=4242,
         )
+    )
 
-        path = _boundary_path(ctx.plan_dir)
-        content = path.read_text(encoding='utf-8')
-        parsed = parse_toon(content)
+    path = _boundary_path(plan_dir)
+    content = path.read_text(encoding='utf-8')
+    parsed = parse_toon(content)
 
-        # Header keys parse to their expected scalar values.
-        assert parsed['plan_id'] == 'disp-parse'
-        assert parsed['phase'] == '5-execute'
-        # parse_toon should have ingested the rows[] header without error.
-        # The exact representation of tabular bodies is parser-dependent, so
-        # we assert the document-level keys plus the presence of the data row
-        # in the raw content (already covered above by _data_rows).
-        rows = _data_rows(content)
-        assert len(rows) == 1
-        assert ',voluntary_checkpoint,42,2,4242' in rows[0]
+    # Header keys parse to their expected scalar values.
+    assert parsed['plan_id'] == 'disp-parse'
+    assert parsed['phase'] == '5-execute'
+    # parse_toon should have ingested the rows[] header without error.
+    # The exact representation of tabular bodies is parser-dependent, so
+    # we assert the document-level keys plus the presence of the data row
+    # in the raw content (already covered above by _data_rows).
+    rows = _data_rows(content)
+    assert len(rows) == 1
+    assert ',voluntary_checkpoint,42,2,4242' in rows[0]
 
 
 # =============================================================================
@@ -290,46 +288,45 @@ def test_toon_layout_parseable_by_parse_toon():
 # =============================================================================
 
 
-def test_clean_exit_queue_empty_accepted_as_canonical_clean_exit_value():
+def test_clean_exit_queue_empty_accepted_as_canonical_clean_exit_value(plan_context):
     """`clean_exit_queue_empty` is the canonical clean-exit value post-migration."""
     plan_id = 'disp-clean-exit'
-    with PlanContext(plan_id=plan_id) as ctx:
-        _seed_status_json(ctx.plan_dir)
-        result = cmd_record_dispatch_boundary(
-            _ns(
-                plan_id,
-                phase='5-execute',
-                termination_cause='clean_exit_queue_empty',
-                total_tokens=10,
-                tool_uses=5,
-                duration_ms=1234,
-            )
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    _seed_status_json(plan_dir)
+    result = cmd_record_dispatch_boundary(
+        _ns(
+            plan_id,
+            phase='5-execute',
+            termination_cause='clean_exit_queue_empty',
+            total_tokens=10,
+            tool_uses=5,
+            duration_ms=1234,
         )
-        assert result['status'] == 'success'
-        assert result['termination_cause'] == 'clean_exit_queue_empty'
+    )
+    assert result['status'] == 'success'
+    assert result['termination_cause'] == 'clean_exit_queue_empty'
 
-        path = _boundary_path(ctx.plan_dir, '5-execute')
-        content = path.read_text(encoding='utf-8')
-        rows = _data_rows(content)
-        assert len(rows) == 1
-        assert ',clean_exit_queue_empty,10,5,1234' in rows[0]
+    path = _boundary_path(plan_dir, '5-execute')
+    content = path.read_text(encoding='utf-8')
+    rows = _data_rows(content)
+    assert len(rows) == 1
+    assert ',clean_exit_queue_empty,10,5,1234' in rows[0]
 
 
-def test_legacy_unknown_termination_cause_rejected_no_file_written():
+def test_legacy_unknown_termination_cause_rejected_no_file_written(plan_context):
     """The legacy `unknown` value is rejected by argparse (no implicit fallback)."""
-    with PlanContext(plan_id='disp-legacy-unknown') as ctx:
-        result = run_script(
-            SCRIPT_PATH,
-            'record-dispatch-boundary',
-            '--plan-id',
-            'disp-legacy-unknown',
-            '--phase',
-            '5-execute',
-            '--termination-cause',
-            'unknown',
-        )
-        assert result.returncode != 0, 'argparse MUST reject the legacy `unknown` value'
-        assert not _boundary_path(ctx.plan_dir, '5-execute').exists()
+    result = run_script(
+        SCRIPT_PATH,
+        'record-dispatch-boundary',
+        '--plan-id',
+        'disp-legacy-unknown',
+        '--phase',
+        '5-execute',
+        '--termination-cause',
+        'unknown',
+    )
+    assert result.returncode != 0, 'argparse MUST reject the legacy `unknown` value'
+    assert not _boundary_path(plan_context.plan_dir_for('disp-legacy-unknown'), '5-execute').exists()
 
 
 def test_dispatch_termination_causes_does_not_contain_unknown():
@@ -405,28 +402,28 @@ def test_record_dispatch_boundary_rejects_plan_dir_missing_status_json_no_mkdir(
     assert not (half_dir / 'work').exists()
 
 
-def test_record_dispatch_boundary_with_initialized_plan_id_continues_to_work():
+def test_record_dispatch_boundary_with_initialized_plan_id_continues_to_work(plan_context):
     """Happy path: initialized plan_id (status.json present) → success.
 
     Pins that the require_plan_exists guard does not regress the existing
     cmd_record_dispatch_boundary contract for in-progress plans.
     """
-    with PlanContext(plan_id='disp-happy') as ctx:
-        _seed_status_json(ctx.plan_dir)
-        result = cmd_record_dispatch_boundary(
-            _ns(
-                'disp-happy',
-                phase='5-execute',
-                termination_cause='voluntary_checkpoint',
-                total_tokens=99,
-                tool_uses=3,
-                duration_ms=500,
-            )
+    plan_dir = plan_context.plan_dir_for('disp-happy')
+    _seed_status_json(plan_dir)
+    result = cmd_record_dispatch_boundary(
+        _ns(
+            'disp-happy',
+            phase='5-execute',
+            termination_cause='voluntary_checkpoint',
+            total_tokens=99,
+            tool_uses=3,
+            duration_ms=500,
         )
+    )
 
-        assert result['status'] == 'success'
-        assert result['plan_id'] == 'disp-happy'
-        assert result['rows_recorded'] == 1
-        # The boundaries file was written to the expected path.
-        path = _boundary_path(ctx.plan_dir, '5-execute')
-        assert path.exists()
+    assert result['status'] == 'success'
+    assert result['plan_id'] == 'disp-happy'
+    assert result['rows_recorded'] == 1
+    # The boundaries file was written to the expected path.
+    path = _boundary_path(plan_dir, '5-execute')
+    assert path.exists()

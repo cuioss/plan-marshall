@@ -18,7 +18,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from conftest import PlanContext, get_script_path, run_script
+from conftest import get_script_path, run_script
 
 # Script under test (for subprocess CLI plumbing tests)
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-github', 'github_pr.py')
@@ -104,19 +104,20 @@ class TestFetchCommentsWrapper(unittest.TestCase):
 # =============================================================================
 
 
-class TestCommentsStage(unittest.TestCase):
+def _stage_make_args(pr_number: int, plan_id: str):
+    class _Args:
+        pass
+
+    a = _Args()
+    a.pr_number = pr_number
+    a.plan_id = plan_id
+    return a
+
+
+class TestCommentsStage:
     """comments-stage writes one pr-comment finding per surviving comment."""
 
-    def _make_args(self, pr_number: int, plan_id: str):
-        class _Args:
-            pass
-
-        a = _Args()
-        a.pr_number = pr_number
-        a.plan_id = plan_id
-        return a
-
-    def test_stage_persists_substantive_comments_only(self):
+    def test_stage_persists_substantive_comments_only(self, plan_context):
         comments = [
             {
                 'id': 'C1',
@@ -138,38 +139,38 @@ class TestCommentsStage(unittest.TestCase):
             },
         ]
 
-        with PlanContext(plan_id='gh-pr-stage-1') as ctx:
-            with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
-                mock_fetch.return_value = {
-                    'status': 'success',
-                    'provider': 'github',
-                    'comments': comments,
-                    'total': len(comments),
-                    'unresolved': len(comments),
-                }
-                result = cmd_comments_stage(self._make_args(123, ctx.plan_id))
+        plan_context.plan_dir_for('gh-pr-stage-1')
+        with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': comments,
+                'total': len(comments),
+                'unresolved': len(comments),
+            }
+            result = cmd_comments_stage(_stage_make_args(123, 'gh-pr-stage-1'))
 
-            self.assertEqual(result['status'], 'success')
-            self.assertEqual(result['count_fetched'], 2)
-            self.assertEqual(result['count_skipped_noise'], 1)
-            self.assertEqual(result['count_stored'], 1)
-            self.assertIsNone(result['producer_mismatch_hash_id'])
+        assert result['status'] == 'success'
+        assert result['count_fetched'] == 2
+        assert result['count_skipped_noise'] == 1
+        assert result['count_stored'] == 1
+        assert result['producer_mismatch_hash_id'] is None
 
-            # Verify the finding made it into the per-type store.
-            from _findings_core import query_findings  # type: ignore[import-not-found]
+        # Verify the finding made it into the per-type store.
+        from _findings_core import query_findings  # type: ignore[import-not-found]
 
-            q = query_findings(ctx.plan_id, finding_type='pr-comment')
-            self.assertEqual(q['filtered_count'], 1)
-            stored = q['findings'][0]
-            self.assertEqual(stored['type'], 'pr-comment')
-            self.assertEqual(stored['file_path'], 'src/Main.java')
-            self.assertEqual(stored['line'], 42)
-            # The detail must carry kind, author, thread_id, comment_id, full body
-            self.assertIn('kind: inline', stored['detail'])
-            self.assertIn('thread_id: PRRT_a', stored['detail'])
-            self.assertIn('Please fix the null pointer here', stored['detail'])
+        q = query_findings('gh-pr-stage-1', finding_type='pr-comment')
+        assert q['filtered_count'] == 1
+        stored = q['findings'][0]
+        assert stored['type'] == 'pr-comment'
+        assert stored['file_path'] == 'src/Main.java'
+        assert stored['line'] == 42
+        # The detail must carry kind, author, thread_id, comment_id, full body
+        assert 'kind: inline' in stored['detail']
+        assert 'thread_id: PRRT_a' in stored['detail']
+        assert 'Please fix the null pointer here' in stored['detail']
 
-    def test_stage_skips_resolved_thread_comments(self):
+    def test_stage_skips_resolved_thread_comments(self, plan_context):
         """Comments on already-resolved threads are dropped by pre-filter 1 before the noise check; each drop increments count_skipped_noise.
 
         The ``resolved`` field is set by the provider (github_ops) on inline
@@ -200,56 +201,56 @@ class TestCommentsStage(unittest.TestCase):
             },
         ]
 
-        with PlanContext(plan_id='gh-pr-stage-resolved') as ctx:
-            with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
-                mock_fetch.return_value = {
-                    'status': 'success',
-                    'provider': 'github',
-                    'comments': comments,
-                    'total': len(comments),
-                    'unresolved': 1,
-                }
-                result = cmd_comments_stage(self._make_args(127, ctx.plan_id))
+        plan_context.plan_dir_for('gh-pr-stage-resolved')
+        with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': comments,
+                'total': len(comments),
+                'unresolved': 1,
+            }
+            result = cmd_comments_stage(_stage_make_args(127, 'gh-pr-stage-resolved'))
 
-            self.assertEqual(result['status'], 'success')
-            self.assertEqual(result['count_fetched'], 2)
-            # Resolved thread comment is counted in skipped_noise
-            self.assertEqual(result['count_skipped_noise'], 1)
-            self.assertEqual(result['count_stored'], 1)
-            self.assertIsNone(result['producer_mismatch_hash_id'])
+        assert result['status'] == 'success'
+        assert result['count_fetched'] == 2
+        # Resolved thread comment is counted in skipped_noise
+        assert result['count_skipped_noise'] == 1
+        assert result['count_stored'] == 1
+        assert result['producer_mismatch_hash_id'] is None
 
-            from _findings_core import query_findings  # type: ignore[import-not-found]
+        from _findings_core import query_findings  # type: ignore[import-not-found]
 
-            q = query_findings(ctx.plan_id, finding_type='pr-comment')
-            self.assertEqual(q['filtered_count'], 1)
-            stored = q['findings'][0]
-            # Only the open-thread comment survives
-            self.assertIn('PRRT_open', stored['detail'])
-            self.assertNotIn('PRRT_resolved', stored['detail'])
+        q = query_findings('gh-pr-stage-resolved', finding_type='pr-comment')
+        assert q['filtered_count'] == 1
+        stored = q['findings'][0]
+        # Only the open-thread comment survives
+        assert 'PRRT_open' in stored['detail']
+        assert 'PRRT_resolved' not in stored['detail']
 
-    def test_stage_no_comments(self):
-        with PlanContext(plan_id='gh-pr-stage-empty') as ctx:
-            with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
-                mock_fetch.return_value = {
-                    'status': 'success',
-                    'provider': 'github',
-                    'comments': [],
-                    'total': 0,
-                    'unresolved': 0,
-                }
-                result = cmd_comments_stage(self._make_args(124, ctx.plan_id))
-            self.assertEqual(result['count_fetched'], 0)
-            self.assertEqual(result['count_stored'], 0)
-            self.assertIsNone(result['producer_mismatch_hash_id'])
+    def test_stage_no_comments(self, plan_context):
+        plan_context.plan_dir_for('gh-pr-stage-empty')
+        with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': [],
+                'total': 0,
+                'unresolved': 0,
+            }
+            result = cmd_comments_stage(_stage_make_args(124, 'gh-pr-stage-empty'))
+        assert result['count_fetched'] == 0
+        assert result['count_stored'] == 0
+        assert result['producer_mismatch_hash_id'] is None
 
-    def test_stage_provider_error_propagates(self):
-        with PlanContext(plan_id='gh-pr-stage-err') as ctx:
-            with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
-                mock_fetch.return_value = {'status': 'error', 'error': 'auth'}
-                result = cmd_comments_stage(self._make_args(125, ctx.plan_id))
-            self.assertEqual(result['status'], 'error')
+    def test_stage_provider_error_propagates(self, plan_context):
+        plan_context.plan_dir_for('gh-pr-stage-err')
+        with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
+            mock_fetch.return_value = {'status': 'error', 'error': 'auth'}
+            result = cmd_comments_stage(_stage_make_args(125, 'gh-pr-stage-err'))
+        assert result['status'] == 'error'
 
-    def test_stage_count_mismatch_produces_qgate_finding(self):
+    def test_stage_count_mismatch_produces_qgate_finding(self, plan_context):
         """When count_stored != expected_stored, a (producer-mismatch) Q-Gate
         finding must be recorded so the LLM consumer sees the drift via
         manage-findings qgate query."""
@@ -274,41 +275,41 @@ class TestCommentsStage(unittest.TestCase):
             },
         ]
 
-        with PlanContext(plan_id='gh-pr-stage-mismatch') as ctx:
-            with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
-                mock_fetch.return_value = {
-                    'status': 'success',
-                    'provider': 'github',
-                    'comments': comments,
-                    'total': len(comments),
-                    'unresolved': len(comments),
-                }
-                # Force one add_finding call to fail so count_stored drifts
-                # below expected_stored; the second succeeds.
-                with patch('_findings_core.add_finding') as mock_add:
-                    def _side_effect(**kwargs):
-                        # First call (C1) fails; second (C2) succeeds.
-                        if mock_add.call_count == 1:
-                            return {'status': 'error', 'message': 'simulated store failure'}
-                        return {'status': 'success', 'hash_id': 'hash-' + str(mock_add.call_count)}
+        plan_context.plan_dir_for('gh-pr-stage-mismatch')
+        with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': comments,
+                'total': len(comments),
+                'unresolved': len(comments),
+            }
+            # Force one add_finding call to fail so count_stored drifts
+            # below expected_stored; the second succeeds.
+            with patch('_findings_core.add_finding') as mock_add:
+                def _side_effect(**kwargs):
+                    # First call (C1) fails; second (C2) succeeds.
+                    if mock_add.call_count == 1:
+                        return {'status': 'error', 'message': 'simulated store failure'}
+                    return {'status': 'success', 'hash_id': 'hash-' + str(mock_add.call_count)}
 
-                    mock_add.side_effect = _side_effect
-                    result = cmd_comments_stage(self._make_args(126, ctx.plan_id))
+                mock_add.side_effect = _side_effect
+                result = cmd_comments_stage(_stage_make_args(126, 'gh-pr-stage-mismatch'))
 
-            self.assertEqual(result['status'], 'success')
-            self.assertEqual(result['count_fetched'], 2)
-            self.assertEqual(result['count_skipped_noise'], 0)
-            self.assertEqual(result['count_stored'], 1)
-            self.assertIsNotNone(result['producer_mismatch_hash_id'])
+        assert result['status'] == 'success'
+        assert result['count_fetched'] == 2
+        assert result['count_skipped_noise'] == 0
+        assert result['count_stored'] == 1
+        assert result['producer_mismatch_hash_id'] is not None
 
-            from _findings_core import query_qgate_findings  # type: ignore[import-not-found]
+        from _findings_core import query_qgate_findings  # type: ignore[import-not-found]
 
-            q = query_qgate_findings(ctx.plan_id, phase='5-execute')
-            self.assertEqual(q['filtered_count'], 1)
-            qf = q['findings'][0]
-            self.assertTrue(qf['title'].startswith('(producer-mismatch)'))
-            self.assertEqual(qf['source'], 'qgate')
-            self.assertEqual(qf['type'], 'pr-comment')
+        q = query_qgate_findings('gh-pr-stage-mismatch', phase='5-execute')
+        assert q['filtered_count'] == 1
+        qf = q['findings'][0]
+        assert qf['title'].startswith('(producer-mismatch)')
+        assert qf['source'] == 'qgate'
+        assert qf['type'] == 'pr-comment'
 
 
 # =============================================================================

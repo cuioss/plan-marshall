@@ -31,8 +31,6 @@ import re
 import sys
 from pathlib import Path
 
-from conftest import PlanContext  # type: ignore[import-not-found]
-
 # ---------------------------------------------------------------------------
 # Source anchors
 # ---------------------------------------------------------------------------
@@ -119,7 +117,7 @@ class _StubCiWait:
 # ---------------------------------------------------------------------------
 
 
-def test_consume_failures_mode_returns_wait_failed_with_envelope_intact():
+def test_consume_failures_mode_returns_wait_failed_with_envelope_intact(plan_context):
     """In ``consume-failures`` mode, a CI failure MUST surface as
     ``wait_failed`` with ``failing_checks`` / ``wait_outcome`` forwarded —
     the same shape ``strict`` mode returns. The dispatcher uses the
@@ -127,115 +125,110 @@ def test_consume_failures_mode_returns_wait_failed_with_envelope_intact():
     step body.
     """
     plan_id = 'ci-verify-consume-failure'
-    with PlanContext(plan_id=plan_id):
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path='/tmp/wt',
-            pr_number=42,
-            ci_wait_runner=_StubCiWait(
-                {
-                    'status': 'success',
-                    'final_status': 'failure',
-                    'failing_checks': [
-                        {'name': 'lint', 'conclusion': 'FAILURE'},
-                    ],
-                    'wait_outcome': 'completed',
-                }
-            ),
-            git_head_resolver=_StubGitHead('abc12345'),
-            mode='consume-failures',
-        )
-        assert result['status'] == 'wait_failed'
-        assert result['ci_final_status'] == 'failure'
-        assert result['mode'] == 'consume-failures'
-        assert [c['name'] for c in result['failing_checks']] == ['lint']
-        assert result['wait_outcome'] == 'completed'
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path='/tmp/wt',
+        pr_number=42,
+        ci_wait_runner=_StubCiWait(
+            {
+                'status': 'success',
+                'final_status': 'failure',
+                'failing_checks': [
+                    {'name': 'lint', 'conclusion': 'FAILURE'},
+                ],
+                'wait_outcome': 'completed',
+            }
+        ),
+        git_head_resolver=_StubGitHead('abc12345'),
+        mode='consume-failures',
+    )
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'failure'
+    assert result['mode'] == 'consume-failures'
+    assert [c['name'] for c in result['failing_checks']] == ['lint']
+    assert result['wait_outcome'] == 'completed'
 
 
-def test_strict_mode_default_still_works():
+def test_strict_mode_default_still_works(plan_context):
     """Backwards compatibility: omitting ``mode`` defaults to strict and
     the return shape is unchanged for existing callers.
     """
     plan_id = 'ci-verify-strict-default'
-    with PlanContext(plan_id=plan_id):
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path='/tmp/wt',
-            pr_number=42,
-            ci_wait_runner=_StubCiWait(
-                {'status': 'success', 'final_status': 'success'}
-            ),
-            git_head_resolver=_StubGitHead('abc12345'),
-        )
-        assert result['status'] == 'wait_succeeded'
-        # ``mode`` is not surfaced on success returns — only on wait_failed.
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path='/tmp/wt',
+        pr_number=42,
+        ci_wait_runner=_StubCiWait(
+            {'status': 'success', 'final_status': 'success'}
+        ),
+        git_head_resolver=_StubGitHead('abc12345'),
+    )
+    assert result['status'] == 'wait_succeeded'
+    # ``mode`` is not surfaced on success returns — only on wait_failed.
 
 
-def test_invalid_mode_raises_runtime_error():
+def test_invalid_mode_raises_runtime_error(plan_context):
     plan_id = 'ci-verify-invalid-mode'
-    with PlanContext(plan_id=plan_id):
-        try:
-            resolve(
-                plan_id=plan_id,
-                worktree_path='/tmp/wt',
-                pr_number=42,
-                ci_wait_runner=_StubCiWait({'status': 'success', 'final_status': 'success'}),
-                git_head_resolver=_StubGitHead('abc'),
-                mode='bogus',
-            )
-        except RuntimeError as exc:
-            assert 'mode' in str(exc)
-        else:
-            raise AssertionError('Expected RuntimeError for invalid mode')
+    try:
+        resolve(
+            plan_id=plan_id,
+            worktree_path='/tmp/wt',
+            pr_number=42,
+            ci_wait_runner=_StubCiWait({'status': 'success', 'final_status': 'success'}),
+            git_head_resolver=_StubGitHead('abc'),
+            mode='bogus',
+        )
+    except RuntimeError as exc:
+        assert 'mode' in str(exc)
+    else:
+        raise AssertionError('Expected RuntimeError for invalid mode')
 
 
-def test_no_checks_returns_distinct_status_in_consume_failures_mode():
+def test_no_checks_returns_distinct_status_in_consume_failures_mode(plan_context):
     plan_id = 'ci-verify-no-checks-consume'
-    with PlanContext(plan_id=plan_id):
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path='/tmp/wt',
-            pr_number=42,
-            ci_wait_runner=_StubCiWait(
-                {
-                    'status': 'success',
-                    'final_status': 'none',
-                    'failing_checks': [],
-                    'wait_outcome': 'completed',
-                }
-            ),
-            git_head_resolver=_StubGitHead('abc'),
-            mode='consume-failures',
-        )
-        assert result['ci_final_status'] == 'no_checks'
-        assert result['mode'] == 'consume-failures'
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path='/tmp/wt',
+        pr_number=42,
+        ci_wait_runner=_StubCiWait(
+            {
+                'status': 'success',
+                'final_status': 'none',
+                'failing_checks': [],
+                'wait_outcome': 'completed',
+            }
+        ),
+        git_head_resolver=_StubGitHead('abc'),
+        mode='consume-failures',
+    )
+    assert result['ci_final_status'] == 'no_checks'
+    assert result['mode'] == 'consume-failures'
 
 
-def test_timeout_returns_deadline_exceeded_in_consume_failures_mode():
+def test_timeout_returns_deadline_exceeded_in_consume_failures_mode(plan_context):
     plan_id = 'ci-verify-timeout-consume'
-    with PlanContext(plan_id=plan_id):
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path='/tmp/wt',
-            pr_number=42,
-            ci_wait_runner=_StubCiWait(
-                {
-                    'status': 'error',
-                    'error': 'Timeout waiting for CI',
-                    'last_status': 'pending',
-                    'wait_outcome': 'deadline_exceeded',
-                    'failing_checks': [
-                        {'name': 'slow-deploy', 'conclusion': 'PENDING'},
-                    ],
-                }
-            ),
-            git_head_resolver=_StubGitHead('abc'),
-            mode='consume-failures',
-        )
-        assert result['status'] == 'wait_failed'
-        assert result['ci_final_status'] == 'timeout'
-        assert result['wait_outcome'] == 'deadline_exceeded'
-        assert result['mode'] == 'consume-failures'
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path='/tmp/wt',
+        pr_number=42,
+        ci_wait_runner=_StubCiWait(
+            {
+                'status': 'error',
+                'error': 'Timeout waiting for CI',
+                'last_status': 'pending',
+                'wait_outcome': 'deadline_exceeded',
+                'failing_checks': [
+                    {'name': 'slow-deploy', 'conclusion': 'PENDING'},
+                ],
+            }
+        ),
+        git_head_resolver=_StubGitHead('abc'),
+        mode='consume-failures',
+    )
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'timeout'
+    assert result['wait_outcome'] == 'deadline_exceeded'
+    assert result['mode'] == 'consume-failures'
 
 
 # ---------------------------------------------------------------------------

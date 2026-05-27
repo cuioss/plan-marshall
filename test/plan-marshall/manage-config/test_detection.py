@@ -15,7 +15,7 @@ from pathlib import Path
 from test_helpers import SCRIPT_PATH
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import PlanContext, run_script
+from conftest import run_script
 
 # =============================================================================
 # Test Cleanup - Ensure Isolation Between Tests
@@ -149,58 +149,55 @@ def create_minimal_marshal_json(fixture_dir: Path) -> Path:
 # =============================================================================
 
 
-def test_detect_domains_maven_project():
+def test_detect_domains_maven_project(plan_context):
     """Test detecting java domain from Maven project."""
-    with PlanContext() as ctx:
-        cleanup_project_files(ctx.fixture_dir)
-        create_simple_maven_project(ctx.fixture_dir)
-        create_minimal_marshal_json(ctx.fixture_dir)
+    cleanup_project_files(plan_context.fixture_dir)
+    create_simple_maven_project(plan_context.fixture_dir)
+    create_minimal_marshal_json(plan_context.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'detect', cwd=ctx.fixture_dir)
+    result = run_script(SCRIPT_PATH, 'skill-domains', 'detect', cwd=plan_context.fixture_dir)
 
-        assert result.success, f'Should succeed: {result.stderr}'
+    assert result.success, f'Should succeed: {result.stderr}'
 
-        # Verify java domain was added
-        verify = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java', cwd=ctx.fixture_dir)
-        assert verify.success, 'Java domain should exist'
+    # Verify java domain was added
+    verify = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java', cwd=plan_context.fixture_dir)
+    assert verify.success, 'Java domain should exist'
 
 
-def test_detect_domains_npm_project():
+def test_detect_domains_npm_project(plan_context):
     """Test detecting javascript domain from npm project."""
-    with PlanContext() as ctx:
-        cleanup_project_files(ctx.fixture_dir)
-        create_simple_npm_project(ctx.fixture_dir)
-        create_minimal_marshal_json(ctx.fixture_dir)
+    cleanup_project_files(plan_context.fixture_dir)
+    create_simple_npm_project(plan_context.fixture_dir)
+    create_minimal_marshal_json(plan_context.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'detect', cwd=ctx.fixture_dir)
+    result = run_script(SCRIPT_PATH, 'skill-domains', 'detect', cwd=plan_context.fixture_dir)
 
-        assert result.success, f'Should succeed: {result.stderr}'
+    assert result.success, f'Should succeed: {result.stderr}'
 
-        # Verify javascript domain was added
-        verify = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'javascript', cwd=ctx.fixture_dir)
-        assert verify.success, 'JavaScript domain should exist'
+    # Verify javascript domain was added
+    verify = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'javascript', cwd=plan_context.fixture_dir)
+    assert verify.success, 'JavaScript domain should exist'
 
 
-def test_detect_domains_multi_module_maven_no_javascript():
+def test_detect_domains_multi_module_maven_no_javascript(plan_context):
     """Test that multi-module Maven with nested npm doesn't add javascript at root."""
-    with PlanContext() as ctx:
-        cleanup_project_files(ctx.fixture_dir)
-        create_mixed_multi_module_project(ctx.fixture_dir)
-        create_minimal_marshal_json(ctx.fixture_dir)
+    cleanup_project_files(plan_context.fixture_dir)
+    create_mixed_multi_module_project(plan_context.fixture_dir)
+    create_minimal_marshal_json(plan_context.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'detect', cwd=ctx.fixture_dir)
+    result = run_script(SCRIPT_PATH, 'skill-domains', 'detect', cwd=plan_context.fixture_dir)
 
-        assert result.success, f'Should succeed: {result.stderr}'
+    assert result.success, f'Should succeed: {result.stderr}'
 
-        # Verify java domain exists
-        verify_java = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java', cwd=ctx.fixture_dir)
-        assert verify_java.success, 'Java domain should exist'
+    # Verify java domain exists
+    verify_java = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java', cwd=plan_context.fixture_dir)
+    assert verify_java.success, 'Java domain should exist'
 
-        # Verify javascript domain does NOT exist at root level
-        verify_js = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'javascript', cwd=ctx.fixture_dir)
-        assert 'error' in verify_js.stdout.lower(), (
-            'JavaScript should not be detected as root domain when only nested in modules'
-        )
+    # Verify javascript domain does NOT exist at root level
+    verify_js = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'javascript', cwd=plan_context.fixture_dir)
+    assert 'error' in verify_js.stdout.lower(), (
+        'JavaScript should not be detected as root domain when only nested in modules'
+    )
 
 
 # =============================================================================

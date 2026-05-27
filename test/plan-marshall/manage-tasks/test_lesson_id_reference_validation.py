@@ -31,8 +31,6 @@ from pathlib import Path
 
 import pytest
 
-from conftest import PlanContext
-
 # =============================================================================
 # Module loading — load _tasks_crud directly via importlib so we can patch
 # the module-level scan/verify bindings rather than the source bindings in
@@ -167,10 +165,10 @@ def _toon_task_body(
     return '\n'.join(lines) + '\n'
 
 
-def _seed_pending(ctx, body, slot='default'):
+def _seed_pending(plan_dir, body, slot='default'):
     """Write a TOON scratch file under the plan's pending-tasks dir so
     cmd_commit_add can consume it (mimics prepare-add → main-context Write)."""
-    pending_dir = ctx.plan_dir / 'work' / 'pending-tasks'
+    pending_dir = plan_dir / 'work' / 'pending-tasks'
     pending_dir.mkdir(parents=True, exist_ok=True)
     path = pending_dir / f'{slot}.toon'
     path.write_text(body, encoding='utf-8')
@@ -230,7 +228,7 @@ def patch_inventory(monkeypatch):
 # =============================================================================
 
 
-def test_commit_add_no_lesson_id_tokens_succeeds(patch_inventory):
+def test_commit_add_no_lesson_id_tokens_succeeds(plan_context, patch_inventory):
     """A task with no lesson-ID-shaped tokens must succeed; the scanner
     short-circuits and never queries the inventory."""
 
@@ -238,25 +236,25 @@ def test_commit_add_no_lesson_id_tokens_succeeds(patch_inventory):
     def _exploding_verify(_tokens):
         raise AssertionError('verify_lesson_ids_exist must not be called when no tokens are present')
 
-    with PlanContext(plan_id='lesson-ref-no-tokens') as ctx:
-        # Replace verify with the exploder for this test only.
-        original = _crud.verify_lesson_ids_exist
-        _crud.verify_lesson_ids_exist = _exploding_verify
-        try:
-            body = _toon_task_body(
-                title='Plain refactor',
-                description='No lesson IDs anywhere in here.',
-            )
-            _seed_pending(ctx, body)
+    # Replace verify with the exploder for this test only.
+    original = _crud.verify_lesson_ids_exist
+    _crud.verify_lesson_ids_exist = _exploding_verify
+    try:
+        plan_dir = plan_context.plan_dir_for('lesson-ref-no-tokens')
+        body = _toon_task_body(
+            title='Plain refactor',
+            description='No lesson IDs anywhere in here.',
+        )
+        _seed_pending(plan_dir, body)
 
-            result = cmd_commit_add(_commit_ns('lesson-ref-no-tokens'))
+        result = cmd_commit_add(_commit_ns('lesson-ref-no-tokens'))
 
-            # Arrange-Act-Assert: result is success and TASK-001.json exists.
-            assert result['status'] == 'success'
-            assert result['file'] == 'TASK-001.json'
-            assert (ctx.plan_dir / 'tasks' / 'TASK-001.json').is_file()
-        finally:
-            _crud.verify_lesson_ids_exist = original
+        # Arrange-Act-Assert: result is success and TASK-001.json exists.
+        assert result['status'] == 'success'
+        assert result['file'] == 'TASK-001.json'
+        assert (plan_dir / 'tasks' / 'TASK-001.json').is_file()
+    finally:
+        _crud.verify_lesson_ids_exist = original
 
 
 # =============================================================================
@@ -264,23 +262,23 @@ def test_commit_add_no_lesson_id_tokens_succeeds(patch_inventory):
 # =============================================================================
 
 
-def test_commit_add_real_lesson_id_succeeds(patch_inventory):
+def test_commit_add_real_lesson_id_succeeds(plan_context, patch_inventory):
     """A task citing a lesson ID that resolves against the inventory must
     succeed and produce a TASK file."""
     patch_inventory(REAL_LESSON_IDS)
 
-    with PlanContext(plan_id='lesson-ref-real') as ctx:
-        body = _toon_task_body(
-            title='Apply fix',
-            description=f'Per lesson {REAL_LESSON_IDS[0]}: refactor the parser.',
-        )
-        _seed_pending(ctx, body)
+    plan_dir = plan_context.plan_dir_for('lesson-ref-real')
+    body = _toon_task_body(
+        title='Apply fix',
+        description=f'Per lesson {REAL_LESSON_IDS[0]}: refactor the parser.',
+    )
+    _seed_pending(plan_dir, body)
 
-        result = cmd_commit_add(_commit_ns('lesson-ref-real'))
+    result = cmd_commit_add(_commit_ns('lesson-ref-real'))
 
-        assert result['status'] == 'success'
-        assert result['file'] == 'TASK-001.json'
-        assert (ctx.plan_dir / 'tasks' / 'TASK-001.json').is_file()
+    assert result['status'] == 'success'
+    assert result['file'] == 'TASK-001.json'
+    assert (plan_dir / 'tasks' / 'TASK-001.json').is_file()
 
 
 # =============================================================================
@@ -288,54 +286,54 @@ def test_commit_add_real_lesson_id_succeeds(patch_inventory):
 # =============================================================================
 
 
-def test_commit_add_phantom_lesson_id_aborts_atomically(patch_inventory):
+def test_commit_add_phantom_lesson_id_aborts_atomically(plan_context, patch_inventory):
     """A task citing a phantom lesson ID must hard-fail with the typed
     error payload AND must NOT create any TASK-NNN.json file."""
     patch_inventory(REAL_LESSON_IDS)  # phantom is NOT in this set
 
-    with PlanContext(plan_id='lesson-ref-phantom') as ctx:
-        body = _toon_task_body(
-            title='Bad task',
-            description=f'Cites phantom lesson {PHANTOM_IDS[0]} that does not exist.',
-        )
-        _seed_pending(ctx, body)
+    plan_dir = plan_context.plan_dir_for('lesson-ref-phantom')
+    body = _toon_task_body(
+        title='Bad task',
+        description=f'Cites phantom lesson {PHANTOM_IDS[0]} that does not exist.',
+    )
+    _seed_pending(plan_dir, body)
 
-        result = cmd_commit_add(_commit_ns('lesson-ref-phantom'))
+    result = cmd_commit_add(_commit_ns('lesson-ref-phantom'))
 
-        # Payload contract from _lesson_id_validation_error.
-        assert result['status'] == 'error'
-        assert result['error'] == 'validation_error'
-        assert result['validation_error'] == 'lesson_id_not_found'
-        assert result['unresolved_ids'] == [PHANTOM_IDS[0]]
-        assert result['task_index'] == 0
-        assert PHANTOM_IDS[0] in result['message']
+    # Payload contract from _lesson_id_validation_error.
+    assert result['status'] == 'error'
+    assert result['error'] == 'validation_error'
+    assert result['validation_error'] == 'lesson_id_not_found'
+    assert result['unresolved_ids'] == [PHANTOM_IDS[0]]
+    assert result['task_index'] == 0
+    assert PHANTOM_IDS[0] in result['message']
 
-        # Atomic-write contract: zero TASK files on failure.
-        task_dir = ctx.plan_dir / 'tasks'
-        # Directory may not exist at all when the abort happens before write.
-        if task_dir.exists():
-            assert list(task_dir.glob('TASK-*.json')) == []
+    # Atomic-write contract: zero TASK files on failure.
+    task_dir = plan_dir / 'tasks'
+    # Directory may not exist at all when the abort happens before write.
+    if task_dir.exists():
+        assert list(task_dir.glob('TASK-*.json')) == []
 
 
-def test_commit_add_phantom_payload_dedupes_and_sorts(patch_inventory):
+def test_commit_add_phantom_payload_dedupes_and_sorts(plan_context, patch_inventory):
     """Multiple unresolved IDs in title+description are returned
     deduplicated and sorted (per _lesson_id_validation_error contract)."""
     patch_inventory(REAL_LESSON_IDS)
 
-    with PlanContext(plan_id='lesson-ref-phantom-dedup') as ctx:
-        # Cite both phantoms twice across title and description; payload
-        # must collapse to a sorted unique list.
-        body = _toon_task_body(
-            title=f'Phantom {PHANTOM_IDS[1]}',
-            description=(f'See {PHANTOM_IDS[0]} and {PHANTOM_IDS[1]} again, plus {PHANTOM_IDS[0]} repeated.'),
-        )
-        _seed_pending(ctx, body)
+    # Cite both phantoms twice across title and description; payload
+    # must collapse to a sorted unique list.
+    plan_dir = plan_context.plan_dir_for('lesson-ref-phantom-dedup')
+    body = _toon_task_body(
+        title=f'Phantom {PHANTOM_IDS[1]}',
+        description=(f'See {PHANTOM_IDS[0]} and {PHANTOM_IDS[1]} again, plus {PHANTOM_IDS[0]} repeated.'),
+    )
+    _seed_pending(plan_dir, body)
 
-        result = cmd_commit_add(_commit_ns('lesson-ref-phantom-dedup'))
+    result = cmd_commit_add(_commit_ns('lesson-ref-phantom-dedup'))
 
-        assert result['status'] == 'error'
-        assert result['validation_error'] == 'lesson_id_not_found'
-        assert result['unresolved_ids'] == sorted(set(PHANTOM_IDS))
+    assert result['status'] == 'error'
+    assert result['validation_error'] == 'lesson_id_not_found'
+    assert result['unresolved_ids'] == sorted(set(PHANTOM_IDS))
 
 
 # =============================================================================
@@ -343,71 +341,69 @@ def test_commit_add_phantom_payload_dedupes_and_sorts(patch_inventory):
 # =============================================================================
 
 
-def test_batch_add_one_phantom_rejects_entire_batch(patch_inventory):
+def test_batch_add_one_phantom_rejects_entire_batch(plan_context, patch_inventory):
     """A batch of N entries where ONE cites a phantom ID rejects the
     whole batch — no TASK-NNN.json files are written."""
     patch_inventory(REAL_LESSON_IDS)
 
-    with PlanContext(plan_id='lesson-ref-batch-mixed') as ctx:
-        entries = [
-            _entry(
-                title='Good task',
-                description=f'Cites {REAL_LESSON_IDS[0]} which is real.',
-                steps=['src/A.java'],
-            ),
-            _entry(
-                title='Bad task',
-                description=f'Cites phantom {PHANTOM_IDS[0]}.',
-                steps=['src/B.java'],
-            ),
-            _entry(
-                title='Another good task',
-                description='No lesson IDs here.',
-                steps=['src/C.java'],
-            ),
-        ]
+    entries = [
+        _entry(
+            title='Good task',
+            description=f'Cites {REAL_LESSON_IDS[0]} which is real.',
+            steps=['src/A.java'],
+        ),
+        _entry(
+            title='Bad task',
+            description=f'Cites phantom {PHANTOM_IDS[0]}.',
+            steps=['src/B.java'],
+        ),
+        _entry(
+            title='Another good task',
+            description='No lesson IDs here.',
+            steps=['src/C.java'],
+        ),
+    ]
 
-        result = cmd_batch_add(_batch_ns('lesson-ref-batch-mixed', tasks_json=json.dumps(entries)))
+    result = cmd_batch_add(_batch_ns('lesson-ref-batch-mixed', tasks_json=json.dumps(entries)))
 
-        assert result['status'] == 'error'
-        assert result['error'] == 'validation_error'
-        assert result['validation_error'] == 'lesson_id_not_found'
-        # task_index points to the offending entry (index 1 — the bad one).
-        assert result['task_index'] == 1
-        assert result['unresolved_ids'] == [PHANTOM_IDS[0]]
+    assert result['status'] == 'error'
+    assert result['error'] == 'validation_error'
+    assert result['validation_error'] == 'lesson_id_not_found'
+    # task_index points to the offending entry (index 1 — the bad one).
+    assert result['task_index'] == 1
+    assert result['unresolved_ids'] == [PHANTOM_IDS[0]]
 
-        # Atomic semantics: zero TASK files on disk.
-        task_dir = ctx.plan_dir / 'tasks'
-        if task_dir.exists():
-            assert list(task_dir.glob('TASK-*.json')) == []
+    # Atomic semantics: zero TASK files on disk.
+    task_dir = plan_context.plan_dir_for('lesson-ref-batch-mixed') / 'tasks'
+    if task_dir.exists():
+        assert list(task_dir.glob('TASK-*.json')) == []
 
 
-def test_batch_add_all_real_succeeds(patch_inventory):
+def test_batch_add_all_real_succeeds(plan_context, patch_inventory):
     """Sanity check: a batch of entries citing only real lesson IDs
     succeeds and creates the expected TASK files (proves the batch path
     is not over-rejecting)."""
     patch_inventory(REAL_LESSON_IDS)
 
-    with PlanContext(plan_id='lesson-ref-batch-good') as ctx:
-        entries = [
-            _entry(
-                title='First',
-                description=f'See {REAL_LESSON_IDS[0]}.',
-                steps=['src/A.java'],
-            ),
-            _entry(
-                title='Second',
-                description=f'See {REAL_LESSON_IDS[1]}.',
-                steps=['src/B.java'],
-            ),
-        ]
+    entries = [
+        _entry(
+            title='First',
+            description=f'See {REAL_LESSON_IDS[0]}.',
+            steps=['src/A.java'],
+        ),
+        _entry(
+            title='Second',
+            description=f'See {REAL_LESSON_IDS[1]}.',
+            steps=['src/B.java'],
+        ),
+    ]
 
-        result = cmd_batch_add(_batch_ns('lesson-ref-batch-good', tasks_json=json.dumps(entries)))
+    result = cmd_batch_add(_batch_ns('lesson-ref-batch-good', tasks_json=json.dumps(entries)))
 
-        assert result['status'] == 'success'
-        assert result['tasks_created'] == 2
-        files = sorted((ctx.plan_dir / 'tasks').glob('TASK-*.json'))
-        assert [f.name for f in files] == ['TASK-001.json', 'TASK-002.json']
+    assert result['status'] == 'success'
+    assert result['tasks_created'] == 2
+    files = sorted((plan_context.plan_dir_for('lesson-ref-batch-good') / 'tasks').glob('TASK-*.json'))
+    assert [f.name for f in files] == ['TASK-001.json', 'TASK-002.json']
 
 
 # =============================================================================
@@ -415,56 +411,55 @@ def test_batch_add_all_real_succeeds(patch_inventory):
 # =============================================================================
 
 
-def test_commit_add_phantom_in_title_only_aborts(patch_inventory):
+def test_commit_add_phantom_in_title_only_aborts(plan_context, patch_inventory):
     """A phantom ID cited ONLY in the title (description is empty of
     lesson IDs) must still abort the write — the scanner spans
     ``title + ' ' + description`` per ``_scan_unresolved_lesson_ids``."""
     patch_inventory(REAL_LESSON_IDS)
 
-    with PlanContext(plan_id='lesson-ref-title-only') as ctx:
-        body = _toon_task_body(
-            title=f'Phantom {PHANTOM_IDS[0]} in title',
-            description='Description has no lesson IDs at all.',
-        )
-        _seed_pending(ctx, body)
+    plan_dir = plan_context.plan_dir_for('lesson-ref-title-only')
+    body = _toon_task_body(
+        title=f'Phantom {PHANTOM_IDS[0]} in title',
+        description='Description has no lesson IDs at all.',
+    )
+    _seed_pending(plan_dir, body)
 
-        result = cmd_commit_add(_commit_ns('lesson-ref-title-only'))
+    result = cmd_commit_add(_commit_ns('lesson-ref-title-only'))
 
-        assert result['status'] == 'error'
-        assert result['validation_error'] == 'lesson_id_not_found'
-        assert result['unresolved_ids'] == [PHANTOM_IDS[0]]
+    assert result['status'] == 'error'
+    assert result['validation_error'] == 'lesson_id_not_found'
+    assert result['unresolved_ids'] == [PHANTOM_IDS[0]]
 
-        task_dir = ctx.plan_dir / 'tasks'
-        if task_dir.exists():
-            assert list(task_dir.glob('TASK-*.json')) == []
+    task_dir = plan_dir / 'tasks'
+    if task_dir.exists():
+        assert list(task_dir.glob('TASK-*.json')) == []
 
 
-def test_batch_add_phantom_in_title_only_aborts(patch_inventory):
+def test_batch_add_phantom_in_title_only_aborts(plan_context, patch_inventory):
     """The batch path also scans title text — a phantom ID cited only in
     one entry's title aborts the entire batch."""
     patch_inventory(REAL_LESSON_IDS)
 
-    with PlanContext(plan_id='lesson-ref-batch-title') as ctx:
-        entries = [
-            _entry(
-                title='Good task',
-                description='No IDs.',
-                steps=['src/A.java'],
-            ),
-            _entry(
-                title=f'Phantom {PHANTOM_IDS[1]} in title',
-                description='Description is clean.',
-                steps=['src/B.java'],
-            ),
-        ]
+    entries = [
+        _entry(
+            title='Good task',
+            description='No IDs.',
+            steps=['src/A.java'],
+        ),
+        _entry(
+            title=f'Phantom {PHANTOM_IDS[1]} in title',
+            description='Description is clean.',
+            steps=['src/B.java'],
+        ),
+    ]
 
-        result = cmd_batch_add(_batch_ns('lesson-ref-batch-title', tasks_json=json.dumps(entries)))
+    result = cmd_batch_add(_batch_ns('lesson-ref-batch-title', tasks_json=json.dumps(entries)))
 
-        assert result['status'] == 'error'
-        assert result['validation_error'] == 'lesson_id_not_found'
-        assert result['task_index'] == 1
-        assert result['unresolved_ids'] == [PHANTOM_IDS[1]]
+    assert result['status'] == 'error'
+    assert result['validation_error'] == 'lesson_id_not_found'
+    assert result['task_index'] == 1
+    assert result['unresolved_ids'] == [PHANTOM_IDS[1]]
 
-        task_dir = ctx.plan_dir / 'tasks'
-        if task_dir.exists():
-            assert list(task_dir.glob('TASK-*.json')) == []
+    task_dir = plan_context.plan_dir_for('lesson-ref-batch-title') / 'tasks'
+    if task_dir.exists():
+        assert list(task_dir.glob('TASK-*.json')) == []

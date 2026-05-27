@@ -12,6 +12,11 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+
+from _arch_fixtures import seed_project as _seed_project  # noqa: E402
+from _arch_fixtures import setup_test_project  # noqa: E402
+
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
     / 'marketplace'
@@ -37,10 +42,7 @@ _cmd_enrich = _load_module('_cmd_enrich', '_cmd_enrich.py')
 DataNotFoundError = _architecture_core.DataNotFoundError
 ModuleNotFoundInProjectError = _architecture_core.ModuleNotFoundInProjectError
 
-save_project_meta = _architecture_core.save_project_meta
 load_project_meta = _architecture_core.load_project_meta
-save_module_derived = _architecture_core.save_module_derived
-save_module_enriched = _architecture_core.save_module_enriched
 load_module_enriched = _architecture_core.load_module_enriched
 load_module_enriched_or_empty = _architecture_core.load_module_enriched_or_empty
 
@@ -52,65 +54,6 @@ enrich_package = _cmd_enrich.enrich_package
 enrich_project = _cmd_enrich.enrich_project
 enrich_skills_by_profile = _cmd_enrich.enrich_skills_by_profile
 enrich_tip = _cmd_enrich.enrich_tip
-
-
-# =============================================================================
-# Helper Functions
-# =============================================================================
-
-
-def _seed_project(tmpdir: str, modules: dict[str, dict] | None = None) -> None:
-    """Write ``_project.json`` plus per-module ``derived.json`` and empty
-    ``enriched.json`` stubs for every module passed in."""
-    if modules is None:
-        modules = {}
-    save_project_meta(
-        {
-            'name': 'test-project',
-            'description': '',
-            'description_reasoning': '',
-            'extensions_used': [],
-            'modules': {name: {} for name in modules},
-        },
-        tmpdir,
-    )
-    for name, data in modules.items():
-        save_module_derived(name, data, tmpdir)
-        # Seed empty enrichment stub so load_module_enriched_or_empty / readers
-        # see a present-by-default file (mirrors discover's swap-time behaviour).
-        save_module_enriched(
-            name,
-            {
-                'responsibility': '',
-                'purpose': '',
-                'key_packages': {},
-                'skills_by_profile': {},
-                'key_dependencies': [],
-                'internal_dependencies': [],
-                'tips': [],
-                'insights': [],
-                'best_practices': [],
-            },
-            tmpdir,
-        )
-
-
-def setup_test_project(tmpdir: str) -> None:
-    """Default fixture: a single ``module-a`` module."""
-    _seed_project(
-        tmpdir,
-        {
-            'module-a': {
-                'name': 'module-a',
-                'build_systems': ['maven'],
-                'paths': {'module': 'module-a'},
-                'metadata': {},
-                'packages': {},
-                'dependencies': [],
-                'commands': {},
-            }
-        },
-    )
 
 
 # =============================================================================
@@ -601,6 +544,7 @@ def _setup_project_with_deps(tmpdir: str, dependencies: list[str]) -> None:
                 'commands': {},
             }
         },
+        with_enrichment_stubs=True,
     )
 
 

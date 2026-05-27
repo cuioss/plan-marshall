@@ -19,7 +19,6 @@ import importlib.util
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import PlanContext
 
 # Tier 2 direct import — match the test layout used by sibling tests.
 _SCRIPTS_DIR = (
@@ -92,61 +91,56 @@ def _compose_ns(
 
 
 class TestSingleStepForm:
-    def test_built_in_step_with_present_standards_returns_loadable(self):
-        with PlanContext(plan_id='vl-builtin-ok'):
-            result = cmd_validate_loadable(_validate_loadable_ns('vl-builtin-ok', step_id='commit-push'))
-            assert result is not None
-            assert result['status'] == 'success'
-            assert result['step_id'] == 'commit-push'
-            assert result['loadable'] is True
-            assert result['standards_path'].endswith('phase-6-finalize/standards/commit-push.md')
-            # Happy path carries no `message` field.
-            assert 'message' not in result
+    def test_built_in_step_with_present_standards_returns_loadable(self, plan_context):
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-builtin-ok', step_id='commit-push'))
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['step_id'] == 'commit-push'
+        assert result['loadable'] is True
+        assert result['standards_path'].endswith('phase-6-finalize/standards/commit-push.md')
+        # Happy path carries no `message` field.
+        assert 'message' not in result
 
-    def test_default_prefix_is_stripped(self):
-        with PlanContext(plan_id='vl-prefix'):
-            result = cmd_validate_loadable(
-                _validate_loadable_ns('vl-prefix', step_id='default:commit-push')
-            )
-            assert result is not None
-            assert result['loadable'] is True
-            assert result['step_id'] == 'commit-push', 'default: prefix must be stripped from echoed step_id'
+    def test_default_prefix_is_stripped(self, plan_context):
+        result = cmd_validate_loadable(
+            _validate_loadable_ns('vl-prefix', step_id='default:commit-push')
+        )
+        assert result is not None
+        assert result['loadable'] is True
+        assert result['step_id'] == 'commit-push', 'default: prefix must be stripped from echoed step_id'
 
-    def test_missing_standards_file_returns_actionable_message(self):
-        with PlanContext(plan_id='vl-missing'):
-            result = cmd_validate_loadable(
-                _validate_loadable_ns('vl-missing', step_id='ghost-step-that-does-not-exist')
-            )
-            assert result is not None
-            assert result['status'] == 'success'
-            assert result['loadable'] is False
-            # Canonical actionable phrasing — phase-6-finalize Step 1.5 surfaces this verbatim.
-            assert 'ghost-step-that-does-not-exist' in result['message']
-            assert 'missing standards file' in result['message']
-            assert 'deleted the file without sweeping' in result['message']
-            assert result['standards_path'].endswith('phase-6-finalize/workflow/ghost-step-that-does-not-exist.md')
+    def test_missing_standards_file_returns_actionable_message(self, plan_context):
+        result = cmd_validate_loadable(
+            _validate_loadable_ns('vl-missing', step_id='ghost-step-that-does-not-exist')
+        )
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['loadable'] is False
+        # Canonical actionable phrasing — phase-6-finalize Step 1.5 surfaces this verbatim.
+        assert 'ghost-step-that-does-not-exist' in result['message']
+        assert 'missing standards file' in result['message']
+        assert 'deleted the file without sweeping' in result['message']
+        assert result['standards_path'].endswith('phase-6-finalize/workflow/ghost-step-that-does-not-exist.md')
 
-    def test_project_step_short_circuits_to_loadable(self):
+    def test_project_step_short_circuits_to_loadable(self, plan_context):
         """External steps (project:foo) are not validated by this guard."""
-        with PlanContext(plan_id='vl-project'):
-            result = cmd_validate_loadable(
-                _validate_loadable_ns('vl-project', step_id='project:finalize-step-deploy-target')
-            )
-            assert result is not None
-            assert result['loadable'] is True
-            assert result['standards_path'] == ''
-            # External step ids are echoed verbatim (no prefix stripping).
-            assert result['step_id'] == 'project:finalize-step-deploy-target'
+        result = cmd_validate_loadable(
+            _validate_loadable_ns('vl-project', step_id='project:finalize-step-deploy-target')
+        )
+        assert result is not None
+        assert result['loadable'] is True
+        assert result['standards_path'] == ''
+        # External step ids are echoed verbatim (no prefix stripping).
+        assert result['step_id'] == 'project:finalize-step-deploy-target'
 
-    def test_skill_step_short_circuits_to_loadable(self):
+    def test_skill_step_short_circuits_to_loadable(self, plan_context):
         """Fully-qualified skill steps short-circuit the same way as project: steps."""
-        with PlanContext(plan_id='vl-skill'):
-            result = cmd_validate_loadable(
-                _validate_loadable_ns('vl-skill', step_id='plan-marshall:plan-retrospective')
-            )
-            assert result is not None
-            assert result['loadable'] is True
-            assert result['standards_path'] == ''
+        result = cmd_validate_loadable(
+            _validate_loadable_ns('vl-skill', step_id='plan-marshall:plan-retrospective')
+        )
+        assert result is not None
+        assert result['loadable'] is True
+        assert result['standards_path'] == ''
 
 
 # =============================================================================
@@ -155,21 +149,19 @@ class TestSingleStepForm:
 
 
 class TestArgumentValidation:
-    def test_neither_step_id_nor_all_returns_invalid_arguments(self):
-        with PlanContext(plan_id='vl-neither'):
-            result = cmd_validate_loadable(_validate_loadable_ns('vl-neither'))
-            assert result is not None
-            assert result['status'] == 'error'
-            assert result['error'] == 'invalid_arguments'
+    def test_neither_step_id_nor_all_returns_invalid_arguments(self, plan_context):
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-neither'))
+        assert result is not None
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_arguments'
 
-    def test_both_step_id_and_all_returns_invalid_arguments(self):
-        with PlanContext(plan_id='vl-both'):
-            result = cmd_validate_loadable(
-                _validate_loadable_ns('vl-both', step_id='commit-push', use_all=True)
-            )
-            assert result is not None
-            assert result['status'] == 'error'
-            assert result['error'] == 'invalid_arguments'
+    def test_both_step_id_and_all_returns_invalid_arguments(self, plan_context):
+        result = cmd_validate_loadable(
+            _validate_loadable_ns('vl-both', step_id='commit-push', use_all=True)
+        )
+        assert result is not None
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_arguments'
 
 
 # =============================================================================
@@ -178,69 +170,65 @@ class TestArgumentValidation:
 
 
 class TestBulkForm:
-    def test_all_against_default_manifest_reports_every_step(self):
-        with PlanContext(plan_id='vl-all-default'):
-            cmd_compose(_compose_ns('vl-all-default'))
-            result = cmd_validate_loadable(_validate_loadable_ns('vl-all-default', use_all=True))
-            assert result is not None
-            assert result['status'] == 'success'
-            assert result['unloadable_count'] == 0
-            results = result['results']
-            assert isinstance(results, list)
-            assert len(results) == len(DEFAULT_PHASE_6_STEPS)
-            for entry in results:
-                assert entry['loadable'] is True
-                assert entry['step_id'] in DEFAULT_PHASE_6_STEPS
+    def test_all_against_default_manifest_reports_every_step(self, plan_context):
+        cmd_compose(_compose_ns('vl-all-default'))
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-all-default', use_all=True))
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['unloadable_count'] == 0
+        results = result['results']
+        assert isinstance(results, list)
+        assert len(results) == len(DEFAULT_PHASE_6_STEPS)
+        for entry in results:
+            assert entry['loadable'] is True
+            assert entry['step_id'] in DEFAULT_PHASE_6_STEPS
 
-    def test_all_flags_unloadable_step_with_actionable_message(self):
+    def test_all_flags_unloadable_step_with_actionable_message(self, plan_context):
         # Compose a manifest then mutate it to add a non-existent step. The
         # composer's candidate-set normalization strips unknown names, so we
         # have to write the manifest directly (re-use the file ops the script
         # itself uses).
-        with PlanContext(plan_id='vl-all-missing'):
-            cmd_compose(_compose_ns('vl-all-missing'))
-            manifest = _mem.read_manifest('vl-all-missing')
-            assert manifest is not None
-            manifest['phase_6']['steps'].append('ghost-step-not-on-disk')
-            _mem.write_manifest('vl-all-missing', manifest)
+        cmd_compose(_compose_ns('vl-all-missing'))
+        manifest = _mem.read_manifest('vl-all-missing')
+        assert manifest is not None
+        manifest['phase_6']['steps'].append('ghost-step-not-on-disk')
+        _mem.write_manifest('vl-all-missing', manifest)
 
-            result = cmd_validate_loadable(_validate_loadable_ns('vl-all-missing', use_all=True))
-            assert result is not None
-            assert result['status'] == 'success'
-            assert result['unloadable_count'] == 1
-            unloadable = [r for r in result['results'] if not r['loadable']]
-            assert len(unloadable) == 1
-            ghost = unloadable[0]
-            assert ghost['step_id'] == 'ghost-step-not-on-disk'
-            assert 'missing standards file' in ghost['message']
-            assert 'ghost-step-not-on-disk' in ghost['message']
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-all-missing', use_all=True))
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['unloadable_count'] == 1
+        unloadable = [r for r in result['results'] if not r['loadable']]
+        assert len(unloadable) == 1
+        ghost = unloadable[0]
+        assert ghost['step_id'] == 'ghost-step-not-on-disk'
+        assert 'missing standards file' in ghost['message']
+        assert 'ghost-step-not-on-disk' in ghost['message']
 
-    def test_all_with_external_steps_marks_them_loadable_without_check(self):
-        with PlanContext(plan_id='vl-all-mixed'):
-            # Compose a default manifest, then inject an external step.
-            cmd_compose(_compose_ns('vl-all-mixed'))
-            manifest = _mem.read_manifest('vl-all-mixed')
-            assert manifest is not None
-            manifest['phase_6']['steps'].insert(1, 'project:finalize-step-deploy-target')
-            _mem.write_manifest('vl-all-mixed', manifest)
+    def test_all_with_external_steps_marks_them_loadable_without_check(self, plan_context):
+        # Compose a default manifest, then inject an external step.
+        cmd_compose(_compose_ns('vl-all-mixed'))
+        manifest = _mem.read_manifest('vl-all-mixed')
+        assert manifest is not None
+        manifest['phase_6']['steps'].insert(1, 'project:finalize-step-deploy-target')
+        _mem.write_manifest('vl-all-mixed', manifest)
 
-            result = cmd_validate_loadable(_validate_loadable_ns('vl-all-mixed', use_all=True))
-            assert result is not None
-            assert result['unloadable_count'] == 0
-            external_rows = [r for r in result['results'] if ':' in r['step_id']]
-            assert len(external_rows) == 1
-            assert external_rows[0]['loadable'] is True
-            assert external_rows[0]['standards_path'] == ''
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-all-mixed', use_all=True))
+        assert result is not None
+        assert result['unloadable_count'] == 0
+        external_rows = [r for r in result['results'] if ':' in r['step_id']]
+        assert len(external_rows) == 1
+        assert external_rows[0]['loadable'] is True
+        assert external_rows[0]['standards_path'] == ''
 
-    def test_all_with_missing_manifest_returns_file_not_found(self, capsys):
-        with PlanContext(plan_id='vl-no-manifest'):
-            # Do not compose — manifest does not exist on disk.
-            result = cmd_validate_loadable(_validate_loadable_ns('vl-no-manifest', use_all=True))
-            # cmd_validate_loadable returns None on file_not_found and emits a
-            # TOON error to stdout via output_toon_error. Confirm via captured stdout.
-            assert result is None
-            captured = capsys.readouterr()
-            assert 'file_not_found' in captured.out
+    def test_all_with_missing_manifest_returns_file_not_found(self, plan_context, capsys):
+        # Do not compose — manifest does not exist on disk.
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-no-manifest', use_all=True))
+        # cmd_validate_loadable returns None on file_not_found and emits a
+        # TOON error to stdout via output_toon_error. Confirm via captured stdout.
+        assert result is None
+        captured = capsys.readouterr()
+        assert 'file_not_found' in captured.out
 
 
 # =============================================================================

@@ -16,7 +16,7 @@ invokes the script via the shared subprocess wrapper.
 
 import json
 
-from conftest import PlanContext, get_script_path, run_script
+from conftest import get_script_path, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-run-config', 'run_config.py')
@@ -27,54 +27,51 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-run-config', 'run_config.
 # =============================================================================
 
 
-def test_get_tier_0_default_when_section_absent():
+def test_get_tier_0_default_when_section_absent(plan_context):
     """get-tier-0 returns 'enabled' on a fresh project with no config file."""
-    with PlanContext() as ctx:
-        ctx.fixture_dir.mkdir(parents=True, exist_ok=True)
+    plan_context.fixture_dir.mkdir(parents=True, exist_ok=True)
 
-        result = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-0')
+    result = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-0')
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        data = result.toon()
-        assert data.get('status') == 'success'
-        assert data.get('field') == 'tier_0'
-        assert data.get('value') == 'enabled'
+    assert result.success, f'Should succeed: {result.stderr}'
+    data = result.toon()
+    assert data.get('status') == 'success'
+    assert data.get('field') == 'tier_0'
+    assert data.get('value') == 'enabled'
 
 
-def test_get_tier_0_default_when_section_missing_in_existing_config():
+def test_get_tier_0_default_when_section_missing_in_existing_config(plan_context):
     """get-tier-0 returns the default when the architecture_refresh section is missing."""
-    with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir
-        plan_dir.mkdir(parents=True, exist_ok=True)
-        (plan_dir / 'run-configuration.json').write_text(json.dumps({'version': 1, 'commands': {}}))
+    plan_dir = plan_context.fixture_dir
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'run-configuration.json').write_text(json.dumps({'version': 1, 'commands': {}}))
 
-        result = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-0')
+    result = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-0')
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        data = result.toon()
-        assert data.get('value') == 'enabled'
+    assert result.success, f'Should succeed: {result.stderr}'
+    data = result.toon()
+    assert data.get('value') == 'enabled'
 
 
-def test_get_tier_0_reads_persisted_value():
+def test_get_tier_0_reads_persisted_value(plan_context):
     """get-tier-0 returns persisted value when explicitly stored."""
-    with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir
-        plan_dir.mkdir(parents=True, exist_ok=True)
-        (plan_dir / 'run-configuration.json').write_text(
-            json.dumps(
-                {
-                    'version': 1,
-                    'commands': {},
-                    'architecture_refresh': {'tier_0': 'disabled'},
-                }
-            )
+    plan_dir = plan_context.fixture_dir
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'run-configuration.json').write_text(
+        json.dumps(
+            {
+                'version': 1,
+                'commands': {},
+                'architecture_refresh': {'tier_0': 'disabled'},
+            }
         )
+    )
 
-        result = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-0')
+    result = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-0')
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        data = result.toon()
-        assert data.get('value') == 'disabled'
+    assert result.success, f'Should succeed: {result.stderr}'
+    data = result.toon()
+    assert data.get('value') == 'disabled'
 
 
 # =============================================================================
@@ -82,53 +79,50 @@ def test_get_tier_0_reads_persisted_value():
 # =============================================================================
 
 
-def test_set_tier_0_round_trip():
+def test_set_tier_0_round_trip(plan_context):
     """set-tier-0 persists value and get-tier-0 reads it back."""
-    with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir
-        plan_dir.mkdir(parents=True, exist_ok=True)
+    plan_dir = plan_context.fixture_dir
+    plan_dir.mkdir(parents=True, exist_ok=True)
 
-        set_result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-0', '--value', 'disabled')
-        assert set_result.success, f'set should succeed: {set_result.stderr}'
-        set_data = set_result.toon()
-        assert set_data.get('status') == 'success'
-        assert set_data.get('field') == 'tier_0'
-        assert set_data.get('value') == 'disabled'
+    set_result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-0', '--value', 'disabled')
+    assert set_result.success, f'set should succeed: {set_result.stderr}'
+    set_data = set_result.toon()
+    assert set_data.get('status') == 'success'
+    assert set_data.get('field') == 'tier_0'
+    assert set_data.get('value') == 'disabled'
 
-        # Verify file contents on disk
-        config = json.loads((plan_dir / 'run-configuration.json').read_text())
-        assert config['architecture_refresh']['tier_0'] == 'disabled'
+    # Verify file contents on disk
+    config = json.loads((plan_dir / 'run-configuration.json').read_text())
+    assert config['architecture_refresh']['tier_0'] == 'disabled'
 
-        # Round-trip via get
-        get_result = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-0')
-        assert get_result.success, f'get should succeed: {get_result.stderr}'
-        assert get_result.toon().get('value') == 'disabled'
+    # Round-trip via get
+    get_result = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-0')
+    assert get_result.success, f'get should succeed: {get_result.stderr}'
+    assert get_result.toon().get('value') == 'disabled'
 
 
-def test_set_tier_0_creates_section_when_absent():
+def test_set_tier_0_creates_section_when_absent(plan_context):
     """set-tier-0 materialises architecture_refresh section if missing."""
-    with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir
-        plan_dir.mkdir(parents=True, exist_ok=True)
-        (plan_dir / 'run-configuration.json').write_text(json.dumps({'version': 1, 'commands': {}}))
+    plan_dir = plan_context.fixture_dir
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'run-configuration.json').write_text(json.dumps({'version': 1, 'commands': {}}))
 
-        result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-0', '--value', 'enabled')
+    result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-0', '--value', 'enabled')
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        config = json.loads((plan_dir / 'run-configuration.json').read_text())
-        assert 'architecture_refresh' in config
-        assert config['architecture_refresh']['tier_0'] == 'enabled'
+    assert result.success, f'Should succeed: {result.stderr}'
+    config = json.loads((plan_dir / 'run-configuration.json').read_text())
+    assert 'architecture_refresh' in config
+    assert config['architecture_refresh']['tier_0'] == 'enabled'
 
 
-def test_set_tier_0_rejects_unknown_value():
+def test_set_tier_0_rejects_unknown_value(plan_context):
     """set-tier-0 rejects values outside the (enabled|disabled) enum."""
-    with PlanContext() as ctx:
-        ctx.fixture_dir.mkdir(parents=True, exist_ok=True)
+    plan_context.fixture_dir.mkdir(parents=True, exist_ok=True)
 
-        result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-0', '--value', 'maybe')
+    result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-0', '--value', 'maybe')
 
-        # argparse choices=… rejects with non-zero exit
-        assert result.returncode != 0, 'Unknown value should be rejected by argparse'
+    # argparse choices=… rejects with non-zero exit
+    assert result.returncode != 0, 'Unknown value should be rejected by argparse'
 
 
 # =============================================================================
@@ -136,39 +130,37 @@ def test_set_tier_0_rejects_unknown_value():
 # =============================================================================
 
 
-def test_get_tier_1_default_when_section_absent():
+def test_get_tier_1_default_when_section_absent(plan_context):
     """get-tier-1 returns 'prompt' default on a fresh project."""
-    with PlanContext() as ctx:
-        ctx.fixture_dir.mkdir(parents=True, exist_ok=True)
+    plan_context.fixture_dir.mkdir(parents=True, exist_ok=True)
 
-        result = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-1')
+    result = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-1')
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        data = result.toon()
-        assert data.get('status') == 'success'
-        assert data.get('field') == 'tier_1'
-        assert data.get('value') == 'prompt'
+    assert result.success, f'Should succeed: {result.stderr}'
+    data = result.toon()
+    assert data.get('status') == 'success'
+    assert data.get('field') == 'tier_1'
+    assert data.get('value') == 'prompt'
 
 
-def test_get_tier_1_reads_persisted_value():
+def test_get_tier_1_reads_persisted_value(plan_context):
     """get-tier-1 returns persisted value when explicitly stored."""
-    with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir
-        plan_dir.mkdir(parents=True, exist_ok=True)
-        (plan_dir / 'run-configuration.json').write_text(
-            json.dumps(
-                {
-                    'version': 1,
-                    'commands': {},
-                    'architecture_refresh': {'tier_1': 'auto'},
-                }
-            )
+    plan_dir = plan_context.fixture_dir
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'run-configuration.json').write_text(
+        json.dumps(
+            {
+                'version': 1,
+                'commands': {},
+                'architecture_refresh': {'tier_1': 'auto'},
+            }
         )
+    )
 
-        result = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-1')
+    result = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-1')
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert result.toon().get('value') == 'auto'
+    assert result.success, f'Should succeed: {result.stderr}'
+    assert result.toon().get('value') == 'auto'
 
 
 # =============================================================================
@@ -176,61 +168,57 @@ def test_get_tier_1_reads_persisted_value():
 # =============================================================================
 
 
-def test_set_tier_1_round_trip():
+def test_set_tier_1_round_trip(plan_context):
     """set-tier-1 persists value and get-tier-1 reads it back."""
-    with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir
-        plan_dir.mkdir(parents=True, exist_ok=True)
+    plan_dir = plan_context.fixture_dir
+    plan_dir.mkdir(parents=True, exist_ok=True)
 
-        set_result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'auto')
-        assert set_result.success, f'set should succeed: {set_result.stderr}'
-        set_data = set_result.toon()
-        assert set_data.get('status') == 'success'
-        assert set_data.get('field') == 'tier_1'
-        assert set_data.get('value') == 'auto'
+    set_result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'auto')
+    assert set_result.success, f'set should succeed: {set_result.stderr}'
+    set_data = set_result.toon()
+    assert set_data.get('status') == 'success'
+    assert set_data.get('field') == 'tier_1'
+    assert set_data.get('value') == 'auto'
 
-        # Verify file contents on disk
-        config = json.loads((plan_dir / 'run-configuration.json').read_text())
-        assert config['architecture_refresh']['tier_1'] == 'auto'
+    # Verify file contents on disk
+    config = json.loads((plan_dir / 'run-configuration.json').read_text())
+    assert config['architecture_refresh']['tier_1'] == 'auto'
 
-        # Round-trip via get
-        get_result = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-1')
-        assert get_result.success, f'get should succeed: {get_result.stderr}'
-        assert get_result.toon().get('value') == 'auto'
+    # Round-trip via get
+    get_result = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-1')
+    assert get_result.success, f'get should succeed: {get_result.stderr}'
+    assert get_result.toon().get('value') == 'auto'
 
 
-def test_set_tier_1_accepts_disabled():
+def test_set_tier_1_accepts_disabled(plan_context):
     """set-tier-1 accepts 'disabled' (shared enum value with tier-0)."""
-    with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir
-        plan_dir.mkdir(parents=True, exist_ok=True)
+    plan_dir = plan_context.fixture_dir
+    plan_dir.mkdir(parents=True, exist_ok=True)
 
-        result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'disabled')
+    result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'disabled')
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        config = json.loads((plan_dir / 'run-configuration.json').read_text())
-        assert config['architecture_refresh']['tier_1'] == 'disabled'
+    assert result.success, f'Should succeed: {result.stderr}'
+    config = json.loads((plan_dir / 'run-configuration.json').read_text())
+    assert config['architecture_refresh']['tier_1'] == 'disabled'
 
 
-def test_set_tier_1_rejects_unknown_value():
+def test_set_tier_1_rejects_unknown_value(plan_context):
     """set-tier-1 rejects values outside the (prompt|auto|disabled) enum."""
-    with PlanContext() as ctx:
-        ctx.fixture_dir.mkdir(parents=True, exist_ok=True)
+    plan_context.fixture_dir.mkdir(parents=True, exist_ok=True)
 
-        result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'enabled')
+    result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'enabled')
 
-        # tier_1 does not allow 'enabled' (only tier_0 does)
-        assert result.returncode != 0, 'Unknown value should be rejected by argparse'
+    # tier_1 does not allow 'enabled' (only tier_0 does)
+    assert result.returncode != 0, 'Unknown value should be rejected by argparse'
 
 
-def test_set_tier_1_rejects_garbage_value():
+def test_set_tier_1_rejects_garbage_value(plan_context):
     """set-tier-1 rejects arbitrary strings outside the enum."""
-    with PlanContext() as ctx:
-        ctx.fixture_dir.mkdir(parents=True, exist_ok=True)
+    plan_context.fixture_dir.mkdir(parents=True, exist_ok=True)
 
-        result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'sometimes')
+    result = run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'sometimes')
 
-        assert result.returncode != 0
+    assert result.returncode != 0
 
 
 # =============================================================================
@@ -238,24 +226,23 @@ def test_set_tier_1_rejects_garbage_value():
 # =============================================================================
 
 
-def test_tier_0_and_tier_1_persist_independently():
+def test_tier_0_and_tier_1_persist_independently(plan_context):
     """Setting tier_0 does not perturb tier_1, and vice versa."""
-    with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir
-        plan_dir.mkdir(parents=True, exist_ok=True)
+    plan_dir = plan_context.fixture_dir
+    plan_dir.mkdir(parents=True, exist_ok=True)
 
-        run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-0', '--value', 'disabled')
-        run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'auto')
+    run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-0', '--value', 'disabled')
+    run_script(SCRIPT_PATH, 'architecture-refresh', 'set-tier-1', '--value', 'auto')
 
-        config = json.loads((plan_dir / 'run-configuration.json').read_text())
-        assert config['architecture_refresh']['tier_0'] == 'disabled'
-        assert config['architecture_refresh']['tier_1'] == 'auto'
+    config = json.loads((plan_dir / 'run-configuration.json').read_text())
+    assert config['architecture_refresh']['tier_0'] == 'disabled'
+    assert config['architecture_refresh']['tier_1'] == 'auto'
 
-        # Re-read via the CLI to confirm
-        t0 = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-0').toon()
-        t1 = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-1').toon()
-        assert t0.get('value') == 'disabled'
-        assert t1.get('value') == 'auto'
+    # Re-read via the CLI to confirm
+    t0 = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-0').toon()
+    t1 = run_script(SCRIPT_PATH, 'architecture-refresh', 'get-tier-1').toon()
+    assert t0.get('value') == 'disabled'
+    assert t1.get('value') == 'auto'
 
 
 # =============================================================================
@@ -263,43 +250,41 @@ def test_tier_0_and_tier_1_persist_independently():
 # =============================================================================
 
 
-def test_validate_accepts_config_with_architecture_refresh_section():
+def test_validate_accepts_config_with_architecture_refresh_section(plan_context):
     """validate succeeds for a config that includes architecture_refresh."""
-    with PlanContext() as ctx:
-        config_path = ctx.fixture_dir / 'run-configuration.json'
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(
-            json.dumps(
-                {
-                    'version': 1,
-                    'commands': {},
-                    'architecture_refresh': {
-                        'tier_0': 'enabled',
-                        'tier_1': 'prompt',
-                    },
-                }
-            )
+    config_path = plan_context.fixture_dir / 'run-configuration.json'
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        json.dumps(
+            {
+                'version': 1,
+                'commands': {},
+                'architecture_refresh': {
+                    'tier_0': 'enabled',
+                    'tier_1': 'prompt',
+                },
+            }
         )
+    )
 
-        result = run_script(SCRIPT_PATH, 'validate', '--file', str(config_path))
+    result = run_script(SCRIPT_PATH, 'validate', '--file', str(config_path))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        data = result.toon()
-        assert data.get('status') == 'success'
-        assert data.get('valid') is True
+    assert result.success, f'Should succeed: {result.stderr}'
+    data = result.toon()
+    assert data.get('status') == 'success'
+    assert data.get('valid') is True
 
 
-def test_validate_accepts_config_without_architecture_refresh_section():
+def test_validate_accepts_config_without_architecture_refresh_section(plan_context):
     """validate succeeds for a baseline config without architecture_refresh."""
-    with PlanContext() as ctx:
-        config_path = ctx.fixture_dir / 'run-configuration.json'
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(json.dumps({'version': 1, 'commands': {}}))
+    config_path = plan_context.fixture_dir / 'run-configuration.json'
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps({'version': 1, 'commands': {}}))
 
-        result = run_script(SCRIPT_PATH, 'validate', '--file', str(config_path))
+    result = run_script(SCRIPT_PATH, 'validate', '--file', str(config_path))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert result.toon().get('valid') is True
+    assert result.success, f'Should succeed: {result.stderr}'
+    assert result.toon().get('valid') is True
 
 
 # =============================================================================

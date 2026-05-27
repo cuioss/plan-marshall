@@ -13,7 +13,7 @@ from argparse import Namespace
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from unittest.mock import patch
 
-from conftest import PlanContext, get_script_path, run_script
+from conftest import get_script_path, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'tools-integration-ci', 'ci_health.py')
@@ -292,67 +292,64 @@ def test_verify_cli_output():
 # =============================================================================
 
 
-def test_verify_all_no_marshal_json():
+def test_verify_all_no_marshal_json(plan_context):
     """Test verify-all fails when marshal.json is missing."""
-    with PlanContext(plan_id='test-verify-all-missing'):
-        result = run_script(SCRIPT_PATH, 'verify-all')
-        assert result.success, 'Expected exit 0 (error in TOON output)'
-        data = result.toon_or_error()
-        assert data.get('status') != 'success', 'Expected error status in TOON output'
-        assert 'error' in data
+    result = run_script(SCRIPT_PATH, 'verify-all')
+    assert result.success, 'Expected exit 0 (error in TOON output)'
+    data = result.toon_or_error()
+    assert data.get('status') != 'success', 'Expected error status in TOON output'
+    assert 'error' in data
 
 
-def test_verify_all_with_marshal_json():
+def test_verify_all_with_marshal_json(plan_context):
     """Test verify-all succeeds and does NOT write config['ci']."""
-    with PlanContext(plan_id='test-verify-all-success') as ctx:
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        marshal_path.write_text(
-            json.dumps(
-                {
-                    'version': 1,
-                    'providers': [
-                        {
-                            'skill_name': 'plan-marshall:workflow-integration-github',
-                            'category': 'ci',
-                            'verify_command': 'gh auth status',
-                        }
-                    ],
-                }
-            )
-        )
-
-        result = run_script(SCRIPT_PATH, 'verify-all')
-        assert result.success, f'Script failed: {result.stderr}'
-
-        updated = json.loads(marshal_path.read_text())
-        # providers[] is the canonical source — verify-all must not write config['ci']
-        assert 'ci' not in updated, f"verify-all should not write config['ci'], got: {updated.get('ci')}"
-        assert updated['providers'][0]['category'] == 'ci'
-
-
-def test_verify_all_leaves_providers_intact():
-    """Test verify-all leaves providers[] untouched (single source of truth)."""
-    with PlanContext(plan_id='test-verify-all-intact') as ctx:
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        original_providers = [
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(
+        json.dumps(
             {
-                'skill_name': 'plan-marshall:workflow-integration-github',
-                'category': 'ci',
-                'verify_command': 'gh auth status',
+                'version': 1,
+                'providers': [
+                    {
+                        'skill_name': 'plan-marshall:workflow-integration-github',
+                        'category': 'ci',
+                        'verify_command': 'gh auth status',
+                    }
+                ],
             }
-        ]
-        marshal_path.write_text(
-            json.dumps(
-                {
-                    'version': 1,
-                    'providers': original_providers,
-                }
-            )
         )
+    )
 
-        result = run_script(SCRIPT_PATH, 'verify-all')
-        assert result.success, f'Script failed: {result.stderr}'
+    result = run_script(SCRIPT_PATH, 'verify-all')
+    assert result.success, f'Script failed: {result.stderr}'
 
-        updated = json.loads(marshal_path.read_text())
-        assert 'ci' not in updated
-        assert updated['providers'] == original_providers
+    updated = json.loads(marshal_path.read_text())
+    # providers[] is the canonical source — verify-all must not write config['ci']
+    assert 'ci' not in updated, f"verify-all should not write config['ci'], got: {updated.get('ci')}"
+    assert updated['providers'][0]['category'] == 'ci'
+
+
+def test_verify_all_leaves_providers_intact(plan_context):
+    """Test verify-all leaves providers[] untouched (single source of truth)."""
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    original_providers = [
+        {
+            'skill_name': 'plan-marshall:workflow-integration-github',
+            'category': 'ci',
+            'verify_command': 'gh auth status',
+        }
+    ]
+    marshal_path.write_text(
+        json.dumps(
+            {
+                'version': 1,
+                'providers': original_providers,
+            }
+        )
+    )
+
+    result = run_script(SCRIPT_PATH, 'verify-all')
+    assert result.success, f'Script failed: {result.stderr}'
+
+    updated = json.loads(marshal_path.read_text())
+    assert 'ci' not in updated
+    assert updated['providers'] == original_providers

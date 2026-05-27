@@ -8,7 +8,7 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import PlanContext, get_script_path, run_script
+from conftest import get_script_path, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
@@ -72,7 +72,7 @@ def _create_status(ctx, plan_id='test-plan', current_phase='1-init', phases=None
         'created': '2026-01-01T00:00:00Z',
         'updated': '2026-01-01T00:00:00Z',
     }
-    status_file = ctx.plan_dir / 'status.json'
+    status_file = ctx.plan_dir_for(plan_id) / 'status.json'
     status_file.write_text(json.dumps(status, indent=2))
     return status
 
@@ -82,57 +82,53 @@ def _create_status(ctx, plan_id='test-plan', current_phase='1-init', phases=None
 # =============================================================================
 
 
-def test_list_empty_plans_dir():
+def test_list_empty_plans_dir(plan_context):
     """Test listing when no plans exist."""
-    with PlanContext(plan_id='lifecycle-list-empty') as ctx:
-        # Remove the auto-created plan dir so plans/ is empty
-        import shutil
+    # Remove the auto-created plan dir so plans/ is empty
+    import shutil
 
-        shutil.rmtree(ctx.plan_dir)
+    shutil.rmtree(plan_context.plan_dir)
 
-        result = cmd_list(Namespace(filter=None))
-        assert result['status'] == 'success'
-        assert result['total'] == 0
+    result = cmd_list(Namespace(filter=None))
+    assert result['status'] == 'success'
+    assert result['total'] == 0
 
 
-def test_list_no_plans_directory():
+def test_list_no_plans_directory(plan_context):
     """Test listing when plans directory does not exist at all."""
-    with PlanContext(plan_id='lifecycle-list-nodir') as ctx:
-        # Remove entire plans directory
-        import shutil
+    # Remove entire plans directory
+    import shutil
 
-        plans_dir = ctx.plan_dir.parent
-        shutil.rmtree(plans_dir)
+    plans_dir = plan_context.plans_dir
+    shutil.rmtree(plans_dir)
 
-        result = cmd_list(Namespace(filter=None))
-        assert result['status'] == 'success'
-        assert result['total'] == 0
+    result = cmd_list(Namespace(filter=None))
+    assert result['status'] == 'success'
+    assert result['total'] == 0
 
 
-def test_list_with_plans():
+def test_list_with_plans(plan_context):
     """Test listing when plans exist with status.json."""
-    with PlanContext(plan_id='lifecycle-list-plans') as ctx:
-        _create_status(ctx, plan_id='lifecycle-list-plans', current_phase='2-refine')
+    _create_status(plan_context, plan_id='lifecycle-list-plans', current_phase='2-refine')
 
-        result = cmd_list(Namespace(filter=None))
-        assert result['status'] == 'success'
-        assert result['total'] >= 1
+    result = cmd_list(Namespace(filter=None))
+    assert result['status'] == 'success'
+    assert result['total'] >= 1
 
 
-def test_list_with_filter():
+def test_list_with_filter(plan_context):
     """Test listing with phase filter."""
-    with PlanContext(plan_id='lifecycle-list-filter') as ctx:
-        _create_status(ctx, plan_id='lifecycle-list-filter', current_phase='3-outline')
+    _create_status(plan_context, plan_id='lifecycle-list-filter', current_phase='3-outline')
 
-        # Filter for matching phase
-        result = cmd_list(Namespace(filter='3-outline'))
-        assert result['status'] == 'success'
-        assert result['total'] >= 1
+    # Filter for matching phase
+    result = cmd_list(Namespace(filter='3-outline'))
+    assert result['status'] == 'success'
+    assert result['total'] >= 1
 
-        # Filter for non-matching phase
-        result = cmd_list(Namespace(filter='5-execute'))
-        assert result['status'] == 'success'
-        assert result['total'] == 0
+    # Filter for non-matching phase
+    result = cmd_list(Namespace(filter='5-execute'))
+    assert result['status'] == 'success'
+    assert result['total'] == 0
 
 
 # =============================================================================
@@ -167,49 +163,45 @@ def test_route_unknown_phase():
 # =============================================================================
 
 
-def test_transition_valid():
+def test_transition_valid(plan_context):
     """Test transitioning from one phase to the next."""
-    with PlanContext(plan_id='lifecycle-trans') as ctx:
-        _create_status(ctx, plan_id='lifecycle-trans', current_phase='1-init')
+    _create_status(plan_context, plan_id='lifecycle-trans', current_phase='1-init')
 
-        result = cmd_transition(Namespace(plan_id='lifecycle-trans', completed='1-init'))
-        assert result['status'] == 'success'
-        assert result['completed_phase'] == '1-init'
-        assert result['next_phase'] == '2-refine'
+    result = cmd_transition(Namespace(plan_id='lifecycle-trans', completed='1-init'))
+    assert result['status'] == 'success'
+    assert result['completed_phase'] == '1-init'
+    assert result['next_phase'] == '2-refine'
 
 
-def test_transition_last_phase():
+def test_transition_last_phase(plan_context):
     """Test transitioning the final phase marks all completed."""
-    with PlanContext(plan_id='lifecycle-trans-last') as ctx:
-        phases = [
-            {'name': '1-init', 'status': 'done'},
-            {'name': '2-refine', 'status': 'done'},
-            {'name': '3-outline', 'status': 'done'},
-            {'name': '4-plan', 'status': 'done'},
-            {'name': '5-execute', 'status': 'done'},
-            {'name': '6-finalize', 'status': 'in_progress'},
-        ]
-        _create_status(ctx, plan_id='lifecycle-trans-last', current_phase='6-finalize', phases=phases)
+    phases = [
+        {'name': '1-init', 'status': 'done'},
+        {'name': '2-refine', 'status': 'done'},
+        {'name': '3-outline', 'status': 'done'},
+        {'name': '4-plan', 'status': 'done'},
+        {'name': '5-execute', 'status': 'done'},
+        {'name': '6-finalize', 'status': 'in_progress'},
+    ]
+    _create_status(plan_context, plan_id='lifecycle-trans-last', current_phase='6-finalize', phases=phases)
 
-        result = cmd_transition(Namespace(plan_id='lifecycle-trans-last', completed='6-finalize'))
-        assert result['status'] == 'success'
-        assert result['message'] == 'All phases completed'
+    result = cmd_transition(Namespace(plan_id='lifecycle-trans-last', completed='6-finalize'))
+    assert result['status'] == 'success'
+    assert result['message'] == 'All phases completed'
 
 
-def test_transition_invalid_phase():
+def test_transition_invalid_phase(plan_context):
     """Test transition fails for a phase not in the plan."""
-    with PlanContext(plan_id='lifecycle-trans-badphase') as ctx:
-        _create_status(ctx, plan_id='lifecycle-trans-badphase')
+    _create_status(plan_context, plan_id='lifecycle-trans-badphase')
 
-        result = cmd_transition(Namespace(plan_id='lifecycle-trans-badphase', completed='nonexistent-phase'))
-        assert result['status'] == 'error'
+    result = cmd_transition(Namespace(plan_id='lifecycle-trans-badphase', completed='nonexistent-phase'))
+    assert result['status'] == 'error'
 
 
-def test_transition_nonexistent_plan():
+def test_transition_nonexistent_plan(plan_context):
     """Test transition returns None for a plan without status.json."""
-    with PlanContext(plan_id='lifecycle-trans-noplan'):
-        result = cmd_transition(Namespace(plan_id='lifecycle-trans-noplan', completed='1-init'))
-        assert result is None
+    result = cmd_transition(Namespace(plan_id='lifecycle-trans-noplan', completed='1-init'))
+    assert result is None
 
 
 # =============================================================================
@@ -217,23 +209,21 @@ def test_transition_nonexistent_plan():
 # =============================================================================
 
 
-def test_get_routing_context_valid():
+def test_get_routing_context_valid(plan_context):
     """Test getting routing context for a valid plan."""
-    with PlanContext(plan_id='lifecycle-ctx') as ctx:
-        _create_status(ctx, plan_id='lifecycle-ctx', current_phase='3-outline', title='My Feature')
+    _create_status(plan_context, plan_id='lifecycle-ctx', current_phase='3-outline', title='My Feature')
 
-        result = cmd_get_routing_context(Namespace(plan_id='lifecycle-ctx'))
-        assert result['status'] == 'success'
-        assert result['current_phase'] == '3-outline'
-        assert result['skill'] == 'solution-outline'
-        assert result['title'] == 'My Feature'
+    result = cmd_get_routing_context(Namespace(plan_id='lifecycle-ctx'))
+    assert result['status'] == 'success'
+    assert result['current_phase'] == '3-outline'
+    assert result['skill'] == 'solution-outline'
+    assert result['title'] == 'My Feature'
 
 
-def test_get_routing_context_missing_plan():
+def test_get_routing_context_missing_plan(plan_context):
     """Test get-routing-context returns None for nonexistent plan."""
-    with PlanContext(plan_id='lifecycle-ctx-missing'):
-        result = cmd_get_routing_context(Namespace(plan_id='lifecycle-ctx-missing'))
-        assert result is None
+    result = cmd_get_routing_context(Namespace(plan_id='lifecycle-ctx-missing'))
+    assert result is None
 
 
 # =============================================================================
@@ -241,34 +231,31 @@ def test_get_routing_context_missing_plan():
 # =============================================================================
 
 
-def test_archive_dry_run():
+def test_archive_dry_run(plan_context):
     """Test archive with --dry-run shows what would happen."""
-    with PlanContext(plan_id='lifecycle-archive-dry') as ctx:
-        _create_status(ctx, plan_id='lifecycle-archive-dry')
+    _create_status(plan_context, plan_id='lifecycle-archive-dry')
 
-        result = cmd_archive(Namespace(plan_id='lifecycle-archive-dry', dry_run=True))
-        assert result['status'] == 'success'
-        # Plan directory should still exist after dry run
-        assert ctx.plan_dir.exists(), 'Plan dir should still exist after dry run'
+    result = cmd_archive(Namespace(plan_id='lifecycle-archive-dry', dry_run=True))
+    assert result['status'] == 'success'
+    # Plan directory should still exist after dry run
+    assert plan_context.plan_dir_for('lifecycle-archive-dry').exists(), 'Plan dir should still exist after dry run'
 
 
-def test_archive_actual():
+def test_archive_actual(plan_context):
     """Test actual archive moves plan directory."""
-    with PlanContext(plan_id='lifecycle-archive-real') as ctx:
-        _create_status(ctx, plan_id='lifecycle-archive-real')
+    _create_status(plan_context, plan_id='lifecycle-archive-real')
 
-        result = cmd_archive(Namespace(plan_id='lifecycle-archive-real', dry_run=False))
-        assert result['status'] == 'success'
-        assert 'archived_to' in result
-        # Plan directory should no longer exist
-        assert not ctx.plan_dir.exists(), 'Plan dir should be moved after archive'
+    result = cmd_archive(Namespace(plan_id='lifecycle-archive-real', dry_run=False))
+    assert result['status'] == 'success'
+    assert 'archived_to' in result
+    # Plan directory should no longer exist
+    assert not (plan_context.plans_dir / 'lifecycle-archive-real').exists(), 'Plan dir should be moved after archive'
 
 
-def test_archive_nonexistent_plan():
+def test_archive_nonexistent_plan(plan_context):
     """Test archive fails for nonexistent plan directory."""
-    with PlanContext(plan_id='lifecycle-archive-gone'):
-        result = cmd_archive(Namespace(plan_id='lifecycle-archive-nope', dry_run=False))
-        assert result['status'] == 'error'
+    result = cmd_archive(Namespace(plan_id='lifecycle-archive-nope', dry_run=False))
+    assert result['status'] == 'error'
 
 
 # =============================================================================
@@ -302,13 +289,12 @@ def test_cli_archive_invalid_plan_id():
     assert 'status: error' in result.stdout
 
 
-def test_cli_self_test_passes():
+def test_cli_self_test_passes(plan_context):
     """Test self-test CLI reports all checks passing."""
-    with PlanContext(plan_id='lifecycle-selftest'):
-        result = run_script(SCRIPT_PATH, 'self-test')
-        assert result.success, f'Self-test failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['passed'] == 4
-        assert data['failed'] == 0
-        assert 'failures' not in data
+    result = run_script(SCRIPT_PATH, 'self-test')
+    assert result.success, f'Self-test failed: {result.stderr}'
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
+    assert data['passed'] == 4
+    assert data['failed'] == 0
+    assert 'failures' not in data

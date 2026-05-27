@@ -30,7 +30,7 @@ simulator below mirrors what the dispatcher would compute from the
 import importlib.util
 from argparse import Namespace
 
-from conftest import MARKETPLACE_ROOT, PlanContext
+from conftest import MARKETPLACE_ROOT
 
 # ---------------------------------------------------------------------------
 # Manifest module (Tier 2 direct import via importlib because of the hyphen)
@@ -150,52 +150,49 @@ class TestLoadabilityGuardSimulation:
     live subprocess.
     """
 
-    def test_clean_manifest_passes_loadability_check(self):
-        with PlanContext(plan_id='loadability-clean'):
-            cmd_compose(_compose_ns('loadability-clean'))
-            result = cmd_validate_loadable(_validate_loadable_ns('loadability-clean', use_all=True))
-            assert result is not None
-            assert result['status'] == 'success'
-            assert result['unloadable_count'] == 0, (
-                'A composed default manifest must report every step loadable; '
-                'otherwise phase-6-finalize Step 1.5 would refuse to enter Step 3 '
-                'on every healthy plan.'
-            )
+    def test_clean_manifest_passes_loadability_check(self, plan_context):
+        cmd_compose(_compose_ns('loadability-clean'))
+        result = cmd_validate_loadable(_validate_loadable_ns('loadability-clean', use_all=True))
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['unloadable_count'] == 0, (
+            'A composed default manifest must report every step loadable; '
+            'otherwise phase-6-finalize Step 1.5 would refuse to enter Step 3 '
+            'on every healthy plan.'
+        )
 
-    def test_manifest_with_deleted_standards_file_fails_check(self):
-        with PlanContext(plan_id='loadability-deleted'):
-            cmd_compose(_compose_ns('loadability-deleted'))
-            manifest = read_manifest('loadability-deleted')
-            assert manifest is not None
-            # Simulate a self-modifying plan that deleted a step's standards
-            # file but forgot to sweep marshal.json — the manifest still
-            # references the now-orphaned step.
-            manifest['phase_6']['steps'].append('orphaned-step-no-standards-file')
-            write_manifest('loadability-deleted', manifest)
+    def test_manifest_with_deleted_standards_file_fails_check(self, plan_context):
+        cmd_compose(_compose_ns('loadability-deleted'))
+        manifest = read_manifest('loadability-deleted')
+        assert manifest is not None
+        # Simulate a self-modifying plan that deleted a step's standards
+        # file but forgot to sweep marshal.json — the manifest still
+        # references the now-orphaned step.
+        manifest['phase_6']['steps'].append('orphaned-step-no-standards-file')
+        write_manifest('loadability-deleted', manifest)
 
-            result = cmd_validate_loadable(_validate_loadable_ns('loadability-deleted', use_all=True))
-            assert result is not None
-            assert result['status'] == 'success'
-            assert result['unloadable_count'] == 1
-            failing = [r for r in result['results'] if not r['loadable']]
-            assert len(failing) == 1
-            assert failing[0]['step_id'] == 'orphaned-step-no-standards-file'
-            # The actionable message mirrors the SKILL.md error-log line.
-            assert 'missing standards file' in failing[0]['message']
+        result = cmd_validate_loadable(_validate_loadable_ns('loadability-deleted', use_all=True))
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['unloadable_count'] == 1
+        failing = [r for r in result['results'] if not r['loadable']]
+        assert len(failing) == 1
+        assert failing[0]['step_id'] == 'orphaned-step-no-standards-file'
+        # The actionable message mirrors the SKILL.md error-log line.
+        assert 'missing standards file' in failing[0]['message']
 
-    def test_external_step_never_triggers_unloadable(self):
+    def test_external_step_never_triggers_unloadable(self, plan_context):
         """project:/skill: steps short-circuit — the guard MUST NOT abort on them."""
-        with PlanContext(plan_id='loadability-external'):
-            cmd_compose(_compose_ns('loadability-external'))
-            manifest = read_manifest('loadability-external')
-            assert manifest is not None
-            manifest['phase_6']['steps'].insert(0, 'project:finalize-step-deploy-target')
-            manifest['phase_6']['steps'].insert(0, 'plan-marshall:plan-retrospective')
-            write_manifest('loadability-external', manifest)
+        cmd_compose(_compose_ns('loadability-external'))
+        manifest = read_manifest('loadability-external')
+        assert manifest is not None
+        manifest['phase_6']['steps'].insert(0, 'project:finalize-step-deploy-target')
+        manifest['phase_6']['steps'].insert(0, 'plan-marshall:plan-retrospective')
+        write_manifest('loadability-external', manifest)
 
-            result = cmd_validate_loadable(_validate_loadable_ns('loadability-external', use_all=True))
-            assert result is not None
-            assert result['unloadable_count'] == 0, (
-                'External steps must short-circuit to loadable=true so the guard '
-                "doesn't false-positive on project:/bundle:skill entries."
-            )
+        result = cmd_validate_loadable(_validate_loadable_ns('loadability-external', use_all=True))
+        assert result is not None
+        assert result['unloadable_count'] == 0, (
+            'External steps must short-circuit to loadable=true so the guard '
+            "doesn't false-positive on project:/bundle:skill entries."
+        )

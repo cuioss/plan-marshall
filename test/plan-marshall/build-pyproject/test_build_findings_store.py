@@ -12,17 +12,14 @@ down independently of any specific build tool, and exercises
 """
 
 import io
-import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
 
-from conftest import PlanContext
 
-
-class TestClassifyIssueFindingType(unittest.TestCase):
+class TestClassifyIssueFindingType:
     """Issue.category → finding type routing."""
 
-    def setUp(self):
+    def setup_method(self):
         from _build_parse import Issue  # type: ignore[import-not-found]
         from _build_shared import _classify_issue_finding_type  # type: ignore[import-not-found]
 
@@ -31,33 +28,33 @@ class TestClassifyIssueFindingType(unittest.TestCase):
 
     def test_test_failure_category(self):
         issue = self.Issue(file='t.py', line=1, message='m', severity='error', category='test_failure')
-        self.assertEqual(self.classify(issue), 'test-failure')
+        assert self.classify(issue) == 'test-failure'
 
     def test_lint_error_category(self):
         issue = self.Issue(file='t.py', line=1, message='m', severity='warning', category='lint_error')
-        self.assertEqual(self.classify(issue), 'lint-issue')
+        assert self.classify(issue) == 'lint-issue'
 
     def test_style_category(self):
         issue = self.Issue(file='t.py', line=1, message='m', severity='warning', category='style_violation')
-        self.assertEqual(self.classify(issue), 'lint-issue')
+        assert self.classify(issue) == 'lint-issue'
 
     def test_compilation_falls_through_to_build_error(self):
         issue = self.Issue(file='t.py', line=1, message='m', severity='error', category='compilation')
-        self.assertEqual(self.classify(issue), 'build-error')
+        assert self.classify(issue) == 'build-error'
 
     def test_type_error_falls_through_to_build_error(self):
         issue = self.Issue(file='t.py', line=1, message='m', severity='error', category='type_error')
-        self.assertEqual(self.classify(issue), 'build-error')
+        assert self.classify(issue) == 'build-error'
 
     def test_no_category_falls_through_to_build_error(self):
         issue = self.Issue(file='t.py', line=1, message='m', severity='error', category=None)
-        self.assertEqual(self.classify(issue), 'build-error')
+        assert self.classify(issue) == 'build-error'
 
 
-class TestStoreBuildFindings(unittest.TestCase):
+class TestStoreBuildFindings:
     """Every parsed Issue must be persisted as a finding."""
 
-    def test_store_three_issue_kinds(self):
+    def test_store_three_issue_kinds(self, plan_context):
         from _build_parse import Issue  # type: ignore[import-not-found]
         from _build_shared import _store_build_findings  # type: ignore[import-not-found]
         from _findings_core import query_findings  # type: ignore[import-not-found]
@@ -86,74 +83,71 @@ class TestStoreBuildFindings(unittest.TestCase):
             ),
         ]
 
-        with PlanContext(plan_id='build-store-1') as ctx:
-            count_seen, count_stored, failures = _store_build_findings(
-                plan_id=ctx.plan_id,
-                tool_name='python',
-                issues=issues,
-                command_str='verify',
-            )
+        count_seen, count_stored, failures = _store_build_findings(
+            plan_id=plan_context.plan_id,
+            tool_name='python',
+            issues=issues,
+            command_str='verify',
+        )
 
-            self.assertEqual(count_seen, 3)
-            self.assertEqual(count_stored, 3)
-            self.assertEqual(failures, [])
+        assert count_seen == 3
+        assert count_stored == 3
+        assert failures == []
 
-            be = query_findings(ctx.plan_id, finding_type='build-error')
-            tf = query_findings(ctx.plan_id, finding_type='test-failure')
-            li = query_findings(ctx.plan_id, finding_type='lint-issue')
+        be = query_findings(plan_context.plan_id, finding_type='build-error')
+        tf = query_findings(plan_context.plan_id, finding_type='test-failure')
+        li = query_findings(plan_context.plan_id, finding_type='lint-issue')
 
-            self.assertEqual(be['filtered_count'], 1)
-            self.assertEqual(tf['filtered_count'], 1)
-            self.assertEqual(li['filtered_count'], 1)
+        assert be['filtered_count'] == 1
+        assert tf['filtered_count'] == 1
+        assert li['filtered_count'] == 1
 
-            be_record = be['findings'][0]
-            self.assertEqual(be_record['module'], 'python')
-            self.assertEqual(be_record['rule'], 'compilation')
-            self.assertEqual(be_record['severity'], 'error')
-            self.assertEqual(be_record['file_path'], 'src/Main.py')
-            self.assertEqual(be_record['line'], 10)
+        be_record = be['findings'][0]
+        assert be_record['module'] == 'python'
+        assert be_record['rule'] == 'compilation'
+        assert be_record['severity'] == 'error'
+        assert be_record['file_path'] == 'src/Main.py'
+        assert be_record['line'] == 10
 
-            li_record = li['findings'][0]
-            self.assertEqual(li_record['severity'], 'warning')
+        li_record = li['findings'][0]
+        assert li_record['severity'] == 'warning'
 
-    def test_store_zero_issues(self):
+    def test_store_zero_issues(self, plan_context):
         from _build_shared import _store_build_findings  # type: ignore[import-not-found]
 
-        with PlanContext(plan_id='build-store-empty') as ctx:
-            count_seen, count_stored, failures = _store_build_findings(
-                plan_id=ctx.plan_id,
-                tool_name='maven',
-                issues=[],
-                command_str='verify',
-            )
-            self.assertEqual((count_seen, count_stored, failures), (0, 0, []))
+        count_seen, count_stored, failures = _store_build_findings(
+            plan_id=plan_context.plan_id,
+            tool_name='maven',
+            issues=[],
+            command_str='verify',
+        )
+        assert (count_seen, count_stored, failures) == (0, 0, [])
 
 
-class TestRecordProducerMismatch(unittest.TestCase):
+class TestRecordProducerMismatch:
     """Producer mismatches must be recorded as a Q-Gate finding."""
 
-    def test_record_producer_mismatch_writes_qgate(self):
+    def test_record_producer_mismatch_writes_qgate(self, plan_context):
         from _build_shared import _record_producer_mismatch  # type: ignore[import-not-found]
         from _findings_core import query_qgate_findings  # type: ignore[import-not-found]
 
-        with PlanContext(plan_id='build-store-mismatch') as ctx:
-            _record_producer_mismatch(
-                plan_id=ctx.plan_id,
-                tool_name='gradle',
-                command_str='build',
-                count_seen=5,
-                count_stored=3,
-                store_failures=['x', 'y'],
-            )
-            q = query_qgate_findings(ctx.plan_id, phase='5-execute')
-            self.assertEqual(q['filtered_count'], 1)
-            qf = q['findings'][0]
-            self.assertTrue(qf['title'].startswith('(producer-mismatch)'))
-            self.assertEqual(qf['source'], 'qgate')
-            self.assertEqual(qf['type'], 'build-error')
+        _record_producer_mismatch(
+            plan_id=plan_context.plan_id,
+            tool_name='gradle',
+            command_str='build',
+            count_seen=5,
+            count_stored=3,
+            store_failures=['x', 'y'],
+        )
+        q = query_qgate_findings(plan_context.plan_id, phase='5-execute')
+        assert q['filtered_count'] == 1
+        qf = q['findings'][0]
+        assert qf['title'].startswith('(producer-mismatch)')
+        assert qf['source'] == 'qgate'
+        assert qf['type'] == 'build-error'
 
 
-class TestCmdRunCommonPlanIdGuard(unittest.TestCase):
+class TestCmdRunCommonPlanIdGuard:
     """When plan_id is None, cmd_run_common MUST NOT call the finding-store
     helpers — preserving the historical silent behaviour for non-plan
     invocations."""
@@ -179,58 +173,52 @@ class TestCmdRunCommonPlanIdGuard(unittest.TestCase):
         )
         return [issue], None, 'failed'
 
-    def test_cmd_run_common_without_plan_id_writes_no_findings(self):
+    def test_cmd_run_common_without_plan_id_writes_no_findings(self, plan_context):
         from _build_shared import cmd_run_common  # type: ignore[import-not-found]
 
-        with PlanContext(plan_id='build-noplan') as ctx:
-            log_file = ctx.fixture_dir / 'fake.log'
-            log_file.write_text('failed\n')
+        log_file = plan_context.fixture_dir / 'fake.log'
+        log_file.write_text('failed\n')
 
-            with patch('_build_shared._store_build_findings') as mock_store, \
-                    patch('_build_shared._record_producer_mismatch') as mock_qgate:
-                # Suppress noisy stdout/stderr
-                buf = io.StringIO()
-                with redirect_stdout(buf):
-                    rc = cmd_run_common(
-                        result=self._make_failure_result(log_file),
-                        parser_fn=self._fake_parser,
-                        tool_name='python',
-                        plan_id=None,
-                    )
+        with patch('_build_shared._store_build_findings') as mock_store, \
+                patch('_build_shared._record_producer_mismatch') as mock_qgate:
+            # Suppress noisy stdout/stderr
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = cmd_run_common(
+                    result=self._make_failure_result(log_file),
+                    parser_fn=self._fake_parser,
+                    tool_name='python',
+                    plan_id=None,
+                )
 
-            # cmd_run_common returns 0 even on build failure — status is
-            # modeled in the printed output, not in the exit code. The
-            # behaviour under test is the silent skip, not the rc value.
-            self.assertEqual(rc, 0)
-            mock_store.assert_not_called()
-            mock_qgate.assert_not_called()
+        # cmd_run_common returns 0 even on build failure — status is
+        # modeled in the printed output, not in the exit code. The
+        # behaviour under test is the silent skip, not the rc value.
+        assert rc == 0
+        mock_store.assert_not_called()
+        mock_qgate.assert_not_called()
 
-    def test_cmd_run_common_with_plan_id_invokes_store(self):
+    def test_cmd_run_common_with_plan_id_invokes_store(self, plan_context):
         from _build_shared import cmd_run_common  # type: ignore[import-not-found]
 
-        with PlanContext(plan_id='build-withplan') as ctx:
-            log_file = ctx.fixture_dir / 'fake.log'
-            log_file.write_text('failed\n')
+        log_file = plan_context.fixture_dir / 'fake.log'
+        log_file.write_text('failed\n')
 
-            with patch('_build_shared._store_build_findings') as mock_store, \
-                    patch('_build_shared._record_producer_mismatch') as mock_qgate:
-                mock_store.return_value = (1, 1, [])
-                buf = io.StringIO()
-                with redirect_stdout(buf):
-                    rc = cmd_run_common(
-                        result=self._make_failure_result(log_file),
-                        parser_fn=self._fake_parser,
-                        tool_name='python',
-                        plan_id=ctx.plan_id,
-                    )
+        with patch('_build_shared._store_build_findings') as mock_store, \
+                patch('_build_shared._record_producer_mismatch') as mock_qgate:
+            mock_store.return_value = (1, 1, [])
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = cmd_run_common(
+                    result=self._make_failure_result(log_file),
+                    parser_fn=self._fake_parser,
+                    tool_name='python',
+                    plan_id=plan_context.plan_id,
+                )
 
-            # cmd_run_common returns 0 even on build failure — see the
-            # silent-skip variant above for rationale.
-            self.assertEqual(rc, 0)
-            mock_store.assert_called_once()
-            # No mismatch (1 seen / 1 stored) → qgate not called.
-            mock_qgate.assert_not_called()
-
-
-if __name__ == '__main__':
-    unittest.main()
+        # cmd_run_common returns 0 even on build failure — see the
+        # silent-skip variant above for rationale.
+        assert rc == 0
+        mock_store.assert_called_once()
+        # No mismatch (1 seen / 1 stored) → qgate not called.
+        mock_qgate.assert_not_called()

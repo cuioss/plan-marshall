@@ -6,8 +6,6 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import PlanContext
-
 # =============================================================================
 # Module loading (script has hyphens in filename → load via importlib)
 # =============================================================================
@@ -118,47 +116,44 @@ def _seed_references(plan_id: str, modified_files: list[str]) -> None:
 class TestPreSubmissionSelfReviewInactive:
     """Pre-filter drops the step when modified_files is empty; no-op otherwise."""
 
-    def test_drops_step_when_modified_files_empty(self):
-        with PlanContext('qg-self-review-empty'):
-            _seed_marshal(ci_provider=None)
-            _seed_references('qg-self-review-empty', [])
+    def test_drops_step_when_modified_files_empty(self, plan_context):
+        _seed_marshal(ci_provider=None)
+        _seed_references('qg-self-review-empty', [])
 
-            ns = _compose_ns(plan_id='qg-self-review-empty')
-            result = cmd_compose(ns)
+        ns = _compose_ns(plan_id='qg-self-review-empty')
+        result = cmd_compose(ns)
 
-            assert result is not None
-            assert result['status'] == 'success'
-            assert result['pre_submission_self_review_omitted'] is True
-            assert 'pre-submission-self-review' not in result_phase_6_steps(result)
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['pre_submission_self_review_omitted'] is True
+        assert 'pre-submission-self-review' not in result_phase_6_steps(result)
 
-    def test_keeps_step_when_modified_files_non_empty(self):
-        with PlanContext('qg-self-review-active'):
-            _seed_marshal(ci_provider=None)
-            _seed_references('qg-self-review-active', ['marketplace/bundles/x/skills/y/SKILL.md'])
+    def test_keeps_step_when_modified_files_non_empty(self, plan_context):
+        _seed_marshal(ci_provider=None)
+        _seed_references('qg-self-review-active', ['marketplace/bundles/x/skills/y/SKILL.md'])
 
-            ns = _compose_ns(plan_id='qg-self-review-active')
-            result = cmd_compose(ns)
+        ns = _compose_ns(plan_id='qg-self-review-active')
+        result = cmd_compose(ns)
 
-            assert result is not None
-            assert result['status'] == 'success'
-            assert result['pre_submission_self_review_omitted'] is False
-            assert 'pre-submission-self-review' in result_phase_6_steps(result)
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['pre_submission_self_review_omitted'] is False
+        assert 'pre-submission-self-review' in result_phase_6_steps(result)
 
-    def test_commit_strategy_none_strips_self_review(self):
-        with PlanContext('qg-self-review-no-push'):
-            _seed_marshal(ci_provider=None)
-            _seed_references('qg-self-review-no-push', ['some/file.py'])
+    def test_commit_strategy_none_strips_self_review(self, plan_context):
+        _seed_marshal(ci_provider=None)
+        _seed_references('qg-self-review-no-push', ['some/file.py'])
 
-            ns = _compose_ns(plan_id='qg-self-review-no-push', commit_strategy='none')
-            result = cmd_compose(ns)
+        ns = _compose_ns(plan_id='qg-self-review-no-push', commit_strategy='none')
+        result = cmd_compose(ns)
 
-            assert result is not None
-            assert result['status'] == 'success'
-            assert result['commit_push_omitted'] is True
-            steps = result_phase_6_steps(result)
-            assert 'commit-push' not in steps
-            assert 'pre-push-quality-gate' not in steps
-            assert 'pre-submission-self-review' not in steps
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['commit_push_omitted'] is True
+        steps = result_phase_6_steps(result)
+        assert 'commit-push' not in steps
+        assert 'pre-push-quality-gate' not in steps
+        assert 'pre-submission-self-review' not in steps
 
 
 # =============================================================================
@@ -178,64 +173,60 @@ class TestBotEnforcementGuard:
     non-remediable violations (currently unreachable).
     """
 
-    def test_remediates_for_github_when_automated_review_missing(self):
-        with PlanContext('qg-bot-github'):
-            _seed_marshal(ci_provider='github')
-            _seed_references('qg-bot-github', ['some/file.py'])
+    def test_remediates_for_github_when_automated_review_missing(self, plan_context):
+        _seed_marshal(ci_provider='github')
+        _seed_references('qg-bot-github', ['some/file.py'])
 
-            # Compose a candidate set that EXCLUDES automated-review.
-            phase_6 = ','.join(s for s in DEFAULT_PHASE_6_STEPS if s != 'automated-review')
-            ns = _compose_ns(plan_id='qg-bot-github', phase_6_steps=phase_6)
-            result = cmd_compose(ns)
+        # Compose a candidate set that EXCLUDES automated-review.
+        phase_6 = ','.join(s for s in DEFAULT_PHASE_6_STEPS if s != 'automated-review')
+        ns = _compose_ns(plan_id='qg-bot-github', phase_6_steps=phase_6)
+        result = cmd_compose(ns)
 
-            assert result is not None
-            assert result['status'] == 'success'
-            steps = result_phase_6_steps(result)
-            # Guard appends `default:automated-review` (canonical prefixed form).
-            bare_step_names = {s[len('default:') :] if s.startswith('default:') else s for s in steps}
-            assert 'automated-review' in bare_step_names
+        assert result is not None
+        assert result['status'] == 'success'
+        steps = result_phase_6_steps(result)
+        # Guard appends `default:automated-review` (canonical prefixed form).
+        bare_step_names = {s[len('default:') :] if s.startswith('default:') else s for s in steps}
+        assert 'automated-review' in bare_step_names
 
-    def test_remediates_for_gitlab_when_automated_review_missing(self):
-        with PlanContext('qg-bot-gitlab'):
-            _seed_marshal(ci_provider='gitlab')
-            _seed_references('qg-bot-gitlab', ['some/file.py'])
+    def test_remediates_for_gitlab_when_automated_review_missing(self, plan_context):
+        _seed_marshal(ci_provider='gitlab')
+        _seed_references('qg-bot-gitlab', ['some/file.py'])
 
-            phase_6 = ','.join(s for s in DEFAULT_PHASE_6_STEPS if s != 'automated-review')
-            ns = _compose_ns(plan_id='qg-bot-gitlab', phase_6_steps=phase_6)
-            result = cmd_compose(ns)
+        phase_6 = ','.join(s for s in DEFAULT_PHASE_6_STEPS if s != 'automated-review')
+        ns = _compose_ns(plan_id='qg-bot-gitlab', phase_6_steps=phase_6)
+        result = cmd_compose(ns)
 
-            assert result is not None
-            assert result['status'] == 'success'
-            steps = result_phase_6_steps(result)
-            bare_step_names = {s[len('default:') :] if s.startswith('default:') else s for s in steps}
-            assert 'automated-review' in bare_step_names
+        assert result is not None
+        assert result['status'] == 'success'
+        steps = result_phase_6_steps(result)
+        bare_step_names = {s[len('default:') :] if s.startswith('default:') else s for s in steps}
+        assert 'automated-review' in bare_step_names
 
-    def test_no_op_when_automated_review_present(self):
-        with PlanContext('qg-bot-present'):
-            _seed_marshal(ci_provider='github')
-            _seed_references('qg-bot-present', ['some/file.py'])
+    def test_no_op_when_automated_review_present(self, plan_context):
+        _seed_marshal(ci_provider='github')
+        _seed_references('qg-bot-present', ['some/file.py'])
 
-            ns = _compose_ns(plan_id='qg-bot-present')
-            result = cmd_compose(ns)
+        ns = _compose_ns(plan_id='qg-bot-present')
+        result = cmd_compose(ns)
 
-            assert result is not None
-            assert result['status'] == 'success'
-            assert 'automated-review' in result_phase_6_steps(result)
+        assert result is not None
+        assert result['status'] == 'success'
+        assert 'automated-review' in result_phase_6_steps(result)
 
-    def test_no_op_for_non_github_non_gitlab(self):
-        with PlanContext('qg-bot-other'):
-            _seed_marshal(ci_provider=None)
-            _seed_references('qg-bot-other', ['some/file.py'])
+    def test_no_op_for_non_github_non_gitlab(self, plan_context):
+        _seed_marshal(ci_provider=None)
+        _seed_references('qg-bot-other', ['some/file.py'])
 
-            phase_6 = ','.join(s for s in DEFAULT_PHASE_6_STEPS if s != 'automated-review')
-            ns = _compose_ns(plan_id='qg-bot-other', phase_6_steps=phase_6)
-            result = cmd_compose(ns)
+        phase_6 = ','.join(s for s in DEFAULT_PHASE_6_STEPS if s != 'automated-review')
+        ns = _compose_ns(plan_id='qg-bot-other', phase_6_steps=phase_6)
+        result = cmd_compose(ns)
 
-            assert result is not None
-            assert result['status'] == 'success'
-            # No CI provider configured → guard is a no-op; automated-review
-            # stays dropped and no error is raised.
-            assert 'automated-review' not in result_phase_6_steps(result)
+        assert result is not None
+        assert result['status'] == 'success'
+        # No CI provider configured → guard is a no-op; automated-review
+        # stays dropped and no error is raised.
+        assert 'automated-review' not in result_phase_6_steps(result)
 
 
 # =============================================================================

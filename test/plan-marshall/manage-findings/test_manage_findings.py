@@ -8,7 +8,7 @@ import importlib.util
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import PlanContext, get_script_path, run_script
+from conftest import get_script_path, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-findings', 'manage-findings.py')
@@ -150,39 +150,37 @@ def _qgate_clear_ns(plan_id='test-plan', phase='3-outline'):
 # =============================================================================
 
 
-def test_finding_add_basic():
+def test_finding_add_basic(plan_context):
     """Test adding a basic finding."""
-    with PlanContext():
-        result = cmd_add(
-            _add_ns(
-                type='bug',
-                title='Test failure in CacheTest',
-                detail='AssertionError: expected 5 but got 3',
-            )
+    result = cmd_add(
+        _add_ns(
+            type='bug',
+            title='Test failure in CacheTest',
+            detail='AssertionError: expected 5 but got 3',
         )
-        assert result['status'] == 'success'
-        assert 'hash_id' in result
-        assert result['type'] == 'bug'
+    )
+    assert result['status'] == 'success'
+    assert 'hash_id' in result
+    assert result['type'] == 'bug'
 
 
-def test_finding_add_with_file_info():
+def test_finding_add_with_file_info(plan_context):
     """Test adding finding with file location."""
-    with PlanContext():
-        result = cmd_add(
-            _add_ns(
-                type='sonar-issue',
-                title='S1192: String literals duplicated',
-                detail='String "application/json" appears 5 times',
-                file_path='src/main/java/Api.java',
-                line=42,
-                rule='java:S1192',
-                severity='warning',
-            )
+    result = cmd_add(
+        _add_ns(
+            type='sonar-issue',
+            title='S1192: String literals duplicated',
+            detail='String "application/json" appears 5 times',
+            file_path='src/main/java/Api.java',
+            line=42,
+            rule='java:S1192',
+            severity='warning',
         )
-        assert result['status'] == 'success'
+    )
+    assert result['status'] == 'success'
 
 
-def test_finding_add_all_types():
+def test_finding_add_all_types(plan_context):
     """Test that all finding types are accepted."""
     finding_types = [
         'bug',
@@ -198,10 +196,9 @@ def test_finding_add_all_types():
         'sonar-issue',
         'pr-comment',
     ]
-    with PlanContext():
-        for ftype in finding_types:
-            result = cmd_add(_add_ns(type=ftype, title=f'Test {ftype}', detail=f'Testing {ftype} type'))
-            assert result['status'] == 'success', f'Failed for type {ftype}'
+    for ftype in finding_types:
+        result = cmd_add(_add_ns(type=ftype, title=f'Test {ftype}', detail=f'Testing {ftype} type'))
+        assert result['status'] == 'success', f'Failed for type {ftype}'
 
 
 # =============================================================================
@@ -209,34 +206,31 @@ def test_finding_add_all_types():
 # =============================================================================
 
 
-def test_finding_query_empty():
+def test_finding_query_empty(plan_context):
     """Test querying with no findings."""
-    with PlanContext():
-        result = cmd_query(_query_ns())
-        assert result['total_count'] == 0
+    result = cmd_query(_query_ns())
+    assert result['total_count'] == 0
 
 
-def test_finding_query_by_type():
+def test_finding_query_by_type(plan_context):
     """Test filtering findings by type."""
-    with PlanContext():
-        cmd_add(_add_ns(type='bug', title='Bug 1', detail='d'))
-        cmd_add(_add_ns(type='tip', title='Tip 1', detail='d'))
-        cmd_add(_add_ns(type='bug', title='Bug 2', detail='d'))
+    cmd_add(_add_ns(type='bug', title='Bug 1', detail='d'))
+    cmd_add(_add_ns(type='tip', title='Tip 1', detail='d'))
+    cmd_add(_add_ns(type='bug', title='Bug 2', detail='d'))
 
-        result = cmd_query(_query_ns(type='bug'))
-        assert result['filtered_count'] == 2
+    result = cmd_query(_query_ns(type='bug'))
+    assert result['filtered_count'] == 2
 
 
-def test_finding_query_by_resolution():
+def test_finding_query_by_resolution(plan_context):
     """Test filtering findings by resolution."""
-    with PlanContext():
-        add_result = cmd_add(_add_ns(type='bug', title='Bug to fix', detail='d'))
-        hash_id = str(add_result['hash_id'])
+    add_result = cmd_add(_add_ns(type='bug', title='Bug to fix', detail='d'))
+    hash_id = str(add_result['hash_id'])
 
-        cmd_resolve(_resolve_ns(hash_id=hash_id, resolution='fixed', detail='Fixed in commit abc'))
+    cmd_resolve(_resolve_ns(hash_id=hash_id, resolution='fixed', detail='Fixed in commit abc'))
 
-        result = cmd_query(_query_ns(resolution='fixed'))
-        assert result['filtered_count'] == 1
+    result = cmd_query(_query_ns(resolution='fixed'))
+    assert result['filtered_count'] == 1
 
 
 # =============================================================================
@@ -244,39 +238,37 @@ def test_finding_query_by_resolution():
 # =============================================================================
 
 
-def test_finding_resolve():
+def test_finding_resolve(plan_context):
     """Test resolving a finding."""
-    with PlanContext():
-        add_result = cmd_add(
-            _add_ns(
-                type='build-error',
-                title='Compilation error',
-                detail='Missing import',
-            )
+    add_result = cmd_add(
+        _add_ns(
+            type='build-error',
+            title='Compilation error',
+            detail='Missing import',
         )
-        hash_id = str(add_result['hash_id'])
+    )
+    hash_id = str(add_result['hash_id'])
 
-        result = cmd_resolve(
-            _resolve_ns(
-                hash_id=hash_id,
-                resolution='fixed',
-                detail='Added missing import statement',
-            )
+    result = cmd_resolve(
+        _resolve_ns(
+            hash_id=hash_id,
+            resolution='fixed',
+            detail='Added missing import statement',
         )
-        assert result['status'] == 'success'
-        assert result['resolution'] == 'fixed'
+    )
+    assert result['status'] == 'success'
+    assert result['resolution'] == 'fixed'
 
 
-def test_finding_resolve_all_statuses():
+def test_finding_resolve_all_statuses(plan_context):
     """Test all resolution statuses."""
     resolutions = ['pending', 'fixed', 'suppressed', 'accepted']
-    with PlanContext():
-        for res in resolutions:
-            add_result = cmd_add(_add_ns(type='bug', title=f'Bug for {res}', detail='d'))
-            hash_id = str(add_result['hash_id'])
+    for res in resolutions:
+        add_result = cmd_add(_add_ns(type='bug', title=f'Bug for {res}', detail='d'))
+        hash_id = str(add_result['hash_id'])
 
-            result = cmd_resolve(_resolve_ns(hash_id=hash_id, resolution=res))
-            assert result['status'] == 'success', f'Failed for resolution {res}'
+        result = cmd_resolve(_resolve_ns(hash_id=hash_id, resolution=res))
+        assert result['status'] == 'success', f'Failed for resolution {res}'
 
 
 # =============================================================================
@@ -284,69 +276,66 @@ def test_finding_resolve_all_statuses():
 # =============================================================================
 
 
-def test_finding_promote():
+def test_finding_promote(plan_context):
     """Test promoting a finding."""
-    with PlanContext(plan_id='finding-promote'):
-        add_result = cmd_add(
-            _add_ns(
-                plan_id='finding-promote',
-                type='tip',
-                title='Use constructor injection',
-                detail='Prefer constructor injection over field injection for testability',
-            )
+    add_result = cmd_add(
+        _add_ns(
+            plan_id='finding-promote',
+            type='tip',
+            title='Use constructor injection',
+            detail='Prefer constructor injection over field injection for testability',
         )
-        hash_id = str(add_result['hash_id'])
+    )
+    hash_id = str(add_result['hash_id'])
 
-        result = cmd_promote(
-            _promote_ns(
-                plan_id='finding-promote',
-                hash_id=hash_id,
-                promoted_to='architecture',
-            )
+    result = cmd_promote(
+        _promote_ns(
+            plan_id='finding-promote',
+            hash_id=hash_id,
+            promoted_to='architecture',
         )
-        assert result['status'] == 'success'
-        assert result['promoted_to'] == 'architecture'
+    )
+    assert result['status'] == 'success'
+    assert result['promoted_to'] == 'architecture'
 
 
-def test_finding_promote_to_lessons():
+def test_finding_promote_to_lessons(plan_context):
     """Test promoting to lessons learned."""
-    with PlanContext():
-        add_result = cmd_add(
-            _add_ns(
-                type='bug',
-                title='Null pointer from missing null check',
-                detail='Always check for null before calling methods on optional fields',
-            )
+    add_result = cmd_add(
+        _add_ns(
+            type='bug',
+            title='Null pointer from missing null check',
+            detail='Always check for null before calling methods on optional fields',
         )
-        hash_id = str(add_result['hash_id'])
+    )
+    hash_id = str(add_result['hash_id'])
 
-        result = cmd_promote(
-            _promote_ns(
-                hash_id=hash_id,
-                promoted_to='lessons-2025-01-22-001',
-            )
+    result = cmd_promote(
+        _promote_ns(
+            hash_id=hash_id,
+            promoted_to='lessons-2025-01-22-001',
         )
-        assert 'lessons-' in result['promoted_to']
+    )
+    assert 'lessons-' in result['promoted_to']
 
 
-def test_finding_query_promoted():
+def test_finding_query_promoted(plan_context):
     """Test filtering by promoted status."""
-    with PlanContext():
-        # Add and promote one
-        add_result = cmd_add(_add_ns(type='tip', title='Promoted tip', detail='d'))
-        hash_id = str(add_result['hash_id'])
-        cmd_promote(_promote_ns(hash_id=hash_id, promoted_to='architecture'))
+    # Add and promote one
+    add_result = cmd_add(_add_ns(type='tip', title='Promoted tip', detail='d'))
+    hash_id = str(add_result['hash_id'])
+    cmd_promote(_promote_ns(hash_id=hash_id, promoted_to='architecture'))
 
-        # Add one not promoted
-        cmd_add(_add_ns(type='tip', title='Not promoted', detail='d'))
+    # Add one not promoted
+    cmd_add(_add_ns(type='tip', title='Not promoted', detail='d'))
 
-        # Query promoted
-        result = cmd_query(_query_ns(promoted='true'))
-        assert result['filtered_count'] == 1
+    # Query promoted
+    result = cmd_query(_query_ns(promoted='true'))
+    assert result['filtered_count'] == 1
 
-        # Query not promoted
-        result = cmd_query(_query_ns(promoted='false'))
-        assert result['filtered_count'] == 1
+    # Query not promoted
+    result = cmd_query(_query_ns(promoted='false'))
+    assert result['filtered_count'] == 1
 
 
 # =============================================================================
@@ -354,45 +343,43 @@ def test_finding_query_promoted():
 # =============================================================================
 
 
-def test_qgate_add_basic():
+def test_qgate_add_basic(plan_context):
     """Test adding a basic Q-Gate finding."""
-    with PlanContext(plan_id='qgate-add-basic'):
-        result = cmd_qgate_add(
-            _qgate_add_ns(
-                plan_id='qgate-add-basic',
-                phase='3-outline',
-                source='qgate',
-                type='triage',
-                title='False positive: helper.py',
-                detail='File is consumer-only, not a producer',
-            )
+    result = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-add-basic',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='False positive: helper.py',
+            detail='File is consumer-only, not a producer',
         )
-        assert result['status'] == 'success'
-        assert 'hash_id' in result
-        assert result['phase'] == '3-outline'
+    )
+    assert result['status'] == 'success'
+    assert 'hash_id' in result
+    assert result['phase'] == '3-outline'
 
 
-def test_qgate_add_with_options():
+def test_qgate_add_with_options(plan_context):
     """Test adding Q-Gate finding with all options."""
-    with PlanContext(plan_id='qgate-add-opts'):
-        result = cmd_qgate_add(
-            _qgate_add_ns(
-                plan_id='qgate-add-opts',
-                phase='3-outline',
-                source='user_review',
-                type='triage',
-                title='User: Add module X',
-                detail='User requested adding module X to scope',
-                file_path='src/module-x/main.py',
-                component='deliverable-3',
-                severity='warning',
-                iteration=2,
-            )
+    result = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-add-opts',
+            phase='3-outline',
+            source='user_review',
+            type='triage',
+            title='User: Add module X',
+            detail='User requested adding module X to scope',
+            file_path='src/module-x/main.py',
+            component='deliverable-3',
+            severity='warning',
+            iteration=2,
         )
-        assert result['status'] == 'success'
+    )
+    assert result['status'] == 'success'
 
 
-def test_qgate_add_invalid_phase():
+def test_qgate_add_invalid_phase(plan_context):
     """Test that invalid phase is rejected (CLI plumbing - subprocess).
 
     The canonical ``parse_args_with_toon_errors`` contract emits
@@ -401,54 +388,52 @@ def test_qgate_add_invalid_phase():
     stderr). The legacy assertion checked ``not result.success``; the
     new contract requires inspecting the parsed TOON instead.
     """
-    with PlanContext(plan_id='qgate-inv-phase'):
-        result = run_script(
-            SCRIPT_PATH,
-            'qgate',
-            'add',
-            '--plan-id',
-            'qgate-inv-phase',
-            '--phase',
-            'invalid-phase',
-            '--source',
-            'qgate',
-            '--type',
-            'triage',
-            '--title',
-            'Test',
-            '--detail',
-            'Test detail',
-        )
-        # New contract: argparse-boundary validation emits TOON on stdout
-        # with exit code 0. Older invalid-source/invalid-type values still
-        # fall through to the command handler which exits non-zero.
-        assert result.returncode == 0
-        data = result.toon()
-        assert data.get('status') == 'error'
-        assert data.get('error') == 'invalid_phase'
+    result = run_script(
+        SCRIPT_PATH,
+        'qgate',
+        'add',
+        '--plan-id',
+        'qgate-inv-phase',
+        '--phase',
+        'invalid-phase',
+        '--source',
+        'qgate',
+        '--type',
+        'triage',
+        '--title',
+        'Test',
+        '--detail',
+        'Test detail',
+    )
+    # New contract: argparse-boundary validation emits TOON on stdout
+    # with exit code 0. Older invalid-source/invalid-type values still
+    # fall through to the command handler which exits non-zero.
+    assert result.returncode == 0
+    data = result.toon()
+    assert data.get('status') == 'error'
+    assert data.get('error') == 'invalid_phase'
 
 
-def test_qgate_add_invalid_source():
+def test_qgate_add_invalid_source(plan_context):
     """Test that invalid source is rejected (CLI plumbing - subprocess)."""
-    with PlanContext(plan_id='qgate-inv-source'):
-        result = run_script(
-            SCRIPT_PATH,
-            'qgate',
-            'add',
-            '--plan-id',
-            'qgate-inv-source',
-            '--phase',
-            '3-outline',
-            '--source',
-            'invalid',
-            '--type',
-            'triage',
-            '--title',
-            'Test',
-            '--detail',
-            'Test detail',
-        )
-        assert not result.success
+    result = run_script(
+        SCRIPT_PATH,
+        'qgate',
+        'add',
+        '--plan-id',
+        'qgate-inv-source',
+        '--phase',
+        '3-outline',
+        '--source',
+        'invalid',
+        '--type',
+        'triage',
+        '--title',
+        'Test',
+        '--detail',
+        'Test detail',
+    )
+    assert not result.success
 
 
 # =============================================================================
@@ -456,143 +441,139 @@ def test_qgate_add_invalid_source():
 # =============================================================================
 
 
-def test_qgate_query_empty():
+def test_qgate_query_empty(plan_context):
     """Test querying with no Q-Gate findings."""
-    with PlanContext(plan_id='qgate-query-empty'):
-        result = cmd_qgate_query(_qgate_query_ns(plan_id='qgate-query-empty', phase='3-outline'))
-        assert result['status'] == 'success'
-        assert result['total_count'] == 0
-        assert result['phase'] == '3-outline'
+    result = cmd_qgate_query(_qgate_query_ns(plan_id='qgate-query-empty', phase='3-outline'))
+    assert result['status'] == 'success'
+    assert result['total_count'] == 0
+    assert result['phase'] == '3-outline'
 
 
-def test_qgate_query_by_resolution():
+def test_qgate_query_by_resolution(plan_context):
     """Test filtering Q-Gate findings by resolution."""
-    with PlanContext(plan_id='qgate-query-res'):
-        # Add two findings
-        cmd_qgate_add(
-            _qgate_add_ns(
-                plan_id='qgate-query-res',
-                phase='3-outline',
-                source='qgate',
-                type='triage',
-                title='Finding 1',
-                detail='d1',
-            )
+    # Add two findings
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-query-res',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Finding 1',
+            detail='d1',
         )
-        add_result = cmd_qgate_add(
-            _qgate_add_ns(
-                plan_id='qgate-query-res',
-                phase='3-outline',
-                source='qgate',
-                type='triage',
-                title='Finding 2',
-                detail='d2',
-            )
+    )
+    add_result = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-query-res',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Finding 2',
+            detail='d2',
         )
-        hash_id = str(add_result['hash_id'])
+    )
+    hash_id = str(add_result['hash_id'])
 
-        # Resolve one
-        cmd_qgate_resolve(
-            _qgate_resolve_ns(
-                plan_id='qgate-query-res',
-                hash_id=hash_id,
-                resolution='taken_into_account',
-                phase='3-outline',
-                detail='Addressed by revising deliverable 3',
-            )
+    # Resolve one
+    cmd_qgate_resolve(
+        _qgate_resolve_ns(
+            plan_id='qgate-query-res',
+            hash_id=hash_id,
+            resolution='taken_into_account',
+            phase='3-outline',
+            detail='Addressed by revising deliverable 3',
         )
+    )
 
-        # Query pending
-        result = cmd_qgate_query(
-            _qgate_query_ns(
-                plan_id='qgate-query-res',
-                phase='3-outline',
-                resolution='pending',
-            )
+    # Query pending
+    result = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-query-res',
+            phase='3-outline',
+            resolution='pending',
         )
-        assert result['filtered_count'] == 1
+    )
+    assert result['filtered_count'] == 1
 
-        # Query taken_into_account
-        result = cmd_qgate_query(
-            _qgate_query_ns(
-                plan_id='qgate-query-res',
-                phase='3-outline',
-                resolution='taken_into_account',
-            )
+    # Query taken_into_account
+    result = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-query-res',
+            phase='3-outline',
+            resolution='taken_into_account',
         )
-        assert result['filtered_count'] == 1
+    )
+    assert result['filtered_count'] == 1
 
 
-def test_qgate_query_by_source():
+def test_qgate_query_by_source(plan_context):
     """Test filtering Q-Gate findings by source."""
-    with PlanContext(plan_id='qgate-query-src'):
-        cmd_qgate_add(
-            _qgate_add_ns(
-                plan_id='qgate-query-src',
-                phase='3-outline',
-                source='qgate',
-                type='triage',
-                title='Auto finding',
-                detail='d',
-            )
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-query-src',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Auto finding',
+            detail='d',
         )
-        cmd_qgate_add(
-            _qgate_add_ns(
-                plan_id='qgate-query-src',
-                phase='3-outline',
-                source='user_review',
-                type='triage',
-                title='User finding',
-                detail='d',
-            )
+    )
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-query-src',
+            phase='3-outline',
+            source='user_review',
+            type='triage',
+            title='User finding',
+            detail='d',
         )
+    )
 
-        result = cmd_qgate_query(
-            _qgate_query_ns(
-                plan_id='qgate-query-src',
-                phase='3-outline',
-                source='user_review',
-            )
+    result = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-query-src',
+            phase='3-outline',
+            source='user_review',
         )
-        assert result['total_count'] == 2
-        assert result['filtered_count'] == 1
+    )
+    assert result['total_count'] == 2
+    assert result['filtered_count'] == 1
 
 
-def test_qgate_per_phase_isolation():
+def test_qgate_per_phase_isolation(plan_context):
     """Test that Q-Gate findings are isolated per phase."""
-    with PlanContext(plan_id='qgate-phase-iso'):
-        # Add to phase 3
-        cmd_qgate_add(
-            _qgate_add_ns(
-                plan_id='qgate-phase-iso',
-                phase='3-outline',
-                source='qgate',
-                type='triage',
-                title='Phase 3 finding',
-                detail='d',
-            )
+    # Add to phase 3
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-phase-iso',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Phase 3 finding',
+            detail='d',
         )
-        # Add to phase 4
-        cmd_qgate_add(
-            _qgate_add_ns(
-                plan_id='qgate-phase-iso',
-                phase='4-plan',
-                source='qgate',
-                type='triage',
-                title='Phase 4 finding',
-                detail='d',
-            )
+    )
+    # Add to phase 4
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-phase-iso',
+            phase='4-plan',
+            source='qgate',
+            type='triage',
+            title='Phase 4 finding',
+            detail='d',
         )
+    )
 
-        # Query phase 3 only
-        result = cmd_qgate_query(_qgate_query_ns(plan_id='qgate-phase-iso', phase='3-outline'))
-        assert result['total_count'] == 1
-        assert result['phase'] == '3-outline'
+    # Query phase 3 only
+    result = cmd_qgate_query(_qgate_query_ns(plan_id='qgate-phase-iso', phase='3-outline'))
+    assert result['total_count'] == 1
+    assert result['phase'] == '3-outline'
 
-        # Query phase 4 only
-        result = cmd_qgate_query(_qgate_query_ns(plan_id='qgate-phase-iso', phase='4-plan'))
-        assert result['total_count'] == 1
-        assert result['phase'] == '4-plan'
+    # Query phase 4 only
+    result = cmd_qgate_query(_qgate_query_ns(plan_id='qgate-phase-iso', phase='4-plan'))
+    assert result['total_count'] == 1
+    assert result['phase'] == '4-plan'
 
 
 # =============================================================================
@@ -600,61 +581,59 @@ def test_qgate_per_phase_isolation():
 # =============================================================================
 
 
-def test_qgate_resolve_taken_into_account():
+def test_qgate_resolve_taken_into_account(plan_context):
     """Test resolving a Q-Gate finding with taken_into_account."""
-    with PlanContext(plan_id='qgate-resolve-tia'):
+    add_result = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-resolve-tia',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Missing coverage',
+            detail='File X not covered',
+        )
+    )
+    hash_id = str(add_result['hash_id'])
+
+    result = cmd_qgate_resolve(
+        _qgate_resolve_ns(
+            plan_id='qgate-resolve-tia',
+            hash_id=hash_id,
+            resolution='taken_into_account',
+            phase='3-outline',
+            detail='Added file X to deliverable 2',
+        )
+    )
+    assert result['status'] == 'success'
+    assert result['resolution'] == 'taken_into_account'
+
+
+def test_qgate_resolve_all_statuses(plan_context):
+    """Test all resolution statuses for Q-Gate findings."""
+    resolutions = ['pending', 'fixed', 'suppressed', 'accepted', 'taken_into_account']
+    for res in resolutions:
         add_result = cmd_qgate_add(
             _qgate_add_ns(
-                plan_id='qgate-resolve-tia',
-                phase='3-outline',
+                plan_id='qgate-resolve-all-st',
+                phase='5-execute',
                 source='qgate',
                 type='triage',
-                title='Missing coverage',
-                detail='File X not covered',
+                title=f'Finding for {res}',
+                detail='d',
             )
         )
+        assert add_result['status'] == 'success', f'Add failed for {res}'
         hash_id = str(add_result['hash_id'])
 
         result = cmd_qgate_resolve(
             _qgate_resolve_ns(
-                plan_id='qgate-resolve-tia',
+                plan_id='qgate-resolve-all-st',
                 hash_id=hash_id,
-                resolution='taken_into_account',
-                phase='3-outline',
-                detail='Added file X to deliverable 2',
+                resolution=res,
+                phase='5-execute',
             )
         )
-        assert result['status'] == 'success'
-        assert result['resolution'] == 'taken_into_account'
-
-
-def test_qgate_resolve_all_statuses():
-    """Test all resolution statuses for Q-Gate findings."""
-    resolutions = ['pending', 'fixed', 'suppressed', 'accepted', 'taken_into_account']
-    with PlanContext(plan_id='qgate-resolve-all-st'):
-        for res in resolutions:
-            add_result = cmd_qgate_add(
-                _qgate_add_ns(
-                    plan_id='qgate-resolve-all-st',
-                    phase='5-execute',
-                    source='qgate',
-                    type='triage',
-                    title=f'Finding for {res}',
-                    detail='d',
-                )
-            )
-            assert add_result['status'] == 'success', f'Add failed for {res}'
-            hash_id = str(add_result['hash_id'])
-
-            result = cmd_qgate_resolve(
-                _qgate_resolve_ns(
-                    plan_id='qgate-resolve-all-st',
-                    hash_id=hash_id,
-                    resolution=res,
-                    phase='5-execute',
-                )
-            )
-            assert result['status'] == 'success', f'Failed for resolution {res}'
+        assert result['status'] == 'success', f'Failed for resolution {res}'
 
 
 # =============================================================================
@@ -662,95 +641,92 @@ def test_qgate_resolve_all_statuses():
 # =============================================================================
 
 
-def test_qgate_clear():
+def test_qgate_clear(plan_context):
     """Test clearing Q-Gate findings for a phase."""
-    with PlanContext(plan_id='qgate-clear'):
-        cmd_qgate_add(
-            _qgate_add_ns(
-                plan_id='qgate-clear',
-                phase='3-outline',
-                source='qgate',
-                type='triage',
-                title='Finding 1',
-                detail='d',
-            )
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-clear',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Finding 1',
+            detail='d',
         )
-        cmd_qgate_add(
-            _qgate_add_ns(
-                plan_id='qgate-clear',
-                phase='3-outline',
-                source='qgate',
-                type='triage',
-                title='Finding 2',
-                detail='d',
-            )
+    )
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-clear',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Finding 2',
+            detail='d',
         )
+    )
 
-        result = cmd_qgate_clear(_qgate_clear_ns(plan_id='qgate-clear', phase='3-outline'))
-        assert result['status'] == 'success'
-        assert result['cleared'] == 2
+    result = cmd_qgate_clear(_qgate_clear_ns(plan_id='qgate-clear', phase='3-outline'))
+    assert result['status'] == 'success'
+    assert result['cleared'] == 2
 
-        # Verify empty
-        query_result = cmd_qgate_query(_qgate_query_ns(plan_id='qgate-clear', phase='3-outline'))
-        assert query_result['total_count'] == 0
+    # Verify empty
+    query_result = cmd_qgate_query(_qgate_query_ns(plan_id='qgate-clear', phase='3-outline'))
+    assert query_result['total_count'] == 0
 
 
-def test_qgate_clear_empty():
+def test_qgate_clear_empty(plan_context):
     """Test clearing when no Q-Gate findings exist."""
-    with PlanContext(plan_id='qgate-clear-empty'):
-        result = cmd_qgate_clear(_qgate_clear_ns(plan_id='qgate-clear-empty', phase='3-outline'))
-        assert result['status'] == 'success'
-        assert result['cleared'] == 0
+    result = cmd_qgate_clear(_qgate_clear_ns(plan_id='qgate-clear-empty', phase='3-outline'))
+    assert result['status'] == 'success'
+    assert result['cleared'] == 0
 
 
-def test_qgate_user_review_source():
+def test_qgate_user_review_source(plan_context):
     """Test that user_review findings work end-to-end."""
-    with PlanContext(plan_id='qgate-user-review'):
-        # Add user review finding
-        add_result = cmd_qgate_add(
-            _qgate_add_ns(
-                plan_id='qgate-user-review',
-                phase='3-outline',
-                source='user_review',
-                type='triage',
-                title='User: scope too narrow',
-                detail='Please include module Y in the deliverables',
-            )
+    # Add user review finding
+    add_result = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-user-review',
+            phase='3-outline',
+            source='user_review',
+            type='triage',
+            title='User: scope too narrow',
+            detail='Please include module Y in the deliverables',
         )
-        assert add_result['status'] == 'success'
-        hash_id = str(add_result['hash_id'])
+    )
+    assert add_result['status'] == 'success'
+    hash_id = str(add_result['hash_id'])
 
-        # Query user_review findings
-        query_result = cmd_qgate_query(
-            _qgate_query_ns(
-                plan_id='qgate-user-review',
-                phase='3-outline',
-                source='user_review',
-            )
+    # Query user_review findings
+    query_result = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-user-review',
+            phase='3-outline',
+            source='user_review',
         )
-        assert query_result['filtered_count'] == 1
+    )
+    assert query_result['filtered_count'] == 1
 
-        # Resolve as taken_into_account
-        resolve_result = cmd_qgate_resolve(
-            _qgate_resolve_ns(
-                plan_id='qgate-user-review',
-                hash_id=hash_id,
-                resolution='taken_into_account',
-                phase='3-outline',
-                detail='Added module Y to deliverable scope',
-            )
+    # Resolve as taken_into_account
+    resolve_result = cmd_qgate_resolve(
+        _qgate_resolve_ns(
+            plan_id='qgate-user-review',
+            hash_id=hash_id,
+            resolution='taken_into_account',
+            phase='3-outline',
+            detail='Added module Y to deliverable scope',
         )
-        assert resolve_result['status'] == 'success'
+    )
+    assert resolve_result['status'] == 'success'
 
-        # Verify resolved
-        verify_result = cmd_qgate_query(
-            _qgate_query_ns(
-                plan_id='qgate-user-review',
-                phase='3-outline',
-                resolution='pending',
-            )
+    # Verify resolved
+    verify_result = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-user-review',
+            phase='3-outline',
+            resolution='pending',
         )
-        assert verify_result['filtered_count'] == 0
+    )
+    assert verify_result['filtered_count'] == 0
 
 
 # =============================================================================
@@ -758,130 +734,127 @@ def test_qgate_user_review_source():
 # =============================================================================
 
 
-def test_qgate_add_dedup_pending():
+def test_qgate_add_dedup_pending(plan_context):
     """Test that adding same title twice returns deduplicated, only 1 record."""
-    with PlanContext(plan_id='qgate-dedup-pend'):
-        result1 = cmd_qgate_add(
-            _qgate_add_ns(
-                plan_id='qgate-dedup-pend',
-                phase='3-outline',
-                source='qgate',
-                type='triage',
-                title='Missing assessment for helper.py',
-                detail='d1',
-            )
+    result1 = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-dedup-pend',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Missing assessment for helper.py',
+            detail='d1',
         )
-        assert result1['status'] == 'success'
-        original_hash = str(result1['hash_id'])
+    )
+    assert result1['status'] == 'success'
+    original_hash = str(result1['hash_id'])
 
-        # Add same title again
-        result2 = cmd_qgate_add(
-            _qgate_add_ns(
-                plan_id='qgate-dedup-pend',
-                phase='3-outline',
-                source='qgate',
-                type='triage',
-                title='Missing assessment for helper.py',
-                detail='d2',
-            )
+    # Add same title again
+    result2 = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-dedup-pend',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Missing assessment for helper.py',
+            detail='d2',
         )
-        assert result2['status'] == 'deduplicated'
-        assert str(result2['hash_id']) == original_hash
+    )
+    assert result2['status'] == 'deduplicated'
+    assert str(result2['hash_id']) == original_hash
 
-        # Verify only 1 record exists
-        query_result = cmd_qgate_query(
-            _qgate_query_ns(
-                plan_id='qgate-dedup-pend',
-                phase='3-outline',
-            )
+    # Verify only 1 record exists
+    query_result = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-dedup-pend',
+            phase='3-outline',
         )
-        assert query_result['total_count'] == 1
+    )
+    assert query_result['total_count'] == 1
 
 
-def test_qgate_add_reopen_resolved():
+def test_qgate_add_reopen_resolved(plan_context):
     """Test that re-adding a resolved finding reopens it."""
-    with PlanContext(plan_id='qgate-dedup-reopen'):
-        # Add finding
-        add_result = cmd_qgate_add(
-            _qgate_add_ns(
-                plan_id='qgate-dedup-reopen',
-                phase='3-outline',
-                source='qgate',
-                type='triage',
-                title='Missing coverage for utils.py',
-                detail='d1',
-            )
+    # Add finding
+    add_result = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-dedup-reopen',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Missing coverage for utils.py',
+            detail='d1',
         )
-        assert add_result['status'] == 'success'
-        hash_id = str(add_result['hash_id'])
+    )
+    assert add_result['status'] == 'success'
+    hash_id = str(add_result['hash_id'])
 
-        # Resolve it
-        cmd_qgate_resolve(
-            _qgate_resolve_ns(
-                plan_id='qgate-dedup-reopen',
-                hash_id=hash_id,
-                resolution='taken_into_account',
-                phase='3-outline',
-                detail='Addressed',
-            )
+    # Resolve it
+    cmd_qgate_resolve(
+        _qgate_resolve_ns(
+            plan_id='qgate-dedup-reopen',
+            hash_id=hash_id,
+            resolution='taken_into_account',
+            phase='3-outline',
+            detail='Addressed',
         )
+    )
 
-        # Re-add same title
-        reopen_result = cmd_qgate_add(
-            _qgate_add_ns(
-                plan_id='qgate-dedup-reopen',
-                phase='3-outline',
-                source='qgate',
-                type='triage',
-                title='Missing coverage for utils.py',
-                detail='d2',
-            )
+    # Re-add same title
+    reopen_result = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-dedup-reopen',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Missing coverage for utils.py',
+            detail='d2',
         )
-        assert reopen_result['status'] == 'reopened'
-        assert str(reopen_result['hash_id']) == hash_id
+    )
+    assert reopen_result['status'] == 'reopened'
+    assert str(reopen_result['hash_id']) == hash_id
 
-        # Verify it's pending again
-        query_result = cmd_qgate_query(
-            _qgate_query_ns(
-                plan_id='qgate-dedup-reopen',
-                phase='3-outline',
-                resolution='pending',
-            )
+    # Verify it's pending again
+    query_result = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-dedup-reopen',
+            phase='3-outline',
+            resolution='pending',
         )
-        assert query_result['filtered_count'] == 1
+    )
+    assert query_result['filtered_count'] == 1
 
 
-def test_qgate_add_different_titles_not_deduped():
+def test_qgate_add_different_titles_not_deduped(plan_context):
     """Test that different titles create separate findings."""
-    with PlanContext(plan_id='qgate-dedup-diff'):
-        cmd_qgate_add(
-            _qgate_add_ns(
-                plan_id='qgate-dedup-diff',
-                phase='3-outline',
-                source='qgate',
-                type='triage',
-                title='Finding A',
-                detail='d1',
-            )
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-dedup-diff',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Finding A',
+            detail='d1',
         )
-        cmd_qgate_add(
-            _qgate_add_ns(
-                plan_id='qgate-dedup-diff',
-                phase='3-outline',
-                source='qgate',
-                type='triage',
-                title='Finding B',
-                detail='d2',
-            )
+    )
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-dedup-diff',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Finding B',
+            detail='d2',
         )
+    )
 
-        query_result = cmd_qgate_query(
-            _qgate_query_ns(
-                plan_id='qgate-dedup-diff',
-                phase='3-outline',
-            )
+    query_result = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-dedup-diff',
+            phase='3-outline',
         )
-        assert query_result['total_count'] == 2
+    )
+    assert query_result['total_count'] == 2
 
 
 # =============================================================================
@@ -889,20 +862,19 @@ def test_qgate_add_different_titles_not_deduped():
 # =============================================================================
 
 
-def test_finding_resolve_taken_into_account():
+def test_finding_resolve_taken_into_account(plan_context):
     """Test that taken_into_account resolution works for regular findings too."""
-    with PlanContext():
-        add_result = cmd_add(_add_ns(type='triage', title='Reviewed finding', detail='d'))
-        hash_id = str(add_result['hash_id'])
+    add_result = cmd_add(_add_ns(type='triage', title='Reviewed finding', detail='d'))
+    hash_id = str(add_result['hash_id'])
 
-        result = cmd_resolve(
-            _resolve_ns(
-                hash_id=hash_id,
-                resolution='taken_into_account',
-                detail='Addressed in revision',
-            )
+    result = cmd_resolve(
+        _resolve_ns(
+            hash_id=hash_id,
+            resolution='taken_into_account',
+            detail='Addressed in revision',
         )
-        assert result['resolution'] == 'taken_into_account'
+    )
+    assert result['resolution'] == 'taken_into_account'
 
 
 # =============================================================================
@@ -910,54 +882,52 @@ def test_finding_resolve_taken_into_account():
 # =============================================================================
 
 
-def test_cli_add_and_query_roundtrip():
+def test_cli_add_and_query_roundtrip(plan_context):
     """CLI plumbing: add a finding and query it back via subprocess."""
-    with PlanContext():
-        result = run_script(
-            SCRIPT_PATH,
-            'add',
-            '--plan-id',
-            'test-plan',
-            '--type',
-            'bug',
-            '--title',
-            'CLI roundtrip test',
-            '--detail',
-            'Testing CLI plumbing',
-        )
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
+    result = run_script(
+        SCRIPT_PATH,
+        'add',
+        '--plan-id',
+        'test-plan',
+        '--type',
+        'bug',
+        '--title',
+        'CLI roundtrip test',
+        '--detail',
+        'Testing CLI plumbing',
+    )
+    assert result.success, f'Script failed: {result.stderr}'
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
 
-        query_result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'test-plan')
-        assert query_result.success
-        query_data = parse_toon(query_result.stdout)
-        assert query_data['total_count'] == 1
+    query_result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'test-plan')
+    assert query_result.success
+    query_data = parse_toon(query_result.stdout)
+    assert query_data['total_count'] == 1
 
 
-def test_cli_qgate_add_and_clear_roundtrip():
+def test_cli_qgate_add_and_clear_roundtrip(plan_context):
     """CLI plumbing: add Q-Gate finding and clear via subprocess."""
-    with PlanContext(plan_id='cli-qgate-rt'):
-        add_result = run_script(
-            SCRIPT_PATH,
-            'qgate',
-            'add',
-            '--plan-id',
-            'cli-qgate-rt',
-            '--phase',
-            '3-outline',
-            '--source',
-            'qgate',
-            '--type',
-            'triage',
-            '--title',
-            'CLI qgate test',
-            '--detail',
-            'Testing CLI plumbing',
-        )
-        assert add_result.success, f'Script failed: {add_result.stderr}'
+    add_result = run_script(
+        SCRIPT_PATH,
+        'qgate',
+        'add',
+        '--plan-id',
+        'cli-qgate-rt',
+        '--phase',
+        '3-outline',
+        '--source',
+        'qgate',
+        '--type',
+        'triage',
+        '--title',
+        'CLI qgate test',
+        '--detail',
+        'Testing CLI plumbing',
+    )
+    assert add_result.success, f'Script failed: {add_result.stderr}'
 
-        clear_result = run_script(SCRIPT_PATH, 'qgate', 'clear', '--plan-id', 'cli-qgate-rt', '--phase', '3-outline')
-        assert clear_result.success
-        clear_data = parse_toon(clear_result.stdout)
-        assert clear_data['cleared'] == 1
+    clear_result = run_script(SCRIPT_PATH, 'qgate', 'clear', '--plan-id', 'cli-qgate-rt', '--phase', '3-outline')
+    assert clear_result.success
+    clear_data = parse_toon(clear_result.stdout)
+    assert clear_data['cleared'] == 1

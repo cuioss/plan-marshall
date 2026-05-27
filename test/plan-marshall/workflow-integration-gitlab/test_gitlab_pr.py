@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from conftest import PlanContext, get_script_path, run_script
+from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-gitlab', 'gitlab_pr.py')
 
@@ -87,60 +87,61 @@ class TestFetchCommentsWrapper(unittest.TestCase):
 # =============================================================================
 
 
-class TestCommentsStage(unittest.TestCase):
-    def _make_args(self, pr_number, plan_id):
-        class _Args:
-            pass
+def _make_args(pr_number, plan_id):
+    class _Args:
+        pass
 
-        a = _Args()
-        a.pr_number = pr_number
-        a.plan_id = plan_id
-        return a
+    a = _Args()
+    a.pr_number = pr_number
+    a.plan_id = plan_id
+    return a
 
-    def test_stage_persists_substantive_comments_only(self):
-        comments = [
-            {
-                'id': 'C1',
-                'kind': 'inline',
-                'author': 'reviewer',
-                'body': 'Please fix the off-by-one error',
-                'path': 'src/Loop.java',
-                'line': 12,
-                'thread_id': 'mr-1',
-            },
-            {
-                'id': 'C2',
-                'kind': 'review_body',
-                'author': 'reviewer',
-                'body': 'lgtm',
-                'path': '',
-                'line': 0,
-                'thread_id': 'mr-2',
-            },
-        ]
-        with PlanContext(plan_id='gl-pr-stage-1') as ctx:
-            with patch('gitlab_pr._gitlab.fetch_pr_comments_data') as mock_fetch:
-                mock_fetch.return_value = {
-                    'status': 'success',
-                    'provider': 'gitlab',
-                    'comments': comments,
-                    'total': len(comments),
-                    'unresolved': len(comments),
-                }
-                result = cmd_comments_stage(self._make_args(123, ctx.plan_id))
 
-            self.assertEqual(result['status'], 'success')
-            self.assertEqual(result['count_fetched'], 2)
-            self.assertEqual(result['count_skipped_noise'], 1)
-            self.assertEqual(result['count_stored'], 1)
+def test_stage_persists_substantive_comments_only(plan_context):
+    plan_id = 'gl-pr-stage-1'
+    plan_context.plan_dir_for(plan_id)
+    comments = [
+        {
+            'id': 'C1',
+            'kind': 'inline',
+            'author': 'reviewer',
+            'body': 'Please fix the off-by-one error',
+            'path': 'src/Loop.java',
+            'line': 12,
+            'thread_id': 'mr-1',
+        },
+        {
+            'id': 'C2',
+            'kind': 'review_body',
+            'author': 'reviewer',
+            'body': 'lgtm',
+            'path': '',
+            'line': 0,
+            'thread_id': 'mr-2',
+        },
+    ]
+    with patch('gitlab_pr._gitlab.fetch_pr_comments_data') as mock_fetch:
+        mock_fetch.return_value = {
+            'status': 'success',
+            'provider': 'gitlab',
+            'comments': comments,
+            'total': len(comments),
+            'unresolved': len(comments),
+        }
+        result = cmd_comments_stage(_make_args(123, plan_id))
 
-            from _findings_core import query_findings  # type: ignore[import-not-found]
+    assert result['status'] == 'success'
+    assert result['count_fetched'] == 2
+    assert result['count_skipped_noise'] == 1
+    assert result['count_stored'] == 1
 
-            q = query_findings(ctx.plan_id, finding_type='pr-comment')
-            self.assertEqual(q['filtered_count'], 1)
-            stored = q['findings'][0]
-            self.assertIn('thread_id: mr-1', stored['detail'])
-            self.assertIn('Please fix the off-by-one error', stored['detail'])
+    from _findings_core import query_findings  # type: ignore[import-not-found]
+
+    q = query_findings(plan_id, finding_type='pr-comment')
+    assert q['filtered_count'] == 1
+    stored = q['findings'][0]
+    assert 'thread_id: mr-1' in stored['detail']
+    assert 'Please fix the off-by-one error' in stored['detail']
 
 
 # =============================================================================

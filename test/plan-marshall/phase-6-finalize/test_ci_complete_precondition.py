@@ -31,7 +31,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from conftest import PlanContext  # type: ignore[import-not-found]
+# PlanContext fixture is provided automatically by conftest.py as `plan_context`.
 
 # ---------------------------------------------------------------------------
 # Module loading — the helper is registered in the executor mapping under
@@ -139,48 +139,47 @@ _WORKTREE = '/nonexistent/worktree/path'  # Never read — git stub overrides.
 # ---------------------------------------------------------------------------
 
 
-def test_cache_miss_then_hit_does_not_repoll():
+def test_cache_miss_then_hit_does_not_repoll(plan_context):
     plan_id = 'ci-precond-cache-miss-then-hit'
-    with PlanContext(plan_id=plan_id):
-        git_stub = _StubGitHead(_SHA_A)
-        # Only one envelope provided — a second call would raise.
-        wait_stub = _StubCiWait(
-            [{'status': 'success', 'final_status': 'success'}]
-        )
+    git_stub = _StubGitHead(_SHA_A)
+    # Only one envelope provided — a second call would raise.
+    wait_stub = _StubCiWait(
+        [{'status': 'success', 'final_status': 'success'}]
+    )
 
-        first = resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=git_stub,
-        )
+    first = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=git_stub,
+    )
 
-        assert first['status'] == 'wait_succeeded'
-        assert first['head_sha'] == _SHA_A
-        assert first['ci_final_status'] == 'success'
-        assert len(wait_stub.calls) == 1
-        # Cache file written with the success outcome.
-        cache_after = _read_cache(plan_id)
-        assert cache_after is not None
-        assert cache_after['head_sha'] == _SHA_A
-        assert cache_after['ci_final_status'] == 'success'
+    assert first['status'] == 'wait_succeeded'
+    assert first['head_sha'] == _SHA_A
+    assert first['ci_final_status'] == 'success'
+    assert len(wait_stub.calls) == 1
+    # Cache file written with the success outcome.
+    cache_after = _read_cache(plan_id)
+    assert cache_after is not None
+    assert cache_after['head_sha'] == _SHA_A
+    assert cache_after['ci_final_status'] == 'success'
 
-        # Second call at the same HEAD with NO new ci wait envelopes.
-        second = resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=git_stub,
-        )
-        assert second['status'] == 'satisfied'
-        assert second['head_sha'] == _SHA_A
-        assert second['ci_final_status'] == 'success'
-        # Critically: ci wait was NOT invoked a second time.
-        assert len(wait_stub.calls) == 1, (
-            'satisfied must short-circuit without re-invoking ci wait'
-        )
+    # Second call at the same HEAD with NO new ci wait envelopes.
+    second = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=git_stub,
+    )
+    assert second['status'] == 'satisfied'
+    assert second['head_sha'] == _SHA_A
+    assert second['ci_final_status'] == 'success'
+    # Critically: ci wait was NOT invoked a second time.
+    assert len(wait_stub.calls) == 1, (
+        'satisfied must short-circuit without re-invoking ci wait'
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -188,49 +187,48 @@ def test_cache_miss_then_hit_does_not_repoll():
 # ---------------------------------------------------------------------------
 
 
-def test_head_advance_invalidates_cache():
+def test_head_advance_invalidates_cache(plan_context):
     plan_id = 'ci-precond-head-advance'
-    with PlanContext(plan_id=plan_id):
-        # First call observes SHA_A; second observes SHA_B.
-        git_stub = _StubGitHead(_SHA_A)
-        wait_stub = _StubCiWait(
-            [
-                {'status': 'success', 'final_status': 'success'},
-                {'status': 'success', 'final_status': 'success'},
-            ]
-        )
+    # First call observes SHA_A; second observes SHA_B.
+    git_stub = _StubGitHead(_SHA_A)
+    wait_stub = _StubCiWait(
+        [
+            {'status': 'success', 'final_status': 'success'},
+            {'status': 'success', 'final_status': 'success'},
+        ]
+    )
 
-        first = resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=git_stub,
-        )
-        assert first['status'] == 'wait_succeeded'
-        assert first['head_sha'] == _SHA_A
-        assert len(wait_stub.calls) == 1
+    first = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=git_stub,
+    )
+    assert first['status'] == 'wait_succeeded'
+    assert first['head_sha'] == _SHA_A
+    assert len(wait_stub.calls) == 1
 
-        # Advance HEAD.
-        git_stub.sha = _SHA_B
+    # Advance HEAD.
+    git_stub.sha = _SHA_B
 
-        second = resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=git_stub,
-        )
-        # Cache is stale → resolver re-polls and reports wait_succeeded again.
-        assert second['status'] == 'wait_succeeded'
-        assert second['head_sha'] == _SHA_B
-        assert len(wait_stub.calls) == 2, (
-            'HEAD advance must force a fresh ci wait poll'
-        )
-        # Cache now reflects the new SHA.
-        cache_after = _read_cache(plan_id)
-        assert cache_after is not None
-        assert cache_after['head_sha'] == _SHA_B
+    second = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=git_stub,
+    )
+    # Cache is stale → resolver re-polls and reports wait_succeeded again.
+    assert second['status'] == 'wait_succeeded'
+    assert second['head_sha'] == _SHA_B
+    assert len(wait_stub.calls) == 2, (
+        'HEAD advance must force a fresh ci wait poll'
+    )
+    # Cache now reflects the new SHA.
+    cache_after = _read_cache(plan_id)
+    assert cache_after is not None
+    assert cache_after['head_sha'] == _SHA_B
 
 
 # ---------------------------------------------------------------------------
@@ -238,30 +236,29 @@ def test_head_advance_invalidates_cache():
 # ---------------------------------------------------------------------------
 
 
-def test_ci_failure_returns_wait_failed_without_caching():
+def test_ci_failure_returns_wait_failed_without_caching(plan_context):
     plan_id = 'ci-precond-ci-failure'
-    with PlanContext(plan_id=plan_id):
-        git_stub = _StubGitHead(_SHA_A)
-        wait_stub = _StubCiWait(
-            [{'status': 'success', 'final_status': 'failure'}]
-        )
+    git_stub = _StubGitHead(_SHA_A)
+    wait_stub = _StubCiWait(
+        [{'status': 'success', 'final_status': 'failure'}]
+    )
 
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=git_stub,
-        )
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=git_stub,
+    )
 
-        assert result['status'] == 'wait_failed'
-        assert result['head_sha'] == _SHA_A
-        assert result['ci_final_status'] == 'failure'
-        # Critically: NO cache entry written on failure.
-        cache_path = _cache_path(plan_id)
-        assert not cache_path.exists(), (
-            'Failure outcomes must not be cached; re-entry must re-poll'
-        )
+    assert result['status'] == 'wait_failed'
+    assert result['head_sha'] == _SHA_A
+    assert result['ci_final_status'] == 'failure'
+    # Critically: NO cache entry written on failure.
+    cache_path = _cache_path(plan_id)
+    assert not cache_path.exists(), (
+        'Failure outcomes must not be cached; re-entry must re-poll'
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -269,41 +266,40 @@ def test_ci_failure_returns_wait_failed_without_caching():
 # ---------------------------------------------------------------------------
 
 
-def test_ci_timeout_returns_wait_failed_with_timeout_reason():
+def test_ci_timeout_returns_wait_failed_with_timeout_reason(plan_context):
     plan_id = 'ci-precond-timeout'
-    with PlanContext(plan_id=plan_id):
-        git_stub = _StubGitHead(_SHA_A)
-        wait_stub = _StubCiWait(
-            [
-                {
-                    'status': 'error',
-                    'operation': 'ci_wait',
-                    'error': 'Timeout waiting for CI',
-                    'pr_number': _PR,
-                    'duration_sec': 600,
-                    'last_status': 'pending',
-                }
-            ]
-        )
+    git_stub = _StubGitHead(_SHA_A)
+    wait_stub = _StubCiWait(
+        [
+            {
+                'status': 'error',
+                'operation': 'ci_wait',
+                'error': 'Timeout waiting for CI',
+                'pr_number': _PR,
+                'duration_sec': 600,
+                'last_status': 'pending',
+            }
+        ]
+    )
 
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=git_stub,
-        )
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=git_stub,
+    )
 
-        assert result['status'] == 'wait_failed'
-        assert result['head_sha'] == _SHA_A
-        assert result['ci_final_status'] == 'timeout', (
-            'Timeout envelope must surface ci_final_status=timeout so the '
-            'dispatcher can include the reason in the consumer step display'
-        )
-        cache_path = _cache_path(plan_id)
-        assert not cache_path.exists(), (
-            'Timeout outcomes must not be cached; re-entry must re-poll'
-        )
+    assert result['status'] == 'wait_failed'
+    assert result['head_sha'] == _SHA_A
+    assert result['ci_final_status'] == 'timeout', (
+        'Timeout envelope must surface ci_final_status=timeout so the '
+        'dispatcher can include the reason in the consumer step display'
+    )
+    cache_path = _cache_path(plan_id)
+    assert not cache_path.exists(), (
+        'Timeout outcomes must not be cached; re-entry must re-poll'
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -449,182 +445,177 @@ def test_source_script_has_no_self_bootstrap():
 # ---------------------------------------------------------------------------
 
 
-def test_failure_forwards_failing_checks_list():
+def test_failure_forwards_failing_checks_list(plan_context):
     """A ``ci wait`` envelope with ``failing_checks`` MUST forward the list
     verbatim through the resolver return so the dispatcher can name the
     failing checks in the consumer step's display_detail and emit the
     structured triage finding documented in deliverable 5.
     """
     plan_id = 'ci-precond-failing-checks'
-    with PlanContext(plan_id=plan_id):
-        git_stub = _StubGitHead(_SHA_A)
-        wait_stub = _StubCiWait(
-            [
-                {
-                    'status': 'success',
-                    'final_status': 'failure',
-                    'failing_checks': [
-                        {'name': 'lint', 'conclusion': 'FAILURE'},
-                        {'name': 'dep-review', 'conclusion': 'CANCELLED'},
-                    ],
-                    'wait_outcome': 'completed',
-                }
-            ]
-        )
-
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=git_stub,
-        )
-
-        assert result['status'] == 'wait_failed'
-        assert result['ci_final_status'] == 'failure'
-        assert result['failing_checks'] == [
-            {'name': 'lint', 'conclusion': 'FAILURE'},
-            {'name': 'dep-review', 'conclusion': 'CANCELLED'},
+    git_stub = _StubGitHead(_SHA_A)
+    wait_stub = _StubCiWait(
+        [
+            {
+                'status': 'success',
+                'final_status': 'failure',
+                'failing_checks': [
+                    {'name': 'lint', 'conclusion': 'FAILURE'},
+                    {'name': 'dep-review', 'conclusion': 'CANCELLED'},
+                ],
+                'wait_outcome': 'completed',
+            }
         ]
-        assert result['wait_outcome'] == 'completed'
+    )
+
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=git_stub,
+    )
+
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'failure'
+    assert result['failing_checks'] == [
+        {'name': 'lint', 'conclusion': 'FAILURE'},
+        {'name': 'dep-review', 'conclusion': 'CANCELLED'},
+    ]
+    assert result['wait_outcome'] == 'completed'
 
 
-def test_no_checks_returns_distinct_ci_final_status():
+def test_no_checks_returns_distinct_ci_final_status(plan_context):
     """``final_status: none`` from ``ci wait`` MUST surface as
     ``ci_final_status: no_checks`` so the dispatcher can distinguish
     "CI never ran" from a real failure and route to the
     ``ci-verify-missing`` producer (deliverable 6).
     """
     plan_id = 'ci-precond-no-checks'
-    with PlanContext(plan_id=plan_id):
-        git_stub = _StubGitHead(_SHA_A)
-        wait_stub = _StubCiWait(
-            [
-                {
-                    'status': 'success',
-                    'final_status': 'none',
-                    'failing_checks': [],
-                    'wait_outcome': 'completed',
-                }
-            ]
-        )
+    git_stub = _StubGitHead(_SHA_A)
+    wait_stub = _StubCiWait(
+        [
+            {
+                'status': 'success',
+                'final_status': 'none',
+                'failing_checks': [],
+                'wait_outcome': 'completed',
+            }
+        ]
+    )
 
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=git_stub,
-        )
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=git_stub,
+    )
 
-        assert result['status'] == 'wait_failed'
-        assert result['ci_final_status'] == 'no_checks', (
-            'no_checks must be distinct from failure so the dispatcher can '
-            'route to ci-verify-missing instead of ci-verify-build'
-        )
-        assert result['failing_checks'] == []
-        # Cache MUST remain absent — no_checks is a non-cacheable verdict.
-        assert not _cache_path(plan_id).exists()
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'no_checks', (
+        'no_checks must be distinct from failure so the dispatcher can '
+        'route to ci-verify-missing instead of ci-verify-build'
+    )
+    assert result['failing_checks'] == []
+    # Cache MUST remain absent — no_checks is a non-cacheable verdict.
+    assert not _cache_path(plan_id).exists()
 
 
-def test_timeout_forwards_wait_outcome_deadline_exceeded():
+def test_timeout_forwards_wait_outcome_deadline_exceeded(plan_context):
     """A wait-deadline exhaustion MUST forward
     ``wait_outcome: deadline_exceeded`` and the still-running checks so the
     dispatcher routes to the ``ci-verify-timeout`` producer.
     """
     plan_id = 'ci-precond-timeout-forward'
-    with PlanContext(plan_id=plan_id):
-        git_stub = _StubGitHead(_SHA_A)
-        wait_stub = _StubCiWait(
-            [
-                {
-                    'status': 'error',
-                    'operation': 'ci_wait',
-                    'error': 'Timeout waiting for CI',
-                    'pr_number': _PR,
-                    'duration_sec': 600,
-                    'last_status': 'pending',
-                    'wait_outcome': 'deadline_exceeded',
-                    'failing_checks': [
-                        {'name': 'slow-deploy', 'conclusion': 'PENDING'},
-                    ],
-                }
-            ]
-        )
+    git_stub = _StubGitHead(_SHA_A)
+    wait_stub = _StubCiWait(
+        [
+            {
+                'status': 'error',
+                'operation': 'ci_wait',
+                'error': 'Timeout waiting for CI',
+                'pr_number': _PR,
+                'duration_sec': 600,
+                'last_status': 'pending',
+                'wait_outcome': 'deadline_exceeded',
+                'failing_checks': [
+                    {'name': 'slow-deploy', 'conclusion': 'PENDING'},
+                ],
+            }
+        ]
+    )
 
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=git_stub,
-        )
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=git_stub,
+    )
 
-        assert result['status'] == 'wait_failed'
-        assert result['ci_final_status'] == 'timeout'
-        assert result['wait_outcome'] == 'deadline_exceeded'
-        assert [c['name'] for c in result['failing_checks']] == ['slow-deploy']
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'timeout'
+    assert result['wait_outcome'] == 'deadline_exceeded'
+    assert [c['name'] for c in result['failing_checks']] == ['slow-deploy']
 
 
-def test_satisfied_does_not_carry_failing_checks_field():
+def test_satisfied_does_not_carry_failing_checks_field(plan_context):
     """``satisfied`` (cache hit) MUST NOT include the failing_checks /
     wait_outcome fields — they are wait_failed-only signals. Deliverable 5
     specifies "satisfied and wait_succeeded outcomes produce no finding";
     the absence of the fields is the structural complement.
     """
     plan_id = 'ci-precond-satisfied-no-failing-checks'
-    with PlanContext(plan_id=plan_id):
-        git_stub = _StubGitHead(_SHA_A)
-        # First call: populate the cache via wait_succeeded.
-        wait_stub = _StubCiWait(
-            [{'status': 'success', 'final_status': 'success'}]
-        )
-        resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=git_stub,
-        )
-        # Second call: cache hit → satisfied.
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=git_stub,
-        )
+    git_stub = _StubGitHead(_SHA_A)
+    # First call: populate the cache via wait_succeeded.
+    wait_stub = _StubCiWait(
+        [{'status': 'success', 'final_status': 'success'}]
+    )
+    resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=git_stub,
+    )
+    # Second call: cache hit → satisfied.
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=git_stub,
+    )
 
-        assert result['status'] == 'satisfied'
-        # The "no triage finding on satisfied" guarantee is structurally
-        # enforced by the absence of the failing_checks field — the SKILL.md
-        # dispatcher only emits findings when wait_failed is observed.
-        assert 'failing_checks' not in result
-        assert 'wait_outcome' not in result
+    assert result['status'] == 'satisfied'
+    # The "no triage finding on satisfied" guarantee is structurally
+    # enforced by the absence of the failing_checks field — the SKILL.md
+    # dispatcher only emits findings when wait_failed is observed.
+    assert 'failing_checks' not in result
+    assert 'wait_outcome' not in result
 
 
-def test_wait_succeeded_does_not_carry_failing_checks_field():
+def test_wait_succeeded_does_not_carry_failing_checks_field(plan_context):
     """``wait_succeeded`` (fresh poll succeeded) MUST NOT include
     failing_checks / wait_outcome — same rationale as satisfied above.
     """
     plan_id = 'ci-precond-wait-succeeded-no-failing-checks'
-    with PlanContext(plan_id=plan_id):
-        git_stub = _StubGitHead(_SHA_A)
-        wait_stub = _StubCiWait(
-            [{'status': 'success', 'final_status': 'success'}]
-        )
+    git_stub = _StubGitHead(_SHA_A)
+    wait_stub = _StubCiWait(
+        [{'status': 'success', 'final_status': 'success'}]
+    )
 
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=git_stub,
-        )
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=git_stub,
+    )
 
-        assert result['status'] == 'wait_succeeded'
-        assert 'failing_checks' not in result
-        assert 'wait_outcome' not in result
+    assert result['status'] == 'wait_succeeded'
+    assert 'failing_checks' not in result
+    assert 'wait_outcome' not in result
 
 
 # ---------------------------------------------------------------------------
@@ -694,7 +685,7 @@ def test_run_ci_wait_uses_checks_wait_subcommand_vector(monkeypatch):
     assert result.get('final_status') == 'success'
 
 
-def test_run_ci_wait_success_envelope_yields_wait_succeeded(monkeypatch):
+def test_run_ci_wait_success_envelope_yields_wait_succeeded(plan_context, monkeypatch):
     """End-to-end through ``resolve``: when the executor (subprocess.run)
     returns a success envelope, ``resolve`` MUST report ``wait_succeeded``.
     This pins the corrected vector all the way to the public return value
@@ -706,13 +697,12 @@ def test_run_ci_wait_success_envelope_yields_wait_succeeded(monkeypatch):
     monkeypatch.setattr(_resolver_mod.subprocess, 'run', capturing)
 
     plan_id = 'ci-precond-vector-end-to-end'
-    with PlanContext(plan_id=plan_id):
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path=str(_REPO_ROOT),
-            pr_number=_PR,
-            git_head_resolver=_StubGitHead(_SHA_A),
-        )
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=str(_REPO_ROOT),
+        pr_number=_PR,
+        git_head_resolver=_StubGitHead(_SHA_A),
+    )
 
     assert result['status'] == 'wait_succeeded'
     assert result['ci_final_status'] == 'success'
@@ -771,131 +761,127 @@ class _StubTimeoutSet:
         self.durations.append(duration_seconds)
 
 
-def test_resolve_reads_timeout_from_run_config_entry():
+def test_resolve_reads_timeout_from_run_config_entry(plan_context):
     """(a) When run-configuration.json carries a ci:wait entry, resolve()
     MUST forward that persisted value as the ci wait --timeout ceiling
     rather than the hard-coded DEFAULT_CI_WAIT_TIMEOUT_SECONDS.
     """
     plan_id = 'ci-precond-runconfig-seeded'
-    with PlanContext(plan_id=plan_id):
-        get_stub = _StubTimeoutGet(seeded_value=420)
-        set_stub = _StubTimeoutSet()
-        wait_stub = _StubCiWait(
-            [{'status': 'success', 'final_status': 'success'}]
-        )
+    get_stub = _StubTimeoutGet(seeded_value=420)
+    set_stub = _StubTimeoutSet()
+    wait_stub = _StubCiWait(
+        [{'status': 'success', 'final_status': 'success'}]
+    )
 
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=_StubGitHead(_SHA_A),
-            timeout_get_runner=get_stub,
-            timeout_set_runner=set_stub,
-        )
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_get_runner=get_stub,
+        timeout_set_runner=set_stub,
+    )
 
-        assert result['status'] == 'wait_succeeded'
-        # The run-config lookup fired with the documented fallback default.
-        assert get_stub.calls == [DEFAULT_CI_WAIT_TIMEOUT_SECONDS]
-        # The seeded value (not the default) reached the ci wait runner.
-        assert len(wait_stub.calls) == 1
-        # _StubCiWait records (plan_id, pr_number, timeout_seconds, worktree).
-        assert wait_stub.calls[0][2] == 420
+    assert result['status'] == 'wait_succeeded'
+    # The run-config lookup fired with the documented fallback default.
+    assert get_stub.calls == [DEFAULT_CI_WAIT_TIMEOUT_SECONDS]
+    # The seeded value (not the default) reached the ci wait runner.
+    assert len(wait_stub.calls) == 1
+    # _StubCiWait records (plan_id, pr_number, timeout_seconds, worktree).
+    assert wait_stub.calls[0][2] == 420
 
 
-def test_resolve_uses_default_timeout_when_no_run_config_entry():
+def test_resolve_uses_default_timeout_when_no_run_config_entry(plan_context):
     """(b) With no ci:wait entry, the run-config helper echoes the supplied
     default, so resolve() falls back to DEFAULT_CI_WAIT_TIMEOUT_SECONDS.
     """
     plan_id = 'ci-precond-runconfig-missing'
-    with PlanContext(plan_id=plan_id):
-        get_stub = _StubTimeoutGetMissing()
-        set_stub = _StubTimeoutSet()
-        wait_stub = _StubCiWait(
-            [{'status': 'success', 'final_status': 'success'}]
-        )
+    get_stub = _StubTimeoutGetMissing()
+    set_stub = _StubTimeoutSet()
+    wait_stub = _StubCiWait(
+        [{'status': 'success', 'final_status': 'success'}]
+    )
 
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=_StubGitHead(_SHA_A),
-            timeout_get_runner=get_stub,
-            timeout_set_runner=set_stub,
-        )
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_get_runner=get_stub,
+        timeout_set_runner=set_stub,
+    )
 
-        assert result['status'] == 'wait_succeeded'
-        assert get_stub.calls == [DEFAULT_CI_WAIT_TIMEOUT_SECONDS]
-        # The default propagated through to the ci wait runner unchanged.
-        assert wait_stub.calls[0][2] == DEFAULT_CI_WAIT_TIMEOUT_SECONDS
+    assert result['status'] == 'wait_succeeded'
+    assert get_stub.calls == [DEFAULT_CI_WAIT_TIMEOUT_SECONDS]
+    # The default propagated through to the ci wait runner unchanged.
+    assert wait_stub.calls[0][2] == DEFAULT_CI_WAIT_TIMEOUT_SECONDS
 
 
-def test_resolve_records_observed_duration_after_successful_wait():
+def test_resolve_records_observed_duration_after_successful_wait(plan_context):
     """(c) After a successful ci wait, resolve() MUST write the observed
     ``duration_sec`` back via the run-config timeout-set helper so the
     ci:wait ceiling adapts to real run lengths.
     """
     plan_id = 'ci-precond-runconfig-writeback'
-    with PlanContext(plan_id=plan_id):
-        get_stub = _StubTimeoutGetMissing()
-        set_stub = _StubTimeoutSet()
-        wait_stub = _StubCiWait(
-            [
-                {
-                    'status': 'success',
-                    'final_status': 'success',
-                    'duration_sec': 137,
-                }
-            ]
-        )
+    get_stub = _StubTimeoutGetMissing()
+    set_stub = _StubTimeoutSet()
+    wait_stub = _StubCiWait(
+        [
+            {
+                'status': 'success',
+                'final_status': 'success',
+                'duration_sec': 137,
+            }
+        ]
+    )
 
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=_StubGitHead(_SHA_A),
-            timeout_get_runner=get_stub,
-            timeout_set_runner=set_stub,
-        )
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_get_runner=get_stub,
+        timeout_set_runner=set_stub,
+    )
 
-        assert result['status'] == 'wait_succeeded'
-        # The observed duration was written back exactly once.
-        assert set_stub.durations == [137]
+    assert result['status'] == 'wait_succeeded'
+    # The observed duration was written back exactly once.
+    assert set_stub.durations == [137]
 
 
-def test_resolve_explicit_timeout_overrides_run_config_lookup():
+def test_resolve_explicit_timeout_overrides_run_config_lookup(plan_context):
     """An explicit ``timeout_seconds`` argument bypasses the run-config
     lookup entirely — the get helper MUST NOT be consulted.
     """
     plan_id = 'ci-precond-runconfig-explicit'
-    with PlanContext(plan_id=plan_id):
-        get_stub = _StubTimeoutGet(seeded_value=420)
-        set_stub = _StubTimeoutSet()
-        wait_stub = _StubCiWait(
-            [{'status': 'success', 'final_status': 'success'}]
-        )
+    get_stub = _StubTimeoutGet(seeded_value=420)
+    set_stub = _StubTimeoutSet()
+    wait_stub = _StubCiWait(
+        [{'status': 'success', 'final_status': 'success'}]
+    )
 
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            timeout_seconds=55,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=_StubGitHead(_SHA_A),
-            timeout_get_runner=get_stub,
-            timeout_set_runner=set_stub,
-        )
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        timeout_seconds=55,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_get_runner=get_stub,
+        timeout_set_runner=set_stub,
+    )
 
-        assert result['status'] == 'wait_succeeded'
-        # The run-config get helper was never consulted.
-        assert get_stub.calls == []
-        # The explicit value reached the ci wait runner.
-        assert wait_stub.calls[0][2] == 55
+    assert result['status'] == 'wait_succeeded'
+    # The run-config get helper was never consulted.
+    assert get_stub.calls == []
+    # The explicit value reached the ci wait runner.
+    assert wait_stub.calls[0][2] == 55
 
 
-def test_consume_failures_mode_threads_wait_failed_envelope():
+def test_consume_failures_mode_threads_wait_failed_envelope(plan_context):
     """Regression guard for deliverable 6.
 
     A failing CI run resolved with ``mode='consume-failures'`` MUST surface
@@ -911,156 +897,152 @@ def test_consume_failures_mode_threads_wait_failed_envelope():
     mode, the failing-check enumeration, and the wait outcome.
     """
     plan_id = 'ci-precond-consume-failures-mode'
-    with PlanContext(plan_id=plan_id):
-        git_stub = _StubGitHead(_SHA_A)
-        wait_stub = _StubCiWait(
-            [
-                {
-                    'status': 'success',
-                    'final_status': 'failure',
-                    'failing_checks': [
-                        {'name': 'lint', 'conclusion': 'FAILURE'},
-                        {'name': 'unit-tests', 'conclusion': 'FAILURE'},
-                    ],
-                    'wait_outcome': 'completed',
-                }
-            ]
-        )
-
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=git_stub,
-            mode='consume-failures',
-        )
-
-        # The wait_failed envelope was NOT short-circuited — the resolver
-        # returned the failure envelope verbatim so the ci-verify body
-        # can classify the failing checks.
-        assert result['status'] == 'wait_failed', (
-            f'consume-failures resolution must surface wait_failed, not '
-            f'{result["status"]!r} — short-circuiting on wait_failed is '
-            'the precise defect lesson 2026-05-22-16-001 deliverable 6 '
-            'guards against'
-        )
-        assert result['ci_final_status'] == 'failure'
-        # The mode echo is the load-bearing signal: consumers branch on
-        # this field to decide whether to short-circuit or thread the
-        # envelope through to their body.
-        assert result['mode'] == 'consume-failures', (
-            'resolver output must echo the mode value so consumers can '
-            'tell strict-mode wait_failed (short-circuit) from '
-            'consume-failures wait_failed (run body with envelope)'
-        )
-        # The full failing-check enumeration is preserved verbatim.
-        assert result['failing_checks'] == [
-            {'name': 'lint', 'conclusion': 'FAILURE'},
-            {'name': 'unit-tests', 'conclusion': 'FAILURE'},
+    git_stub = _StubGitHead(_SHA_A)
+    wait_stub = _StubCiWait(
+        [
+            {
+                'status': 'success',
+                'final_status': 'failure',
+                'failing_checks': [
+                    {'name': 'lint', 'conclusion': 'FAILURE'},
+                    {'name': 'unit-tests', 'conclusion': 'FAILURE'},
+                ],
+                'wait_outcome': 'completed',
+            }
         ]
-        assert result['wait_outcome'] == 'completed'
+    )
+
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=git_stub,
+        mode='consume-failures',
+    )
+
+    # The wait_failed envelope was NOT short-circuited — the resolver
+    # returned the failure envelope verbatim so the ci-verify body
+    # can classify the failing checks.
+    assert result['status'] == 'wait_failed', (
+        f'consume-failures resolution must surface wait_failed, not '
+        f'{result["status"]!r} — short-circuiting on wait_failed is '
+        'the precise defect lesson 2026-05-22-16-001 deliverable 6 '
+        'guards against'
+    )
+    assert result['ci_final_status'] == 'failure'
+    # The mode echo is the load-bearing signal: consumers branch on
+    # this field to decide whether to short-circuit or thread the
+    # envelope through to their body.
+    assert result['mode'] == 'consume-failures', (
+        'resolver output must echo the mode value so consumers can '
+        'tell strict-mode wait_failed (short-circuit) from '
+        'consume-failures wait_failed (run body with envelope)'
+    )
+    # The full failing-check enumeration is preserved verbatim.
+    assert result['failing_checks'] == [
+        {'name': 'lint', 'conclusion': 'FAILURE'},
+        {'name': 'unit-tests', 'conclusion': 'FAILURE'},
+    ]
+    assert result['wait_outcome'] == 'completed'
 
 
-def test_consume_failures_mode_preserves_timeout_envelope():
+def test_consume_failures_mode_preserves_timeout_envelope(plan_context):
     """A timeout under consume-failures MUST still surface as wait_failed
     with ci_final_status=timeout — the consume-failures path is for
     *all* wait_failed shapes (failure, timeout, no_checks), not just
     final_status=failure.
     """
     plan_id = 'ci-precond-consume-failures-timeout'
-    with PlanContext(plan_id=plan_id):
-        git_stub = _StubGitHead(_SHA_A)
-        wait_stub = _StubCiWait(
-            [
-                {
-                    'status': 'error',
-                    'operation': 'ci_wait',
-                    'error': 'Timeout waiting for CI',
-                    'wait_outcome': 'deadline_exceeded',
-                    'failing_checks': [
-                        {'name': 'slow-deploy', 'conclusion': 'PENDING'},
-                    ],
-                }
-            ]
-        )
+    git_stub = _StubGitHead(_SHA_A)
+    wait_stub = _StubCiWait(
+        [
+            {
+                'status': 'error',
+                'operation': 'ci_wait',
+                'error': 'Timeout waiting for CI',
+                'wait_outcome': 'deadline_exceeded',
+                'failing_checks': [
+                    {'name': 'slow-deploy', 'conclusion': 'PENDING'},
+                ],
+            }
+        ]
+    )
 
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=git_stub,
-            mode='consume-failures',
-        )
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=git_stub,
+        mode='consume-failures',
+    )
 
-        assert result['status'] == 'wait_failed'
-        assert result['ci_final_status'] == 'timeout'
-        assert result['mode'] == 'consume-failures'
-        assert result['wait_outcome'] == 'deadline_exceeded'
-        assert [c['name'] for c in result['failing_checks']] == ['slow-deploy']
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'timeout'
+    assert result['mode'] == 'consume-failures'
+    assert result['wait_outcome'] == 'deadline_exceeded'
+    assert [c['name'] for c in result['failing_checks']] == ['slow-deploy']
 
 
-def test_strict_mode_default_does_not_echo_consume_failures():
+def test_strict_mode_default_does_not_echo_consume_failures(plan_context):
     """Sanity guard: a default (strict) resolution MUST NOT echo
     ``mode: consume-failures`` — the mode echo is a load-bearing signal
     and accidentally setting it under strict would mis-route consumers
     into the consume-failures branch.
     """
     plan_id = 'ci-precond-strict-mode-default'
-    with PlanContext(plan_id=plan_id):
-        git_stub = _StubGitHead(_SHA_A)
-        wait_stub = _StubCiWait(
-            [
-                {
-                    'status': 'success',
-                    'final_status': 'failure',
-                    'failing_checks': [{'name': 'lint'}],
-                    'wait_outcome': 'completed',
-                }
-            ]
-        )
+    git_stub = _StubGitHead(_SHA_A)
+    wait_stub = _StubCiWait(
+        [
+            {
+                'status': 'success',
+                'final_status': 'failure',
+                'failing_checks': [{'name': 'lint'}],
+                'wait_outcome': 'completed',
+            }
+        ]
+    )
 
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=git_stub,
-            # No mode argument — defaults to strict.
-        )
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=git_stub,
+        # No mode argument — defaults to strict.
+    )
 
-        assert result['status'] == 'wait_failed'
-        # The mode echo is present on wait_failed but carries strict.
-        assert result.get('mode') == 'strict'
+    assert result['status'] == 'wait_failed'
+    # The mode echo is present on wait_failed but carries strict.
+    assert result.get('mode') == 'strict'
 
 
-def test_resolve_skips_writeback_when_duration_absent():
+def test_resolve_skips_writeback_when_duration_absent(plan_context):
     """When the ci wait envelope omits ``duration_sec``, resolve() MUST NOT
     write a bogus value back — the adaptive update is skipped.
     """
     plan_id = 'ci-precond-runconfig-no-duration'
-    with PlanContext(plan_id=plan_id):
-        get_stub = _StubTimeoutGetMissing()
-        set_stub = _StubTimeoutSet()
-        # Envelope carries no duration_sec field.
-        wait_stub = _StubCiWait(
-            [{'status': 'success', 'final_status': 'success'}]
-        )
+    get_stub = _StubTimeoutGetMissing()
+    set_stub = _StubTimeoutSet()
+    # Envelope carries no duration_sec field.
+    wait_stub = _StubCiWait(
+        [{'status': 'success', 'final_status': 'success'}]
+    )
 
-        result = resolve(
-            plan_id=plan_id,
-            worktree_path=_WORKTREE,
-            pr_number=_PR,
-            ci_wait_runner=wait_stub,
-            git_head_resolver=_StubGitHead(_SHA_A),
-            timeout_get_runner=get_stub,
-            timeout_set_runner=set_stub,
-        )
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_get_runner=get_stub,
+        timeout_set_runner=set_stub,
+    )
 
-        assert result['status'] == 'wait_succeeded'
-        # No duration → no write-back.
-        assert set_stub.durations == []
+    assert result['status'] == 'wait_succeeded'
+    # No duration → no write-back.
+    assert set_stub.durations == []
 
 
 # ---------------------------------------------------------------------------
@@ -1168,15 +1150,14 @@ def test_fixture_dir_present():
     assert expected == found, f'Fixture directory out of sync. Missing: {expected - found}, Extra: {found - expected}'
 
 
-def test_fixture_green_success_resolves_to_success():
+def test_fixture_green_success_resolves_to_success(plan_context):
     """The exact regression case from PR #454 — green fixture must classify
     as ``wait_succeeded / ci_final_status: success``. This is the headline
     mis-classification the lesson identifies; if this test fails, the
     parse-and-extract pipeline is broken."""
     fixture = _FIXTURE_DIR / 'green-success.toon'
     plan_id = 'ci-fixture-green-success'
-    with PlanContext(plan_id=plan_id):
-        result = _run_fixture_through_resolver(fixture, plan_id)
+    result = _run_fixture_through_resolver(fixture, plan_id)
     assert result['status'] == 'wait_succeeded', (
         f"green-success.toon expected wait_succeeded, got "
         f"{result['status']} (ci_final_status="
@@ -1186,86 +1167,78 @@ def test_fixture_green_success_resolves_to_success():
     assert result['ci_final_status'] == 'success'
 
 
-def test_fixture_single_check_success_resolves_to_success():
+def test_fixture_single_check_success_resolves_to_success(plan_context):
     """Smallest non-empty checks table — minimum parser surface."""
     fixture = _FIXTURE_DIR / 'single-check-success.toon'
     plan_id = 'ci-fixture-single-check-success'
-    with PlanContext(plan_id=plan_id):
-        result = _run_fixture_through_resolver(fixture, plan_id)
+    result = _run_fixture_through_resolver(fixture, plan_id)
     assert result['status'] == 'wait_succeeded'
     assert result['ci_final_status'] == 'success'
 
 
-def test_fixture_many_checks_success_resolves_to_success():
+def test_fixture_many_checks_success_resolves_to_success(plan_context):
     """Larger checks table — exercises the parser at realistic counts."""
     fixture = _FIXTURE_DIR / 'many-checks-success.toon'
     plan_id = 'ci-fixture-many-checks-success'
-    with PlanContext(plan_id=plan_id):
-        result = _run_fixture_through_resolver(fixture, plan_id)
+    result = _run_fixture_through_resolver(fixture, plan_id)
     assert result['status'] == 'wait_succeeded'
     assert result['ci_final_status'] == 'success'
 
 
-def test_fixture_skipped_checks_resolves_to_success():
+def test_fixture_skipped_checks_resolves_to_success(plan_context):
     """Mix of pass + skipping rows — variant of green-success."""
     fixture = _FIXTURE_DIR / 'skipped-checks.toon'
     plan_id = 'ci-fixture-skipped-checks'
-    with PlanContext(plan_id=plan_id):
-        result = _run_fixture_through_resolver(fixture, plan_id)
+    result = _run_fixture_through_resolver(fixture, plan_id)
     assert result['status'] == 'wait_succeeded'
     assert result['ci_final_status'] == 'success'
 
 
-def test_fixture_failure_with_failing_checks_resolves_to_failure():
+def test_fixture_failure_with_failing_checks_resolves_to_failure(plan_context):
     """One failing check — exercises failing_checks[] enumeration."""
     fixture = _FIXTURE_DIR / 'failure-with-failing-checks.toon'
     plan_id = 'ci-fixture-failure-with-failing-checks'
-    with PlanContext(plan_id=plan_id):
-        result = _run_fixture_through_resolver(fixture, plan_id)
+    result = _run_fixture_through_resolver(fixture, plan_id)
     assert result['status'] == 'wait_failed'
     assert result['ci_final_status'] == 'failure'
     assert len(result.get('failing_checks') or []) == 1
 
 
-def test_fixture_mixed_success_failure_resolves_to_failure():
+def test_fixture_mixed_success_failure_resolves_to_failure(plan_context):
     """Multiple failing checks alongside passing — multi-row failing list."""
     fixture = _FIXTURE_DIR / 'mixed-success-failure.toon'
     plan_id = 'ci-fixture-mixed-success-failure'
-    with PlanContext(plan_id=plan_id):
-        result = _run_fixture_through_resolver(fixture, plan_id)
+    result = _run_fixture_through_resolver(fixture, plan_id)
     assert result['status'] == 'wait_failed'
     assert result['ci_final_status'] == 'failure'
     assert len(result.get('failing_checks') or []) == 2
 
 
-def test_fixture_pending_then_cancelled_resolves_to_failure():
+def test_fixture_pending_then_cancelled_resolves_to_failure(plan_context):
     """All checks cancelled (non-failure terminal) — classifies as failure
     per the resolver contract (only success/none distinguish)."""
     fixture = _FIXTURE_DIR / 'pending-then-cancelled.toon'
     plan_id = 'ci-fixture-pending-then-cancelled'
-    with PlanContext(plan_id=plan_id):
-        result = _run_fixture_through_resolver(fixture, plan_id)
+    result = _run_fixture_through_resolver(fixture, plan_id)
     assert result['status'] == 'wait_failed'
     assert result['ci_final_status'] == 'failure'
 
 
-def test_fixture_no_checks_resolves_to_no_checks():
+def test_fixture_no_checks_resolves_to_no_checks(plan_context):
     """Empty checks[] (no CI configured) — distinct from real failure."""
     fixture = _FIXTURE_DIR / 'no-checks.toon'
     plan_id = 'ci-fixture-no-checks'
-    with PlanContext(plan_id=plan_id):
-        result = _run_fixture_through_resolver(fixture, plan_id)
+    result = _run_fixture_through_resolver(fixture, plan_id)
     assert result['status'] == 'wait_failed'
     assert result['ci_final_status'] == 'no_checks'
 
 
-def test_fixture_timeout_deadline_exceeded_resolves_to_timeout():
+def test_fixture_timeout_deadline_exceeded_resolves_to_timeout(plan_context):
     """True timeout (deadline_exceeded) — distinct from the false-timeout
     mis-classification the lesson identifies."""
     fixture = _FIXTURE_DIR / 'timeout-deadline-exceeded.toon'
     plan_id = 'ci-fixture-timeout-deadline-exceeded'
-    with PlanContext(plan_id=plan_id):
-        result = _run_fixture_through_resolver(fixture, plan_id)
+    result = _run_fixture_through_resolver(fixture, plan_id)
     assert result['status'] == 'wait_failed'
     assert result['ci_final_status'] == 'timeout'
     assert result.get('wait_outcome') == 'deadline_exceeded'
@@ -1295,13 +1268,12 @@ def test_fixture_timeout_deadline_exceeded_resolves_to_timeout():
 # ---------------------------------------------------------------------------
 
 
-def test_fixture_url_with_commas_and_quotes_resolves_to_success():
+def test_fixture_url_with_commas_and_quotes_resolves_to_success(plan_context):
     """Stressor (a): commas and quotes inside URL columns of a tab-separated
     row must not break parsing — the tab-mode splitter ignores commas."""
     fixture = _FIXTURE_DIR / 'url-with-commas-and-quotes.toon'
     plan_id = 'ci-fixture-url-commas-quotes'
-    with PlanContext(plan_id=plan_id):
-        result = _run_fixture_through_resolver(fixture, plan_id)
+    result = _run_fixture_through_resolver(fixture, plan_id)
     assert result['status'] == 'wait_succeeded'
     assert result['ci_final_status'] == 'success'
 
@@ -1333,24 +1305,22 @@ def test_fixture_check_name_special_chars_preserves_all_rows():
     assert 'coverage = 95%' in names, f'coverage row missing: {names!r}'
 
 
-def test_fixture_check_name_special_chars_resolves_to_success():
+def test_fixture_check_name_special_chars_resolves_to_success(plan_context):
     """End-to-end: the special-chars fixture still resolves to wait_succeeded."""
     fixture = _FIXTURE_DIR / 'check-name-special-chars.toon'
     plan_id = 'ci-fixture-check-name-special-chars'
-    with PlanContext(plan_id=plan_id):
-        result = _run_fixture_through_resolver(fixture, plan_id)
+    result = _run_fixture_through_resolver(fixture, plan_id)
     assert result['status'] == 'wait_succeeded'
     assert result['ci_final_status'] == 'success'
 
 
-def test_fixture_multi_line_error_summary_resolves_to_timeout():
+def test_fixture_multi_line_error_summary_resolves_to_timeout(plan_context):
     """Stressor (c): multi-line `|` content in a top-level envelope field
     must parse without breaking the trailing `checks[N]:` table or the
     top-level `status: error` classification."""
     fixture = _FIXTURE_DIR / 'multi-line-error-summary.toon'
     plan_id = 'ci-fixture-multi-line-error'
-    with PlanContext(plan_id=plan_id):
-        result = _run_fixture_through_resolver(fixture, plan_id)
+    result = _run_fixture_through_resolver(fixture, plan_id)
     assert result['status'] == 'wait_failed'
     assert result['ci_final_status'] == 'timeout'
     assert result.get('wait_outcome') == 'deadline_exceeded'
@@ -1358,24 +1328,22 @@ def test_fixture_multi_line_error_summary_resolves_to_timeout():
     assert len(result.get('failing_checks') or []) == 2
 
 
-def test_fixture_older_gh_envelope_resolves_to_success():
+def test_fixture_older_gh_envelope_resolves_to_success(plan_context):
     """Stressor (d): older `gh` envelope shapes with empty url and run_id
     fields must still parse and resolve to success when final_status is set."""
     fixture = _FIXTURE_DIR / 'older-gh-envelope.toon'
     plan_id = 'ci-fixture-older-gh'
-    with PlanContext(plan_id=plan_id):
-        result = _run_fixture_through_resolver(fixture, plan_id)
+    result = _run_fixture_through_resolver(fixture, plan_id)
     assert result['status'] == 'wait_succeeded'
     assert result['ci_final_status'] == 'success'
 
 
-def test_fixture_huge_checks_block_resolves_to_success():
+def test_fixture_huge_checks_block_resolves_to_success(plan_context):
     """Stressor (e): a >50-row checks block must parse without performance
     cliff and resolve cleanly. The fixture carries exactly 55 rows."""
     fixture = _FIXTURE_DIR / 'huge-checks-block.toon'
     plan_id = 'ci-fixture-huge-checks-block'
-    with PlanContext(plan_id=plan_id):
-        result = _run_fixture_through_resolver(fixture, plan_id)
+    result = _run_fixture_through_resolver(fixture, plan_id)
     assert result['status'] == 'wait_succeeded'
     assert result['ci_final_status'] == 'success'
     # Verify the parser captured every row — pin the structural completeness.
@@ -1386,14 +1354,13 @@ def test_fixture_huge_checks_block_resolves_to_success():
     )
 
 
-def test_fixture_mixed_skipped_cancelled_neutral_resolves_to_failure():
+def test_fixture_mixed_skipped_cancelled_neutral_resolves_to_failure(plan_context):
     """Stressor (f): a mix of pass + SKIPPED + CANCELLED + NEUTRAL + FAIL
     conclusions where `final_status: failure` MUST classify as wait_failed
     and forward the failing_checks list verbatim."""
     fixture = _FIXTURE_DIR / 'mixed-skipped-cancelled-neutral.toon'
     plan_id = 'ci-fixture-mixed-conclusions'
-    with PlanContext(plan_id=plan_id):
-        result = _run_fixture_through_resolver(fixture, plan_id)
+    result = _run_fixture_through_resolver(fixture, plan_id)
     assert result['status'] == 'wait_failed'
     assert result['ci_final_status'] == 'failure'
     failing_names = [c['name'] for c in result.get('failing_checks') or []]
@@ -1402,7 +1369,7 @@ def test_fixture_mixed_skipped_cancelled_neutral_resolves_to_failure():
     )
 
 
-def test_fixture_failing_checks_with_colon_names_forwards_full_list():
+def test_fixture_failing_checks_with_colon_names_forwards_full_list(plan_context):
     """Companion regression for stressor (b): when a `failing_checks[N]:`
     inline-table block has rows whose first column contains `:` (e.g.
     `lint:strict`, `coverage:enforce`), the resolver MUST forward the full
@@ -1416,8 +1383,7 @@ def test_fixture_failing_checks_with_colon_names_forwards_full_list():
     """
     fixture = _FIXTURE_DIR / 'failing-checks-with-colon-names.toon'
     plan_id = 'ci-fixture-failing-colon-names'
-    with PlanContext(plan_id=plan_id):
-        result = _run_fixture_through_resolver(fixture, plan_id)
+    result = _run_fixture_through_resolver(fixture, plan_id)
     assert result['status'] == 'wait_failed'
     assert result['ci_final_status'] == 'failure'
     failing_names = [c['name'] for c in result.get('failing_checks') or []]

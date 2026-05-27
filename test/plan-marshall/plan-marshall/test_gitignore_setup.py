@@ -11,8 +11,10 @@ Tests .gitignore configuration for the planning system:
 - Supports dry-run mode
 """
 
+import pytest
+
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
+from conftest import MARKETPLACE_ROOT, run_script
 
 # Script path to gitignore_setup.py
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts' / 'gitignore_setup.py'
@@ -36,196 +38,176 @@ def test_gitignore_plan_local_worktrees_constant_value():
     assert GITIGNORE_PLAN_LOCAL_WORKTREES == '.plan/local/worktrees/'
 
 
-class TestGitignoreSetupCreate(ScriptTestCase):
+class TestGitignoreSetupCreate:
     """Test gitignore_setup.py creating new .gitignore via direct import."""
 
-    bundle = 'plan-marshall'
-    skill = 'marshall-steward'
-    script = 'gitignore_setup.py'
-
-    def test_creates_gitignore_when_missing(self):
+    def test_creates_gitignore_when_missing(self, tmp_path):
         """Should create new .gitignore with planning entries."""
-        result = setup_gitignore(self.temp_dir)
-        self.assertEqual(result['status'], 'created')
+        result = setup_gitignore(tmp_path)
+        assert result['status'] == 'created'
         # .plan/*, !marshal.json, !project-architecture/, .plan/local/worktrees/
-        self.assertEqual(result['entries_added'], 4)
+        assert result['entries_added'] == 4
 
         # Verify file was created
-        gitignore_path = self.temp_dir / '.gitignore'
-        self.assertTrue(gitignore_path.exists())
+        gitignore_path = tmp_path / '.gitignore'
+        assert gitignore_path.exists()
 
         content = gitignore_path.read_text()
-        self.assertIn('.plan/', content)
-        self.assertIn('!.plan/marshal.json', content)
-        self.assertIn('!.plan/project-architecture/', content)
-        self.assertIn('.plan/local/worktrees/', content)
-        self.assertNotIn('.claude/worktrees/', content)
-        self.assertIn('# Planning system', content)
+        assert '.plan/' in content
+        assert '!.plan/marshal.json' in content
+        assert '!.plan/project-architecture/' in content
+        assert '.plan/local/worktrees/' in content
+        assert '.claude/worktrees/' not in content
+        assert '# Planning system' in content
 
 
-class TestGitignoreSetupUpdate(ScriptTestCase):
+class TestGitignoreSetupUpdate:
     """Test gitignore_setup.py updating existing .gitignore via direct import."""
 
-    bundle = 'plan-marshall'
-    skill = 'marshall-steward'
-    script = 'gitignore_setup.py'
-
-    def test_updates_existing_gitignore(self):
+    def test_updates_existing_gitignore(self, tmp_path):
         """Should add planning entries to existing .gitignore."""
-        gitignore_path = self.temp_dir / '.gitignore'
+        gitignore_path = tmp_path / '.gitignore'
         gitignore_path.write_text('# Existing content\nnode_modules/\n*.log\n')
 
-        result = setup_gitignore(self.temp_dir)
-        self.assertEqual(result['status'], 'updated')
-        self.assertEqual(result['entries_added'], 4)
+        result = setup_gitignore(tmp_path)
+        assert result['status'] == 'updated'
+        assert result['entries_added'] == 4
 
         # Verify existing content preserved and new content added
         content = gitignore_path.read_text()
-        self.assertIn('node_modules/', content)
-        self.assertIn('*.log', content)
-        self.assertIn('.plan/', content)
-        self.assertIn('!.plan/marshal.json', content)
-        self.assertIn('!.plan/project-architecture/', content)
-        self.assertIn('.plan/local/worktrees/', content)
-        self.assertNotIn('.claude/worktrees/', content)
+        assert 'node_modules/' in content
+        assert '*.log' in content
+        assert '.plan/' in content
+        assert '!.plan/marshal.json' in content
+        assert '!.plan/project-architecture/' in content
+        assert '.plan/local/worktrees/' in content
+        assert '.claude/worktrees/' not in content
 
-    def test_adds_only_missing_entries(self):
+    def test_adds_only_missing_entries(self, tmp_path):
         """Should only add entries that are missing."""
-        gitignore_path = self.temp_dir / '.gitignore'
+        gitignore_path = tmp_path / '.gitignore'
         gitignore_path.write_text('.plan/\n')
 
-        result = setup_gitignore(self.temp_dir)
-        self.assertEqual(result['status'], 'updated')
+        result = setup_gitignore(tmp_path)
+        assert result['status'] == 'updated'
         # !marshal.json + !project-architecture/ + .plan/local/worktrees/
-        self.assertEqual(result['entries_added'], 3)
+        assert result['entries_added'] == 3
 
         content = gitignore_path.read_text()
-        self.assertIn('!.plan/marshal.json', content)
-        self.assertIn('!.plan/project-architecture/', content)
-        self.assertIn('.plan/local/worktrees/', content)
-        self.assertNotIn('.claude/worktrees/', content)
+        assert '!.plan/marshal.json' in content
+        assert '!.plan/project-architecture/' in content
+        assert '.plan/local/worktrees/' in content
+        assert '.claude/worktrees/' not in content
 
 
-class TestGitignoreSetupUnchanged(ScriptTestCase):
+class TestGitignoreSetupUnchanged:
     """Test gitignore_setup.py when no changes needed via direct import."""
 
-    bundle = 'plan-marshall'
-    skill = 'marshall-steward'
-    script = 'gitignore_setup.py'
-
-    def test_unchanged_when_all_entries_exist(self):
+    def test_unchanged_when_all_entries_exist(self, tmp_path):
         """Should report unchanged when all entries already present."""
-        gitignore_path = self.temp_dir / '.gitignore'
+        gitignore_path = tmp_path / '.gitignore'
         gitignore_path.write_text(
             '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
             '— managed by plan-marshall)\n'
             '.plan/\n!.plan/marshal.json\n!.plan/project-architecture/\n.plan/local/worktrees/\n'
         )
 
-        result = setup_gitignore(self.temp_dir)
-        self.assertEqual(result['status'], 'unchanged')
-        self.assertEqual(result['entries_added'], 0)
+        result = setup_gitignore(tmp_path)
+        assert result['status'] == 'unchanged'
+        assert result['entries_added'] == 0
 
-    def test_recognizes_alternate_plan_format(self):
+    def test_recognizes_alternate_plan_format(self, tmp_path):
         """Should recognize .plan without trailing slash."""
-        gitignore_path = self.temp_dir / '.gitignore'
+        gitignore_path = tmp_path / '.gitignore'
         gitignore_path.write_text(
             '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
             '— managed by plan-marshall)\n'
             '.plan\n!.plan/marshal.json\n!.plan/project-architecture/\n.plan/local/worktrees/\n'
         )
 
-        result = setup_gitignore(self.temp_dir)
+        result = setup_gitignore(tmp_path)
         # .plan (without slash) should be recognized as .plan/
-        self.assertEqual(result['entries_added'], 0)
+        assert result['entries_added'] == 0
 
-    def test_recognizes_plan_local_worktrees_without_trailing_slash(self):
+    def test_recognizes_plan_local_worktrees_without_trailing_slash(self, tmp_path):
         """Should recognize .plan/local/worktrees without trailing slash."""
-        gitignore_path = self.temp_dir / '.gitignore'
+        gitignore_path = tmp_path / '.gitignore'
         gitignore_path.write_text(
             '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
             '— managed by plan-marshall)\n'
             '.plan/\n!.plan/marshal.json\n!.plan/project-architecture/\n.plan/local/worktrees\n'
         )
 
-        result = setup_gitignore(self.temp_dir)
-        self.assertEqual(result['entries_added'], 0)
+        result = setup_gitignore(tmp_path)
+        assert result['entries_added'] == 0
 
-    def test_adds_plan_local_worktrees_when_missing(self):
+    def test_adds_plan_local_worktrees_when_missing(self, tmp_path):
         """Should add .plan/local/worktrees/ entry when only planning entries exist."""
-        gitignore_path = self.temp_dir / '.gitignore'
+        gitignore_path = tmp_path / '.gitignore'
         gitignore_path.write_text('.plan/*\n!.plan/marshal.json\n!.plan/project-architecture/\n')
 
-        result = setup_gitignore(self.temp_dir)
-        self.assertEqual(result['status'], 'updated')
-        self.assertEqual(result['entries_added'], 1)
+        result = setup_gitignore(tmp_path)
+        assert result['status'] == 'updated'
+        assert result['entries_added'] == 1
 
         content = gitignore_path.read_text()
-        self.assertIn('.plan/local/worktrees/', content)
-        self.assertNotIn('.claude/worktrees/', content)
+        assert '.plan/local/worktrees/' in content
+        assert '.claude/worktrees/' not in content
 
 
-class TestGitignoreSetupDryRun(ScriptTestCase):
+class TestGitignoreSetupDryRun:
     """Test gitignore_setup.py dry-run mode via direct import."""
 
-    bundle = 'plan-marshall'
-    skill = 'marshall-steward'
-    script = 'gitignore_setup.py'
-
-    def test_dry_run_does_not_create_file(self):
+    def test_dry_run_does_not_create_file(self, tmp_path):
         """Dry-run should not create .gitignore."""
-        result = setup_gitignore(self.temp_dir, dry_run=True)
-        self.assertEqual(result['status'], 'created')
-        self.assertTrue(result['dry_run'])
+        result = setup_gitignore(tmp_path, dry_run=True)
+        assert result['status'] == 'created'
+        assert result['dry_run']
 
         # Verify file was NOT created
-        gitignore_path = self.temp_dir / '.gitignore'
-        self.assertFalse(gitignore_path.exists())
+        gitignore_path = tmp_path / '.gitignore'
+        assert not gitignore_path.exists()
 
-    def test_dry_run_does_not_modify_file(self):
+    def test_dry_run_does_not_modify_file(self, tmp_path):
         """Dry-run should not modify existing .gitignore."""
-        gitignore_path = self.temp_dir / '.gitignore'
+        gitignore_path = tmp_path / '.gitignore'
         original_content = '# Original\nnode_modules/\n'
         gitignore_path.write_text(original_content)
 
-        result = setup_gitignore(self.temp_dir, dry_run=True)
-        self.assertEqual(result['status'], 'updated')
-        self.assertTrue(result['dry_run'])
+        result = setup_gitignore(tmp_path, dry_run=True)
+        assert result['status'] == 'updated'
+        assert result['dry_run']
 
         # Verify file was NOT modified
-        self.assertEqual(gitignore_path.read_text(), original_content)
+        assert gitignore_path.read_text() == original_content
 
 
-class TestGitignoreSetupEdgeCases(ScriptTestCase):
+class TestGitignoreSetupEdgeCases:
     """Test gitignore_setup.py edge cases via direct import."""
 
-    bundle = 'plan-marshall'
-    skill = 'marshall-steward'
-    script = 'gitignore_setup.py'
-
-    def test_preserves_newline_formatting(self):
+    def test_preserves_newline_formatting(self, tmp_path):
         """Should preserve proper newline formatting."""
-        gitignore_path = self.temp_dir / '.gitignore'
+        gitignore_path = tmp_path / '.gitignore'
         gitignore_path.write_text('node_modules/')  # No trailing newline
 
-        result = setup_gitignore(self.temp_dir)
-        self.assertEqual(result['status'], 'updated')
+        result = setup_gitignore(tmp_path)
+        assert result['status'] == 'updated'
 
         content = gitignore_path.read_text()
         # Should have proper newlines between sections
-        self.assertNotIn('node_modules/#', content)  # Should not run together
+        assert 'node_modules/#' not in content  # Should not run together
 
-    def test_check_gitignore_status_function(self):
+    def test_check_gitignore_status_function(self, tmp_path):
         """Test the raw check_gitignore_status function."""
-        gitignore_path = self.temp_dir / '.gitignore'
+        gitignore_path = tmp_path / '.gitignore'
         gitignore_path.write_text('.plan/*\n!.plan/marshal.json\n')
 
         status = check_gitignore_status(gitignore_path)
-        self.assertTrue(status['exists'])
-        self.assertTrue(status['has_plan_dir'])
-        self.assertTrue(status['has_marshal_exception'])
-        self.assertFalse(status['has_architecture_exception'])
-        self.assertFalse(status['has_plan_local_worktrees'])
+        assert status['exists']
+        assert status['has_plan_dir']
+        assert status['has_marshal_exception']
+        assert not status['has_architecture_exception']
+        assert not status['has_plan_local_worktrees']
 
 
 # =============================================================================
@@ -233,59 +215,49 @@ class TestGitignoreSetupEdgeCases(ScriptTestCase):
 # =============================================================================
 
 
-class TestGitignoreSetupCLI(ScriptTestCase):
+class TestGitignoreSetupCLI:
     """Test CLI plumbing for gitignore_setup.py."""
 
-    bundle = 'plan-marshall'
-    skill = 'marshall-steward'
-    script = 'gitignore_setup.py'
-
-    def _isolated_env(self) -> dict[str, str]:
+    @pytest.fixture
+    def isolated_env(self, tmp_path):
         """Env overrides that redirect run-configuration + credential paths.
 
-        Subprocess-invoking tests cannot use pytest's ``monkeypatch`` fixture
-        (this is a ``unittest.TestCase`` subclass), so we redirect
-        ``PLAN_BASE_DIR`` and ``HOME`` via ``run_script(env_overrides=...)``
-        instead. The subprocess reads both at import time, so this pins
-        every path-resolving computation to ``self.temp_dir`` — no leaks
-        into the real ``.plan/local/run-configuration.json`` or
+        Subprocess-invoking tests redirect ``PLAN_BASE_DIR`` and ``HOME``
+        via ``run_script(env_overrides=...)``. The subprocess reads both at
+        import time, so this pins every path-resolving computation to
+        ``tmp_path`` — no leaks into the real
+        ``.plan/local/run-configuration.json`` or
         ``~/.plan-marshall-credentials/``.
         """
         return {
-            'PLAN_BASE_DIR': str(self.temp_dir / '.plan'),
-            'HOME': str(self.temp_dir),
+            'PLAN_BASE_DIR': str(tmp_path / '.plan'),
+            'HOME': str(tmp_path),
         }
 
-    def test_nonexistent_project_root_fails(self):
+    def test_nonexistent_project_root_fails(self, tmp_path, isolated_env):
         """Should fail when project root doesn't exist."""
-        nonexistent = self.temp_dir / 'nonexistent'
+        nonexistent = tmp_path / 'nonexistent'
 
         result = run_script(
             SCRIPT_PATH,
             '--project-root',
             str(nonexistent),
-            env_overrides=self._isolated_env(),
+            env_overrides=isolated_env,
         )
-        self.assert_success(result)
-        self.assertIn('project_root_not_found', result.stdout)
+        assert result.success, f'Script failed: {result.stderr}'
+        assert 'project_root_not_found' in result.stdout
 
-    def test_toon_output_format(self):
+    def test_toon_output_format(self, tmp_path, isolated_env):
         """Output should be valid TOON format."""
         result = run_script(
             SCRIPT_PATH,
             '--project-root',
-            str(self.temp_dir),
-            env_overrides=self._isolated_env(),
+            str(tmp_path),
+            env_overrides=isolated_env,
         )
-        self.assert_success(result)
+        assert result.success, f'Script failed: {result.stderr}'
 
         lines = result.stdout.strip().split('\n')
-        self.assertGreaterEqual(len(lines), 3)
+        assert len(lines) >= 3
         for line in lines:
-            self.assertIn(': ', line, f'Line should contain colon-space separator: {line}')
-
-
-if __name__ == '__main__':
-    import unittest
-
-    unittest.main()
+            assert ': ' in line, f'Line should contain colon-space separator: {line}'

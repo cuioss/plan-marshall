@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import PlanContext, get_script_path, get_test_fixture_dir, run_script
+from conftest import get_script_path, get_test_fixture_dir, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-files', 'manage-files.py')
@@ -96,35 +96,32 @@ class EmptyPlanContext:
 # =============================================================================
 
 
-def test_write_file():
+def test_write_file(plan_context):
     """Test writing a file."""
-    with PlanContext(plan_id='file-write') as ctx:
-        result = cmd_write(Namespace(plan_id='file-write', file='task.md', content='# Task\nDo something', stdin=False))
-        assert result['status'] == 'success'
-        assert result['action'] == 'created'
-        assert result['file'] == 'task.md'
-        # Verify file was created
-        assert (ctx.plan_dir / 'task.md').exists()
-        assert (ctx.plan_dir / 'task.md').read_text().rstrip('\n') == '# Task\nDo something'
+    result = cmd_write(Namespace(plan_id=plan_context.plan_id, file='task.md', content='# Task\nDo something', stdin=False))
+    assert result['status'] == 'success'
+    assert result['action'] == 'created'
+    assert result['file'] == 'task.md'
+    # Verify file was created
+    assert (plan_context.plan_dir / 'task.md').exists()
+    assert (plan_context.plan_dir / 'task.md').read_text().rstrip('\n') == '# Task\nDo something'
 
 
-def test_read_file(capsys):
+def test_read_file(plan_context, capsys):
     """Test reading a file (cmd_read prints content and returns None)."""
-    with PlanContext(plan_id='file-read') as ctx:
-        (ctx.plan_dir / 'test.md').write_text('Test content')
+    (plan_context.plan_dir / 'test.md').write_text('Test content')
 
-        result = cmd_read(Namespace(plan_id='file-read', file='test.md'))
-        assert result is None  # cmd_read prints directly, returns None
-        captured = capsys.readouterr()
-        assert 'Test content' in captured.out
+    result = cmd_read(Namespace(plan_id=plan_context.plan_id, file='test.md'))
+    assert result is None  # cmd_read prints directly, returns None
+    captured = capsys.readouterr()
+    assert 'Test content' in captured.out
 
 
-def test_read_nonexistent_file():
+def test_read_nonexistent_file(plan_context):
     """Test reading a file that doesn't exist."""
-    with PlanContext(plan_id='file-noexist'):
-        result = cmd_read(Namespace(plan_id='file-noexist', file='missing.md'))
-        assert result['status'] == 'error'
-        assert result['error'] == 'file_not_found'
+    result = cmd_read(Namespace(plan_id='file-noexist', file='missing.md'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'file_not_found'
 
 
 # =============================================================================
@@ -132,64 +129,58 @@ def test_read_nonexistent_file():
 # =============================================================================
 
 
-def test_list_empty():
+def test_list_empty(plan_context):
     """Test listing files in empty plan."""
-    with PlanContext(plan_id='file-list-empty'):
-        result = cmd_list(Namespace(plan_id='file-list-empty', dir=None))
-        assert result['status'] == 'success'
-        assert result['files'] == []
+    result = cmd_list(Namespace(plan_id=plan_context.plan_id, dir=None))
+    assert result['status'] == 'success'
+    assert result['files'] == []
 
 
-def test_list_with_files():
+def test_list_with_files(plan_context):
     """Test listing files."""
-    with PlanContext(plan_id='file-list') as ctx:
-        # Create some files
-        (ctx.plan_dir / 'references.json').write_text('{"branch": "main"}')
-        (ctx.plan_dir / 'task.md').write_text('Task')
+    # Create some files
+    (plan_context.plan_dir / 'references.json').write_text('{"branch": "main"}')
+    (plan_context.plan_dir / 'task.md').write_text('Task')
 
-        result = cmd_list(Namespace(plan_id='file-list', dir=None))
-        assert result['status'] == 'success'
-        assert 'task.md' in result['files']
-        assert 'references.json' in result['files']
+    result = cmd_list(Namespace(plan_id=plan_context.plan_id, dir=None))
+    assert result['status'] == 'success'
+    assert 'task.md' in result['files']
+    assert 'references.json' in result['files']
 
 
-def test_exists_present():
+def test_exists_present(plan_context):
     """Test checking if file exists (present)."""
-    with PlanContext(plan_id='file-exists') as ctx:
-        (ctx.plan_dir / 'test.md').write_text('Test')
+    (plan_context.plan_dir / 'test.md').write_text('Test')
 
-        result = cmd_exists(Namespace(plan_id='file-exists', file='test.md'))
-        assert result['status'] == 'success'
-        assert result['exists'] is True
-        assert result['plan_id'] == 'file-exists'
-        assert result['file'] == 'test.md'
-        assert 'path' in result
+    result = cmd_exists(Namespace(plan_id=plan_context.plan_id, file='test.md'))
+    assert result['status'] == 'success'
+    assert result['exists'] is True
+    assert result['plan_id'] == plan_context.plan_id
+    assert result['file'] == 'test.md'
+    assert 'path' in result
 
 
-def test_exists_absent():
+def test_exists_absent(plan_context):
     """Test checking if file exists (absent)."""
-    with PlanContext(plan_id='file-absent'):
-        result = cmd_exists(Namespace(plan_id='file-absent', file='missing.md'))
-        assert result['status'] == 'success'
-        assert result['exists'] is False
-        assert result['plan_id'] == 'file-absent'
-        assert result['file'] == 'missing.md'
+    result = cmd_exists(Namespace(plan_id='file-absent', file='missing.md'))
+    assert result['status'] == 'success'
+    assert result['exists'] is False
+    assert result['plan_id'] == 'file-absent'
+    assert result['file'] == 'missing.md'
 
 
-def test_exists_invalid_plan_id():
+def test_exists_invalid_plan_id(plan_context):
     """Test exists with invalid plan ID exits via sys.exit(1)."""
-    with PlanContext():
-        with pytest.raises(SystemExit) as exc_info:
-            cmd_exists(Namespace(plan_id='Invalid_Plan', file='test.md'))
-        assert exc_info.value.code == 0
+    with pytest.raises(SystemExit) as exc_info:
+        cmd_exists(Namespace(plan_id='Invalid_Plan', file='test.md'))
+    assert exc_info.value.code == 0
 
 
-def test_exists_invalid_file_path():
+def test_exists_invalid_file_path(plan_context):
     """Test exists with invalid file path returns error dict."""
-    with PlanContext(plan_id='file-exists'):
-        result = cmd_exists(Namespace(plan_id='file-exists', file='../escape.md'))
-        assert result['status'] == 'error'
-        assert result['error'] == 'invalid_path'
+    result = cmd_exists(Namespace(plan_id='file-exists', file='../escape.md'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_path'
 
 
 # =============================================================================
@@ -197,41 +188,37 @@ def test_exists_invalid_file_path():
 # =============================================================================
 
 
-def test_remove_file():
+def test_remove_file(plan_context):
     """Test removing a file."""
-    with PlanContext(plan_id='file-remove') as ctx:
-        (ctx.plan_dir / 'delete-me.md').write_text('Goodbye')
+    (plan_context.plan_dir / 'delete-me.md').write_text('Goodbye')
 
-        result = cmd_remove(Namespace(plan_id='file-remove', file='delete-me.md'))
-        assert result['status'] == 'success'
-        assert result['action'] == 'removed'
-        assert not (ctx.plan_dir / 'delete-me.md').exists()
+    result = cmd_remove(Namespace(plan_id=plan_context.plan_id, file='delete-me.md'))
+    assert result['status'] == 'success'
+    assert result['action'] == 'removed'
+    assert not (plan_context.plan_dir / 'delete-me.md').exists()
 
 
-def test_remove_nonexistent_file():
+def test_remove_nonexistent_file(plan_context):
     """Test removing a file that doesn't exist."""
-    with PlanContext(plan_id='file-remove-missing'):
-        result = cmd_remove(Namespace(plan_id='file-remove-missing', file='ghost.md'))
-        assert result['status'] == 'error'
-        assert result['error'] == 'file_not_found'
+    result = cmd_remove(Namespace(plan_id='file-remove-missing', file='ghost.md'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'file_not_found'
 
 
-def test_mkdir():
+def test_mkdir(plan_context):
     """Test creating a directory."""
-    with PlanContext(plan_id='file-mkdir') as ctx:
-        result = cmd_mkdir(Namespace(plan_id='file-mkdir', dir='requirements'))
-        assert result['status'] == 'success'
-        assert result['action'] == 'created'
-        assert (ctx.plan_dir / 'requirements').is_dir()
+    result = cmd_mkdir(Namespace(plan_id=plan_context.plan_id, dir='requirements'))
+    assert result['status'] == 'success'
+    assert result['action'] == 'created'
+    assert (plan_context.plan_dir / 'requirements').is_dir()
 
 
-def test_mkdir_already_exists():
+def test_mkdir_already_exists(plan_context):
     """Test creating a directory that already exists."""
-    with PlanContext(plan_id='file-mkdir-exists') as ctx:
-        (ctx.plan_dir / 'existing').mkdir()
-        result = cmd_mkdir(Namespace(plan_id='file-mkdir-exists', dir='existing'))
-        assert result['status'] == 'success'
-        assert result['action'] == 'exists'
+    (plan_context.plan_dir / 'existing').mkdir()
+    result = cmd_mkdir(Namespace(plan_id=plan_context.plan_id, dir='existing'))
+    assert result['status'] == 'success'
+    assert result['action'] == 'exists'
 
 
 # =============================================================================
@@ -250,28 +237,26 @@ def test_create_or_reference_new_plan():
         assert ctx.plan_dir('new-plan').exists()
 
 
-def test_create_or_reference_existing_plan():
+def test_create_or_reference_existing_plan(plan_context):
     """Test create-or-reference returns exists for existing plan."""
-    with PlanContext(plan_id='existing-plan'):
-        result = cmd_create_or_reference(Namespace(plan_id='existing-plan'))
-        assert result['status'] == 'success'
-        assert result['action'] == 'exists'
-        assert result['plan_id'] == 'existing-plan'
+    result = cmd_create_or_reference(Namespace(plan_id=plan_context.plan_id))
+    assert result['status'] == 'success'
+    assert result['action'] == 'exists'
+    assert result['plan_id'] == plan_context.plan_id
 
 
-def test_create_or_reference_existing_with_status():
+def test_create_or_reference_existing_with_status(plan_context):
     """Test create-or-reference returns phase info when status.json exists."""
-    with PlanContext(plan_id='status-plan') as ctx:
-        # Create status.json with phase info (domain is in references.json, not status.json)
-        status_content = json.dumps({'title': 'Test Plan', 'current_phase': 'outline'})
-        (ctx.plan_dir / 'status.json').write_text(status_content)
+    # Create status.json with phase info (domain is in references.json, not status.json)
+    status_content = json.dumps({'title': 'Test Plan', 'current_phase': 'outline'})
+    (plan_context.plan_dir / 'status.json').write_text(status_content)
 
-        result = cmd_create_or_reference(Namespace(plan_id='status-plan'))
-        assert result['status'] == 'success'
-        assert result['action'] == 'exists'
-        assert result['current_phase'] == 'outline'
-        # Domain should NOT be in output (stored in references.json, not status.toon)
-        assert 'domain' not in result
+    result = cmd_create_or_reference(Namespace(plan_id=plan_context.plan_id))
+    assert result['status'] == 'success'
+    assert result['action'] == 'exists'
+    assert result['current_phase'] == 'outline'
+    # Domain should NOT be in output (stored in references.json, not status.toon)
+    assert 'domain' not in result
 
 
 def test_create_or_reference_invalid_plan_id():
@@ -287,20 +272,18 @@ def test_create_or_reference_invalid_plan_id():
 # =============================================================================
 
 
-def test_invalid_plan_id_uppercase():
+def test_invalid_plan_id_uppercase(plan_context):
     """Test that uppercase plan IDs are rejected."""
-    with PlanContext():
-        with pytest.raises(SystemExit) as exc_info:
-            cmd_list(Namespace(plan_id='My-Plan', dir=None))
-        assert exc_info.value.code == 0
+    with pytest.raises(SystemExit) as exc_info:
+        cmd_list(Namespace(plan_id='My-Plan', dir=None))
+    assert exc_info.value.code == 0
 
 
-def test_invalid_plan_id_underscore():
+def test_invalid_plan_id_underscore(plan_context):
     """Test that underscore in plan IDs are rejected."""
-    with PlanContext():
-        with pytest.raises(SystemExit) as exc_info:
-            cmd_list(Namespace(plan_id='my_plan', dir=None))
-        assert exc_info.value.code == 0
+    with pytest.raises(SystemExit) as exc_info:
+        cmd_list(Namespace(plan_id='my_plan', dir=None))
+    assert exc_info.value.code == 0
 
 
 # =============================================================================
@@ -308,20 +291,18 @@ def test_invalid_plan_id_underscore():
 # =============================================================================
 
 
-def test_write_missing_content():
+def test_write_missing_content(plan_context):
     """Test write fails when neither --content nor --stdin provided."""
-    with PlanContext(plan_id='file-write-no-content'):
-        result = cmd_write(Namespace(plan_id='file-write-no-content', file='test.md', content=None, stdin=False))
-        assert result['status'] == 'error'
-        assert result['error'] == 'missing_content'
+    result = cmd_write(Namespace(plan_id='file-write-no-content', file='test.md', content=None, stdin=False))
+    assert result['status'] == 'error'
+    assert result['error'] == 'missing_content'
 
 
-def test_write_invalid_path():
+def test_write_invalid_path(plan_context):
     """Test write rejects path traversal."""
-    with PlanContext(plan_id='file-write-escape'):
-        result = cmd_write(Namespace(plan_id='file-write-escape', file='../escape.md', content='bad', stdin=False))
-        assert result['status'] == 'error'
-        assert result['error'] == 'invalid_path'
+    result = cmd_write(Namespace(plan_id='file-write-escape', file='../escape.md', content='bad', stdin=False))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_path'
 
 
 # =============================================================================
@@ -329,69 +310,66 @@ def test_write_invalid_path():
 # =============================================================================
 
 
-def test_write_with_content_file_path_succeeds(tmp_path):
+def test_write_with_content_file_path_succeeds(plan_context, tmp_path):
     """Test write reads payload from --content-file and writes verbatim."""
     payload = '# Heading\n\nMultiline\npayload\n'
     payload_path = tmp_path / 'payload.md'
     payload_path.write_text(payload, encoding='utf-8')
 
-    with PlanContext(plan_id='file-write-content-file') as ctx:
-        result = cmd_write(
-            Namespace(
-                plan_id='file-write-content-file',
-                file='task.md',
-                content=None,
-                content_file=str(payload_path),
-                stdin=False,
-            )
+    result = cmd_write(
+        Namespace(
+            plan_id=plan_context.plan_id,
+            file='task.md',
+            content=None,
+            content_file=str(payload_path),
+            stdin=False,
         )
-        assert result['status'] == 'success'
-        assert result['action'] == 'created'
-        assert result['file'] == 'task.md'
-        # Verify file contents match the staged payload verbatim.
-        target = ctx.plan_dir / 'task.md'
-        assert target.exists()
-        assert target.read_text(encoding='utf-8') == payload
+    )
+    assert result['status'] == 'success'
+    assert result['action'] == 'created'
+    assert result['file'] == 'task.md'
+    # Verify file contents match the staged payload verbatim.
+    target = plan_context.plan_dir / 'task.md'
+    assert target.exists()
+    assert target.read_text(encoding='utf-8') == payload
 
 
-def test_write_with_content_file_missing_returns_error(tmp_path):
+def test_write_with_content_file_missing_returns_error(plan_context, tmp_path):
     """Test write returns content_file_not_found when --content-file path is absent."""
     missing_path = tmp_path / 'does-not-exist.md'
 
-    with PlanContext(plan_id='file-write-cf-missing'):
-        result = cmd_write(
-            Namespace(
-                plan_id='file-write-cf-missing',
-                file='task.md',
-                content=None,
-                content_file=str(missing_path),
-                stdin=False,
-            )
+    result = cmd_write(
+        Namespace(
+            plan_id='file-write-cf-missing',
+            file='task.md',
+            content=None,
+            content_file=str(missing_path),
+            stdin=False,
         )
-        assert result['status'] == 'error'
-        assert result['error'] == 'content_file_not_found'
-        # The script resolves the path before reporting; assert the resolved
-        # form appears in the message so the user can locate the missing file.
-        assert str(missing_path.resolve()) in result['message']
+    )
+    assert result['status'] == 'error'
+    assert result['error'] == 'content_file_not_found'
+    # The script resolves the path before reporting; assert the resolved
+    # form appears in the message so the user can locate the missing file.
+    assert str(missing_path.resolve()) in result['message']
 
 
-def test_write_content_and_content_file_mutually_exclusive(tmp_path):
+def test_write_content_and_content_file_mutually_exclusive(plan_context, tmp_path):
     """Test write rejects --content and --content-file used together."""
     payload_path = tmp_path / 'payload.md'
     payload_path.write_text('payload', encoding='utf-8')
 
-    with PlanContext(plan_id='file-write-cf-mutex'):
-        result = cmd_write(
-            Namespace(
-                plan_id='file-write-cf-mutex',
-                file='task.md',
-                content='inline content',
-                content_file=str(payload_path),
-                stdin=False,
-            )
+    result = cmd_write(
+        Namespace(
+            plan_id='file-write-cf-mutex',
+            file='task.md',
+            content='inline content',
+            content_file=str(payload_path),
+            stdin=False,
         )
-        assert result['status'] == 'error'
-        assert result['error'] == 'mutually_exclusive'
+    )
+    assert result['status'] == 'error'
+    assert result['error'] == 'mutually_exclusive'
 
 
 # =============================================================================
@@ -399,26 +377,23 @@ def test_write_content_and_content_file_mutually_exclusive(tmp_path):
 # =============================================================================
 
 
-def test_cli_missing_required_args():
+def test_cli_missing_required_args(plan_context):
     """Test that missing required args produces exit code 2 (argparse error)."""
-    with PlanContext():
-        result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'test-plan')
-        # argparse exits with code 2 for missing required args (--file)
-        assert not result.success
+    result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'test-plan')
+    # argparse exits with code 2 for missing required args (--file)
+    assert not result.success
 
 
-def test_cli_help_flag():
+def test_cli_help_flag(plan_context):
     """Test that --help produces exit code 0."""
-    with PlanContext():
-        result = run_script(SCRIPT_PATH, '--help')
-        assert result.success
+    result = run_script(SCRIPT_PATH, '--help')
+    assert result.success
 
 
-def test_cli_subcommand_help():
+def test_cli_subcommand_help(plan_context):
     """Test that subcommand --help produces exit code 0."""
-    with PlanContext():
-        result = run_script(SCRIPT_PATH, 'write', '--help')
-        assert result.success
+    result = run_script(SCRIPT_PATH, 'write', '--help')
+    assert result.success
 
 
 # =============================================================================
