@@ -2,6 +2,8 @@
 
 Concrete end-to-end traces of `execution-context-{level}` dispatches at three representative call sites: a single-workflow phase entry, a finalize step that sub-dispatches `verification-feedback` (producer=pr-comment) by reference, and a per-iteration parallel fan-out. For the dispatch contract itself (prompt-body fields, role-key resolution, mandatory rules), see [`agents.md`](agents.md). For the heuristics that decide *whether* a step should dispatch, see [`../../extension-api/standards/dispatch-granularity.md`](../../extension-api/standards/dispatch-granularity.md). For the holistic visual call graph covering every dispatch path (not just these three exemplars), see [`call-graph.md`](call-graph.md).
 
+![Sequence diagram of one execution-context dispatch — the orchestrator resolves the level via manage-config, constructs a five-field prompt body, dispatches Task: execution-context-{level}, suspends while the subagent loads dev-agent-behavior-rules plus caller-named skills and reads/executes the workflow doc, then records the TOON return via manage-status mark-step-done.](../../../../../../doc/resources/diagrams/dispatch-walkthrough.svg)
+
 ## Generic eight-step sequence
 
 Every dispatched phase or step follows the same shape:

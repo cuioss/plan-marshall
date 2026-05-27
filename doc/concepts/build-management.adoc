@@ -5,190 +5,40 @@
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
-A technology-neutral build abstraction. From the LLM's point of view a build is a single synchronous method call: "run the canonical command X on module Y, return when it's done." The model is suspended on the tool call until the build finishes — no prompt tokens spent waiting, no log scrolled into context, just one structured TOON back with status, errors, optional partially-filtered warnings, and a pointer to the full log on disk.
+A 10-minute Maven build streamed into a stock LLM session burns tokens, fragments attention, and fills the context window with `[INFO] Building module-7…` line by line — none of it useful, all of it billable. Plan Marshall makes the build a single synchronous tool call: the model dispatches one operation, suspends on it, and resumes when the build finishes with a structured TOON containing status, parsed errors, and a pointer to the full log on disk. No tokens spent waiting, no log scrolled into context, no attention spent babysitting a process the LLM cannot influence anyway.
 
-This is one of Plan Marshall's most powerful features. It turns a 5–10 minute Maven build (or `pytest` run, or `npm test`, …) from a token-burning, attention-fragmenting interaction into a single dispatched operation.
+== Build-tool independence at the prompt layer
 
-== Overview
+From the LLM's point of view, "run the verify build" is a single call with a single shape. The workflow does not know whether the module is Maven, Gradle, npm, or Python; it asks for the *canonical command* (`verify`, `quality-gate`, `module-tests`, `coverage`, …) by module name, and the resolver returns a fully-wrapped executable that the LLM runs verbatim. The build-system invocation is determined per module at architecture-discovery time by `/marshall-steward` and persisted in `.plan/project-architecture/{module}/enriched.json` — a deterministic lookup, not a probabilistic match.
 
-Plan Marshall splits build management into two responsibilities:
+This means a skill author writing a verify step writes one workflow that works against every build system in the project. Adding a new build tool (Go, Rust, …) is a matter of writing a new `build-{tool}` skill that implements `ext-point-build` and a companion `plan-marshall-plugin` extension that maps canonical commands to the new tool's invocation. The rest of the system — dispatch sites, verify-step lists, retrospective fragments — continues to work unchanged because it only ever sees the canonical names.
 
-* **`/marshall-steward`** discovers each module's actual build tool (Maven / Gradle / npm / Python) once at setup time, and builds a per-module mapping from canonical command names (`compile`, `quality-gate`, `module-tests`, `verify`, `coverage`, …) to the concrete tool invocation (`./mvnw verify -Ppre-commit -pl my-module`, `./gradlew :api:build`, `./pw verify core`, etc.). This mapping lives in `.plan/project-architecture/`.
-* **The LLM / task executor** asks for a canonical name by module: `architecture resolve --command verify --module my-module` returns the **full executor-wrapped command** (e.g. `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -pl my-module"`); the LLM runs that returned string verbatim. The model never has to know what underlying tool the module uses, never has to construct a build-skill dispatch.
+== Why no tokens during the wait
 
-The result is build-tool independence at the LLM-prompt layer. A skill author writing a verify step writes one workflow that works against Maven, Gradle, npm, and Python modules.
+image::../resources/diagrams/build-dispatch-sequence.svg[Build dispatch sequence — the LLM resolves the canonical command, dispatches the build skill, suspends on the tool call while the build subprocess runs, then receives a structured TOON return; no tokens are billed to the orchestrator during the wait, align=center]
 
-image::../resources/diagrams/build-dispatch-sequence.svg[Build dispatch sequence — LLM resolves the canonical command, dispatches the build skill, suspends on the tool call while the build process runs, then receives a structured TOON return. No tokens spent during the wait., align=center]
+Build skills capture all build output to a log file before returning anything to the LLM. The return is the *summary* — exit status, duration, parsed errors, the path to the full log. The LLM consults the log only when the structured errors aren't enough to act on. Three consequences compound:
 
-The diagram above shows the synchronous call shape. The LLM holds control during steps 1-3 (resolve, then dispatch run), is suspended for the duration of step 4 (the build subprocess), and resumes only when the build skill returns a single TOON. The sections below walk through each piece.
+* **A 10-minute build costs ~100 tokens.** Just the TOON envelope. The duration of the wait is decoupled from the token bill.
+* **The build output never enters working memory** unless the LLM explicitly reads the log. The context window stays focused on the task that triggered the build, not the build's intermediate noise.
+* **Most plans run multiple builds** (incremental compile, quality-gate, module-tests, verify). At ~100 tokens each, the build budget is a rounding error. The same plan without this abstraction would burn tens of thousands of tokens on build-output streaming alone.
 
-== The canonical command vocabulary
+The synchronous shape is the load-bearing property here. The LLM is *suspended* on the tool call, not polling, not babysitting, not generating filler tokens while waiting. From the model's perspective the build is one operation that takes however long it takes and returns one structured answer.
 
-A small, build-system-agnostic vocabulary of operation names. The full list lives in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/canonical-commands.md[`canonical-commands.md`]; the most-used entries:
+[CAUTION]
+====
+**Zero tokens during the wait does not mean zero cost.**
 
-[cols="1,1,3", options="header"]
-|===
-| Canonical name | Phase | Description
-
-| `clean` | clean | Remove build artifacts and generated files.
-| `compile` | build | Compile production sources.
-| `module-tests` | test | Unit tests for the module. **Required for every test-bearing module.**
-| `integration-tests` | test | Integration tests (containers, embedded servers, Weld).
-| `e2e` | test | End-to-end / acceptance tests.
-| `coverage` | test | Test execution with coverage measurement.
-| `quality-gate` | quality | Static analysis, linting, formatting. **Required for every module.**
-| `verify` | verify | Full verification (compile + test + quality). **Required for every non-pom module.**
-| `install` / `package` | deploy | Install or package the artifact.
-|===
-
-A skill that wants "run the unit tests" asks for `module-tests` and stays portable. A skill that wants "full local verification before commit" asks for `verify`. The canonical name is what the LLM thinks in; the build-system invocation is what runs.
-
-== Resolve once, then run the returned command
-
-A skill that needs to run a build calls the resolver once. **The resolver returns a complete, ready-to-execute shell command — already wrapped through the script-executor proxy, already bound to the right build skill for that module's tool, already carrying the correct `--command-args` for the canonical command.** The LLM does not separately construct a build-skill dispatch; it simply runs what the resolver returned.
-
-[source,bash]
-----
-# 1. Resolve the canonical command to a fully-wrapped executable
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command verify --module my-module
-
-# Returns TOON (real example from a Python module):
-#   module:     my-module
-#   command:    verify
-#   executable: python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --module my-module --targets verify
-#
-# For a Maven module the executable would be:
-#   python3 .plan/execute-script.py plan-marshall:build-maven:maven run --module my-module --targets verify
-# — same shape, same script-executor proxy, just routed to a different build skill.
-# Hybrid modules (e.g. Maven + npm in one directory) return `executables[N]{build_system,command}:` instead.
-
-# 2. Execute the returned `executable` string verbatim
-{the executable string returned in step 1}
-----
-
-The resolver reads `.plan/project-architecture/{module}/enriched.json` (per-module, persisted) and looks up the requested canonical command in the module's `commands` map. The stored value is **the full executor invocation, already pre-composed at architecture-discover time** — the LLM never has to know which build skill (`build-maven` / `build-gradle` / `build-npm` / `build-pyproject`) owns this module, nor how to format the underlying tool's flags. The lookup is deterministic — no LLM judgement, no probabilistic match. If `verify` doesn't resolve, the module legitimately doesn't have it (e.g. pom-only aggregator modules have only `quality-gate`); the LLM gets an error TOON, not a hallucinated guess.
-
-Behind the scenes the executor proxy routes to one of four link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-build.md[`ext-point-build`] implementations (`build-maven`, `build-gradle`, `build-npm`, `build-pyproject`). All four expose the same `run --command-args …` subcommand and the same return TOON, so the LLM's interaction with the build is uniform regardless of which tool sits behind the wrapper.
-
-== The return TOON — what the LLM gets back
-
-After however long the build takes, the LLM receives a single structured TOON. **No streaming log output. No partial tokens. No context noise during the wait.** Just the result.
-
-Success shape:
-
-[source]
-----
-status              success
-exit_code           0
-duration_seconds    45
-log_file            .plan/temp/build-output/default/maven-2026-05-18-102315.log
-command             ./mvnw -l .plan/temp/build-output/default/maven-2026-05-18-102315.log clean verify
-----
-
-Failure shape (the same skill auto-parses the log into structured errors on non-zero exit):
-
-[source]
-----
-status              error
-exit_code           1
-duration_seconds    23
-log_file            .plan/temp/build-output/default/maven-2026-05-18-102315.log
-command             ./mvnw -l .plan/temp/build-output/default/maven-2026-05-18-102315.log clean verify
-error               build_failed
-
-errors[N]{file,line,message,category}:
-src/main/java/Foo.java    42    cannot find symbol      compile
-src/main/java/Bar.java    15    test assertion failed   test_failure
-
-tests:
-  passed: 40
-  failed: 2
-  skipped: 1
-----
-
-The `command` field carries the *actual* shell invocation the build skill ran — including the `-l {log_file}` redirect that captures stdout/stderr to the named log. It is not the canonical command string; it is the real, fully-flagged invocation as executed.
-
-Warnings are partially filtered by default (`mode: actionable` — accepted-warning patterns are dropped, only actionable items remain). The `--mode structured` mode keeps all warnings and flags accepted ones with `[accepted]`; `--mode errors` drops warnings entirely. The LLM picks the mode based on what it's investigating.
-
-The `log_file` field is the escape hatch — when the structured errors aren't enough, the LLM reads the full log on demand. Most of the time it doesn't need to.
-
-== Why "no tokens spent waiting" matters
-
-Build runs are slow by LLM standards. A Maven `verify` against a multi-module project routinely takes 5–15 minutes. A `coverage` run can be 20+. If the LLM were attached to the build's stdout, every line of `[INFO] Building module-7…` would consume context tokens and fragment attention.
-
-Plan Marshall's build skills capture all build output to the log file before returning anything to the LLM. The skill's return TOON is the *summary*; the LLM looks at the log only when it needs to. This means:
-
-* **A 10-minute build = ~100 tokens spent.** The `status`, `duration_seconds`, `log_file`, and any `errors[]` block. Nothing else.
-* **No context pollution.** The build output never enters the LLM's working memory unless the LLM explicitly asks for it via a follow-up `Read` of the log file.
-* **Parallel reasoning during the wait.** The skill is a synchronous subprocess from the LLM's perspective — the LLM is suspended waiting on a single tool call, not babysitting a stream.
-
-This compounds: most plans run multiple builds (incremental compile, quality-gate, module-tests, verify). Each is a single tool call, each costs ~100 tokens of context. Without this abstraction, a multi-build plan would burn tens of thousands of tokens on build output noise.
-
-== Where `/marshall-steward` builds the canonical mapping
-
-The mapping from canonical name to concrete invocation is built once at setup time and refreshed on demand. The wizard's Step 9 — *Discover Project Architecture* — walks the project via each domain bundle's `plan-marshall-plugin` extension and produces:
-
-* `.plan/project-architecture/_project.json` — the module index (canonical "which modules exist").
-* `.plan/project-architecture/{module}/enriched.json` — per-module persisted state, including the LLM-curated commentary.
-* Per-module derived data (paths, packages, build commands with filtered profiles) — computed on demand by `crawl_module_derived` from the live filesystem on every read (see xref:audit-trail.adoc[Audit Trail]).
-
-For each module, the discovery extension also runs the canonical-command resolution rules described in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/canonical-commands.md[`canonical-commands.md`]:
-
-* *Always-available* commands (`clean`, `quality-gate`) for every module.
-* *Source-conditional* commands (`compile`) when the module has source files.
-* *Test-conditional* commands (`test-compile`, `module-tests`) when the module has tests.
-* *Profile-based* commands (`integration-tests`, `e2e`, `coverage`, `benchmark`) when the underlying profile is detected.
-
-Each resolved command is stored **complete** — `verify -Ppre-commit -pl my-module`, not `verify` + a composition rule. The resolver returns the stored string verbatim, so there is no runtime composition logic that could go wrong.
-
-The CLAUDE.md `### Build Commands` block (written by the wizard's Step 9b, see xref:../user/getting-started.adoc#_what_the_wizard_writes_to_claude_md[Getting Started → What the wizard writes to CLAUDE.md]) projects this same mapping into a form humans (and any agent reading CLAUDE.md) can scan: one bullet per canonical command on the default module, plus child-module-only entries where applicable.
-
-== The four built-in build skills
-
-[cols="1,1,3", options="header"]
-|===
-| Skill | Tool | Coverage
-
-| link:../../marketplace/bundles/plan-marshall/skills/build-maven/SKILL.md[`build-maven`] | Maven (mvnw + system mvn) | Java/Kotlin builds with JaCoCo coverage, OpenRewrite markers, multi-module profile management.
-| link:../../marketplace/bundles/plan-marshall/skills/build-gradle/SKILL.md[`build-gradle`] | Gradle (gradlew + system gradle) | Java/Kotlin builds with JaCoCo coverage, quality task detection, multi-project discovery, OpenRewrite markers.
-| link:../../marketplace/bundles/plan-marshall/skills/build-npm/SKILL.md[`build-npm`] | npm / npx | TypeScript, Jest, ESLint, TAP parsing with workspace discovery, per-file JS coverage analysis, automatic npm/npx routing.
-| link:../../marketplace/bundles/plan-marshall/skills/build-pyproject/SKILL.md[`build-pyproject`] | Pyprojectx (`./pw`) | mypy type-checking, ruff linting, pytest with Cobertura coverage, test-directory-based module discovery.
-|===
-
-All four expose the same subcommand set (`run`, `parse`, `coverage-report`, `check-warnings`, `discover`, plus a few tool-specific extras like `search-markers` for OpenRewrite TODO scans). All four return the same TOON shape on success and the same auto-parsed structured errors on failure. The shared contract lives in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/build-api-reference.md[`build-api-reference.md`] and link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/build-execution.md[`build-execution.md`].
-
-Adding a new build tool (Go, Rust, …) is a matter of writing a new `build-{tool}` skill that implements `ext-point-build` and a companion `plan-marshall-plugin` extension that maps the canonical commands to the new tool's invocation. The rest of the system — LLM dispatch sites, finalize-step verify-step list, retrospective fragments — continues to work unchanged because it only ever sees the canonical names.
-
-== Worked example — a verify step
-
-The phase-5-execute `default:build_verify` verify step runs as:
-
-[source]
-----
-1. Read task.module from TASK-N.json                       (architecture lookup)
-2. architecture resolve --command verify --module {module}
-   → returns executable: "python3 .plan/execute-script.py
-                           plan-marshall:build-maven:maven run
-                           --command-args \"verify -pl {module}\""
-3. Run the returned executable verbatim via Bash.
-   ⏳ … 7 minutes pass …
-4. Result TOON returned by the build skill:
-   - status=success → proceed to next verify step
-   - status=error  → run check-warnings, capture findings, route to verification-feedback
-----
-
-Steps 2 and 3 are the entire LLM-visible build interaction. Steps 1 and 4 are deterministic dispatches inside the verify-step body — no judgement, no streaming output. The LLM's effective prompt cost per build is essentially constant regardless of how big or slow the actual build is.
-
-This is the shape of every build invocation in plan-marshall.
+Long-running builds still consume wall-clock time the developer pays for in latency. The `manage-metrics` accumulator records per-phase build duration, so the cost is measurable; the canonical-commands resolver records observed durations and adapts its timeout ceiling per command, so subsequent runs of the same build set the right budget instead of hard-coding a one-size-fits-all value. The abstraction makes the build cheap *in tokens*; it does not make it instantaneous.
+====
 
 == Related
 
-* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/canonical-commands.md[`canonical-commands.md`] — full canonical command vocabulary + resolution rules
-* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/build-api-reference.md[`build-api-reference.md`] — shared subcommand API across all build skills
-* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/build-execution.md[`build-execution.md`] — input/output contract, lifecycle, format spec
-* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/build-systems-common.md[`build-systems-common.md`] — shared standards (timeouts, log handling, acceptable-warning patterns)
-* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-build.md[`ext-point-build.md`] — extension point that all `build-*` skills implement
-* link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/manage-api.md[`manage-architecture/manage-api.md`] § Command Resolution — how `architecture resolve` maps canonical → concrete
-* xref:../user/configuration.adoc#build-systems[User Guide › Configuration › Build systems] — how to tune the discovered mapping
-* xref:../user/getting-started.adoc#_what_the_wizard_writes_to_claude_md[Getting Started → CLAUDE.md Build Commands] — how the wizard projects the canonical commands into CLAUDE.md
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/canonical-commands.md[`canonical-commands.md`] — full canonical-command vocabulary (`clean`, `compile`, `module-tests`, `integration-tests`, `e2e`, `coverage`, `quality-gate`, `verify`, `install`, `package`, …) with resolution rules per module type.
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/build-execution.md[`build-execution.md`] — input + output contract: every field in the success and failure TOON shapes, the parsed-errors block, the warnings-mode selector, the log-file conventions, the timeout-learning protocol.
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/build-api-reference.md[`build-api-reference.md`] — shared subcommand API across all build skills (`run`, `parse`, `coverage-report`, `check-warnings`, `discover`).
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/build-systems-common.md[`build-systems-common.md`] — shared standards: timeouts, log handling, acceptable-warning patterns.
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-build.md[`ext-point-build.md`] — the extension point all `build-*` skills implement; the four current implementers (`build-maven`, `build-gradle`, `build-npm`, `build-pyproject`) are documented in their own `SKILL.md`.
+* link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/manage-api.md[`manage-architecture/manage-api.md`] § Command Resolution — how `architecture resolve` maps canonical to concrete per module.
+* xref:../user/configuration.adoc#build-systems[User Guide › Configuration › Build systems] — operator-side tuning of the discovered mapping.
+* xref:token-management.adoc[Concepts › Token Management] — the cross-cutting framing of synchronous tool calls as the central token-management lever.

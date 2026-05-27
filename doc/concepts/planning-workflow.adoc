@@ -5,7 +5,7 @@
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
-Plan Marshall organises every non-trivial change as a *plan* that moves through six phases. Each phase is a skill (`phase-1-init` … `phase-6-finalize`) whose workflow doc is dispatched through the xref:execution-context.adoc[execution-context dispatcher]. The `plan-marshall` meta-skill (link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/SKILL.md[`plan-marshall/SKILL.md`]) ties them together and is what `/plan-marshall` orchestrates.
+"What is the agent supposed to be doing right now?" is a question that goes unanswered through most of a long Claude Code session. Plan Marshall organises every non-trivial change as a *plan* that moves through six phases, each with a clear contract about what it produces and what it refuses to do. Each phase is a skill (`phase-1-init` … `phase-6-finalize`) whose workflow doc is dispatched through the xref:execution-context.adoc[execution-context dispatcher]; the `plan-marshall` meta-skill ties them together and is what `/plan-marshall` orchestrates.
 
 image::../resources/diagrams/phase-lifecycle.svg[Plan lifecycle — six phases from init through finalize with named forward gates and a curved back-edge for the finalize → execute loop-back outcome, align=center]
 
@@ -56,20 +56,11 @@ A handful of workflows run inside multiple phases. They live under link:../../ma
 * link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/enrich-module.md[`enrich-module.md`] — Tier-1 architecture enrichment invoked from phase-6 architecture-refresh.
 * link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/recipe.md[`recipe.md`], link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning-lessons-aggregate.md[`planning-lessons-aggregate.md`] — recipe/lesson orchestration.
 
-== Dispatch Call Graph
+== Dispatch shape
 
-image::../resources/diagrams/call-graph.svg[Call graph of plan-marshall dispatches — the orchestrator at top fans out to six phase envelopes, three of which dispatch shared workflow bodies (q-gate-validation, verification-feedback, enrich-module) under specified conditions, align=center]
+Every phase boundary is a `Task: plan-marshall:execution-context-{level}` dispatch. The orchestrator runs in the main agent's context; each phase envelope is a separate subagent. A handful of shared workflow bodies (Q-Gate validation, verification-feedback, enrich-module) are invoked from multiple phases — the same `*.md` runs from every caller, but the `{level}` resolves under the calling phase's role registry, so the model and effort can differ per call site. Small, well-scoped changes can skip the Q-Gate via a bypass predicate documented in `phase-3-outline/SKILL.md`; for everything else the gate fires.
 
-Every arrow above is a `Task: plan-marshall:execution-context-{level}` dispatch. The orchestrator runs in the main agent's context; each phase envelope is a separate subagent. The three shared envelopes at the bottom are workflow bodies invoked from multiple phases — the same `*.md` runs from every caller, but the `{level}` resolves under the calling phase's role registry, so the model/effort can differ per call site.
-
-The conditionals on the bottom arrows are the per-call-site predicates that govern whether the dispatch fires:
-
-* `phase-3-outline` Step 11 is skipped when `scope_estimate=surgical` AND `change_type ∈ {bug_fix, tech_debt, verification}` AND `deliverable_count=1`. Every other path through outline triggers it.
-* `phase-5-execute` dispatches `verification-feedback` only when the task verification (`verification.passed`) comes back false.
-* `phase-6-finalize` `automated-review`, `sonar-roundtrip`, and the `pr-doctor` slash command all use the same `verification-feedback` shape, parameterised by `producer`.
-* `phase-6-finalize` `architecture-refresh` Tier-1 is the only per-iteration parallel dispatch in the contract — one envelope per affected module, fanned out in parallel.
-
-The full graph (every conditional, every shared workflow, every inline-script step) is canonical in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/call-graph.md[`ref-workflow-architecture/standards/call-graph.md`]. The 8-step anatomy of one dispatch (pick role → resolve level → construct prompt → dispatch → load skills + read workflow → execute → return TOON → record outcome) is in xref:execution-context.adoc[Execution Context].
+The full call graph (every conditional, every shared workflow, every inline-script step) is canonical in `ref-workflow-architecture/standards/call-graph.md`. The 8-step anatomy of one dispatch (pick role → resolve level → construct prompt → dispatch → load skills + read workflow → execute → return TOON → record outcome) is in xref:execution-context.adoc[Execution Context].
 
 == Phase Boundaries
 

@@ -5,16 +5,7 @@
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
-How Plan Marshall reduces the prompt-vs-blast-radius trade-off that Claude Code's stock permission modes force on developers — and a frank statement of what it does **not** solve.
-
-== Overview
-
-Claude Code ships two extremes:
-
-* **Accept-edits / interactive mode** — every meaningful action prompts the developer. Safe, but flow-killing on any non-trivial task.
-* **YOLO (`--dangerously-skip-permissions`)** — no prompts. Fast, but a single misstep by the LLM can do anything within the user's shell.
-
-Plan Marshall sits between them with a different approach: **narrow what the LLM does at all**, so the permission surface is small enough to pre-approve with confidence. Two layers cooperate — a normative baseline (`dev-agent-behavior-rules` hard rules) and a technical funnel (the script-executor proxy at `python3 .plan/execute-script.py`).
+Claude Code ships two extremes: **accept-edits** prompts the developer on every meaningful action (safe but flow-killing) and **YOLO** (`--dangerously-skip-permissions`) skips every prompt (fast but a single LLM misstep can do anything within the user's shell). Plan Marshall sits between them with a different approach — **narrow what the LLM does at all**, so the permission surface is small enough to pre-approve with confidence. Two layers cooperate: a normative baseline (`dev-agent-behavior-rules` hard rules) and a technical funnel (the script-executor proxy at `python3 .plan/execute-script.py`).
 
 [CAUTION]
 ====
@@ -27,115 +18,38 @@ The model is **way fewer prompts than accept-edits, way more secure than YOLO**.
 
 image::../resources/diagrams/security-spectrum.svg[Plan Marshall on the Claude Code permission spectrum — three modes positioned along a prompt-frequency axis with blast-radius annotations underneath each. accept-edits sits at high prompts with small radius; YOLO at no prompts with unbounded radius; plan-marshall achieves YOLO's low prompt rate with bounded radius via the script-executor proxy plus dev-agent-behavior-rules hard rules. Marked as the sweet spot., align=center]
 
-== Claude Code's stock modes — recap
-
-For orientation:
-
-[cols="1,3,1", options="header"]
-|===
-| Mode | Behaviour | Prompt frequency
-
-| Interactive (default) | Every Edit / Write / Bash / WebFetch outside the `allow` list pops a permission prompt. | High
-| Accept-edits | Skips prompts for Edit / Write inside the cwd, prompts for everything else. | Medium
-| Auto | Heuristic mid-tier — narrower auto-accepts than YOLO, broader than accept-edits. | Low
-| YOLO (`--dangerously-skip-permissions`) | Skips every prompt. | None — unbounded blast radius
-|===
-
-Plan Marshall operates inside interactive mode, but the prompt rate stays low because the permission lists pre-approve the patterns plan-marshall actually uses.
-
 == Layer 1 — `dev-agent-behavior-rules` as the normative baseline
 
-Every plan-marshall subagent loads link:../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/SKILL.md[`plan-marshall:dev-agent-behavior-rules`] as Tier-1 *before* anything else (see xref:skill-handling.adoc[Skill Handling]). Its `Workflow Discipline (Hard Rules)` section in `standards/agent-behavior-rules.md` narrows what the subagent is allowed to *try*:
+Every plan-marshall subagent loads `plan-marshall:dev-agent-behavior-rules` as Tier-1 *before* anything else (see xref:skill-handling.adoc[Skill Handling]). The hard-rules block narrows what the subagent is allowed to *try*: no unconstrained generic subagents (every dispatch routes through `execution-context-{level}`), `.plan/` access through scripts only, one Bash command per call, no shell constructs (`for`/`while`/`$()`/subshells/heredocs), structured queries before `Glob`/`Grep`, build commands resolved via the architecture API rather than hard-coded, CI operations through the abstraction rather than direct `gh`/`glab`.
 
-* **No unconstrained generic subagents** — every phase-1 through phase-6 dispatch routes through `execution-context-{level}`. No raw `Task: general-purpose`.
-* **`.plan/` access through scripts only** — never direct Read/Write/Edit on `.plan/` files (except via documented workflow exceptions).
-* **One Bash command per call** — no `&&`, `;`, `&`, or newlines. Compound commands are refused at review time.
-* **No shell constructs** — no `for`/`while` loops, `$()` substitution, subshells, or heredocs with `#` lines (which trigger security prompts).
-* **Structured queries first** — `architecture files --module X` before `Glob`/`Grep` for module-scoped discovery.
-* **Build commands via architecture-resolve** — never hard-coded `mvn`/`gradle`/`npm`/`./pw`; always resolved through `manage-architecture:architecture resolve`.
-* **CI operations via abstraction** — `tools-integration-ci` instead of direct `gh`/`glab`.
+These rules cut off the gnarliest LLM failure modes — shell injection through `$()`, runaway loops, ad-hoc subagents with full tool access — before they can fire. The rules are guidance, not enforcement, but loaded at every dispatch they sit in the subagent's context at every decision point.
 
-These rules cut off the gnarliest LLM failure modes (shell injection through `$()`, runaway loops, ad-hoc subagents with full tool access) before they can fire. They are guidance, not enforcement — but loaded at every dispatch, they are present in the subagent's context at every decision.
+== Layer 2 — The script-executor proxy as a technical funnel
 
-== Layer 2 — the script-executor proxy as a technical funnel
+Almost every action plan-marshall takes routes through one Bash pattern: `python3 .plan/execute-script.py {bundle}:{skill}:{script} [args...]`. The executor is a Python proxy with an embedded notation-to-script map: only registered scripts resolve, unknown notations error out, and the executor never `exec`s shell strings — it dispatches to Python directly.
 
-Almost every action plan-marshall takes routes through one Bash pattern:
+This shape means a single broad Claude Code permission (`Bash(python3 .plan/execute-script.py *)`) covers the bulk of plan-marshall's work. The wildcard is bounded: it can match only arguments the executor itself accepts, and the executor only dispatches to registered scripts. Without the proxy, the same coverage would require either a prompt per operation or a dozens-of-entries-long allow list that's easy to get wrong. With it, hundreds of distinct plan-marshall operations (every `manage-*`, every build, every triage, every finalize step) collapse into one allow entry.
 
-[source,bash]
-----
-python3 .plan/execute-script.py {bundle}:{skill}:{script} [args...]
-----
-
-The executor is a Python proxy generated by `/marshall-steward` that resolves the `{bundle}:{skill}:{script}` notation to an actual script under `marketplace/bundles/`, sets `PYTHONPATH`, and runs the script with the caller's args forwarded. The list of `{bundle}:{skill}:{script}` notations is embedded — only registered scripts resolve; unknown notations error out.
-
-This shape means a *single broad Claude Code permission* covers the bulk of plan-marshall's work:
-
-[source,json]
-----
-"Bash(python3 .plan/execute-script.py *)"
-----
-
-The `*` is bounded — it can only match arguments that the executor itself accepts, and the executor only dispatches to registered scripts. The LLM cannot smuggle arbitrary commands through this allow rule because the executor doesn't `exec` shell strings; it dispatches to Python.
-
-**Net effect**: hundreds of distinct plan-marshall operations (every `manage-*`, every build, every triage, every finalize step) collapse into one allow entry. Without the executor proxy, the same coverage would require either a permission prompt per operation, or a dozens-of-entries-long allow list that's easy to get wrong.
-
-== Permission settings — shape and split
-
-Plan Marshall uses Claude Code's standard two-file split:
-
-[cols="1,1,3", options="header"]
-|===
-| File | Tracked? | Role
-
-| `.claude/settings.json` | ✅ committed | The project-shared allow list. Small (~10 entries) — just the executor proxy, narrow `Edit`/`Write` against `.plan/`, Skill access for finalize-step plugin synchronisation. Same for every developer on the team.
-| `.claude/settings.local.json` | ❌ gitignored | Per-developer customisation. Larger (~50 entries) because individual developers approve patterns the team-shared file doesn't (WebFetch domains, local tool paths, ad-hoc Bash patterns).
-|===
-
-Sample allow entries from a real plan-marshall checkout:
-
-[source,json]
-----
-"Bash(python3 .plan/execute-script.py *)",   // the executor proxy — covers ~90% of operations
-"Bash(rm -rf .plan/logs/*)",                 // narrow cleanup, scoped to ignored paths
-"Edit(.plan/**)",                            // local plan files
-"Write(.plan/**)",                           // local plan files
-"Read(~/.claude/plugins/cache/**)",          // installed plugin cache (read-only)
-"WebFetch(domain:github.com)"                // narrow web access
-----
-
-The list is short by design — every entry maps to a known operation pattern plan-marshall produces. There are no `deny` or `ask` entries in plan-marshall's recommended settings; the *narrowness* of the allow list is the safety mechanism.
+The settings hierarchy itself follows Claude Code's standard two-file split — `.claude/settings.json` is the team-shared allow list (small, version-controlled, same for every developer) and `.claude/settings.local.json` is the per-developer customisation (gitignored, larger, individual). The canonical sample patterns and the resolution rules between them live in `permission-architecture.md`.
 
 == When prompts still happen
 
-Plan Marshall reduces prompt frequency; it does not eliminate prompts. Note that `git -C {worktree} commit/push` invocations are issued directly via Bash by the caller (the link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-git/SKILL.md[`workflow-integration-git`] skill provides supporting operations — `format-commit`, `analyze-diff`, `detect-artifacts`, `worktree-*` — that run through the executor proxy, but the commit/push themselves do not). The `.claude/settings.json` allow list therefore carries narrow `Bash(git -C * commit *)` / `Bash(git -C * push *)` entries alongside the executor-proxy allow. Prompts you should still expect:
+Plan Marshall reduces prompt frequency; it does not eliminate prompts. Expect prompts for: Bash file-ops that the LLM tries despite the hard-rule ban (`find`, `cat`, `grep`, `ls`, `head`, `tail`), compound shell commands the rules forbid (`&&`, `;`, `$()`, heredocs, `for`/`while`), direct `gh`/`glab` calls (the abstraction is the documented route), and novel WebFetch domains.
 
-* **Bash file-ops (`find`, `cat`, `grep`, `ls`, `head`, `tail`)** — banned by hard rule, but if the LLM tries them anyway, the absence of a matching allow rule surfaces a prompt before damage.
-* **Compound shell commands** — `&&`, `;`, `&`, newlines, `$()`, heredocs, `for`/`while` loops. All banned by hard rule, all unmatched by any allow pattern, so they prompt.
-* **Direct `gh` / `glab` calls** — the CI abstraction (`tools-integration-ci`) is the documented route. Direct provider calls aren't pre-approved.
-* **New WebFetch domains** — the WebFetch allow list is per-domain; novel domains prompt.
-* **Ad-hoc Bash that doesn't match the executor proxy** — anything the LLM tries that bypasses the executor and doesn't match a narrow allow rule surfaces a prompt. The fallback when the LLM ignores a hard rule.
-
-**Treat every prompt as a signal.** A prompt for something plan-marshall should never have tried means a hard-rule violation made it through the skill-load layer. The right response is usually to deny, redirect, and (if it recurs) capture as a lesson.
-
-== Permission tooling
-
-Two user-invocable skills manage the settings files themselves:
-
-* link:../../marketplace/bundles/plan-marshall/skills/tools-permission-doctor/SKILL.md[`tools-permission-doctor`] — read-only analysis. Detects redundant patterns, security anti-patterns (overly broad allow rules, conflicting deny lists), validates syntax. Use *before* applying fixes.
-* link:../../marketplace/bundles/plan-marshall/skills/tools-permission-fix/SKILL.md[`tools-permission-fix`] — write operations. Adds, removes, consolidates patterns; applies marketplace-recommended permission updates after installing a new bundle; runs the executor-migration sweep that converts legacy direct-script allows into the executor-proxy form.
-
-Both expose `--dry-run` for verification before any settings file is rewritten.
+Treat every prompt as a signal. A prompt for something plan-marshall should never have tried means a hard-rule violation made it through the skill-load layer. The right response is usually to deny, redirect, and — if it recurs — capture as a lesson.
 
 == Audit trail
 
-Because every action routes through the script-executor proxy, every script invocation is logged automatically. Combined with the structured `[STATUS]` / `[DISPATCH]` / `[SKILL]` / `[ARTIFACT]` log emitter inside `execution-context`, the per-plan findings JSONL, and the phase-handshake invariants, this produces a comprehensive, machine-readable record of every plan run. The full story — what's logged, where, how `plan-retrospective` evaluates it — is its own concept page: xref:audit-trail.adoc[Audit Trail].
+Because every action routes through the script-executor proxy, every script invocation is logged automatically. Combined with the structured `[STATUS]` / `[DISPATCH]` / `[SKILL]` / `[ARTIFACT]` tags emitted by `execution-context`, the per-plan findings JSONL, and the phase-handshake invariants, this produces a comprehensive, machine-readable record of every plan run. The full story — what's logged, where, how `plan-retrospective` evaluates it — is its own concept page: xref:audit-trail.adoc[Audit Trail].
 
 == Related
 
-* link:../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/agent-behavior-rules.md[`dev-agent-behavior-rules/agent-behavior-rules.md`] § Workflow Discipline (Hard Rules) — the normative baseline
-* link:../../marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md[`tools-script-executor/SKILL.md`] — the script-executor proxy contract
-* link:../../marketplace/bundles/plan-marshall/skills/tools-permission-doctor/SKILL.md[`tools-permission-doctor/SKILL.md`] — read-only permission analysis
-* link:../../marketplace/bundles/plan-marshall/skills/tools-permission-fix/SKILL.md[`tools-permission-fix/SKILL.md`] — permission write operations
-* xref:skill-handling.adoc[Concepts › Skill Handling] — why every subagent loads `dev-agent-behavior-rules` as Tier-1
-* xref:execution-context.adoc[Concepts › Execution Context] — why every subagent dispatch routes through the same generic dispatcher
-* xref:../user/configuration.adoc[User Guide › Configuration] — surface map including `.claude/settings.local.json`
+* link:../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/agent-behavior-rules.md[`agent-behavior-rules.md`] § Workflow Discipline (Hard Rules) — the normative baseline that every Tier-1 load enforces.
+* link:../../marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md[`tools-script-executor/SKILL.md`] — the script-executor proxy contract, the embedded notation map, the error envelopes.
+* link:../../marketplace/bundles/plan-marshall/skills/tools-permission-doctor/standards/permission-architecture.md[`permission-architecture.md`] — the three-level settings hierarchy (global / project / local), resolution priority, sample patterns per scope, and the "when to use which file" guidance.
+* link:../../marketplace/bundles/plan-marshall/skills/tools-permission-doctor/SKILL.md[`tools-permission-doctor/SKILL.md`] — read-only permission analysis (`tools-permission-fix` covers the write operations).
+* link:../../marketplace/bundles/plan-marshall/skills/manage-providers/SKILL.md[`manage-providers/SKILL.md`] — credential storage outside `marshal.json` and `.plan/`, with the filesystem-protection invariants the credential store enforces.
+* xref:skill-handling.adoc[Concepts › Skill Handling] — why every subagent loads `dev-agent-behavior-rules` as Tier-1.
+* xref:execution-context.adoc[Concepts › Execution Context] — why every subagent dispatch routes through the same generic dispatcher.
+* xref:audit-trail.adoc[Concepts › Audit Trail] — what every operation records to disk.
+* xref:../user/configuration.adoc[User Guide › Configuration] — surface map of `.claude/settings.json` / `.claude/settings.local.json`.
