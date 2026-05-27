@@ -73,7 +73,7 @@ def stubbed_invariants(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
         'task_state_hash': 'hash-tasks',
         'qgate_open_count': 0,
         'config_hash': 'hash-cfg',
-        'pending_tasks_count': 1,
+        'unfinished_tasks_count': 1,
     }
 
     def always(_pid: str, _md: dict) -> bool:
@@ -98,7 +98,7 @@ def stubbed_invariants(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
         ('task_state_hash', always, make_capture('task_state_hash')),
         ('qgate_open_count', always, make_capture('qgate_open_count')),
         ('config_hash', always, make_capture('config_hash')),
-        ('pending_tasks_count', always, make_capture('pending_tasks_count')),
+        ('unfinished_tasks_count', always, make_capture('unfinished_tasks_count')),
     ]
     monkeypatch.setattr(inv, 'INVARIANTS', stubbed)
     monkeypatch.setattr(cmds, 'INVARIANTS', stubbed)
@@ -305,7 +305,7 @@ def _capture_row_for_strict_test(plan_id: str) -> None:
             'task_state_hash': 'hash-tasks',
             'qgate_open_count': 0,
             'config_hash': 'hash-cfg',
-            'pending_tasks_count': 0,
+            'unfinished_tasks_count': 0,
             'override': False,
             'override_reason': '',
             'worktree_applicable': False,

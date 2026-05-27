@@ -135,6 +135,29 @@ Substitute the `--termination-cause` value with the canonical cause from the
 table above and `{n}` with the integer parsed from the agent's
 `<usage>...</usage>` block (use `0` when the field is absent).
 
+**Pre-dispatch queue peek** — before issuing any phase-5-execute *re-dispatch* (a dispatch motivated by the prior return classifying as anything other than `clean_exit_queue_empty`, and excluding the human-escalation cases `error` and repeated `harness_cancellation`), the orchestrator MUST first call `manage-tasks loop-exit-guard` as a cheap pre-flight to decide whether the queue is empty. This short-circuits the ~30s envelope dispatch when there is no work left.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks loop-exit-guard \
+  --plan-id {plan_id}
+```
+
+Inspect the returned TOON:
+
+- **`status: success` with `pending_count: 0` AND `in_progress_count: 0`** — the queue is empty by the broadened predicate (see `manage-tasks/SKILL.md` § "Loop-Exit Guard"). The orchestrator MUST NOT re-dispatch the execution-context. Instead, synthesize the boundary record with the canonical clean-exit cause (the peek itself is the clean signal — there is no agent return to parse, so token / tool-use / duration counters are recorded as `0`):
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
+    --plan-id {plan_id} --phase 5-execute --termination-cause clean_exit_queue_empty \
+    --total-tokens 0 --tool-uses 0 --duration-ms 0
+  ```
+
+  Then proceed directly to the **Execute Phase Completion** transition (capture invariants for `5-execute`, run the fused `5-execute → 6-finalize` `phase-boundary` call, transition status, and route through the `finalize_without_asking` gate). No phase-5-execute dispatch occurs.
+
+- **`status: continue`** — at least one task is `pending` OR `in_progress`. The broadened predicate (Deliverable 2 of the originating plan) treats both axes as blocking; the `message` field of the guard return names which axis was non-empty so the orchestrator's log surfaces the reason. Proceed with the normal re-dispatch path below.
+
+The peek is the same `loop-exit-guard` verb that the **Boundary-call fence** below uses as its post-classification enforcement. Relocating one invocation to the pre-dispatch decision point lets the orchestrator avoid paying the full envelope cost when the queue is already drained — the structural fix for the empty-queue waste documented in lesson `2026-05-26-17-002` (empirical evidence: two consecutive wasted dispatches at 12:08:07Z and 12:36:09Z during the `fix-1-init-phase-boundary-bootstrap-bug` plan, both returning identical zero-task summaries after a full envelope round-trip).
+
 **Boundary-call fence** — the existing `5-execute → 6-finalize` fused
 `phase-boundary` call MUST only fire on a clean exit, defined as
 `termination-cause == clean_exit_queue_empty` AND `manage-tasks loop-exit-guard`

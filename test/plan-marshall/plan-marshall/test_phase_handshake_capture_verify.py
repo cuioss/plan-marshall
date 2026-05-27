@@ -142,36 +142,36 @@ def test_verify_drift_config_hash(plan_context, stubbed_invariants, stub_metadat
     assert 'config_hash' in diff_names
 
 
-def test_capture_persists_pending_tasks_count_to_handshakes_toon(
+def test_capture_persists_unfinished_tasks_count_to_handshakes_toon(
     plan_context, stubbed_invariants, stub_metadata
 ) -> None:
-    """``pending_tasks_count`` must round-trip through handshakes.toon."""
-    stubbed_invariants['pending_tasks_count'] = 4
+    """``unfinished_tasks_count`` must round-trip through handshakes.toon."""
+    stubbed_invariants['unfinished_tasks_count'] = 4
     result = cmds.cmd_capture(_ns(plan_id='cap-pending-persist', phase='5-execute'))
     assert result['status'] == 'success'
-    assert result['invariants'].get('pending_tasks_count') in (4, '4')
+    assert result['invariants'].get('unfinished_tasks_count') in (4, '4')
     row = store.get_row('cap-pending-persist', '5-execute')
     assert row is not None
-    assert 'pending_tasks_count' in row, (
-        f'pending_tasks_count must be a HANDSHAKE_FIELDS column, got {list(row)}'
+    assert 'unfinished_tasks_count' in row, (
+        f'unfinished_tasks_count must be a HANDSHAKE_FIELDS column, got {list(row)}'
     )
-    assert row['pending_tasks_count'] in (4, '4'), row
+    assert row['unfinished_tasks_count'] in (4, '4'), row
 
 
-def test_verify_drift_pending_tasks_count(plan_context, stubbed_invariants, stub_metadata) -> None:
-    """A change in pending_tasks_count between capture and verify is drift."""
-    stubbed_invariants['pending_tasks_count'] = 3
+def test_verify_drift_unfinished_tasks_count(plan_context, stubbed_invariants, stub_metadata) -> None:
+    """A change in unfinished_tasks_count between capture and verify is drift."""
+    stubbed_invariants['unfinished_tasks_count'] = 3
     cmds.cmd_capture(_ns(plan_id='ver-pending', phase='5-execute'))
-    stubbed_invariants['pending_tasks_count'] = 0
+    stubbed_invariants['unfinished_tasks_count'] = 0
     result = cmds.cmd_verify(_ns(plan_id='ver-pending', phase='5-execute'))
     assert result['status'] == 'drift'
     diff_names = {d['invariant'] for d in result['diffs']}
-    assert 'pending_tasks_count' in diff_names
+    assert 'unfinished_tasks_count' in diff_names
 
 
-def test_handshake_fields_includes_pending_tasks_count() -> None:
-    """The TOON column schema must include ``pending_tasks_count``."""
-    assert 'pending_tasks_count' in store.HANDSHAKE_FIELDS
+def test_handshake_fields_includes_unfinished_tasks_count() -> None:
+    """The TOON column schema must include ``unfinished_tasks_count``."""
+    assert 'unfinished_tasks_count' in store.HANDSHAKE_FIELDS
 
 
 def test_verify_skipped_no_capture(plan_context, stubbed_invariants, stub_metadata) -> None:
@@ -358,7 +358,7 @@ def test_classifier_other_invariants_blocking_everywhere() -> None:
         'task_state_hash',
         'qgate_open_count',
         'config_hash',
-        'pending_tasks_count',
+        'unfinished_tasks_count',
         'phase_steps_complete',
         'task_graph_valid',
         'pending_findings_by_type',

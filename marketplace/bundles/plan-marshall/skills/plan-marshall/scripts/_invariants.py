@@ -864,34 +864,76 @@ def _capture_task_graph_valid(plan_id: str, _metadata: dict[str, Any], _phase: s
     return _hash_dict([list(edge) for edge in edges])
 
 
-def _capture_pending_tasks_count(plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
-    """Count of tasks currently in ``status: pending`` for this plan.
+def _capture_unfinished_tasks_count(plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
+    """Count of unfinished tasks (``status: pending`` OR ``status: in_progress``).
 
-    Drives the phase-5-execute transition guard: if tasks remain pending when
-    the orchestrator tries to transition to ``6-finalize``, the guard refuses.
-    Captured every phase so retrospective analysis sees the queue size at each
-    boundary; non-zero values at later phases indicate orphaned fix tasks.
+    Mirrors the broadened predicate of ``manage-tasks loop-exit-guard``: both
+    ``pending`` (never started) and ``in_progress`` (started but not finalized)
+    are unfinished terminal states that block clean exit. Drives the
+    phase-5-execute transition guard: if any unfinished task remains when the
+    orchestrator tries to transition to ``6-finalize``, the guard refuses.
+    Captured every phase so retrospective analysis sees the unfinished-queue
+    size at each boundary; non-zero values at later phases indicate orphaned
+    fix tasks or abandoned mid-flight dispatches.
+
+    The capture invokes ``loop-exit-guard`` so the count tracks the same
+    on-disk machinery the runtime guard reads. If the guard call is
+    unreachable, fall back to two separate ``list --status`` reads (the
+    inline historical path) so the row is still captured.
     """
     stdout = _run_script(
         [
             'plan-marshall:manage-tasks:manage-tasks',
-            'list',
-            '--status',
-            'pending',
+            'loop-exit-guard',
             '--plan-id',
             plan_id,
         ]
     )
-    if stdout is None:
-        return None
-    try:
-        parsed = parse_toon(stdout)
-    except Exception:
-        return None
-    rows = parsed.get('tasks_table') or parsed.get('tasks') or []
-    if not isinstance(rows, list):
-        return None
-    return len(rows)
+    if stdout is not None:
+        try:
+            parsed = parse_toon(stdout)
+        except Exception:
+            parsed = None
+        if isinstance(parsed, dict):
+            pending = parsed.get('pending_count')
+            in_progress = parsed.get('in_progress_count')
+
+            def _as_int(value: Any) -> int | None:
+                if isinstance(value, int):
+                    return value
+                if isinstance(value, str) and value.isdigit():
+                    return int(value)
+                return None
+
+            pending_int = _as_int(pending)
+            in_progress_int = _as_int(in_progress)
+            if pending_int is not None and in_progress_int is not None:
+                return pending_int + in_progress_int
+
+    # Fallback: read the two unfinished buckets directly via `list --status`.
+    total = 0
+    for status in ('pending', 'in_progress'):
+        bucket_stdout = _run_script(
+            [
+                'plan-marshall:manage-tasks:manage-tasks',
+                'list',
+                '--status',
+                status,
+                '--plan-id',
+                plan_id,
+            ]
+        )
+        if bucket_stdout is None:
+            return None
+        try:
+            bucket_parsed = parse_toon(bucket_stdout)
+        except Exception:
+            return None
+        rows = bucket_parsed.get('tasks_table') or bucket_parsed.get('tasks') or []
+        if not isinstance(rows, list):
+            return None
+        total += len(rows)
+    return total
 
 
 def _capture_qgate_open_count(plan_id: str, _metadata: dict[str, Any], phase: str) -> Any:
@@ -1339,7 +1381,7 @@ INVARIANTS: list[tuple[str, AppliesFn, CaptureFn]] = [
     ('task_state_hash', _always, _capture_task_state_hash),
     ('qgate_open_count', _always, _capture_qgate_open_count),
     ('config_hash', _always, _capture_config_hash),
-    ('pending_tasks_count', _always, _capture_pending_tasks_count),
+    ('unfinished_tasks_count', _always, _capture_unfinished_tasks_count),
     ('phase_steps_complete', _always, _capture_phase_steps_complete),
     ('task_graph_valid', _always, _capture_task_graph_valid),
     ('pending_findings_by_type', _always, _capture_pending_findings_by_type),
@@ -1384,7 +1426,7 @@ INVARIANTS: list[tuple[str, AppliesFn, CaptureFn]] = [
 #
 # Other invariants (``task_state_hash``, ``qgate_open_count``,
 # ``config_hash``, ``references_valid``, ``phase_steps_complete``,
-# ``pending_findings_blocking_count``, ``pending_tasks_count``,
+# ``pending_findings_blocking_count``, ``unfinished_tasks_count``,
 # ``pending_findings_by_type``, ``task_graph_valid``) describe plan-internal
 # state that should remain stable across every boundary and stay blocking
 # everywhere. Worktree-applicable invariants (``worktree_sha``,
@@ -1406,7 +1448,7 @@ INVARIANT_BLOCKING_SCOPE: dict[str, BlockingScope] = {
     'task_state_hash': 'blocking_at_every_boundary',
     'qgate_open_count': 'blocking_at_every_boundary',
     'config_hash': 'blocking_at_every_boundary',
-    'pending_tasks_count': 'blocking_at_every_boundary',
+    'unfinished_tasks_count': 'blocking_at_every_boundary',
     'phase_steps_complete': 'blocking_at_every_boundary',
     'task_graph_valid': 'blocking_at_every_boundary',
     'pending_findings_by_type': 'blocking_at_every_boundary',

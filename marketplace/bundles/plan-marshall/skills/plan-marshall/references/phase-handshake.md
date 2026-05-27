@@ -76,7 +76,7 @@ File: `<base>/plans/{plan_id}/handshakes.toon` (owned exclusively by `phase_hand
 
 ```toon
 plan_id: recipe-plugin-compliance
-handshakes[2]{phase,captured_at,worktree_applicable,override,override_reason,main_sha,main_dirty,main_dirty_files,worktree_sha,worktree_dirty,worktree_orphan,references_valid,task_state_hash,qgate_open_count,config_hash,pending_tasks_count,phase_steps_complete,pending_findings_by_type,pending_findings_blocking_count}:
+handshakes[2]{phase,captured_at,worktree_applicable,override,override_reason,main_sha,main_dirty,main_dirty_files,worktree_sha,worktree_dirty,worktree_orphan,references_valid,task_state_hash,qgate_open_count,config_hash,unfinished_tasks_count,phase_steps_complete,pending_findings_by_type,pending_findings_blocking_count}:
   5-execute,2026-04-14T17:42:57Z,false,false,"",3823a0dd…,0,[],"","",false,b2c3d4…,a1b2c3…,0,d4e5f6…,0,"","build-error=0,test-failure=0,lint-issue=0,sonar-issue=0",0
   6-finalize,2026-04-14T18:01:12Z,false,false,"",15efe821…,0,[],"","",false,b2c3d4…,a1b2c3…,0,d4e5f6…,0,e7f8a9…,"build-error=0,test-failure=0,lint-issue=0,sonar-issue=0,pr-comment=0",0
 ```
@@ -99,7 +99,7 @@ Defined in `_invariants.py` as `(name, applies_fn, capture_fn)` tuples. The para
 | `task_state_hash` | always | SHA256 of sorted `(number, status, step_outcomes, depends_on)` from `manage-tasks list` | `blocking_at_every_boundary` | tasks silently mutated |
 | `qgate_open_count` | always | `filtered_count` from `manage-findings qgate list --resolution pending --phase P` | `blocking_at_every_boundary` | Q-Gate bypass |
 | `config_hash` | always | SHA256 of stable-key JSON of `manage-config plan phase-P get` output | `blocking_at_every_boundary` | config swapped mid-run |
-| `pending_tasks_count` | always | row count from `manage-tasks list --status pending` | `blocking_at_every_boundary` | premature transition with fix tasks still pending |
+| `unfinished_tasks_count` | always | union count from `manage-tasks loop-exit-guard` (`pending_count + in_progress_count`) | `blocking_at_every_boundary` | premature transition with fix tasks still pending OR a mid-flight task abandoned by a previous dispatch |
 | `phase_steps_complete` | always (no-op when phase has no declaration) | See [resolution rule](#phase_steps_complete-resolution) | `blocking_at_every_boundary` | silently skipped intra-phase steps |
 | `task_graph_valid` | always | adjacency graph from `manage-tasks read` (cycle / dangling detection) | `blocking_at_every_boundary` | broken task graph blocking transition |
 | `pending_findings_by_type` | always | per-type breakdown from `manage-findings list --type T --resolution pending` for every known type, serialized as `"build-error=N,test-failure=N,..."` | `blocking_at_every_boundary` | retrospective view of the queue at every boundary |
