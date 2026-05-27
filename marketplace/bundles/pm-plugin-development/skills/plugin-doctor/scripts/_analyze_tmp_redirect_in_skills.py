@@ -46,9 +46,6 @@ Structural exemptions (identical to ``shell-substitution-in-skills``):
 2. **Comment lines** — lines whose first non-whitespace character is ``#`` are
    skipped.
 
-3. **Inline-code spans** — a redirect pattern inside a backtick span is a
-   structural reference, not a runnable command.
-
 Findings have the shape::
 
     {
@@ -89,8 +86,6 @@ _FENCE_CLOSE_RE = re.compile(r'^\s*```\s*$')
 
 _BASH_FENCE_INFO_STRINGS = frozenset({'bash', 'sh'})
 
-_INLINE_CODE_RE = re.compile(r'`([^`]+)`')
-
 # Match >> or > followed by optional whitespace then /tmp/ or /var/tmp/.
 # The group(1) captures the operator (>> or >), group(2) the target prefix.
 _TMP_REDIRECT_RE = re.compile(r'(>>?)\s*(/(?:var/)?tmp/)')
@@ -119,16 +114,6 @@ def _build_fence_map(lines: list[str]) -> dict[int, str]:
             else:
                 inside[idx] = info_string
     return inside
-
-
-def _inline_code_spans(line: str) -> list[tuple[int, int]]:
-    """Return (start, end) character offsets of inline-code spans on ``line``."""
-    return [(m.start(), m.end()) for m in _INLINE_CODE_RE.finditer(line)]
-
-
-def _offset_in_inline_code(offset: int, spans: list[tuple[int, int]]) -> bool:
-    """Return ``True`` if ``offset`` lies within any of the inline-code spans."""
-    return any(start <= offset < end for start, end in spans)
 
 
 def _is_comment_line(line: str) -> bool:
@@ -205,17 +190,12 @@ def _scan_file(path: Path) -> list[dict]:
         if _is_comment_line(line):
             continue
 
-        spans = _inline_code_spans(line)
-
         for m in _TMP_REDIRECT_RE.finditer(line):
-            offset = m.start()
-            if _offset_in_inline_code(offset, spans):
-                continue
             operator = m.group(1)
             target_prefix = m.group(2)
             redirect_type = 'append' if operator == '>>' else 'overwrite'
             findings.append(
-                _make_finding(path, idx + 1, redirect_type, target_prefix, line, offset)
+                _make_finding(path, idx + 1, redirect_type, target_prefix, line, m.start())
             )
 
     return findings

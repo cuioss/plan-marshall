@@ -44,10 +44,7 @@ Structural exemptions (identical to ``shell-substitution-in-skills``):
    not interpret as instructions.  Since these are not ``bash``/``sh``, they
    are naturally excluded by rule 1.
 
-3. **Inline-code spans inside fenced blocks** — backtick spans inside a fence
-   body are structural references, not runnable commands.
-
-4. **Comment lines** — lines whose first non-whitespace character is ``#`` are
+3. **Comment lines** — lines whose first non-whitespace character is ``#`` are
    treated as comments and skipped (common in shell scripts to illustrate
    intent without running code).
 
@@ -94,9 +91,6 @@ _FENCE_CLOSE_RE = re.compile(r'^\s*```\s*$')
 # Info-strings for which detection fires (only inside bash/sh fences).
 _BASH_FENCE_INFO_STRINGS = frozenset({'bash', 'sh'})
 
-# Inline-code span detection (matches `...`).
-_INLINE_CODE_RE = re.compile(r'`([^`]+)`')
-
 # Compound-command detection.
 _AND_AND_RE = re.compile(r'&&')
 _SEMICOLON_RE = re.compile(r';')
@@ -133,16 +127,6 @@ def _build_fence_map(lines: list[str]) -> dict[int, str]:
             else:
                 inside[idx] = info_string
     return inside
-
-
-def _inline_code_spans(line: str) -> list[tuple[int, int]]:
-    """Return (start, end) character offsets of inline-code spans on ``line``."""
-    return [(m.start(), m.end()) for m in _INLINE_CODE_RE.finditer(line)]
-
-
-def _offset_in_inline_code(offset: int, spans: list[tuple[int, int]]) -> bool:
-    """Return ``True`` if ``offset`` lies within any of the inline-code spans."""
-    return any(start <= offset < end for start, end in spans)
 
 
 def _is_comment_line(line: str) -> bool:
@@ -221,26 +205,18 @@ def _scan_file(path: Path) -> list[dict]:
         if _is_comment_line(line):
             continue
 
-        spans = _inline_code_spans(line)
-
         # Check for && chains.
         for m in _AND_AND_RE.finditer(line):
-            offset = m.start()
-            if not _offset_in_inline_code(offset, spans):
-                findings.append(_make_finding(path, idx + 1, 'and_and', line, offset))
+            findings.append(_make_finding(path, idx + 1, 'and_and', line, m.start()))
 
         # Check for ; chains.
         for m in _SEMICOLON_RE.finditer(line):
-            offset = m.start()
-            if not _offset_in_inline_code(offset, spans):
-                findings.append(_make_finding(path, idx + 1, 'semicolon', line, offset))
+            findings.append(_make_finding(path, idx + 1, 'semicolon', line, m.start()))
 
         # Check for trailing & (background dispatch).
         m_bg = _TRAILING_BG_RE.search(line)
         if m_bg:
-            offset = m_bg.start()
-            if not _offset_in_inline_code(offset, spans):
-                findings.append(_make_finding(path, idx + 1, 'background', line, offset))
+            findings.append(_make_finding(path, idx + 1, 'background', line, m_bg.start()))
 
     return findings
 

@@ -11,8 +11,9 @@ etc. are not scanned).
 
 Exemptions:
   1. Comment lines (first non-whitespace char is ``#``).
-  2. Inline-code spans (`` `...` ``).
-  3. All lines outside ``bash``/``sh`` fenced blocks.
+  2. All lines outside ``bash``/``sh`` fenced blocks.
+  Note: backtick spans inside bash fences are command substitutions, NOT inline-code
+  exemptions — they are scanned for chain-shape violations.
 
 Test layers:
   (a) Detection of ``&&`` chains inside bash/sh fences.
@@ -20,7 +21,7 @@ Test layers:
   (c) Detection of trailing ``&`` (background dispatch) inside bash/sh fences.
   (d) Non-detection: prose outside fences is NOT scanned.
   (e) Non-detection: comment lines inside bash fences are exempt.
-  (f) Non-detection: inline-code spans inside bash fences are exempt.
+  (f) Backtick spans inside bash fences are flagged (command substitutions, not markdown).
   (g) Non-detection: backslash-escaped ``\\&`` is exempt from trailing-& rule.
   (h) Finding shape validation.
   (i) Multiple findings on a single line.
@@ -275,25 +276,37 @@ class TestCommentLinesExempt:
 # ===========================================================================
 
 
-class TestInlineCodeSpanExemption:
-    """Compound operators inside inline-code spans inside bash fences are exempt."""
+class TestBacktickSpanInBashFence:
+    """Backtick spans inside bash fences are bash command substitutions, not markdown inline-code.
 
-    def test_and_and_in_inline_code_in_bash_fence_is_exempt(self, tmp_path: Path) -> None:
-        """``&&`` inside backtick span inside bash fence produces no finding."""
+    Unlike prose sections, backticks inside a fenced bash block denote command substitution
+    (e.g. ``result=`cmd1 && cmd2```) and are therefore NOT exempt from chain-shape detection.
+    """
+
+    def test_and_and_in_backtick_span_inside_bash_fence_is_flagged(self, tmp_path: Path) -> None:
+        """``&&`` inside a backtick span inside a bash fence is a command substitution and IS flagged."""
+        content = '```bash\nresult=`cmd1 && cmd2`\n```\n'
+        marketplace_root, _ = _make_skill_md(tmp_path, content)
+        findings = analyze_bash_chain_shapes_in_skills(marketplace_root)
+        and_and_findings = [f for f in findings if f['chain_type'] == 'and_and']
+        assert len(and_and_findings) >= 1
+
+    def test_and_and_comment_with_backtick_is_skipped(self, tmp_path: Path) -> None:
+        """A comment line containing a backtick span with ``&&`` is still skipped (comment exemption)."""
         content = '```bash\n# document: `cmd1 && cmd2` is forbidden\npython3 safe.py\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         findings = analyze_bash_chain_shapes_in_skills(marketplace_root)
         assert findings == []
 
-    def test_and_and_outside_inline_code_on_same_line_is_flagged(
+    def test_and_and_bare_is_flagged_alongside_backtick_span(
         self, tmp_path: Path
     ) -> None:
-        """The bare ``&&`` is flagged even when an inline-code span is on the same line."""
+        """Both the bare ``&&`` and any ``&&`` inside a backtick span on the same line are flagged."""
         content = '```bash\ncmd1 && cmd2  # see `a && b` doc\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         findings = analyze_bash_chain_shapes_in_skills(marketplace_root)
-        # The bare cmd1 && cmd2 is NOT in inline-code; must be flagged.
         and_and_findings = [f for f in findings if f['chain_type'] == 'and_and']
+        # cmd1 && cmd2 is flagged; `a && b` in a comment-suffix backtick is also flagged.
         assert len(and_and_findings) >= 1
 
 
@@ -306,8 +319,8 @@ class TestBackslashEscapedAmpersand:
     """A ``\\&`` (backslash-escaped ampersand) is not a trailing-& finding."""
 
     def test_backslash_ampersand_is_not_background_dispatch(self, tmp_path: Path) -> None:
-        """``2>\\&1`` does not trigger a background-dispatch finding."""
-        content = '```bash\npython3 cmd.py > /dev/null 2>\\&1\n```\n'
+        """A trailing backslash-escaped ampersand does not trigger a background-dispatch finding."""
+        content = '```bash\necho "hello" \\&\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         findings = analyze_bash_chain_shapes_in_skills(marketplace_root)
         bg_findings = [f for f in findings if f['chain_type'] == 'background']
