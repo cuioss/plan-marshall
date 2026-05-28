@@ -555,10 +555,10 @@ def _classify_affected_files(paths: list[str]) -> str:
     all_python_test = True
 
     for path in paths:
-        if not isinstance(path, str) or not path:
+        if not path:
             continue
-        is_py = path.endswith('.py')
-        if is_py:
+        path_obj = Path(path)
+        if path_obj.suffix == '.py':
             has_python = True
             # python-prod predicate: under scripts/ directory
             is_py_prod = '/scripts/' in path or path.startswith('scripts/')

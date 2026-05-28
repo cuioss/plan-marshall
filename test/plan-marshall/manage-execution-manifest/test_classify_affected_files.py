@@ -197,18 +197,14 @@ def test_classify_affected_files_three_doc_only_deliverables_from_this_plan():
     assert result == 'doc-only'
 
 
-def test_classify_affected_files_skips_non_string_entries():
-    """Defensive: non-string entries (None, int) are silently skipped."""
-    # Arrange — list with corrupt entries mixed in among real paths
+def test_classify_affected_files_raises_on_non_string_entries():
+    """Verify that non-string entries cause a loud failure (TypeError) as per general rules."""
+    # Arrange
     paths = [
         'marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md',
         None,  # type: ignore[list-item]
-        42,  # type: ignore[list-item]
-        '',  # empty string
     ]
 
-    # Act
-    result = _classify_affected_files(paths)
-
-    # Assert — only the single .md entry counts; result is doc-only
-    assert result == 'doc-only'
+    # Act & Assert
+    with pytest.raises(TypeError):
+        _classify_affected_files(paths)
