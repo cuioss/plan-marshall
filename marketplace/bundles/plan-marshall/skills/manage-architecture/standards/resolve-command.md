@@ -56,7 +56,7 @@ hint: Exceeds Bash ceiling; orchestrator-tier only
 
 ## Threshold Rationale: `> 600`
 
-The 600-second threshold is the Bash tool's `timeout` parameter ceiling on the host platform. A build whose recommended Bash timeout exceeds the ceiling cannot be invoked from a per-task sub-agent's Bash call without auto-backgrounding, which surfaces the recurring failure documented in lesson `2026-05-27-20-003` (≈ 600K tokens of re-dispatch overhead per 12-task plan).
+The 600-second threshold is the Bash tool's `timeout` parameter ceiling on the host platform. A build whose recommended Bash timeout exceeds the ceiling cannot be invoked from a per-task sub-agent's Bash call without auto-backgrounding, which produces ≈ 600K tokens of re-dispatch overhead per 12-task plan.
 
 The threshold is computed from real measurements via the adaptive-timeout infrastructure — nothing hard-codes a list of "long-running" commands:
 
@@ -107,7 +107,7 @@ The `hint` field is a recognition token, not optional prose — its presence in 
 
 ## Cross-References
 
-- Lesson [`2026-05-27-20-003`](../../../../../.plan/lessons-learned/2026-05-27-20-003-bash-timeout-from-architecture-resolve.md) — the failure mode that motivated this surface.
+- The Bash-timeout-from-architecture-resolve failure mode that motivated this surface — see `dev-agent-behavior-rules` § "Bash: Timeout from architecture-resolved canonical command" for the behavioural rule.
 - [`client-api.md`](client-api.md) § `resolve` — base resolve invocation and options.
 - [`manage-execution-manifest`](../../manage-execution-manifest/standards/decision-rules.md) — manifest composer's `execution_tier` routing rule.
 - `dev-agent-behavior-rules` — the agent-side behavioural rule that consumes these fields.

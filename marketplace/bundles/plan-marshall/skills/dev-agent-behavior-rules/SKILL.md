@@ -57,7 +57,7 @@ When invoking a build/verify canonical command (resolved via `plan-marshall:mana
 
 The floor for ad-hoc build/verify invocations outside the architecture-resolved envelope is 600000ms (10 minutes); the architecture-resolved `bash_timeout_seconds` always supersedes the floor.
 
-See lesson `2026-05-27-20-003` for the recurrence signature and the orchestrator-tier rationale.
+The recurrence signature and orchestrator-tier rationale are documented in the adaptive-timeout infrastructure design.
 
 ### Bash: No file operations
 

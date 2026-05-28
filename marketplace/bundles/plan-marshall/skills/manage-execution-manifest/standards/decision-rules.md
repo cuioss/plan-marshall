@@ -187,7 +187,7 @@ When `ci_provider` is neither `github` nor `gitlab`, OR `default:automated-revie
 (plan-marshall:manage-execution-manifest:compose) execution_tier routing — mutated_tasks={N}, phase_5.verification_steps={list}
 ```
 
-**Cross-references**: lesson `2026-05-27-20-003` (the originating ≈600K-token re-dispatch failure); `manage-architecture/standards/resolve-command.md` (the four-field augmented resolve TOON); `dev-agent-behavior-rules` (the sub-agent rule that consumes `bash_timeout_seconds`).
+**Cross-references**: `manage-architecture/standards/resolve-command.md` (the four-field augmented resolve TOON and the ≈600K-token re-dispatch failure mode that motivated it); `dev-agent-behavior-rules` (the sub-agent rule that consumes `bash_timeout_seconds`).
 
 ## Role-Field Intersection
 
