@@ -41,7 +41,6 @@ def _load_module(name, filename):
 
 
 _sync_mod = _load_module('_cmd_sync_defaults', '_cmd_sync_defaults.py')
-_config_defaults_mod = _load_module('_config_defaults_for_sync_test', '_config_defaults.py')
 
 cmd_sync_defaults = _sync_mod.cmd_sync_defaults
 
