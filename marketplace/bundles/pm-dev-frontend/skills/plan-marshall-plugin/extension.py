@@ -94,3 +94,57 @@ class Extension(ExtensionBase):
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""
         return 'pm-dev-frontend:ext-triage-js'
+
+    # =========================================================================
+    # File-type classifier
+    # =========================================================================
+
+    # Test patterns are recognized via filename suffix `.spec.*` / `.test.*`.
+    # Source patterns claim *.js, *.mjs, *.ts, *.tsx, *.jsx that are NOT test files.
+    _SOURCE_SUFFIXES: tuple[str, ...] = ('.js', '.mjs', '.ts', '.tsx', '.jsx')
+    _TEST_TOKENS: tuple[str, ...] = ('.spec.', '.test.')
+    _CONFIG_FILES: tuple[str, ...] = (
+        'package.json',
+        'tsconfig.json',
+    )
+    _CONFIG_PREFIXES: tuple[str, ...] = ('eslint.config.',)
+
+    def _match_classify(self, path: str) -> tuple[str, int] | None:
+        # Config files (highest specificity — exact filename match).
+        filename = path.rsplit('/', 1)[-1]
+        if filename in self._CONFIG_FILES:
+            return 'config', 1
+        for prefix in self._CONFIG_PREFIXES:
+            if filename.startswith(prefix):
+                return 'config', 1
+        # Test patterns — *.spec.* / *.test.* with a JS/TS extension.
+        if any(token in filename for token in self._TEST_TOKENS):
+            for ext in self._SOURCE_SUFFIXES:
+                if filename.endswith(ext):
+                    return 'test', 1
+        # Production source — JS/TS suffix and NOT a test file.
+        for ext in self._SOURCE_SUFFIXES:
+            if filename.endswith(ext):
+                return 'production', 1
+        return None
+
+    def classify_paths(self, paths: list[str]) -> dict[str, list[str]]:
+        """Classify paths for the JavaScript / frontend domain.
+
+        See extension-api/standards/extension-contract.md § classify_paths()
+        for the full contract.
+        """
+        claims: dict[str, list[str]] = {
+            'production': [], 'test': [], 'documentation': [], 'config': []
+        }
+        for path in paths:
+            match = self._match_classify(path)
+            if match is not None:
+                claims[match[0]].append(path)
+        return claims
+
+    def classify_path_specificity(self, path: str, role: str) -> int:
+        match = self._match_classify(path)
+        if match is not None and match[0] == role:
+            return match[1]
+        return 0

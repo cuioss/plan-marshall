@@ -189,3 +189,52 @@ class Extension(ExtensionBase):
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""
         return 'pm-dev-java:ext-triage-java'
+
+    # =========================================================================
+    # File-type classifier
+    # =========================================================================
+
+    _CLASSIFY_PATTERNS: tuple[tuple[str, str, int], ...] = (
+        ('**/src/main/**/*.java', 'production', 2),
+        ('src/main/**/*.java', 'production', 2),
+        ('**/src/test/**/*.java', 'test', 2),
+        ('src/test/**/*.java', 'test', 2),
+        ('**/pom.xml', 'config', 1),
+        ('pom.xml', 'config', 1),
+        ('**/build.gradle', 'config', 1),
+        ('build.gradle', 'config', 1),
+        ('**/build.gradle.kts', 'config', 1),
+        ('build.gradle.kts', 'config', 1),
+        ('**/settings.gradle', 'config', 1),
+        ('settings.gradle', 'config', 1),
+        ('**/settings.gradle.kts', 'config', 1),
+        ('settings.gradle.kts', 'config', 1),
+    )
+
+    def _match_classify(self, path: str) -> tuple[str, int] | None:
+        import fnmatch
+        for glob, role, score in self._CLASSIFY_PATTERNS:
+            if fnmatch.fnmatchcase(path, glob):
+                return role, score
+        return None
+
+    def classify_paths(self, paths: list[str]) -> dict[str, list[str]]:
+        """Classify paths for the Java domain.
+
+        See extension-api/standards/extension-contract.md § classify_paths()
+        for the full contract.
+        """
+        claims: dict[str, list[str]] = {
+            'production': [], 'test': [], 'documentation': [], 'config': []
+        }
+        for path in paths:
+            match = self._match_classify(path)
+            if match is not None:
+                claims[match[0]].append(path)
+        return claims
+
+    def classify_path_specificity(self, path: str, role: str) -> int:
+        match = self._match_classify(path)
+        if match is not None and match[0] == role:
+            return match[1]
+        return 0

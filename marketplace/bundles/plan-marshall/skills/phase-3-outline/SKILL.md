@@ -241,14 +241,14 @@ For localized changes where targets are already known from module_mapping.
 | Step | Purpose | Key Action |
 |------|---------|------------|
 | **6. Validate Targets** | Verify target files/modules exist | `ls -la {target_path}` for each target |
-| **7. Create Deliverables** | Map module_mapping to deliverables | **MUST classify each deliverable's `affected_files` against the [File-type classifier](standards/outline-workflow-detail.md#file-type-classifier) (four buckets: `python-prod` / `python-test` / `doc-only` / `mixed`) BEFORE assigning `profiles[]`.** Use deliverable template, resolve verification commands via `architecture resolve`. The resolved bucket MUST be recorded as a comment in the `**Profiles:**` block (see Deliverable Template below). |
+| **7. Create Deliverables** | Map module_mapping to deliverables | **MUST classify each deliverable's `affected_files` against the [File-type classifier](standards/outline-workflow-detail.md#file-type-classifier) (six buckets: `production_only` / `test_only` / `documentation_only` / `mixed_code` / `mixed_with_docs` / `unknown`) BEFORE assigning `profiles[]`.** Use deliverable template, resolve verification commands via `architecture resolve`. The resolved bucket MUST be recorded as a comment in the `**Profiles:**` block (see Deliverable Template below). |
 | **8. Simple Q-Gate** | Lightweight verification (with surgical bypass) | Bypass when surgical+bug_fix/tech_debt/verification+1 deliverable; otherwise check target existence + request alignment |
 
 ### File-type classifier (normative)
 
-Before assigning `profiles[]` to any deliverable, every author MUST classify the deliverable's `**Affected files:**` list against the four-bucket file-type classifier. The buckets, predicates, profile assignments, and verification commands are documented in [`standards/outline-workflow-detail.md` § File-type classifier](standards/outline-workflow-detail.md#file-type-classifier). The rule is normative — assigning `module_testing` to a `doc-only` deliverable is a contract violation that phase-4-plan refuses to translate into a paired pytest task and instead emits a Q-Gate finding back to this phase.
+Before assigning `profiles[]` to any deliverable, every author MUST classify the deliverable's `**Affected files:**` list against the six-bucket file-type classifier. The buckets, predicates, profile assignments, and verification commands are documented in [`standards/outline-workflow-detail.md` § File-type classifier](standards/outline-workflow-detail.md#file-type-classifier). The rule is normative — assigning `module_testing` to a `documentation_only` deliverable is a contract violation that phase-4-plan refuses to translate into a paired pytest task and instead emits a Q-Gate finding back to this phase. The aggregator that produces the bucket lives in `manage-execution-manifest._classify_paths_via_extensions`; per-domain predicates are owned by each bundle's `ExtensionBase.classify_paths()` override.
 
-The canonical doctor invocation cited in all `doc-only` deliverable Verification fields is `pm-plugin-development:plugin-doctor:doctor-marketplace scan --paths {skill-dir}` (NOT the stale `:plugin-doctor:plugin-doctor`).
+The canonical doctor invocation cited in all `documentation_only` deliverable Verification fields is `pm-plugin-development:plugin-doctor:doctor-marketplace scan --paths {skill-dir}` (NOT the stale `:plugin-doctor:plugin-doctor`).
 
 **Step 6 may also refine `scope_estimate`**: After deliverables crystalize and the concrete Affected files lists are known, phase-3-outline MAY downgrade `scope_estimate` (e.g., `single_module` → `surgical`) when the final deliverable composition narrows the actual scope. Persist any change via `manage-references set --field scope_estimate`. Refinement happens BEFORE Step 8 so the bypass rule sees the refined value.
 
@@ -332,9 +332,9 @@ Each deliverable in solution_outline.md MUST follow this field order. The author
 
 **Design notes:** {required when the deliverable adds capability to an existing skill; names the target skill's design model — `script-deterministic`, `LLM-driven`, or `hybrid` — and a one-sentence rationale showing the proposed implementation extends, not contradicts, that model. See Step 9c (Read Target Skill Design Intent) and [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md#step-9c-read-target-skill-design-intent) for the procedure. Omit when the deliverable does not add capability to an existing skill (e.g., docs-only, brand-new skill).}
 
-**Profiles:** <!-- bucket: {python-prod|python-test|doc-only|mixed} -->
+**Profiles:** <!-- bucket: {production_only|test_only|documentation_only|mixed_code|mixed_with_docs|unknown} -->
 - implementation
-- {module_testing - only if the resolved bucket is python-prod, python-test, or mixed; never for doc-only}
+- {module_testing - only if the resolved bucket is production_only, test_only, mixed_code, or mixed_with_docs; never for documentation_only; unknown BLOCKS the deliverable}
 
 **Affected files:**
 - `{explicit/path/to/file1}`
@@ -353,10 +353,12 @@ Each deliverable in solution_outline.md MUST follow this field order. The author
 
 The `<!-- bucket: ... -->` comment on the `**Profiles:**` line is REQUIRED and records the resolved file-type bucket from the [File-type classifier](standards/outline-workflow-detail.md#file-type-classifier). The bucket determines which profiles are valid for the deliverable:
 
-- `doc-only` → `implementation` only; never paired with `module_testing`. Verification cites `pm-plugin-development:plugin-doctor:doctor-marketplace scan --paths {skill-dir}`.
-- `python-prod` → `implementation` + `module_testing`. Verification cites the resolved `quality-gate` and `module-tests` commands.
-- `python-test` → `module_testing` only (test-only deliverable). Verification cites the resolved `module-tests` command.
-- `mixed` → `implementation` + `module_testing`, with `module_testing` scope narrowed to the `**/*.py` paths only (declare the narrowed scope in a `**Module_testing scope:**` block above `**Affected files:**`).
+- `documentation_only` → `implementation` only; never paired with `module_testing`. Verification cites `pm-plugin-development:plugin-doctor:doctor-marketplace scan --paths {skill-dir}`.
+- `production_only` → `implementation` + `module_testing`. Verification cites the resolved `quality-gate` and `module-tests` commands.
+- `test_only` → `module_testing` only (test-only deliverable). Verification cites the resolved `module-tests` command.
+- `mixed_code` → `implementation` + `module_testing` (production + test paths, no documentation). Verification cites the resolved `quality-gate` and `module-tests` commands.
+- `mixed_with_docs` → `implementation` + `module_testing`, with `module_testing` scope narrowed to the production/test paths only (declare the narrowed scope in a `**Module_testing scope:**` block above `**Affected files:**`).
+- `unknown` → BLOCKS the deliverable. Phase-4-plan emits a Q-Gate finding requiring the user to add a domain-extension claim for the unclaimed path(s) or correct the affected-files list. Never silently route to `documentation_only`.
 
 ---
 

@@ -250,14 +250,14 @@ Parse `depends` field for each deliverable:
 
 For each deliverable, create one task per profile in its `profiles` list:
 
-**Doc-only contract-violation guard (NORMATIVE)**: Before iterating profiles, fire this guard for every deliverable. The guard refuses to translate a misclassified `module_testing` profile into a paired pytest task; instead it emits a Q-Gate finding back to phase-3-outline so the misclassification is corrected at its source. The predicate, classifier vocabulary, and bucket-naming rules live in the central standard — do NOT inline-copy them here:
+**Documentation-only contract-violation guard (NORMATIVE)**: Before iterating profiles, fire this guard for every deliverable. The guard refuses to translate a misclassified `module_testing` profile into a paired pytest task; instead it emits a Q-Gate finding back to phase-3-outline so the misclassification is corrected at its source. The predicate, classifier vocabulary, and bucket-naming rules live in the central standard — do NOT inline-copy them here:
 
-**Reference standard**: see [`marketplace/bundles/plan-marshall/skills/phase-3-outline/standards/outline-workflow-detail.md` § File-type classifier](../phase-3-outline/standards/outline-workflow-detail.md#file-type-classifier). The four buckets (`python-prod` / `python-test` / `doc-only` / `mixed`), the path predicates, and the per-bucket profile assignments are normative in that standard. The guard below restates only the predicate needed for enforcement — it does NOT redefine the bucket vocabulary or the bucket-comment recording rules.
+**Reference standard**: see [`marketplace/bundles/plan-marshall/skills/phase-3-outline/standards/outline-workflow-detail.md` § File-type classifier](../phase-3-outline/standards/outline-workflow-detail.md#file-type-classifier). The six buckets (`production_only` / `test_only` / `documentation_only` / `mixed_code` / `mixed_with_docs` / `unknown`), the per-domain extension predicates that produce them, and the per-bucket profile assignments are normative in that standard (with `manage-execution-manifest/standards/decision-rules.md` § "Overlap resolution policy" and § "Unclaimed paths" carrying the aggregator contract). The guard below restates only the predicate needed for enforcement — it does NOT redefine the bucket vocabulary or the bucket-comment recording rules.
 
 **Predicate**: the guard fires for a deliverable `D` when BOTH of the following hold:
 
 1. `module_testing ∈ D.profiles[]`, AND
-2. `D.affected_files` contains zero paths matching `**/*.py` (i.e., the deliverable resolves to the `doc-only` bucket per the central standard's predicate evaluation rules — every path is non-`.py`).
+2. The `<!-- bucket: ... -->` comment on `D`'s `**Profiles:**` line names `documentation_only` (i.e., the per-domain extension aggregator resolved every claimed path under the `documentation` role per the central standard's predicate evaluation rules).
 
 **Action on match**:
 
@@ -270,9 +270,9 @@ For each deliverable, create one task per profile in its `profiles` list:
 ```toon
 type: triage
 severity: error
-title: "phase-3-outline contract violation: module_testing profile on doc-only deliverable"
+title: "phase-3-outline contract violation: module_testing profile on documentation_only deliverable"
 component: "plan-marshall:phase-3-outline"
-detail: "Deliverable {N} ({title}) lists `module_testing` in profiles[] but its affected_files contains no Python sources (paths checked: {affected_files}). Workflow-doc-only deliverables must use `implementation` only with `pm-plugin-development:plugin-doctor:doctor-marketplace scan` verification. See lesson 2026-05-28-10-001 and marketplace/bundles/plan-marshall/skills/phase-3-outline/standards/outline-workflow-detail.md § File-type classifier."
+detail: "Deliverable {N} ({title}) lists `module_testing` in profiles[] but its bucket comment names `documentation_only` (paths checked: {affected_files}). Documentation-only deliverables must use `implementation` only with `pm-plugin-development:plugin-doctor:doctor-marketplace scan` verification. See lesson 2026-05-28-10-001 and marketplace/bundles/plan-marshall/skills/phase-3-outline/standards/outline-workflow-detail.md § File-type classifier."
 ```
 
 **Emit via `manage-findings`**:
@@ -281,9 +281,9 @@ detail: "Deliverable {N} ({title}) lists `module_testing` in profiles[] but its 
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} --phase 4-plan --source qgate \
   --type triage --severity error \
-  --title "phase-3-outline contract violation: module_testing profile on doc-only deliverable" \
+  --title "phase-3-outline contract violation: module_testing profile on documentation_only deliverable" \
   --component "plan-marshall:phase-3-outline" \
-  --detail "Deliverable {N} ({title}) lists module_testing in profiles[] but its affected_files contains no Python sources (paths checked: {affected_files}). Workflow-doc-only deliverables must use implementation only with pm-plugin-development:plugin-doctor:doctor-marketplace scan verification. See lesson 2026-05-28-10-001."
+  --detail "Deliverable {N} ({title}) lists module_testing in profiles[] but its bucket comment names documentation_only (paths checked: {affected_files}). Documentation-only deliverables must use implementation only with pm-plugin-development:plugin-doctor:doctor-marketplace scan verification. See lesson 2026-05-28-10-001."
 ```
 
 **Decision-log entry**:
@@ -291,10 +291,12 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level WARNING \
-  --message "(plan-marshall:phase-4-plan) Doc-only contract-violation guard fired for deliverable {N} ({title}): module_testing profile dropped, Q-Gate finding emitted (lesson 2026-05-28-10-001). Affected files: {affected_files}."
+  --message "(plan-marshall:phase-4-plan) Documentation-only contract-violation guard fired for deliverable {N} ({title}): module_testing profile dropped, Q-Gate finding emitted (lesson 2026-05-28-10-001). Affected files: {affected_files}."
 ```
 
-**Rationale**: workflow-doc-only deliverables (markdown skill bodies — `SKILL.md`, `workflow/*.md`, `references/*.md`, `standards/*.md`) are LLM-orchestrator instructions, not executable Python. A pytest test of such a file can only assert "the markdown contains these section headers" — which is doc-lint dressed as a unit test. The correct verification surface for doc-only deliverables is `pm-plugin-development:plugin-doctor:doctor-marketplace scan --paths {skill-dir}` plus a manual end-to-end run, both of which are captured by the `implementation` profile. The Q-Gate finding routes the violation back to phase-3-outline (the misclassification's source) rather than amplifying it into an empty-target pytest task at this layer. This guard is orthogonal to all plan-level discriminators (`scope_estimate`, `change_type`, `plan_source`) — the discriminating information is the file types inside each individual deliverable, which only this per-deliverable predicate can read.
+**Bucket-comment example**: `**Profiles:** <!-- bucket: documentation_only -->` is the canonical shape this guard reads. The same comment carries any of the six bucket values; the guard fires only when the value is `documentation_only`.
+
+**Rationale**: documentation-only deliverables (markdown skill bodies — `SKILL.md`, `workflow/*.md`, `references/*.md`, `standards/*.md`) are LLM-orchestrator instructions, not executable Python. A pytest test of such a file can only assert "the markdown contains these section headers" — which is doc-lint dressed as a unit test. The correct verification surface for `documentation_only` deliverables is `pm-plugin-development:plugin-doctor:doctor-marketplace scan --paths {skill-dir}` plus a manual end-to-end run, both of which are captured by the `implementation` profile. The Q-Gate finding routes the violation back to phase-3-outline (the misclassification's source) rather than amplifying it into an empty-target pytest task at this layer. This guard is orthogonal to all plan-level discriminators (`scope_estimate`, `change_type`, `plan_source`) — the discriminating information is the bucket comment on each individual deliverable, which only this per-deliverable predicate can read.
 
 **Verification-Only Guard**: Before iterating profiles, check if the deliverable is verification-only (`change_type: verification` or empty `affected_files`). If so, override `D.profiles` to `[verification]` — **except** when `D.profiles` explicitly contains `implementation`. The explicit `Profiles` list declared on the deliverable is authoritative over `change_type`: if the outline says the deliverable involves `implementation`, the guard is a no-op and the declared profile set flows through unchanged. Log a warning when the override fires and the original profiles differed:
 

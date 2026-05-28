@@ -61,6 +61,46 @@ class Extension(ExtensionBase):
         """Return triage skill reference."""
         return 'pm-dev-oci:ext-triage-oci'
 
+    # =========================================================================
+    # File-type classifier
+    # =========================================================================
+
+    _PRODUCTION_FILENAME_PREFIXES: tuple[str, ...] = ('Dockerfile', 'Containerfile')
+    _PRODUCTION_FILENAMES: tuple[str, ...] = ('.dockerignore',)
+    _CONFIG_FILENAMES: tuple[str, ...] = ('compose.yml', 'docker-compose.yml', 'compose.yaml', 'docker-compose.yaml')
+
+    def _match_classify(self, path: str) -> tuple[str, int] | None:
+        filename = path.rsplit('/', 1)[-1]
+        if filename in self._PRODUCTION_FILENAMES:
+            return 'production', 1
+        for prefix in self._PRODUCTION_FILENAME_PREFIXES:
+            if filename.startswith(prefix):
+                return 'production', 1
+        if filename in self._CONFIG_FILENAMES:
+            return 'config', 1
+        return None
+
+    def classify_paths(self, paths: list[str]) -> dict[str, list[str]]:
+        """Classify paths for the OCI containers domain.
+
+        See extension-api/standards/extension-contract.md § classify_paths()
+        for the full contract.
+        """
+        claims: dict[str, list[str]] = {
+            'production': [], 'test': [], 'documentation': [], 'config': []
+        }
+        for path in paths:
+            match = self._match_classify(path)
+            if match is not None:
+                claims[match[0]].append(path)
+        return claims
+
+    def classify_path_specificity(self, path: str, role: str) -> int:
+        match = self._match_classify(path)
+        if match is not None and match[0] == role:
+            return match[1]
+        return 0
+
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
         return [

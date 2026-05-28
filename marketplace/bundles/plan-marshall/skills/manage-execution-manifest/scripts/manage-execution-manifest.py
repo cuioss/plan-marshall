@@ -513,78 +513,149 @@ def _looks_docs_only(phase_5_candidates: list[str], role_cache: dict[str, str | 
     return 'module-tests' not in roles and 'coverage' not in roles
 
 
-def _classify_affected_files(paths: list[str]) -> str:
-    """Classify a list of affected file paths against the four-bucket file-type classifier.
+def _classify_paths_via_extensions(
+    paths: list[str],
+    plan_id: str | None = None,
+    extensions: list[Any] | None = None,
+) -> tuple[str, list[str]]:
+    """Classify a path list via per-domain ExtensionBase.classify_paths().
 
-    The bucket vocabulary, predicates, and per-bucket profile assignments are
-    the normative source of truth in
-    ``marketplace/bundles/plan-marshall/skills/phase-3-outline/standards/outline-workflow-detail.md``
-    § File-type classifier. This helper implements the same four-bucket
-    classification at composer scope (union of every deliverable's
-    ``affected_files`` across the plan) so the manifest composer can suppress
-    holistic Python verification steps (``quality-gate``, ``module-tests``)
-    when every affected file across the plan is non-Python.
+    Pure aggregator: loads every registered extension, asks each one to
+    classify the path list via its ``classify_paths()`` method, resolves
+    multi-extension overlap by longest-glob-wins (highest
+    ``classify_path_specificity`` wins; alphabetical domain-key tie-break),
+    tags paths no extension claims as ``unknown`` and emits a ``[STATUS]``
+    decision-log warning naming them, then collapses the per-path claims
+    into one of six plan-wide bucket values.
 
-    The four buckets:
+    Args:
+        paths: Plan-wide union of every deliverable's ``affected_files``.
+        plan_id: When supplied AND at least one path is unclaimed, the
+            aggregator emits a ``[STATUS]`` warning naming each unclaimed
+            path under this plan id. Omit during unit tests.
+        extensions: Optional pre-resolved list of extension instances. When
+            ``None`` the aggregator calls
+            :func:`extension_discovery.discover_all_extensions` and uses
+            every loaded module. The override is intended for the fake-
+            extension test fixture in
+            ``test/plan-marshall/manage-execution-manifest/_fixtures.py``.
 
-    - ``python-prod`` — every path matches ``**/scripts/**/*.py`` (production
-      Python source under a skill's ``scripts/`` directory).
-    - ``python-test`` — every path matches ``test/**/*.py`` (test-only
-      deliverable; only pytest test files).
-    - ``doc-only`` — every path is a non-``.py`` file: typically markdown
-      under ``marketplace/bundles/**`` (``SKILL.md``, ``workflow/*.md``,
-      ``references/*.md``, ``standards/*.md``) or a non-``.py`` config file
-      outside ``scripts/``.
-    - ``mixed`` — the path list spans both Python and non-Python (the
-      catch-all bucket).
+    Returns:
+        A 2-tuple ``(bucket, unclaimed_paths)`` where ``bucket`` is one of
+        the six plan-wide vocabulary values
+        (``production_only`` / ``test_only`` / ``documentation_only`` /
+        ``mixed_code`` / ``mixed_with_docs`` / ``unknown``) and
+        ``unclaimed_paths`` is the list of paths no extension claimed (empty
+        when bucket is anything other than ``unknown``).
 
-    Sibling lesson ``2026-05-27-19-002`` documents the docs-only branch at
-    the manifest-composer layer; sibling lesson ``2026-05-28-10-001``
-    documents the per-deliverable classifier at the outline layer. Both
-    converge on the same four-bucket vocabulary — the classifier name
-    string literals returned here MUST stay shape-identical to the
-    central standard's bucket names. Returns ``"doc-only"`` for an empty
-    path list as the conservative default (no Python sources means no
-    holistic Python verification is needed).
+    The aggregator returns ``documentation_only`` for an empty path list as
+    the conservative default (no affected files means no holistic Python
+    verification is needed). This preserves the prior behaviour of the
+    legacy ``_classify_affected_files()`` helper.
+
+    See ``manage-execution-manifest/standards/decision-rules.md`` §
+    "Overlap resolution policy" and § "Unclaimed paths" for the full
+    contract documentation. See
+    ``extension-api/standards/extension-contract.md`` § classify_paths()
+    for the per-extension contract.
     """
     if not paths:
-        return 'doc-only'
+        return 'documentation_only', []
 
-    has_python = False
-    has_non_python = False
-    all_python_prod = True
-    all_python_test = True
+    # Resolve the active extension set. The lazy import avoids a circular
+    # dependency on extension_discovery during module import; the test
+    # fixture passes ``extensions`` explicitly so we never hit this branch
+    # during unit tests.
+    if extensions is None:
+        try:
+            from extension_discovery import discover_all_extensions  # type: ignore[import-not-found]
+        except ImportError:
+            return 'documentation_only', []
+        discovered = discover_all_extensions()
+        extensions = [ext.get('module') for ext in discovered if ext.get('module') is not None]
 
-    for path in paths:
-        path_obj = Path(path)
-        if path_obj.suffix == '.py':
-            has_python = True
-            # python-prod predicate: under scripts/ directory
-            is_py_prod = '/scripts/' in path or path.startswith('scripts/')
-            # python-test predicate: under test/ directory
-            is_py_test = path.startswith('test/') or '/test/' in path
-            if not is_py_prod:
-                all_python_prod = False
-            if not is_py_test:
-                all_python_test = False
-        else:
-            has_non_python = True
-            all_python_prod = False
-            all_python_test = False
+    # Collect per-extension claims. Each entry is
+    # (extension_instance, domain_key, role, path).
+    Claim = tuple[Any, str, str, str]
+    raw_claims: list[Claim] = []
+    for ext in extensions:
+        try:
+            claims = ext.classify_paths(list(paths))
+            domain_key = _safe_domain_key(ext)
+            for role, claimed_paths in claims.items():
+                for path in claimed_paths:
+                    raw_claims.append((ext, domain_key, role, path))
+        except Exception:
+            continue
 
-    if has_python and has_non_python:
-        return 'mixed'
-    if has_python and all_python_prod:
-        return 'python-prod'
-    if has_python and all_python_test:
-        return 'python-test'
-    if has_python:
-        # Python paths that fall outside both scripts/ and test/ — treat as
-        # mixed-equivalent so holistic verification is retained (Python is
-        # present even if not in a conventional location).
-        return 'mixed'
-    # No Python at all — doc-only.
-    return 'doc-only'
+    # Resolve overlaps per-path: highest specificity wins; alphabetical
+    # tie-break on domain_key.
+    per_path_role: dict[str, str] = {}
+    claims_by_path: dict[str, list[Claim]] = {}
+    for claim in raw_claims:
+        claims_by_path.setdefault(claim[3], []).append(claim)
+    for path, path_claims in claims_by_path.items():
+        scored: list[tuple[int, str, str]] = []
+        for ext, domain_key, role, _ in path_claims:
+            try:
+                specificity = int(ext.classify_path_specificity(path, role))
+            except Exception:
+                specificity = 0
+            scored.append((specificity, domain_key, role))
+        # Sort by (-specificity, domain_key) — higher specificity first,
+        # alphabetical tie-break.
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        per_path_role[path] = scored[0][2]
+
+    # Identify unclaimed paths and emit warning when the caller passed plan_id.
+    unclaimed = [p for p in paths if p not in per_path_role]
+    if unclaimed:
+        if plan_id:
+            _emit_decision_log(
+                plan_id,
+                f'(plan-marshall:manage-execution-manifest:classify) '
+                f'[STATUS] Unclaimed paths tagged unknown: {unclaimed}',
+            )
+        return 'unknown', unclaimed
+
+    # Collapse per-path roles into the six-bucket plan-wide vocabulary.
+    # config role does NOT influence the plan-wide bucket — config changes
+    # ride with whatever production/test/docs surface they accompany.
+    roles_present = {role for role in per_path_role.values() if role != 'config'}
+    has_prod = 'production' in roles_present
+    has_test = 'test' in roles_present
+    has_docs = 'documentation' in roles_present
+
+    if has_docs and (has_prod or has_test):
+        return 'mixed_with_docs', []
+    if has_prod and has_test:
+        return 'mixed_code', []
+    if has_prod:
+        return 'production_only', []
+    if has_test:
+        return 'test_only', []
+    if has_docs:
+        return 'documentation_only', []
+    # Only config claims (no production/test/docs) — treat as documentation_only
+    # under the conservative default (config-only changes do not warrant
+    # holistic Python verification).
+    return 'documentation_only', []
+
+
+def _safe_domain_key(ext: Any) -> str:
+    """Return the extension's first domain key, or empty string on failure.
+
+    Used as the alphabetical tie-breaker in overlap resolution. Failure to
+    resolve the key produces an empty string so the tie-break degrades
+    gracefully.
+    """
+    try:
+        domains = ext.get_skill_domains()
+        if domains:
+            return str(domains[0].get('domain', {}).get('key', '') or '')
+    except Exception:
+        pass
+    return ''
 
 
 # =============================================================================
@@ -667,8 +738,8 @@ def _log_commit_push_omitted(plan_id: str) -> None:
 def _log_docs_only_classifier_fired(plan_id: str, paths_count: int) -> None:
     """Emit the decision-log entry for the docs-only classifier post-matrix rule.
 
-    Logged whenever the plan-wide ``_classify_affected_files()`` returns
-    ``"doc-only"`` AND the seven-row matrix output's
+    Logged whenever the plan-wide ``_classify_paths_via_extensions()``
+    returns ``"documentation_only"`` AND the seven-row matrix output's
     ``phase_5.verification_steps`` carried holistic ``quality-gate`` or
     ``module-tests`` entries that the rule suppressed. The entry names the
     affected-files count so the audit trail is reconstructable. See
@@ -678,7 +749,7 @@ def _log_docs_only_classifier_fired(plan_id: str, paths_count: int) -> None:
     """
     message = (
         '(plan-marshall:manage-execution-manifest:compose) docs-only classifier fired — '
-        f'plan-wide affected_files ({paths_count} paths) resolved to doc-only bucket; '
+        f'plan-wide affected_files ({paths_count} paths) resolved to documentation_only bucket; '
         'holistic quality-gate + module-tests steps suppressed from phase_5.verification_steps. '
         'See lesson 2026-05-28-10-001.'
     )
@@ -1540,8 +1611,13 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # compose calls without a plan workspace continue to behave normally.
     docs_only_classifier_fired = False
     bundle_change_paths = _read_bundle_change_paths(plan_id)
-    plan_wide_bucket = _classify_affected_files(bundle_change_paths) if bundle_change_paths else 'unknown'
-    if plan_wide_bucket == 'doc-only':
+    if bundle_change_paths:
+        plan_wide_bucket, _unclaimed_paths = _classify_paths_via_extensions(
+            bundle_change_paths, plan_id=plan_id
+        )
+    else:
+        plan_wide_bucket = 'unknown'
+    if plan_wide_bucket == 'documentation_only':
         # Reuse the per-compose role cache shape from _decide (built fresh
         # here because _decide's cache is scoped to that call). Filter out
         # any verification step whose role is quality-gate, module-tests,

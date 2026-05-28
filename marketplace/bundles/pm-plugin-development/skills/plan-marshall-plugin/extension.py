@@ -94,6 +94,53 @@ class Extension(ExtensionBase):
         """Return triage skill reference."""
         return 'pm-plugin-development:ext-triage-plugin'
 
+    # =========================================================================
+    # File-type classifier
+    # =========================================================================
+
+    # Marketplace skill markdown lives under
+    # marketplace/bundles/<bundle>/skills/<skill>/{SKILL.md, workflow/*.md,
+    # standards/*.md, references/*.md}. The specificity score reflects the
+    # count of non-wildcard path-segment tokens. The aggregator routes the
+    # overlap with pm-documents (*.md glob, specificity 0) to this extension
+    # via longest-glob-wins.
+    _CLASSIFY_PATTERNS: tuple[tuple[str, str, int], ...] = (
+        ('marketplace/bundles/*/skills/*/SKILL.md', 'documentation', 4),
+        ('marketplace/bundles/*/skills/*/workflow/*.md', 'documentation', 5),
+        ('marketplace/bundles/*/skills/*/standards/*.md', 'documentation', 5),
+        ('marketplace/bundles/*/skills/*/references/*.md', 'documentation', 5),
+    )
+
+    def _match_classify(self, path: str) -> tuple[str, int] | None:
+        import fnmatch
+        for glob, role, score in self._CLASSIFY_PATTERNS:
+            if fnmatch.fnmatchcase(path, glob):
+                return role, score
+        return None
+
+    def classify_paths(self, paths: list[str]) -> dict[str, list[str]]:
+        """Classify marketplace skill markdown paths under the documentation role.
+
+        See extension-api/standards/extension-contract.md § classify_paths()
+        for the full contract. This extension's globs are deliberately more
+        specific than pm-documents's broad *.md glob so that marketplace
+        skill markdown routes here under longest-glob-wins.
+        """
+        claims: dict[str, list[str]] = {
+            'production': [], 'test': [], 'documentation': [], 'config': []
+        }
+        for path in paths:
+            match = self._match_classify(path)
+            if match is not None:
+                claims[match[0]].append(path)
+        return claims
+
+    def classify_path_specificity(self, path: str, role: str) -> int:
+        match = self._match_classify(path)
+        if match is not None and match[0] == role:
+            return match[1]
+        return 0
+
     def provides_outline_skill(self) -> str | None:
         """Return domain-specific outline skill for plugin development.
 
