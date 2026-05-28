@@ -555,8 +555,6 @@ def _classify_affected_files(paths: list[str]) -> str:
     all_python_test = True
 
     for path in paths:
-        if not path:
-            continue
         path_obj = Path(path)
         if path_obj.suffix == '.py':
             has_python = True
