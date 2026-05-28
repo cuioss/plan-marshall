@@ -49,19 +49,26 @@ Do not load this skill for:
 | [`standards/visual-language.md`](standards/visual-language.md) | The shared visual language — palette, typography, stroke widths, corner radius, arrow markers, layout grid. Read first. |
 | [`standards/theme-handling.md`](standards/theme-handling.md) | The three theme-handling strategies (theme-neutral / theme-aware via CSS / theme-aware via two files) with full SVG samples. Pick one strategy per diagram and document the choice. |
 | [`standards/asciidoc-embedding.md`](standards/asciidoc-embedding.md) | The `image::` macro form, file-path conventions, accessibility (alt text, title, desc), and how AsciiDoctor renders the macro. |
-| [`standards/diagram-type-block.md`](standards/diagram-type-block.md) | Block / data-flow diagram type — multi-column producer / store / consumer layouts. The findings-pipeline diagram is the reference implementation. |
+| [`standards/diagram-type-block.md`](standards/diagram-type-block.md) | Block / data-flow diagram type — multi-column producer / store / consumer layouts and side-by-side comparisons. The findings-pipeline diagram is the reference implementation. |
+| [`standards/diagram-type-graph.md`](standards/diagram-type-graph.md) | Graph / topology diagram type — hub-and-spoke and radial relationships. The plan-worktree-topology diagram is the reference implementation. |
+| [`standards/diagram-type-flow.md`](standards/diagram-type-flow.md) | Flow diagram type — single- or multi-track directional movement through stages, with junctions and loops. The post-execute-shipping-flow diagram is the reference implementation. |
+| [`standards/diagram-type-stack.md`](standards/diagram-type-stack.md) | Stack diagram type — layered slabs with optional convergence on a consumer. The audit-trail-layers diagram is the reference implementation. |
 
 Future per-diagram-type standards (placeholder — not yet authored):
 
-- `standards/diagram-type-sequence.md` — sequence diagrams (LLM dispatch flows, finalize-step chains).
+- `standards/diagram-type-sequence.md` — sequence diagrams (LLM dispatch traces, finalize-step chains).
 - `standards/diagram-type-state.md` — state machines (plan phase lifecycle, finding resolution lifecycle).
-- `standards/diagram-type-graph.md` — call graphs / dependency graphs (skill-loading bubble resolution, agent dispatch tree).
 
 ## Templates
 
-| Template | Use |
-|----------|-----|
-| [`templates/block-diagram-skeleton.svg`](templates/block-diagram-skeleton.svg) | Starter SVG with the standard `<style>` block, marker definition, and three-column scaffold. Copy, rename, fill in. |
+| Template | Pairs with | Use |
+|----------|------------|-----|
+| [`templates/block-diagram-skeleton.svg`](templates/block-diagram-skeleton.svg) | `diagram-type-block.md` | Three-column block scaffold — producer / store / consumer or N-column comparison. |
+| [`templates/graph-diagram-skeleton.svg`](templates/graph-diagram-skeleton.svg) | `diagram-type-graph.md` | Asymmetric hub-and-spoke scaffold — central hub, single primary node on the left, stack of secondary nodes on the right. |
+| [`templates/flow-diagram-skeleton.svg`](templates/flow-diagram-skeleton.svg) | `diagram-type-flow.md` | Multi-track flow scaffold — two horizontal tracks with a Y-junction, a Bézier loop, and stage waypoints. |
+| [`templates/stack-diagram-skeleton.svg`](templates/stack-diagram-skeleton.svg) | `diagram-type-stack.md` | Three-slab stack scaffold with dashed inter-slab dividers, left-region label gutter, right-region content, and a consumer node on the right with convergent connectors. |
+
+Each starter carries the canonical `<style>` block, arrow marker, theme-neutral palette, and placeholder content shaped to the diagram type's geometry. Copy the matching template, rename, fill in.
 
 ## Workflow
 

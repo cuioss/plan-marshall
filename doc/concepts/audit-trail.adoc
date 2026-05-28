@@ -28,7 +28,7 @@ The two together mean any run can be replayed from the logs and re-evaluated fro
 
 == `plan-retrospective` — the trail's natural consumer
 
-`plan-retrospective` is the opt-in skill that reads the audit trail back and produces a `quality-verification-report.md`. The design has two layers: a set of deterministic aspect scripts produce TOON *fragments* under `work/` — pure facts derived from the audit trail — and the LLM synthesizes the report from those fragments. Scripts never judge; references never run code. The exact aspect inventory and per-aspect semantics live in the skill's own SKILL.md.
+`plan-retrospective` is the opt-in skill that reads the audit trail back and produces a quality-verification report. The design has two layers: a set of deterministic aspect scripts produce TOON *fragments* under `work/` — pure facts derived from the audit trail — and the LLM synthesizes the report from those fragments. Scripts never judge; references never run code. The exact aspect inventory, per-aspect semantics, and report shape live in link:../../marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md[`plan-retrospective/SKILL.md`].
 
 Invocation paths: dispatched automatically as the `post-run-review` finalize step (when configured), invoked standalone as `/plan-marshall action=lessons`, or pointed at an archived plan in "archived mode" to evaluate a completed run after the fact without mutating it.
 

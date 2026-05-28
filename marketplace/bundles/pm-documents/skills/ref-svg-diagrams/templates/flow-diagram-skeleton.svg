@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Flow diagram skeleton — multi-track with Y-junction and loop.
+
+  theme-handling: A (theme-neutral)
+  see  pm-documents:ref-svg-diagrams/standards/theme-handling.md
+
+  Two horizontal tracks. Top track carries stages A, B, a loop, and
+  C; bottom track is the destination track that the top track merges
+  into via a Y-junction. Terminal arrowhead at the right edge.
+  See  pm-documents:ref-svg-diagrams/standards/diagram-type-flow.md
+  for placement conventions.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 360"
+     role="img" aria-labelledby="title desc"
+     font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
+  <title id="title">PLACEHOLDER — one-sentence accessible name</title>
+  <desc  id="desc">PLACEHOLDER — paragraph describing the flow: the tracks, their stages, junctions, loops, and the terminal state</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" class="arrow-fill"/>
+    </marker>
+    <style>
+      .stage-header { font-size: 13px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
+      .stage-sub    { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .track-lbl    { font-size: 13px; font-weight: 600; fill: #6e7681; text-anchor: start; font-style: italic; }
+      .junction-lbl { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .stage        { stroke: #6e7681; stroke-width: 1.2; fill: none; }
+      .track        { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+      .loop         { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+      .arrow-fill   { fill: #6e7681; }
+      .junction-dot { fill: #6e7681; }
+      .caption      { font-size: 12px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+    </style>
+  </defs>
+
+  <!-- Track labels (left edge) -->
+  <text x="20" y="138" class="track-lbl">track A</text>
+  <text x="20" y="278" class="track-lbl">track B (destination)</text>
+
+  <!-- ============================================================ -->
+  <!-- TOP TRACK (track A)                                           -->
+  <!-- Horizontal line at y=130 from x=110 to x=820, then drops to   -->
+  <!-- the Y-junction at the merge point.                            -->
+  <!-- ============================================================ -->
+  <line class="track" x1="110" y1="130" x2="170" y2="130"/>
+  <line class="track" x1="290" y1="130" x2="350" y2="130"/>
+  <line class="track" x1="470" y1="130" x2="530" y2="130"/>
+  <line class="track" x1="650" y1="130" x2="820" y2="130"/>
+
+  <!-- Stage A — event -->
+  <rect class="stage" x="170" y="100" width="120" height="60" rx="6" ry="6"/>
+  <text x="230" y="90" class="stage-header">stage A</text>
+  <text x="230" y="180" class="stage-sub">event</text>
+  <text x="230" y="135" class="stage-header" style="font-weight: 400;">label</text>
+
+  <!-- Stage B — event -->
+  <rect class="stage" x="350" y="100" width="120" height="60" rx="6" ry="6"/>
+  <text x="410" y="90" class="stage-header">stage B</text>
+  <text x="410" y="180" class="stage-sub">event</text>
+  <text x="410" y="135" class="stage-header" style="font-weight: 400;">label</text>
+
+  <!-- Stage C — process (taller box) -->
+  <rect class="stage" x="530" y="92" width="120" height="76" rx="6" ry="6"/>
+  <text x="590" y="80" class="stage-header">stage C</text>
+  <text x="590" y="186" class="stage-sub">process</text>
+  <text x="590" y="135" class="stage-header" style="font-weight: 400;">label</text>
+
+  <!-- Loop arc inside the C stage (iteration before continuing) -->
+  <path class="loop" d="M 610 168 Q 645 200 605 200 Q 575 200 590 168" marker-end="url(#arrow)"/>
+  <text x="623" y="222" class="junction-lbl">loop</text>
+
+  <!-- ============================================================ -->
+  <!-- Y-JUNCTION                                                    -->
+  <!-- Top track drops to the bottom track at x=820                  -->
+  <!-- ============================================================ -->
+  <path class="track" d="M 820 130 Q 870 130 870 200 Q 870 270 920 270"/>
+  <circle class="junction-dot" cx="920" cy="270" r="4"/>
+  <text x="870" y="242" class="junction-lbl">merge</text>
+
+  <!-- ============================================================ -->
+  <!-- BOTTOM TRACK (track B) — full width                           -->
+  <!-- ============================================================ -->
+  <line class="track" x1="110" y1="270" x2="920" y2="270"/>
+  <line class="track" x1="920" y1="270" x2="1060" y2="270" marker-end="url(#arrow)"/>
+
+  <!-- Stage D — terminal -->
+  <rect class="stage" x="960" y="240" width="100" height="60" rx="6" ry="6"/>
+  <text x="1010" y="232" class="stage-header">stage D</text>
+  <text x="1010" y="275" class="stage-header" style="font-weight: 400;">end</text>
+
+  <!-- ============================================================ -->
+  <!-- Footer caption                                                -->
+  <!-- ============================================================ -->
+  <text x="550" y="340" class="caption">Flow: directed movement through stages; tracks converge at junctions.</text>
+
+</svg>

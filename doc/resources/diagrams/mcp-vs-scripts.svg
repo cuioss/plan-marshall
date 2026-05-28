@@ -28,6 +28,7 @@
     <style>
       .col-header { font-size: 15px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
       .col-sub    { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .axis-lbl   { font-size: 10px; font-weight: 600; fill: #6e7681; text-anchor: middle; letter-spacing: 0.06em; }
       .item       { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
       .item-c     { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; text-anchor: middle; }
       .stroke     { stroke: #6e7681; stroke-width: 1.2; fill: none; }
@@ -49,16 +50,19 @@
   <text x="170" y="124" class="item-c">model decides per call</text>
 
   <line class="sep" x1="50" y1="150" x2="290" y2="150"/>
+  <text x="350" y="146" class="axis-lbl">tool resolution</text>
 
   <text x="170" y="184" class="item-c">no contracted return shape</text>
   <text x="170" y="208" class="item-c">free-form CLI output</text>
 
   <line class="sep" x1="50" y1="234" x2="290" y2="234"/>
+  <text x="350" y="230" class="axis-lbl">return shape</text>
 
   <text x="170" y="268" class="item-c">three runs, three code paths</text>
   <text x="170" y="292" class="item-c">for one operation</text>
 
   <line class="sep" x1="50" y1="318" x2="290" y2="318"/>
+  <text x="350" y="314" class="axis-lbl">reproducibility</text>
 
   <text x="170" y="352" class="item-c">no per-call audit row</text>
   <text x="170" y="376" class="item-c">no pytest coverage</text>
@@ -92,11 +96,8 @@
 
   <text x="530" y="424" class="col-sub">good for repeatable workflows</text>
 
-  <!-- ============================================================ -->
-  <!-- Gutter arrow — comparison flow                                -->
-  <!-- ============================================================ -->
-  <line class="arrow" x1="324" y1="250" x2="376" y2="250" marker-end="url(#arrow)"/>
-  <text x="350" y="242" class="col-sub">narrow</text>
+  <!-- Axis label for the fourth row (under the third divider) -->
+  <text x="350" y="398" class="axis-lbl">auditability</text>
 
   <!-- ============================================================ -->
   <!-- Footer caption                                                -->

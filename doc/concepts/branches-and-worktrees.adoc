@@ -5,7 +5,9 @@
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
-Plan Marshall runs each plan in an isolated working area on its own feature branch so that work is plan-bound from start to finish: concurrent plans never contend for the main checkout's HEAD, and every plan produces one self-contained, reviewable unit that lands on `main` through a single, well-defined shipping arc. Two ideas carry the design — plan-bound isolation while a plan is in flight, and a clean post-execute shipping flow that turns that isolated work into landed mainline state.
+Two actors want to edit the same checkout — the developer and the agent — and stock Claude Code lets them. Plans contaminate the developer's working tree, half-finished changes from a forgotten plan show up in `git status` from yesterday, and "concurrent plans" is a euphemism for "serialised plans pretending." Plan Marshall sidesteps the contention by giving every plan its own paired resources — a dedicated *feature branch* and a dedicated *git worktree* — so plan-bound work is plan-bound from start to finish, and the shipping arc back to mainline is one well-defined transition rather than a per-plan ritual.
+
+Two ideas carry the design: plan-bound isolation while a plan is in flight, and a clean post-execute shipping flow that turns that isolated work into landed mainline state.
 
 == Plan-bound Isolation
 

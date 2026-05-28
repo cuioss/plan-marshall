@@ -27,6 +27,8 @@
     "./skills/recipe-doc-verify",
     "./skills/recipe-verify-architecture-diagrams",
     "./skills/ref-asciidoc",
-    "./skills/ref-documentation"
+    "./skills/ref-documentation",
+    "./skills/ref-narrative-styles",
+    "./skills/ref-svg-diagrams"
   ]
 }

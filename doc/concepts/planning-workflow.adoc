@@ -19,7 +19,7 @@ The lifecycle is a forward state machine — each phase advances to the next whe
 
 |1. Init
 |`phase-1-init`
-|Plan directory created, `request.md` captured, references seeded, status initialised.
+|Plan directory created, the link:../../marketplace/bundles/plan-marshall/skills/manage-plan-documents/SKILL.md[request document] captured, references seeded, status initialised.
 
 |2. Refine
 |`phase-2-refine`
@@ -27,7 +27,7 @@ The lifecycle is a forward state machine — each phase advances to the next whe
 
 |3. Outline
 |`phase-3-outline`
-|`solution_outline.md` produced via the Simple Track (localised changes) or Complex Track (cross-cutting discovery). Outline is strictly analytical — no source mutations.
+|The link:../../marketplace/bundles/plan-marshall/skills/manage-solution-outline/SKILL.md[solution outline] produced via the Simple Track (localised changes) or Complex Track (cross-cutting discovery). Outline is strictly analytical — no source mutations.
 
 |4. Plan
 |`phase-4-plan`
@@ -58,9 +58,9 @@ A handful of workflows run inside multiple phases. They live under link:../../ma
 
 == Dispatch shape
 
-Every phase boundary is a `Task: plan-marshall:execution-context-{level}` dispatch. The orchestrator runs in the main agent's context; each phase envelope is a separate subagent. A handful of shared workflow bodies (Q-Gate validation, verification-feedback, enrich-module) are invoked from multiple phases — the same `*.md` runs from every caller, but the `{level}` resolves under the calling phase's role registry, so the model and effort can differ per call site. Small, well-scoped changes can skip the Q-Gate via a bypass predicate documented in `phase-3-outline/SKILL.md`; for everything else the gate fires.
+Every phase boundary is a `Task: plan-marshall:execution-context-{level}` dispatch. The orchestrator runs in the main agent's context; each phase envelope is a separate subagent. A handful of shared workflow bodies (Q-Gate validation, verification-feedback, enrich-module) are invoked from multiple phases — the same `*.md` runs from every caller, but the `{level}` resolves under the calling phase's role registry, so the model and effort can differ per call site. Small, well-scoped changes can skip the Q-Gate via a bypass predicate documented in link:../../marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md[`phase-3-outline/SKILL.md`]; for everything else the gate fires.
 
-The full call graph (every conditional, every shared workflow, every inline-script step) is canonical in `ref-workflow-architecture/standards/call-graph.md`. The 8-step anatomy of one dispatch (pick role → resolve level → construct prompt → dispatch → load skills + read workflow → execute → return TOON → record outcome) is in xref:execution-context.adoc[Execution Context].
+The full call graph (every conditional, every shared workflow, every inline-script step) is canonical in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/call-graph.md[`call-graph.md`]. The 8-step anatomy of one dispatch (pick role → resolve level → construct prompt → dispatch → load skills + read workflow → execute → return TOON → record outcome) is in xref:execution-context.adoc[Execution Context].
 
 == Phase Boundaries
 

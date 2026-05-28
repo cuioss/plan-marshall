@@ -15,7 +15,7 @@ Recipes are the extension point for that case. A recipe declares "I know what th
 
 == How the lifecycle changes
 
-A recipe-driven plan still passes through every phase, but the work inside the early phases shortcuts. Refine bypasses its confidence iteration and returns immediately. Outline routes to the recipe skill instead of the Simple- or Complex-Track LLM analysis; the recipe skill produces `solution_outline.md` via its own deterministic discovery + deliverable mapping. The Q-Gate at outline is bypassed when the recipe yields a surgical single-deliverable shape and runs normally otherwise. From phase-4-plan onward, the plan flows through the same pipeline as any other.
+A recipe-driven plan still passes through every phase, but the work inside the early phases shortcuts. Refine bypasses its confidence iteration and returns immediately. Outline routes to the recipe skill instead of the Simple- or Complex-Track LLM analysis; the recipe skill produces the link:../../marketplace/bundles/plan-marshall/skills/manage-solution-outline/SKILL.md[solution outline] via its own deterministic discovery + deliverable mapping. The Q-Gate at outline is bypassed when the recipe yields a surgical single-deliverable shape and runs normally otherwise. From phase-4-plan onward, the plan flows through the same pipeline as any other.
 
 The cost saving is real: a Complex-Track outline on a multi-module codebase is a multi-thousand-token LLM exercise. A recipe-driven outline producing the same N deliverables is mostly script invocations (`architecture modules`, `architecture module --full`, `manage-files discover`) plus a templated write. The shortcut shows up directly in the per-phase metrics for recipe-driven runs.
 
@@ -30,7 +30,7 @@ The list pulls from `manage-config list-recipes`, the user picks one, and `phase
 
 == The contract
 
-A recipe is a skill whose `SKILL.md` declares `implements: plan-marshall:extension-api/standards/ext-point-recipe`. It is registered for discovery by one of two routes — both fully documented in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-recipe.md[`extension-api/standards/ext-point-recipe.md`]:
+A recipe is a skill whose SKILL.md declares `implements: plan-marshall:extension-api/standards/ext-point-recipe`. It is registered for discovery by one of two routes — both fully documented in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-recipe.md[`ext-point-recipe.md`]:
 
 * **Extension-provided** — a domain bundle implements `provides_recipes()` and returns a list of recipe dicts (`key`, `name`, `description`, `skill`, `default_change_type`, `scope`).
 * **Project-local** — the project ships its own recipe under `.claude/skills/recipe-*` (mirrors the finalize-step pattern).
@@ -40,7 +40,7 @@ At runtime the recipe skill is invoked under phase-3-outline Step 3 with `plan_i
 1. Resolving the applicable skills for the recipe's profile (e.g. via `manage-config resolve-domain-skills`).
 2. Querying the architecture for the input set (modules, packages, diagrams, ADRs, …).
 3. Mapping the input set to deliverables — one row per "unit of repetition" (one deliverable per package, per diagram, …).
-4. Writing `solution_outline.md` via `manage-solution-outline` so the file is structure-validated like any other outline.
+4. Writing the link:../../marketplace/bundles/plan-marshall/skills/manage-solution-outline/SKILL.md[solution outline] via `manage-solution-outline` so the file is structure-validated like any other outline.
 
 The recipe skill is the *single source of truth* for what its deliverables look like — phase-3-outline does not second-guess it.
 

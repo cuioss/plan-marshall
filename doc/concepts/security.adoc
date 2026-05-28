@@ -30,7 +30,7 @@ Almost every action plan-marshall takes routes through one Bash pattern: `python
 
 This shape means a single broad Claude Code permission (`Bash(python3 .plan/execute-script.py *)`) covers the bulk of plan-marshall's work. The wildcard is bounded: it can match only arguments the executor itself accepts, and the executor only dispatches to registered scripts. Without the proxy, the same coverage would require either a prompt per operation or a dozens-of-entries-long allow list that's easy to get wrong. With it, hundreds of distinct plan-marshall operations (every `manage-*`, every build, every triage, every finalize step) collapse into one allow entry.
 
-The settings hierarchy itself follows Claude Code's standard two-file split — `.claude/settings.json` is the team-shared allow list (small, version-controlled, same for every developer) and `.claude/settings.local.json` is the per-developer customisation (gitignored, larger, individual). The canonical sample patterns and the resolution rules between them live in `permission-architecture.md`.
+The settings hierarchy itself follows Claude Code's standard two-file split — `.claude/settings.json` is the team-shared allow list (small, version-controlled, same for every developer) and `.claude/settings.local.json` is the per-developer customisation (gitignored, larger, individual). The canonical sample patterns and the resolution rules between them live in link:../../marketplace/bundles/plan-marshall/skills/tools-permission-doctor/standards/permission-architecture.md[`permission-architecture.md`].
 
 == When prompts still happen
 
