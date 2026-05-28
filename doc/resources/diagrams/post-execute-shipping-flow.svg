@@ -69,7 +69,7 @@
   <text x="640" y="188" class="stage-sub">iterates until approved</text>
 
   <!-- Loop arc above the PR-cycle stage — clean self-loop, kept clear of the merge connector -->
-  <path class="loop" d="M 600 92 C 600 50, 680 50, 680 92" marker-end="url(#arrow)"/>
+  <path class="loop" d="M 680 92 C 680 50, 600 50, 600 92" marker-end="url(#arrow)"/>
   <text x="640" y="46" class="junction-lbl">loop</text>
 
   <!-- Y-JUNCTION (top track drops to bottom track) -->
