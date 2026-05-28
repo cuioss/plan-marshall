@@ -42,7 +42,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ## Execution
 
-The dispatcher-level Signal Gate (see header above, and `phase-6-finalize/SKILL.md` Step 3 item 4b) has already certified that at least one of the three signal sources is non-zero before this body runs. Proceed directly to the `Skill: plan-marshall:manage-lessons` load below and run the standard three-step add flow.
+The dispatcher-level Signal Gate (see header above, and `phase-6-finalize/SKILL.md` Step 3 item 4b) has already certified that at least one of the three signal sources is non-zero before this body runs. Proceed to the `Skill: plan-marshall:manage-lessons` load below, then run the three-gate lesson-creation policy before allocating any new lesson.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -52,6 +52,17 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ```
 Skill: plan-marshall:manage-lessons
 ```
+
+### Run the lesson-creation policy gates first
+
+Before allocating a new lesson, run the canonical three-gate sequence defined in [`../../manage-lessons/standards/lesson-creation-policy.md`](../../manage-lessons/standards/lesson-creation-policy.md): Gate 1 (dedup against the existing corpus), Gate 2 (active-plan check), then Gate 3 (create). Do not restate the gate mechanics here — follow the standard.
+
+- **Gate 1 → `merge_into`**: extend the existing lesson (append a `## Recurrence` section / broaden scope) instead of adding a new one. Record nothing new; this is a Branch C outcome below.
+- **Gate 1 → `already_closed`**: follow the standard's closed-lesson contract (deletion requires user confirmation). Branch C outcome.
+- **Gate 2 → covering active plan**: fold the observation into that plan; do not file a standalone lesson. Branch C outcome.
+- **Gates 1 and 2 both clear**: proceed to the three-step path-allocate add flow below — this IS Gate 3.
+
+### Gate 3 — Create: the three-step path-allocate add flow
 
 Lessons are added in **three steps** via the path-allocate flow. This is the single canonical sequence — there is no inline `--detail` form and no alternative API variant. The body is staged to a plan-scoped file with the Write tool, then applied to the lesson via `set-body`, so arbitrary markdown (sections with `##` headings, fenced code blocks, multi-paragraph prose) never passes through a shell argument.
 
@@ -116,6 +127,14 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done \
   --display-detail "no lessons recorded"
+```
+
+**Branch B2 — folded into an existing lesson or active plan, no new lesson recorded**: the gate sequence resolved the observation at Gate 1 (`merge_into` / `already_closed`) or Gate 2 (covering active plan), so no new lesson was allocated:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done \
+  --display-detail "folded into existing lesson/plan, no new lesson"
 ```
 
 **Branch C — no lesson-bearing signals (skip)**: NOT emitted by this body. The `outcome=skipped` recording is now the dispatcher's responsibility (see `phase-6-finalize/SKILL.md` Step 3 item 4b) and fires before this workflow is dispatched. This body only runs when at least one signal was non-zero, so its `mark-step-done` calls are exclusively Branches A or B above.

@@ -43,7 +43,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ## Recording Lessons
 
-For each notable finding, follow the two-step path-allocate flow (the single supported API — there is no `--detail` inline form):
+Before recording any new lesson, run the canonical before-recording gate sequence in [`../../manage-lessons/standards/lesson-creation-policy.md`](../../manage-lessons/standards/lesson-creation-policy.md): Gate 1 (dedup against the existing corpus), Gate 2 (active-plan check), then Gate 3 (create). That standard is authoritative for the gate mechanics; the two-step path-allocate flow below is Gate 3, reached only when Gates 1 and 2 both clear. When Gate 1 returns `merge_into` / `already_closed` or Gate 2 finds a covering active plan, extend the existing lesson or fold into the plan instead of allocating a new one.
+
+For each notable finding that clears the gates, follow the two-step path-allocate flow (the single supported API — there is no `--detail` inline form):
 
 ### Step A — Allocate the lesson file
 
@@ -75,6 +77,8 @@ Parse `path` from the TOON output of Step A and write the detailed context and r
 - Standard procedure was followed
 - The issue was trivial and obvious
 - The finding is project-specific (won't apply elsewhere)
+- A similar lesson already exists — extend it instead (Gate 1 `merge_into`; see the shared policy)
+- An active plan already covers the issue — fold the observation into that plan instead of filing a standalone lesson (Gate 2; see the shared policy)
 
 ## Example: Recording Bug Lesson
 
