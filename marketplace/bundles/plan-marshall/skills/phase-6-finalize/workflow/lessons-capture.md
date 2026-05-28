@@ -57,9 +57,9 @@ Skill: plan-marshall:manage-lessons
 
 Before allocating a new lesson, run the canonical three-gate sequence defined in [`../../manage-lessons/standards/lesson-creation-policy.md`](../../manage-lessons/standards/lesson-creation-policy.md): Gate 1 (dedup against the existing corpus), Gate 2 (active-plan check), then Gate 3 (create). Do not restate the gate mechanics here — follow the standard.
 
-- **Gate 1 → `merge_into`**: extend the existing lesson (append a `## Recurrence` section / broaden scope) instead of adding a new one. Record nothing new; this is a Branch C outcome below.
-- **Gate 1 → `already_closed`**: follow the standard's closed-lesson contract (deletion requires user confirmation). Branch C outcome.
-- **Gate 2 → covering active plan**: fold the observation into that plan; do not file a standalone lesson. Branch C outcome.
+- **Gate 1 → `merge_into`**: extend the existing lesson (append a `## Recurrence` section / broaden scope) instead of adding a new one. Record nothing new; this is a Branch B2 outcome below.
+- **Gate 1 → `already_closed`**: follow the standard's closed-lesson contract (deletion requires user confirmation). Branch B2 outcome.
+- **Gate 2 → covering active plan**: fold the observation into that plan; do not file a standalone lesson. Branch B2 outcome.
 - **Gates 1 and 2 both clear**: proceed to the three-step path-allocate add flow below — this IS Gate 3.
 
 ### Gate 3 — Create: the three-step path-allocate add flow
