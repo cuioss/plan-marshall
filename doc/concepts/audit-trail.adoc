@@ -5,180 +5,53 @@
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
-Every Plan Marshall run leaves a structured, machine-readable record of *everything* it did — every dispatch, every script call, every skill load, every configuration decision, every finding, every phase boundary, every artifact produced. The record lives next to the plan on local disk, never leaves the developer's machine, and is detailed enough that the `plan-retrospective` skill can audit a plan automatically.
+"What did this run actually do?" is a question that Claude Code sessions answer poorly. The chat history is long, the action sequence has gaps, the model's own summary is generous. Plan Marshall solves the problem by writing everything down as a side-effect of running the plan: every dispatch, every script call, every skill load, every gate decision, every artifact produced, every finding raised, every resolution recorded. The record lives next to the plan on local disk, never leaves the developer's machine, and is detailed enough that `plan-retrospective` can read a finished plan back and produce a quality report without any human prompting.
 
-== Overview
+== Three telemetry layers
 
-Three telemetry layers, all produced as a side-effect of plan execution:
+image::../resources/diagrams/audit-trail-layers.svg[Audit trail layers — three telemetry surfaces (line-oriented logs, structured artifacts, append-only findings) recorded under each plan's directory; all three feed plan-retrospective as the consumer, align=center]
 
-* **Logs** — line-oriented event stream covering status changes, dispatches, skill loads, decisions, script calls.
-* **Structured artifacts** — every milestone document (`request.md`, `solution_outline.md`, `tasks/TASK-N.json`, `status.json`, `references.json`, `execution.toon`, `handshakes.toon`, `metrics.md`).
-* **Findings** — append-only JSONL records for every Q-Gate verification, deliverable assessment, and PR review comment, with hash-id dedup and resolution tracking.
+Logs are the line-oriented event stream: `work.log` is the narrative (phase milestones, dispatches, skill loads, artifact creation), `decision.log` is the why (config reads, gate decisions, judgement calls), and `script-execution.log` is the ledger of every script the executor proxy ran. Each entry carries a timestamp, severity, hash-id, and a category tag in brackets that retrospective consumers grep by; the canonical tag inventory lives in the `manage-logging` standards.
 
-Storage layout under `.plan/local/{plans|archived-plans}/{plan_id}/` — gitignored, local-only.
+Structured artifacts are the per-plan document set — request, outline, tasks, status, references, the per-plan execution manifest, the phase-handshake snapshots, and the metrics report. Every file has a contract-validated shape produced by a specific phase; together they reconstruct *what the plan thought it was doing* at every transition. Reads always go through `manage-*` scripts, so the artifact API is the audit layer's API.
 
-== What gets recorded
-
-=== Logs
-
-Three line-oriented log files under `{plan_id}/logs/`, each with the same timestamp / hash-id / severity / context prefix shape:
-
-[cols="1,3", options="header"]
-|===
-| File | Content
-
-| `work.log` | The narrative event stream. Status changes, dispatches, artifact creation, skill loads, refine steps. Filterable by tag prefix.
-| `decision.log` | Every config read, route decision, gate resolution, and judgement call the LLM logged. The "why this branch was taken" record.
-| `script-execution.log` | Every `python3 .plan/execute-script.py` invocation — notation, args, exit status. The full record of which scripts ran.
-|===
-
-Tag prefixes inside `work.log` provide structure:
-
-[cols="1,3", options="header"]
-|===
-| Tag | Meaning
-
-| `[STATUS]` | Phase milestones — "Starting init phase", "Init phase complete", "Refine phase complete".
-| `[DISPATCH]` | Every `Task: execution-context-{level}` subagent dispatch — target, level, role, workflow doc, plan id.
-| `[SKILL]` | Every `Skill:` load inside an `execution-context` envelope — see xref:skill-handling.adoc#_auditing_what_loaded[Skill Handling § Auditing what loaded].
-| `[ARTIFACT]` | Every artifact creation — "Created request.md", "Captured handshake row for phase-3-outline".
-| `[REFINE:N]` | Phase-2 refine-iteration markers.
-|===
-
-Real samples from an archived plan:
-
-[source]
-----
-[2026-05-15T09:42:13Z] [INFO] [17dda4] [ARTIFACT] (plan-marshall:phase-1-init) Created request.md from description
-[2026-05-15T09:44:54Z] [INFO] [94549d] [DISPATCH] (plan-marshall:plan-marshall) target=execution-context-high level=high role=phase-2-refine workflow=plan-marshall:phase-2-refine/SKILL.md plan_id=worktree-integration-analysis
-[2026-05-15T10:25:51Z] [INFO] [c52dc6] (plan-marshall:phase-3-outline:qgate-resolve) hash_id=882466 resolved as taken_into_account — Phasing Rationale block added to solution_outline.md…
-----
-
-The dispatch log contract (what fields every `[DISPATCH]` line must carry) is canonical at link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/dispatch-logging.md[`ref-workflow-architecture/standards/dispatch-logging.md`].
-
-=== Structured artifacts
-
-Every plan accumulates a fixed set of structured files. Each file is produced by a specific phase and carries a contract-validated shape. The canonical inventory lives in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/artifacts.md[`ref-workflow-architecture/standards/artifacts.md`]; this section calls out the major artefacts and their telemetry role.
-
-[cols="1,1,3", options="header"]
-|===
-| File | Producer | Purpose
-
-| `request.md` | phase-1-init | The captured task / issue description. Plan's reason for existing.
-| `solution_outline.md` | phase-3-outline | The deliverable breakdown. Each deliverable names a module, profile, and applicable skills.
-| `tasks/TASK-N.json` | phase-4-plan | Materialized task records — `module`, `profile`, `skills[]` (per xref:skill-handling.adoc[Skill Handling]), `depends_on`, status.
-| `references.json` | phase-1-init … phase-6-finalize | Branch, base branch, `modified_files[]`, lesson references, related plan ids.
-| `status.json` | every phase | Phase lifecycle state plus `metadata.phase_handshake` invariants captured at each boundary.
-| `execution.toon` | phase-4-plan | The per-plan finalize-step manifest — which verify steps run in phase-5, which finalize steps run in phase-6.
-| `handshakes.toon` | every phase | Each phase boundary's captured invariants (e.g. `pending_findings_by_type`, `pending_findings_blocking_count`).
-| `metrics.md` | phase-1 → phase-6 | Per-phase duration, token usage, tool-use counts; rolled up by `manage-metrics`.
-| `quality-verification-report.md` | plan-retrospective | The retrospective output (when run). Optional, opt-in.
-|===
-
-All these files are read on retrospective via `manage-*` scripts — never by ad-hoc filesystem access. The `manage-*` interface is the audit layer's API.
-
-=== Findings
-
-Append-only JSONL files under `{plan_id}/artifacts/findings/`. One file per producer × phase.
-
-Observed in archived plans:
-
-[source]
-----
-artifacts/findings/qgate-3-outline.jsonl
-artifacts/findings/qgate-4-plan.jsonl
-artifacts/findings/assessments.jsonl
-artifacts/findings/pr-comment.jsonl
-----
-
-Each line is a complete finding record:
-
-[source,json]
-----
-{
-  "hash_id": "882466",
-  "timestamp": "2026-05-15T10:23:22Z",
-  "phase": "3-outline",
-  "source": "qgate",
-  "type": "anti-pattern",
-  "title": "Self-modifying + breaking plan requires phasing rationale or split",
-  "detail": "…",
-  "resolution": "taken_into_account",
-  "resolution_detail": "…",
-  "resolution_timestamp": "2026-05-15T10:25:45Z",
-  "severity": "warning"
-}
-----
-
-The `hash_id` is content-derived: re-running a Q-Gate that produces the same finding text won't duplicate the entry. Resolution fields (`fixed` / `suppressed` / `accepted` / `taken_into_account` / `pending`) record the disposition; the `pending` set feeds the phase-handshake `pending_findings_blocking_count` invariant that gates phase-5 → phase-6 transitions.
-
-The findings layer is the structural counterpart to the prose `decision.log`: decisions explain *why*; findings record *what was found and what was done about it*.
+Findings are append-only JSONL records — one row per quality signal, hash-id deduplicated, with resolution fields that record *what was done about it*. The Q-Gate findings are the producer side of the analytical reviews; the per-domain findings (`pr-comment.jsonl`, `sonar-issue.jsonl`, `build-error.jsonl`, …) are the producer side of the automated reviews (xref:automatic-reviews.adoc[Automatic Reviews]). Findings explain *what was found and what was done about it* — the structural counterpart to `decision.log`'s prose.
 
 == Why it's comprehensive
 
-Two structural reasons the audit trail is exhaustive rather than best-effort:
+Two structural reasons push the audit trail from "best effort" to "exhaustive":
 
-1. **The script-executor proxy is the audit point.** Every `python3 .plan/execute-script.py` call routes through one Python entry point, which logs the notation, args, and exit status to `script-execution.log` before dispatching to the underlying script. Nothing operational slips past. See xref:security.adoc[Security] for the executor-proxy contract.
-2. **Phase handshakes make state checkable.** Every phase boundary captures a registry of *invariants* into `status.json.metadata.phase_handshake` and verifies them on entry to the next phase. Drift between captured and live state surfaces immediately as a `status: drift` return — visible in `work.log`, persisted in `handshakes.toon`.
+* **The script-executor proxy is the audit point.** Every `python3 .plan/execute-script.py` call routes through one Python entry point that logs the notation, args, and exit status to `script-execution.log` before dispatching. Nothing operational slips past. See xref:security.adoc[Security] for the executor-proxy contract.
+* **Phase handshakes make state checkable.** Every phase boundary captures a registry of invariants into `status.json` and verifies them on entry to the next phase. Drift between captured and live state surfaces immediately as a `status: drift` return — visible in `work.log`, persisted in `handshakes.toon`.
 
-The two together mean any run can be replayed from the logs and re-evaluated from the artifacts — no information needs to be re-derived from chat history or memory.
+The two together mean any run can be replayed from the logs and re-evaluated from the artifacts. No information needs to be re-derived from chat history.
 
-== Evaluation — `plan-retrospective`
+== `plan-retrospective` — the trail's natural consumer
 
-`plan-retrospective` is the opt-in skill that consumes the audit trail and produces a `quality-verification-report.md`. It is the canonical answer to "did this plan run well?"
+`plan-retrospective` is the opt-in skill that reads the audit trail back and produces a `quality-verification-report.md`. The design has two layers: a set of deterministic aspect scripts produce TOON *fragments* under `work/` — pure facts derived from the audit trail — and the LLM synthesizes the report from those fragments. Scripts never judge; references never run code. The exact aspect inventory and per-aspect semantics live in the skill's own SKILL.md.
 
-The design has two layers:
+Invocation paths: dispatched automatically as the `post-run-review` finalize step (when configured), invoked standalone as `/plan-marshall action=lessons`, or pointed at an archived plan in "archived mode" to evaluate a completed run after the fact without mutating it.
 
-* **A set of aspect scripts** produces deterministic TOON *fragments* under `{plan_id}/work/` — pure facts derived from the audit trail. The exact aspect list (and which are conditional vs always-on) is canonical in link:../../marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md[`plan-retrospective/SKILL.md`] § Aspects. Representative fragments observed in archived plans:
-+
-[source]
-----
-work/fragment-artifact-consistency.toon
-work/fragment-execution-context-dispatch-audit.toon
-work/fragment-log-analysis.toon
-work/fragment-permission-prompt-analysis.toon
-work/fragment-request-result-alignment.toon
-work/fragment-script-failure-analysis.toon
-work/fragment-plan-efficiency.toon
-work/fragment-llm-to-script-opportunities.toon
-work/fragment-logging-gap-analysis.toon
-work/fragment-invariant-outcomes.toon
-work/fragment-direct-gh-glab-usage.toon
-work/fragment-lessons-proposal.toon
-work/fragment-manifest-decisions.toon
-----
-* **The LLM synthesizes** the report from those fragments — judgement on top of facts. Aspect references (`references/artifact-consistency.md`, `references/log-analysis.md`, …) define what each aspect means and how to read its fragment.
+[CAUTION]
+====
+**The audit trail is post-hoc, not real-time enforcement.**
 
-The intent is captured in the skill's own design statement: "Python scripts produce deterministic TOON fragments (facts). The orchestrator loads aspect reference docs on-demand so the LLM can synthesize judgement from those facts. Scripts never judge; references never run code."
-
-Invocation paths:
-
-* During a live finalize phase: dispatched automatically as the `post-run-review` finalize step (when configured in `execution.toon`).
-* As a standalone audit: `Skill: plan-marshall:plan-retrospective`, or `/plan-marshall action=lessons` to surface proposed lessons.
-* Against an archived plan: the same skill invoked in "archived mode" — writes the report next to the archived plan without mutating any plan state.
-
-Outputs:
-
-* `quality-verification-report.md` — the synthesized retrospective (with a `-audit-{timestamp}` suffix when run in archived mode).
-* Proposed lesson drafts under `work/lesson-body-*.md` — the LLM's candidate lessons-learned, ready for review and promotion via `manage-lessons`.
+The script-executor proxy logs what already happened. The phase handshakes refuse to advance when invariants have drifted, but they refuse *at the boundary* — not the moment an off-script action fires. The trail's contribution is making the next reviewer's job tractable: "the run is on disk, in known shapes, and `plan-retrospective` can synthesize a verdict." It is the safety net under the live enforcement (xref:process-enforcement.adoc[Process Enforcement]), not a replacement for it.
+====
 
 == Retention and privacy
 
-The audit trail is **strictly local**.
-
-* **Storage** — `.plan/local/{plans,archived-plans}/{plan_id}/`. Gitignored by `.plan/*` (see xref:../user/getting-started.adoc#_where_things_live[Where things live]). Never pushed, never shared with the team automatically.
-* **Active vs. archived** — completed plans move from `plans/` to `archived-plans/` via `/plan-marshall action=cleanup`. Archived plans are read-only from the retrospective's perspective.
-* **Sharing** — if a retrospective is worth sharing, copy `quality-verification-report.md` out manually. Nothing under `.plan/local/` is ever surfaced to remotes by Plan Marshall itself.
-
-This is by design: the audit trail records local LLM behaviour, model usage, decisions, and per-developer working state — content that should not propagate to a shared repository.
+The audit trail is strictly local. Storage lives under `.plan/local/{plans,archived-plans}/{plan_id}/`, which is gitignored. Completed plans move to `archived-plans/` via `/plan-marshall action=cleanup`; archived plans are read-only from the retrospective's perspective. Nothing under `.plan/local/` is ever surfaced to remotes by Plan Marshall itself — if a retrospective is worth sharing, the developer copies `quality-verification-report.md` out by hand. This is deliberate: the trail records local LLM behaviour, model usage, decisions, and per-developer state, and that content should not propagate to a shared repository.
 
 == Related
 
-* link:../../marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md[`plan-retrospective/SKILL.md`] — canonical retrospective skill (aspect list, fragments, report shape)
-* link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/artifacts.md[`ref-workflow-architecture/standards/artifacts.md`] — canonical artifact inventory
-* link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/dispatch-logging.md[`ref-workflow-architecture/standards/dispatch-logging.md`] — `[DISPATCH]` log line contract
-* link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/findings-pipeline.md[`ref-workflow-architecture/standards/findings-pipeline.md`] — findings storage + resolution lifecycle
-* link:../../marketplace/bundles/plan-marshall/skills/manage-findings/SKILL.md[`manage-findings/SKILL.md`] — the API for reading and writing findings
-* link:../../marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md[`manage-metrics/SKILL.md`] — phase metrics accumulation
-* xref:security.adoc[Concepts › Security] — the script-executor proxy that makes the audit trail comprehensive
-* xref:skill-handling.adoc[Concepts › Skill Handling] — the `[SKILL]` log tag and how loaded context is auditable
+* link:../../marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md[`plan-retrospective/SKILL.md`] — canonical retrospective skill, the aspect inventory, the fragment-naming pattern, the report structure.
+* link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/artifacts.md[`artifacts.md`] — canonical inventory of every structured artifact a plan produces, with per-phase ownership.
+* link:../../marketplace/bundles/plan-marshall/skills/manage-logging/standards/log-format.md[`manage-logging/standards/log-format.md`] — canonical log-entry format, the category tags embedded in `work.log`, and the script-execution log shape.
+* link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/dispatch-logging.md[`dispatch-logging.md`] — the `[DISPATCH]` line contract every subagent dispatch follows.
+* link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/findings-pipeline.md[`findings-pipeline.md`] — the producer / store / consumer / gate architecture and the per-phase blocking partition.
+* link:../../marketplace/bundles/plan-marshall/skills/manage-findings/SKILL.md[`manage-findings/SKILL.md`] — the unified store API, finding-type taxonomy, and resolution semantics (`standards/jsonl-format.md` § Resolution semantics).
+* link:../../marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md[`manage-metrics/SKILL.md`] — per-phase metrics accumulation that feeds `metrics.md`.
+* xref:security.adoc[Concepts › Security] — the script-executor proxy that makes the audit trail comprehensive.
+* xref:skill-handling.adoc[Concepts › Skill Handling] — the `[SKILL]` log tag and how loaded context is auditable.
+* xref:process-enforcement.adoc[Concepts › Process Enforcement] — the four enforcement layers the audit trail records.

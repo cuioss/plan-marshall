@@ -457,6 +457,18 @@ class Extension(ExtensionBase):
 
 ---
 
+## Adding a new domain
+
+Three steps materialise a new domain bundle on top of this contract:
+
+1. **Create the discovery directory.** `marketplace/bundles/{bundle}/skills/plan-marshall-plugin/` and an `extension.py` that subclasses `ExtensionBase` and implements `get_skill_domains()`. The path segment is hardcoded — the scanner finds the bundle by the exact directory name. Start from the `Minimal Extension` example above; replace the domain key, name, and profile-skill lists with your domain's content.
+2. **Add domain skills.** `marketplace/bundles/{bundle}/skills/{skill}/SKILL.md` for each piece of domain knowledge the bundle provides. At minimum a `core` profile skill set so something loads during dispatches against the new domain. Implementation, module-testing, quality, and documentation profiles are added as the bundle's coverage justifies them.
+3. **Run `/marshall-steward`** in the consuming project. The wizard discovers the new bundle, calls `get_skill_domains()`, writes the registration into `marshal.json` under `skill_domains.{key}`, and prompts for any optional configuration (credentials via `ext-point-provider`, profile overrides, finalize steps via `provides_finalize_steps()`).
+
+Adding a single hook to an existing bundle is smaller — override the relevant method on the existing `Extension` class. The wizard picks the new declaration up on re-run. For an end-to-end "minimum looks like this" example, see [`pm-dev-frontend-cui:plan-marshall-plugin`](../../../../pm-dev-frontend-cui/skills/plan-marshall-plugin/) — `get_skill_domains` only, no other overrides.
+
+---
+
 ## Validation
 
 Extensions are validated by `plugin-doctor extension`:

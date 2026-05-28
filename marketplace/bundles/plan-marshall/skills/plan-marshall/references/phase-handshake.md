@@ -4,6 +4,8 @@ Drift-detecting handshake between phase transitions. Each phase's completion cap
 
 > **Findings pipeline cross-reference**: the `pending_findings_blocking_count` invariant is the gate that backs the producer→store→consumer→gate flow. For the architectural synthesis (producers, store layout, consumer dispatch, extension contract), see [`ref-workflow-architecture/standards/findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md). This document owns the capture / verify mechanics, the row schema, and the structured error envelope.
 
+![Sequence diagram of the phase-handshake protocol. At phase N completion the orchestrator runs phase_handshake capture, which evaluates an invariant registry (main_sha, dirty count, task_state_hash, qgate_open_count, config_hash, pending_findings_blocking_count, phase_steps_complete) and writes a row to handshakes.toon. At phase N+1 entry the orchestrator runs phase_handshake verify with strict mode; the script reads the captured row, re-runs the invariants against live state, diffs, and returns either ok (continue), drift (surface diffs, exit 1, refuse to advance), or skipped (log warning, continue).](../../../../../../doc/resources/diagrams/handshake-protocol.svg)
+
 ## Why
 
 Phase skills occasionally drift between what they *report* they did and what the next phase *observes*. Examples: a task summary claims file edits while the tree is clean; a phase advances while Q-Gate findings are still open; phase config changes mid-run. A lesson that prescribes "run `git status` manually" is a ritual, easy to skip. The handshake replaces the ritual with a mechanical guardrail.

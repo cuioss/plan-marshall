@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Audit trail layers — three telemetry surfaces feeding one retrospective consumer.
+
+  theme-handling: A (theme-neutral)
+  see  pm-documents:ref-svg-diagrams/standards/theme-handling.md
+
+  Three-column block diagram. Each column is one telemetry layer:
+  logs (line-oriented event streams), structured artifacts (per-plan
+  document set), and findings (append-only JSONL records). Each column
+  has an arrow descending to a single consumer label at the bottom —
+  plan-retrospective — which reads all three to produce its report.
+
+  diagram-type-block reference standard:
+  pm-documents:ref-svg-diagrams/standards/diagram-type-block.md
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 540"
+     role="img" aria-labelledby="title desc"
+     font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
+  <title id="title">Audit trail layers</title>
+  <desc id="desc">A three-column block diagram showing the three telemetry layers that every Plan Marshall run records on local disk. The Logs column lists work.log, decision.log, and script-execution.log. The Structured Artifacts column lists request.md, solution_outline.md, tasks/, status.json, references.json, execution.toon, handshakes.toon, and metrics.md. The Findings column lists the per-type JSONL stores. All three columns have an arrow descending to a single consumer label at the bottom — plan-retrospective — which reads all three layers to produce its quality verification report.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" class="arrow-fill"/>
+    </marker>
+    <style>
+      .col-header { font-size: 15px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
+      .col-sub    { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .item       { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+      .item-c     { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; text-anchor: middle; }
+      .arrow-lbl  { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .stroke     { stroke: #6e7681; stroke-width: 1.2; fill: none; }
+      .arrow      { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+      .arrow-fill { fill: #6e7681; }
+      .sep        { stroke: #6e7681; stroke-width: 0.6; stroke-dasharray: 3 3; }
+      .consumer   { font-size: 14px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
+      .caption    { font-size: 12px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+    </style>
+  </defs>
+
+  <!-- ============================================================ -->
+  <!-- COLUMN 1 — Logs                                              -->
+  <!-- ============================================================ -->
+  <text x="150" y="28" class="col-header">LOGS</text>
+  <text x="150" y="44" class="col-sub">line-oriented event streams</text>
+  <rect class="stroke" x="20" y="60" width="260" height="340" rx="6" ry="6"/>
+
+  <text x="150" y="104" class="item-c">work.log</text>
+  <text x="150" y="124" class="col-sub">status, dispatches, skills, artifacts</text>
+
+  <text x="150" y="184" class="item-c">decision.log</text>
+  <text x="150" y="204" class="col-sub">config reads, gates, judgement calls</text>
+
+  <text x="150" y="264" class="item-c">script-execution.log</text>
+  <text x="150" y="284" class="col-sub">every executor invocation, exit status</text>
+
+  <line class="sep" x1="60" y1="320" x2="240" y2="320"/>
+  <text x="150" y="352" class="col-sub">tagged by category</text>
+  <text x="150" y="372" class="col-sub">(see manage-logging)</text>
+
+  <!-- ============================================================ -->
+  <!-- COLUMN 2 — Structured Artifacts                              -->
+  <!-- ============================================================ -->
+  <text x="450" y="28" class="col-header">STRUCTURED ARTIFACTS</text>
+  <text x="450" y="44" class="col-sub">per-plan document set</text>
+  <rect class="stroke" x="320" y="60" width="260" height="340" rx="6" ry="6"/>
+
+  <text x="450" y="98"  class="item-c">request.md</text>
+  <text x="450" y="120" class="item-c">solution_outline.md</text>
+  <text x="450" y="142" class="item-c">tasks/TASK-N.json</text>
+  <text x="450" y="164" class="item-c">references.json</text>
+  <text x="450" y="186" class="item-c">status.json</text>
+  <text x="450" y="208" class="item-c">execution.toon</text>
+  <text x="450" y="230" class="item-c">handshakes.toon</text>
+  <text x="450" y="252" class="item-c">metrics.md</text>
+
+  <line class="sep" x1="360" y1="284" x2="540" y2="284"/>
+  <text x="450" y="316" class="col-sub">contract-validated shapes</text>
+  <text x="450" y="336" class="col-sub">read via manage-* scripts</text>
+
+  <!-- ============================================================ -->
+  <!-- COLUMN 3 — Findings                                          -->
+  <!-- ============================================================ -->
+  <text x="750" y="28" class="col-header">FINDINGS</text>
+  <text x="750" y="44" class="col-sub">append-only JSONL stores</text>
+  <rect class="stroke" x="620" y="60" width="260" height="340" rx="6" ry="6"/>
+
+  <text x="750" y="98"  class="item-c">qgate-2-refine.jsonl</text>
+  <text x="750" y="120" class="item-c">qgate-3-outline.jsonl</text>
+  <text x="750" y="142" class="item-c">qgate-4-plan.jsonl</text>
+  <text x="750" y="164" class="item-c">assessments.jsonl</text>
+  <text x="750" y="186" class="item-c">pr-comment.jsonl</text>
+  <text x="750" y="208" class="item-c">sonar-issue.jsonl</text>
+  <text x="750" y="230" class="item-c">build-error.jsonl</text>
+  <text x="750" y="252" class="item-c">test-failure.jsonl</text>
+  <text x="750" y="274" class="item-c">lint-issue.jsonl</text>
+
+  <line class="sep" x1="660" y1="306" x2="840" y2="306"/>
+  <text x="750" y="338" class="col-sub">hash-id deduped</text>
+  <text x="750" y="358" class="col-sub">resolution-tracked</text>
+
+  <!-- ============================================================ -->
+  <!-- Arrows from each column to the consumer                       -->
+  <!-- ============================================================ -->
+
+  <line class="arrow" x1="150" y1="406" x2="430" y2="466" marker-end="url(#arrow)"/>
+  <line class="arrow" x1="450" y1="406" x2="450" y2="466" marker-end="url(#arrow)"/>
+  <line class="arrow" x1="750" y1="406" x2="470" y2="466" marker-end="url(#arrow)"/>
+
+  <!-- ============================================================ -->
+  <!-- Consumer                                                      -->
+  <!-- ============================================================ -->
+  <rect class="stroke" x="340" y="476" width="220" height="40" rx="6" ry="6"/>
+  <text x="450" y="500" class="consumer">plan-retrospective</text>
+
+  <!-- ============================================================ -->
+  <!-- Footer caption                                                -->
+  <!-- ============================================================ -->
+  <text x="450" y="534" class="caption">Three telemetry layers, one retrospective consumer.</text>
+
+</svg>

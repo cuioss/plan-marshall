@@ -9,6 +9,8 @@ Holistic view of every dispatch path in the plan-marshall bundle: orchestrator e
 
 This doc is the **graph** view; the others are the **contract**, **examples**, and **heuristics** views of the same surface.
 
+![Call graph of plan-marshall dispatches — the orchestrator fans out to six phase envelopes, three of which dispatch shared workflow bodies (q-gate-validation, verification-feedback, enrich-module) under specified per-call-site conditions.](../../../../../../doc/resources/diagrams/call-graph.svg)
+
 > **Note on the dispatch target name.** Every dispatch in the graphs below is written as `execution-context` for clarity. The actual `Task:` target on the wire is `execution-context-{level}` where `{level}` ∈ `{low, medium, high, xhigh, xxhigh, max, inherit}` is resolved at dispatch time via `manage-config effort resolve-target --phase <caller-phase> [--role <subkey>]`. The level is a runtime detail (chosen by the role-key registry), not a structural one — so the graphs hide it.
 
 Legend (used in every diagram below):

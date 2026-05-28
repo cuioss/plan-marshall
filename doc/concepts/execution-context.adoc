@@ -5,7 +5,7 @@
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
-Why Plan Marshall ships exactly one role-eligible agent (link:../../marketplace/bundles/plan-marshall/agents/execution-context.md[`plan-marshall:execution-context`]) and how every plan-marshall `Task:` invocation dispatches through it.
+Each subagent dispatch in a stock Claude Code session is a fresh ad-hoc invention — a different prompt shape, a different tool subset, a different skill load order, sometimes a different model. Reproducibility suffers, model-tier selection per workflow is impossible, and the prompt-body contract drifts with every refactor. Plan Marshall ships **exactly one role-eligible agent** — `plan-marshall:execution-context` — and every `Task:` invocation in the marketplace dispatches through it. One canonical agent file; six level-suffixed variants emitted at build time; a five-field prompt body that every workflow body declares against.
 
 == One Generic Dispatcher
 
@@ -33,20 +33,11 @@ Dispatch sites resolve which variant to call via `manage-config effort resolve-t
 [#per-role-model-selection]
 == Per-Role Model Selection
 
-What "which model and effort level runs each LLM-judgement workflow" reduces to. Three layers, each with a single canonical spec under `marketplace/bundles/plan-marshall/skills/plan-marshall/standards/`:
+The "which model and effort level runs each LLM-judgement workflow" question reduces to three layered concepts — **Levels**, **Roles**, and **Variants**. Levels are the six ordinals (`low` through `max`) plus the `inherit` sentinel, each binding to a `(model, effort)` primitive. Roles are the phase-scoped registry of LLM-judgement workflows that may be pinned to a level — six phase groups, each polymorphic (a string shorthand for the whole phase, or an object whose recognised sub-keys are `default`, `verification-feedback`, `post-run-review`). Variants are the emitted agent files <<level-variants,described above>>; the resolver picks one per dispatch.
 
-[cols="1,3", options="header"]
-|===
-| Layer | What it is
+The runtime path: caller passes `--phase <phase>` and optionally `--role <subkey>` to `manage-config effort resolve-target`. The resolver bubbles `phase.subkey` → `phase.default` → `phase` shorthand → plan-wide `effort` → `inherit` and returns the first level it finds. The variant emitter has already produced an agent file for that level; the orchestrator dispatches that variant by name.
 
-| **Levels** | Six ordinals (`low`, `medium`, `high`, `xhigh`, `xxhigh`, `max`) plus the `inherit` sentinel. Each ordinal binds to a single `(model, effort)` primitive. Defined in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md[`effort-levels.md`].
-| **Roles** | Phase-scoped registry of LLM-judgement workflows that may be pinned to a level. Six top-level groups (`phase-1-init` … `phase-6-finalize`), each polymorphic — its value is either a string (single-level shorthand for the whole phase) or an object whose recognised sub-keys are `default`, `verification-feedback`, `post-run-review`. Research dispatches do not get their own sub-key — they inherit the calling phase's `default`. Defined in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-roles.md[`effort-roles.md`].
-| **Variants** | The emitted agent files described in <<level-variants,Level Variants>> above. The resolver picks one of them per dispatch.
-|===
-
-The runtime resolution path: caller passes `--phase <phase>` and optionally `--role <subkey>` to `manage-config effort resolve-target`. The resolver walks the bubbling chain `phase.subkey` → `phase.default` → `phase` string shorthand → plan-wide `effort` → `inherit` and returns the first level it finds. The variant emitter has already produced an agent file for that level (or the canonical no-suffix file for `inherit` — see <<level-variants,Level Variants>> above); the orchestrator dispatches that variant by name.
-
-Operator-facing guidance (wizard walkthrough, the three named presets, polymorphic `marshal.json` shape, a worked example, troubleshooting) lives in xref:../user/efforts.adoc[User Guide › Efforts]. The resolver contract itself (precise resolution order, env-var override semantics, the build-time `-max` guard) is in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md[`effort-variants.md`].
+The canonical specs (`effort-levels.md`, `effort-roles.md`, `effort-variants.md`) live under `marketplace/bundles/plan-marshall/skills/plan-marshall/standards/`. Operator-facing guidance (wizard presets, polymorphic `marshal.json` shape, worked example, troubleshooting) lives in xref:../user/efforts.adoc[User Guide › Efforts].
 
 == Granularity
 
@@ -56,19 +47,9 @@ Not every step belongs in its own dispatch. The granularity heuristics in link:.
 * **Bundle-shared-context** — a multi-step LLM workflow runs inside ONE dispatch envelope rather than N sequential dispatches.
 * **Per-iteration only when parallel-or-different-models** — N parallel dispatches are justified only when each subagent runs independently. The sole such case in the marketplace is `enrich-module` dispatched under phase-6-finalize from architecture-refresh Tier-1.
 
-== Dispatch Lifecycle
+== Dispatch lifecycle
 
-image::../resources/diagrams/dispatch-walkthrough.svg[Sequence diagram of one execution-context dispatch — the orchestrator resolves the level via manage-config, constructs a five-field prompt body, dispatches Task: execution-context-{level}, suspends while the subagent loads dev-agent-behavior-rules plus caller-named skills and reads/executes the workflow doc, then records the TOON return via manage-status mark-step-done, align=center]
-
-The dispatch is synchronous. The orchestrator suspends on the `Task:` call for the entire duration of the subagent's run (skill loads, workflow read, internal loops, AskUserQuestion gates) and resumes only when the subagent returns its TOON record. No tokens are billed to the orchestrator during the suspension — only the subagent's `<usage>` is counted.
-
-Three properties make the 8-step shape worth pinning (step numbers refer to the canonical sequence in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/dispatch-walkthrough.md[`dispatch-walkthrough.md`] § Generic eight-step sequence):
-
-* **Step 2's level resolution reads `marshal.json` fresh.** A configuration edit takes effect on the *next* dispatch — no Claude Code restart needed. The variant target string returned by the resolver is what `Task:` is called with.
-* **Step 3's prompt body has exactly five required fields.** `name`, `plan_id`, `skills[]`, exactly one of `workflow`/`instructions`, and `WORKTREE`. Workflow-specific runtime inputs (`producer`, `track`, `module`, …) layer on top per the workflow doc's contract.
-* **Step 5's skill loads are deterministic.** `dev-agent-behavior-rules` is implicit-first, then each `skills[]` entry in caller-declared order, then `Read` on the workflow doc. The order is part of the contract — see xref:skill-handling.adoc[Skill Handling].
-
-Three worked end-to-end traces (a single-workflow phase entry, a `verification-feedback` sub-dispatch by reference, and a parallel `enrich-module` fan-out) live in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/dispatch-walkthrough.md[`ref-workflow-architecture/standards/dispatch-walkthrough.md`].
+The dispatch is synchronous. The orchestrator suspends on the `Task:` call for the entire duration of the subagent's run (skill loads, workflow read, internal loops, AskUserQuestion gates) and resumes only when the subagent returns its TOON record. No tokens are billed to the orchestrator during the suspension — only the subagent's `<usage>` is counted. The contract behind that — the eight-step sequence the dispatcher follows, the five-field prompt body, the deterministic skill-load order — is canonical in `ref-workflow-architecture/standards/dispatch-walkthrough.md` along with three worked end-to-end traces (a single-workflow phase entry, a sub-dispatch by reference, and a parallel fan-out). The concept page stops at "synchronous, contracted, zero-token suspension"; the spec carries the steps.
 
 == Related
 

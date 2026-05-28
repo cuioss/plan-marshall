@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MCP vs scripts — runtime tool surface vs scripted contracted interface.
+
+  theme-handling: A (theme-neutral)
+  see  pm-documents:ref-svg-diagrams/standards/theme-handling.md
+
+  Two-column comparison. Left column lists what a typical MCP-style
+  runtime surface looks like to the LLM and to the developer trying to
+  audit it. Right column lists what a Plan Marshall scripted
+  integration looks like in the same terms. Footer caption names the
+  load-bearing property: narrower runtime surface, fewer ways to go wrong.
+
+  diagram-type-block reference standard:
+  pm-documents:ref-svg-diagrams/standards/diagram-type-block.md
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 500"
+     role="img" aria-labelledby="title desc"
+     font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
+  <title id="title">MCP-style runtime tools vs scripted integrations</title>
+  <desc id="desc">A two-column side-by-side comparison of how an LLM interacts with external systems. The left column describes MCP-style runtime tool surfaces, where the model picks a tool per prompt: this gives a wide runtime surface, no contract on the return shape, variance across runs, no logged invocation, and no per-call test coverage. The right column describes Plan Marshall's scripted integration approach: one operation maps to one named script with a contracted TOON return, deterministic invocation, audit-trail logging on every call, and pytest coverage at marketplace authoring time. Footer caption names the trade: narrower runtime surface, fewer ways to go wrong.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" class="arrow-fill"/>
+    </marker>
+    <style>
+      .col-header { font-size: 15px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
+      .col-sub    { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .item       { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+      .item-c     { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; text-anchor: middle; }
+      .stroke     { stroke: #6e7681; stroke-width: 1.2; fill: none; }
+      .arrow      { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+      .arrow-fill { fill: #6e7681; }
+      .sep        { stroke: #6e7681; stroke-width: 0.6; stroke-dasharray: 3 3; }
+      .caption    { font-size: 12px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+    </style>
+  </defs>
+
+  <!-- ============================================================ -->
+  <!-- COLUMN 1 — MCP-style runtime surface                          -->
+  <!-- ============================================================ -->
+  <text x="170" y="28" class="col-header">MCP-STYLE RUNTIME SURFACE</text>
+  <text x="170" y="44" class="col-sub">LLM picks the tool per prompt</text>
+  <rect class="stroke" x="20" y="60" width="300" height="380" rx="6" ry="6"/>
+
+  <text x="170" y="100" class="item-c">N tools available at runtime</text>
+  <text x="170" y="124" class="item-c">model decides per call</text>
+
+  <line class="sep" x1="50" y1="150" x2="290" y2="150"/>
+
+  <text x="170" y="184" class="item-c">no contracted return shape</text>
+  <text x="170" y="208" class="item-c">free-form CLI output</text>
+
+  <line class="sep" x1="50" y1="234" x2="290" y2="234"/>
+
+  <text x="170" y="268" class="item-c">three runs, three code paths</text>
+  <text x="170" y="292" class="item-c">for one operation</text>
+
+  <line class="sep" x1="50" y1="318" x2="290" y2="318"/>
+
+  <text x="170" y="352" class="item-c">no per-call audit row</text>
+  <text x="170" y="376" class="item-c">no pytest coverage</text>
+
+  <text x="170" y="424" class="col-sub">good for novel ad-hoc tasks</text>
+
+  <!-- ============================================================ -->
+  <!-- COLUMN 2 — Scripted integration                               -->
+  <!-- ============================================================ -->
+  <text x="530" y="28" class="col-header">SCRIPTED INTEGRATION</text>
+  <text x="530" y="44" class="col-sub">one operation = one script</text>
+  <rect class="stroke" x="380" y="60" width="300" height="380" rx="6" ry="6"/>
+
+  <text x="530" y="100" class="item-c">one named script</text>
+  <text x="530" y="124" class="item-c">per external operation</text>
+
+  <line class="sep" x1="410" y1="150" x2="650" y2="150"/>
+
+  <text x="530" y="184" class="item-c">TOON return contract</text>
+  <text x="530" y="208" class="item-c">structured fields per call</text>
+
+  <line class="sep" x1="410" y1="234" x2="650" y2="234"/>
+
+  <text x="530" y="268" class="item-c">same inputs -&gt;</text>
+  <text x="530" y="292" class="item-c">same return TOON</text>
+
+  <line class="sep" x1="410" y1="318" x2="650" y2="318"/>
+
+  <text x="530" y="352" class="item-c">script-execution.log row</text>
+  <text x="530" y="376" class="item-c">+ pytest coverage at author time</text>
+
+  <text x="530" y="424" class="col-sub">good for repeatable workflows</text>
+
+  <!-- ============================================================ -->
+  <!-- Gutter arrow — comparison flow                                -->
+  <!-- ============================================================ -->
+  <line class="arrow" x1="324" y1="250" x2="376" y2="250" marker-end="url(#arrow)"/>
+  <text x="350" y="242" class="col-sub">narrow</text>
+
+  <!-- ============================================================ -->
+  <!-- Footer caption                                                -->
+  <!-- ============================================================ -->
+  <text x="350" y="478" class="caption">Narrower runtime surface, fewer ways to go wrong.</text>
+
+</svg>

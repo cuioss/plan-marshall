@@ -5,25 +5,19 @@
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
-Predefined, repeatable transformations whose plan shape is already known — so the lifecycle skips the refine confidence loop and the outline-discovery work and produces deliverables from a deterministic mapping.
+The standard pipeline re-discovers the scope of every plan from first principles — refine iterates on confidence, outline walks the architecture, plan creates tasks. Useful for the request the user just typed; wasteful for the transformation you have already done forty times. Recipes are the workflow's escape hatch for that case: predefined, repeatable transformations whose plan shape is already known, so the lifecycle skips the refine confidence loop and the outline-discovery work and produces deliverables from a deterministic mapping.
 
 == Overview
 
-The standard pipeline (xref:planning-workflow.adoc[Planning Workflow]) assumes a request whose scope must be *discovered*: phase-2-refine iterates on confidence, phase-3-outline's Complex Track walks the architecture and proposes deliverables, phase-4-plan creates tasks. That's the right shape for "build the thing the user just described."
-
-It is the wrong shape for *recurring* transformations: "refactor this codebase to comply with the configured profile standards", "verify every architecture diagram is up to date", "enforce CUI logging conventions across all modules". The plan shape is *already known* — one deliverable per package, or per module, or per ADR — and the work is filling in the affected files, not discovering what to do.
+The standard pipeline (xref:planning-workflow.adoc[Planning Workflow]) assumes a request whose scope must be *discovered*: phase-2-refine iterates on confidence, phase-3-outline's Complex Track walks the architecture and proposes deliverables, phase-4-plan creates tasks. That is the right shape for "build the thing the user just described." It is the wrong shape for recurring transformations like "refactor every package to the configured profile standards" or "verify every architecture diagram is up to date" — there the plan shape is *already known*, and asking the LLM to re-discover it from scratch each time burns tokens for no gain.
 
 Recipes are the extension point for that case. A recipe declares "I know what this plan looks like; ask me, not the LLM."
 
 == How the lifecycle changes
 
-A recipe-driven plan still passes through every phase, but the work inside three phases shortcuts:
+A recipe-driven plan still passes through every phase, but the work inside the early phases shortcuts. Refine bypasses its confidence iteration and returns immediately. Outline routes to the recipe skill instead of the Simple- or Complex-Track LLM analysis; the recipe skill produces `solution_outline.md` via its own deterministic discovery + deliverable mapping. The Q-Gate at outline is bypassed when the recipe yields a surgical single-deliverable shape and runs normally otherwise. From phase-4-plan onward, the plan flows through the same pipeline as any other.
 
-* **phase-2-refine** — the recipe shortcut: `confidence=100, track=complex` returned immediately. No iteration on intent.
-* **phase-3-outline** — recipe detection routes to the recipe skill (link:../../marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md[`phase-3-outline`] Step 3). The recipe skill produces `solution_outline.md` via its own discovery + deliverable pattern instead of the Simple/Complex Track LLM analysis.
-* **phase-3-outline Q-Gate** — bypassed when the recipe yields surgical scope with a single-deliverable shape; pays the Q-Gate cost otherwise.
-
-The cost saving is real: a Complex Track outline on a 30-module codebase is a multi-thousand-token LLM exercise. A recipe-driven outline producing the same N deliverables is mostly script invocations (`architecture modules`, `architecture module --full`, `manage-files discover`) plus a templated write.
+The cost saving is real: a Complex-Track outline on a multi-module codebase is a multi-thousand-token LLM exercise. A recipe-driven outline producing the same N deliverables is mostly script invocations (`architecture modules`, `architecture module --full`, `manage-files discover`) plus a templated write. The shortcut shows up directly in the per-phase metrics for recipe-driven runs.
 
 User entry point:
 
@@ -76,6 +70,8 @@ The recipe skill is the *single source of truth* for what its deliverables look 
 == Where this fits
 
 Recipes are the workflow's *known-shape escape hatch*. The standard pipeline is what makes Plan Marshall safe for arbitrary requests; recipes are what make it efficient for recurring ones. The hooks the recipe pattern rides on (xref:execution-context.adoc[execution-context dispatch], xref:skill-handling.adoc[skill loading], xref:audit-trail.adoc[audit trail]) are the same — the recipe just supplies its own discovery step.
+
+Recipes do not make the recurring shape any less recurring — the underlying drudgery is still there, just dispatched efficiently. The recipe pattern is for "this is going to happen again", not "we have solved the underlying problem."
 
 == Related
 

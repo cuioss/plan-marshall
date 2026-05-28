@@ -5,25 +5,15 @@
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
-How Plan Marshall keeps LLM token spend bounded — and where it deliberately spends more in exchange for verifiable process.
-
-== Overview
-
-Every LLM tool call, every line of build output streamed into the context, every "let me check that file" detour costs tokens that the host pays for and that crowd the context window. On a long-running plan, naive token spend climbs into tens of thousands per session and the *recall quality* of anything earlier in the context degrades. Plan Marshall treats token efficiency as a first-class design goal across six concrete mechanisms — and then accepts targeted *overspend* in two places where the verification payoff is worth it.
+A naïve LLM session faced with a 10-minute build will spend 10 minutes' worth of tokens watching it. Add a few file-discovery detours, the usual context-bloat from streaming build logs, and a long-running plan, and the token bill climbs into tens of thousands per session — while the *recall quality* of anything early in the context degrades the longer the session runs. Plan Marshall treats token efficiency as a first-class design goal across six concrete mechanisms, then accepts targeted overspend in two places where the verification payoff is worth it.
 
 == Mechanisms that reduce token spend
 
 === 1. Scripts over LLM for deterministic work
 
-LLM work is reserved for *judgement*. Anything that can be expressed as a deterministic Python function lives in a `manage-*` or `tools-*` script and runs through the executor proxy.
+LLM work is reserved for *judgement*. Anything that can be expressed as a deterministic Python function lives in a `manage-*` or `tools-*` script and runs through the executor proxy: architecture lookups, status writes, findings queries, log rotations, executor-script generation. Each saved call is two-to-five thousand tokens that would have been spent on "ask the LLM to grep for the module owner of this file" or "have the LLM hand-craft the JSON and re-read it back" — small per call, but they compound across a plan.
 
-Concrete examples:
-
-* `manage-architecture which-module --path foo/bar.java` — pure filesystem-to-module lookup. Takes no LLM tokens. The naive alternative ("ask the LLM to grep for the module owner of this file") burns ~2-5 K tokens *each time*.
-* `manage-status mark-step-done` — JSON write, no LLM. Naive alternative would have the LLM hand-craft the JSON and re-read it back.
-* `manage-findings query --plan-id X --type Y --resolution pending` — store query, no LLM. Naive alternative would have the LLM scan the JSONL store linearly.
-
-The dispatch-vs-script verdict is decided per call site by the heuristics in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/dispatch-granularity.md[`extension-api:dispatch-granularity`]. The rule of thumb: if the work is mechanical, don't pay LLM tokens for it.
+The dispatch-vs-script verdict is decided per call site by the heuristics in `extension-api:dispatch-granularity`. The rule of thumb: if the work is mechanical, do not pay LLM tokens for it.
 
 === 2. Build management — long waits at zero token cost
 
@@ -38,15 +28,7 @@ Token cost ≈ size of the TOON return, **independent of build duration**. The s
 
 === 3. TOON over JSON on every `manage-*` API
 
-Every script in the marketplace returns link:../../marketplace/bundles/plan-marshall/skills/ref-toon-format/SKILL.md[TOON] (Token-Oriented Object Notation) — a CSV-style compact encoding of the JSON data model. Uniform arrays declare their structure once and use single-line rows.
-
-The Sonar-issues worked example in `ref-toon-format`:
-
-* JSON: 580 tokens.
-* TOON: 240 tokens.
-* **59 % reduction.**
-
-Across the typical Plan Marshall return surface (findings queries, task lists, architecture inventories, phase handshakes), 30-60 % reductions compound across hundreds of calls per plan. The format is enforced by the `manage-contract` shared contract — see link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/manage-contract.md[`manage-contract.md`].
+Every script in the marketplace returns link:../../marketplace/bundles/plan-marshall/skills/ref-toon-format/SKILL.md[TOON] (Token-Oriented Object Notation) — a CSV-style compact encoding of the JSON data model that declares array structure once and emits single-line rows after. TOON typically halves the token cost vs equivalent JSON; the precise reduction varies by payload shape, and the worked Sonar-issues example in `ref-toon-format` quantifies one representative case. Across the typical Plan Marshall return surface (findings queries, task lists, architecture inventories, phase handshakes), the savings compound across hundreds of calls per plan. The format is enforced by the `manage-contract` shared contract.
 
 === 4. Skill-driven guidance — no tool exploration
 
