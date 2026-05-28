@@ -142,25 +142,14 @@ def _resolve_active_plan() -> str | None:
     if not candidates:
         return None
 
-    # Sort newest first: largest mtime wins; ties broken by newest ``created``
-    # timestamp (ISO-8601, lexicographic). Plan name ASC as final deterministic
-    # fallback. Implemented via a single key that negates mtime and inverts the
-    # created string into a "reversed" form so the ascending sort selects the
-    # newest candidate first.
-    candidates.sort(key=lambda t: (-t[0], _inverse_string_key(t[1]), t[2]))
+    # Stable sort (three passes, reverse priority order):
+    # 1. Sort by plan name ascending (final deterministic fallback)
+    candidates.sort(key=lambda t: t[2])
+    # 2. Sort by created timestamp descending (newer wins, empty values rank last)
+    candidates.sort(key=lambda t: t[1], reverse=True)
+    # 3. Sort by mtime descending (newest wins)
+    candidates.sort(key=lambda t: t[0], reverse=True)
     return candidates[0][2]
-
-
-def _inverse_string_key(value: str) -> tuple[int, str]:
-    """Produce a sort key that orders larger ASCII strings first.
-
-    Used to invert ``created`` ISO-8601 timestamp ordering inside an ascending
-    sort: newer timestamps sort earlier. Empty values rank last (presence
-    flag 1 vs 0).
-    """
-    if not value:
-        return (1, "")
-    return (0, "".join(chr(0x10FFFF - ord(c)) for c in value))
 
 
 def _resolve_cache_dir() -> Path:
@@ -201,13 +190,11 @@ def _write_active_plan_mapping(session_id: str) -> None:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 fh.write(plan_id)
             os.replace(tmp_name, target)
-        except OSError:
-            # Clean up the temp file on failure; ignore secondary errors.
+        finally:
             try:
                 os.unlink(tmp_name)
             except OSError:
                 pass
-            return
     except Exception:  # noqa: BLE001 — best-effort by contract.
         return
 
