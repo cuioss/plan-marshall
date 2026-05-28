@@ -257,6 +257,104 @@ When a script invoked with `--plan-id X` resolves an empty path (i.e., the plan 
 
 Bucket A `manage-*` scripts MUST NOT accept `--plan-id` for cwd binding — they resolve `.plan/` via `git rev-parse --git-common-dir` regardless of the active worktree. (Many `manage-*` scripts already accept `--plan-id` as a *plan-identifier* argument that selects which plan's metadata to read or write — that usage is unrelated to the cwd contract here.) See [`tools-script-executor/standards/cwd-policy.md`](../../tools-script-executor/standards/cwd-policy.md) for the authoritative Bucket A / Bucket B / Bucket C split.
 
+## The Consolidated Branch-Cleanup Verbs
+
+Three verbs — `force-push-with-lease`, `switch-and-pull`, and `prune-local-and-remote-ref` — consolidate the inline git calls that `branch-cleanup.md` previously emitted directly. They share a common resolution pattern and are documented here together because they cross the worktree/main-checkout boundary in a structured way.
+
+### Resolution Pattern
+
+All three verbs accept `--plan-id` as the primary resolution path and `--project-dir` as the escape hatch. They are mutually exclusive; passing both is a hard error.
+
+**Primary path (`--plan-id`)**: The verb calls `manage-status get-worktree-path --plan-id {plan_id}` internally to resolve the working tree. For `force-push-with-lease`, the resolved path is the **worktree** (the branch lives there until `worktree-remove` runs). For `switch-and-pull` and `prune-local-and-remote-ref`, the verb derives the **main checkout** root from `marketplace_paths.git_main_checkout_root()` because those operations target the main checkout after worktree removal.
+
+**Escape hatch (`--project-dir [--branch|--head]`)**: Useful in post-worktree-removal cleanup, non-plan contexts, or fixture-driven test invocations where the caller already holds the path. All git calls use `git -C {project_dir}`.
+
+### `force-push-with-lease`
+
+Pushes the feature branch to `origin` with `--force-with-lease` — a lease violation indicates the remote moved since the last fetch and is surfaced as `status: rejected` / `error_type: push_rejected_non_fast_forward` rather than silently overwriting remote state.
+
+Resolution: `--plan-id` → `worktree_path` and `worktree_branch` from `manage-status get-worktree-path`.
+
+**Output** (success):
+```toon
+status: success
+operation: force-push-with-lease
+plan_id: PLAN_ID
+branch: feature/PLAN_ID
+remote: origin
+remote_sha: {sha after push}
+```
+
+**Typed errors**: `plan_not_found`, `worktree_not_materialized`, `missing_required_arg`, `project_dir_not_a_git_repo`, `branch_not_found`, `push_rejected_non_fast_forward`, `lease_check_failed`, `push_failed`.
+
+### `switch-and-pull`
+
+Checks out `--base` on the main checkout and pulls from `origin` using `git pull origin {base_branch}` (the explicit form; never plain `git pull` — Drift 1 resolution). Captures `pre_sha` and `post_sha` and computes `commits_pulled` via `git rev-list --count`.
+
+Resolution: `--plan-id` → main checkout root from `marketplace_paths.git_main_checkout_root()`.
+
+**Output** (success):
+```toon
+status: success
+operation: switch-and-pull
+plan_id: PLAN_ID
+base_branch: main
+pre_sha: {sha before checkout}
+post_sha: {sha after pull}
+commits_pulled: N
+```
+
+**Typed errors**: `plan_not_found`, `missing_required_arg`, `project_dir_not_a_git_repo`, `branch_not_found`, `merge_conflict`, `pull_failed`.
+
+### `prune-local-and-remote-ref`
+
+Deletes the local feature branch (`git branch -D {head_branch}`) and, in `local_and_remote` mode, prunes the remote-tracking ref `refs/remotes/origin/{head_branch}` via `git update-ref -d`. An internal `show-ref` guard is issued before `update-ref -d` — if the ref is already absent, the verb returns `status: partial` with `remote_ref_deleted: false` and a `remote_ref_warning`, avoiding a non-zero exit for a ref that `git fetch --prune` (or the PR host) may have already cleaned up (Drift 3 resolution).
+
+Safety invariants:
+1. Never deletes the currently checked-out branch.
+2. Uses force-delete (`git branch -D`) — post-merge squash merges make safe-delete (`-d`) refuse.
+3. `show-ref` guard before `update-ref -d` — targeted ref deletion only; no `git fetch --prune`.
+4. `local_only` mode skips all remote-tracking ref operations.
+
+Resolution: `--plan-id` → `worktree_branch` and main checkout root from `manage-status get-worktree-path` + `marketplace_paths`.
+
+**Output** (success — full deletion):
+```toon
+status: success
+operation: prune-local-and-remote-ref
+plan_id: PLAN_ID
+head_branch: feature/PLAN_ID
+mode: local_and_remote
+local_deleted: true
+remote_ref_deleted: true
+```
+
+**Output** (partial — remote-tracking ref already absent):
+```toon
+status: partial
+operation: prune-local-and-remote-ref
+plan_id: PLAN_ID
+head_branch: feature/PLAN_ID
+mode: local_and_remote
+local_deleted: true
+remote_ref_deleted: false
+remote_ref_warning: "remote-tracking ref refs/remotes/origin/feature/PLAN_ID was already absent — no-op"
+```
+
+**Typed errors**: `plan_not_found`, `worktree_not_materialized`, `missing_required_arg`, `project_dir_not_a_git_repo`, `branch_delete_failed`, `unexpected_ref_error`.
+
+### Sequencing with `worktree-remove`
+
+The three consolidated verbs are designed to be invoked **after** `worktree-remove` because they target the main checkout; `worktree-remove` is `worktree-first` (it removes the worktree directory before deleting the branch ref). The sequence in `branch-cleanup.md` enforces:
+
+1. `worktree-remove --plan-id {plan_id}` — removes the worktree directory and its local branch ref.
+2. `switch-and-pull --plan-id {plan_id} --base {base_branch}` — checks out base and pulls on the main checkout.
+3. `prune-local-and-remote-ref --plan-id {plan_id} [--mode ...]` — deletes the local branch (post-removal cleanup) and the remote-tracking ref.
+
+`force-push-with-lease` runs **before** `worktree-remove` (the branch must still be checked out in the worktree when pushing). After `worktree-remove`, the worktree path is gone; callers that need to reference the branch path must switch to `--project-dir {main_checkout}` + `--branch {head_branch}` (the `--plan-id` path for `force-push-with-lease` resolves the worktree path — if the worktree no longer exists, the verb will fail with `project_dir_not_a_git_repo`).
+
+See `phase-6-finalize/standards/branch-cleanup.md` for the canonical sequencing and the Conflict-Severity Classifier that gates interactive confirmation.
+
 ## The `worktree-rebase-to` Verb
 
 `git_workflow worktree-rebase-to --plan-id X --base BRANCH` rebases the worktree's branch onto `--base` after detecting which of eight documented worktree states applies. The verb is intentionally narrow — it does not stash, force, or salvage; the caller is responsible for setting the worktree to a rebaseable state before invoking it.

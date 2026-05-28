@@ -4,8 +4,11 @@ Git workflow operations - format commits, analyze diffs, manage worktrees.
 
 Usage:
     git-workflow.py format-commit --type <type> --subject <subject> [options]
-    git-workflow.py analyze-diff --worktree-path <worktree-path> [--cached]
+    git-workflow.py analyze-diff (--plan-id <plan-id> | --project-dir <path>) [--cached]
     git-workflow.py detect-artifacts [--root <dir>]
+    git-workflow.py force-push-with-lease (--plan-id <plan-id> | --project-dir <path> --branch <branch>)
+    git-workflow.py switch-and-pull (--plan-id <plan-id> | --project-dir <path>) --base <branch>
+    git-workflow.py prune-local-and-remote-ref (--plan-id <plan-id> | --project-dir <path> --head <branch>) [--mode local_and_remote|local_only]
     git-workflow.py worktree-path --plan-id <plan-id>
     git-workflow.py worktree-create --plan-id <plan-id> --branch <branch> [--base <ref>]
     git-workflow.py worktree-remove --plan-id <plan-id> [--force]
@@ -14,25 +17,34 @@ Usage:
     git-workflow.py --help
 
 Subcommands:
-    format-commit      Format commit message following conventional commits
-    analyze-diff       Capture and analyze the worktree diff to suggest a commit message
-    detect-artifacts   Scan for committable artifacts (build outputs, temp files)
-    worktree-path      Resolve the persisted worktree path for a plan
-    worktree-create    Create a worktree + feature branch + .plan symlink for a plan
-    worktree-remove    Remove a worktree (worktree first, then branch ref)
-    worktree-list      Enumerate plans whose status.json declares a worktree
-    worktree-rebase-to Rebase the worktree's branch onto --base, dispatching
-                       on the eight documented worktree states
+    format-commit             Format commit message following conventional commits
+    analyze-diff              Capture and analyze the worktree diff to suggest a commit message
+    detect-artifacts          Scan for committable artifacts (build outputs, temp files)
+    force-push-with-lease     Force-push feature branch with lease guard (post-rebase)
+    switch-and-pull           Checkout base branch and pull from origin (post-merge cleanup)
+    prune-local-and-remote-ref Delete local feature branch and remote-tracking ref (post-merge)
+    worktree-path             Resolve the persisted worktree path for a plan
+    worktree-create           Create a worktree + feature branch + .plan symlink for a plan
+    worktree-remove           Remove a worktree (worktree first, then branch ref)
+    worktree-list             Enumerate plans whose status.json declares a worktree
+    worktree-rebase-to        Rebase the worktree's branch onto --base, dispatching
+                              on the eight documented worktree states
 
 Examples:
     # Format a commit message
     git-workflow.py format-commit --type feat --scope auth --subject "add login flow"
 
     # Analyze a worktree diff for commit suggestions
-    git-workflow.py analyze-diff --worktree-path /path/to/worktree [--cached]
+    git-workflow.py analyze-diff --plan-id EXAMPLE-PLAN [--cached]
+    git-workflow.py analyze-diff --project-dir /path/to/worktree [--cached]
 
     # Detect artifacts before committing
     git-workflow.py detect-artifacts --root /path/to/repo
+
+    # New consolidated verbs (Phase C)
+    git-workflow.py force-push-with-lease --plan-id EXAMPLE-PLAN
+    git-workflow.py switch-and-pull --project-dir /path/to/main --base main
+    git-workflow.py prune-local-and-remote-ref --project-dir /path/to/main --head feature/EXAMPLE-PLAN --mode local_and_remote
 
     # Worktree CRUD verbs
     git-workflow.py worktree-path --plan-id EXAMPLE-PLAN
@@ -52,6 +64,9 @@ from pathlib import Path
 from typing import Any
 
 from _cmd_baseline_reconcile import cmd_baseline_reconcile
+from _cmd_force_push import cmd_force_push
+from _cmd_prune_ref import cmd_prune_ref
+from _cmd_switch_and_pull import cmd_switch_and_pull
 from file_ops import get_worktree_root  # type: ignore[import-not-found]
 from git_provider import run_git  # type: ignore[import-not-found]
 from marketplace_paths import git_main_checkout_root  # type: ignore[import-not-found]
@@ -405,16 +420,111 @@ def analyze_diff(diff_content: str) -> dict:
     return suggestions
 
 
+def _resolve_analyze_diff_path(args) -> tuple[Path | None, dict | None]:
+    """Resolve the working tree path for analyze-diff.
+
+    Accepts ``--plan-id`` (primary) or ``--project-dir`` (escape hatch).
+    Returns ``(path, None)`` on success or ``(None, error_dict)`` on failure.
+    """
+    plan_id: str | None = getattr(args, 'plan_id', None)
+    project_dir: str | None = getattr(args, 'project_dir', None)
+
+    if plan_id is not None:
+        # Resolve via manage-status to get the worktree path.
+        executor = _executor_path()
+        if executor is None:
+            return None, make_error(
+                'plan-marshall executor not available (.plan/execute-script.py missing)',
+                code=ErrorCode.NOT_FOUND,
+            )
+        try:
+            result = subprocess.run(
+                [
+                    'python3',
+                    str(executor),
+                    'plan-marshall:manage-status:manage-status',
+                    'get-worktree-path',
+                    '--plan-id',
+                    plan_id,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except FileNotFoundError:
+            return None, make_error('python3 not found on PATH', code=ErrorCode.NOT_FOUND)
+        except subprocess.TimeoutExpired:
+            return None, make_error('manage-status timed out', code=ErrorCode.NOT_FOUND)
+
+        if result.returncode != 0:
+            return None, make_error(
+                f'plan resolution failed: {(result.stderr or result.stdout).strip()}',
+                code=ErrorCode.NOT_FOUND,
+            )
+
+        try:
+            parsed = parse_toon(result.stdout)
+        except Exception as exc:  # noqa: BLE001
+            return None, make_error(
+                f'failed to parse manage-status output: {exc}',
+                code=ErrorCode.NOT_FOUND,
+            )
+
+        if parsed.get('status') == 'error' or parsed.get('error'):
+            return None, make_error(
+                parsed.get('message') or 'plan resolution failed',
+                code=ErrorCode.NOT_FOUND,
+            )
+
+        worktree_path_val = parsed.get('worktree_path') or ''
+        if not worktree_path_val:
+            # Non-worktree plan: fall back to the main checkout root.
+            main = git_main_checkout_root()
+            if main is None:
+                return None, make_error(
+                    'cannot resolve main git checkout root for non-worktree plan',
+                    code=ErrorCode.NOT_FOUND,
+                )
+            return main, None
+        path = Path(str(worktree_path_val))
+        if not path.is_dir():
+            return None, make_error(
+                f'Worktree path not found: {path}',
+                code=ErrorCode.NOT_FOUND,
+            )
+        return path, None
+
+    elif project_dir is not None:
+        path = Path(project_dir)
+        if not path.is_dir():
+            return None, make_error(
+                f'Worktree path not found: {project_dir}',
+                code=ErrorCode.NOT_FOUND,
+            )
+        return path, None
+
+    else:
+        return None, make_error(
+            'one of --plan-id or --project-dir is required',
+            code=ErrorCode.INVALID_INPUT,
+        )
+
+
 def cmd_analyze_diff(args):
     """Handle analyze-diff subcommand.
 
-    Captures the worktree diff in-process via ``git -C {worktree_path} diff
+    Captures the worktree diff in-process via ``git -C {path} diff
     [--cached]`` and feeds the captured stdout to ``analyze_diff()``. The
     caller no longer needs to materialize a temp file.
+
+    Accepts ``--plan-id`` (primary) or ``--project-dir`` (escape hatch).
+    The deprecated ``--worktree-path`` flag has been removed.
     """
-    worktree_path = Path(args.worktree_path)
-    if not worktree_path.is_dir():
-        return make_error(f'Worktree path not found: {args.worktree_path}', code=ErrorCode.NOT_FOUND)
+    worktree_path, err = _resolve_analyze_diff_path(args)
+    if err is not None:
+        return err
+
+    assert worktree_path is not None  # narrowing
 
     cmd = ['git', '-C', str(worktree_path), 'diff']
     if args.cached:
@@ -425,12 +535,12 @@ def cmd_analyze_diff(args):
     except subprocess.CalledProcessError as exc:
         return make_error(
             f'git diff failed (exit {exc.returncode}): {exc.stderr.strip()}',
-            code=ErrorCode.UNKNOWN,
+            code=ErrorCode.FETCH_FAILURE,
         )
     except subprocess.TimeoutExpired:
-        return make_error('git diff timed out after 30 seconds', code=ErrorCode.UNKNOWN)
+        return make_error('git diff timed out after 30 seconds', code=ErrorCode.FETCH_FAILURE)
     except FileNotFoundError:
-        return make_error('git executable not found on PATH', code=ErrorCode.UNKNOWN)
+        return make_error('git executable not found on PATH', code=ErrorCode.FETCH_FAILURE)
 
     suggestions = analyze_diff(result.stdout)
 
@@ -1297,8 +1407,12 @@ def main():
         epilog="""
 Examples:
   git-workflow.py format-commit --type feat --scope auth --subject "add login"
-  git-workflow.py analyze-diff --worktree-path /path/to/worktree [--cached]
+  git-workflow.py analyze-diff --plan-id EXAMPLE-PLAN [--cached]
+  git-workflow.py analyze-diff --project-dir /path/to/worktree [--cached]
   git-workflow.py detect-artifacts --root /path/to/repo
+  git-workflow.py force-push-with-lease --plan-id EXAMPLE-PLAN
+  git-workflow.py switch-and-pull --project-dir /path/to/main --base main
+  git-workflow.py prune-local-and-remote-ref --project-dir /path/to/main --head feature/EXAMPLE-PLAN
   git-workflow.py worktree-path --plan-id EXAMPLE-PLAN
   git-workflow.py worktree-create --plan-id EXAMPLE-PLAN --branch feature/EXAMPLE-PLAN
   git-workflow.py worktree-remove --plan-id EXAMPLE-PLAN [--force]
@@ -1331,9 +1445,14 @@ Examples:
                 'handler': cmd_analyze_diff,
                 'args': [
                     {
-                        'flags': ['--worktree-path'],
-                        'required': True,
-                        'help': 'Worktree path to capture diff from',
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'help': 'Plan identifier — resolves working tree path via manage-status',
+                    },
+                    {
+                        'flags': ['--project-dir'],
+                        'dest': 'project_dir',
+                        'help': 'Explicit working tree path (escape hatch when plan-id is unavailable)',
                     },
                     {
                         'flags': ['--cached'],
@@ -1352,6 +1471,104 @@ Examples:
                         'flags': ['--no-gitignore'],
                         'action': 'store_true',
                         'help': 'Include gitignored files in results',
+                    },
+                ],
+            },
+            {
+                'name': 'force-push-with-lease',
+                'help': 'Force-push feature branch to origin with --force-with-lease guard',
+                'handler': cmd_force_push,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'help': (
+                            'Plan identifier — resolves worktree path and branch name '
+                            'via manage-status (mutually exclusive with --project-dir)'
+                        ),
+                    },
+                    {
+                        'flags': ['--project-dir'],
+                        'dest': 'project_dir',
+                        'help': (
+                            'Explicit worktree path (escape hatch; '
+                            'mutually exclusive with --plan-id; requires --branch)'
+                        ),
+                    },
+                    {
+                        'flags': ['--branch'],
+                        'help': (
+                            'Branch name to push (only with --project-dir; '
+                            'resolved from plan metadata when --plan-id is used)'
+                        ),
+                    },
+                ],
+            },
+            {
+                'name': 'switch-and-pull',
+                'help': 'Checkout base branch on main checkout and pull from origin',
+                'handler': cmd_switch_and_pull,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'help': (
+                            'Plan identifier — resolves main checkout root via manage-status '
+                            '(mutually exclusive with --project-dir)'
+                        ),
+                    },
+                    {
+                        'flags': ['--project-dir'],
+                        'dest': 'project_dir',
+                        'help': (
+                            'Explicit main checkout path (escape hatch; '
+                            'mutually exclusive with --plan-id)'
+                        ),
+                    },
+                    {
+                        'flags': ['--base'],
+                        'required': True,
+                        'help': 'Base branch to check out and pull (e.g. main)',
+                    },
+                ],
+            },
+            {
+                'name': 'prune-local-and-remote-ref',
+                'help': 'Delete local feature branch and remote-tracking ref after merge',
+                'handler': cmd_prune_ref,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'help': (
+                            'Plan identifier — resolves main checkout root and head branch '
+                            'via manage-status (mutually exclusive with --project-dir)'
+                        ),
+                    },
+                    {
+                        'flags': ['--project-dir'],
+                        'dest': 'project_dir',
+                        'help': (
+                            'Explicit main checkout path (escape hatch; '
+                            'mutually exclusive with --plan-id; requires --head)'
+                        ),
+                    },
+                    {
+                        'flags': ['--head'],
+                        'help': (
+                            'Feature branch name to delete (only with --project-dir; '
+                            'resolved from plan metadata when --plan-id is used)'
+                        ),
+                    },
+                    {
+                        'flags': ['--mode'],
+                        'choices': ['local_and_remote', 'local_only'],
+                        'default': 'local_and_remote',
+                        'help': (
+                            'Deletion scope: local_and_remote (default) deletes both the '
+                            'local branch and remote-tracking ref; local_only skips the '
+                            'remote-tracking ref deletion (used in local-only plans)'
+                        ),
                     },
                 ],
             },
@@ -1456,11 +1673,12 @@ Examples:
                         ),
                     },
                     {
-                        'flags': ['--worktree-path'],
+                        'flags': ['--project-dir'],
                         'dest': 'worktree_path',
                         'help': (
                             'Optional override for the worktree path. Default reads '
-                            'metadata.worktree_path from status.json.'
+                            'metadata.worktree_path from status.json. '
+                            '(Replaces the deprecated --worktree-path flag.)'
                         ),
                     },
                     {
