@@ -24,7 +24,7 @@ A reader who finishes the document should be able to recover all three from it.
 - **Concrete over abstract.** Replace category nouns with the smallest specific example that still carries the point.
 - **Defer with confidence.** "See [spec] for the full contract" — not "this is only a summary; the real story is elsewhere."
 - **One idea per paragraph.** Sentences mostly 15-25 words.
-- **Header depth ceiling: three.** A document reaching for a fourth header level has become a spec — move the detail to one.
+- **Header depth ceiling: three.** A document reaching for a fourth header level has become a spec — move the detail into a spec instead.
 
 ## Tone
 

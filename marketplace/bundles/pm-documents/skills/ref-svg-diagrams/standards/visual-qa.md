@@ -1,6 +1,6 @@
 # Visual QA for hand-authored SVG
 
-The SVG verification surface the skill's Step 4 checklist alone does not cover. The Step 4 list catches gross failures — illegible text, clipping at the viewBox edge, missing arrow markers, broken font fallback. The defects this standard catches are subtler: text that fits the page but not its container, intra-diagram drift in stylistic choices, curves whose geometry was set by accident, label collisions that the eye notices but the markup does not flag. Most are correctness-by-eye problems; the SVG parses, the renderer succeeds, and the diagram still ships a glitch.
+This standard addresses the SVG verification surface that the skill's Step 4 checklist alone does not cover. The Step 4 list catches gross failures — illegible text, clipping at the viewBox edge, missing arrow markers, broken font fallback. The defects this standard catches are subtler: text that fits the page but not its container, intra-diagram drift in stylistic choices, curves whose geometry was set by accident, label collisions that the eye notices but the markup does not flag. Most are correctness-by-eye problems; the SVG parses, the renderer succeeds, and the diagram still ships a glitch.
 
 Visual QA is therefore a distinct discipline from "the SVG renders." A new or modified diagram passes only when *both* the Step 4 checklist and the expanded checklist below succeed on both themes.
 
@@ -32,7 +32,7 @@ Repeat until both renderings pass clean. Never approve a fix from the SVG source
 A short catalogue of patterns this QA pass has caught historically. The list is not exhaustive; new patterns are added when they are encountered more than once.
 
 - **Empty-vs-filled inconsistency.** Half the boxes of a kind are filled, half are not. Almost always the empty ones are wrong (a fill attribute was forgotten when the box was copied). Fix by aligning to the filled convention.
-- **Text overflow inside a container.** A box was sized for short labels; a longer label was substituted later without resizing. Fix by widening the box (and, if needed, the column) — never by shortening the label below clarity.
+- **Text overflow inside a container.** A box was sized for short labels; a longer label was substituted later without resizing. Fix by widening the box (and, if needed, the column) — never by shortening the label at the expense of clarity.
 - **Awkward loop arc.** A return-to-start connector was drawn with a single Bézier whose control points are far enough apart that the curve reads as wobbly. Fix by either tightening the control points or splitting the loop into two arcs joined at a midpoint.
 - **Mid-stroke connector start.** A connector visibly starts a few pixels inside the source box rather than at its edge. Usually a forgotten coordinate update after the box was repositioned. Fix by snapping the connector endpoint to the container's edge.
 - **Misaligned arrowhead.** The arrow marker is rotated correctly but the path it terminates is off-axis from where the eye expects. Fix by recomputing the path's final segment so it ends square to the target.
