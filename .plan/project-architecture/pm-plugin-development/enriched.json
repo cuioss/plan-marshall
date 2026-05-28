@@ -5,26 +5,31 @@
   "key_dependencies": [],
   "key_dependencies_reasoning": "",
   "key_packages": {
-    "architecture_guidance": {
-      "description": "Plugin architecture skill providing principles, skill patterns, and design guidance for building goal-based marketplace components."
+    "skills.plugin_create": {
+      "description": "Wizards for creating new marketplace components (agents/skills/commands/bundles) with proper structure + standards compliance."
     },
-    "marketplace_inventory": {
-      "description": "Marketplace inventory tool that scans and reports all bundles, agents, commands, skills, and scripts across the marketplace."
-    },
-    "plugin_lifecycle": {
-      "description": "Plugin lifecycle skills (plugin-create, plugin-doctor, plugin-maintain) covering creation wizards, quality diagnosis, and maintenance workflows for marketplace components."
+    "skills.plugin_doctor": {
+      "description": "Marketplace-component quality diagnosis with automated safe fixes and prompted risky fixes - the workhorse of finalize-phase verification-feedback for plugin work."
     }
   },
-  "purpose": "extension",
-  "purpose_reasoning": "Optional meta-bundle that helps authors build new marketplace bundles, skills, agents, and commands.",
-  "responsibility": "Plugin development toolkit for marketplace components covering creation wizards, quality diagnosis (plugin-doctor), inventory scanning, architecture guidance, and component maintenance workflows.",
-  "responsibility_reasoning": "Optional meta-bundle that helps authors build new marketplace bundles, skills, agents, and commands.",
+  "purpose": "library",
+  "purpose_reasoning": "Marketplace bundle of meta-tools for authoring other marketplace components",
+  "responsibility": "Plugin development toolchain for the marketplace itself: create new components (agents/skills/commands/bundles), diagnose quality issues (plugin-doctor), scan marketplace inventory, apply lessons learned, and orchestrate verification-feedback workflows under phase-6-finalize.",
+  "responsibility_reasoning": "source: marketplace/bundles/pm-plugin-development/README.md (Purpose + Architecture + Components sections)",
   "skills_by_profile": {
     "implementation": {
       "defaults": [
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     },
@@ -33,6 +38,14 @@
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     },
@@ -41,10 +54,18 @@
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     }
   },
-  "skills_by_profile_reasoning": "Backfill skills_by_profile for plan-marshall module to resolve phase-4-plan Q-Gate findings 1103b8 and 7e3190 (missing implementation and module_testing profiles)",
+  "skills_by_profile_reasoning": "Batch: marshall-plugin build_system detected; all marketplace bundles host skills/scripts authored under plugin-architecture standards",
   "tips": []
 }

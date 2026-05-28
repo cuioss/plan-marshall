@@ -5,26 +5,31 @@
   "key_dependencies": [],
   "key_dependencies_reasoning": "",
   "key_packages": {
-    "planning_and_traceability": {
-      "description": "Planning and traceability skills for tracking task status, linking specifications to implementation code, and maintaining bidirectional documentation traceability."
+    "skills.requirements_authoring": {
+      "description": "SMART-requirement authoring standards: document structure, ID schemes, integrity rules, traceability."
     },
-    "project_setup": {
-      "description": "Project initialization skill providing standards for setting up requirements directory structure and initial documents in new projects."
-    },
-    "requirements_authoring": {
-      "description": "Requirements authoring skill covering SMART principles, document structure, integrity, and traceability for specification documents."
+    "skills.traceability": {
+      "description": "Bidirectional traceability between requirements, specifications, and implementation code."
     }
   },
-  "purpose": "extension",
-  "purpose_reasoning": "Optional requirements engineering bundle activated when projects need traceable specifications.",
-  "responsibility": "Requirements engineering standards covering specification authoring, planning, traceability between docs and code, and project initialization templates.",
-  "responsibility_reasoning": "Optional requirements engineering bundle activated when projects need traceable specifications.",
+  "purpose": "library",
+  "purpose_reasoning": "Marketplace bundle of requirements/spec/traceability skills; no runtime entrypoint",
+  "responsibility": "Requirements engineering bundle covering SMART requirements authoring, specification structure, project setup, planning documentation, bidirectional traceability between requirements/specs/code, and the requirements triage extension.",
+  "responsibility_reasoning": "source: marketplace/bundles/pm-requirements/README.md (Overview + Skills sections)",
   "skills_by_profile": {
     "implementation": {
       "defaults": [
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     },
@@ -33,6 +38,14 @@
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     },
@@ -41,10 +54,18 @@
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     }
   },
-  "skills_by_profile_reasoning": "Backfill skills_by_profile for plan-marshall module to resolve phase-4-plan Q-Gate findings 1103b8 and 7e3190 (missing implementation and module_testing profiles)",
+  "skills_by_profile_reasoning": "Batch: marshall-plugin build_system detected; all marketplace bundles host skills/scripts authored under plugin-architecture standards",
   "tips": []
 }

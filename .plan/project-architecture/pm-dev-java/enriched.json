@@ -5,26 +5,34 @@
   "key_dependencies": [],
   "key_dependencies_reasoning": "",
   "key_packages": {
-    "cdi_and_quarkus": {
-      "description": "CDI and Quarkus skills covering injection patterns, scopes, producers, observers, native-image support, and GraalVM reflection configuration."
+    "skills.java_core": {
+      "description": "Core Java patterns: modern language features, performance, idioms used as the baseline for all java-domain skills."
     },
-    "java_core_and_quality": {
-      "description": "Core Java skills covering modern language features, null-safety with JSpecify, Lombok patterns, code maintenance, and JavaDoc documentation standards."
+    "skills.java_quarkus": {
+      "description": "Quarkus-specific CDI standards: @QuarkusTest, native-image support, GraalVM reflection configuration."
     },
-    "junit_testing": {
-      "description": "JUnit 5 testing skills covering AAA structure, integration tests with Failsafe, Weld CDI testing, and Maven profile management."
+    "skills.junit_core": {
+      "description": "JUnit 5 unit testing patterns: AAA structure, test organization, coverage targets."
     }
   },
-  "purpose": "extension",
-  "purpose_reasoning": "Optional Java domain extension activated for Maven/Gradle Java modules.",
-  "responsibility": "Java development standards covering core language patterns, JSpecify null-safety, Lombok, CDI/Quarkus, JUnit 5 testing, JavaDoc, and Maven profile management with verification and coverage agents.",
-  "responsibility_reasoning": "Optional Java domain extension activated for Maven/Gradle Java modules.",
+  "purpose": "library",
+  "purpose_reasoning": "Marketplace bundle of Java domain skills + Maven-profile management; no runtime entrypoint",
+  "responsibility": "Comprehensive Java development knowledge base covering core patterns, null safety (JSpecify), Lombok, CDI/Quarkus, JUnit 5 unit & integration testing, JavaDoc, maintenance prioritization, Maven profile classification, and the Java triage extension.",
+  "responsibility_reasoning": "source: marketplace/bundles/pm-dev-java/README.md (Purpose + Architecture sections)",
   "skills_by_profile": {
     "implementation": {
       "defaults": [
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     },
@@ -33,6 +41,14 @@
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     },
@@ -41,10 +57,18 @@
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     }
   },
-  "skills_by_profile_reasoning": "Backfill skills_by_profile for plan-marshall module to resolve phase-4-plan Q-Gate findings 1103b8 and 7e3190 (missing implementation and module_testing profiles)",
+  "skills_by_profile_reasoning": "Batch: marshall-plugin build_system detected; all marketplace bundles host skills/scripts authored under plugin-architecture standards",
   "tips": []
 }
