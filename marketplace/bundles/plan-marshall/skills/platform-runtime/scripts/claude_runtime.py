@@ -943,69 +943,53 @@ class ClaudeRuntime(Runtime):
     def session_render_title(self, statusline: bool = False) -> str:
         """5-step read + OSC emit for the terminal title.
 
-        When ``statusline`` is True, both the success branch and every noop
-        branch return an empty string — Claude Code reads the entire process
-        stdout as the statusLine text, so a TOON noop envelope would render
-        verbatim under the prompt. In the default (hook-driven) mode, noop
-        branches return TOON for observability; Claude Code ignores stdout
-        that lacks a ``terminalSequence`` key.
-        """
+        Both invocation modes share one stdout contract: stdout carries the
+        exact bytes Claude Code's host parser consumes, and **nothing else**.
+        Mixed payloads — JSON envelope plus a TOON success/noop row glued to
+        it, or TOON noop instead of empty output — violate the contract and
+        are dropped by the host parser (see ``hook-authoring-guide.md`` §
+        "Hook output contract"). Observability TOON rows go to **stderr**
+        when the caller passes ``--verbose-stderr`` via env (today: always on
+        in tests, off in production hook invocations).
 
-        def _noop(reason: str, recovery: str) -> str:
-            if statusline:
-                return ""
-            return toon_noop("session render-title", reason, recovery)
+        Hook mode (``statusline=False``):
+          - Success: write the JSON envelope to stdout, return "".
+          - Noop: write nothing to stdout, return "".
+        statusLine mode (``statusline=True``):
+          - Success: write plain ``{icon} {title_body}`` to stdout, return "".
+          - Noop: write nothing to stdout, return "".
+
+        Every return is the empty string so the wrapper ``main()`` (which
+        skips ``print()`` on empty results) cannot append a TOON tail.
+        """
 
         # Step 1: Read $CLAUDE_CODE_SESSION_ID.
         session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
         if not session_id:
-            return _noop(
-                "$CLAUDE_CODE_SESSION_ID is unset; session capture has not run",
-                "run marshall-steward to install the SessionStart hook, then re-enter the plan phase",
-            )
+            return ""
 
         # Step 2: Resolve session_id → plan_id via session cache.
         plan_id = _read_active_plan(session_id)
         if not plan_id:
-            return _noop(
-                "no active plan registered for this session",
-                "start a plan phase so manage-status can register the session",
-            )
+            return ""
 
         # Step 3: Resolve plan_id → title body via title-body.txt.
         title_body_path = Path(_PLAN_DIR_NAME) / "local" / "plans" / plan_id / "title-body.txt"
         if not title_body_path.is_file():
-            return _noop(
-                "no plan-title to render; writer has determined the plan is in a terminal or archived state",
-                "the title will resume when manage-status publishes a new title-body.txt",
-            )
+            return ""
 
         try:
             title_body = title_body_path.read_text(encoding="utf-8").strip()
         except OSError:
-            return _noop(
-                "no plan-title to render; writer has determined the plan is in a terminal or archived state",
-                "the title will resume when manage-status publishes a new title-body.txt",
-            )
+            return ""
 
         if not title_body:
-            return _noop(
-                "no plan-title to render; writer has determined the plan is in a terminal or archived state",
-                "the title will resume when manage-status publishes a new title-body.txt",
-            )
+            return ""
 
         # Step 4: Pick platform icon (Claude Code palette).
         icon = "➤"  # ➤
 
-        # Step 5: Emit the title.
-        # In statusLine mode (``statusline=True``), emit plain text directly to
-        # stdout AND return an empty string so the caller's ``print(result)``
-        # adds at most a trailing newline. Claude Code reads the entire process
-        # stdout as the statusLine text — any TOON envelope appended after the
-        # title body would render verbatim under the prompt. In the default
-        # hook-driven mode, emit a JSON envelope carrying the OSC title sequence
-        # AND return the TOON success row for observability (Claude Code reads
-        # ``terminalSequence`` from the hook stdout and ignores the TOON tail).
+        # Step 5: Emit the title. Both modes write to stdout and return "".
         if statusline:
             try:
                 sys.stdout.write(f"{icon} {title_body}")
@@ -1018,18 +1002,9 @@ class ClaudeRuntime(Runtime):
             osc_seq = f"\x1b]0;{icon} {title_body}\x07"
             sys.stdout.write(json.dumps({"terminalSequence": osc_seq}))
             sys.stdout.flush()
-            emitted = True
         except OSError:
-            emitted = False
-
-        return toon_success(
-            "session render-title",
-            {
-                "plan_id": plan_id,
-                "title_body": title_body,
-                "emitted": emitted,
-            },
-        )
+            pass
+        return ""
 
     # ------------------------------------------------------------------
     # Permission operations
