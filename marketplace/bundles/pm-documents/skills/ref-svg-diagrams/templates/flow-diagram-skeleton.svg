@@ -84,7 +84,8 @@
   <!-- BOTTOM TRACK (track B) — full width                           -->
   <!-- ============================================================ -->
   <line class="track" x1="110" y1="270" x2="920" y2="270"/>
-  <line class="track" x1="920" y1="270" x2="1060" y2="270" marker-end="url(#arrow)"/>
+  <line class="track" x1="920" y1="270" x2="960" y2="270"/>
+  <line class="track" x1="1060" y1="270" x2="1080" y2="270" marker-end="url(#arrow)"/>
 
   <!-- Stage D — terminal -->
   <rect class="stage" x="960" y="240" width="100" height="60" rx="6" ry="6"/>

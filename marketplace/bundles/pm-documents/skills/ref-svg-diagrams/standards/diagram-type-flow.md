@@ -73,7 +73,7 @@ This is the design technique that elevates a flow diagram beyond a generic "boxe
 
 ### Stage labels
 
-- **Header (event / process name)** — above the stage box, `15 px / 600 weight / sans-serif`, centred on the stage's x-coordinate.
+- **Header (event / process name)** — above the stage box, `13 px / 600 weight / sans-serif`, centred on the stage's x-coordinate. (The 13 px size keeps the header from overflowing the standard 120 × 60 stage box; the visual-language `15 px` header size is reserved for column headers in block diagrams, which sit above wider boxes.)
 - **Sub-detail (concrete content)** — below the stage box, `11 px italic`, centred. Use sparingly — only when the stage's label alone doesn't communicate the role.
 
 ### Track labels
