@@ -341,7 +341,7 @@ Run verification commands without modifying files.
 
       Parse the `TOON` output. Use the `rewritten_command` value as the command to execute. When `worktree_path` is empty (main-checkout flow), skip the helper and execute the raw `step.target`.
 
-   b. Execute the resulting command with a Bash timeout of **at least 600000ms (10 minutes)** — verification commands routinely include `quality-gate`, `verify`, and `coverage` invocations that exceed default timeouts. The 10-minute floor matches `CLAUDE.md` § Build Commands.
+   b. Execute the resulting command with a Bash timeout derived from the architecture-resolved canonical envelope. See `plan-marshall:dev-agent-behavior-rules` § "Bash: Timeout from architecture-resolved canonical command" for the authoritative rule: read `bash_timeout_seconds` and `execution_tier` from the resolved TOON, pass `timeout: bash_timeout_seconds * 1000` when `execution_tier=per_task`, and hand off to the orchestrator when `execution_tier=orchestrator`. The 600000ms floor still applies to ad-hoc invocations that do not flow through architecture resolve, and matches `CLAUDE.md` § Build Commands.
 
    c. On `injected: true`, emit the standard auto-injection work-log entry:
 

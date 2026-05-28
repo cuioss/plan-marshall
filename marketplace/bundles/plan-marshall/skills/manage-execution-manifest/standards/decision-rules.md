@@ -162,6 +162,33 @@ When `ci_provider` is neither `github` nor `gitlab`, OR `default:automated-revie
 
 **Safety-net error path**: The function still has a non-`None` return contract (`str | None`) and the caller (`cmd_compose`) still translates a non-`None` return into a `bot_enforcement_violation` error TOON. In current code this branch is unreachable — the guard either no-ops (returns `None`) or remediates and returns `None`. The branch is retained as a hook for any future logic that detects a non-remediable violation (e.g., a malformed `phase_6_steps` list), so the legacy `bot-enforcement guard fired` log line and error TOON shape remain documented in the codebase even though they are not exercised by the current control flow.
 
+## execution_tier Routing
+
+**Type**: Composition-time per-task routing pass. Runs *after* the seven-row matrix has produced the body's `phase_5.verification_steps` and `phase_6.steps`, *before* the bot-enforcement guard. Mutates both the manifest body and the plan's `TASK-*.json` files.
+
+**Inputs** (per task):
+
+| Input | Source | Type |
+|-------|--------|------|
+| `verification.commands` | `{plan_dir}/tasks/TASK-*.json` | list[string] |
+| Resolve TOON | `architecture resolve --command {verb} --module {module}` (subprocessed via the executor) | dict — see [the augmented resolve contract](../../manage-architecture/standards/resolve-command.md) |
+
+**Routing predicate** (per command):
+
+- **`execution_tier == 'orchestrator'`**: the command's adaptive Bash timeout has crossed the 600s host ceiling. The composer maps the build verb to the matching phase-5 step ID (`quality-gate → default:quality_check`, `verify` / `module-tests → default:build_verify`, `coverage → default:coverage_check`), appends it (de-duped) to `phase_5.verification_steps`, and drops the command from the task's `verification.commands`. A task whose entire `verification.commands` list routes to orchestrator ends up with an empty list — that is the correct "all orchestrator" signal.
+- **`execution_tier == 'per_task'`**: the command fits inside the Bash ceiling. The composer writes `bash_timeout_seconds` into the task's `verification` dict alongside `commands` so the dispatched sub-agent reads the numeric timeout directly. When a task has multiple `per_task` commands, the maximum `bash_timeout_seconds` wins (the sub-agent honours the most-demanding command).
+- **No `execution_tier` field** (non-build executable — raw shell, `grep`, `manage-*` notation): the command stays in the task and no `bash_timeout_seconds` annotation is added. Today's behaviour is preserved.
+
+**Idempotence**: every compose call re-derives the routing from the live `architecture resolve` output. Re-composing after a tier shift converges deterministically — orchestrator commands stay pruned, `bash_timeout_seconds` is overwritten when its value changes, and the stale annotation is stripped when no `per_task` commands survive.
+
+**Decision log line** (emitted on every compose, regardless of mutation count):
+
+```
+(plan-marshall:manage-execution-manifest:compose) execution_tier routing — mutated_tasks={N}, phase_5.verification_steps={list}
+```
+
+**Cross-references**: `manage-architecture/standards/resolve-command.md` (the four-field augmented resolve TOON and the ≈600K-token re-dispatch failure mode that motivated it); `dev-agent-behavior-rules` (the sub-agent rule that consumes `bash_timeout_seconds`).
+
 ## Role-Field Intersection
 
 Rows 2, 3, 5, and 6 intersect the `phase_5_candidates` list against a set of canonical roles (`{quality-gate}`, `{module-tests}`, `{quality-gate, module-tests}`) rather than against literal step IDs. The mechanism is structural: each phase-5 step standards file under `marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/` declares its role in YAML frontmatter (e.g., `role: quality-gate` on `quality_check.md`, `role: module-tests` on `build_verify.md`, `role: coverage` on `coverage_check.md`). At compose time the composer resolves each candidate step ID to its source file and reads the `role:` value; intersection is `candidate_role ∈ {target_role, ...}` rather than `candidate_id ∈ {literal_id, ...}`.

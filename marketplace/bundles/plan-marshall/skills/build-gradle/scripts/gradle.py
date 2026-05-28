@@ -33,7 +33,7 @@ from _build_coverage_report import create_coverage_report_handler
 from _gradle_cmd_discover import discover_gradle_modules
 from _gradle_cmd_find_project import cmd_find_project
 from _gradle_cmd_parse import parse_log
-from _gradle_execute import cmd_run
+from _gradle_execute import _CONFIG, cmd_run
 from _markers_search import cmd_search_markers
 
 # --- Tool-specific configuration inlined from former wrapper files ---
@@ -79,6 +79,7 @@ def main() -> int:
             check_warnings_handler=cmd_check_warnings,
             discover_handler=discover_gradle_modules,
             discover_help='Discover Gradle modules',
+            run_config_key_config=_CONFIG,
             extra_register_fns=[
                 _register_find_project,
                 lambda sp: add_search_markers_subparser(sp, cmd_search_markers, default_extensions='.java,.kt'),

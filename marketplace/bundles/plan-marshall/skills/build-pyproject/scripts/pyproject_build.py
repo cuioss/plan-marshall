@@ -32,7 +32,7 @@ from _build_cli import (
 from _build_coverage_report import create_coverage_report_handler
 from _pyproject_cmd_discover import discover_python_modules
 from _pyproject_cmd_parse import parse_log
-from _pyproject_execute import cmd_run
+from _pyproject_execute import _CONFIG, cmd_run
 
 # --- Tool-specific configuration inlined from former wrapper files ---
 
@@ -63,6 +63,7 @@ def main() -> int:
             check_warnings_handler=cmd_check_warnings,
             discover_handler=discover_python_modules,
             discover_help='Discover Python modules',
+            run_config_key_config=_CONFIG,
         ),
     )
 

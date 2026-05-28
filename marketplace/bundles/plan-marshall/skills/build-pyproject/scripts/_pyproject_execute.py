@@ -24,6 +24,7 @@ from _build_execute import CaptureStrategy
 from _build_execute import detect_wrapper as _detect_wrapper
 from _build_execute_factory import (
     ExecuteConfig,
+    compute_command_key,
     create_execute_handlers,
     default_build_command_fn,
     default_command_key_fn,
@@ -155,8 +156,7 @@ def execute_direct(
 def cmd_run(args) -> int:
     project_dir = getattr(args, 'project_dir', '.')
     command_args = args.command_args
-    key_suffix = _CONFIG.command_key_fn(command_args)
-    command_key = f'{_CONFIG.tool_name}:{key_suffix}'
+    command_key = compute_command_key(_CONFIG, command_args)
     timeout_seconds = getattr(args, 'timeout', None) or _CONFIG.default_timeout
     result = execute_direct(
         args=command_args,

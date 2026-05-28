@@ -123,6 +123,21 @@ class ExecuteConfig:
     E.g., npm uses this to add command_type based on args."""
 
 
+def compute_command_key(config: ExecuteConfig, command_args: str) -> str:
+    """Compute the canonical run-config key for a build invocation.
+
+    Returns ``f'{config.tool_name}:{config.command_key_fn(command_args)}'`` —
+    the exact same key that ``cmd_run`` constructs at execute time (see
+    ``create_execute_handlers.cmd_run`` below). Exposed as a pure helper so
+    callers outside the execute path (e.g., the ``run-config-key`` CLI
+    subcommand on each build skill, ``architecture resolve``'s adaptive
+    timeout lookup) can derive the canonical key without re-implementing
+    the construction and risking drift between learning and lookup.
+    """
+    key_suffix = config.command_key_fn(command_args)
+    return f'{config.tool_name}:{key_suffix}'
+
+
 def create_execute_handlers(
     config: ExecuteConfig,
     parse_log_fn: Callable,
@@ -186,8 +201,7 @@ def create_execute_handlers(
     def cmd_run(args) -> int:
         project_dir = getattr(args, 'project_dir', '.')
         command_args = args.command_args
-        key_suffix = config.command_key_fn(command_args)
-        command_key = f'{config.tool_name}:{key_suffix}'
+        command_key = compute_command_key(config, command_args)
         timeout_seconds = getattr(args, 'timeout', None) or config.default_timeout
 
         # Optional env_vars support

@@ -247,6 +247,77 @@ def add_discover_subparser(subparsers, discover_fn, *, help_text: str = 'Discove
     return discover_parser
 
 
+def add_run_config_key_subparser(subparsers, config, *, help_text: str = 'Compute canonical run-config key for a given command args string'):
+    """Add a 'run-config-key' subparser that prints the canonical run-config key.
+
+    Returns TOON with three fields:
+
+    * ``build_tool`` — the build skill's ``tool_name`` (e.g. ``maven``,
+      ``python``, ``gradle``, ``npm``).
+    * ``key_suffix`` — output of ``config.command_key_fn(command_args)``
+      (the part after the colon).
+    * ``command_key`` — the full key ``{build_tool}:{key_suffix}`` produced
+      by ``compute_command_key(config, command_args)``.
+
+    The handler reuses the same ``compute_command_key`` helper that
+    ``cmd_run`` uses at execute time, so there is exactly one source of
+    truth for the canonical key. Consumers of ``architecture resolve``
+    use this subcommand to look up the adaptive-timeout entry without
+    re-implementing the key construction.
+
+    Args:
+        subparsers: argparse subparsers object.
+        config: The build skill's ExecuteConfig instance.
+        help_text: Help text for the subparser.
+
+    Returns:
+        The created run-config-key subparser.
+    """
+    from _build_execute_factory import compute_command_key as _compute_command_key
+
+    key_parser = subparsers.add_parser('run-config-key', help=help_text, allow_abbrev=False)
+    key_parser.add_argument(
+        '--command-args',
+        dest='command_args',
+        required=True,
+        help='Canonical command args string (e.g., "verify", "verify plan-marshall")',
+    )
+    key_parser.add_argument(
+        '--format',
+        choices=['toon', 'json'],
+        default='toon',
+        help='Output format (default: toon)',
+    )
+
+    def _cmd_run_config_key(args) -> int:
+        key_suffix = config.command_key_fn(args.command_args)
+        command_key = _compute_command_key(config, args.command_args)
+        result = {
+            'status': 'success',
+            'build_tool': config.tool_name,
+            'key_suffix': key_suffix,
+            'command_key': command_key,
+        }
+        output_format = getattr(args, 'format', 'toon')
+        if output_format == 'json':
+            import json as _json
+
+            print(_json.dumps(result, indent=2))
+        else:
+            # Use the canonical generic TOON serializer rather than
+            # ``format_toon``: the latter is build-result-specific and silently
+            # drops keys outside its CORE_FIELDS/EXTRA_FIELDS allow-list (e.g.
+            # ``build_tool``, ``key_suffix``, ``command_key``), which would
+            # collapse our payload to just ``status: success``.
+            from toon_parser import serialize_toon as _serialize_toon
+
+            print(_serialize_toon(result))
+        return 0
+
+    key_parser.set_defaults(func=_cmd_run_config_key)
+    return key_parser
+
+
 def add_search_markers_subparser(subparsers, search_markers_fn, *, default_extensions: str = '.java'):
     """Add standard 'search-markers' subparser for OpenRewrite TODO markers.
 
@@ -287,6 +358,7 @@ def register_standard_subparsers(
     coverage_handler: Callable | None = None,
     coverage_help: str = 'Parse coverage report',
     check_warnings_handler: Callable | None = None,
+    run_config_key_config=None,
     extra_register_fns: list[Callable] | None = None,
 ) -> list[Callable]:
     """Build a list of subparser registration functions from declarative config.
@@ -308,6 +380,11 @@ def register_standard_subparsers(
         coverage_handler: Handler for 'coverage-report' subcommand.
         coverage_help: Help text for coverage subparser.
         check_warnings_handler: Handler for 'check-warnings' subcommand.
+        run_config_key_config: When non-None, an ExecuteConfig instance that
+            registers the 'run-config-key' subcommand exposing the canonical
+            run-config key construction. The same config object that
+            cmd_run uses MUST be passed so the exposed key matches the
+            persisted key exactly (round-trip property).
         extra_register_fns: Additional registration functions for tool-specific subcommands.
 
     Returns:
@@ -363,6 +440,13 @@ def register_standard_subparsers(
             add_discover_subparser(subparsers, _h, help_text=_ht)
 
         fns.append(_reg_disc)
+
+    if run_config_key_config is not None:
+
+        def _reg_rck(subparsers, _cfg=run_config_key_config):
+            add_run_config_key_subparser(subparsers, _cfg)
+
+        fns.append(_reg_rck)
 
     return fns
 

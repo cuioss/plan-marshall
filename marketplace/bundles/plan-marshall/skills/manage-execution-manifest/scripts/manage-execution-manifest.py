@@ -19,6 +19,7 @@ Usage:
 import argparse
 import fnmatch
 import json
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -1101,6 +1102,312 @@ def _validate_automated_review_placement(phase_6_steps: list[str]) -> str | None
 
 
 # =============================================================================
+# execution_tier Routing (per-task verification command classification)
+# =============================================================================
+#
+# Each plan task carries a ``verification.commands`` list whose entries are
+# already in resolved form — they are the exact strings dispatched at
+# phase-5-execute time. The composer classifies each command via
+# ``architecture resolve`` to obtain the four ``execution_tier`` fields
+# emitted by that script:
+#
+# * ``execution_tier == 'orchestrator'`` — the command's adaptive bash
+#   timeout has exceeded the host platform's 600s Bash-tool ceiling, so the
+#   command MUST run from orchestrator tier rather than a sub-agent's Bash
+#   call. The composer maps the build verb (``quality-gate`` / ``verify`` /
+#   ``module-tests`` / ``coverage``) to the matching phase-5 step ID,
+#   appends it (deduped) to ``phase_5.verification_steps``, and removes the
+#   command from the task's verification list. The task may end up with an
+#   empty ``verification.commands`` list if every command routed to
+#   orchestrator — that is the correct outcome.
+# * ``execution_tier == 'per_task'`` — the command fits inside the Bash
+#   ceiling. The composer writes ``bash_timeout_seconds`` into the
+#   verification entry alongside ``commands`` so the dispatched sub-agent
+#   reads the numeric timeout directly. The command itself stays in the
+#   task.
+# * No ``execution_tier`` field in the resolve TOON — non-build executable
+#   (raw shell, ``grep``, ``manage-*`` notation). Behave as today: leave
+#   the command in the task, no ``bash_timeout_seconds`` annotation.
+#
+# Re-entrant by construction: every invocation re-derives the routing from
+# the live ``architecture resolve`` output and rewrites both the manifest's
+# ``phase_5.verification_steps`` (de-duped) and the task files (per-task
+# ``bash_timeout_seconds`` re-written, orchestrator commands re-pruned).
+# A previous compose that left a task with empty ``verification.commands``
+# is re-noted but the empty state is the canonical "all orchestrator"
+# signal.
+
+# Build verb → phase-5 step ID mapping. The four canonical verbs are the
+# ones registered by every build skill's ``_CONFIG`` (verify / quality-gate /
+# coverage / module-tests). Verbs not in this map are left to the consumer
+# (the composer skips routing for unmapped verbs, preserving today's
+# behaviour).
+_VERB_TO_PHASE_5_STEP: dict[str, str] = {
+    'quality-gate': 'default:quality_check',
+    'verify': 'default:build_verify',
+    'module-tests': 'default:build_verify',
+    'coverage': 'default:coverage_check',
+}
+
+
+def _parse_verification_command(cmd: str) -> tuple[str, str] | None:
+    """Extract ``(verb, command_args)`` from a Bucket B build verification command.
+
+    Accepts the canonical shape::
+
+        python3 .plan/execute-script.py {build_notation} run --command-args "{args}"
+
+    where ``{args}`` typically reads as ``"<verb> [module]"`` (e.g.
+    ``"verify plan-marshall"``). Returns ``(verb, command_args)`` on a
+    successful parse, ``None`` for any non-build invocation (raw shell,
+    grep, Bucket A ``manage-*`` notations, malformed quoting, etc.). The
+    verb is always the first whitespace-separated token of ``command_args``.
+
+    The parse is intentionally permissive on the trailing module/profile
+    arguments — only ``verb`` is needed to map to a phase-5 step ID; the
+    ``command_args`` payload is forwarded verbatim to ``architecture
+    resolve`` when the composer subprocesses it.
+    """
+    if not cmd:
+        return None
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        return None
+    # Locate the executor token (allow ``python3`` / ``python`` prefix variations).
+    script_index: int | None = None
+    for i, tok in enumerate(tokens):
+        if tok.endswith('.plan/execute-script.py') or tok.endswith('execute-script.py'):
+            script_index = i
+            break
+    if script_index is None:
+        return None
+    # Notation immediately follows the script path; the four Bucket B build
+    # notations are the only ones that emit execution_tier fields on resolve.
+    notation_index = script_index + 1
+    if notation_index >= len(tokens):
+        return None
+    notation = tokens[notation_index]
+    if not notation.startswith('plan-marshall:build-'):
+        return None
+    # Subcommand ``run``.
+    sub_index = notation_index + 1
+    if sub_index >= len(tokens) or tokens[sub_index] != 'run':
+        return None
+    # ``--command-args`` (accept ``--command-args VAL`` and ``--command-args=VAL``).
+    command_args: str | None = None
+    i = sub_index + 1
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok == '--command-args':
+            if i + 1 < len(tokens):
+                command_args = tokens[i + 1]
+            break
+        if tok.startswith('--command-args='):
+            command_args = tok[len('--command-args=') :]
+            break
+        i += 1
+    if command_args is None or not command_args.strip():
+        return None
+    verb = command_args.strip().split()[0]
+    return verb, command_args
+
+
+def _verb_to_phase_5_step(verb: str) -> str | None:
+    """Return the phase-5 step ID for a build verb, or ``None`` when unmapped."""
+    return _VERB_TO_PHASE_5_STEP.get(verb)
+
+
+def _resolve_command_tier(cmd: str, plan_id: str) -> dict[str, Any] | None:
+    """Subprocess ``architecture resolve`` for a verification command's verb.
+
+    Calls the executor with ``--audit-plan-id`` so resolve runs in the
+    correct project_dir context, parses the TOON output via ``parse_toon``,
+    and returns the resolve dict. Returns ``None`` on any failure — the
+    composer treats ``None`` as "non-build / unresolvable" and leaves the
+    command unrouted.
+
+    The composer subprocesses ``architecture resolve`` rather than
+    importing its internals because the resolve flow is the canonical
+    cross-bundle entry point per the "Build commands: resolve via
+    architecture" hard rule, and the augmented TOON shape (the four
+    ``execution_tier`` fields) is exactly the resolve script's
+    contract — re-deriving them here would duplicate logic.
+    """
+    parsed = _parse_verification_command(cmd)
+    if parsed is None:
+        return None
+    verb, command_args = parsed
+    # Module: second whitespace-separated token of command_args, when present.
+    parts = command_args.strip().split()
+    module = parts[1] if len(parts) >= 2 else None
+
+    executor = _resolve_executor()
+    if executor is None:
+        return None
+    argv: list[str] = [
+        sys.executable,
+        str(executor),
+        'plan-marshall:manage-architecture:architecture',
+        'resolve',
+        '--command',
+        verb,
+        '--audit-plan-id',
+        plan_id,
+    ]
+    if module:
+        argv.extend(['--module', module])
+    try:
+        proc = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return None
+    if proc.returncode != 0 or not proc.stdout:
+        return None
+    try:
+        parsed_toon = parse_toon(proc.stdout)
+    except Exception:
+        return None
+    if not isinstance(parsed_toon, dict) or parsed_toon.get('status') != 'success':
+        return None
+    return parsed_toon
+
+
+def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> int:
+    """Walk plan tasks; route verification commands by ``execution_tier``.
+
+    For each ``TASK-*.json`` under ``{plan_dir}/tasks/``:
+
+    - Skip the task when it has no ``verification.commands`` list.
+    - Classify each command via ``_resolve_command_tier``.
+    - ``orchestrator`` → map the verb to its phase-5 step ID, append
+      (de-duped) to ``body['phase_5']['verification_steps']``, and drop the
+      command from the task's ``verification.commands``.
+    - ``per_task`` → set ``verification.bash_timeout_seconds`` on the task
+      (overwriting any prior value so re-compose is deterministic). When
+      multiple ``per_task`` commands share a task, the maximum
+      ``bash_timeout_seconds`` wins — the dispatched sub-agent honours the
+      most-demanding command.
+    - No tier (non-build / unresolvable) → leave the command in place, no
+      annotation.
+
+    The function mutates ``body`` in place and rewrites each task's JSON
+    file when its verification dict changed. Returns the count of task
+    files mutated for downstream logging.
+    """
+    tasks_dir = get_plan_dir(plan_id) / 'tasks'
+    if not tasks_dir.is_dir():
+        return 0
+
+    phase_5 = body.setdefault('phase_5', {})
+    verification_steps = phase_5.setdefault('verification_steps', [])
+    if not isinstance(verification_steps, list):
+        verification_steps = list(verification_steps)
+        phase_5['verification_steps'] = verification_steps
+    # De-dup helper: track membership for O(1) lookup while preserving order.
+    seen_steps: set[str] = set(verification_steps)
+
+    mutated_tasks = 0
+    for task_path in sorted(tasks_dir.glob('TASK-*.json')):
+        try:
+            task = read_json(task_path, default=None)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(task, dict):
+            continue
+        verification = task.get('verification')
+        if not isinstance(verification, dict):
+            continue
+        commands = verification.get('commands')
+        if not isinstance(commands, list) or not commands:
+            continue
+
+        kept_commands: list[Any] = []
+        per_task_timeout: int | None = None
+        changed = False
+        for raw in commands:
+            if not isinstance(raw, str):
+                kept_commands.append(raw)
+                continue
+            resolve_toon = _resolve_command_tier(raw, plan_id)
+            tier = resolve_toon.get('execution_tier') if isinstance(resolve_toon, dict) else None
+            if tier == 'orchestrator':
+                parsed = _parse_verification_command(raw)
+                if parsed is None:
+                    # Defensive: classifier said orchestrator but we cannot
+                    # extract the verb. Leave the command in place so the
+                    # mapping mismatch is observable in the next compose.
+                    kept_commands.append(raw)
+                    continue
+                verb, _ = parsed
+                step_id = _verb_to_phase_5_step(verb)
+                if step_id is None:
+                    # Unmapped verb (e.g. a custom build target). Leave the
+                    # command per-task so the existing flow handles it.
+                    kept_commands.append(raw)
+                    continue
+                if step_id not in seen_steps:
+                    verification_steps.append(step_id)
+                    seen_steps.add(step_id)
+                changed = True
+                continue
+            if tier == 'per_task':
+                bash_timeout = resolve_toon.get('bash_timeout_seconds') if isinstance(resolve_toon, dict) else None
+                if isinstance(bash_timeout, int):
+                    if per_task_timeout is None or bash_timeout > per_task_timeout:
+                        per_task_timeout = bash_timeout
+                kept_commands.append(raw)
+                continue
+            # No tier or unresolvable → leave the command in place.
+            kept_commands.append(raw)
+
+        if kept_commands != commands:
+            verification['commands'] = kept_commands
+            changed = True
+        # Always write the timeout when at least one per_task command was
+        # classified — repeat composes converge on the same value.
+        existing_timeout = verification.get('bash_timeout_seconds')
+        if per_task_timeout is not None:
+            if existing_timeout != per_task_timeout:
+                verification['bash_timeout_seconds'] = per_task_timeout
+                changed = True
+        else:
+            # No per_task commands survived: strip any stale annotation so
+            # re-composes after a tier shift do not leave the field behind.
+            if 'bash_timeout_seconds' in verification:
+                del verification['bash_timeout_seconds']
+                changed = True
+
+        if changed:
+            task['verification'] = verification
+            task_path.write_text(json.dumps(task, indent=2) + '\n', encoding='utf-8')
+            mutated_tasks += 1
+
+    return mutated_tasks
+
+
+def _log_execution_tier_routing(plan_id: str, mutated_tasks: int, phase_5_steps: list[str]) -> None:
+    """Emit one decision-log entry summarising the execution_tier routing pass.
+
+    Logged regardless of whether any task was mutated so the routing is
+    observable from ``decision.log`` for every compose call. The entry
+    names both the count of touched tasks and the final phase-5 step list
+    so retrospective audits can correlate manifest content with task-file
+    mutations.
+    """
+    message = (
+        '(plan-marshall:manage-execution-manifest:compose) execution_tier routing — '
+        f'mutated_tasks={mutated_tasks}, phase_5.verification_steps={phase_5_steps}'
+    )
+    _emit_decision_log(plan_id, message)
+
+
+# =============================================================================
 # Command Handlers
 # =============================================================================
 
@@ -1247,6 +1554,25 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         if filtered_steps != current_steps:
             body['phase_5']['verification_steps'] = filtered_steps
             docs_only_classifier_fired = True
+
+    # execution_tier routing runs AFTER the docs-only classifier and BEFORE
+    # the bot-enforcement guard. It walks plan tasks, classifies each
+    # ``verification.commands`` entry via ``architecture resolve``, and
+    # branches on ``execution_tier``:
+    #
+    # * ``orchestrator`` → append the mapped phase-5 step ID to
+    #   ``body['phase_5']['verification_steps']`` (de-duped) and drop the
+    #   command from the task's verification list.
+    # * ``per_task`` → write ``bash_timeout_seconds`` into the task's
+    #   verification dict alongside ``commands``.
+    #
+    # Non-build / unresolvable commands pass through unchanged. The pass is
+    # idempotent across re-composes — every call rewrites both the manifest
+    # and the touched task files from the live ``architecture resolve``
+    # output. The adaptive-timeout infrastructure design carries the
+    # recurrence signature and orchestrator-tier rationale.
+    mutated_tasks = _route_task_verification_commands(plan_id, body)
+    _log_execution_tier_routing(plan_id, mutated_tasks, list(body['phase_5'].get('verification_steps', [])))
 
     # Bot-enforcement guard runs AFTER the seven-row matrix and BEFORE manifest
     # persistence. On GitHub/GitLab plans where `automated-review` is missing

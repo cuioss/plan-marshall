@@ -2498,3 +2498,210 @@ def test_marshal_json_phase_5_steps_also_preferred(plan_context):
     manifest = read_manifest('marshal-phase-5')
     assert manifest is not None
     assert set(manifest['phase_5']['verification_steps']) == set(custom_phase_5)
+
+
+# =============================================================================
+# execution_tier Routing Tests (lesson 2026-05-27-20-003)
+# =============================================================================
+#
+# The composer walks plan tasks and classifies each ``verification.commands``
+# entry via ``architecture resolve``. The tests below monkeypatch
+# ``_resolve_command_tier`` to return a synthetic resolve TOON so the routing
+# logic is exercised deterministically without depending on a live
+# ``run-configuration.json`` or the persisted timeout state.
+
+
+def _write_task(plans_root: Path, plan_id: str, number: int, commands: list[str]) -> Path:
+    """Write a minimal TASK-*.json with the supplied verification commands.
+
+    The shape mirrors what phase-4-plan emits: a ``verification`` dict with a
+    ``commands`` list plus the structural ``steps`` array. Only the fields
+    the composer's routing pass reads are populated.
+    """
+    task = {
+        'number': number,
+        'title': f'Task {number}',
+        'status': 'pending',
+        'verification': {'commands': list(commands), 'manual': False},
+        'steps': [],
+    }
+    tasks_dir = plans_root / plan_id / 'tasks'
+    tasks_dir.mkdir(parents=True, exist_ok=True)
+    task_path = tasks_dir / f'TASK-{number:03d}.json'
+    task_path.write_text(json.dumps(task, indent=2) + '\n', encoding='utf-8')
+    return task_path
+
+
+def _read_task(plans_root: Path, plan_id: str, number: int) -> dict:
+    task_path = plans_root / plan_id / 'tasks' / f'TASK-{number:03d}.json'
+    return json.loads(task_path.read_text(encoding='utf-8'))
+
+
+def _make_tier_stub(
+    orchestrator_verbs: set[str] | None = None,
+    per_task_timeout: int = 360,
+) -> Callable[[str, str], dict | None]:
+    """Build a fake ``_resolve_command_tier`` that branches by verb.
+
+    Commands whose verb appears in ``orchestrator_verbs`` resolve to the
+    ``orchestrator`` tier; every other build verb resolves to ``per_task``
+    with the supplied ``bash_timeout_seconds`` (default 360s — comfortably
+    under the 600s ceiling). Non-build commands (the helper's parse
+    returns ``None``) resolve to ``None`` so the composer leaves them
+    untouched.
+    """
+    orch = set(orchestrator_verbs or ())
+
+    def _stub(cmd: str, plan_id: str) -> dict | None:
+        parsed = _mem._parse_verification_command(cmd)
+        if parsed is None:
+            return None
+        verb, _ = parsed
+        if verb in orch:
+            return {
+                'status': 'success',
+                'bash_timeout_seconds': 900,
+                'exceeds_bash_ceiling': True,
+                'execution_tier': 'orchestrator',
+                'hint': 'Exceeds Bash ceiling; orchestrator-tier only',
+            }
+        return {
+            'status': 'success',
+            'bash_timeout_seconds': per_task_timeout,
+            'exceeds_bash_ceiling': False,
+            'execution_tier': 'per_task',
+            'hint': f'Bash timeout={per_task_timeout * 1000}ms',
+        }
+
+    return _stub
+
+
+def test_orchestrator_tier_routes_to_phase_5_and_drops_per_task(plan_context, monkeypatch):
+    """Case (a): a deliverable whose verification resolves to ``orchestrator``
+    appends the mapped phase-5 step ID to ``phase_5.verification_steps`` and
+    removes the command from the task's verification list."""
+    plan_id = 'tier-orchestrator'
+    _write_task(
+        plan_context.plans_dir,
+        plan_id,
+        1,
+        [
+            'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run '
+            '--command-args "verify plan-marshall"',
+        ],
+    )
+    monkeypatch.setattr(_mem, '_resolve_command_tier', _make_tier_stub(orchestrator_verbs={'verify'}))
+
+    result = cmd_compose(
+        _compose_ns(
+            plan_id=plan_id,
+            change_type='feature',
+            scope_estimate='multi_module',
+            affected_files_count=3,
+        )
+    )
+
+    assert result is not None and result['status'] == 'success'
+    manifest = read_manifest(plan_id)
+    assert manifest is not None
+    assert 'default:build_verify' in manifest['phase_5']['verification_steps']
+    task = _read_task(plan_context.plans_dir, plan_id, 1)
+    assert task['verification']['commands'] == []
+    assert 'bash_timeout_seconds' not in task['verification']
+
+
+def test_per_task_tier_annotates_task_with_bash_timeout_seconds(plan_context, monkeypatch):
+    """Case (b): a per_task verification keeps its command and gains a
+    ``bash_timeout_seconds`` annotation derived from the resolve TOON."""
+    plan_id = 'tier-per-task'
+    _write_task(
+        plan_context.plans_dir,
+        plan_id,
+        1,
+        [
+            'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run '
+            '--command-args "module-tests plan-marshall"',
+        ],
+    )
+    monkeypatch.setattr(_mem, '_resolve_command_tier', _make_tier_stub(per_task_timeout=420))
+
+    result = cmd_compose(_compose_ns(plan_id=plan_id, affected_files_count=2))
+
+    assert result is not None and result['status'] == 'success'
+    task = _read_task(plan_context.plans_dir, plan_id, 1)
+    assert len(task['verification']['commands']) == 1
+    assert task['verification']['bash_timeout_seconds'] == 420
+
+
+def test_mixed_tier_routes_to_both_locations(plan_context, monkeypatch):
+    """Case (c): a task with two verification commands — one ``orchestrator``,
+    one ``per_task`` — routes to both locations simultaneously."""
+    plan_id = 'tier-mixed'
+    _write_task(
+        plan_context.plans_dir,
+        plan_id,
+        1,
+        [
+            'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run '
+            '--command-args "verify plan-marshall"',
+            'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run '
+            '--command-args "quality-gate plan-marshall"',
+        ],
+    )
+    monkeypatch.setattr(
+        _mem,
+        '_resolve_command_tier',
+        _make_tier_stub(orchestrator_verbs={'verify'}, per_task_timeout=360),
+    )
+
+    result = cmd_compose(_compose_ns(plan_id=plan_id, affected_files_count=2))
+
+    assert result is not None and result['status'] == 'success'
+    manifest = read_manifest(plan_id)
+    assert manifest is not None
+    assert 'default:build_verify' in manifest['phase_5']['verification_steps']
+    task = _read_task(plan_context.plans_dir, plan_id, 1)
+    # Orchestrator command pruned; per_task command retained.
+    assert len(task['verification']['commands']) == 1
+    assert 'quality-gate' in task['verification']['commands'][0]
+    assert task['verification']['bash_timeout_seconds'] == 360
+
+
+def test_non_build_command_passes_through_unchanged(plan_context, monkeypatch):
+    """Case (d): a non-build verification command (raw shell ``grep``)
+    receives no ``execution_tier`` field from the resolver, so the composer
+    leaves the command in place and adds no annotation."""
+    plan_id = 'tier-non-build'
+    raw = 'grep -nE "TODO" CLAUDE.md'
+    _write_task(plan_context.plans_dir, plan_id, 1, [raw])
+    # ``_resolve_command_tier`` already returns ``None`` for non-build
+    # commands via the existing parse short-circuit — no monkeypatch needed.
+
+    result = cmd_compose(_compose_ns(plan_id=plan_id, affected_files_count=1))
+
+    assert result is not None and result['status'] == 'success'
+    task = _read_task(plan_context.plans_dir, plan_id, 1)
+    assert task['verification']['commands'] == [raw]
+    assert 'bash_timeout_seconds' not in task['verification']
+
+
+def test_duplicate_orchestrator_routings_are_deduped(plan_context, monkeypatch):
+    """Case (e): two tasks routing the same verb to ``orchestrator`` produce
+    a single ``default:build_verify`` entry in ``phase_5.verification_steps``."""
+    plan_id = 'tier-dedupe'
+    same_cmd = (
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run '
+        '--command-args "verify plan-marshall"'
+    )
+    _write_task(plan_context.plans_dir, plan_id, 1, [same_cmd])
+    _write_task(plan_context.plans_dir, plan_id, 2, [same_cmd])
+    monkeypatch.setattr(_mem, '_resolve_command_tier', _make_tier_stub(orchestrator_verbs={'verify'}))
+
+    result = cmd_compose(_compose_ns(plan_id=plan_id, affected_files_count=4))
+
+    assert result is not None and result['status'] == 'success'
+    manifest = read_manifest(plan_id)
+    assert manifest is not None
+    steps = manifest['phase_5']['verification_steps']
+    # default:build_verify appears exactly once.
+    assert steps.count('default:build_verify') == 1
