@@ -118,11 +118,15 @@ class Extension(ExtensionBase):
     # path-segment tokens in the glob. The aggregator resolves multi-extension
     # overlap by comparing specificity values across claiming extensions.
     _CLASSIFY_PATTERNS: tuple[tuple[str, str, int], ...] = (
-        # Production python under any scripts/ directory.
+        # Production python under any scripts/ directory. Both `*/scripts/sub/foo.py`
+        # (deep) and `*/scripts/foo.py` (direct child) variants must match — fnmatch's
+        # `**/scripts/**/*.py` requires a subdirectory after `scripts/`, so the
+        # direct-child pattern is needed alongside.
         ('**/scripts/**/*.py', 'production', 2),
+        ('**/scripts/*.py', 'production', 2),
         ('scripts/**/*.py', 'production', 1),
         ('scripts/*.py', 'production', 1),
-        # Test python under top-level test/ or tests/.
+        # Test python under any test/ or tests/ directory (deep child + direct child).
         ('test/**/*.py', 'test', 1),
         ('tests/**/*.py', 'test', 1),
         ('test/*.py', 'test', 1),
