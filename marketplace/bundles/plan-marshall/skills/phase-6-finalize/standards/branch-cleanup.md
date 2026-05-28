@@ -23,7 +23,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 - Branch name available from references context (`branch` field)
 - The manifest's `phase_6.steps` list has been read in SKILL.md Step 2 (used here for Mode Detection only)
-- `{worktree_path}` and `{main_checkout}` have been resolved at finalize entry (see SKILL.md Step 0). All pre-removal git commands use `git -C {worktree_path}`. Post-removal git commands (after worktree is gone) use `git -C {main_checkout}`. All `ci` invocations identify the worktree via either `--plan-id {plan_id}` (preferred — auto-resolves through `manage-status get-worktree-path`; auto-resolution falls back to the main checkout when `use_worktree=false`, so `--plan-id` keeps working post-removal) or `--project-dir {worktree_path}` / `--project-dir {main_checkout}` (escape hatch / explicit override). The two flags are mutually exclusive.
+- `{worktree_path}` and `{main_checkout}` have been resolved at finalize entry (see SKILL.md Step 0). Consolidated `workflow-integration-git` verbs (`force-push-with-lease`, `switch-and-pull`, `prune-local-and-remote-ref`) resolve the working tree internally via `--plan-id {plan_id}` — no path forwarding required at call sites. All `ci` invocations identify the worktree via either `--plan-id {plan_id}` (preferred — auto-resolves through `manage-status get-worktree-path`; auto-resolution falls back to the main checkout when `use_worktree=false`, so `--plan-id` keeps working post-removal) or `--project-dir {worktree_path}` / `--project-dir {main_checkout}` (escape hatch / explicit override). The two flags are mutually exclusive.
 
 ## Constraints
 
@@ -36,9 +36,9 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Worktree Awareness
 
-Both `{worktree_path}` and `{main_checkout}` were resolved at finalize entry (see SKILL.md Step 0) and are available throughout this workflow. If `worktree_path` is absent (`use_worktree == false`), substitute `{main_checkout}` in every `git -C {worktree_path}` command below — the plan ran directly against the main checkout, so all git work targets it.
+Both `{worktree_path}` and `{main_checkout}` were resolved at finalize entry (see SKILL.md Step 0) and are available throughout this workflow. If `worktree_path` is absent (`use_worktree == false`), the consolidated verbs invoked below (`force-push-with-lease`, `switch-and-pull`, `prune-local-and-remote-ref`) resolve the correct working tree internally via `--plan-id {plan_id}` — no path substitution is required at the call site.
 
-The cleanup ordering — **remove worktree first, then delete branch** — is enforced here at the call site because `git worktree remove` refuses to operate on a worktree that is the cwd of any shell, and the local branch cannot be deleted while still checked out in a worktree. After worktree removal, every git call MUST switch from `git -C {worktree_path}` to `git -C {main_checkout}` because `{worktree_path}` no longer exists on disk.
+The cleanup ordering — **remove worktree first, then delete branch** — is enforced here at the call site because `git worktree remove` refuses to operate on a worktree that is the cwd of any shell, and the local branch cannot be deleted while still checked out in a worktree. The consolidated verbs are designed to be invoked after worktree removal (they target the main checkout); the `worktree-remove` verb handles the worktree removal step before these cleanup verbs run.
 
 See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (path convention, never-edit-main-checkout invariant, cleanup ordering rationale).
 
@@ -249,7 +249,7 @@ Parse the returned TOON and branch on `status`:
     work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: worktree-rebase-to onto {base_branch} produced conflicts in {conflicts} — resolve manually in the worktree (rebase is left in progress) and re-run finalize"
   ```
 
-  Do NOT proceed with force-push, merge, or any cleanup. The conflicted rebase state is intentionally preserved so the user can run `git -C {worktree_path} rebase --continue` or `git -C {worktree_path} rebase --abort` as appropriate.
+  Do NOT proceed with force-push, merge, or any cleanup. The conflicted rebase state is intentionally preserved so the user can resolve conflicts in the worktree and run `git rebase --continue` or `git rebase --abort` as appropriate.
 
 - `status: error` → ABORT cleanup with a fatal error using the returned `error` and `message` fields:
 
@@ -260,11 +260,14 @@ Parse the returned TOON and branch on `status`:
 
   Then return — do NOT proceed with force-push or merge.
 
-On a successful rebase, push the rewritten history to the remote with a lease guard:
+On a successful rebase, push the rewritten history to the remote with a lease guard via the `force-push-with-lease` verb (see `workflow-integration-git` Canonical invocations → `force-push-with-lease`):
 
 ```bash
-git -C {worktree_path} push origin {worktree_branch} --force-with-lease
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow \
+  force-push-with-lease --plan-id {plan_id}
 ```
+
+Parse the TOON output. On `status: rejected` (lease violation — remote moved since last fetch), ABORT cleanup and surface the error. On `status: error`, ABORT cleanup and return the error TOON verbatim to the dispatcher. On `status: success`, continue to the CI wait below.
 
 After the force-push, wait for CI to complete on the rebased branch before proceeding to merge:
 
@@ -338,17 +341,17 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 The worktree must be removed BEFORE executing any post-removal git operations — `git worktree remove` refuses to operate on a worktree that is the current working directory of any shell, and the local branch cannot be deleted while still checked out in a worktree.
 
-The `git_workflow worktree remove` script operates on the main checkout internally and does not rely on the caller's cwd:
+The `worktree-remove` verb operates on the main checkout internally and does not rely on the caller's cwd (see `workflow-integration-git` Canonical invocations → `worktree-remove`):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree remove \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-remove \
   --plan-id {plan_id}
 ```
 
 Parse the TOON output:
 
-- `status: success, action: removed` → continue. From this point forward, every git call MUST use `git -C {main_checkout}` and every `ci` invocation MUST use `--project-dir {main_checkout}`, because `{worktree_path}` no longer exists on disk.
-- `status: success, action: noop` → worktree already gone (possibly manual cleanup), continue with the same `{main_checkout}` rule.
+- `status: success, action: removed` → continue. From this point forward, the consolidated verbs (`switch-and-pull`, `prune-local-and-remote-ref`) and every `ci` invocation MUST use `--project-dir {main_checkout}`, because `{worktree_path}` no longer exists on disk.
+- `status: success, action: noop` → worktree already gone (possibly manual cleanup), continue with the same `{main_checkout}` rule for `ci` invocations.
 - `status: error, error: worktree_remove_failed` → ABORT cleanup. The worktree has uncommitted changes or is otherwise not clean. Log the error:
 
 ```bash
@@ -360,68 +363,56 @@ Then return — do NOT proceed with branch deletion while the worktree still exi
 
 ### Switch to Base Branch, Pull, and Delete Local Branch
 
-All git calls in this section target the main checkout via `git -C {main_checkout}` because the worktree has been removed above.
+All git operations in this section target the main checkout because the worktree has been removed above.
 
 **Uniform local cleanup (both `state == open` and `state == merged`)**:
 
-The `--delete-branch` flag on `pr merge` deletes ONLY the remote branch (via the provider REST API). It does NOT touch the local clone — local branch deletion and base-branch checkout are always the workflow's responsibility and must run here regardless of the prior merge path. After worktree removal, the main checkout may still be on the feature branch and the local feature branch still exists, so switch to the base branch, pull the merge commit, and delete the local feature branch:
+The `--delete-branch` flag on `pr merge` deletes ONLY the remote branch (via the provider REST API). It does NOT touch the local clone — local branch deletion and base-branch checkout are always the workflow's responsibility and must run here regardless of the prior merge path. After worktree removal, the main checkout may still be on the feature branch and the local feature branch still exists.
+
+Switch to the base branch and pull the merge commit via `switch-and-pull` (see `workflow-integration-git` Canonical invocations → `switch-and-pull`):
 
 ```bash
-git -C {main_checkout} checkout {base_branch}
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow \
+  switch-and-pull --plan-id {plan_id} --base {base_branch}
 ```
 
-```bash
-git -C {main_checkout} pull
-```
+Parse the TOON output:
 
-```bash
-git -C {main_checkout} branch -d {head_branch}
-```
+- `status: success` → continue to local branch deletion below.
+- `status: error, error_type: branch_not_found` → base branch not found on remote; log error and abort.
+- `status: error, error_type: merge_conflict` → checkout failed due to uncommitted changes on the main checkout; log error and abort.
+- Any other `status: error` → log error and abort.
 
-After the local feature branch is deleted, delete the plan's own remote-tracking ref. This is the targeted single-ref deletion permitted by the "No broad cleanup" constraint — it removes exactly the one ref this finalize run made stale (by deleting the corresponding remote branch via `pr merge --delete-branch`). The deletion is guarded by a `show-ref` existence check so the `state == merged` re-entry path (where the ref may have been pruned externally) is a graceful no-op.
-
-```bash
-git -C {main_checkout} show-ref --quiet refs/remotes/origin/{head_branch}
-```
-
-```bash
-git -C {main_checkout} update-ref -d refs/remotes/origin/{head_branch}
-```
-
-`update-ref -d` operates directly on the ref database with no implicit prune, no fetch, and no rev-walk — it is the cheapest operation that achieves the goal. `git branch -dr origin/{head_branch}` is not used here because its additional upstream-merged safety checks are unnecessary: the workflow already verified at `pr merge --delete-branch` time that the remote branch is gone.
-
-If `show-ref` returns non-zero (ref already absent — e.g. `state == merged` re-entry, external prune, or a prior finalize run already deleted it), skip the `update-ref` call and log the no-op:
+**Error handling** (checkout or pull failures):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: remote-tracking ref refs/remotes/origin/{head_branch} already absent, skipping update-ref"
+  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: switch-and-pull failed - {error_type}: {message}"
 ```
 
-If `update-ref -d` itself fails (rare — typically a ref-db lock contention) → log a warning and continue. The cleanup gap is detection-friendly (the next finalize run or an invariant check surfaces it), not a hard blocker that should fail the finalize step:
+Delete the local feature branch and prune the now-stale remote-tracking ref via `prune-local-and-remote-ref` (see `workflow-integration-git` Canonical invocations → `prune-local-and-remote-ref`). The verb encapsulates the `show-ref` guard and `update-ref -d` so the remote-tracking ref is only deleted when it exists:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow \
+  prune-local-and-remote-ref --plan-id {plan_id}
+```
+
+Parse the TOON output:
+
+- `status: success` → both local branch and remote-tracking ref deleted.
+- `status: partial` → local branch deleted; remote-tracking ref was already absent (graceful no-op — expected on `state == merged` re-entry or external prune).
+- `status: error, error_type: branch_delete_failed` → log warning and continue (branch may not exist locally, e.g. another process already deleted it).
+- `status: error, error_type: unexpected_ref_error` → log warning and continue (ref-db lock contention; cleanup gap is detection-friendly, not a hard blocker).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: update-ref -d refs/remotes/origin/{head_branch} failed - {error} (continuing; ref left stale)"
+  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: prune-local-and-remote-ref - {error_type}: {message}"
 ```
 
 Notes on the two entry paths:
 
-- **`state == open`** (we just merged this run with `--delete-branch`): the remote branch is already gone. The sequence above performs the local-only cleanup AND prunes the now-stale remote-tracking ref.
-- **`state == merged`** (PR was already merged on a prior run, possibly without `--delete-branch`): the remote branch may still exist. The local cleanup sequence is identical; any leftover remote branch is left as-is and can be cleaned up by a separate workflow if desired. The `show-ref --quiet` guard makes the targeted ref deletion a graceful no-op when the tracking ref is already absent on this re-entry path.
-
-If `git branch -d` fails → log warning (branch may not exist locally, e.g. another process already deleted it):
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: local branch delete failed - {error} (may not exist)"
-```
-
-**Error handling**:
-
-If checkout or pull fails → log error and abort:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: {checkout|pull} failed - {error}"
-```
+- **`state == open`** (we just merged this run with `--delete-branch`): the remote branch is already gone. `prune-local-and-remote-ref` deletes the local branch AND prunes the now-stale remote-tracking ref.
+- **`state == merged`** (PR was already merged on a prior run, possibly without `--delete-branch`): the remote branch may still exist. `prune-local-and-remote-ref` deletes the local branch; the remote-tracking ref may or may not be present — the internal `show-ref` guard produces a `status: partial` no-op when the tracking ref is already absent on this re-entry path.
 
 ### Log Completion (PR Mode)
 
@@ -478,38 +469,45 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 **Only if `{worktree_path}` is set** (from the Worktree Awareness section).
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree remove \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-remove \
   --plan-id {plan_id}
 ```
 
-On `status: error`, log and abort as in PR mode. Do not proceed with branch deletion while the worktree remains. On success, all subsequent git calls MUST use `git -C {main_checkout}`.
+On `status: error`, log and abort as in PR mode. Do not proceed with branch deletion while the worktree remains. On success, the consolidated verbs (`switch-and-pull`, `prune-local-and-remote-ref`) and any `ci` invocations MUST use `--project-dir {main_checkout}`.
 
 ### Switch to Base Branch, Pull, and Clean Up
 
-```bash
-git -C {main_checkout} checkout {base_branch}
-```
+Switch to the base branch and pull via `switch-and-pull` (see `workflow-integration-git` Canonical invocations → `switch-and-pull`):
 
 ```bash
-git -C {main_checkout} pull
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow \
+  switch-and-pull --plan-id {plan_id} --base {base_branch}
 ```
 
-```bash
-git -C {main_checkout} branch -d {head_branch}
-```
+Parse the TOON output:
 
-If `git branch -d` fails → log warning (branch may not exist locally or has unmerged changes):
+- `status: success` → continue to local branch deletion below.
+- Any `status: error` → log error and abort.
+
+**Error handling** (checkout or pull failures):
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: local branch delete failed - {error} (may not exist or has unmerged changes)"
+  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: switch-and-pull failed - {error_type}: {message}"
 ```
 
-**Error handling**:
+Delete the local feature branch only (no remote-tracking ref deletion in local-only mode — the remote branch lifecycle is managed outside this workflow) via `prune-local-and-remote-ref` with `--mode local_only` (see `workflow-integration-git` Canonical invocations → `prune-local-and-remote-ref`):
 
-If checkout or pull fails → log error and abort:
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow \
+  prune-local-and-remote-ref --plan-id {plan_id} --mode local_only
+```
+
+If `status: error` → log warning and continue (branch may not exist locally or has unmerged changes):
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: {checkout|pull} failed - {error}"
+  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: local branch delete failed - {error_type}: {message} (may not exist or has unmerged changes)"
 ```
 
 ### Log Completion (Local-Only Mode)

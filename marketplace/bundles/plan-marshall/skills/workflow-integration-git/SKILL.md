@@ -49,7 +49,9 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
   --type feat --scope auth --subject "add login flow"
 
 # Analyze a worktree diff for commit suggestions
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff --worktree-path {worktree_path}
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff --plan-id {plan_id}
+# or with explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff --project-dir {worktree_path}
 
 # Detect artifacts before committing
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts
@@ -107,7 +109,10 @@ If no message:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff \
-    --worktree-path {worktree_path} [--cached]
+    --plan-id {plan_id} [--cached]
+  # or with explicit path override:
+  python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff \
+    --project-dir {worktree_path} [--cached]
   ```
 - The script suggests `type` and `scope` but NOT the subject line — compose the subject yourself based on the diff content and the detected type
 - If multiple change types are present, use the highest priority: fix > feat > perf > refactor > docs > style > test > chore > ci
@@ -162,8 +167,11 @@ pushed: true
 | Command | Parameters | Description |
 |---------|------------|-------------|
 | `format-commit` | `--type --subject [--scope] [--body] [--breaking] [--footer]` | Format commit message (Co-Authored-By NOT appended — caller adds it at `git commit` time per project convention) |
-| `analyze-diff` | `--worktree-path [--cached]` | Capture and analyze the worktree diff for commit suggestions |
+| `analyze-diff` | `(--plan-id \| --project-dir) [--cached]` | Capture and analyze the worktree diff for commit suggestions. Resolves working tree path from plan metadata when `--plan-id` is used. |
 | `detect-artifacts` | `[--root]` | Scan for committable artifacts |
+| `force-push-with-lease` | `(--plan-id \| --project-dir --branch)` | Force-push feature branch to origin with `--force-with-lease` guard (post-rebase). Resolves branch and worktree path from plan metadata when `--plan-id` is used. |
+| `switch-and-pull` | `(--plan-id \| --project-dir) --base` | Checkout `--base` on the main checkout and pull from origin. Resolves main checkout root from plan metadata when `--plan-id` is used. |
+| `prune-local-and-remote-ref` | `(--plan-id \| --project-dir --head) [--mode local_and_remote\|local_only]` | Delete local feature branch and optionally prune the remote-tracking ref after merge. Internal `show-ref` guard skips ref deletion when already absent. Default mode `local_and_remote`; use `local_only` in local-only plans. |
 | `worktree-path` | `--plan-id` | Resolve the persisted worktree path via `manage-status get-worktree-path` |
 | `worktree-create` | `--plan-id --branch [--base]` | Run `git worktree add` plus project-state bookkeeping (`metadata.use_worktree`/`worktree_path`/`worktree_branch`) |
 | `worktree-remove` | `--plan-id [--force]` | Remove the worktree first, then delete the branch ref |
@@ -212,11 +220,15 @@ Capture the worktree diff via `git -C {worktree_path} diff [--cached]` and analy
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff \
-  --worktree-path /path/to/worktree [--cached]
+  --plan-id PLAN_ID [--cached]
+# or with explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff \
+  --project-dir ABS_PATH [--cached]
 ```
 
 **Parameters**:
-- `--worktree-path` (required): Worktree path to capture the diff from. The script runs `git -C {worktree_path} diff` against this directory.
+- `--plan-id`: Plan identifier — resolves the worktree path via `manage-status get-worktree-path` (mutually exclusive with `--project-dir`).
+- `--project-dir`: Explicit worktree path (escape hatch; mutually exclusive with `--plan-id`).
 - `--cached`: Use the staged diff (`git diff --cached`) instead of the unstaged working-tree diff.
 
 **Output** (TOON):
@@ -257,6 +269,137 @@ uncertain[1]:
 total: 3
 status: success
 ```
+
+### force-push-with-lease
+
+Push the plan's feature branch to `origin` using `--force-with-lease`, detecting concurrent remote pushes instead of silently overwriting them. The primary path (`--plan-id`) resolves the worktree path and branch name from plan metadata; the escape hatch (`--project-dir` + `--branch`) accepts an explicit path for post-worktree-removal or non-plan contexts.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow force-push-with-lease \
+  --plan-id PLAN_ID
+# or with explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow force-push-with-lease \
+  --project-dir ABS_PATH --branch BRANCH
+```
+
+**Parameters**:
+- `--plan-id`: Plan identifier — resolves worktree path and branch name via `manage-status get-worktree-path` (mutually exclusive with `--project-dir`).
+- `--project-dir`: Explicit worktree path (escape hatch; mutually exclusive with `--plan-id`; requires `--branch`).
+- `--branch`: Branch name to push (only with `--project-dir`; resolved from plan metadata when `--plan-id` is used).
+
+**Output** (TOON, success):
+```toon
+status: success
+operation: force-push-with-lease
+plan_id: EXAMPLE-PLAN
+branch: feature/EXAMPLE-PLAN
+remote: origin
+remote_sha: abc123def456
+```
+
+**Typed errors**:
+
+| `error_type` | Cause |
+|-------------|-------|
+| `plan_not_found` | `--plan-id` supplied but executor missing, python3 absent, manage-status timed out, or plan resolution failed |
+| `worktree_not_materialized` | `worktree_path` or `worktree_branch` absent from manage-status response |
+| `missing_required_arg` | Neither `--plan-id` nor `--project-dir` supplied; or `--project-dir` without `--branch` |
+| `project_dir_not_a_git_repo` | `--project-dir` path is not a git working tree |
+| `branch_not_found` | Branch does not exist locally, or branch is `main`/`master` (force-push to base branch is refused) |
+| `push_rejected_non_fast_forward` | `--force-with-lease` lease violation: remote moved since last fetch |
+| `lease_check_failed` | Force-with-lease check could not be evaluated |
+| `push_failed` | Push exited non-zero for another reason |
+
+### switch-and-pull
+
+Checkout `--base` on the project directory and then pull from `origin` using the explicit form `git pull origin {base_branch}` (never the implicit plain `git pull`). Designed for post-merge cleanup; the primary path (`--plan-id`) derives the main checkout root from `marketplace_paths`; the escape hatch (`--project-dir`) accepts an explicit path.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull \
+  --plan-id PLAN_ID --base BASE_BRANCH
+# or with explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull \
+  --project-dir ABS_PATH --base BASE_BRANCH
+```
+
+**Parameters**:
+- `--plan-id`: Plan identifier — resolves the main checkout root via `marketplace_paths` (mutually exclusive with `--project-dir`).
+- `--project-dir`: Explicit main checkout path (escape hatch; mutually exclusive with `--plan-id`).
+- `--base` (required): Base branch to check out and pull (e.g., `main`).
+
+**Output** (TOON, success):
+```toon
+status: success
+operation: switch-and-pull
+plan_id: EXAMPLE-PLAN
+base_branch: main
+pre_sha: abc123
+post_sha: def456
+commits_pulled: 3
+```
+
+**Typed errors**:
+
+| `error_type` | Cause |
+|-------------|-------|
+| `plan_not_found` | `--plan-id` supplied but executor missing, python3 absent, manage-status timed out, plan resolution failed, or `marketplace_paths` unavailable |
+| `missing_required_arg` | Neither `--plan-id` nor `--project-dir` supplied |
+| `project_dir_not_a_git_repo` | `--project-dir` path is not a git working tree |
+| `branch_not_found` | `--base` branch not found on remote (`origin/{base}` does not exist) |
+| `merge_conflict` | Checkout failed due to uncommitted changes in the current working tree |
+| `pull_failed` | `git checkout` or `git pull origin {base}` exited non-zero for another reason |
+
+### prune-local-and-remote-ref
+
+Delete the local feature branch and (in `local_and_remote` mode) the remote-tracking ref `refs/remotes/origin/{head_branch}` after a PR merge. Consolidates the three inline git calls (BC-04, BC-05, BC-06) from `branch-cleanup.md`. An internal `show-ref` guard skips remote-tracking ref deletion when the ref is already absent (Drift 3 resolution).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow prune-local-and-remote-ref \
+  --plan-id PLAN_ID [--mode local_and_remote|local_only]
+# or with explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow prune-local-and-remote-ref \
+  --project-dir ABS_PATH --head HEAD_BRANCH [--mode local_and_remote|local_only]
+```
+
+**Parameters**:
+- `--plan-id`: Plan identifier — resolves main checkout root and head branch via `manage-status get-worktree-path` (mutually exclusive with `--project-dir`).
+- `--project-dir`: Explicit main checkout path (escape hatch; mutually exclusive with `--plan-id`; requires `--head`).
+- `--head`: Feature branch name to delete (only with `--project-dir`; resolved from plan metadata when `--plan-id` is used).
+- `--mode`: Deletion scope: `local_and_remote` (default) deletes both the local branch and remote-tracking ref; `local_only` skips the remote-tracking ref operation.
+
+**Output** (TOON, success — full deletion):
+```toon
+status: success
+operation: prune-local-and-remote-ref
+plan_id: EXAMPLE-PLAN
+head_branch: feature/EXAMPLE-PLAN
+mode: local_and_remote
+local_deleted: true
+remote_ref_deleted: true
+```
+
+**Output** (TOON, partial — remote-tracking ref was already absent):
+```toon
+status: partial
+operation: prune-local-and-remote-ref
+plan_id: EXAMPLE-PLAN
+head_branch: feature/EXAMPLE-PLAN
+mode: local_and_remote
+local_deleted: true
+remote_ref_deleted: false
+remote_ref_warning: "remote-tracking ref refs/remotes/origin/feature/EXAMPLE-PLAN was already absent — no-op"
+```
+
+**Typed errors**:
+
+| `error_type` | Cause |
+|-------------|-------|
+| `plan_not_found` | `--plan-id` supplied but executor missing, python3 absent, manage-status timed out, plan resolution failed, or `marketplace_paths` unavailable |
+| `worktree_not_materialized` | `worktree_branch` absent from manage-status response |
+| `missing_required_arg` | Neither `--plan-id` nor `--project-dir` supplied; or `--project-dir` without `--head` |
+| `project_dir_not_a_git_repo` | `--project-dir` path is not a git working tree |
+| `branch_delete_failed` | Refusing to delete the currently checked-out branch; or `git branch -D` exited non-zero |
+| `unexpected_ref_error` | `git update-ref -d` failed after `show-ref` confirmed the ref exists |
 
 ### worktree-path
 
@@ -366,7 +509,10 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff \
-  --worktree-path ABS_PATH [--cached]
+  --plan-id PLAN_ID [--cached]
+# or explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff \
+  --project-dir ABS_PATH [--cached]
 ```
 
 ### detect-artifacts
@@ -374,6 +520,36 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts \
   [--root DIR] [--no-gitignore]
+```
+
+### force-push-with-lease
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow force-push-with-lease \
+  --plan-id PLAN_ID
+# or explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow force-push-with-lease \
+  --project-dir ABS_PATH --branch BRANCH
+```
+
+### switch-and-pull
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull \
+  --plan-id PLAN_ID --base BASE_BRANCH
+# or explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull \
+  --project-dir ABS_PATH --base BASE_BRANCH
+```
+
+### prune-local-and-remote-ref
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow prune-local-and-remote-ref \
+  --plan-id PLAN_ID [--mode local_and_remote|local_only]
+# or explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow prune-local-and-remote-ref \
+  --project-dir ABS_PATH --head HEAD_BRANCH [--mode local_and_remote|local_only]
 ```
 
 ### worktree-path

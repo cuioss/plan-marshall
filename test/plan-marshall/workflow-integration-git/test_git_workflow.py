@@ -399,7 +399,7 @@ class TestAnalyzeDiffCli(unittest.TestCase):
             new_lines.append('')
         target.write_text('\n'.join(new_lines))
 
-        stdout, stderr, code = run_git_script(['analyze-diff', '--worktree-path', self.tmpdir])
+        stdout, stderr, code = run_git_script(['analyze-diff', '--project-dir', self.tmpdir])
         self.assertEqual(code, 0, f'stderr={stderr}')
         result = parse_toon(stdout)
         self.assertEqual(result['status'], 'success')
@@ -421,7 +421,7 @@ class TestAnalyzeDiffCli(unittest.TestCase):
         unstaged = Path(self.tmpdir) / 'src' / 'mypackage' / 'utils.py'
         unstaged.write_text('def existing():\n    return 999\n')
 
-        stdout, stderr, code = run_git_script(['analyze-diff', '--worktree-path', self.tmpdir, '--cached'])
+        stdout, stderr, code = run_git_script(['analyze-diff', '--project-dir', self.tmpdir, '--cached'])
         self.assertEqual(code, 0, f'stderr={stderr}')
         result = parse_toon(stdout)
         self.assertEqual(result['status'], 'success')
@@ -438,7 +438,7 @@ class TestAnalyzeDiffCli(unittest.TestCase):
         uncaught exceptions.
         """
         bogus = str(Path(self.tmpdir) / 'does-not-exist')
-        stdout, stderr, code = run_git_script(['analyze-diff', '--worktree-path', bogus])
+        stdout, stderr, code = run_git_script(['analyze-diff', '--project-dir', bogus])
         self.assertEqual(code, 0, f'stderr={stderr}')
         result = parse_toon(stdout)
         self.assertEqual(result['status'], 'error')
