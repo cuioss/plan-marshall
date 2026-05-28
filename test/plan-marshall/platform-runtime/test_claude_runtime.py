@@ -997,15 +997,23 @@ class TestSessionRenderTitle:
         ids=[c["id"] for c in _RENDER_MATRIX],
     )
     def test_resolver_matrix(self, cell, rt, tmp_path, monkeypatch, capsys):
-        """Every {tier × outcome} cell asserts status + stdout emission."""
+        """Every {tier × outcome} cell asserts the function returns "" and stdout matches the hook contract.
+
+        Hook mode contract: stdout carries exactly the JSON envelope on
+        success, exactly nothing on every noop. The function ALWAYS returns
+        the empty string so the wrapper main() does not append a TOON tail.
+        """
         _arrange_render_cell(cell, tmp_path, monkeypatch)
         capsys.readouterr()  # discard prior captures
 
-        result = _parsed(rt.session_render_title())
+        returned = rt.session_render_title()
         captured = capsys.readouterr().out
 
-        assert result["status"] == cell["expected"], (
-            f"cell {cell['id']!r}: expected status={cell['expected']!r}, got {result['status']!r}"
+        # Function always returns "" — TOON observability has been removed
+        # from the hook channel because the host parser drops mixed-content
+        # stdout (see hook-authoring-guide.md).
+        assert returned == "", (
+            f"cell {cell['id']!r}: expected empty return, got {returned!r}"
         )
 
         if cell["emits_stdout"]:
@@ -1016,8 +1024,10 @@ class TestSessionRenderTitle:
             assert payload["terminalSequence"] == expected_osc, (
                 f"cell {cell['id']!r}: OSC payload mismatch"
             )
-            assert result["plan_id"] == cell["plan_id"]
-            assert result["title_body"] == cell["title_body"]
+            # No TOON success row glued to the envelope.
+            assert "status:" not in captured, (
+                f"cell {cell['id']!r}: TOON tail leaked into stdout: {captured!r}"
+            )
         else:
             # No-op branches must write nothing to stdout.
             assert captured == "", (
@@ -1056,19 +1066,21 @@ class TestSessionRenderTitle:
         # Session A invocation — must see session A's title body only.
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", cell_a["session_id"])
         capsys.readouterr()
-        result_a = _parsed(rt.session_render_title())
+        returned_a = rt.session_render_title()
         captured_a = capsys.readouterr().out
-        assert result_a["plan_id"] == cell_a["plan_id"]
-        assert result_a["title_body"] == cell_a["title_body"]
+        assert returned_a == ""
+        payload_a = json.loads(captured_a)
+        assert cell_a["title_body"] in payload_a["terminalSequence"]
         assert cell_b["title_body"] not in captured_a
 
         # Session B invocation — must see session B's title body only.
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", cell_b["session_id"])
         capsys.readouterr()
-        result_b = _parsed(rt.session_render_title())
+        returned_b = rt.session_render_title()
         captured_b = capsys.readouterr().out
-        assert result_b["plan_id"] == cell_b["plan_id"]
-        assert result_b["title_body"] == cell_b["title_body"]
+        assert returned_b == ""
+        payload_b = json.loads(captured_b)
+        assert cell_b["title_body"] in payload_b["terminalSequence"]
         assert cell_a["title_body"] not in captured_b
 
 
