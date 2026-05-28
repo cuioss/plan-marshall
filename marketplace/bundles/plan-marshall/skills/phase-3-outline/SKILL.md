@@ -241,8 +241,14 @@ For localized changes where targets are already known from module_mapping.
 | Step | Purpose | Key Action |
 |------|---------|------------|
 | **6. Validate Targets** | Verify target files/modules exist | `ls -la {target_path}` for each target |
-| **7. Create Deliverables** | Map module_mapping to deliverables | Use deliverable template, resolve verification commands via `architecture resolve` |
+| **7. Create Deliverables** | Map module_mapping to deliverables | **MUST classify each deliverable's `affected_files` against the [File-type classifier](standards/outline-workflow-detail.md#file-type-classifier) (four buckets: `python-prod` / `python-test` / `doc-only` / `mixed`) BEFORE assigning `profiles[]`.** Use deliverable template, resolve verification commands via `architecture resolve`. The resolved bucket MUST be recorded as a comment in the `**Profiles:**` block (see Deliverable Template below). |
 | **8. Simple Q-Gate** | Lightweight verification (with surgical bypass) | Bypass when surgical+bug_fix/tech_debt/verification+1 deliverable; otherwise check target existence + request alignment |
+
+### File-type classifier (normative)
+
+Before assigning `profiles[]` to any deliverable, every author MUST classify the deliverable's `**Affected files:**` list against the four-bucket file-type classifier. The buckets, predicates, profile assignments, and verification commands are documented in [`standards/outline-workflow-detail.md` § File-type classifier](standards/outline-workflow-detail.md#file-type-classifier). The rule is normative — assigning `module_testing` to a `doc-only` deliverable is a contract violation that phase-4-plan refuses to translate into a paired pytest task and instead emits a Q-Gate finding back to this phase.
+
+The canonical doctor invocation cited in all `doc-only` deliverable Verification fields is `pm-plugin-development:plugin-doctor:doctor-marketplace scan --paths {skill-dir}` (NOT the stale `:plugin-doctor:plugin-doctor`).
 
 **Step 6 may also refine `scope_estimate`**: After deliverables crystalize and the concrete Affected files lists are known, phase-3-outline MAY downgrade `scope_estimate` (e.g., `single_module` → `surgical`) when the final deliverable composition narrows the actual scope. Persist any change via `manage-references set --field scope_estimate`. Refinement happens BEFORE Step 8 so the bypass rule sees the refined value.
 
@@ -274,7 +280,7 @@ For codebase-wide changes requiring discovery and analysis.
 |------|---------|------------|
 | **9. Resolve Domain Skill** | Route to domain-specific or generic instructions | `resolve-outline-skill --domain {domain}`, then load `change-{change_type}.md` |
 | **9c. Read Target Skill Design Intent** | For each deliverable that adds capability to an existing skill, classify the skill's design model and record it on the deliverable | Read the target skill's `SKILL.md` and design-intent docs; classify as `script-deterministic`, `LLM-driven`, or `hybrid`; record the classification in the deliverable's `**Design notes:**` block; reroute or justify when the proposed implementation contradicts the model. Detailed procedure: [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md#step-9c-read-target-skill-design-intent). |
-| **10. Execute Workflow** | Run discovery, analysis, write solution | Follow change-type instructions, resolve verification commands, write `solution_outline.md`. Step 10 includes a consumer-sweep when the deliverable deletes/renames a public symbol — see [`consumer-sweep.md`](standards/consumer-sweep.md). |
+| **10. Execute Workflow** | Run discovery, analysis, write solution | Follow change-type instructions, resolve verification commands, write `solution_outline.md`. **For each composed deliverable, MUST apply the [File-type classifier](standards/outline-workflow-detail.md#file-type-classifier) to its `affected_files` BEFORE assigning `profiles[]`** — the resolved bucket MUST be recorded as a comment in the `**Profiles:**` block (see Deliverable Template below). Step 10 includes a consumer-sweep when the deliverable deletes/renames a public symbol — see [`consumer-sweep.md`](standards/consumer-sweep.md). |
 | **10b. Self-Modifying Classification** | Classify deliverables that touch plan-marshall runtime infrastructure and surface phasing decision | When predicate fires (path heuristic + `compatibility: breaking` + hard-cutover language), prompt author via `AskUserQuestion` for split / inline-rationale / additive-mode resolution. Standard: [`ref-workflow-architecture/standards/self-modifying-classification.md`](../ref-workflow-architecture/standards/self-modifying-classification.md). |
 | **11. Q-Gate Verification** | Signal q-gate-validation requirement (with surgical bypass) | Bypass when surgical+bug_fix/tech_debt/verification+1 deliverable → set `qgate_validation_required: false`; otherwise set `qgate_validation_required: true` in the return TOON so the orchestrator dispatches `plan-marshall:plan-marshall/workflow/q-gate-validation.md` as a sibling top-level Task after the phase returns (see [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md) for the activation contract). The orchestrator-dispatched workflow runs phase-3-applicable validators: existing checks 2.1-2.7, consumer-sweep §2.9, **argparse-validator §2.10**, **tier-delta-validator §2.13**, **self-modifying-phased-rollout-validator §2.16**, **architecture-mismatch-validator §2.17**. |
 
@@ -326,9 +332,9 @@ Each deliverable in solution_outline.md MUST follow this field order. The author
 
 **Design notes:** {required when the deliverable adds capability to an existing skill; names the target skill's design model — `script-deterministic`, `LLM-driven`, or `hybrid` — and a one-sentence rationale showing the proposed implementation extends, not contradicts, that model. See Step 9c (Read Target Skill Design Intent) and [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md#step-9c-read-target-skill-design-intent) for the procedure. Omit when the deliverable does not add capability to an existing skill (e.g., docs-only, brand-new skill).}
 
-**Profiles:**
+**Profiles:** <!-- bucket: {python-prod|python-test|doc-only|mixed} -->
 - implementation
-- {module_testing - only if this deliverable creates/modifies test files}
+- {module_testing - only if the resolved bucket is python-prod, python-test, or mixed; never for doc-only}
 
 **Affected files:**
 - `{explicit/path/to/file1}`
@@ -344,6 +350,13 @@ Each deliverable in solution_outline.md MUST follow this field order. The author
 ```
 
 `**Intent gloss:**` is copied verbatim by phase-4-plan into every derived task.description, so the sentence must stand alone without relying on the surrounding deliverable context.
+
+The `<!-- bucket: ... -->` comment on the `**Profiles:**` line is REQUIRED and records the resolved file-type bucket from the [File-type classifier](standards/outline-workflow-detail.md#file-type-classifier). The bucket determines which profiles are valid for the deliverable:
+
+- `doc-only` → `implementation` only; never paired with `module_testing`. Verification cites `pm-plugin-development:plugin-doctor:doctor-marketplace scan --paths {skill-dir}`.
+- `python-prod` → `implementation` + `module_testing`. Verification cites the resolved `quality-gate` and `module-tests` commands.
+- `python-test` → `module_testing` only (test-only deliverable). Verification cites the resolved `module-tests` command.
+- `mixed` → `implementation` + `module_testing`, with `module_testing` scope narrowed to the `**/*.py` paths only (declare the narrowed scope in a `**Module_testing scope:**` block above `**Affected files:**`).
 
 ---
 
