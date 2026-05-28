@@ -32,6 +32,50 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config init
 
 ---
 
+## Workflow: Sync Defaults
+
+**Pattern**: Script Automation
+
+Non-destructively merge any keys present in `get_default_config()` but missing
+from the live `.plan/marshal.json` into the file, without overwriting existing
+user values. This is the canonical migration path after a default-shape change
+(new schema rows added to a `DEFAULT_*` block): existing projects never re-run
+`init`, so `sync-defaults` is how a live `marshal.json` picks up new defaults
+while preserving every operator override.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config sync-defaults
+```
+
+**Contract** (non-destructive deep merge):
+
+- A key already present in the live config is preserved unchanged. "Present"
+  means "key exists" — value comparison is NOT performed, so a user-set
+  `auto_merge_after_ci: false` survives even when the default is `false`.
+- Nested dicts are merged recursively, so a deeply-nested missing sub-key
+  (e.g. `plan.phase-6-finalize.auto_rebase_threshold` when `phase-6-finalize`
+  exists but the sub-key does not) is added without disturbing siblings.
+- Lists are atomic: a present list is kept verbatim; only an absent list key is
+  seeded from defaults.
+- The merge is idempotent — re-running immediately produces an empty `added[]`.
+
+**Output** (TOON):
+
+```toon
+status: success
+added[3]:
+  - plan.phase-5-execute.per_task_budget_reserve
+  - plan.phase-6-finalize.auto_rebase_threshold
+  - project.default_base_branch
+added_count: 3
+```
+
+`added[]` lists the dotted paths of every newly-added key; `added_count` is its
+length. An empty `added[]` (with `added_count: 0`) means the live config already
+carried every default.
+
+---
+
 ## Workflow: Query Skill Domains
 
 **Pattern**: Read-Process-Write

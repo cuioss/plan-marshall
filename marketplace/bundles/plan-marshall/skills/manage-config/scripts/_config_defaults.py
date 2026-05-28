@@ -142,6 +142,12 @@ DEFAULT_PLAN_EXECUTE = {
     'rebase_on_execute_start': True,
     # Enum: see VALID_REBASE_STRATEGIES / validate_rebase_strategy.
     'rebase_strategy': 'merge',
+    # Per-task budget reserve (tokens) gating the phase-5-execute continue-vs-yield
+    # sentinel. phase-5-execute reads this via
+    # `manage-config plan phase-5-execute get --field per_task_budget_reserve`;
+    # the workflow's documented fallback when the knob is absent is 50000.
+    # Registering it here makes the reserve operator-visible in marshal.json.
+    'per_task_budget_reserve': 50000,
     'steps': list(BUILT_IN_VERIFY_STEPS),
 }
 
@@ -211,6 +217,23 @@ DEFAULT_PLAN_FINALIZE = {
     # on branch-protection error) is unaffected when an explicit "Yes, merge"
     # answer was given; it does NOT activate on a deferred "No, skip merge".
     'auto_merge_after_ci': False,
+    # Threshold gating the pre-rebase auto-proceed decision in branch-cleanup.md,
+    # orthogonal to `auto_merge_after_ci` (which gates the post-CI merge). The
+    # value `no_overlap_only` permits the auto-rebase to proceed only when the
+    # rebase would touch a disjoint file set; any overlap defers to the operator.
+    # branch-cleanup.md reads this row via
+    # `manage-config plan phase-6-finalize get --field auto_rebase_threshold`,
+    # so registering it here makes the threshold operator-visible in marshal.json.
+    'auto_rebase_threshold': 'no_overlap_only',
+    # Pre-push-quality-gate activation config. The manifest composer
+    # (manage-execution-manifest.py) reads
+    # `plan.phase-6-finalize.pre_push_quality_gate.activation_globs` to decide
+    # whether the `default:pre-push-quality-gate` finalize step is active; an
+    # empty list (the default) leaves the step inactive. Registering the block
+    # here makes the activation_globs knob operator-visible in marshal.json.
+    'pre_push_quality_gate': {
+        'activation_globs': [],
+    },
     'steps': list(BUILT_IN_FINALIZE_STEPS),
 }
 

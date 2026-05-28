@@ -35,6 +35,7 @@ from _cmd_skill_resolution import (
     cmd_resolve_recipe,
     cmd_resolve_workflow_skill_extension,
 )
+from _cmd_sync_defaults import cmd_sync_defaults
 from _cmd_system_plan import cmd_plan, cmd_project, cmd_system
 
 # Direct imports - PYTHONPATH set by executor
@@ -256,6 +257,18 @@ def main() -> int:
     p_init = subparsers.add_parser('init', help='Initialize marshal.json', allow_abbrev=False)
     p_init.add_argument('--force', action='store_true', help='Overwrite existing')
 
+    # --- sync-defaults ---
+    p_sync = subparsers.add_parser(
+        'sync-defaults',
+        help='Non-destructively merge keys present in defaults but absent from the live marshal.json',
+        allow_abbrev=False,
+    )
+    p_sync.add_argument(
+        '--audit-plan-id',
+        dest='audit_plan_id',
+        help='Plan identifier for execution-log attribution (optional).',
+    )
+
     # --- effort ---
     p_effort = subparsers.add_parser(
         'effort',
@@ -467,6 +480,8 @@ def main() -> int:
         result = cmd_ext_defaults(args)
     elif args.noun == 'init':
         result = cmd_init(args)
+    elif args.noun == 'sync-defaults':
+        result = cmd_sync_defaults(args)
     elif args.noun == 'effort':
         if not args.verb:
             p_effort.print_help()

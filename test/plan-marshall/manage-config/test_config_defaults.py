@@ -62,6 +62,81 @@ def test_default_plan_finalize_includes_auto_merge_after_ci():
     )
 
 
+def test_default_plan_finalize_includes_auto_rebase_threshold():
+    """DEFAULT_PLAN_FINALIZE must declare auto_rebase_threshold with default 'no_overlap_only'."""
+    # Arrange
+    finalize_defaults = _config_defaults_mod.DEFAULT_PLAN_FINALIZE
+
+    # Act / Assert
+    assert 'auto_rebase_threshold' in finalize_defaults, (
+        'auto_rebase_threshold must be schema-registered in DEFAULT_PLAN_FINALIZE'
+    )
+    assert finalize_defaults['auto_rebase_threshold'] == 'no_overlap_only', (
+        "auto_rebase_threshold default must be 'no_overlap_only'"
+    )
+
+
+def test_get_default_config_includes_auto_rebase_threshold():
+    """get_default_config() must surface plan.phase-6-finalize.auto_rebase_threshold == 'no_overlap_only'."""
+    # Arrange / Act
+    config = _config_defaults_mod.get_default_config()
+
+    # Assert
+    finalize = config['plan']['phase-6-finalize']
+    assert 'auto_rebase_threshold' in finalize, (
+        'auto_rebase_threshold must round-trip through get_default_config()'
+    )
+    assert finalize['auto_rebase_threshold'] == 'no_overlap_only'
+
+
+def test_default_plan_execute_includes_per_task_budget_reserve():
+    """DEFAULT_PLAN_EXECUTE must declare per_task_budget_reserve with default 50000."""
+    # Arrange
+    execute_defaults = _config_defaults_mod.DEFAULT_PLAN_EXECUTE
+
+    # Act / Assert
+    assert 'per_task_budget_reserve' in execute_defaults, (
+        'per_task_budget_reserve must be schema-registered in DEFAULT_PLAN_EXECUTE'
+    )
+    assert execute_defaults['per_task_budget_reserve'] == 50000, (
+        'per_task_budget_reserve default must be 50000 (phase-5-execute sentinel reserve)'
+    )
+
+
+def test_get_default_config_includes_per_task_budget_reserve():
+    """get_default_config() must surface plan.phase-5-execute.per_task_budget_reserve == 50000."""
+    # Arrange / Act
+    config = _config_defaults_mod.get_default_config()
+
+    # Assert
+    execute = config['plan']['phase-5-execute']
+    assert execute.get('per_task_budget_reserve') == 50000
+
+
+def test_default_plan_finalize_includes_pre_push_quality_gate():
+    """DEFAULT_PLAN_FINALIZE must declare pre_push_quality_gate with empty activation_globs."""
+    # Arrange
+    finalize_defaults = _config_defaults_mod.DEFAULT_PLAN_FINALIZE
+
+    # Act / Assert
+    assert 'pre_push_quality_gate' in finalize_defaults, (
+        'pre_push_quality_gate must be schema-registered in DEFAULT_PLAN_FINALIZE'
+    )
+    assert finalize_defaults['pre_push_quality_gate'] == {'activation_globs': []}, (
+        'pre_push_quality_gate default must be {activation_globs: []} (step inactive by default)'
+    )
+
+
+def test_get_default_config_includes_pre_push_quality_gate():
+    """get_default_config() must surface plan.phase-6-finalize.pre_push_quality_gate.activation_globs == []."""
+    # Arrange / Act
+    config = _config_defaults_mod.get_default_config()
+
+    # Assert
+    finalize = config['plan']['phase-6-finalize']
+    assert finalize.get('pre_push_quality_gate') == {'activation_globs': []}
+
+
 def test_default_project_default_base_branch_is_main():
     """DEFAULT_PROJECT must declare default_base_branch == 'main'."""
     # Arrange
