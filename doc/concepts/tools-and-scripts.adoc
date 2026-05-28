@@ -30,7 +30,7 @@ All five expose operations through the same invocation shape, return TOON, and r
 
 == Credentials — outside LLM reach
 
-External-HTTPS integrations need authentication tokens. `manage-providers` handles the lifecycle so the LLM never sees a credential: tokens are stored outside the project tree (so they survive `rm -rf .plan/` and never enter git), the credential files are filesystem-protected by the `manage-providers` skill, the user enters tokens interactively into a Python script (the LLM dispatches the operation, the script reads the credential and constructs the auth header), and the `RestClient` consumed by every integration refuses to send an auth header over plain HTTP. The credential never enters LLM context, never appears in TOON output, never lands in logs.
+External-HTTPS integrations need authentication tokens. `manage-providers` handles the lifecycle so the LLM never sees a credential: tokens are stored outside the project tree (so they survive `rm -rf .plan/` and never enter git) and the credential files are filesystem-protected by the `manage-providers` skill. Tokens are entered by the user interactively at setup time; at runtime the LLM dispatches the operation, and the script reads the credential to construct the auth header. The `RestClient` consumed by every integration refuses to send an auth header over plain HTTP. The credential never enters LLM context, never appears in TOON output, and never lands in logs.
 
 A skill declares it needs credentials by shipping a `{provider}_provider.py` next to its scripts; the discovery is automatic via `manage-providers discover-and-persist`. The contract — every field, validation rules, runtime invocation flow — lives in `ext-point-provider.md`.
 
