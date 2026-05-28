@@ -8,7 +8,7 @@ $CLAUDE_ENV_FILE file so subsequent tool invocations in the same session can
 read the session id from the environment.
 
 Exit codes:
-    0 — success (env var written, or hook explicitly chose not to act)
+    0 — success (env var written)
     1 — malformed stdin (not JSON, or session_id field missing)
     2 — runtime error (CLAUDE_ENV_FILE not set, or write failure)
 
