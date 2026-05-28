@@ -40,6 +40,14 @@ class Extension(ExtensionBase):
                                 'skill': 'pm-documents:ref-documentation',
                                 'description': 'Content quality, tone analysis, organization standards, and review orchestration',
                             },
+                            {
+                                'skill': 'pm-documents:ref-narrative-styles',
+                                'description': 'Narrative styles for technical documentation — tone, voice, and arc per surface (concept pages, user guides, spec references)',
+                            },
+                            {
+                                'skill': 'pm-documents:ref-svg-diagrams',
+                                'description': 'SVG diagram authoring standards — visual language, theme handling, AsciiDoc embedding, per-diagram-type patterns',
+                            },
                         ],
                         'optionals': [],
                     },

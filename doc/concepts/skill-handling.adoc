@@ -39,7 +39,7 @@ Each transition is a `manage-*` script call or a workflow-driven assignment, not
 
 The profile is the *category of work* a task represents — production code vs test code vs integration test vs quality / docs. It drives two things: which skills enter the dispatched context (the Tier-2 selection from `skills_by_profile`), and which workflow body executes the task (the system default is `execute-task`, but a domain can override it per profile).
 
-Profile selection happens at architecture-discovery time, signal-based per module: a Java module with sources gets `implementation` and `quality`; with a Failsafe plugin or testcontainers dependency it adds `integration_testing`; a documentation module with `doc/*.adoc` files gets `documentation`. The detection rules per profile live in `extension-api/standards/profiles.md`. A sixth slot, `core`, is special: it carries foundation patterns that always merge into every other profile's load.
+Profile selection happens at architecture-discovery time, signal-based per module: a Java module with sources gets `implementation` and `quality`; with a Failsafe plugin or testcontainers dependency it adds `integration_testing`; a documentation module with `doc/*.adoc` files gets `documentation`. The detection rules per profile live in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/profiles.md[`profiles.md`]. A sixth slot, `core`, is special: it carries foundation patterns that always merge into every other profile's load.
 
 == Auditing what loaded
 

@@ -1,25 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Plan worktree topology — shared repository + N independent working trees.
+  Plan worktree topology — shared .git as the hub, working trees as
+  spokes. Asymmetric hub-and-spoke: developer's main checkout on the
+  left, stack of plan worktrees on the right, shared repository at
+  the centre.
 
   theme-handling: A (theme-neutral)
   see  pm-documents:ref-svg-diagrams/standards/theme-handling.md
 
-  Three-column block diagram. Left column: developer's main checkout.
-  Middle column: the shared .git directory (commits, refs, objects). Right
-  column: a stack of plan worktrees, each on its own feature branch. Arrows
-  in both gutters show every working tree reading and writing to the same
-  .git. The footer caption names the load-bearing idea: many working trees,
-  one repository.
-
-  diagram-type-block reference standard:
-  pm-documents:ref-svg-diagrams/standards/diagram-type-block.md
+  diagram-type-graph reference standard:
+  pm-documents:ref-svg-diagrams/standards/diagram-type-graph.md
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 540"
      role="img" aria-labelledby="title desc"
      font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
   <title id="title">Plan Marshall worktree topology</title>
-  <desc id="desc">A three-column block diagram showing how Plan Marshall pairs each plan with its own git worktree and feature branch while all worktrees share one underlying repository. The developer's main checkout sits on the left, the shared .git directory (commits, refs, objects, hooks) sits in the middle, and a stack of three example plan worktrees on their own feature branches sits on the right. Bi-directional arrows in both gutters indicate that every working tree reads from and writes to the same .git.</desc>
+  <desc id="desc">An asymmetric hub-and-spoke topology showing how Plan Marshall pairs each plan with its own git worktree and feature branch while all worktrees share one underlying repository. The shared .git directory (commits, refs, objects, hooks) is the hub at the centre, drawn with a thicker stroke. The developer's main checkout is a single primary node on the left, with bidirectional read/write arrows to the hub. Three plan worktrees (one per in-flight plan) are stacked on the right, each connected to the hub by an unlabelled structural line. The topology communicates that the .git directory is the shared source of history and refs while every working tree — the developer's checkout and each plan worktree — is independent on disk.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
@@ -27,101 +23,70 @@
       <path d="M0,0 L10,5 L0,10 z" class="arrow-fill"/>
     </marker>
     <style>
-      .col-header { font-size: 15px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
-      .col-sub    { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
-      .item       { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
-      .item-bold  { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-weight: 700; }
-      .item-c     { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; text-anchor: middle; }
-      .arrow-lbl  { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
-      .stroke     { stroke: #6e7681; stroke-width: 1.2; fill: none; }
-      .arrow      { stroke: #6e7681; stroke-width: 1.5; fill: none; }
-      .arrow-fill { fill: #6e7681; }
-      .sep        { stroke: #6e7681; stroke-width: 0.6; stroke-dasharray: 3 3; }
-      .caption    { font-size: 12px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .node-header  { font-size: 15px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
+      .node-sub     { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .item-c       { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; text-anchor: middle; }
+      .edge-lbl     { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .hub-stroke   { stroke: #6e7681; stroke-width: 1.6; fill: none; }
+      .spoke-stroke { stroke: #6e7681; stroke-width: 1.2; fill: none; }
+      .connector    { stroke: #6e7681; stroke-width: 1; fill: none; }
+      .arrow        { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+      .arrow-fill   { fill: #6e7681; }
+      .sep          { stroke: #6e7681; stroke-width: 0.6; stroke-dasharray: 3 3; }
+      .caption      { font-size: 12px; fill: #6e7681; text-anchor: middle; font-style: italic; }
     </style>
   </defs>
 
-  <!-- ============================================================ -->
-  <!-- COLUMN 1 (left) — developer's main checkout                  -->
-  <!-- ============================================================ -->
-  <text x="150" y="28" class="col-header">MAIN CHECKOUT</text>
-  <text x="150" y="44" class="col-sub">developer's working tree</text>
-  <rect class="stroke" x="20" y="60" width="260" height="380" rx="6" ry="6"/>
+  <!-- HUB — shared .git directory -->
+  <rect class="hub-stroke" x="340" y="170" width="220" height="216" rx="8" ry="8"/>
+  <text x="450" y="200" class="node-header">SHARED .git</text>
+  <text x="450" y="216" class="node-sub">one source of history</text>
+  <line class="sep" x1="360" y1="234" x2="540" y2="234"/>
+  <text x="450" y="264" class="item-c">commits</text>
+  <text x="450" y="286" class="item-c">refs (branches, tags)</text>
+  <text x="450" y="308" class="item-c">objects (blobs, trees)</text>
+  <text x="450" y="330" class="item-c">hooks</text>
+  <line class="sep" x1="360" y1="350" x2="540" y2="350"/>
+  <text x="450" y="372" class="node-sub">shared by every working tree</text>
 
-  <text x="150" y="100" class="item-c">branch: main</text>
-  <text x="150" y="125" class="item-c">HEAD = origin/main</text>
-  <line class="sep" x1="60" y1="150" x2="240" y2="150"/>
-  <text x="36"  y="184" class="item-bold">role</text>
-  <text x="36"  y="204" class="item">review PRs</text>
-  <text x="36"  y="224" class="item">ad-hoc commands</text>
-  <text x="36"  y="244" class="item">read mainline state</text>
-  <line class="sep" x1="60" y1="270" x2="240" y2="270"/>
-  <text x="36"  y="304" class="item-bold">never edited</text>
-  <text x="36"  y="324" class="item">by Plan Marshall</text>
+  <!-- PRIMARY — developer's main checkout -->
+  <rect class="spoke-stroke" x="40" y="222" width="220" height="112" rx="6" ry="6"/>
+  <text x="150" y="252" class="node-header">MAIN CHECKOUT</text>
+  <text x="150" y="268" class="node-sub">developer's working tree</text>
+  <text x="150" y="296" class="item-c">branch: main</text>
+  <text x="150" y="318" class="node-sub">untouched while plans run</text>
 
-  <text x="150" y="420" class="col-sub">untouched while plans run</text>
+  <!-- SECONDARY STACK — three plan worktrees -->
+  <rect class="spoke-stroke" x="640" y="110" width="220" height="80" rx="6" ry="6"/>
+  <text x="750" y="138" class="item-c">worktree: plan-a</text>
+  <text x="750" y="158" class="item-c">branch: feature/plan-a</text>
+  <text x="750" y="178" class="node-sub">isolated working tree</text>
 
-  <!-- ============================================================ -->
-  <!-- COLUMN 2 (middle) — shared .git                              -->
-  <!-- ============================================================ -->
-  <text x="450" y="28" class="col-header">SHARED REPOSITORY</text>
-  <text x="450" y="44" class="col-sub">.git directory</text>
-  <rect class="stroke" x="320" y="60" width="260" height="380" rx="6" ry="6"/>
+  <rect class="spoke-stroke" x="640" y="218" width="220" height="80" rx="6" ry="6"/>
+  <text x="750" y="246" class="item-c">worktree: plan-b</text>
+  <text x="750" y="266" class="item-c">branch: feature/plan-b</text>
+  <text x="750" y="286" class="node-sub">isolated working tree</text>
 
-  <text x="450" y="100" class="item-c">commits</text>
-  <text x="450" y="125" class="item-c">refs (branches, tags)</text>
-  <text x="450" y="150" class="item-c">objects (blobs, trees)</text>
-  <text x="450" y="175" class="item-c">hooks</text>
-  <line class="sep" x1="360" y1="200" x2="540" y2="200"/>
-  <text x="450" y="234" class="item-c">single source of</text>
-  <text x="450" y="254" class="item-c">history for everyone</text>
+  <rect class="spoke-stroke" x="640" y="326" width="220" height="80" rx="6" ry="6"/>
+  <text x="750" y="354" class="item-c">worktree: plan-c</text>
+  <text x="750" y="374" class="item-c">branch: feature/plan-c</text>
+  <text x="750" y="394" class="node-sub">isolated working tree</text>
 
-  <text x="450" y="420" class="col-sub">one directory, shared by all working trees</text>
+  <!-- main checkout -> hub (write) -->
+  <line class="arrow" x1="260" y1="266" x2="338" y2="266" marker-end="url(#arrow)"/>
+  <text x="299" y="258" class="edge-lbl">writes</text>
 
-  <!-- ============================================================ -->
-  <!-- COLUMN 3 (right) — plan worktrees                            -->
-  <!-- ============================================================ -->
-  <text x="750" y="28" class="col-header">PLAN WORKTREES</text>
-  <text x="750" y="44" class="col-sub">in flight</text>
-  <rect class="stroke" x="620" y="60" width="260" height="380" rx="6" ry="6"/>
+  <!-- hub -> main checkout (read) -->
+  <line class="arrow" x1="338" y1="294" x2="260" y2="294" marker-end="url(#arrow)"/>
+  <text x="299" y="286" class="edge-lbl">reads</text>
 
-  <!-- three stacked worktree boxes -->
-  <rect class="stroke" x="636" y="84" width="228" height="74" rx="4" ry="4"/>
-  <text x="750" y="106" class="item-c">worktree: plan-a</text>
-  <text x="750" y="128" class="item-c">branch: feature/plan-a</text>
-  <text x="750" y="148" class="col-sub">isolated working tree</text>
+  <!-- hub -> plan-a (structural connector) -->
+  <line class="connector" x1="560" y1="220" x2="638" y2="150"/>
+  <!-- hub -> plan-b -->
+  <line class="connector" x1="562" y1="278" x2="638" y2="258"/>
+  <!-- hub -> plan-c -->
+  <line class="connector" x1="560" y1="338" x2="638" y2="366"/>
 
-  <rect class="stroke" x="636" y="174" width="228" height="74" rx="4" ry="4"/>
-  <text x="750" y="196" class="item-c">worktree: plan-b</text>
-  <text x="750" y="218" class="item-c">branch: feature/plan-b</text>
-  <text x="750" y="238" class="col-sub">isolated working tree</text>
-
-  <rect class="stroke" x="636" y="264" width="228" height="74" rx="4" ry="4"/>
-  <text x="750" y="286" class="item-c">worktree: plan-c</text>
-  <text x="750" y="308" class="item-c">branch: feature/plan-c</text>
-  <text x="750" y="328" class="col-sub">isolated working tree</text>
-
-  <text x="750" y="420" class="col-sub">one per plan; concurrent and independent</text>
-
-  <!-- ============================================================ -->
-  <!-- Arrows between columns (bi-directional pairs)                -->
-  <!-- ============================================================ -->
-
-  <!-- main checkout ↔ shared repo -->
-  <line class="arrow" x1="280" y1="225" x2="316" y2="225" marker-end="url(#arrow)"/>
-  <text x="298" y="217" class="arrow-lbl">writes</text>
-  <line class="arrow" x1="316" y1="260" x2="280" y2="260" marker-end="url(#arrow)"/>
-  <text x="298" y="252" class="arrow-lbl">reads</text>
-
-  <!-- shared repo ↔ plan worktrees -->
-  <line class="arrow" x1="584" y1="225" x2="616" y2="225" marker-end="url(#arrow)"/>
-  <text x="600" y="217" class="arrow-lbl">reads</text>
-  <line class="arrow" x1="616" y1="260" x2="584" y2="260" marker-end="url(#arrow)"/>
-  <text x="600" y="252" class="arrow-lbl">writes</text>
-
-  <!-- ============================================================ -->
-  <!-- Footer caption (whole-diagram)                                -->
-  <!-- ============================================================ -->
-  <text x="450" y="478" class="caption">Many working trees, one repository — commits and refs are shared; the working files are not.</text>
+  <text x="450" y="494" class="caption">Many working trees, one repository — commits and refs are shared; the working files are not.</text>
 
 </svg>

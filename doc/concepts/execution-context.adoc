@@ -26,7 +26,7 @@ A new LLM-judgement workflow worth pinning its own model is added by writing a n
 
 image::../resources/diagrams/variant-emission.svg[Variant emission — one canonical SKILL declares implements + levels; the build target reads it and emits the canonical no-suffix file plus six suffixed level variants with model and effort baked in, align=center]
 
-The Claude target emits up to **seven** files from the single canonical source: the no-suffix `execution-context.md` (inherit; `implements:` and `levels:` stripped) plus six level-suffixed files (`-low`, `-medium`, `-high`, `-xhigh`, `-xxhigh`, `-max`). Each suffixed variant has `model:` and `effort:` baked into its frontmatter from the canonical level → primitive mapping in `effort-levels.md`. The `-max` variant is Opus-4.7-only — the build emitter's guard skips it when the resolved alias does not accept `effort: xhigh`, leaving six files in that case.
+The Claude target emits up to **seven** files from the single canonical source: the no-suffix link:../../marketplace/bundles/plan-marshall/agents/execution-context.md[`execution-context.md`] (inherit; `implements:` and `levels:` stripped) plus six level-suffixed files (`-low`, `-medium`, `-high`, `-xhigh`, `-xxhigh`, `-max`). Each suffixed variant has `model:` and `effort:` baked into its frontmatter from the canonical level → primitive mapping in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md[`effort-levels.md`]. The `-max` variant is Opus-4.7-only — the build emitter's guard skips it when the resolved alias does not accept `effort: xhigh`, leaving six files in that case.
 
 Dispatch sites resolve which variant to call via `manage-config effort resolve-target --phase <phase> [--role <subkey>]`, which returns the canonical name when the level is `inherit`/empty and the matching variant otherwise. The resolver reads `.plan/marshal.json` fresh per dispatch, so an edit to any `plan.<phase>.effort` attribute takes effect on the **next** call — no Claude Code restart required.
 
@@ -37,7 +37,7 @@ The "which model and effort level runs each LLM-judgement workflow" question red
 
 The runtime path: caller passes `--phase <phase>` and optionally `--role <subkey>` to `manage-config effort resolve-target`. The resolver bubbles `phase.subkey` → `phase.default` → `phase` shorthand → plan-wide `effort` → `inherit` and returns the first level it finds. The variant emitter has already produced an agent file for that level; the orchestrator dispatches that variant by name.
 
-The canonical specs (`effort-levels.md`, `effort-roles.md`, `effort-variants.md`) live under `marketplace/bundles/plan-marshall/skills/plan-marshall/standards/`. Operator-facing guidance (wizard presets, polymorphic `marshal.json` shape, worked example, troubleshooting) lives in xref:../user/efforts.adoc[User Guide › Efforts].
+The canonical specs — link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md[`effort-levels.md`], link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-roles.md[`effort-roles.md`], link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-variants.md[`effort-variants.md`] — live under `plan-marshall/standards/`. Operator-facing guidance (wizard presets, polymorphic `marshal.json` shape, worked example, troubleshooting) lives in xref:../user/efforts.adoc[User Guide › Efforts].
 
 == Granularity
 
@@ -49,7 +49,7 @@ Not every step belongs in its own dispatch. The granularity heuristics in link:.
 
 == Dispatch lifecycle
 
-The dispatch is synchronous. The orchestrator suspends on the `Task:` call for the entire duration of the subagent's run (skill loads, workflow read, internal loops, AskUserQuestion gates) and resumes only when the subagent returns its TOON record. No tokens are billed to the orchestrator during the suspension — only the subagent's `<usage>` is counted. The contract behind that — the eight-step sequence the dispatcher follows, the five-field prompt body, the deterministic skill-load order — is canonical in `ref-workflow-architecture/standards/dispatch-walkthrough.md` along with three worked end-to-end traces (a single-workflow phase entry, a sub-dispatch by reference, and a parallel fan-out). The concept page stops at "synchronous, contracted, zero-token suspension"; the spec carries the steps.
+The dispatch is synchronous. The orchestrator suspends on the `Task:` call for the entire duration of the subagent's run (skill loads, workflow read, internal loops, AskUserQuestion gates) and resumes only when the subagent returns its TOON record. No tokens are billed to the orchestrator during the suspension — only the subagent's `<usage>` is counted. The contract behind that — the eight-step sequence the dispatcher follows, the five-field prompt body, the deterministic skill-load order — is canonical in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/dispatch-walkthrough.md[`dispatch-walkthrough.md`] along with three worked end-to-end traces (a single-workflow phase entry, a sub-dispatch by reference, and a parallel fan-out). The concept page stops at "synchronous, contracted, zero-token suspension"; the spec carries the steps.
 
 == Related
 
