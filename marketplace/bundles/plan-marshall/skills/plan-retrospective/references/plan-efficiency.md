@@ -40,7 +40,7 @@ For every plan, compute and embed the following four ratios explicitly under the
 
 1. `tokens_per_file_modified` = `totals.tokens / max(totals.files_modified, 1)`
 2. `seconds_per_task` = `totals.duration_seconds / max(totals.tasks_completed, 1)`
-3. `max_phase_token_share` = `max(phase_breakdown[*].tokens) / totals.tokens` (as a fraction 0.0–1.0; emit two decimals)
+3. `max_phase_token_share` = `max(phase_breakdown[*].tokens) / max(totals.tokens, 1)` (as a fraction 0.0–1.0; emit two decimals)
 4. `total_tokens_per_deliverable` = `totals.tokens / max(deliverable_count, 1)` where `deliverable_count` is the number of deliverables in the originating `solution_outline.md` (read this from the plan's `solution_outline.md` headings of the form `### N.` — count them).
 
 The four computed values MUST appear under `ratios:` in the fragment alongside the `dominant_phase` derived from the `phase_breakdown[*]` row that contributed the most tokens. Do NOT round or truncate; emit the integer or two-decimal value verbatim.
