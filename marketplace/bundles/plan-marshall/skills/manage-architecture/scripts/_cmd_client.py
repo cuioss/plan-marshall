@@ -114,7 +114,7 @@ _HINT_ORCHESTRATOR: str = 'Exceeds Bash ceiling; orchestrator-tier only'
 # Marketplace bundle root, used to locate each build skill's ``_*_execute.py``
 # module for ``_CONFIG`` import. Resolved relative to this file so the lookup
 # works from any worktree.
-_MARKETPLACE_BUNDLES_DIR: Path = Path(__file__).resolve().parents[5] / 'marketplace' / 'bundles'
+_MARKETPLACE_BUNDLES_DIR: Path = Path(__file__).resolve().parents[4]
 
 # Build skills directory layout: each build skill stores its ``_CONFIG``
 # (the ExecuteConfig instance) in a module named ``_{skill}_execute.py``
