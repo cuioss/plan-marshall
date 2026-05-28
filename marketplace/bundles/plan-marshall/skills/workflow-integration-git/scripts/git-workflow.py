@@ -425,6 +425,14 @@ def _resolve_analyze_diff_path(args) -> tuple[Path | None, dict | None]:
 
     Accepts ``--plan-id`` (primary) or ``--project-dir`` (escape hatch).
     Returns ``(path, None)`` on success or ``(None, error_dict)`` on failure.
+
+    Note: The argument resolution pattern (executor lookup → subprocess call →
+    TOON parse → worktree path extraction) is intentionally repeated across the
+    ``_resolve_analyze_diff_path``, ``_resolve_branch_and_path``,
+    ``_resolve_project_dir_and_head``, and ``_resolve_project_dir`` helpers in
+    this file. Each function is specific to its command's return shape and error
+    envelope, so they cannot be collapsed without coupling unrelated subcommands.
+    Keep the implementations in sync when modifying the shared resolution logic.
     """
     plan_id: str | None = getattr(args, 'plan_id', None)
     project_dir: str | None = getattr(args, 'project_dir', None)

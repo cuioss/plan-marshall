@@ -25,7 +25,13 @@ from git_provider import run_git  # type: ignore[import-not-found]
 
 
 def _verify_git_repo(path: Path) -> str | None:
-    """Return an error message if ``path`` is not a git working tree root."""
+    """Return an error message if ``path`` is not a git working tree root.
+
+    Note: This function is intentionally duplicated across ``_cmd_force_push.py``,
+    ``_cmd_prune_ref.py``, and ``_cmd_switch_and_pull.py`` to maintain module
+    independence (private helpers must not cross module boundaries). Keep the
+    implementations in sync when modifying this logic.
+    """
     rc, _out, err = run_git(['-C', str(path), 'rev-parse', '--show-toplevel'])
     if rc != 0:
         return f'path is not a git working tree: {err or "rev-parse failed"}'
@@ -140,7 +146,13 @@ def _resolve_branch_and_path(args) -> tuple[str | None, Path | None, dict | None
 
 
 def _find_executor() -> Path | None:
-    """Locate ``.plan/execute-script.py`` relative to the main checkout."""
+    """Locate ``.plan/execute-script.py`` relative to the main checkout.
+
+    Note: This function is intentionally duplicated across ``_cmd_force_push.py``,
+    ``_cmd_prune_ref.py``, and ``_cmd_switch_and_pull.py`` to maintain module
+    independence (private helpers must not cross module boundaries). Keep the
+    implementations in sync when modifying this logic.
+    """
     try:
         from marketplace_paths import git_main_checkout_root  # type: ignore[import-not-found]
         root = git_main_checkout_root()
