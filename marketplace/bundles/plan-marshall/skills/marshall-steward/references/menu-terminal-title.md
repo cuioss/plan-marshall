@@ -21,9 +21,9 @@ plan-marshall bundle:
 
 The remaining wiring is the set of hook entries that drive the reader on every
 render-trigger event. **Action A** installs those entries into
-`.claude/settings.local.json`. **Action B** overrides the heuristic-derived
-active plan for the current session when the SessionStart hook's best-effort
-resolver picked the wrong plan.
+`.claude/settings.local.json`. **Action B** sets the active-plan cache mapping
+for the current session, overriding whichever plan id the executor's
+write-through last published.
 
 ## Reachability
 
@@ -262,15 +262,18 @@ After completion, return to the Configuration menu.
 
 ## Action B — Override active-plan for this session
 
-The SessionStart hook (`platform-runtime/scripts/claude_hook.py`) writes a
-best-effort active-plan cache mapping on every fresh session, using a
-most-recently-modified non-terminal heuristic. When that heuristic picks the
-wrong plan (e.g., the user touched plan A recently but actually wants to work
-on plan B), this action lets the user override the mapping for the current
-session.
+The active-plan cache mapping at
+`${XDG_CACHE_HOME:-$HOME/.cache}/plan-marshall/sessions/$CLAUDE_CODE_SESSION_ID/active-plan`
+is normally populated on the first `/plan-marshall` invocation in a session
+(the executor's write-through publishes the plan id alongside the command it
+ran). Until that first invocation lands, a fresh session shows the host
+terminal's default title; this action is the explicit override path for setting
+the active plan up front, or for switching to a different plan mid-session.
 
-The override is **session-scoped**: closing the terminal and opening a new one
-re-runs the heuristic from a clean state.
+The override is **session-scoped**: the cache mapping lives under the current
+`$CLAUDE_CODE_SESSION_ID` directory, so closing the terminal and opening a new
+one starts from an empty mapping again (the next `/plan-marshall` invocation
+in the new session will repopulate it via the executor write-through).
 
 ### Step 1: Precondition — session id must be set
 
