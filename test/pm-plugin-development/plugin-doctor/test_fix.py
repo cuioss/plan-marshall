@@ -556,8 +556,7 @@ def test_apply_signature_docstring_fix_removes_restating_docstring():
             'def f(a, b):\n'
             '    """Args:\n'
             '\n'
-            '    a: first\n'
-            '    b: second\n'
+            '    Returns:\n'
             '    """\n'
             '    return a + b\n',
             encoding='utf-8',
@@ -575,6 +574,43 @@ def test_apply_signature_docstring_fix_removes_restating_docstring():
         content = py_file.read_text()
         assert 'Args:' not in content, f'Restating docstring should be removed: {content!r}'
         assert 'return a + b' in content, 'Function body must be preserved'
+
+
+def test_apply_signature_docstring_fix_inserts_pass_for_sole_docstring():
+    """A function whose body is ONLY a signature-restating docstring gets a ``pass``.
+
+    Regression for PR #499 review 7877ca: deleting the sole-statement docstring
+    leaves an empty function body, which is a SyntaxError. The fix replaces the
+    docstring with a ``pass`` (preserving indentation) so the result still
+    parses.
+    """
+    import ast as _ast
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        py_file = Path(tmp_dir) / 'sample.py'
+        py_file.write_text(
+            'def f(a, b):\n'
+            '    """Args:\n'
+            '\n'
+            '    Returns:\n'
+            '    """\n',
+            encoding='utf-8',
+        )
+
+        fix_json = json.dumps({'type': 'SIMPLICITY_SIGNATURE_DOCSTRING', 'file': 'sample.py'})
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write(fix_json)
+            f.flush()
+            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            data = cmd_apply(args)
+            Path(f.name).unlink()
+
+        assert data['success'] is True, f'Fix should succeed: {data}'
+        content = py_file.read_text()
+        assert 'Args:' not in content, f'Restating docstring should be removed: {content!r}'
+        assert '    pass' in content, f'Sole-docstring body should be replaced with pass: {content!r}'
+        # The resulting source must still parse (no empty-block SyntaxError).
+        _ast.parse(content)
 
 
 def test_apply_signature_docstring_fix_preserves_intent_docstring():

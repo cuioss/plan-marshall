@@ -342,8 +342,11 @@ def apply_signature_docstring_fix(file_path: Path, fix: dict, templates: dict) -
         return {'success': False, 'error': f'Could not parse file: {exc}'}
 
     lines = content.split('\n')
-    # Collect (start_line, end_line) 1-based inclusive ranges to delete.
-    ranges: list[tuple[int, int]] = []
+    # Collect (start_line, end_line, sole_statement) 1-based inclusive ranges.
+    # ``sole_statement`` is True when the docstring is the only statement in the
+    # function body — deleting it outright would leave an empty block (a
+    # SyntaxError), so the range is replaced with a ``pass`` instead.
+    ranges: list[tuple[int, int, bool]] = []
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
@@ -356,13 +359,19 @@ def apply_signature_docstring_fix(file_path: Path, fix: dict, templates: dict) -
         if not (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)):
             continue
         end = first.end_lineno if first.end_lineno is not None else first.lineno
-        ranges.append((first.lineno, end))
+        sole_statement = len(node.body) == 1
+        ranges.append((first.lineno, end, sole_statement))
 
     if not ranges:
         return {'success': False, 'error': 'No signature-restating docstrings found'}
 
-    for start, end in sorted(ranges, key=lambda r: r[0], reverse=True):
-        del lines[start - 1:end]
+    for start, end, sole_statement in sorted(ranges, key=lambda r: r[0], reverse=True):
+        if sole_statement:
+            # Preserve the docstring's indentation for the replacement ``pass``.
+            indent = lines[start - 1][: len(lines[start - 1]) - len(lines[start - 1].lstrip())]
+            lines[start - 1:end] = [f'{indent}pass']
+        else:
+            del lines[start - 1:end]
 
     new_content = '\n'.join(lines)
     with open(file_path, 'w', encoding='utf-8') as f:

@@ -1662,6 +1662,34 @@ def test_simplicity_unused_parameter_del_local_no_false_positive(tmp_path):
     assert findings == [], f'del of a local should not flag, got {findings!r}'
 
 
+def test_simplicity_unused_parameter_detects_marker_on_last_multiline_param(tmp_path):
+    """A ``# unused`` marker on the last parameter of a multi-line signature is detected.
+
+    Regression for PR #499 review fc4fa4: the old string heuristic required the
+    line to contain ``def ``, ``):``, or ``,``. The last parameter of a
+    multi-line signature sits on its own line with none of those tokens, so the
+    marker was missed. The AST-based parameter-line binding catches it.
+    """
+    body = 'def f(\n    name,\n    flag  # unused\n):\n    return name\n'
+    _write_simplicity_script(tmp_path, body)
+    findings = analyze_unused_parameter(tmp_path / 'marketplace')
+    assert len(findings) == 1, f'Expected one # unused finding on last multi-line param, got {findings!r}'
+    assert findings[0]['type'] == 'SIMPLICITY_UNUSED_PARAMETER'
+    assert findings[0]['fixable'] is False
+
+
+def test_simplicity_unused_parameter_marker_in_body_no_false_positive(tmp_path):
+    """A ``# unused`` comment on a non-parameter line does not trigger the marker rule.
+
+    The AST binding means only lines carrying a parameter declaration are
+    considered; a ``# unused`` comment on a body statement is ignored.
+    """
+    body = 'def f(name):\n    tmp = 1  # unused\n    return name\n'
+    _write_simplicity_script(tmp_path, body)
+    findings = analyze_unused_parameter(tmp_path / 'marketplace')
+    assert findings == [], f'# unused on a body line should not flag, got {findings!r}'
+
+
 def test_simplicity_backward_compat_reexport_detects_tagged_import(tmp_path):
     """An import tagged ``# backward compat`` triggers SIMPLICITY_BACKWARD_COMPAT_REEXPORT."""
     body = 'from other import thing  # backward compat re-export\n'
@@ -1723,8 +1751,8 @@ def test_simplicity_thin_wrapper_no_false_positive_multistatement(tmp_path):
 
 
 def test_simplicity_signature_docstring_detects_restating_docstring(tmp_path):
-    """A docstring whose first paragraph only says ``Args:`` triggers SIMPLICITY_SIGNATURE_DOCSTRING."""
-    body = 'def f(a, b):\n    """Args:\n\n    a: first\n    b: second\n    """\n    return a + b\n'
+    """A docstring whose ONLY content is bare ``Args:``/``Returns:`` headers triggers SIMPLICITY_SIGNATURE_DOCSTRING."""
+    body = 'def f(a, b):\n    """Args:\n\n    Returns:\n    """\n    return a + b\n'
     _write_simplicity_script(tmp_path, body)
     findings = analyze_signature_docstring(tmp_path / 'marketplace')
     assert len(findings) == 1, f'Expected one signature-docstring finding, got {findings!r}'
@@ -1740,6 +1768,21 @@ def test_simplicity_signature_docstring_no_false_positive_with_intent(tmp_path):
     assert findings == [], f'Docstring with intent should yield no finding, got {findings!r}'
 
 
+def test_simplicity_signature_docstring_no_false_positive_with_param_descriptions(tmp_path):
+    """A docstring opening with ``Args:`` but carrying real parameter descriptions is NOT flagged.
+
+    Regression for PR #499 review bfdb40: ``_restates_signature_only`` returned
+    True as soon as the first paragraph was a structural header, without
+    inspecting the rest of the body. A docstring whose remaining lines describe
+    each parameter (``a: first input``) carries real documentation and must NOT
+    be flagged for deletion.
+    """
+    body = 'def f(a, b):\n    """Args:\n\n    a: the first input value\n    b: the second input value\n    """\n    return a + b\n'
+    _write_simplicity_script(tmp_path, body)
+    findings = analyze_signature_docstring(tmp_path / 'marketplace')
+    assert findings == [], f'Docstring with param descriptions should not be flagged, got {findings!r}'
+
+
 def test_simplicity_scan_aggregates_all_five(tmp_path):
     """scan_simplicity aggregates findings from every detector in one pass."""
     body = (
@@ -1753,7 +1796,7 @@ def test_simplicity_scan_aggregates_all_five(tmp_path):
         '    return target(a, b)\n'
         '\n'
         'def g(x):\n'
-        '    """Args:\n\n    x: input\n    """\n'
+        '    """Args:\n\n    Returns:\n    """\n'
         '    try:\n'
         '        do()\n'
         '    except Exception:  # defensive only\n'

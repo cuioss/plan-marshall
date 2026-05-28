@@ -107,6 +107,34 @@ def _param_names(func: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
     return names
 
 
+def _param_arg_nodes(func: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.arg]:
+    """Collect every ``ast.arg`` node declared by a function signature."""
+    a = func.args
+    nodes: list[ast.arg] = [*a.posonlyargs, *a.args, *a.kwonlyargs]
+    if a.vararg:
+        nodes.append(a.vararg)
+    if a.kwarg:
+        nodes.append(a.kwarg)
+    return nodes
+
+
+def _param_line_numbers(tree: ast.Module) -> set[int]:
+    """Collect the 1-based source line of every parameter declaration.
+
+    Each ``ast.arg`` carries the line on which its name appears. For a
+    multi-line signature, each parameter sits on its own line, so the set of
+    parameter line numbers lets a per-line comment check (``# unused``) bind
+    deterministically to a parameter regardless of where the parameter falls
+    in the signature — including the last parameter on its own line, which has
+    no trailing ``,`` or ``):`` and which the old string heuristic missed.
+    """
+    lines: set[int] = set()
+    for func in _functions(tree):
+        for arg in _param_arg_nodes(func):
+            lines.add(arg.lineno)
+    return lines
+
+
 def _finding(rule_id: str, file_path: Path, line: int, description: str, *, fixable: bool) -> dict:
     return {
         'rule_id': rule_id,
@@ -153,8 +181,14 @@ def analyze_unused_parameter(marketplace_root: Path) -> list[dict]:
                                 fixable=False,
                             )
                         )
+        # Detect ``# unused`` markers by binding them to AST-collected parameter
+        # line numbers rather than a fragile string heuristic. The old heuristic
+        # (`'def ' in line or '):' in line or ',' in line`) missed a parameter
+        # declared on its own line as the last entry of a multi-line signature,
+        # which carries no trailing comma or `):`.
+        param_lines = _param_line_numbers(tree)
         for idx, line in enumerate(lines, start=1):
-            if _UNUSED_MARKER_RE.search(line) and ('def ' in line or '):' in line or ',' in line):
+            if idx in param_lines and _UNUSED_MARKER_RE.search(line):
                 findings.append(
                     _finding(
                         RULE_UNUSED_PARAMETER,
@@ -274,21 +308,48 @@ def _first_docstring_paragraph(docstring: str) -> str:
     return ' '.join(paragraph)
 
 
+# A line that is purely a structural section header (``Args:``, ``Returns:`` …)
+# carrying no parameter descriptions or prose.
+_STRUCTURAL_HEADER_RE = re.compile(
+    r'(args|arguments|returns|return|params|parameters|yields|yield|raises|raise|'
+    r'attributes|attribute|examples|example|note|notes|see also)\s*:?$',
+    re.IGNORECASE,
+)
+
+
 def _restates_signature_only(docstring: str) -> bool:
     """Return True when a docstring's only content restates Args:/Returns:.
 
     A signature-restating docstring has a first paragraph that is empty or
     merely names ``Args:`` / ``Returns:`` headers, with no intent ("WHY")
-    content elsewhere.
+    content elsewhere. Crucially, the predicate inspects the WHOLE docstring,
+    not just the first paragraph: a docstring whose first paragraph is a bare
+    ``Args:`` header but whose remaining lines carry detailed parameter
+    descriptions is NOT signature-restating — deleting it would silently drop
+    the documented parameter semantics. Such a docstring returns False.
     """
     body = docstring.strip()
     if not body:
         return False
     first = _first_docstring_paragraph(body)
-    # The docstring must consist ONLY of Args:/Returns: structural headers —
-    # the first paragraph carries no prose summary line.
-    structural_only = bool(re.fullmatch(r'(args|arguments|returns|return|params|parameters)\s*:?', first, re.IGNORECASE))
-    return structural_only
+    # The first paragraph must itself be a bare structural header; otherwise the
+    # docstring opens with a prose summary line and carries intent.
+    structural_first = bool(
+        re.fullmatch(r'(args|arguments|returns|return|params|parameters)\s*:?', first, re.IGNORECASE)
+    )
+    if not structural_first:
+        return False
+    # Inspect every remaining line. If any non-empty line is something other
+    # than a bare structural header, the docstring carries a real description
+    # (e.g. ``a: first input``) and is therefore NOT signature-restating.
+    lines = body.splitlines()
+    for raw in lines[1:]:
+        line = raw.strip()
+        if not line:
+            continue
+        if not _STRUCTURAL_HEADER_RE.fullmatch(line):
+            return False
+    return True
 
 
 def analyze_signature_docstring(marketplace_root: Path) -> list[dict]:
