@@ -1,9 +1,10 @@
 # Menu Option: Terminal Title
 
-Configure the dynamic terminal-title integration. When enabled, each terminal
-tab shows the active plan-marshall plan, phase, and a live status icon for the
-Claude Code session running in it. The same body also drives the Claude Code
-statusLine inside the TUI.
+Configure the dynamic terminal-title integration or override the active plan
+for the current Claude Code session. When the integration is enabled, each
+terminal tab shows the active plan-marshall plan, phase, and a live status
+icon for the Claude Code session running in it. The same body also drives the
+Claude Code statusLine inside the TUI.
 
 Terminal-title configuration is split across two surfaces, both shipped with the
 plan-marshall bundle:
@@ -19,18 +20,10 @@ plan-marshall bundle:
   or plain text (statusLine mode) to the controlling terminal.
 
 The remaining wiring is the set of hook entries that drive the reader on every
-render-trigger event. This menu option installs them into
-`.claude/settings.local.json`. A single invocation of `project install-hook`
-writes:
-
-- `hooks.SessionStart` — two entries (matcher-less + `matcher: "clear"`) plus
-  the existing session-capture entry (preserved when present).
-- `hooks.UserPromptSubmit`, `hooks.Notification`, `hooks.Stop` — one
-  matcher-less render entry each.
-- `hooks.PostToolUse` — one entry with `matcher: "AskUserQuestion"`.
-- `statusLine` — the renderer in plain-text mode.
-- `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE` — set to `"1"` so Claude Code does
-  not overwrite our title with its own.
+render-trigger event. **Action A** installs those entries into
+`.claude/settings.local.json`. **Action B** overrides the heuristic-derived
+active plan for the current session when the SessionStart hook's best-effort
+resolver picked the wrong plan.
 
 ## Reachability
 
@@ -41,14 +34,38 @@ that already has `.claude/settings.local.json` and `.plan/marshal.json` reaches
 this option the same way a fresh project does — the Configuration menu is not
 gated behind first-run setup.
 
+---
+
+## Sub-Menu Prompt
+
+Before either action runs, ask the user which one to take:
+
+```
+AskUserQuestion:
+  question: "Terminal Title — what would you like to do?"
+  header: "Terminal Title"
+  options:
+    - label: "Configure hook wiring"
+      description: "Install or repair the SessionStart, UserPromptSubmit, Notification, Stop, PostToolUse:AskUserQuestion render entries plus statusLine and env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE in ./.claude/settings.local.json (Action A)"
+    - label: "Override active-plan for this session"
+      description: "Write the cache mapping ${XDG_CACHE_HOME:-$HOME/.cache}/plan-marshall/sessions/$CLAUDE_CODE_SESSION_ID/active-plan so the next render trigger uses the selected plan (Action B)"
+  multiSelect: false
+```
+
+On **Configure hook wiring** proceed to Action A. On **Override active-plan for
+this session** proceed to Action B. The user may always return to the
+Configuration menu by cancelling the prompt.
+
+---
+
+## Action A — Configure hook wiring
+
 The detect → confirm → install flow below is the add/fix-into-existing-config
 path: it installs every missing render entry, preserves entries already present,
 and surfaces explicit prompts for the two conflict cases (`statusLine` /
 `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE` set to a different value).
 
----
-
-## Step 1: Detect
+### Step 1: Detect
 
 Probe the current `.claude/settings.local.json` to discover what is already
 wired up. Because the install operation is idempotent and reports a precise
@@ -96,9 +113,7 @@ tab title and statusline automatically.
 
 Otherwise proceed to Step 2.
 
----
-
-## Step 2: Confirm
+### Step 2: Confirm
 
 Prompt the user before writing anything:
 
@@ -118,9 +133,7 @@ On **Skip**: write nothing and return to the Configuration menu.
 
 On **Enable**: proceed to Step 3.
 
----
-
-## Step 3: Install
+### Step 3: Install
 
 Install the full wiring by invoking `project install-hook`:
 
@@ -136,7 +149,7 @@ Inspect the TOON response:
   write permissions on `./.claude/settings.local.json`. Do not proceed to the
   conflict-resolution prompts.
 
-### Per-event summary
+#### Per-event summary
 
 Two fields list which render-trigger events landed and which were already
 present:
@@ -156,7 +169,7 @@ Installed render entries: <installed_events>
 Already present:          <already_present_events>
 ```
 
-### statusLine conflict resolution
+#### statusLine conflict resolution
 
 `statusLine_status` is one of `installed`, `already_present`,
 `already_present_other`, or `overwritten`.
@@ -190,7 +203,7 @@ Already present:          <already_present_events>
 
   On **Keep existing**: skip; report that the existing statusLine was kept.
 
-### env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE conflict resolution
+#### env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE conflict resolution
 
 `env_status` follows the same enum (`installed`, `already_present`,
 `already_present_other`, `overwritten`).
@@ -228,7 +241,7 @@ when both `already_present_other` signals fire, passing the appropriate flag(s)
 on the follow-up call. The follow-up call may carry both flags at once when the
 user consented to both overwrites.
 
-### Final report
+#### Final report
 
 Once all conflicts (if any) are resolved, report the outcome:
 
@@ -243,6 +256,96 @@ Start a fresh Claude Code session to see the live tab title and statusline
 (plan, phase, status icon).
 ```
 
+After completion, return to the Configuration menu.
+
 ---
+
+## Action B — Override active-plan for this session
+
+The SessionStart hook (`platform-runtime/scripts/claude_hook.py`) writes a
+best-effort active-plan cache mapping on every fresh session, using a
+most-recently-modified non-terminal heuristic. When that heuristic picks the
+wrong plan (e.g., the user touched plan A recently but actually wants to work
+on plan B), this action lets the user override the mapping for the current
+session.
+
+The override is **session-scoped**: closing the terminal and opening a new one
+re-runs the heuristic from a clean state.
+
+### Step 1: Precondition — session id must be set
+
+Read `$CLAUDE_CODE_SESSION_ID`. When unset, print:
+
+```
+Cannot override active plan: $CLAUDE_CODE_SESSION_ID is not set. The override
+sub-action must be invoked from inside a Claude Code session.
+```
+
+and return to the Configuration menu.
+
+### Step 2: Enumerate active plans
+
+List all plans whose `current_phase ∉ {complete, archived}`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status list
+```
+
+The TOON contract for `list` carries `current_phase` per row; filter
+client-side to retain only non-terminal plans. For each surviving plan, capture
+`plan_id`, `current_phase`, and `short_description` from the row.
+
+- **Zero active plans** → print `No active plans to choose from.` and return
+  to the Configuration menu.
+- **One active plan** → confirm via `AskUserQuestion`:
+
+  ```
+  AskUserQuestion:
+    question: "Set active plan for this session to `<plan_id>`?"
+    header: "Override active plan"
+    options:
+      - label: "Confirm"
+        description: "<current_phase> — <short_description>"
+      - label: "Cancel"
+        description: "Leave the current mapping untouched"
+    multiSelect: false
+  ```
+
+  On **Confirm**: proceed to Step 3 with the single plan id. On **Cancel**:
+  return to the Configuration menu.
+
+- **Multiple active plans** → present them via `AskUserQuestion` with
+  `multiSelect: false`; each option carries `label: <plan_id>` and
+  `description: "<current_phase> — <short_description>"` sourced from
+  `status.json`. The user's selection is the override target.
+
+### Step 3: Write the cache mapping
+
+Resolve the cache path with `XDG_CACHE_HOME` honored:
+
+```
+${XDG_CACHE_HOME:-$HOME/.cache}/plan-marshall/sessions/$CLAUDE_CODE_SESSION_ID/active-plan
+```
+
+Write atomically (write to a sibling temp file, then rename) so a partial write
+cannot corrupt the cache. Create the session directory with parents as needed.
+
+### Step 4: Report
+
+On success, print:
+
+```
+Active plan for session $CLAUDE_CODE_SESSION_ID set to <plan_id>.
+The next render-trigger event (next prompt, notification, or stop) will
+update the tab title.
+```
+
+On any I/O failure, surface the OS error and advise the user to check write
+permissions on the cache directory:
+
+```
+Failed to write active-plan cache mapping: <os_error>.
+Check write permissions on ${XDG_CACHE_HOME:-$HOME/.cache}/plan-marshall/sessions/.
+```
 
 After completion, return to the Configuration menu.

@@ -208,7 +208,7 @@ Then execute the workflow described in that file. Each reference file is loaded 
 | `menu-configuration.md` | Build systems, skill domains, architecture refresh tier knobs | Menu option 3 |
 | `standards/effort-menu.md` | Per-phase effort configuration (Effort submenu) | Menu option 4 |
 | `menu-recipes.md` | Built-in recipes available in the wizard | Linked from `menu-configuration.md` |
-| `menu-terminal-title.md` | Confirmation-gated SessionStart-hook installation for the live terminal title | Linked from `menu-configuration.md` (Terminal Title) |
+| `menu-terminal-title.md` | Two-action sub-menu: install render-hook wiring; override active-plan for the current session | Linked from `menu-configuration.md` (Terminal Title) |
 | `shared-settings.md` | **DEPRECATED** — Plan phases, review gates, quality pipelines now delegate to `manage-config` | Retained for transition reference only |
 | `error-handling.md` | Error types and recovery | On error conditions |
 
