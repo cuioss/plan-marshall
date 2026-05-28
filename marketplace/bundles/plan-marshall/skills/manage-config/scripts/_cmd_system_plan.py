@@ -1,7 +1,7 @@
 """
-System and plan command handlers for manage-config.
+System, project, and plan command handlers for manage-config.
 
-Handles: system, plan
+Handles: system, project, plan
 
 Plan sub-nouns delegate to phase handlers in _cmd_quality_phases:
   phase-1-init, phase-2-refine, phase-5-execute, phase-6-finalize
@@ -17,6 +17,7 @@ from _config_core import (
     save_config,
     success_exit,
 )
+from _config_defaults import DEFAULT_PROJECT
 
 
 def cmd_system(args) -> dict:
@@ -46,6 +47,44 @@ def cmd_system(args) -> dict:
             return success_exit({'field': field, 'value': value})
 
     return error_exit('Unknown system sub-noun or verb')
+
+
+def cmd_project(args) -> dict:
+    """Handle project noun.
+
+    Exposes the project-level `project.*` block in marshal.json
+    (currently `default_base_branch`). On a fresh marshal.json that lacks
+    the `project` block, `get` returns the value from
+    :data:`DEFAULT_PROJECT` so consumers always observe the canonical
+    default — mirroring the implicit-default semantics of the other
+    `DEFAULT_PLAN_*` blocks.
+    """
+    try:
+        require_initialized()
+    except MarshalNotInitializedError as e:
+        return error_exit(str(e))
+
+    config = load_config()
+    project_config = config.get('project', {})
+
+    if args.verb == 'get':
+        field = args.field
+        if field in project_config:
+            return success_exit({'field': field, 'value': project_config[field]})
+        if field in DEFAULT_PROJECT:
+            return success_exit({'field': field, 'value': DEFAULT_PROJECT[field]})
+        return error_exit(f"Field '{field}' not found in project config", error_type='field_not_found')
+
+    elif args.verb == 'set':
+        field = args.field
+        value = _coerce_value(args.value)
+
+        project_config[field] = value
+        config['project'] = project_config
+        save_config(config)
+        return success_exit({'field': field, 'value': value})
+
+    return error_exit('Unknown project verb')
 
 
 def cmd_plan(args) -> dict:

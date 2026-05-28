@@ -325,7 +325,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 **Parameters**:
 - `--plan-id`: Plan identifier — resolves the main checkout root via `marketplace_paths` (mutually exclusive with `--project-dir`).
 - `--project-dir`: Explicit main checkout path (escape hatch; mutually exclusive with `--plan-id`).
-- `--base` (required): Base branch to check out and pull (e.g., `main`).
+- `--base` (required): Base branch to check out and pull (consumer-configured via `project.default_base_branch`; per-plan override via `references.base_branch`).
 
 **Output** (TOON, success):
 ```toon
@@ -427,7 +427,7 @@ Run `git worktree add <resolved-path> <branch>` against the main checkout, set u
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create \
-  --plan-id EXAMPLE-PLAN --branch feature/EXAMPLE-PLAN [--base main]
+  --plan-id EXAMPLE-PLAN --branch feature/EXAMPLE-PLAN [--base {base_branch}]
 ```
 
 **Parameters**:

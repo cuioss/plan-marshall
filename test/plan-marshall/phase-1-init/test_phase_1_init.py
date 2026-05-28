@@ -86,5 +86,65 @@ class TestPhase1InitLessonMoveContract:
         assert destination.read_text() == lesson_content
 
 
+class TestPhase1InitBaseBranchSeeding:
+    """Pin the doc-level orchestration sequence that seeds references.base_branch.
+
+    phase-1-init is a workflow-driven skill so the test target is SKILL.md:
+    the orchestration sequence MUST read project.default_base_branch from
+    marshal.json (via `manage-config project get --field default_base_branch`)
+    and write that value to `references.base_branch`, with a documented
+    fallback path on `field_not_found` (legacy marshal.json schema).
+    """
+
+    def _skill_md_text(self) -> str:
+        skill_md = (
+            MARKETPLACE_ROOT
+            / 'plan-marshall'
+            / 'skills'
+            / 'phase-1-init'
+            / 'SKILL.md'
+        )
+        return skill_md.read_text(encoding='utf-8')
+
+    def test_skill_documents_manage_config_project_read(self):
+        """SKILL.md MUST document the `manage-config project get --field default_base_branch` read."""
+        # Arrange / Act
+        text = self._skill_md_text()
+
+        # Assert
+        assert 'project get --field default_base_branch' in text, (
+            'phase-1-init SKILL.md must document the `manage-config project get` '
+            'read for default_base_branch — that is the seed source for '
+            'references.base_branch.'
+        )
+
+    def test_skill_documents_field_not_found_fallback(self):
+        """SKILL.md MUST document the legacy-schema fallback path on field_not_found."""
+        # Arrange / Act
+        text = self._skill_md_text()
+
+        # Assert — the fallback must mention field_not_found AND the legacy
+        # current-branch behaviour so the workflow degrades gracefully against
+        # marshal.json files predating the project.default_base_branch field.
+        assert 'field_not_found' in text, (
+            'phase-1-init SKILL.md must document the field_not_found fallback '
+            'so legacy marshal.json files still produce a valid base_branch seed.'
+        )
+
+    def test_skill_writes_project_base_branch_to_references(self):
+        """SKILL.md MUST write the resolved value to references.base_branch."""
+        # Arrange / Act
+        text = self._skill_md_text()
+
+        # Assert — the orchestration writes through manage-references set
+        # with --field base_branch carrying the project-resolved value.
+        assert '--field base_branch' in text
+        assert 'project_base_branch' in text, (
+            'phase-1-init SKILL.md must use the {project_base_branch} '
+            'placeholder when seeding references.base_branch, signalling that '
+            'the value originates from project.default_base_branch.'
+        )
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
