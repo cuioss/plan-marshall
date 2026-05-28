@@ -922,6 +922,16 @@ Execute continuously without user prompts except:
 - Task transitions
 - Routine confirmations
 
+### B7 — voluntary_checkpoint no-progress reclassification
+
+After a phase-5-execute dispatch returns and the orchestrator's classification rules in [`plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) provisionally label the return as `termination_cause: voluntary_checkpoint`, the orchestrator evaluates the deterministic no-progress predicate:
+
+> `in_progress_count > 0 AND completed_tasks_delta == 0 AND consumed_tokens > 50000`
+
+When all three sub-conditions hold, the orchestrator reclassifies `termination_cause` from `voluntary_checkpoint` to `error` BEFORE invoking `record-dispatch-boundary`. The reclassification routes the dispatch into the shorter retry-budget / escalation path already coded for `error`, instead of letting another round of voluntary-checkpoint re-dispatches burn budget on a loop that is not making progress. Plans that DO make progress — even a single task completed (`completed_tasks_delta >= 1`), or cheap no-op iterations under the 50K-token threshold — keep the `voluntary_checkpoint` classification and continue along the standard recovery path.
+
+The reclassification is a forensic + control-flow decision: the dispatch is still recorded via `record-dispatch-boundary`, only the `--termination-cause` value changes. The full predicate definition, sub-condition resolution rules, and decision-log shape (carrying all three predicate values for forensic reconstruction) live in [`plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "B7 — voluntary_checkpoint no-progress reclassification".
+
 ### Forbidden: agent-initiated checkpoints
 
 Phase-5-execute MUST drive the task loop to one of three terminal outcomes inside a single dispatch:

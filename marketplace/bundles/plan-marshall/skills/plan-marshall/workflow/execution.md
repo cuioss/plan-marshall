@@ -112,7 +112,7 @@ to the agent's terminal payload (text + structured TOON return):
 | Cause | Detection rule |
 |-------|----------------|
 | `task_complete_returned_verbatim` | The agent returned the bare `task_complete` payload from `execute-task` verbatim, without wrapping it in a phase-5-execute terminal payload. (Implies the agent skipped the loop's bookkeeping after a single task.) |
-| `voluntary_checkpoint` | The agent emitted any of "Returning control to orchestrator", "progress checkpoint", "partial-completion handoff", or returned a non-error payload while pending tasks remain in the queue. |
+| `voluntary_checkpoint` | The agent emitted any of "Returning control to orchestrator", "progress checkpoint", "partial-completion handoff", or returned a non-error payload while pending tasks remain in the queue. **See "B7 — voluntary_checkpoint no-progress reclassification" below for the deterministic predicate that reclassifies a sub-class of voluntary_checkpoint returns as `error`.** |
 | `harness_cancellation` | The dispatch ended with a host-platform cancellation marker (timeout, context-window limit, etc.). |
 | `error` | The agent returned a structured error payload via the skill's Error Handling section (including the pending-task-drift fatal error), EXCLUDING the `error_type: baseline_drift` discriminator below. |
 | `baseline_drift` | The agent returned `status: error, error_type: baseline_drift` from phase-5-execute Step 3 because `baseline-reconcile` reported `conflict_count > 0` (non-zero overlap between upstream commits and the worktree's in-flight changes). Triggers the **Baseline drift recovery (non-zero overlap)** sub-section below. The zero-overlap case (`conflict_count == 0`) NEVER reaches this branch — phase-5-execute self-absorbs it internally via the metadata-only contract documented in `phase-5-execute/standards/sync-with-main.md` § "Self-absorption contract", then continues its task loop without returning. |
@@ -133,6 +133,30 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reco
 Substitute the `--termination-cause` value with the canonical cause from the
 table above and `{n}` with the integer parsed from the agent's
 `<usage>...</usage>` block (use `0` when the field is absent).
+
+**B7 — voluntary_checkpoint no-progress reclassification (deterministic)**:
+
+After a dispatch returns and is provisionally classified as `voluntary_checkpoint` per the table above, BEFORE invoking `record-dispatch-boundary`, evaluate the deterministic no-progress predicate:
+
+> `in_progress_count > 0 AND completed_tasks_delta == 0 AND consumed_tokens > 50000`
+
+where:
+
+- `in_progress_count` is the value returned by `manage-tasks loop-exit-guard` for the current iteration.
+- `completed_tasks_delta` is the difference between the current iteration's `done` task count and the previous iteration's snapshot (read from the prior `record-dispatch-boundary` row, or `0` on first iteration).
+- `consumed_tokens` is the `total_tokens` value parsed from the just-returned agent's `<usage>...</usage>` block (substitute `0` when the field is absent — the threshold then trivially fails and reclassification does NOT fire).
+
+When ALL THREE sub-conditions hold, reclassify `termination_cause` from `voluntary_checkpoint` to `error` BEFORE the `record-dispatch-boundary` call. The reclassification routes the dispatch into the shorter retry-budget / escalation path already coded for `error` (see § "Other Errors" downstream), instead of letting the orchestrator burn additional rounds on a non-progressing loop. Log the reclassification at decision level — the entry MUST carry all three predicate values so retrospective forensic analysis can reconstruct the decision:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-5-execute:no-progress) reclassified voluntary_checkpoint as error — in_progress={N}, completed_delta=0, tokens={X}"
+```
+
+When ANY sub-condition fails (in_progress_count==0, OR a task DID complete in the iteration (completed_tasks_delta >= 1), OR consumed_tokens <= 50000), keep the `voluntary_checkpoint` classification as-is — current behaviour is preserved for plans that ARE making progress under the checkpoint flow. The 50K threshold is intentional: it filters out cheap no-op iterations that legitimately bounce off the queue boundary without burning real budget.
+
+The reclassification is a forensic + control-flow decision, not a soft-failure escalation: the dispatch is still recorded via `record-dispatch-boundary` (with `--termination-cause error`), and the orchestrator's downstream `error` handling — including the `error_type` discriminator and the user-facing escalation prompt — runs unchanged.
 
 **Pre-dispatch queue peek** — before issuing any phase-5-execute *re-dispatch* (a dispatch motivated by the prior return classifying as anything other than `clean_exit_queue_empty`, and excluding the human-escalation cases `error` and repeated `harness_cancellation`), the orchestrator MUST first call `manage-tasks loop-exit-guard` as a cheap pre-flight to decide whether the queue is empty. This short-circuits the ~30s envelope dispatch when there is no work left.
 

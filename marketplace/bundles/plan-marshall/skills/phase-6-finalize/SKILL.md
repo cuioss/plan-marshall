@@ -599,6 +599,61 @@ FOR each step_id in manifest.phase_6.steps:
   4. Pre-archive snapshot hook (run BEFORE dispatching the step if step_id == "archive-plan"):
      See "Pre-Archive Snapshot Hook" subsection below. Capture the snapshot into model context, then proceed to step 5 to dispatch archive-plan normally.
 
+  4b. Lessons-capture Signal Gate (B4 — run BEFORE dispatching the step if step_id == "lessons-capture"):
+
+      The deterministic three-signal Signal Gate that previously lived inside `workflow/lessons-capture.md` is now evaluated at dispatcher level so the envelope spawn cost is avoided when all three signals are zero. The semantics are preserved bit-for-bit — same three signal sources, same all-zero short-circuit, same `outcome=skipped` recording. The change is structural only: deterministic precondition evaluation moves into the dispatcher; the LLM workflow body becomes the recording loop only.
+
+      a. Compute three signal counts (the body documented these inline; the dispatcher computes them now):
+
+         **Signal 1 — pending Q-Gate findings (sum across five phases)**:
+         For each phase in `{2-refine, 3-outline, 4-plan, 5-execute, 6-finalize}`, invoke:
+
+            python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+              qgate list --plan-id {plan_id} --phase {phase} --resolution pending
+
+         Parse `total_count` from each TOON output. `signal_1_count` is the SUM of the five counts.
+
+         **Signal 2 — automated-review outcome**:
+
+            python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
+              read --plan-id {plan_id}
+
+         Locate the `automated-review` step under `metadata.phase_steps["6-finalize"]`. `signal_2_count = 1` when any of the following holds; `0` otherwise: (a) `outcome` is anything other than `done`, (b) `display_detail` reports a non-zero promoted-comment count (e.g. `"3 comments promoted"`).
+
+         **Signal 3 — script-failure clusters**:
+
+            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+              read --plan-id {plan_id} --type work
+
+         Scan the returned log lines for `[FAILED]` markers and bucket them by distinct failing script notation (the `bundle:skill:script` token in each `[FAILED]` line). `signal_3_count` is the number of distinct notations.
+
+      b. Three-zero short-circuit:
+
+         When `signal_1_count == 0 AND signal_2_count == 0 AND signal_3_count == 0`:
+            - Mark the step done with `outcome=skipped` directly from the dispatcher (do NOT dispatch the envelope):
+
+              python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+                --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome skipped \
+                --display-detail "no lesson-bearing signals"
+
+            - Log the skip decision:
+
+              python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+                decision --plan-id {plan_id} --level INFO \
+                --message "(plan-marshall:phase-6-finalize:lessons-capture) Signal Gate skip — all three signals zero (qgate=0, automated-review=0, script-failures=0)"
+
+            - CONTINUE the FOR loop (skip item 5 dispatch entirely for this step).
+
+      c. Forward gate counts on dispatch (when at least one signal is non-zero):
+
+         The envelope no longer re-computes the three signals — the dispatcher forwards them as runtime inputs so the body skips its (now-removed) Signal Gate step. Add the three count fields verbatim into the prompt body's runtime-inputs block alongside `plan_id` (see item 5 below):
+
+            signal_qgate_pending_count: {signal_1_count}
+            signal_automated_review_count: {signal_2_count}
+            signal_script_failure_clusters_count: {signal_3_count}
+
+         Continue to item 5 (Dispatch with timeout wrapper).
+
   5. Dispatch with timeout wrapper:
      Resolve the per-agent timeout budget from the table above (15 min for sonar/automated-review, 5 min for knowledge/lessons; no explicit budget for other steps).
 

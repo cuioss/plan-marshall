@@ -50,8 +50,16 @@ from ci_base import (
 
 
 def test_default_constants():
-    """Shared constants should have expected values."""
-    assert DEFAULT_CI_TIMEOUT == 300
+    """Shared constants should have expected values.
+
+    ``DEFAULT_CI_TIMEOUT`` is now resolved from marshal.json at module load via
+    ``_resolve_ci_timeout`` — see deliverable 7 (B8). The 600s value is the
+    conservative fallback when marshal.json is absent (the test runs outside
+    a configured project) OR the value baked into the project's marshal.json.
+    A real marshal.json override would surface as a different integer here;
+    this assertion exists to document the fallback contract.
+    """
+    assert DEFAULT_CI_TIMEOUT == 600
     assert DEFAULT_CI_INTERVAL == 30
     assert CI_LOG_TRUNCATE_LINES == 200
 

@@ -44,6 +44,7 @@ def _ensure_sibling_skill_paths() -> None:
         skills_dir / 'tools-file-ops' / 'scripts',
         skills_dir / 'ref-toon-format' / 'scripts',
         skills_dir / 'tools-input-validation' / 'scripts',
+        skills_dir / 'manage-config' / 'scripts',
     ]
     for d in sibling_dirs:
         d_str = str(d)
@@ -245,8 +246,47 @@ def add_body_consumer_args(subparser: argparse.ArgumentParser) -> None:
     )
 
 
-# Shared defaults for CI polling operations
-DEFAULT_CI_TIMEOUT = 300  # seconds
+# Shared defaults for CI polling operations.
+#
+# `DEFAULT_CI_TIMEOUT` is resolved at module load via `_resolve_ci_timeout()`:
+#   1. Read `ci.checks_wait_timeout_seconds` from marshal.json when the file
+#      is present and the key is set — the project-level override.
+#   2. Fall back to 600 seconds when marshal.json is absent OR the key is
+#      unset. The 600s baseline replaces the prior hard-coded 300s default
+#      after verify jobs were observed taking 318s+ on hot CI runners.
+# The explicit `--timeout` CLI flag on each polling subparser ALWAYS wins —
+# argparse-supplied values override the module-level default.
+def _resolve_ci_timeout() -> int:
+    """Resolve the default polling timeout from marshal.json with safe fallback.
+
+    Returns:
+        Integer seconds. 600 when marshal.json is absent OR the key is unset
+        OR any read/parse error occurs (the resolver never raises — a missing
+        or malformed config falls back to the conservative 600s baseline so
+        the CLI remains usable outside a plan-marshall project).
+    """
+    try:
+        # _config_core triggers get_base_dir() at import time, which raises
+        # RuntimeError when no git root is resolvable from cwd. Catching
+        # Exception broadly here is deliberate — the resolver MUST NOT raise
+        # under any project state; falling back to 600s keeps the CLI usable.
+        from _config_core import is_initialized, load_config  # type: ignore[import-not-found]
+    except Exception:
+        return 600
+    try:
+        if not is_initialized():
+            return 600
+        cfg = load_config()
+        ci_section = cfg.get('ci') or {}
+        value = ci_section.get('checks_wait_timeout_seconds')
+        if isinstance(value, int) and value > 0:
+            return value
+        return 600
+    except Exception:
+        return 600
+
+
+DEFAULT_CI_TIMEOUT = _resolve_ci_timeout()  # seconds, see resolver above
 DEFAULT_CI_INTERVAL = 30  # seconds
 CI_LOG_TRUNCATE_LINES = 200
 
@@ -753,7 +793,12 @@ def build_parser(
     # checks wait
     ci_wait = checks_sub.add_parser('wait', help='Wait for CI to complete', allow_abbrev=False)
     ci_wait.add_argument('--pr-number', required=True, type=int, help='PR number')
-    ci_wait.add_argument('--timeout', type=int, default=300, help='Max wait time in seconds (default: 300)')
+    ci_wait.add_argument(
+        '--timeout',
+        type=int,
+        default=DEFAULT_CI_TIMEOUT,
+        help=f'Max wait time in seconds (default: {DEFAULT_CI_TIMEOUT})',
+    )
     ci_wait.add_argument('--interval', type=int, default=30, help='Poll interval in seconds (default: 30)')
 
     # checks rerun
