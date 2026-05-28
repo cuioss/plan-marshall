@@ -176,7 +176,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   project get --field default_base_branch
 ```
 
-If the call returns a non-default value (or `field_not_found` in the legacy schema), proceed with the prompt below.
+If the call returns the default value (or `field_not_found` in the legacy schema), proceed with the prompt below.
 
 **Resolve the suggested default** from `git symbolic-ref refs/remotes/origin/HEAD`. Parse the output `refs/remotes/origin/{branch}` for the `{branch}` suffix and use it as the default suggestion. If the symbolic ref is unset (fresh clone without an `origin/HEAD` tracking ref), fall back to `main` as the last-resort default:
 
