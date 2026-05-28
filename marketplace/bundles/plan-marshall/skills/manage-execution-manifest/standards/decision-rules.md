@@ -37,6 +37,7 @@ The pre-filters run in this order:
 1. **`commit_strategy_none`** — drops `commit-push`, `pre-push-quality-gate`, AND `pre-submission-self-review` when no push will occur.
 2. **`pre_push_quality_gate_inactive`** — drops `pre-push-quality-gate` when activation conditions fail.
 3. **`pre_submission_self_review_inactive`** — drops `pre-submission-self-review` when `references.modified_files` is empty.
+4. **`simplify_inactive`** — drops `finalize-step-simplify` when `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`.
 
 Each row that emits a Phase 6 list (whether by intersection, subtraction, or pass-through) operates on the already-filtered candidate list, so the resulting `phase_6.steps` will never contain a step removed by any pre-filter that ran before the row matrix.
 
@@ -100,6 +101,26 @@ When all three activation conditions are satisfied (non-empty globs, non-empty m
 When `modified_files` is non-empty, the pre-filter is a no-op and emits no log entry; `pre-submission-self-review` survives into the seven-row matrix.
 
 **Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `pre_push_quality_gate_inactive` and *before* every row of the seven-row matrix. The pre-filter is observable independently of the row matrix — every row sees a Phase 6 candidate list that has `pre-submission-self-review` removed if any of the prior pre-filters fired.
+
+### Pre-Filter: `simplify_inactive`
+
+**Condition**: `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`.
+
+**Effect**: `finalize-step-simplify` is removed from `phase_6_candidates` before the rows are evaluated. Equivalently — phrased as the activation gate — `default:finalize-step-simplify` lands in `phase_6.steps` **whenever `change_type ∈ {feature, bug_fix, tech_debt}` AND `affected_files_count > 0`** (and the step is present in the candidate set). The pre-filter is the subtraction-only expression of that gate: the step is a candidate by default and dropped when the gate fails, matching the manifest architecture where rows and pre-filters only ever narrow the candidate list.
+
+**Enum reconciliation**: the source plan phrased the gate in branch-prefix terms `{feature, fix, chore}`. The manifest's `change_type` vocabulary (see Inputs table) uses `feature` / `bug_fix` / `tech_debt`. The mapping is explicit: branch-prefix `fix` → `change_type: bug_fix`, branch-prefix `chore` → `change_type: tech_debt`, `feature` → `feature` unchanged. The gate is therefore `change_type ∈ {feature, bug_fix, tech_debt}` — the three code-touching change types — excluding `analysis`, `enhancement`, and `verification`.
+
+**Why a pre-filter (not an eighth row)**: Activation depends only on `change_type` and `affected_files_count` and uses no language detection — it is domain-agnostic by construction (the cognitive simplification pass applies to any code or doc change in scope). The gate is orthogonal to the scope / recipe inputs the seven-row matrix consumes, and expressing it as a pre-filter keeps the seven-row matrix unchanged.
+
+**Decision log line** (in addition to the row's own log line and any other pre-filter log line):
+
+```
+(plan-marshall:manage-execution-manifest:compose) finalize-step-simplify omitted — change_type={value} affected_files_count={N}
+```
+
+When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt}` AND `affected_files_count > 0`), the pre-filter is a no-op and emits no log entry; `finalize-step-simplify` survives into the seven-row matrix.
+
+**Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `pre_submission_self_review_inactive` and *before* every row of the seven-row matrix.
 
 ## Post-Matrix Rule: docs-only classifier
 

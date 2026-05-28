@@ -521,5 +521,105 @@ def test_apply_checklist_pattern_fix_mixed():
 
 
 # =============================================================================
+# Simplification Fix Tests (SIMPLICITY_*)
+# =============================================================================
+#
+# Only SIMPLICITY_SIGNATURE_DOCSTRING has an auto-apply handler. The other four
+# SIMPLICITY_* rules are detection-only (fixable=False) and have no FIX_HANDLER.
+
+
+def test_simplicity_signature_docstring_in_fix_handlers():
+    """SIMPLICITY_SIGNATURE_DOCSTRING is registered in FIX_HANDLERS."""
+    handlers = _cmd_apply_mod.FIX_HANDLERS
+    assert 'SIMPLICITY_SIGNATURE_DOCSTRING' in handlers, (
+        'SIMPLICITY_SIGNATURE_DOCSTRING must have an auto-apply fix handler'
+    )
+
+
+def test_simplicity_other_four_not_in_fix_handlers():
+    """The four detection-only SIMPLICITY_* rules have no auto-apply handler."""
+    handlers = _cmd_apply_mod.FIX_HANDLERS
+    for rule in (
+        'SIMPLICITY_UNUSED_PARAMETER',
+        'SIMPLICITY_BACKWARD_COMPAT_REEXPORT',
+        'SIMPLICITY_DEFENSIVE_CATCHALL',
+        'SIMPLICITY_THIN_WRAPPER',
+    ):
+        assert rule not in handlers, f'{rule} must be detection-only (no auto-apply handler)'
+
+
+def test_apply_signature_docstring_fix_removes_restating_docstring():
+    """Applying SIMPLICITY_SIGNATURE_DOCSTRING deletes the signature-restating docstring."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        py_file = Path(tmp_dir) / 'sample.py'
+        py_file.write_text(
+            'def f(a, b):\n'
+            '    """Args:\n'
+            '\n'
+            '    a: first\n'
+            '    b: second\n'
+            '    """\n'
+            '    return a + b\n',
+            encoding='utf-8',
+        )
+
+        fix_json = json.dumps({'type': 'SIMPLICITY_SIGNATURE_DOCSTRING', 'file': 'sample.py'})
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write(fix_json)
+            f.flush()
+            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            data = cmd_apply(args)
+            Path(f.name).unlink()
+
+        assert data['success'] is True, f'Fix should succeed: {data}'
+        content = py_file.read_text()
+        assert 'Args:' not in content, f'Restating docstring should be removed: {content!r}'
+        assert 'return a + b' in content, 'Function body must be preserved'
+
+
+def test_apply_signature_docstring_fix_preserves_intent_docstring():
+    """A docstring with intent content is NOT removed by the fix."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        py_file = Path(tmp_dir) / 'sample.py'
+        original = (
+            'def f(a, b):\n'
+            '    """Combine the two halves into the canonical key.\n'
+            '\n'
+            '    Args:\n'
+            '    a: first\n'
+            '    """\n'
+            '    return a + b\n'
+        )
+        py_file.write_text(original, encoding='utf-8')
+
+        fix_json = json.dumps({'type': 'SIMPLICITY_SIGNATURE_DOCSTRING', 'file': 'sample.py'})
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write(fix_json)
+            f.flush()
+            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            data = cmd_apply(args)
+            Path(f.name).unlink()
+
+        # No restating docstring present → handler reports failure (nothing to fix)
+        # and the intent docstring is left untouched.
+        assert data['success'] is False, f'Intent docstring should not be removed: {data}'
+        content = py_file.read_text()
+        assert 'Combine the two halves' in content, 'Intent docstring must be preserved'
+
+
+def test_categorize_simplicity_signature_docstring_safe():
+    """SIMPLICITY_SIGNATURE_DOCSTRING categorizes as a safe fix."""
+    extracted = {'fixable_issues': [{'type': 'SIMPLICITY_SIGNATURE_DOCSTRING', 'fixable': True}]}
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        f.write(json.dumps(extracted))
+        f.flush()
+        args = Namespace(input=f.name)
+        data = cmd_categorize(args)
+        Path(f.name).unlink()
+    safe_types = {issue['type'] for issue in data.get('safe', [])}
+    assert 'SIMPLICITY_SIGNATURE_DOCSTRING' in safe_types, f'Should be categorized safe, got {data}'
+
+
+# =============================================================================
 # Main
 # =============================================================================

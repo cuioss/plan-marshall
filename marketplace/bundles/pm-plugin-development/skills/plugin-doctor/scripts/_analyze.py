@@ -33,6 +33,14 @@ from _analyze_role_field import analyze_role_field
 from _analyze_shared import detect_component_type, extract_frontmatter
 from _analyze_shell_active_tokens import analyze_shell_active_tokens
 from _analyze_shell_substitution_in_skills import analyze_shell_substitution_in_skills
+from _analyze_simplicity import (
+    analyze_backward_compat_reexport,
+    analyze_defensive_catchall,
+    analyze_signature_docstring,
+    analyze_thin_wrapper,
+    analyze_unused_parameter,
+    scan_simplicity,
+)
 from _analyze_structure import analyze_skill_structure, cmd_structure
 from _analyze_tmp_redirect_in_skills import analyze_tmp_redirect_in_skills
 from _analyze_verb_chains import analyze_verb_chains
@@ -40,8 +48,10 @@ from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 # Public API surface — used by _doctor_analysis.py and other scripts
 __all__ = [
+    'analyze_backward_compat_reexport',
     'analyze_bash_chain_shapes_in_skills',
     'analyze_cmd_root_anchoring',
+    'analyze_defensive_catchall',
     'analyze_executor_path_in_production',
     'analyze_historical_prose_in_skills',
     'analyze_lesson_id_in_skill_prose',
@@ -55,12 +65,16 @@ __all__ = [
     'analyze_role_field',
     'analyze_shell_active_tokens',
     'analyze_shell_substitution_in_skills',
+    'analyze_signature_docstring',
     'analyze_skill_structure',
+    'analyze_thin_wrapper',
     'analyze_tmp_redirect_in_skills',
     'analyze_tool_coverage',
+    'analyze_unused_parameter',
     'analyze_verb_chains',
     'detect_component_type',
     'extract_frontmatter',
+    'scan_simplicity',
 ]
 
 

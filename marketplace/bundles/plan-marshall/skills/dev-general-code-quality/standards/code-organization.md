@@ -221,6 +221,24 @@ if (isActiveAdmin(user))
 * `if (!(!condition))` -> `if (condition)`
 * `if (x) { return; } else { doSomething(); }` -> `if (x) return; doSomething();`
 
+## Minimum Viable Code
+
+**Trigger**: Code carries weight that no live caller, test, or requirement justifies — surplus structure added "to be safe" or "for later".
+
+The guiding principle: implement the minimum that satisfies the present requirement. Surplus structure is not free — every speculative parameter, re-export, or abstraction layer is something a future reader must understand, a static analyzer must scan, and a maintainer must keep correct. When in doubt, leave it out; the change is cheap to add later against a real requirement and expensive to retrofit-remove once callers depend on its accidental presence.
+
+**Detection:**
+
+* **Unused parameters preserved for future use.** A parameter that no code path reads, kept "because a caller might need it later". Remove it; add it back when a real caller needs it.
+* **Thin/backward-compat re-exports with <= 1 live caller.** A module that exists only to re-export a symbol from another module, with at most one importer. Inline the import at the single call site and delete the shim.
+* **Defensive try/except around already-handled or should-fail-loudly failures.** A guard that swallows or re-wraps an exception the caller already handles, or that masks a programming error that should crash loudly. Let it propagate.
+* **Multiple near-identical helpers where one parameterised function suffices.** Two or more functions differing only in a constant or a branch. Collapse into one function with a parameter.
+* **Signature-restating docstrings/comments.** A docstring or comment that names the parameters and return type without adding intent ("WHY") beyond what the signature already states. Delete it or replace it with a rationale.
+* **Config keys/flags with a single hard-coded caller.** A configuration knob, feature flag, or setting read in exactly one place and never varied. Inline the constant and remove the key.
+* **Speculative abstraction for extensibility with no second implementation.** An interface, base class, strategy, or plugin seam introduced for a hypothetical second implementation that does not yet exist. Code the concrete case directly; introduce the seam when the second implementation arrives.
+
+**Action:** Delete the surplus structure and verify nothing breaks. For each anti-pattern above, the resolution is removal or inlining — never "keep it but document the intent". When the surplus is a public/protected element or could plausibly serve an imminent requirement, ask the user before removing (mirrors the [Unused Code](#unused-code) "Do NOT remove when" exceptions). This section is the constructive counterpart to [Over-Abstraction](#over-abstraction): Over-Abstraction targets indirection layers after they exist; Minimum Viable Code prevents the surplus from being written in the first place. The two reinforce each other — apply Minimum Viable Code at authoring time, Over-Abstraction at refactoring time.
+
 ## Unused Code
 
 **Trigger**: Code that is never executed or called.

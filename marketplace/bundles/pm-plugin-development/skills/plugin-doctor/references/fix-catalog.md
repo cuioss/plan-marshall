@@ -180,6 +180,19 @@ description: [Description needed]
 
 **Why Safe**: Checkbox markers are a human UI element (GitHub rendering). Removing them preserves the list item text. LLMs gain no value from `[ ]` prefixes.
 
+### 12. SIMPLICITY_SIGNATURE_DOCSTRING
+
+**Description**: A function docstring whose first paragraph only restates `Args:`/`Returns:` structural headers with no intent ("WHY") content.
+
+**Detection**: AST walk — a function docstring whose first blank-line-delimited paragraph matches only `args`/`arguments`/`returns`/`return`/`params`/`parameters` (with optional trailing `:`).
+
+**Fix Strategy**:
+- Re-parse the file, locate every function whose docstring matches the signature-restating predicate
+- Delete the docstring node's source lines (bottom-up so earlier line numbers stay valid)
+- Handler: `_cmd_apply.py::apply_signature_docstring_fix`
+
+**Why Safe**: Deleting a pure-structural docstring changes no behaviour and no signature. It is the one mechanically-safe simplification fix in the `SIMPLICITY_*` cluster. The other four `SIMPLICITY_*` rules are confirm-before-apply (see Risky Fix Types § Simplification rules).
+
 ### SCR-009. positional-argument
 
 **Description**: Script uses positional arguments instead of named `--kebab-case` flags.
@@ -457,6 +470,15 @@ Risky fixes require user confirmation because they involve judgment calls or may
 - User should decide whether to fix path or remove declaration
 - Removing `implements:` changes component semantics
 
+### 15. Simplification rules (confirm-before-apply)
+
+The four `SIMPLICITY_*` rules below are detected (`fixable: false`) and surfaced for human review — they have no auto-apply handler because each resolution changes a signature or requires rewriting call sites, which is a judgement call, not a single-file mechanical edit. Each maps to a bullet in `plan-marshall:dev-general-code-quality` `standards/code-organization.md` § `#minimum-viable-code`. The fifth rule, `SIMPLICITY_SIGNATURE_DOCSTRING`, IS auto-applicable and is documented under Safe Fix Types § 12.
+
+- **SIMPLICITY_UNUSED_PARAMETER**: A parameter discarded via `del <param>` (preserved-for-future-use) or tagged `# unused`. **Resolution**: remove it from the signature; add it back against a real caller. **Why confirm**: changes a public signature.
+- **SIMPLICITY_BACKWARD_COMPAT_REEXPORT**: An import line tagged `# backward compat` / `# re-exported for`. **Resolution**: inline the import at its single call site and delete the shim. **Why confirm**: requires verifying the live-caller count first.
+- **SIMPLICITY_DEFENSIVE_CATCHALL**: An `except Exception` handler tagged `# defensive only` / `# pragma: no cover -- defensive`. **Resolution**: let the exception propagate. **Why confirm**: the propagation path must be verified.
+- **SIMPLICITY_THIN_WRAPPER**: A function whose body is a single argument-forwarding `return`. **Resolution**: inline it at the call sites. **Why confirm**: inlining rewrites every caller, not a single-file edit.
+
 ## Non-Fixable Issue Types
 
 These issues are detected but cannot be automatically fixed:
@@ -495,7 +517,8 @@ def categorize(issue_type):
         "missing-plan-parameter",       # PM-004: add required param
         "positional-argument",          # SCR-009: convert to named flag
         "camelcase-flag",               # SCR-010: rename to kebab-case
-        "missing-subparser-required"    # SCR-011: add required=True
+        "missing-subparser-required",   # SCR-011: add required=True
+        "SIMPLICITY_SIGNATURE_DOCSTRING"  # delete signature-restating docstring
     }
     RISKY = {
         "unused-tool-declared", "tool-not-declared",

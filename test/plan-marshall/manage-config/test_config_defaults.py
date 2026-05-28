@@ -46,6 +46,9 @@ _cmd_init_mod = _load_module(
 _cmd_system_plan_mod = _load_module(
     '_cmd_system_plan_for_split_gate_test', '_cmd_system_plan.py'
 )
+_cmd_quality_phases_mod = _load_module(
+    '_cmd_quality_phases_for_simplicity_test', '_cmd_quality_phases.py'
+)
 
 
 def test_default_plan_finalize_includes_auto_merge_after_ci():
@@ -207,3 +210,76 @@ def test_project_get_returns_default_when_block_absent(plan_context):
     # Assert — implicit-default semantics mirror open_in_ide / DEFAULT_PLAN_* blocks
     assert result['status'] == 'success'
     assert result['value'] == 'main'
+
+
+def test_default_plan_refine_includes_simplicity_lean():
+    """DEFAULT_PLAN_REFINE must declare simplicity with default 'lean'.
+
+    Mirrors the sibling `compatibility` knob — simplicity controls how
+    aggressively the implementation favours the minimum viable surface.
+    """
+    # Arrange
+    refine_defaults = _config_defaults_mod.DEFAULT_PLAN_REFINE
+
+    # Act / Assert
+    assert 'simplicity' in refine_defaults, (
+        'simplicity must be schema-registered in DEFAULT_PLAN_REFINE'
+    )
+    assert refine_defaults['simplicity'] == 'lean', (
+        "simplicity default must be 'lean' (implement the strict minimum)"
+    )
+
+
+def test_get_default_config_phase_2_refine_includes_simplicity_lean():
+    """get_default_config() must surface simplicity == 'lean' under plan.phase-2-refine."""
+    # Arrange / Act
+    config = _config_defaults_mod.get_default_config()
+
+    # Assert
+    refine_block = config['plan']['phase-2-refine']
+    assert refine_block.get('simplicity') == 'lean'
+
+
+def test_valid_simplicity_levels_enumerates_expected_values():
+    """VALID_SIMPLICITY_LEVELS must enumerate exactly the three allowed enum values."""
+    # Arrange / Act
+    levels = _config_defaults_mod.VALID_SIMPLICITY_LEVELS
+
+    # Assert — default 'lean' must be a member of the enum
+    assert levels == ('lean', 'pragmatic', 'defensive')
+    assert _config_defaults_mod.DEFAULT_PLAN_REFINE['simplicity'] in levels
+
+
+def test_validate_simplicity_accepts_allowed_values():
+    """validate_simplicity must accept every value in VALID_SIMPLICITY_LEVELS."""
+    # Arrange / Act / Assert — no exception for any allowed value
+    for value in _config_defaults_mod.VALID_SIMPLICITY_LEVELS:
+        _config_defaults_mod.validate_simplicity(value)
+
+
+def test_validate_simplicity_rejects_unknown_value():
+    """validate_simplicity must raise ValueError for a value outside the enum."""
+    # Arrange / Act / Assert
+    import pytest
+
+    with pytest.raises(ValueError, match='Invalid simplicity'):
+        _config_defaults_mod.validate_simplicity('reckless')
+
+
+def test_plan_phase_2_refine_get_simplicity_returns_lean_default(plan_context):
+    """`plan phase-2-refine get --field simplicity` returns 'lean' from the merged default config.
+
+    Exercises the actual cmd_phase get path (same code `manage-config plan
+    phase-2-refine get --field simplicity` runs) against a fresh marshal.json,
+    proving the default surfaces even when the persisted config omits the key.
+    """
+    # Arrange — fresh marshal.json
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    # Act — get the simplicity field via the phase handler
+    args = Namespace(verb='get', field='simplicity')
+    result = _cmd_quality_phases_mod.cmd_phase(args, 'phase-2-refine')
+
+    # Assert — default merge surfaces 'lean'
+    assert result['status'] == 'success'
+    assert result['value'] == 'lean'

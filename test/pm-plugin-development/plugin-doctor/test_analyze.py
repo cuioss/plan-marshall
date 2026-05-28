@@ -1602,5 +1602,200 @@ def test_argument_naming_canonical_forms_match_no_finding(tmp_path):
 
 
 # =============================================================================
+# Simplification Rule Cluster Tests (SIMPLICITY_*) - Tier 2 direct import
+# =============================================================================
+#
+# These tests exercise the five SIMPLICITY_* detectors implemented in
+# ``_analyze_simplicity.py``. Each detector scans
+# ``marketplace/bundles/*/skills/*/scripts/**/*.py``, so the fixtures write a
+# synthetic script at that canonical path under ``tmp_path`` and invoke the
+# detector against ``tmp_path/marketplace``.
+
+_analyze_simplicity_mod = _load_module('_analyze_simplicity', '_analyze_simplicity.py')
+_doctor_shared_mod = _load_module('_doctor_shared', '_doctor_shared.py')
+
+analyze_unused_parameter = _analyze_simplicity_mod.analyze_unused_parameter
+analyze_backward_compat_reexport = _analyze_simplicity_mod.analyze_backward_compat_reexport
+analyze_defensive_catchall = _analyze_simplicity_mod.analyze_defensive_catchall
+analyze_thin_wrapper = _analyze_simplicity_mod.analyze_thin_wrapper
+analyze_signature_docstring = _analyze_simplicity_mod.analyze_signature_docstring
+scan_simplicity = _analyze_simplicity_mod.scan_simplicity
+
+
+def _write_simplicity_script(tmp_path: Path, body: str) -> Path:
+    """Write a synthetic Python script at the canonical marketplace path.
+
+    The detector enumerates ``marketplace/bundles/*/skills/*/scripts/**/*.py``;
+    this places the script under that glob so the scan picks it up.
+    """
+    scripts_dir = tmp_path / 'marketplace' / 'bundles' / 'sample-bundle' / 'skills' / 'sample-skill' / 'scripts'
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    script_path = scripts_dir / 'sample.py'
+    script_path.write_text(body, encoding='utf-8')
+    return script_path
+
+
+def test_simplicity_unused_parameter_detects_del_param(tmp_path):
+    """A parameter discarded via ``del <param>`` triggers SIMPLICITY_UNUSED_PARAMETER."""
+    body = 'def f(plan_id, name):\n    del plan_id\n    return name\n'
+    _write_simplicity_script(tmp_path, body)
+    findings = analyze_unused_parameter(tmp_path / 'marketplace')
+    assert len(findings) == 1, f'Expected one del-param finding, got {findings!r}'
+    assert findings[0]['type'] == 'SIMPLICITY_UNUSED_PARAMETER'
+    assert findings[0]['rule_id'] == 'SIMPLICITY_UNUSED_PARAMETER'
+    assert findings[0]['fixable'] is False
+
+
+def test_simplicity_unused_parameter_no_false_positive(tmp_path):
+    """A function that reads all its parameters yields no finding."""
+    body = 'def f(plan_id, name):\n    return plan_id + name\n'
+    _write_simplicity_script(tmp_path, body)
+    findings = analyze_unused_parameter(tmp_path / 'marketplace')
+    assert findings == [], f'Used parameters should yield no finding, got {findings!r}'
+
+
+def test_simplicity_unused_parameter_del_local_no_false_positive(tmp_path):
+    """``del`` of a local variable (not a parameter) yields no finding."""
+    body = 'def f(name):\n    tmp = name * 2\n    del tmp\n    return name\n'
+    _write_simplicity_script(tmp_path, body)
+    findings = analyze_unused_parameter(tmp_path / 'marketplace')
+    assert findings == [], f'del of a local should not flag, got {findings!r}'
+
+
+def test_simplicity_backward_compat_reexport_detects_tagged_import(tmp_path):
+    """An import tagged ``# backward compat`` triggers SIMPLICITY_BACKWARD_COMPAT_REEXPORT."""
+    body = 'from other import thing  # backward compat re-export\n'
+    _write_simplicity_script(tmp_path, body)
+    findings = analyze_backward_compat_reexport(tmp_path / 'marketplace')
+    assert len(findings) == 1, f'Expected one re-export finding, got {findings!r}'
+    assert findings[0]['type'] == 'SIMPLICITY_BACKWARD_COMPAT_REEXPORT'
+    assert findings[0]['fixable'] is False
+
+
+def test_simplicity_backward_compat_reexport_no_false_positive(tmp_path):
+    """An untagged import yields no finding."""
+    body = 'from other import thing\n'
+    _write_simplicity_script(tmp_path, body)
+    findings = analyze_backward_compat_reexport(tmp_path / 'marketplace')
+    assert findings == [], f'Untagged import should yield no finding, got {findings!r}'
+
+
+def test_simplicity_defensive_catchall_detects_tagged_handler(tmp_path):
+    """An ``except Exception`` tagged ``# defensive only`` triggers SIMPLICITY_DEFENSIVE_CATCHALL."""
+    body = (
+        'def f():\n'
+        '    try:\n'
+        '        do()\n'
+        '    except Exception:  # defensive only\n'
+        '        pass\n'
+    )
+    _write_simplicity_script(tmp_path, body)
+    findings = analyze_defensive_catchall(tmp_path / 'marketplace')
+    assert len(findings) == 1, f'Expected one defensive-catchall finding, got {findings!r}'
+    assert findings[0]['type'] == 'SIMPLICITY_DEFENSIVE_CATCHALL'
+    assert findings[0]['fixable'] is False
+
+
+def test_simplicity_defensive_catchall_no_false_positive_untagged(tmp_path):
+    """An untagged ``except Exception`` yields no finding (only tagged ones flag)."""
+    body = 'def f():\n    try:\n        do()\n    except Exception:\n        raise\n'
+    _write_simplicity_script(tmp_path, body)
+    findings = analyze_defensive_catchall(tmp_path / 'marketplace')
+    assert findings == [], f'Untagged except should yield no finding, got {findings!r}'
+
+
+def test_simplicity_thin_wrapper_detects_forwarding_return(tmp_path):
+    """A function whose body is a single forwarding ``return`` triggers SIMPLICITY_THIN_WRAPPER."""
+    body = 'def wrapper(a, b):\n    return target(a, b)\n'
+    _write_simplicity_script(tmp_path, body)
+    findings = analyze_thin_wrapper(tmp_path / 'marketplace')
+    assert len(findings) == 1, f'Expected one thin-wrapper finding, got {findings!r}'
+    assert findings[0]['type'] == 'SIMPLICITY_THIN_WRAPPER'
+    assert findings[0]['fixable'] is False
+
+
+def test_simplicity_thin_wrapper_no_false_positive_multistatement(tmp_path):
+    """A function with more than one statement yields no finding."""
+    body = 'def f(a, b):\n    x = a + b\n    return target(x)\n'
+    _write_simplicity_script(tmp_path, body)
+    findings = analyze_thin_wrapper(tmp_path / 'marketplace')
+    assert findings == [], f'Multi-statement function should yield no finding, got {findings!r}'
+
+
+def test_simplicity_signature_docstring_detects_restating_docstring(tmp_path):
+    """A docstring whose first paragraph only says ``Args:`` triggers SIMPLICITY_SIGNATURE_DOCSTRING."""
+    body = 'def f(a, b):\n    """Args:\n\n    a: first\n    b: second\n    """\n    return a + b\n'
+    _write_simplicity_script(tmp_path, body)
+    findings = analyze_signature_docstring(tmp_path / 'marketplace')
+    assert len(findings) == 1, f'Expected one signature-docstring finding, got {findings!r}'
+    assert findings[0]['type'] == 'SIMPLICITY_SIGNATURE_DOCSTRING'
+    assert findings[0]['fixable'] is True
+
+
+def test_simplicity_signature_docstring_no_false_positive_with_intent(tmp_path):
+    """A docstring with a prose summary line (intent) yields no finding."""
+    body = 'def f(a, b):\n    """Combine the two halves into the canonical key.\n\n    Args:\n    a: first\n    """\n    return a + b\n'
+    _write_simplicity_script(tmp_path, body)
+    findings = analyze_signature_docstring(tmp_path / 'marketplace')
+    assert findings == [], f'Docstring with intent should yield no finding, got {findings!r}'
+
+
+def test_simplicity_scan_aggregates_all_five(tmp_path):
+    """scan_simplicity aggregates findings from every detector in one pass."""
+    body = (
+        'from other import thing  # backward compat\n'
+        '\n'
+        'def f(plan_id, name):\n'
+        '    del plan_id\n'
+        '    return name\n'
+        '\n'
+        'def wrapper(a, b):\n'
+        '    return target(a, b)\n'
+        '\n'
+        'def g(x):\n'
+        '    """Args:\n\n    x: input\n    """\n'
+        '    try:\n'
+        '        do()\n'
+        '    except Exception:  # defensive only\n'
+        '        pass\n'
+        '    return x\n'
+    )
+    _write_simplicity_script(tmp_path, body)
+    findings = scan_simplicity(tmp_path / 'marketplace')
+    rule_ids = {f['type'] for f in findings}
+    assert 'SIMPLICITY_UNUSED_PARAMETER' in rule_ids
+    assert 'SIMPLICITY_BACKWARD_COMPAT_REEXPORT' in rule_ids
+    assert 'SIMPLICITY_DEFENSIVE_CATCHALL' in rule_ids
+    assert 'SIMPLICITY_THIN_WRAPPER' in rule_ids
+    assert 'SIMPLICITY_SIGNATURE_DOCSTRING' in rule_ids
+
+
+def test_simplicity_skips_test_files(tmp_path):
+    """Detectors exclude test files (test_*.py) from the scan."""
+    scripts_dir = tmp_path / 'marketplace' / 'bundles' / 'b' / 'skills' / 's' / 'scripts'
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    (scripts_dir / 'test_sample.py').write_text('def f(plan_id):\n    del plan_id\n    return 1\n', encoding='utf-8')
+    findings = analyze_unused_parameter(tmp_path / 'marketplace')
+    assert findings == [], f'Test files should be excluded, got {findings!r}'
+
+
+def test_simplicity_classification_signature_docstring_safe():
+    """SIMPLICITY_SIGNATURE_DOCSTRING is the one safe (auto-apply) simplification fix."""
+    assert 'SIMPLICITY_SIGNATURE_DOCSTRING' in _doctor_shared_mod.SAFE_FIX_TYPES
+    assert 'SIMPLICITY_SIGNATURE_DOCSTRING' in _doctor_shared_mod.FIXABLE_ISSUE_TYPES
+
+
+def test_simplicity_classification_other_four_not_safe():
+    """The other four SIMPLICITY_* rules are detection-only (not auto-applicable)."""
+    for rule in (
+        'SIMPLICITY_UNUSED_PARAMETER',
+        'SIMPLICITY_BACKWARD_COMPAT_REEXPORT',
+        'SIMPLICITY_DEFENSIVE_CATCHALL',
+        'SIMPLICITY_THIN_WRAPPER',
+    ):
+        assert rule not in _doctor_shared_mod.SAFE_FIX_TYPES, f'{rule} must not be a safe auto-apply fix'
+
+
+# =============================================================================
 # Main
 # =============================================================================

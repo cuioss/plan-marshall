@@ -104,6 +104,14 @@ Maintain tracking JSON:
 }
 ```
 
+## Simplification Safe Fix (SIMPLICITY_SIGNATURE_DOCSTRING)
+
+The `SIMPLICITY_*` rule cluster enforces the "minimum viable code" posture (`plan-marshall:dev-general-code-quality` `standards/code-organization.md` § `#minimum-viable-code`). Of the five rules, exactly **one** is a safe auto-apply fix:
+
+- **SIMPLICITY_SIGNATURE_DOCSTRING** — delete a function docstring whose first paragraph only restates `Args:`/`Returns:` with no intent content. The handler (`_cmd_apply.py::apply_signature_docstring_fix`) re-parses the file, finds every signature-restating docstring, and deletes its source lines bottom-up. Deleting a pure-structural docstring changes no behaviour and no signature, so it satisfies all four Safe Fix Principles above.
+
+The other four `SIMPLICITY_*` rules (`SIMPLICITY_UNUSED_PARAMETER`, `SIMPLICITY_BACKWARD_COMPAT_REEXPORT`, `SIMPLICITY_DEFENSIVE_CATCHALL`, `SIMPLICITY_THIN_WRAPPER`) are **NOT** auto-apply — each resolution changes a signature or rewrites call sites, which is a judgement call. They are surfaced for human review (confirm-before-apply); see `risky-fixes-guide.md` § Simplification rules.
+
 ## Common Pitfalls
 
 1. **Applying to Wrong Component Type**: Check path for `/agents/`, `/commands/`, `/skills/`
