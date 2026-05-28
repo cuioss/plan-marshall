@@ -40,7 +40,10 @@ The pre-filters run in this order:
 
 Each row that emits a Phase 6 list (whether by intersection, subtraction, or pass-through) operates on the already-filtered candidate list, so the resulting `phase_6.steps` will never contain a step removed by any pre-filter that ran before the row matrix.
 
-After the seven-row matrix runs, a single composition-time guard (`bot_enforcement_guard`) inspects the final `phase_6.steps` list. On GitHub/GitLab plans where `default:automated-review` is missing, the guard remediates in-place by appending it back to the list (defense-in-depth, not assertion). The guard is documented in its own subsection below the pre-filter sections.
+After the seven-row matrix runs, two post-matrix transforms inspect the matrix output before the manifest is persisted:
+
+1. **Docs-only classifier (post-matrix)** — when the plan-wide union of every deliverable's `affected_files` resolves to the `doc-only` bucket via the four-bucket file-type classifier, holistic Python verification steps (`quality-gate`, `module-tests`, `coverage`) are suppressed from `phase_5.verification_steps`. See "Post-Matrix Rule: docs-only classifier" below.
+2. **`bot_enforcement_guard`** — on GitHub/GitLab plans where `default:automated-review` is missing from the final `phase_6.steps`, the guard remediates in-place by appending it back to the list (defense-in-depth, not assertion). The guard is documented in its own subsection below the pre-filter sections.
 
 ### Pre-Filter: `commit_strategy_none`
 
@@ -97,6 +100,45 @@ When all three activation conditions are satisfied (non-empty globs, non-empty m
 When `modified_files` is non-empty, the pre-filter is a no-op and emits no log entry; `pre-submission-self-review` survives into the seven-row matrix.
 
 **Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `pre_push_quality_gate_inactive` and *before* every row of the seven-row matrix. The pre-filter is observable independently of the row matrix — every row sees a Phase 6 candidate list that has `pre-submission-self-review` removed if any of the prior pre-filters fired.
+
+## Post-Matrix Rule: docs-only classifier
+
+**Activation**: runs unconditionally after the seven-row matrix and before the bot-enforcement guard. The rule inspects the plan-wide union of every deliverable's `affected_files` and classifies it against the four-bucket file-type classifier. The bucket vocabulary, predicates, and per-bucket profile assignments are the normative source of truth in `marketplace/bundles/plan-marshall/skills/phase-3-outline/standards/outline-workflow-detail.md` § File-type classifier — this rule consumes the same vocabulary at composer scope.
+
+**Predicate**: `_classify_affected_files(union_of_affected_files) == "doc-only"`, where:
+
+- `union_of_affected_files` is the result of `_read_bundle_change_paths(plan_id)` — the union of `references.json::affected_files`, `references.json::modified_files`, and the deliverable-level `**Affected files:**` blocks in `solution_outline.md` (the same fallback chain Row 3's `_looks_docs_only` heuristic does not see, because that heuristic keys on phase-5 candidate roles rather than actual file paths).
+- The four buckets and their predicates are documented centrally — do NOT inline-copy them here.
+
+**Effect**: every entry in `phase_5.verification_steps` whose `role:` frontmatter resolves to `quality-gate`, `module-tests`, or `coverage` is removed. Other entries (e.g., `pre-submission-self-review`, future role types) pass through unchanged. The rule is a no-op when:
+
+- The plan-wide bucket is not `doc-only` (i.e., the plan touches at least one `.py` file).
+- The seven-row matrix already produced an empty `phase_5.verification_steps` (Row 1 `early_terminate_analysis`, Row 3 `docs_only`).
+- The matrix's surviving entries carry no holistic Python roles (the rule still runs but filters nothing).
+
+**Rationale**: the composer-layer docs-only branch and the per-deliverable classifier at phase-3-outline converge on the same four-bucket vocabulary. The per-deliverable classifier at outline time refuses to assign `module_testing` to a doc-only deliverable; this post-matrix rule extends the same logic to the plan-wide composition layer, where the union of every deliverable's affected files determines whether holistic Python verification has any meaningful target. Without this rule, a `feature`-type plan whose deliverables all happen to be docs-only would emit holistic `quality-gate` and `module-tests` steps that burn execution time on files that are not testable Python.
+
+**Why post-matrix (not a new row)**: the seven-row matrix keys on `change_type` / `track` / `scope_estimate` / `recipe_key` / `affected_files_count` — none of which can read the actual file paths. The plan-wide bucket is a path-content predicate that is orthogonal to the row inputs. Modeling it as a post-matrix transform keeps the seven-row matrix unchanged and lets the composer emit one extra `decision.log` entry naming the suppression. The rule layers on TOP of Row 3 (`docs_only`) — Row 3 keys on the role heuristic and catches plans where the candidate set itself signals docs-only; this rule catches plans where the candidate set looks code-shaped but the actual affected files are all docs.
+
+**Worked example** — a plan with `change_type: bug_fix`, `scope_estimate: surgical`, `affected_files_count: 3`, and `affected_files: ["a/SKILL.md", "b/outline-workflow-detail.md", "c/SKILL.md"]`:
+
+1. Seven-row matrix evaluates: Row 5 (`surgical_bug_fix`) fires → `phase_5.verification_steps = ['quality_check', 'build_verify']` (the intersection by role with `quality-gate` and `module-tests`).
+2. Post-matrix docs-only classifier runs: `_classify_affected_files(["a/SKILL.md", "b/outline-workflow-detail.md", "c/SKILL.md"]) == "doc-only"`.
+3. Effect: both `quality_check` (role `quality-gate`) and `build_verify` (role `module-tests`) are suppressed → `phase_5.verification_steps = []`.
+4. Decision log emits TWO entries: one for the row that fired (`surgical_bug_fix`) and one for the post-matrix rule (`docs_only_classifier`).
+
+**Decision log line** (in addition to the row's own log line):
+
+```
+(plan-marshall:manage-execution-manifest:compose) docs-only classifier fired — plan-wide affected_files (N paths) resolved to doc-only bucket; holistic quality-gate + module-tests steps suppressed from phase_5.verification_steps. See lesson 2026-05-28-10-001.
+```
+
+**Composer output fields**: the post-matrix rule surfaces two additional fields in the `compose` success TOON:
+
+- `docs_only_classifier_fired: true|false` — `true` when the rule suppressed at least one step.
+- `plan_wide_bucket: python-prod|python-test|doc-only|mixed` — the resolved bucket for the plan-wide union.
+
+These fields make the rule's behavior observable from a single TOON inspection without re-reading `decision.log`.
 
 ## Bot-Enforcement Guard
 

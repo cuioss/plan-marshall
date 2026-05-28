@@ -259,6 +259,52 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 For localized changes where targets are already known from module_mapping.
 
+### File-type classifier
+
+**Normative source of truth for per-deliverable profile assignment.** Phase-3-outline (both Simple Track Step 7 and Complex Track Step 10) MUST classify each deliverable's `**Affected files:**` list against the four-bucket table below BEFORE assigning `profiles[]`. The same vocabulary is consumed downstream by phase-4-plan (refuses to create a paired `*-Test` task for a `doc-only` deliverable; emits a Q-Gate finding instead) and by `manage-execution-manifest.compose()` (skips holistic `quality-gate` + `module-tests` verification steps when the plan-wide union of `affected_files` resolves to `doc-only`).
+
+| Bucket | Predicate (every path in `affected_files` must satisfy) | Profile assignment | Verification |
+|--------|---------------------------------------------------------|--------------------|--------------|
+| `python-prod` | path matches `marketplace/bundles/**/scripts/**/*.py` (production Python source under a skill's `scripts/` directory) | `implementation` + `module_testing` | resolved `quality-gate` + resolved `module-tests` + pytest |
+| `python-test` | path matches `test/**/*.py` (test-only deliverable: only pytest test files, no production source) | `module_testing` only | resolved `module-tests` + pytest |
+| `doc-only` | path matches `**/*.md` under `marketplace/bundles/**` OR a non-`.py` configuration file outside `scripts/` (e.g., a JSON template, a `.toon` schema asset) | `implementation` only — NEVER `module_testing`, NEVER a paired pytest task | `pm-plugin-development:plugin-doctor:doctor-marketplace scan --paths {skill-dir}` + manual end-to-end where relevant |
+| `mixed` | the deliverable's `affected_files` spans both Python (`**/*.py`) and non-Python paths | `implementation` + `module_testing`, with `module_testing` scope narrowed to the `**/*.py` paths only (declare the narrowed scope in a `**Module_testing scope:**` block above `**Affected files:**`) | both: `quality-gate` + `module-tests` for the Python paths, `plugin-doctor scan` for the non-Python paths |
+
+**Canonical plugin-doctor notation**: `pm-plugin-development:plugin-doctor:doctor-marketplace` (NOT the stale `:plugin-doctor:plugin-doctor`). All `doc-only` and `mixed` deliverable Verification fields MUST cite this notation.
+
+**Predicate evaluation rules**:
+
+- Predicates are evaluated on the **union** of all paths in `**Affected files:**`. A deliverable falls into `python-prod` only when EVERY path satisfies the `python-prod` predicate; the first non-matching path forces evaluation against the remaining buckets.
+- The `mixed` bucket is the catch-all: any deliverable whose `affected_files` contains BOTH `.py` and non-`.py` paths resolves to `mixed`, regardless of where the `.py` files live.
+- A deliverable that touches only non-`.py` paths under `marketplace/bundles/**` (typical workflow-doc edit) resolves to `doc-only`.
+- A deliverable that touches only `test/**/*.py` paths (test-only deliverable, no production source modified) resolves to `python-test` — it MUST NOT carry the `implementation` profile because the deliverable produces no production code.
+
+**Required recording**: the resolved bucket MUST be recorded as a comment on the `**Profiles:**` line of the deliverable: `**Profiles:** <!-- bucket: doc-only -->`. The comment is normative — it is the audit trail that lets Q-Gate, phase-4-plan, and reviewers verify the classifier was applied. A missing or wrong bucket comment is a Q-Gate finding.
+
+**Mixed-scope narrowing rule**: when a deliverable resolves to `mixed`, the `module_testing` profile applies ONLY to the `**/*.py` paths. The deliverable MUST declare the narrowed scope in a dedicated `**Module_testing scope:**` block listing only the Python paths. The non-Python paths are verified via `plugin-doctor scan` as part of the `implementation` profile. This rule prevents pytest from burning cycles on `.md` files and ensures the test plan reflects what is actually testable.
+
+**Glob-predicate examples**:
+
+- `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py` → `**/scripts/**/*.py` → `python-prod` component
+- `test/plan-marshall/manage-execution-manifest/test_classify_affected_files.py` → `test/**/*.py` → `python-test` component
+- `marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md` → `marketplace/bundles/**/*.md` → `doc-only` component
+- `marketplace/bundles/plan-marshall/skills/phase-3-outline/standards/outline-workflow-detail.md` → `marketplace/bundles/**/*.md` → `doc-only` component
+
+**Worked classification — three deliverables from the plan that ships this very classifier** (self-referential meta example: this plan IMPLEMENTS the classifier that fixes the very bug it suffers from):
+
+| Deliverable | `**Affected files:**` | Resolved bucket | Profiles | Module_testing scope |
+|-------------|------------------------|-----------------|----------|----------------------|
+| D1 — phase-3-outline File-type classifier rules | `SKILL.md`, `standards/outline-workflow-detail.md` (both under `marketplace/bundles/plan-marshall/skills/phase-3-outline/`) | `doc-only` | `implementation` only | n/a |
+| D2 — phase-4-plan contract-violation Q-Gate emission | `SKILL.md` under `marketplace/bundles/plan-marshall/skills/phase-4-plan/` | `doc-only` | `implementation` only | n/a |
+| D3 — manage-execution-manifest docs-only classifier | `scripts/manage-execution-manifest.py`, `standards/decision-rules.md` (mixed paths: one `.py` + one `.md`) | `mixed` | `implementation` + `module_testing` | `scripts/manage-execution-manifest.py` only (the `.md` standards doc is verified via plugin-doctor scan under the `implementation` profile) |
+
+**Cross-references**:
+
+- Simple Track [Step 7: Create Deliverables](#step-7-create-deliverables) consumes this classifier when mapping module_mapping entries to deliverables.
+- Complex Track [Step 10: Execute Change-Type Workflow and Write Solution](#step-10-execute-change-type-workflow-and-write-solution) consumes this classifier when composing deliverables from domain skill discovery.
+- phase-4-plan's contract-violation guard reads the resolved bucket from the `<!-- bucket: ... -->` comment to decide whether to emit a `*-Test` task or a Q-Gate finding (see `marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md`).
+- `manage-execution-manifest.compose()` applies the same classifier at plan-composer scope (union of all `affected_files`) to decide whether to emit holistic Python verification steps (see `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md`).
+
 ### Step 6: Validate Targets
 
 **Purpose**: Verify target files/modules exist and match domain.
@@ -444,6 +490,8 @@ After Simple Q-Gate, proceed to Step 12.
 ## Complex Track Procedures (Steps 9-11)
 
 For codebase-wide changes requiring discovery and analysis.
+
+**File-type classifier applies here too**: every deliverable composed in Step 10 MUST be classified against the four-bucket [File-type classifier](#file-type-classifier) defined under Simple Track Procedures BEFORE its `profiles[]` block is finalised. The classifier vocabulary, predicates, profile assignments, and required bucket-comment recording are identical across both tracks — Complex Track does not redefine them. The cross-reference in Step 10's `**Affected files:**` composition is mandatory; the bucket comment on the `**Profiles:**` line is the audit trail.
 
 ### Step 9: Resolve Domain Skill and Load Change-Type Instructions
 

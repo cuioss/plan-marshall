@@ -512,6 +512,80 @@ def _looks_docs_only(phase_5_candidates: list[str], role_cache: dict[str, str | 
     return 'module-tests' not in roles and 'coverage' not in roles
 
 
+def _classify_affected_files(paths: list[str]) -> str:
+    """Classify a list of affected file paths against the four-bucket file-type classifier.
+
+    The bucket vocabulary, predicates, and per-bucket profile assignments are
+    the normative source of truth in
+    ``marketplace/bundles/plan-marshall/skills/phase-3-outline/standards/outline-workflow-detail.md``
+    § File-type classifier. This helper implements the same four-bucket
+    classification at composer scope (union of every deliverable's
+    ``affected_files`` across the plan) so the manifest composer can suppress
+    holistic Python verification steps (``quality-gate``, ``module-tests``)
+    when every affected file across the plan is non-Python.
+
+    The four buckets:
+
+    - ``python-prod`` — every path matches ``**/scripts/**/*.py`` (production
+      Python source under a skill's ``scripts/`` directory).
+    - ``python-test`` — every path matches ``test/**/*.py`` (test-only
+      deliverable; only pytest test files).
+    - ``doc-only`` — every path is a non-``.py`` file: typically markdown
+      under ``marketplace/bundles/**`` (``SKILL.md``, ``workflow/*.md``,
+      ``references/*.md``, ``standards/*.md``) or a non-``.py`` config file
+      outside ``scripts/``.
+    - ``mixed`` — the path list spans both Python and non-Python (the
+      catch-all bucket).
+
+    Sibling lesson ``2026-05-27-19-002`` documents the docs-only branch at
+    the manifest-composer layer; sibling lesson ``2026-05-28-10-001``
+    documents the per-deliverable classifier at the outline layer. Both
+    converge on the same four-bucket vocabulary — the classifier name
+    string literals returned here MUST stay shape-identical to the
+    central standard's bucket names. Returns ``"doc-only"`` for an empty
+    path list as the conservative default (no Python sources means no
+    holistic Python verification is needed).
+    """
+    if not paths:
+        return 'doc-only'
+
+    has_python = False
+    has_non_python = False
+    all_python_prod = True
+    all_python_test = True
+
+    for path in paths:
+        path_obj = Path(path)
+        if path_obj.suffix == '.py':
+            has_python = True
+            # python-prod predicate: under scripts/ directory
+            is_py_prod = '/scripts/' in path or path.startswith('scripts/')
+            # python-test predicate: under test/ directory
+            is_py_test = path.startswith('test/') or '/test/' in path
+            if not is_py_prod:
+                all_python_prod = False
+            if not is_py_test:
+                all_python_test = False
+        else:
+            has_non_python = True
+            all_python_prod = False
+            all_python_test = False
+
+    if has_python and has_non_python:
+        return 'mixed'
+    if has_python and all_python_prod:
+        return 'python-prod'
+    if has_python and all_python_test:
+        return 'python-test'
+    if has_python:
+        # Python paths that fall outside both scripts/ and test/ — treat as
+        # mixed-equivalent so holistic verification is retained (Python is
+        # present even if not in a conventional location).
+        return 'mixed'
+    # No Python at all — doc-only.
+    return 'doc-only'
+
+
 # =============================================================================
 # Decision Logging
 # =============================================================================
@@ -586,6 +660,27 @@ def _log_decision(plan_id: str, rule: str, body: dict[str, Any]) -> None:
 def _log_commit_push_omitted(plan_id: str) -> None:
     """Emit the decision-log entry for the ``commit_strategy_none`` pre-filter."""
     message = '(plan-marshall:manage-execution-manifest:compose) commit-push omitted — commit_strategy=none'
+    _emit_decision_log(plan_id, message)
+
+
+def _log_docs_only_classifier_fired(plan_id: str, paths_count: int) -> None:
+    """Emit the decision-log entry for the docs-only classifier post-matrix rule.
+
+    Logged whenever the plan-wide ``_classify_affected_files()`` returns
+    ``"doc-only"`` AND the seven-row matrix output's
+    ``phase_5.verification_steps`` carried holistic ``quality-gate`` or
+    ``module-tests`` entries that the rule suppressed. The entry names the
+    affected-files count so the audit trail is reconstructable. See
+    sibling lessons ``2026-05-28-10-001`` (per-deliverable classifier at
+    phase-3-outline) and ``2026-05-27-19-002`` (composer-layer docs-only
+    branch — implemented here).
+    """
+    message = (
+        '(plan-marshall:manage-execution-manifest:compose) docs-only classifier fired — '
+        f'plan-wide affected_files ({paths_count} paths) resolved to doc-only bucket; '
+        'holistic quality-gate + module-tests steps suppressed from phase_5.verification_steps. '
+        'See lesson 2026-05-28-10-001.'
+    )
     _emit_decision_log(plan_id, message)
 
 
@@ -1115,6 +1210,44 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         task_queue_active=task_queue_active,
     )
 
+    # Docs-only classifier (post-matrix rule). Sibling lessons
+    # ``2026-05-28-10-001`` (per-deliverable classifier at phase-3-outline) and
+    # ``2026-05-27-19-002`` (composer-layer docs-only branch — implemented
+    # here) converge on the same four-bucket file-type classifier. When the
+    # plan-wide union of every deliverable's ``affected_files`` resolves to
+    # the ``doc-only`` bucket, suppress holistic Python verification steps
+    # (``quality-gate``, ``module-tests``) from ``phase_5.verification_steps``.
+    # The rule is layered AFTER the seven-row matrix so the matrix's existing
+    # docs-only Row 3 (which keys on the role heuristic) is preserved, and
+    # this rule catches the cases Row 3 misses (e.g., a feature plan whose
+    # affected files happen to be all docs). The rule is a no-op when the
+    # matrix already emptied ``verification_steps`` (Row 3, Row 1) or when
+    # the plan-wide affected_files bucket is not ``doc-only``.
+    #
+    # Evidence-required gate: the rule only fires when we have CONCRETE
+    # evidence of affected files (a non-empty bundle change paths list).
+    # An empty list — which occurs when ``references.json`` is absent AND
+    # ``solution_outline.md`` is absent — is the "unknown" case, not the
+    # "all docs" case. The conservative default for "unknown" is to leave
+    # the matrix output untouched so existing test fixtures and ad-hoc
+    # compose calls without a plan workspace continue to behave normally.
+    docs_only_classifier_fired = False
+    bundle_change_paths = _read_bundle_change_paths(plan_id)
+    plan_wide_bucket = _classify_affected_files(bundle_change_paths) if bundle_change_paths else 'unknown'
+    if plan_wide_bucket == 'doc-only':
+        # Reuse the per-compose role cache shape from _decide (built fresh
+        # here because _decide's cache is scoped to that call). Filter out
+        # any verification step whose role is quality-gate, module-tests,
+        # or coverage — these are the holistic Python verification steps
+        # that have no meaningful target on a doc-only plan.
+        post_role_cache: dict[str, str | None] = {}
+        suppressed_roles = {'quality-gate', 'module-tests', 'coverage'}
+        current_steps = body['phase_5']['verification_steps']
+        filtered_steps = [s for s in current_steps if _role_of(s, post_role_cache) not in suppressed_roles]
+        if filtered_steps != current_steps:
+            body['phase_5']['verification_steps'] = filtered_steps
+            docs_only_classifier_fired = True
+
     # Bot-enforcement guard runs AFTER the seven-row matrix and BEFORE manifest
     # persistence. On GitHub/GitLab plans where `automated-review` is missing
     # from `phase_6.steps`, the guard remediates in-place (appends the step and
@@ -1169,6 +1302,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         _log_pre_push_quality_gate_omitted(plan_id)
     if pre_submission_self_review_omitted:
         _log_pre_submission_self_review_omitted(plan_id)
+    if docs_only_classifier_fired:
+        _log_docs_only_classifier_fired(plan_id, len(bundle_change_paths))
     _log_decision(plan_id, rule, body)
 
     return {
@@ -1189,6 +1324,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'commit_push_omitted': commit_push_omitted,
         'pre_push_quality_gate_omitted': pre_push_quality_gate_omitted,
         'pre_submission_self_review_omitted': pre_submission_self_review_omitted,
+        'docs_only_classifier_fired': docs_only_classifier_fired,
+        'plan_wide_bucket': plan_wide_bucket,
     }
 
 
