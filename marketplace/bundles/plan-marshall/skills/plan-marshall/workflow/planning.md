@@ -179,6 +179,84 @@ This mirrors the existing `plan_without_asking` (phase-3-outline) and `execute_w
 The `phase-boundary` call above already recorded the start of `2-refine` — do
 not call `start-phase 2-refine` again.
 
+#### Refine-bypass branch (lesson-derived plans)
+
+Before the **Phase handshake (verify)** below, evaluate a deterministic four-conjunction bypass predicate. When the predicate evaluates true, the refine envelope is skipped entirely — no dispatch is spawned and the phase is marked done with `outcome=skipped`. The orchestrator remains LLM-driven; this gate is the only deterministic short-circuit in the refine path.
+
+**Bypass predicate** — ALL four conditions MUST hold (hard conjunction; failing any one falls through to the standard refine dispatch below):
+
+1. `status.metadata.plan_source` matches the lesson-id pattern (e.g., `lesson:YYYY-MM-DD-HH-NNN` or a bare lesson-id token recognised by `manage-status` metadata writers — the marker that phase-1-init recorded the plan as lesson-derived).
+2. `status.metadata.confidence == 100` (the lesson body was crisp enough that phase-1-init captured maximum confidence at init time; refine cannot meaningfully iterate further).
+3. `references.scope_estimate == surgical` (the change footprint is narrowly localised; refine's iterate-to-confidence loop does not add value at this scope).
+4. `status.metadata.change_type == bug_fix` (the change is corrective — lesson-derived bug fixes are deterministic enough to skip refine; feature and refactor plans always retain refine).
+
+Read the four fields (single call each):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
+  --plan-id {plan_id}
+```
+
+Extract `metadata.plan_source`, `metadata.confidence`, and `metadata.change_type` from the TOON output.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references read \
+  --plan-id {plan_id}
+```
+
+Extract `scope_estimate` from the TOON output.
+
+**Bypass branch** — when ALL four conditions hold:
+
+1. Log the bypass decision (decision-level, exact wording for grep-ability):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level INFO \
+     --message "(plan-marshall:planning) refine-bypass: lesson_id={plan_source} confidence=100 surgical bug_fix"
+   ```
+
+2. Emit the canonical `[STATUS]` skipped-phase log line to work-log (mirrors the wording used by other skipped-phase paths so the retrospective can attribute the saved envelope cost):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level INFO \
+     --message "[STATUS] (plan-marshall:planning) phase-2-refine skipped — bypass predicate matched (lesson-derived, confidence=100, surgical, bug_fix)"
+   ```
+
+3. Mark phase-2-refine done with `outcome=skipped` via `manage-status mark-step-done`:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+     --plan-id {plan_id} --phase 2-refine --outcome skipped
+   ```
+
+4. Set `qgate_validation_required: false` for the skipped phase via the metadata setter (the post-return q-gate-validation dispatch below MUST read this value as `false` and SHALL skip the q-gate-validation sub-dispatch — there is nothing to validate when refine was never run):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+     --plan-id {plan_id} --set qgate_validation_required=false
+   ```
+
+5. Record the `2-refine → 3-outline` phase boundary with zero `<usage>` totals (no envelope was dispatched, so no agent tokens accrue to refine):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
+     --plan-id {plan_id} --prev-phase 2-refine --next-phase 3-outline \
+     --total-tokens 0 --tool-uses 0 --duration-ms 0
+   ```
+
+6. Capture phase handshake invariants for the skipped phase so the 3-outline entry assertion does not flag `phase_status==skipped` as drift:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
+     --plan-id {plan_id} --phase 2-refine
+   ```
+
+Then proceed directly to **Action: outline** (do NOT execute the **Phase handshake (verify)** call below for 1-init — it has already been done by the entry into the 2-refine section above; the bypass branch is a no-op on top of the verify-on-entry contract). Skip the entire standard-dispatch block below (including the **Post-return q-gate-validation dispatch**, the **Post-dispatch contract assertion**, and the standard **Metrics** fused-call — the bypass branch has already executed steps 5 and 6 above).
+
+**Standard dispatch branch** — when ANY of the four conditions is false, fall through to the standard refine dispatch documented below. Non-matching plans (e.g., free-form `task=`/`issue=`-sourced plans, lessons with `confidence<100`, non-surgical scopes, or non-`bug_fix` change types) retain the full refine envelope without modification.
+
 **Phase handshake (verify)**: Before entering 2-refine, verify the captured invariants for the previous phase still match the live state. Stop on `status: drift`.
 
 ```bash

@@ -73,6 +73,34 @@ If the helper exits non-zero, halt and proceed to **Step 4 — Mark Step Complet
 
 Capture the helper's TOON output as `{candidates_toon}` for forwarding to the cognitive-phase dispatch.
 
+### Step 1b: Candidate-count gate (inline vs dispatch) — B5
+
+Parse the seven candidate sub-lists from `{candidates_toon}` and compute `total_candidates` as the sum of the seven sub-list lengths (`symmetric_pairs`, `regexes`, `user_facing_strings`, `markdown_sections`, `contract_sources`, `schema_bearing_files`, plus the seventh enumerated sub-list per the surfacing contract).
+
+Evaluate the gate:
+
+> `total_candidates <= 5`
+
+When the gate holds (the typical small-diff case): execute the LLM cognitive checks (Step 2a + Step 3) INLINE in the dispatcher context. Do NOT compute the variant target, do NOT emit a `[DISPATCH]` log line, do NOT issue the `Task: plan-marshall:{target}` invocation in Step 2. Skip directly to Step 2a (cross-reference setup) and continue through Step 3 in the dispatcher's own context. The boundary is INCLUSIVE: `total_candidates == 5` is inline; `total_candidates == 6` falls through to dispatch.
+
+Log the gate decision once:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-6-finalize:pre-submission-self-review) Candidate-count gate INLINE — total_candidates={N} (<=5 threshold)"
+```
+
+When `total_candidates > 5`: fall through to Step 2 (dispatch) as documented. Log:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-6-finalize:pre-submission-self-review) Candidate-count gate DISPATCH — total_candidates={N} (>5 threshold)"
+```
+
+**Return-TOON shape invariant**: BOTH branches MUST produce the IDENTICAL return-TOON shape documented in `## Dispatched-envelope output` below (`status`, `display_detail`, `findings[N]{file,line,defect_class,rationale}`). The inline branch produces the same TOON-shaped result in dispatcher context — `display_detail` follows the same `"self-review clean: {N} candidates examined"` / `"self-review found {K} issues"` rule, and `findings[]` carries the same entry shape. Downstream consumers (Step 4 bookkeeping, output-template rendering) MUST NOT need to differentiate which branch produced the result. The gate is a pure dispatch-cost optimization — semantics are preserved bit-for-bit.
+
 ### Step 2: LLM cognitive phase (dispatch)
 
 Compute the variant target via the role resolver:

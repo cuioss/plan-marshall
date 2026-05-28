@@ -190,6 +190,23 @@ DEFAULT_PLAN_FINALIZE = {
     'steps': list(BUILT_IN_FINALIZE_STEPS),
 }
 
+# CI integration defaults (consumed by tools-integration-ci/scripts/ci_base.py).
+#
+# `checks_wait_timeout_seconds` controls the default timeout for the polling
+# commands that wait for CI run completion (`ci checks wait`, `ci pr wait-for-comments`,
+# `ci checks wait-for-status-flip`, and the two `issue wait-for-*` polls).
+# Resolution precedence inside ci_base.py:
+#   1. Explicit `--timeout` CLI flag (always wins when supplied).
+#   2. `ci.checks_wait_timeout_seconds` in marshal.json (project-level override).
+#   3. The 600-second fallback baked into the resolver — covers callers running
+#      outside a plan-marshall project where marshal.json is absent.
+# The default was raised from the prior hard-coded 300s after observing verify
+# jobs taking 318s + on hot CI runners; 600s gives headroom without hiding a
+# genuinely stuck pipeline behind an excessive ceiling.
+DEFAULT_CI = {
+    'checks_wait_timeout_seconds': 600,
+}
+
 # Build system defaults (detection reference only - commands are in modules)
 BUILD_SYSTEM_DEFAULTS = {
     'maven': {'skill': 'plan-marshall:plan-marshall-plugin'},
@@ -218,6 +235,7 @@ def get_default_config() -> dict:
         'providers': [],
         'skill_domains': {'system': system_domain},
         'system': {'retention': copy.deepcopy(DEFAULT_SYSTEM_RETENTION)},
+        'ci': copy.deepcopy(DEFAULT_CI),
         'plan': {
             'open_in_ide': DEFAULT_OPEN_IN_IDE,
             'phase-1-init': copy.deepcopy(DEFAULT_PLAN_INIT),

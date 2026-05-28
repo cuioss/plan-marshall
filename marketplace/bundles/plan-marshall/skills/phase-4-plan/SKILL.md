@@ -560,6 +560,22 @@ After creating per-deliverable tasks, create plan-level verification tasks that 
 
 **Module resolution for holistic tasks**: Holistic tasks are plan-level, not deliverable-level. Omit `--module` from `architecture resolve` to use the root module, which runs commands across all modules. Do NOT try to list or enumerate modules — the root module default handles cross-module verification.
 
+**B3 — Surgical holistic-verification-fold bypass (deterministic)**: Before creating any standalone holistic verification task, evaluate the surgical-scope bypass predicate:
+
+> `scope_estimate == surgical AND affected_files_count <= 2`
+
+where `affected_files_count` is the cardinality of the deduplicated union of every deliverable's `Affected files:` list (read from `solution_outline.md`). When the predicate holds, fold the resolved `build_verify` and `quality_check` commands into the existing implementation task's `steps[]` array as trailing entries (verbatim — the resolved executable strings become the new `steps[].target` values) instead of creating standalone holistic `TASK-N+1` / `TASK-N+2` tasks. The fold preserves the exact verification commands; only the dispatch shape changes (one task with extra steps vs. one task + two holistic tasks). When `affected_files_count == 2`, the predicate IS satisfied (the boundary is inclusive); `affected_files_count == 3` falls back to the standalone-holistic path. When the predicate does NOT hold (non-surgical scope, or 3+ affected files), create standalone holistic tasks as documented below — current behaviour is preserved bit-for-bit.
+
+Log the fold decision once at decision level:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-4-plan:holistic-fold) folded build_verify + quality_check into implementation task — scope_estimate=surgical, affected_files={N}"
+```
+
+When the fold fires, skip the rest of Step 7 — no holistic-task creation, no `[ARTIFACT]` log lines for absent holistic tasks. Proceed directly to Step 8.
+
 **Read verification steps** (NOTE: `manage-config plan` is ONLY for phase configs — for architecture queries use `manage-architecture:architecture`):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -731,7 +747,29 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Purpose**: Run the `module-mapping-validator` and `scope-criterion-validator` from `plan-marshall:plan-marshall/workflow/q-gate-validation.md` (§§ 2.11, 2.12) over the just-created tasks and the parent deliverables. Both validators reconcile LLM-authored task/deliverable shape against live ground truth (architecture which-module, architecture find/marketplace grep) and emit findings that the orchestrator's existing 3-iteration auto-loop consumes.
 
-**Activation guard**: Unconditional — runs after every successful phase-4-plan invocation, regardless of `plan_source`. Both validators apply to every plan (lesson-derived, issue-derived, recipe-derived, free-form). The phase sets `qgate_validation_required: true` in its return TOON on every successful completion; the orchestrator's existing `verification_max_iterations` budget gates re-entry on its side. Skipping the signal is reserved for the unrecoverable error path (the phase has aborted with `status: error` before reaching the return-results step).
+**Activation guard**: Runs after every successful phase-4-plan invocation, regardless of `plan_source`, EXCEPT when the surgical-scope bypass predicate (B2) below fires. Both validators apply to every plan (lesson-derived, issue-derived, recipe-derived, free-form). The phase sets `qgate_validation_required: true` in its return TOON on every successful completion; the orchestrator's existing `verification_max_iterations` budget gates re-entry on its side. Skipping the signal is reserved for the unrecoverable error path (the phase has aborted with `status: error` before reaching the return-results step) AND the B2 surgical-scope bypass below.
+
+**B2 — Surgical q-gate-validation bypass (deterministic)**: Before signalling `qgate_validation_required: true`, evaluate the same surgical-scope predicate used by Step 7 § B3:
+
+> `scope_estimate == surgical AND affected_files_count <= 2`
+
+where `affected_files_count` is the cardinality of the deduplicated union of every deliverable's `Affected files:` list. When the predicate holds, override `qgate_validation_required` to `false` in the Step 11 return TOON instead of the unconditional `true` — the orchestrator's q-gate-validation dispatch site reads the flag and skips the validator envelope when it is `false`. When the predicate is false (non-surgical, or 3+ affected files), the unconditional `true` value documented above is preserved.
+
+Log the bypass decision once at decision level:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-4-plan:qgate-bypass) skipped — scope_estimate=surgical, affected_files={N}"
+```
+
+When the bypass fires, also skip the `[STATUS] qgate_validation_required=true` log line emitted below; emit instead:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[STATUS] (plan-marshall:phase-4-plan) qgate_validation_required=false — surgical-scope bypass active (scope_estimate=surgical, affected_files={N})"
+```
 
 **Cross-reference (lesson-ID validation)**: Lesson-ID validation is intentionally NOT signaled here. PR #323 ships lesson-ID validation at **write time** in `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_tasks_crud.py` (via `tools-input-validation/scripts/input_validation.py`). Every `TASK-*.json` write hits the validator before disk and **hard-fails** with `validation_error: lesson_id_not_found` when a phantom ID is cited — distinct from this Step 9b's orchestrator-side q-gate auto-loop placement. Future maintainers extending phase-4-plan validation should preserve the placement split: write-time hard-fail for lesson-ID lookup against `manage-lessons list`; orchestrator-dispatched q-gate auto-loop for structural cross-checks (module mapping, scope criterion).
 
