@@ -57,19 +57,22 @@
   <text x="150" y="318" class="node-sub">untouched while plans run</text>
 
   <!-- SECONDARY STACK — three plan worktrees -->
-  <rect class="spoke-stroke" x="640" y="110" width="220" height="80" rx="6" ry="6"/>
-  <text x="750" y="138" class="item-c">worktree: plan-a</text>
-  <text x="750" y="158" class="item-c">branch: feature/plan-a</text>
-  <text x="750" y="178" class="node-sub">isolated working tree</text>
+  <rect class="spoke-stroke" x="640" y="110" width="220" height="95" rx="6" ry="6"/>
+  <text x="750" y="130" class="item-c">worktree: plan-a</text>
+  <text x="750" y="148" class="item-c">.plan/local/worktrees/plan-a</text>
+  <text x="750" y="166" class="item-c">branch: feature/plan-a</text>
+  <text x="750" y="184" class="node-sub">isolated working tree</text>
 
-  <rect class="spoke-stroke" x="640" y="218" width="220" height="80" rx="6" ry="6"/>
-  <text x="750" y="246" class="item-c">worktree: plan-b</text>
-  <text x="750" y="266" class="item-c">branch: feature/plan-b</text>
-  <text x="750" y="286" class="node-sub">isolated working tree</text>
+  <rect class="spoke-stroke" x="640" y="215" width="220" height="95" rx="6" ry="6"/>
+  <text x="750" y="235" class="item-c">worktree: plan-b</text>
+  <text x="750" y="253" class="item-c">.plan/local/worktrees/plan-b</text>
+  <text x="750" y="271" class="item-c">branch: feature/plan-b</text>
+  <text x="750" y="289" class="node-sub">isolated working tree</text>
 
-  <rect class="spoke-stroke" x="640" y="326" width="220" height="80" rx="6" ry="6"/>
-  <text x="750" y="354" class="item-c">worktree: plan-c</text>
-  <text x="750" y="374" class="item-c">branch: feature/plan-c</text>
+  <rect class="spoke-stroke" x="640" y="320" width="220" height="95" rx="6" ry="6"/>
+  <text x="750" y="340" class="item-c">worktree: plan-c</text>
+  <text x="750" y="358" class="item-c">.plan/local/worktrees/plan-c</text>
+  <text x="750" y="376" class="item-c">branch: feature/plan-c</text>
   <text x="750" y="394" class="node-sub">isolated working tree</text>
 
   <!-- main checkout -> hub (write) -->
@@ -81,11 +84,11 @@
   <text x="299" y="286" class="edge-lbl">reads</text>
 
   <!-- hub -> plan-a (structural connector) -->
-  <line class="connector" x1="560" y1="220" x2="638" y2="150"/>
+  <line class="connector" x1="560" y1="220" x2="638" y2="157"/>
   <!-- hub -> plan-b -->
-  <line class="connector" x1="562" y1="278" x2="638" y2="258"/>
+  <line class="connector" x1="560" y1="278" x2="638" y2="263"/>
   <!-- hub -> plan-c -->
-  <line class="connector" x1="560" y1="338" x2="638" y2="366"/>
+  <line class="connector" x1="560" y1="338" x2="638" y2="367"/>
 
   <text x="450" y="494" class="caption">Many working trees, one repository — commits and refs are shared; the working files are not.</text>
 
