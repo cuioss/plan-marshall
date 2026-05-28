@@ -2,42 +2,43 @@
   "best_practices": [],
   "insights": [],
   "internal_dependencies": [],
-  "key_dependencies": [],
-  "key_dependencies_reasoning": "",
+  "key_dependencies": [
+    "pytest",
+    "pyprojectx",
+    "mypy",
+    "ruff"
+  ],
+  "key_dependencies_reasoning": "pyproject.toml dependency set: pyprojectx orchestrates pytest+mypy+ruff for the Python test/lint pipeline",
   "key_packages": {
-    "marketplace_adapters": {
-      "description": "Adapter system in marketplace/adapters/ that exports bundles to other AI assistant formats (currently OpenCode) while keeping Claude Code as the source of truth."
+    "marketplace.targets": {
+      "description": "Multi-target adapter system that exports bundles to alternative AI-assistant formats (currently Claude Code native + OpenCode). Implements TargetBase plus per-target frontmatter mapping and body transforms."
     },
-    "python_build": {
-      "description": "Python build configuration via pyproject.toml and the ./pw pyprojectx wrapper, exposing compile/test/quality-gate/verify/coverage targets."
+    "test": {
+      "description": "Top-level Python test tree mirroring marketplace bundle layout (one subdir per bundle). Holds pytest modules that execute marketplace scripts via subprocess + PYTHONPATH and parse their TOON outputs."
     }
   },
-  "purpose": "library",
-  "purpose_reasoning": "The repo root packages a Python library/build harness rather than a deployable artifact.",
-  "responsibility": "Project root pyproject module hosting the Python build configuration (pyproject.toml, ./pw wrapper) and the marketplace adapter generator that exports bundles to other AI assistant formats.",
-  "responsibility_reasoning": "The repo root packages a Python library/build harness rather than a deployable artifact.",
+  "purpose": "runtime",
+  "purpose_reasoning": "Top-level pyproject with Python 3.12 requirement; hosts test entry points executed via pyprojectx (./pw module-tests / verify)",
+  "responsibility": "Root project module housing the pyprojectx-based test harness for the entire marketplace. Contains the unified pytest suite that exercises every bundle's scripts (plan-marshall, pm-dev-*, pm-documents, pm-plugin-development, pm-requirements) plus the multi-target adapter generator.",
+  "responsibility_reasoning": "source: pyproject.toml + test/ directory layout (per-bundle test folders + sync-plugin-cache)",
   "skills_by_profile": {
     "implementation": {
       "defaults": [
         {
-          "description": "Foundational development practices (user interaction, tool usage, research, dependency management)",
-          "skill": "plan-marshall:dev-general-practices"
+          "description": "Foundational agent behavior rules (user interaction, tool usage, research, dependency management)",
+          "skill": "plan-marshall:dev-agent-behavior-rules"
         },
         {
           "description": "Language-agnostic code quality, refactoring, and documentation principles",
           "skill": "plan-marshall:dev-general-code-quality"
-        },
-        {
-          "description": "Foundational agent behavior rules (user interaction, tool usage, research, dependency management)",
-          "skill": "plan-marshall:dev-agent-behavior-rules"
         }
       ]
     },
     "module_testing": {
       "defaults": [
         {
-          "description": "Foundational development practices (user interaction, tool usage, research, dependency management)",
-          "skill": "plan-marshall:dev-general-practices"
+          "description": "Foundational agent behavior rules (user interaction, tool usage, research, dependency management)",
+          "skill": "plan-marshall:dev-agent-behavior-rules"
         },
         {
           "description": "Language-agnostic code quality principles (SRP, CQS, complexity, error handling)",
@@ -46,30 +47,22 @@
         {
           "description": "Language-agnostic testing methodology (AAA, coverage, reliability, determinism)",
           "skill": "plan-marshall:dev-general-module-testing"
-        },
-        {
-          "description": "Foundational agent behavior rules (user interaction, tool usage, research, dependency management)",
-          "skill": "plan-marshall:dev-agent-behavior-rules"
         }
       ]
     },
     "quality": {
       "defaults": [
         {
-          "description": "Foundational development practices (user interaction, tool usage, research, dependency management)",
-          "skill": "plan-marshall:dev-general-practices"
+          "description": "Foundational agent behavior rules (user interaction, tool usage, research, dependency management)",
+          "skill": "plan-marshall:dev-agent-behavior-rules"
         },
         {
           "description": "Language-agnostic code quality, refactoring, and documentation principles",
           "skill": "plan-marshall:dev-general-code-quality"
-        },
-        {
-          "description": "Foundational agent behavior rules (user interaction, tool usage, research, dependency management)",
-          "skill": "plan-marshall:dev-agent-behavior-rules"
         }
       ]
     }
   },
-  "skills_by_profile_reasoning": "Backfill skills_by_profile for plan-marshall module to resolve phase-4-plan Q-Gate findings 1103b8 and 7e3190 (missing implementation and module_testing profiles)",
+  "skills_by_profile_reasoning": "general-dev: cross-cutting baseline; default module covers infra-level tests + adapter without language-specific bundle binding; Batch: marshall-plugin build_system detected; all marketplace bundles host skills/scripts authored under plugin-architecture standards",
   "tips": []
 }

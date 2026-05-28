@@ -3,28 +3,39 @@
   "insights": [],
   "internal_dependencies": [],
   "key_dependencies": [],
-  "key_dependencies_reasoning": "",
+  "key_dependencies_reasoning": "Marketplace bundle - no compile-scope code dependencies; pure markdown skills + Python scripts using only stdlib",
   "key_packages": {
-    "build_and_ci": {
-      "description": "Build-system abstractions (build-maven, build-gradle, build-npm, build-python) and CI/Sonar/Git integrations (tools-integration-ci, workflow-integration-sonar, workflow-integration-git*)."
+    "skills.build_systems": {
+      "description": "Build system abstraction over Maven, Gradle, npm, and pyproject: unified compile/test/verify/coverage command resolution plus per-system output parsing (JaCoCo, Cobertura, TAP)."
     },
-    "manage_apis": {
-      "description": "Foundational manage-* CRUD scripts (manage-tasks, manage-files, manage-findings, manage-lessons, manage-config, manage-status) accessed via the .plan/execute-script.py executor."
+    "skills.manage_architecture": {
+      "description": "Architecture analysis & enrichment manager - source of truth for module metadata, dependency graph, and skills_by_profile resolution. Consumed by phase-3-outline and phase-4-plan for placement decisions."
     },
-    "phase_lifecycle": {
-      "description": "Six-phase plan workflow skills (phase-1-init through phase-6-finalize) plus the plan-marshall orchestrator that drives the lifecycle end-to-end."
+    "skills.phase_workflow": {
+      "description": "Six-phase planning workflow: phase-1-init through phase-6-finalize. Drives the end-to-end plan lifecycle (init \u2192 refine \u2192 outline \u2192 plan \u2192 execute \u2192 finalize) with strict boundary contracts."
+    },
+    "skills.tools_script_executor": {
+      "description": "Generates and operates the .plan/execute-script.py proxy that resolves marketplace script notations (bundle:skill:script) to filesystem paths via embedded mappings."
     }
   },
-  "purpose": "extension",
-  "purpose_reasoning": "Forms the load-bearing skeleton other bundles plug into; classified as extension because it ships skills, agents, and commands consumed via the Claude Code marketplace plugin system.",
-  "responsibility": "Core orchestration bundle providing the 6-phase plan lifecycle (init, refine, outline, plan, execute, finalize), foundational manage-* scripts for plans/tasks/findings/lessons, and project-wide build/CI/Sonar abstractions.",
-  "responsibility_reasoning": "Forms the load-bearing skeleton other bundles plug into; classified as extension because it ships skills, agents, and commands consumed via the Claude Code marketplace plugin system.",
+  "purpose": "library",
+  "purpose_reasoning": "Plugin bundle exposing skills/agents/commands; no runtime entrypoint but is consumed by every other bundle and by Claude Code as a plugin",
+  "responsibility": "Core orchestration bundle providing the complete 5-phase development workflow (init, refine, outline, plan, execute, finalize), task planning, git/PR workflows, Sonar integration, and build automation across Maven/Gradle/npm/pyproject. Hosts foundational infrastructure (script executor, manage-config, manage-architecture, manage-lessons, permissions, logging) that every other bundle consumes.",
+  "responsibility_reasoning": "source: marketplace/bundles/plan-marshall/README.md (Purpose + Components sections)",
   "skills_by_profile": {
     "implementation": {
       "defaults": [
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     },
@@ -33,6 +44,14 @@
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     },
@@ -41,10 +60,18 @@
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     }
   },
-  "skills_by_profile_reasoning": "Backfill skills_by_profile for plan-marshall module to resolve phase-4-plan Q-Gate findings 1103b8 and 7e3190 (missing implementation and module_testing profiles)",
+  "skills_by_profile_reasoning": "plan-marshall-plugin-dev: marshall-plugin build_system; bundle authors marketplace skills + scripts (optionals apply for script-heavy work); Batch: marshall-plugin build_system detected; all marketplace bundles host skills/scripts authored under plugin-architecture standards",
   "tips": []
 }

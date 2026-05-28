@@ -5,23 +5,31 @@
   "key_dependencies": [],
   "key_dependencies_reasoning": "",
   "key_packages": {
-    "pytest_testing": {
-      "description": "Pytest testing skill covering AAA pattern, fixtures, parametrization, isolation, mocking, assertions, and coverage configuration."
+    "skills.pytest_testing": {
+      "description": "Pytest testing standards: AAA, fixtures, parametrization, isolation, mocking, assertions, coverage configuration."
     },
-    "python_core": {
-      "description": "Core Python 3.10+ skill covering type annotations, dataclasses, pathlib, async patterns, error handling, and naming conventions."
+    "skills.python_core": {
+      "description": "Python 3.10+ language standards: type annotations, data structures (dataclass/pydantic), pathlib, match statements, error handling, naming, imports."
     }
   },
-  "purpose": "extension",
-  "purpose_reasoning": "Optional Python domain extension activated for Python projects using pyprojectx.",
-  "responsibility": "Python 3.10+ development standards covering type annotations, dataclasses, pathlib, async patterns, and pytest testing methodology, plus pyprojectx (./pw) build operations.",
-  "responsibility_reasoning": "Optional Python domain extension activated for Python projects using pyprojectx.",
+  "purpose": "library",
+  "purpose_reasoning": "Marketplace bundle of Python skills; no runtime entrypoint",
+  "responsibility": "Python 3.10+ development standards bundle covering core language patterns (types, dataclasses, pathlib, async), pytest testing with isolation/fixtures/coverage, ruff+mypy toolchain integration, and the Python triage extension.",
+  "responsibility_reasoning": "source: marketplace/bundles/pm-dev-python/README.md (Purpose + Skills sections)",
   "skills_by_profile": {
     "implementation": {
       "defaults": [
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     },
@@ -30,6 +38,14 @@
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     },
@@ -38,10 +54,18 @@
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     }
   },
-  "skills_by_profile_reasoning": "Backfill skills_by_profile for plan-marshall module to resolve phase-4-plan Q-Gate findings 1103b8 and 7e3190 (missing implementation and module_testing profiles)",
+  "skills_by_profile_reasoning": "Batch: marshall-plugin build_system detected; all marketplace bundles host skills/scripts authored under plugin-architecture standards",
   "tips": []
 }

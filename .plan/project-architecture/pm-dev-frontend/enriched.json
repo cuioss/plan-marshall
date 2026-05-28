@@ -5,26 +5,31 @@
   "key_dependencies": [],
   "key_dependencies_reasoning": "",
   "key_packages": {
-    "css_and_lint": {
-      "description": "CSS skill covering modern features (nesting, container queries, layers) and lint-config skill for ESLint/Stylelint/Prettier setup."
+    "skills.javascript": {
+      "description": "Core JavaScript ES2022+ standards: ES modules, modern async patterns, code quality, JSDoc documentation with violation-detection analyzer."
     },
-    "javascript_standards": {
-      "description": "Core JavaScript skill covering ES modules, modern syntax, async patterns, JSDoc documentation, and code quality conventions."
-    },
-    "jest_testing": {
-      "description": "Jest unit testing skill covering DOM testing, web component testing, mocking, async tests, and coverage configuration."
+    "skills.jest_testing": {
+      "description": "Jest unit-testing patterns for JS/DOM/web-components: mocking, async testing, coverage configuration."
     }
   },
-  "purpose": "extension",
-  "purpose_reasoning": "Optional domain extension that activates when a project has frontend modules; not required by the core lifecycle.",
-  "responsibility": "JavaScript, CSS, and frontend tooling standards covering ES modules, modern syntax, JSDoc conventions, ESLint/Stylelint configuration, and Jest unit testing for browser and component code.",
-  "responsibility_reasoning": "Optional domain extension that activates when a project has frontend modules; not required by the core lifecycle.",
+  "purpose": "library",
+  "purpose_reasoning": "Marketplace bundle of skills/scripts; no runtime entrypoint",
+  "responsibility": "General frontend development standards bundle providing vanilla JavaScript (ES2022+) and CSS knowledge skills, JSDoc analyzer, ESLint flat-config standards, Jest testing patterns, and the JS/CSS triage extension. TypeScript and frameworks (React/Vue/Angular) are out of scope.",
+  "responsibility_reasoning": "source: marketplace/bundles/pm-dev-frontend/README.md (Scope + Purpose sections)",
   "skills_by_profile": {
     "implementation": {
       "defaults": [
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     },
@@ -33,6 +38,14 @@
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     },
@@ -41,10 +54,18 @@
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     }
   },
-  "skills_by_profile_reasoning": "Backfill skills_by_profile for plan-marshall module to resolve phase-4-plan Q-Gate findings 1103b8 and 7e3190 (missing implementation and module_testing profiles)",
+  "skills_by_profile_reasoning": "Batch: marshall-plugin build_system detected; all marketplace bundles host skills/scripts authored under plugin-architecture standards",
   "tips": []
 }

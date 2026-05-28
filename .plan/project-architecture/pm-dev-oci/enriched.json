@@ -5,23 +5,31 @@
   "key_dependencies": [],
   "key_dependencies_reasoning": "",
   "key_packages": {
-    "oci_image_standards": {
-      "description": "OCI image building skill covering base images, multi-stage builds, version pinning, .dockerignore, multi-platform builds, and OCI labels."
+    "skills.oci_security": {
+      "description": "Container runtime + supply-chain security: OWASP Docker Top 10 controls, capability dropping, read-only fs, image signing, SBOM generation (Trivy/Cosign/Syft)."
     },
-    "oci_security": {
-      "description": "OCI runtime security skill covering capability dropping, read-only filesystems, image signing (Cosign), SBOMs (Syft), and Trivy vulnerability scanning."
+    "skills.oci_standards": {
+      "description": "General OCI image building practices: minimal bases, multi-stage builds, pinned versions, OCI labels, multi-platform builds, certificate management, Quarkus distroless health probes."
     }
   },
-  "purpose": "extension",
-  "purpose_reasoning": "Optional container domain extension activated when projects build OCI images.",
-  "responsibility": "OCI container standards covering image building, multi-platform builds, Dockerfile best practices, runtime security hardening, and supply-chain controls (SBOM, signing, scanning).",
-  "responsibility_reasoning": "Optional container domain extension activated when projects build OCI images.",
+  "purpose": "library",
+  "purpose_reasoning": "Marketplace bundle of OCI reference skills; no runtime entrypoint",
+  "responsibility": "OCI container expertise bundle covering image building (minimal bases, multi-stage, pinned versions), multi-platform builds, distroless health probes, runtime hardening, vulnerability scanning, supply-chain security (signing, SBOMs), and OWASP Docker Top 10 controls.",
+  "responsibility_reasoning": "source: marketplace/bundles/pm-dev-oci/README.md (Purpose + Skills sections)",
   "skills_by_profile": {
     "implementation": {
       "defaults": [
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     },
@@ -30,6 +38,14 @@
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     },
@@ -38,10 +54,18 @@
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     }
   },
-  "skills_by_profile_reasoning": "Backfill skills_by_profile for plan-marshall module to resolve phase-4-plan Q-Gate findings 1103b8 and 7e3190 (missing implementation and module_testing profiles)",
+  "skills_by_profile_reasoning": "Batch: marshall-plugin build_system detected; all marketplace bundles host skills/scripts authored under plugin-architecture standards",
   "tips": []
 }

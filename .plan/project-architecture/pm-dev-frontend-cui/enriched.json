@@ -5,23 +5,28 @@
   "key_dependencies": [],
   "key_dependencies_reasoning": "",
   "key_packages": {
-    "cui_javascript_project": {
-      "description": "CUI JavaScript project structure, package.json conventions, dependency management, and Maven integration via frontend-maven-plugin."
-    },
-    "triage_ext": {
-      "description": "Plan-finalize triage extension that classifies JavaScript/CSS findings into fix vs suppress decisions for the CUI frontend domain."
+    "skills.cui_javascript_project": {
+      "description": "CUI JS project structure: package.json conventions, frontend-maven-plugin, Quarkus DevUI / NiFi layouts, SonarQube JS config."
     }
   },
-  "purpose": "extension",
-  "purpose_reasoning": "CUI-flavoured layer on top of pm-dev-frontend; activates only for CUI OSS projects.",
-  "responsibility": "CUI-specific JavaScript project conventions covering Maven integration with frontend-maven-plugin, Quarkus DevUI, NiFi extensions, and SonarQube scanning configuration for CUI OSS projects.",
-  "responsibility_reasoning": "CUI-flavoured layer on top of pm-dev-frontend; activates only for CUI OSS projects.",
+  "purpose": "library",
+  "purpose_reasoning": "Marketplace bundle of CUI-specific JS skills; no runtime entrypoint",
+  "responsibility": "CUI-specific JavaScript project standards complementing pm-dev-frontend with opinionated patterns for Maven+npm dual-build CUI projects: frontend-maven-plugin integration, Quarkus DevUI / NiFi project layouts, and SonarQube configuration for JS.",
+  "responsibility_reasoning": "source: marketplace/bundles/pm-dev-frontend-cui/README.md (Overview + Skills sections)",
   "skills_by_profile": {
     "implementation": {
       "defaults": [
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     },
@@ -30,6 +35,14 @@
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     },
@@ -38,10 +51,18 @@
         {
           "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
           "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
         }
       ]
     }
   },
-  "skills_by_profile_reasoning": "Backfill skills_by_profile for plan-marshall module to resolve phase-4-plan Q-Gate findings 1103b8 and 7e3190 (missing implementation and module_testing profiles)",
+  "skills_by_profile_reasoning": "Batch: marshall-plugin build_system detected; all marketplace bundles host skills/scripts authored under plugin-architecture standards",
   "tips": []
 }

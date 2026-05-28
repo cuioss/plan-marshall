@@ -1,14 +1,12 @@
 {
-  "description": "",
-  "description_reasoning": "",
+  "description": "Plan Marshall is a Claude Code marketplace and orchestration layer for AI coding assistants that enforces phase-driven planning workflows. It ships ten production bundles of skills, agents, and commands covering core orchestration, Java/JavaScript/Python/OCI/documentation/requirements/plugin-development domains.",
+  "description_reasoning": "source: README.md introduction (What is it section)",
   "extensions_used": [
     "plan-marshall",
-    "pm-documents",
     "pm-plugin-development"
   ],
   "modules": {
     "default": {},
-    "documentation": {},
     "plan-marshall": {},
     "pm-dev-frontend": {},
     "pm-dev-frontend-cui": {},
