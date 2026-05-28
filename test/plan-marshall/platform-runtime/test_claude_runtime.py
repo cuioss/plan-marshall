@@ -576,8 +576,8 @@ class TestSessionRenderTitleStatusline:
         assert "\x1b]0;" not in captured
         assert "status:" not in captured
 
-    def test_default_mode_still_emits_json_envelope(self, rt, tmp_path, monkeypatch, capsys):
-        """statusline=False (default) emits a JSON envelope — confirms the two modes are distinct."""
+    def test_default_mode_emits_only_json_envelope(self, rt, tmp_path, monkeypatch, capsys):
+        """Hook mode (statusline=False) success: stdout contains ONLY the JSON envelope — no TOON tail, function returns ""."""
         import claude_runtime as _cr
 
         session_id = "sess-envelope-mode"
@@ -597,11 +597,18 @@ class TestSessionRenderTitleStatusline:
         monkeypatch.chdir(tmp_path)
 
         capsys.readouterr()
-        _parsed(rt.session_render_title(statusline=False))
+        # Function MUST return empty string so the wrapper main() does not
+        # append a TOON tail to the JSON envelope. Mixed-content stdout breaks
+        # Claude Code's host parser (see hook-authoring-guide.md).
+        returned = rt.session_render_title(statusline=False)
+        assert returned == ""
+
         captured = capsys.readouterr().out
-        # JSON envelope present in default mode.
+        # Stdout MUST be parseable as a single JSON object with no trailing bytes.
         payload = json.loads(captured)
         assert payload["terminalSequence"] == f"\x1b]0;➤ {title_body}\x07"
+        # No TOON success/noop row glued to the envelope.
+        assert "status:" not in captured
 
     def test_statusline_missing_session_id_writes_nothing(self, rt, monkeypatch, capsys):
         """statusline noop: missing $CLAUDE_CODE_SESSION_ID — nothing written to stdout, empty return."""
@@ -642,12 +649,40 @@ class TestSessionRenderTitleStatusline:
         assert rt.session_render_title(statusline=True) == ""
         assert capsys.readouterr().out == ""
 
-    def test_hook_mode_noops_still_emit_toon(self, rt, monkeypatch, capsys):
-        """Hook (non-statusline) mode noops still return TOON for observability — the contract only shifts in statusline mode."""
+    def test_hook_mode_missing_session_id_writes_nothing(self, rt, monkeypatch, capsys):
+        """Hook mode noop (missing session id): empty stdout, empty return — host-parser contract requires absolute silence."""
         monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
         capsys.readouterr()
-        result = _parsed(rt.session_render_title(statusline=False))
-        assert result["status"] == "no-op"
+        assert rt.session_render_title(statusline=False) == ""
+        assert capsys.readouterr().out == ""
+
+    def test_hook_mode_no_active_plan_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
+        """Hook mode noop (no plan mapping): empty stdout, empty return."""
+        import claude_runtime as _cr
+
+        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-no-plan-mapping")
+        capsys.readouterr()
+        assert rt.session_render_title(statusline=False) == ""
+        assert capsys.readouterr().out == ""
+
+    def test_hook_mode_missing_title_body_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
+        """Hook mode noop (title-body.txt missing): empty stdout, empty return."""
+        import claude_runtime as _cr
+
+        session_id = "sess-no-title-body"
+        plan_id = "plan-no-title"
+        cache_dir = tmp_path / "sessions" / session_id
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
+
+        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
+        monkeypatch.chdir(tmp_path)
+
+        capsys.readouterr()
+        assert rt.session_render_title(statusline=False) == ""
         assert capsys.readouterr().out == ""
 
 
@@ -962,15 +997,23 @@ class TestSessionRenderTitle:
         ids=[c["id"] for c in _RENDER_MATRIX],
     )
     def test_resolver_matrix(self, cell, rt, tmp_path, monkeypatch, capsys):
-        """Every {tier × outcome} cell asserts status + stdout emission."""
+        """Every {tier × outcome} cell asserts the function returns "" and stdout matches the hook contract.
+
+        Hook mode contract: stdout carries exactly the JSON envelope on
+        success, exactly nothing on every noop. The function ALWAYS returns
+        the empty string so the wrapper main() does not append a TOON tail.
+        """
         _arrange_render_cell(cell, tmp_path, monkeypatch)
         capsys.readouterr()  # discard prior captures
 
-        result = _parsed(rt.session_render_title())
+        returned = rt.session_render_title()
         captured = capsys.readouterr().out
 
-        assert result["status"] == cell["expected"], (
-            f"cell {cell['id']!r}: expected status={cell['expected']!r}, got {result['status']!r}"
+        # Function always returns "" — TOON observability has been removed
+        # from the hook channel because the host parser drops mixed-content
+        # stdout (see hook-authoring-guide.md).
+        assert returned == "", (
+            f"cell {cell['id']!r}: expected empty return, got {returned!r}"
         )
 
         if cell["emits_stdout"]:
@@ -981,8 +1024,10 @@ class TestSessionRenderTitle:
             assert payload["terminalSequence"] == expected_osc, (
                 f"cell {cell['id']!r}: OSC payload mismatch"
             )
-            assert result["plan_id"] == cell["plan_id"]
-            assert result["title_body"] == cell["title_body"]
+            # No TOON success row glued to the envelope.
+            assert "status:" not in captured, (
+                f"cell {cell['id']!r}: TOON tail leaked into stdout: {captured!r}"
+            )
         else:
             # No-op branches must write nothing to stdout.
             assert captured == "", (
@@ -1021,19 +1066,21 @@ class TestSessionRenderTitle:
         # Session A invocation — must see session A's title body only.
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", cell_a["session_id"])
         capsys.readouterr()
-        result_a = _parsed(rt.session_render_title())
+        returned_a = rt.session_render_title()
         captured_a = capsys.readouterr().out
-        assert result_a["plan_id"] == cell_a["plan_id"]
-        assert result_a["title_body"] == cell_a["title_body"]
+        assert returned_a == ""
+        payload_a = json.loads(captured_a)
+        assert cell_a["title_body"] in payload_a["terminalSequence"]
         assert cell_b["title_body"] not in captured_a
 
         # Session B invocation — must see session B's title body only.
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", cell_b["session_id"])
         capsys.readouterr()
-        result_b = _parsed(rt.session_render_title())
+        returned_b = rt.session_render_title()
         captured_b = capsys.readouterr().out
-        assert result_b["plan_id"] == cell_b["plan_id"]
-        assert result_b["title_body"] == cell_b["title_body"]
+        assert returned_b == ""
+        payload_b = json.loads(captured_b)
+        assert cell_b["title_body"] in payload_b["terminalSequence"]
         assert cell_a["title_body"] not in captured_b
 
 
