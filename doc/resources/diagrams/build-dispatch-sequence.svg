@@ -28,15 +28,19 @@
   <!-- ============= Actor headers ============= -->
   <text x="110" y="32" class="col-header">LLM workflow</text>
   <rect class="stroke" x="50" y="44" width="120" height="34" rx="6"/>
+  <text x="110" y="65" class="col-sub">phase agent</text>
 
   <text x="360" y="32" class="col-header">architecture</text>
   <rect class="stroke" x="300" y="44" width="120" height="34" rx="6"/>
+  <text x="360" y="65" class="col-sub">resolver skill</text>
 
   <text x="600" y="32" class="col-header">build-{tool}</text>
   <rect class="stroke" x="540" y="44" width="120" height="34" rx="6"/>
+  <text x="600" y="65" class="col-sub">build skill</text>
 
   <text x="830" y="32" class="col-header">build process</text>
   <rect class="stroke" x="770" y="44" width="120" height="34" rx="6"/>
+  <text x="830" y="65" class="col-sub">subprocess</text>
 
   <!-- ============= Lifelines (dashed verticals) ============= -->
   <line class="sep" x1="110" y1="80" x2="110" y2="470"/>

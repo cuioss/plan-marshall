@@ -107,7 +107,11 @@ Verification checklist — every item must be visually confirmed against the ren
 - [ ] Captions / labels do not collide with adjacent elements (arrows, separators, neighbouring text).
 - [ ] Font fallback rendered as expected (no glyph substitution to Times-style serif where ui-sans-serif was intended).
 
-If any item fails, fix the SVG and re-render. Repeat until the checklist passes on both themes. **Only after the checklist passes** does authoring move to Step 5.
+If any item fails, fix the SVG and re-render. Repeat until the checklist passes on both themes.
+
+**For the full QA process** — additional defect classes the checklist above does not catch (text overflow inside containers, intra-diagram stylistic consistency, curve smoothness, cross-diagram parity, label collisions, smell test), repair workflow, common defect catalogue, and pre-commit gate — see [`standards/visual-qa.md`](standards/visual-qa.md). The Step 4 checklist is the floor; the visual-QA standard is the bar.
+
+**Only after both checklists pass** does authoring move to Step 5.
 
 ### Step 5 — Embed in the AsciiDoc page
 

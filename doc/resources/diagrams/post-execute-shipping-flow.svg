@@ -68,9 +68,9 @@
   <text x="640" y="158" class="stage-line">+ fold-back</text>
   <text x="640" y="188" class="stage-sub">iterates until approved</text>
 
-  <!-- Loop arc on the PR-cycle stage -->
-  <path class="loop" d="M 700 170 Q 745 180 740 145 Q 735 110 705 115" marker-end="url(#arrow)"/>
-  <text x="752" y="155" class="junction-lbl">loop</text>
+  <!-- Loop arc above the PR-cycle stage — clean self-loop, kept clear of the merge connector -->
+  <path class="loop" d="M 600 92 C 600 50, 680 50, 680 92" marker-end="url(#arrow)"/>
+  <text x="640" y="46" class="junction-lbl">loop</text>
 
   <!-- Y-JUNCTION (top track drops to bottom track) -->
   <path class="track" d="M 710 130 Q 800 130 830 200 Q 860 270 900 270"/>

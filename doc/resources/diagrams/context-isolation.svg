@@ -76,7 +76,7 @@
   <text x="750" y="113" class="col-sub">each variant runs in its own context; only the TOON return survives</text>
 
   <!-- Orchestrator (small, persistent) -->
-  <rect class="fill-faint" x="690" y="135" width="120" height="80" rx="6" ry="6"/>
+  <rect class="fill-faint" x="670" y="135" width="160" height="80" rx="6" ry="6"/>
   <text x="750" y="160" class="col-header">orchestrator</text>
   <text x="750" y="180" class="mono">~5 K</text>
   <text x="750" y="198" class="item">grows only by TOON returns</text>
@@ -107,9 +107,9 @@
   <text x="895" y="384" class="item">discarded at return</text>
 
   <!-- Arrows orchestrator → subagents (Task dispatches) -->
-  <line class="arrow" x1="720" y1="218" x2="595" y2="296" marker-end="url(#arrow)"/>
+  <line class="arrow" x1="700" y1="218" x2="595" y2="296" marker-end="url(#arrow)"/>
   <line class="arrow" x1="750" y1="218" x2="745" y2="296" marker-end="url(#arrow)"/>
-  <line class="arrow" x1="780" y1="218" x2="895" y2="296" marker-end="url(#arrow)"/>
+  <line class="arrow" x1="800" y1="218" x2="895" y2="296" marker-end="url(#arrow)"/>
 
   <!-- Single label centered above the arrow fan, between orchestrator and variant row -->
   <text x="750" y="245" class="col-sub">Task: execution-context-{level} — one dispatch per phase / task</text>
