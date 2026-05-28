@@ -42,7 +42,7 @@ Each row that emits a Phase 6 list (whether by intersection, subtraction, or pas
 
 After the seven-row matrix runs, two post-matrix transforms inspect the matrix output before the manifest is persisted:
 
-1. **Docs-only classifier (post-matrix)** — when the plan-wide union of every deliverable's `affected_files` resolves to the `doc-only` bucket via the four-bucket file-type classifier, holistic Python verification steps (`quality-gate`, `module-tests`, `coverage`) are suppressed from `phase_5.verification_steps`. See "Post-Matrix Rule: docs-only classifier" below.
+1. **Docs-only classifier (post-matrix)** — when the plan-wide union of every deliverable's `affected_files` resolves to the `documentation_only` bucket via the six-bucket file-type classifier (per-domain extension aggregation; see "Overlap resolution policy" and "Unclaimed paths" below), holistic Python verification steps (`quality-gate`, `module-tests`, `coverage`) are suppressed from `phase_5.verification_steps`. See "Post-Matrix Rule: docs-only classifier" below.
 2. **`bot_enforcement_guard`** — on GitHub/GitLab plans where `default:automated-review` is missing from the final `phase_6.steps`, the guard remediates in-place by appending it back to the list (defense-in-depth, not assertion). The guard is documented in its own subsection below the pre-filter sections.
 
 ### Pre-Filter: `commit_strategy_none`
@@ -103,42 +103,70 @@ When `modified_files` is non-empty, the pre-filter is a no-op and emits no log e
 
 ## Post-Matrix Rule: docs-only classifier
 
-**Activation**: runs unconditionally after the seven-row matrix and before the bot-enforcement guard. The rule inspects the plan-wide union of every deliverable's `affected_files` and classifies it against the four-bucket file-type classifier. The bucket vocabulary, predicates, and per-bucket profile assignments are the normative source of truth in `marketplace/bundles/plan-marshall/skills/phase-3-outline/standards/outline-workflow-detail.md` § File-type classifier — this rule consumes the same vocabulary at composer scope.
+**Activation**: runs unconditionally after the seven-row matrix and before the bot-enforcement guard. The rule inspects the plan-wide union of every deliverable's `affected_files` and classifies it via the per-domain extension aggregator (`_classify_paths_via_extensions`). The aggregator dispatches each path to every registered `ExtensionBase.classify_paths()` and resolves overlaps via longest-glob-wins specificity (see "Overlap resolution policy" below). The bucket vocabulary and per-bucket profile assignments are the normative source of truth in `marketplace/bundles/plan-marshall/skills/phase-3-outline/standards/outline-workflow-detail.md` § File-type classifier — this rule consumes the same vocabulary at composer scope.
 
-**Predicate**: `_classify_affected_files(union_of_affected_files) == "doc-only"`, where:
+**Predicate**: `_classify_paths_via_extensions(union_of_affected_files) == "documentation_only"`, where:
 
 - `union_of_affected_files` is the result of `_read_bundle_change_paths(plan_id)` — the union of `references.json::affected_files`, `references.json::modified_files`, and the deliverable-level `**Affected files:**` blocks in `solution_outline.md` (the same fallback chain Row 3's `_looks_docs_only` heuristic does not see, because that heuristic keys on phase-5 candidate roles rather than actual file paths).
-- The four buckets and their predicates are documented centrally — do NOT inline-copy them here.
+- The six buckets and the per-domain predicates that produce them are documented centrally in `extension-api/standards/extension-contract.md` § classify_paths() — do NOT inline-copy them here.
 
 **Effect**: every entry in `phase_5.verification_steps` whose `role:` frontmatter resolves to `quality-gate`, `module-tests`, or `coverage` is removed. Other entries (e.g., `pre-submission-self-review`, future role types) pass through unchanged. The rule is a no-op when:
 
-- The plan-wide bucket is not `doc-only` (i.e., the plan touches at least one `.py` file).
+- The plan-wide bucket is not `documentation_only` (i.e., the plan touches at least one production or test file; config-only plans still collapse to `documentation_only`).
 - The seven-row matrix already produced an empty `phase_5.verification_steps` (Row 1 `early_terminate_analysis`, Row 3 `docs_only`).
 - The matrix's surviving entries carry no holistic Python roles (the rule still runs but filters nothing).
 
-**Rationale**: the composer-layer docs-only branch and the per-deliverable classifier at phase-3-outline converge on the same four-bucket vocabulary. The per-deliverable classifier at outline time refuses to assign `module_testing` to a doc-only deliverable; this post-matrix rule extends the same logic to the plan-wide composition layer, where the union of every deliverable's affected files determines whether holistic Python verification has any meaningful target. Without this rule, a `feature`-type plan whose deliverables all happen to be docs-only would emit holistic `quality-gate` and `module-tests` steps that burn execution time on files that are not testable Python.
+**Rationale**: the composer-layer docs-only branch and the per-deliverable classifier at phase-3-outline converge on the same six-bucket vocabulary. The per-deliverable classifier at outline time refuses to assign `module_testing` to a `documentation_only` deliverable; this post-matrix rule extends the same logic to the plan-wide composition layer, where the union of every deliverable's affected files determines whether holistic Python verification has any meaningful target. Without this rule, a `feature`-type plan whose deliverables all happen to be docs-only would emit holistic `quality-gate` and `module-tests` steps that burn execution time on files that are not testable Python.
 
 **Why post-matrix (not a new row)**: the seven-row matrix keys on `change_type` / `track` / `scope_estimate` / `recipe_key` / `affected_files_count` — none of which can read the actual file paths. The plan-wide bucket is a path-content predicate that is orthogonal to the row inputs. Modeling it as a post-matrix transform keeps the seven-row matrix unchanged and lets the composer emit one extra `decision.log` entry naming the suppression. The rule layers on TOP of Row 3 (`docs_only`) — Row 3 keys on the role heuristic and catches plans where the candidate set itself signals docs-only; this rule catches plans where the candidate set looks code-shaped but the actual affected files are all docs.
 
 **Worked example** — a plan with `change_type: bug_fix`, `scope_estimate: surgical`, `affected_files_count: 3`, and `affected_files: ["a/SKILL.md", "b/outline-workflow-detail.md", "c/SKILL.md"]`:
 
 1. Seven-row matrix evaluates: Row 5 (`surgical_bug_fix`) fires → `phase_5.verification_steps = ['quality_check', 'build_verify']` (the intersection by role with `quality-gate` and `module-tests`).
-2. Post-matrix docs-only classifier runs: `_classify_affected_files(["a/SKILL.md", "b/outline-workflow-detail.md", "c/SKILL.md"]) == "doc-only"`.
+2. Post-matrix docs-only classifier runs: `_classify_paths_via_extensions(["a/SKILL.md", "b/outline-workflow-detail.md", "c/SKILL.md"]) == "documentation_only"` (every path claimed by `pm-documents` or `pm-plugin-development` under the `documentation` role).
 3. Effect: both `quality_check` (role `quality-gate`) and `build_verify` (role `module-tests`) are suppressed → `phase_5.verification_steps = []`.
 4. Decision log emits TWO entries: one for the row that fired (`surgical_bug_fix`) and one for the post-matrix rule (`docs_only_classifier`).
 
 **Decision log line** (in addition to the row's own log line):
 
 ```
-(plan-marshall:manage-execution-manifest:compose) docs-only classifier fired — plan-wide affected_files (N paths) resolved to doc-only bucket; holistic quality-gate + module-tests steps suppressed from phase_5.verification_steps. See lesson 2026-05-28-10-001.
+(plan-marshall:manage-execution-manifest:compose) docs-only classifier fired — plan-wide affected_files (N paths) resolved to documentation_only bucket; holistic quality-gate + module-tests steps suppressed from phase_5.verification_steps. See lesson 2026-05-28-10-001.
 ```
 
 **Composer output fields**: the post-matrix rule surfaces two additional fields in the `compose` success TOON:
 
 - `docs_only_classifier_fired: true|false` — `true` when the rule suppressed at least one step.
-- `plan_wide_bucket: python-prod|python-test|doc-only|mixed` — the resolved bucket for the plan-wide union.
+- `plan_wide_bucket: production_only|test_only|documentation_only|mixed_code|mixed_with_docs|unknown` — the resolved bucket for the plan-wide union.
 
 These fields make the rule's behavior observable from a single TOON inspection without re-reading `decision.log`.
+
+## Overlap resolution policy
+
+When the path union contains a path claimed by more than one domain extension (e.g., `pm-documents` claims `*.md`, `pm-plugin-development` claims `marketplace/bundles/*/skills/*/SKILL.md`), the aggregator resolves the conflict via **longest-glob-wins specificity**:
+
+1. For each claiming extension, the aggregator calls `classify_path_specificity(path, role)` — a companion method on `ExtensionBase` documented in `extension-api/standards/extension-contract.md`. Each extension returns a non-negative integer score equal to the count of non-wildcard path-segment tokens in the glob that matched `path` for `role`.
+2. The extension with the **highest** specificity score wins the path under its declared role.
+3. Ties break **alphabetically on the extension's domain key** (`d.get('domain', {}).get('key')`) — deterministic and order-independent.
+
+Order-independence is structural: the aggregator collects every extension's claims first, then resolves overlaps. Extension load order is irrelevant.
+
+**Worked overlap** — for the path `marketplace/bundles/foo/skills/bar/SKILL.md`:
+
+- `pm-documents` claims it under `documentation` with `classify_path_specificity(...) == 0` (its glob `*.md` has zero explicit segments).
+- `pm-plugin-development` claims it under `documentation` with `classify_path_specificity(...) == 4` (its glob `marketplace/bundles/*/skills/*/SKILL.md` has four explicit segments).
+- Resolution: `pm-plugin-development` wins; the path is tagged `documentation` from `pm-plugin-development`.
+
+## Unclaimed paths
+
+Paths no extension claims are tagged `unknown` by the aggregator AND surface as a `[STATUS]` decision-log warning naming each unclaimed path. The aggregator **never** silently falls back to `documentation_only` for unclaimed paths. The `unknown` tag forces the plan-wide bucket to `unknown`, which downstream guards (e.g., the `phase-3-outline` File-type classifier section) treat as a hard error requiring user resolution.
+
+**Decision log line** (emitted at most once per compose call when at least one path is unclaimed):
+
+```
+(plan-marshall:manage-execution-manifest:classify) [STATUS] Unclaimed paths tagged unknown: [<list of paths>]
+```
+
+The never-silently-drop policy is load-bearing: an unclassified path indicates either a missing domain extension OR a brand-new file type the project has not yet declared, and silently routing it to `documentation_only` would suppress the holistic Python verification that the path may actually need. Surfacing `unknown` forces the user (or the future Q-Gate finding) to declare the path's role explicitly.
 
 ## Bot-Enforcement Guard
 

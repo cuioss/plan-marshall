@@ -334,6 +334,114 @@ def applies_to_module(self, module_data: dict,
     """
 ```
 
+### classify_paths
+
+Classifies each repo-relative path into a file-role bucket owned by this extension. Extensions own the predicates that decide which paths they claim and the role each claimed path plays; the aggregator in `manage-execution-manifest._classify_paths_via_extensions` collects every extension's claims and resolves overlaps. The default implementation is a no-op — extensions that do not own any file types simply do not override this method.
+
+**Lifecycle**: Called by `manage-execution-manifest` during `phase-4-plan` Step 8b (manifest composition). The aggregator iterates every registered extension over the plan's `references.affected_files` union and uses the resolved per-path claims to derive the plan-wide bucket value.
+
+```python
+def classify_paths(self, paths: list[str]) -> dict[str, list[str]]:
+    """Classify each path into a file-role bucket owned by this extension.
+
+    Args:
+        paths: Repo-relative paths to classify. Extensions ignore paths
+            their globs do not match.
+
+    Returns:
+        A four-role dict keyed by ``production`` / ``test`` /
+        ``documentation`` / ``config`` with list-of-claimed-paths values.
+
+    Default: empty four-role dict (``{'production': [], 'test': [],
+    'documentation': [], 'config': []}``) — explicitly NOT
+    ``NotImplementedError``.
+    """
+```
+
+#### Four-Role Return Shape
+
+| Role | Semantics |
+|------|-----------|
+| `production` | Source code that ships to production (e.g., `scripts/foo.py`, `src/main/java/Foo.java`). |
+| `test` | Test source code (e.g., `test/foo_test.py`, `src/test/java/FooIT.java`). |
+| `documentation` | Human-readable documentation (e.g., `README.md`, `standards/foo.md`, `docs/foo.adoc`). |
+| `config` | Build / lint / packaging configuration (e.g., `pom.xml`, `pyproject.toml`, `package.json`). |
+
+The return dict MUST contain all four keys; extensions that own only some roles use empty lists for the others.
+
+#### Default No-Op Behavior
+
+The default returns `{'production': [], 'test': [], 'documentation': [], 'config': []}`. This is interpreted by the aggregator as "this extension claims nothing" and contributes no per-path claims. The default is intentionally NOT `NotImplementedError` — opting out is the common case. Extensions that own no file types (e.g., a recipe-only bundle) MAY simply not override this method.
+
+#### Longest-Glob-Wins Overlap Resolution (Aggregator Responsibility)
+
+When two extensions claim the same path, the **aggregator** — NOT the extension — resolves the conflict. The resolution policy:
+
+1. Compute a specificity score for each extension's matched glob by counting non-wildcard path-segment tokens.
+2. The extension with the highest specificity score wins the path under its declared role.
+3. Ties break alphabetically on the extension's domain key (`d.get('domain', {}).get('key')`).
+
+Extensions therefore return their own claims naively (i.e., based on their own predicates) and do NOT attempt to coordinate with sibling extensions. The aggregator handles cross-extension overlap.
+
+**Example overlap**: both `pm-documents` (glob `*.{md,adoc,asciidoc}`) and `pm-plugin-development` (glob `marketplace/bundles/*/skills/*/{SKILL.md,workflow/*.md,standards/*.md,references/*.md}`) claim a path like `marketplace/bundles/foo/skills/bar/SKILL.md`. The `pm-plugin-development` glob has four explicit non-wildcard segments (`marketplace`, `bundles`, `skills`, `SKILL.md`) versus `pm-documents`'s zero (`*.md` is wildcard-only), so `pm-plugin-development` wins.
+
+#### Unclaimed-Path Policy (Aggregator Responsibility)
+
+Paths no extension claims are tagged `unknown` by the aggregator AND surface as a `[STATUS]` warning naming each unclaimed path. The aggregator **never** silently falls back to `documentation_only` or any other bucket. The `unknown` tag forces the plan-wide bucket value to `unknown`, which downstream guards (e.g., `phase-3-outline` File-type classifier section) treat as a hard error requiring user resolution.
+
+#### Six-Bucket Plan-Wide Output
+
+The aggregator collapses per-path claims into one of six plan-wide bucket values that drive downstream profile and verification-step selection:
+
+| Bucket | Triggered by |
+|--------|--------------|
+| `production_only` | All claimed paths are `production` (no `test`, no `documentation`). |
+| `test_only` | All claimed paths are `test`. |
+| `documentation_only` | All claimed paths are `documentation`. |
+| `mixed_code` | Claimed paths include both `production` AND `test` but NO `documentation`. |
+| `mixed_with_docs` | Claimed paths include `production` and/or `test` AND `documentation`. |
+| `unknown` | At least one path was unclaimed by every registered extension. |
+
+The `config` role does NOT influence the plan-wide bucket — config changes ride with whatever production/test/docs surface they accompany.
+
+#### classify_path_specificity (specificity helper)
+
+To make the longest-glob-wins resolution implementable without requiring the aggregator to introspect each extension's internal glob list, the contract also defines a companion method:
+
+```python
+def classify_path_specificity(self, path: str, role: str) -> int:
+    """Non-wildcard segment count of the matched glob.
+
+    Returns:
+        Non-negative integer. Default ``0``. Extensions that override
+        ``classify_paths()`` are expected to override this too, returning
+        the count of explicit (non-wildcard) path-segment tokens in the
+        glob that matched ``path`` for ``role``.
+    """
+```
+
+The aggregator calls this method on every extension that claimed a contested path; the highest return value wins. Ties break alphabetically on the domain key. Extensions that never participate in overlap (e.g., `pm-dev-python` claiming `scripts/*.py` for `production` — no other extension owns that pattern) may leave the default `0` return in place.
+
+#### Worked Example
+
+Given the input path list `['scripts/foo.py', 'test/foo_test.py', 'marketplace/bundles/foo/skills/bar/SKILL.md']` and the registered extensions `pm-dev-python`, `pm-documents`, `pm-plugin-development`:
+
+1. `pm-dev-python` claims: `{'production': ['scripts/foo.py'], 'test': ['test/foo_test.py'], 'documentation': [], 'config': []}`.
+2. `pm-documents` claims: `{'production': [], 'test': [], 'documentation': ['marketplace/bundles/foo/skills/bar/SKILL.md'], 'config': []}` (matched glob `*.md`).
+3. `pm-plugin-development` claims: `{'production': [], 'test': [], 'documentation': ['marketplace/bundles/foo/skills/bar/SKILL.md'], 'config': []}` (matched glob `marketplace/bundles/*/skills/*/SKILL.md`).
+
+Aggregator resolves the overlap on `marketplace/bundles/foo/skills/bar/SKILL.md`: `pm-plugin-development`'s glob has four explicit segments vs `pm-documents`'s zero — `pm-plugin-development` wins. Final per-path map:
+
+| Path | Role | Source extension |
+|------|------|------------------|
+| `scripts/foo.py` | `production` | `pm-dev-python` |
+| `test/foo_test.py` | `test` | `pm-dev-python` |
+| `marketplace/bundles/foo/skills/bar/SKILL.md` | `documentation` | `pm-plugin-development` |
+
+Plan-wide bucket: `mixed_with_docs` (production + test + documentation present).
+
+---
+
 ### Protected Helpers
 
 #### _detect_applicable_profiles

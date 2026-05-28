@@ -108,3 +108,61 @@ class Extension(ExtensionBase):
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""
         return 'pm-dev-python:ext-triage-python'
+
+    # =========================================================================
+    # File-type classifier
+    # =========================================================================
+
+    # Glob patterns ordered by specificity (highest first). Each tuple is
+    # (glob, role, specificity) where specificity is the count of non-wildcard
+    # path-segment tokens in the glob. The aggregator resolves multi-extension
+    # overlap by comparing specificity values across claiming extensions.
+    _CLASSIFY_PATTERNS: tuple[tuple[str, str, int], ...] = (
+        # Production python under any scripts/ directory.
+        ('**/scripts/**/*.py', 'production', 2),
+        ('scripts/**/*.py', 'production', 1),
+        ('scripts/*.py', 'production', 1),
+        # Test python under top-level test/ or tests/.
+        ('test/**/*.py', 'test', 1),
+        ('tests/**/*.py', 'test', 1),
+        ('test/*.py', 'test', 1),
+        ('tests/*.py', 'test', 1),
+        # Config files.
+        ('pyproject.toml', 'config', 1),
+        ('uv.lock', 'config', 1),
+    )
+
+    def _match_classify(self, path: str) -> tuple[str, int] | None:
+        """Return (role, specificity) for the first matching glob, or None.
+
+        Patterns are evaluated in declaration order; the first match wins
+        within this extension. The aggregator handles cross-extension overlap
+        via classify_path_specificity().
+        """
+        import fnmatch
+        for glob, role, score in self._CLASSIFY_PATTERNS:
+            if fnmatch.fnmatchcase(path, glob):
+                return role, score
+        return None
+
+    def classify_paths(self, paths: list[str]) -> dict[str, list[str]]:
+        """Classify paths for the Python domain.
+
+        See standards/extension-contract.md § classify_paths() in the
+        plan-marshall extension-api skill for the full contract.
+        """
+        claims: dict[str, list[str]] = {
+            'production': [], 'test': [], 'documentation': [], 'config': []
+        }
+        for path in paths:
+            match = self._match_classify(path)
+            if match is not None:
+                role, _ = match
+                claims[role].append(path)
+        return claims
+
+    def classify_path_specificity(self, path: str, role: str) -> int:
+        match = self._match_classify(path)
+        if match is not None and match[0] == role:
+            return match[1]
+        return 0

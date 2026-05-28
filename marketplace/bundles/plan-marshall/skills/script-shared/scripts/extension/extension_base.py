@@ -289,6 +289,113 @@ class ExtensionBase(ABC):
         """
         return []
 
+    def classify_paths(self, paths: list[str]) -> dict[str, list[str]]:
+        """Classify each path into a file-role bucket owned by this extension.
+
+        Extensions own the predicates that decide which paths they claim and
+        the role each claimed path plays (production / test / documentation /
+        config). The default implementation is a no-op — extensions that do
+        not own any file types simply do not override this method.
+
+        Args:
+            paths: List of repo-relative path strings to classify. The
+                aggregator passes every path under the plan's
+                `references.affected_files` union. Extensions are free to
+                ignore paths their globs do not match.
+
+        Returns:
+            A dict keyed by file-role with list-of-claimed-paths values.
+            The four roles are fixed by contract:
+
+            - ``production``: source code that ships to production (e.g.,
+              ``scripts/foo.py``, ``src/main/java/Foo.java``).
+            - ``test``: test source code (e.g., ``test/foo_test.py``,
+              ``src/test/java/FooIT.java``).
+            - ``documentation``: human-readable documentation (e.g.,
+              ``README.md``, ``standards/foo.md``, ``docs/foo.adoc``).
+            - ``config``: build / lint / packaging configuration (e.g.,
+              ``pom.xml``, ``pyproject.toml``, ``package.json``).
+
+            Default returns the empty four-role dict
+            ``{'production': [], 'test': [], 'documentation': [], 'config': []}``;
+            the aggregator interprets this as "this extension claims
+            nothing". The default is intentionally NOT
+            ``NotImplementedError`` — extensions opting out is the common
+            case.
+
+        Aggregator responsibility (NOT this method's responsibility):
+
+        - **Longest-glob-wins overlap resolution.** When two extensions claim
+          the same path under different roles or different glob patterns,
+          the aggregator (`manage-execution-manifest._classify_paths_via_extensions`)
+          counts non-wildcard path-segment tokens in each extension's matched
+          glob and the longest-glob wins. Ties break alphabetically on the
+          extension's domain key.
+        - **Unclaimed-path handling.** Paths no extension claims are tagged
+          ``unknown`` by the aggregator and surface as a ``[STATUS]``
+          warning. The aggregator never silently falls back to
+          ``documentation_only``.
+        - **Plan-wide bucket collapse.** The aggregator collapses per-path
+          claims into one of six plan-wide bucket values: ``production_only``,
+          ``test_only``, ``documentation_only``, ``mixed_code``,
+          ``mixed_with_docs``, ``unknown``.
+
+        Example (override in a domain extension)::
+
+            def classify_paths(self, paths: list[str]) -> dict[str, list[str]]:
+                claims: dict[str, list[str]] = {
+                    'production': [], 'test': [], 'documentation': [], 'config': []
+                }
+                for path in paths:
+                    if path.endswith('.py') and path.startswith('scripts/'):
+                        claims['production'].append(path)
+                    elif path.endswith('.py') and (
+                        path.startswith('test/') or path.startswith('tests/')
+                    ):
+                        claims['test'].append(path)
+                    elif path in ('pyproject.toml', 'uv.lock'):
+                        claims['config'].append(path)
+                return claims
+
+        See ``extension-api/standards/extension-contract.md`` § classify_paths()
+        for the complete contract documentation.
+        """
+        return {'production': [], 'test': [], 'documentation': [], 'config': []}
+
+    def classify_path_specificity(self, path: str, role: str) -> int:
+        """Return the non-wildcard segment count of this extension's matched glob.
+
+        Called by the manage-execution-manifest aggregator when more than one
+        extension claims the same path. The aggregator uses the returned value
+        to apply longest-glob-wins overlap resolution: the extension with the
+        highest specificity score wins the path under its declared role.
+
+        Args:
+            path: The path that this extension claimed (in any role).
+            role: The role under which this extension claimed the path
+                (one of ``production`` / ``test`` / ``documentation`` /
+                ``config``).
+
+        Returns:
+            Non-negative integer specificity score. Higher wins. The default
+            returns ``0`` — extensions that override ``classify_paths()`` are
+            expected to override this method as well, returning the count of
+            non-wildcard path-segment tokens in the glob that matched ``path``
+            for ``role``.
+
+        Example::
+
+            # An extension whose glob ``marketplace/bundles/*/skills/*/SKILL.md``
+            # claimed the path ``marketplace/bundles/foo/skills/bar/SKILL.md``
+            # for the ``documentation`` role returns 4 (the four explicit
+            # segments: ``marketplace``, ``bundles``, ``skills``, ``SKILL.md``).
+            def classify_path_specificity(self, path: str, role: str) -> int:
+                if role == 'documentation' and path.endswith('SKILL.md'):
+                    return 4
+                return 0
+        """
+        return 0
+
     def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Check if this domain applies to a specific module and return resolved skills.
 

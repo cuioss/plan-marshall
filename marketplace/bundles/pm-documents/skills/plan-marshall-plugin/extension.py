@@ -101,6 +101,48 @@ class Extension(ExtensionBase):
         """No verify steps — documentation verification is handled via recipe."""
         return []
 
+    # =========================================================================
+    # File-type classifier
+    # =========================================================================
+
+    # Documentation files — *.md, *.adoc, *.asciidoc — but EXCLUDING any
+    # markdown that lives under marketplace/bundles/*/skills/, which is
+    # claimed by pm-plugin-development with a more specific glob. Both
+    # extensions emit claims; the aggregator's longest-glob-wins overlap
+    # resolution routes the overlap to pm-plugin-development.
+    _DOC_SUFFIXES: tuple[str, ...] = ('.md', '.adoc', '.asciidoc')
+
+    def _match_classify(self, path: str) -> tuple[str, int] | None:
+        for suffix in self._DOC_SUFFIXES:
+            if path.endswith(suffix):
+                return 'documentation', 0
+        return None
+
+    def classify_paths(self, paths: list[str]) -> dict[str, list[str]]:
+        """Classify paths for the documentation domain.
+
+        Claims every *.md / *.adoc / *.asciidoc path under the documentation
+        role. The aggregator routes overlap with pm-plugin-development's
+        marketplace-skill glob to pm-plugin-development via longest-glob-wins.
+
+        See extension-api/standards/extension-contract.md § classify_paths()
+        for the full contract.
+        """
+        claims: dict[str, list[str]] = {
+            'production': [], 'test': [], 'documentation': [], 'config': []
+        }
+        for path in paths:
+            match = self._match_classify(path)
+            if match is not None:
+                claims[match[0]].append(path)
+        return claims
+
+    def classify_path_specificity(self, path: str, role: str) -> int:
+        match = self._match_classify(path)
+        if match is not None and match[0] == role:
+            return match[1]
+        return 0
+
     def provides_recipes(self) -> list[dict]:
         """Return documentation recipes."""
         return [
