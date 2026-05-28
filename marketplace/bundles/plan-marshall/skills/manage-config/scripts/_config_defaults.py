@@ -61,6 +61,21 @@ DEFAULT_SYSTEM_RETENTION = {
     'temp_on_maintenance': True,
 }
 
+# Project-level defaults (`project.*` in marshal.json).
+#
+# `default_base_branch` is the project's canonical base branch. Consumer
+# projects override this at first-run via `marshall-steward`, which prompts
+# for the value and writes it through `manage-config project set --field
+# default_base_branch --value {answer}`. The wizard's default suggestion is
+# derived from `git symbolic-ref refs/remotes/origin/HEAD` (parsed as
+# `refs/remotes/origin/{branch}`), with `main` as the last-resort fallback
+# when `origin/HEAD` is unset. `phase-1-init` reads this value as the seed
+# for `references.base_branch`; operators may still override per-plan via
+# `manage-references set --field base_branch` after init.
+DEFAULT_PROJECT = {
+    'default_base_branch': 'main',
+}
+
 # open-in-ide gate default (`plan.open_in_ide` in marshal.json — flat bool).
 # Default `true` preserves the current always-attempt-to-open behaviour.
 # A missing key is also treated as `true` by `manage-files open-in-ide`.
@@ -187,6 +202,15 @@ DEFAULT_PLAN_FINALIZE = {
     # → mark done → transition 5-execute → 6-finalize via finalize_without_asking)
     # and re-enters the finalize loop, capped by max_iterations.
     'loop_back_without_asking': False,
+    # Gates the final `pr merge --delete-branch` step in the branch-cleanup
+    # workflow independently of the pre-rebase auto-proceed gate (driven by
+    # `auto_rebase_threshold` in branch-cleanup.md). Default False is the
+    # conservative shape — after CI passes, the operator is prompted to merge.
+    # Set True to enable full unattended runs where the post-CI merge fires
+    # silently. The auto-merge fallback path (`pr merge` -> `pr auto-merge`
+    # on branch-protection error) is unaffected when an explicit "Yes, merge"
+    # answer was given; it does NOT activate on a deferred "No, skip merge".
+    'auto_merge_after_ci': False,
     'steps': list(BUILT_IN_FINALIZE_STEPS),
 }
 
@@ -233,6 +257,7 @@ def get_default_config() -> dict:
     validate_domain_invariants(system_domain)
     return {
         'providers': [],
+        'project': copy.deepcopy(DEFAULT_PROJECT),
         'skill_domains': {'system': system_domain},
         'system': {'retention': copy.deepcopy(DEFAULT_SYSTEM_RETENTION)},
         'ci': copy.deepcopy(DEFAULT_CI),

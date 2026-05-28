@@ -35,7 +35,7 @@ from _cmd_skill_resolution import (
     cmd_resolve_recipe,
     cmd_resolve_workflow_skill_extension,
 )
-from _cmd_system_plan import cmd_plan, cmd_system
+from _cmd_system_plan import cmd_plan, cmd_project, cmd_system
 
 # Direct imports - PYTHONPATH set by executor
 from effort_presets import EffortPresets  # type: ignore[import-not-found]
@@ -207,6 +207,17 @@ def main() -> int:
     ret_set = ret_sub.add_parser('set', help='Set retention field', allow_abbrev=False)
     add_field_arg(ret_set)
     ret_set.add_argument('--value', required=True, help='Field value')
+
+    # --- project (project-level config) ---
+    p_proj = subparsers.add_parser('project', help='Manage project-level settings', allow_abbrev=False)
+    proj_sub = p_proj.add_subparsers(dest='verb', required=True, help='Operation')
+
+    proj_get = proj_sub.add_parser('get', help='Get a project field', allow_abbrev=False)
+    add_field_arg(proj_get)
+
+    proj_set = proj_sub.add_parser('set', help='Set a project field', allow_abbrev=False)
+    add_field_arg(proj_set)
+    proj_set.add_argument('--value', required=True, help='Field value')
 
     # --- plan (phase-based sub-nouns) ---
     p_plan = subparsers.add_parser('plan', help='Manage plan settings', allow_abbrev=False)
@@ -439,6 +450,11 @@ def main() -> int:
             p_sys.print_help()
             return 2
         result = cmd_system(args)
+    elif args.noun == 'project':
+        if not args.verb:
+            p_proj.print_help()
+            return 2
+        result = cmd_project(args)
     elif args.noun == 'plan':
         if not args.sub_noun or not args.verb:
             p_plan.print_help()

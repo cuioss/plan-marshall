@@ -165,6 +165,59 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config init -
 
 ---
 
+## Step 5a: Project Default Base Branch
+
+Seed `project.default_base_branch` so `phase-1-init` can populate `references.base_branch` without falling back to whatever branch happens to be checked out at plan-creation time. The value is the project's canonical base branch — typically `main` or `master` for legacy projects.
+
+**On non-first-run invocations** the prompt is skipped when `project.default_base_branch` is already set:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  project get --field default_base_branch
+```
+
+If the call returns the default value (or `field_not_found` in the legacy schema), proceed with the prompt below.
+
+**Resolve the suggested default** from `git symbolic-ref refs/remotes/origin/HEAD`. Parse the output `refs/remotes/origin/{branch}` for the `{branch}` suffix and use it as the default suggestion. If the symbolic ref is unset (fresh clone without an `origin/HEAD` tracking ref), fall back to `main` as the last-resort default:
+
+```bash
+git -C . symbolic-ref refs/remotes/origin/HEAD
+```
+
+Treat a non-zero exit as the unset case — silently fall through to `main`.
+
+**Prompt the operator** via `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "What is this project's default base branch?"
+      header: "Project Default Base Branch"
+      description: |
+        `phase-1-init` will seed `references.base_branch` for every new plan from this value. Per-plan overrides remain available via `manage-references set --field base_branch` after init.
+
+        **Detected default** (from `git symbolic-ref refs/remotes/origin/HEAD`): {detected_default}
+      options:
+        - label: "{detected_default}"
+          description: "Use the detected default"
+        - label: "main"
+          description: "Use main"
+        - label: "Custom"
+          description: "Enter a custom branch name"
+      multiSelect: false
+```
+
+When the operator selects `Custom`, follow up with a free-text `AskUserQuestion` for the branch name. Persist the chosen value:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  project set --field default_base_branch --value {answer}
+```
+
+Then continue to Step 5b.
+
+---
+
 ## Step 5b: Discover and Activate Providers
 
 See [provider-setup.md](provider-setup.md#provider-discovery-and-activation-step-5b) for the full discovery and activation workflow; Step 5b-4 auto-selects the CI provider on high-confidence detection with manual fallback.

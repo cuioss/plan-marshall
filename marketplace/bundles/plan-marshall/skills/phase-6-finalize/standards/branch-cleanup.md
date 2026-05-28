@@ -32,7 +32,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 - **No improvisation**: Do not add git cleanup steps beyond what is explicitly documented in the execution sections below.
 - **Worktree removal is non-force**: Never pass `--force` to `git worktree remove`. Only clean worktrees may be removed. If the worktree has uncommitted changes, abort cleanup and surface the error — the user may still want to salvage the work.
 - **Failure leaves worktree in place**: On any plan abort or failure path, do NOT auto-remove the worktree. Worktree removal happens only during successful branch-cleanup.
-- **Confirmation gate is conditional on conflict severity**: The PR-mode `AskUserQuestion` confirmation gate is no longer mandatory on every `state == open` invocation. It is now driven by the **Conflict-Severity Classifier** section below, which dispatches `plan-marshall:workflow-integration-git:git-workflow baseline-reconcile --no-emit` to classify the rebase as `no_overlap`, `overlap_no_content_conflict`, or `overlap_with_content_conflict`. The classifier's safety properties: `baseline-reconcile --no-emit` is idempotent, performs only `fetch + diff + merge-tree` (with an internal `git merge` probe that is always aborted before any working-tree mutation persists — see the `auto_reconciled: false` downgrade path inside the script), and emits no Q-Gate findings under `--no-emit`. The auto-proceed threshold is tunable via `plan.phase-6-finalize.branch_cleanup_auto_proceed_threshold` (default `no_overlap_only`; opt-in `auto_resolvable`; opt-out `never`). All other safety properties (`--force-with-lease` only, worktree-first removal, targeted ref prune) remain unchanged on every code path.
+- **Confirmation gate is conditional on conflict severity**: The PR-mode `AskUserQuestion` confirmation gate is no longer mandatory on every `state == open` invocation. It is now driven by the **Conflict-Severity Classifier** section below, which dispatches `plan-marshall:workflow-integration-git:git-workflow baseline-reconcile --no-emit` to classify the rebase as `no_overlap`, `overlap_no_content_conflict`, or `overlap_with_content_conflict`. The classifier's safety properties: `baseline-reconcile --no-emit` is idempotent, performs only `fetch + diff + merge-tree` (with an internal `git merge` probe that is always aborted before any working-tree mutation persists — see the `auto_reconciled: false` downgrade path inside the script), and emits no Q-Gate findings under `--no-emit`. The auto-proceed threshold is tunable via `plan.phase-6-finalize.auto_rebase_threshold` (default `no_overlap_only`; opt-in `auto_resolvable`; opt-out `never`). All other safety properties (`--force-with-lease` only, worktree-first removal, targeted ref prune) remain unchanged on every code path.
 
 ## Worktree Awareness
 
@@ -97,7 +97,7 @@ This section dispatches the existing `baseline-reconcile` probe to classify the 
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize get --field branch_cleanup_auto_proceed_threshold --audit-plan-id {plan_id}
+  plan phase-6-finalize get --field auto_rebase_threshold --audit-plan-id {plan_id}
 ```
 
 Extract `value` as `{threshold}`. Default: `no_overlap_only`. Accepted values:
@@ -153,9 +153,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup classifier: classification={classification}, auto_reconciled={auto_reconciled}, threshold={threshold}, decision={decision}, upstream_commits={upstream_commit_count}"
 ```
 
-### User Confirmation Gate
+### Pre-Rebase Confirmation Gate
 
-The gate is **mandatory when `{decision} == needs_user`** (genuine conflict, classifier-bypassed threshold, or `state == merged` re-entry path) and **bypassed when `{decision} == auto_proceed`** (clean or auto-resolvable rebase under a permissive threshold).
+The pre-rebase gate decides whether the upcoming `worktree-rebase-to → force-push-with-lease → ci wait` sequence fires silently or prompts the operator for confirmation. It is driven by the `auto_rebase_threshold` knob (read above in the **Conflict-Severity Classifier** section) and the classifier's `{decision}`.
+
+The merge step itself is governed by a separate gate (see **Pre-Merge Confirmation Gate** below) routed by the orthogonal `auto_merge_after_ci` knob. The two gates are independent: a permissive `auto_rebase_threshold` does NOT imply a permissive merge gate, and vice versa.
+
+The gate is **mandatory when `{decision} == needs_user`** (genuine conflict, classifier-bypassed threshold, or `state == merged` re-entry path where there is no rebase to perform but the operator is asked to confirm local cleanup) and **bypassed when `{decision} == auto_proceed`** (clean or auto-resolvable rebase under a permissive threshold).
 
 #### Auto-proceed path (`{decision} == auto_proceed`)
 
@@ -163,39 +167,40 @@ When the classifier returned `{decision} == auto_proceed`, skip the `AskUserQues
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: auto-proceed (classification={classification}), confirmation gate bypassed"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: pre-rebase auto-proceed (classification={classification}), pre-rebase confirmation gate bypassed"
 ```
 
 Then proceed directly to **Safety Check: Other Open PRs**.
 
 #### Interactive path (`{decision} == needs_user` OR `state == merged`)
 
-Present all context and ask the user before any destructive action.
+Present the **rebase-and-cleanup** context and ask the user before any destructive action. The merge action is intentionally absent from this prompt — it is gated separately below after CI passes on the rebased branch.
 
-Determine planned actions based on PR state. Local cleanup (switch to base branch, pull, delete local feature branch) is uniform across both paths; only the remote-side action differs (`--delete-branch` deletes the remote branch only when we merge this run):
+Determine planned actions based on PR state. Local cleanup (switch to base branch, pull, delete local feature branch) is uniform across both paths; only the remote-side action differs (the merge itself is deferred to the pre-merge gate when `state == open`):
 
-- **If `state == open`**: Actions = merge PR (with --delete-branch, which deletes the remote branch), wait for CI, switch to base branch, pull latest, delete local feature branch
-- **If `state == merged`**: Actions = switch to base branch, pull latest, delete local feature branch
+- **If `state == open`**: Actions = rebase onto base, force-push with lease, wait for CI; the post-CI merge is confirmed separately at the pre-merge gate. Local cleanup runs after the merge gate resolves.
+- **If `state == merged`**: Actions = switch to base branch, pull latest, delete local feature branch. No rebase or merge is planned; the pre-merge gate is skipped on this path.
 
 ```
 AskUserQuestion:
   questions:
-    - question: "Branch cleanup will perform the following actions. Proceed?"
-      header: "Branch Cleanup"
+    - question: "Rebase the feature branch onto {base_branch} and run CI? (Merge will be confirmed separately after CI passes.)"
+      header: "Branch Cleanup — Pre-rebase"
       description: |
         **PR**: {pr_url} ({state})
         **Branch**: {head_branch} → {base_branch}
         **Other open PRs for this branch**: {count} {details if any}
 
-        **Actions**:
-        {- Merge PR #{pr_number} with --delete-branch (if state == open; deletes remote branch only)}
-        {- Wait for CI checks to complete (if merging)}
+        **Actions** (this gate covers rebase + CI wait only; merge is gated separately):
+        {- Rebase {head_branch} onto origin/{base_branch} (if state == open)}
+        {- Force-push the rebased branch with --force-with-lease (if state == open)}
+        {- Wait for CI checks to complete on the rebased branch (if state == open)}
         - Switch to {base_branch}
         - Pull latest
         - Delete local branch {head_branch}
       options:
         - label: "Yes, proceed"
-          description: "Execute branch cleanup"
+          description: "Execute rebase + CI wait; merge will be confirmed separately"
         - label: "No, skip"
           description: "Leave branch as-is"
       multiSelect: false
@@ -204,7 +209,7 @@ AskUserQuestion:
 **If user selects "No, skip"**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup skipped: user declined"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup skipped: user declined at pre-rebase gate"
 ```
 → Done, return.
 
@@ -290,16 +295,97 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: rebased onto origin/{base_branch}, force-pushed with lease, CI passed"
 ```
 
+### Pre-Merge Confirmation Gate
+
+**Only if `state == open`** (when `state == merged` there is nothing to merge — skip this entire section and proceed to **Wait for Merge CI**, which itself is a no-op on the `state == merged` path).
+
+The pre-merge gate fires after `ci wait` returns green on the rebased branch and BEFORE the `pr merge --delete-branch` call below. It is suppressed only when `auto_merge_after_ci == true`. The gate is orthogonal to the pre-rebase gate above — the operator may have auto-proceeded through rebase but still be asked to confirm the irreversible merge step.
+
+#### Read the auto-merge gate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize get --field auto_merge_after_ci --audit-plan-id {plan_id}
+```
+
+Extract `value` as `{auto_merge_after_ci}` (default: `false`). Valid values: `true`, `false`.
+
+#### Re-run the classifier against the current head
+
+The pre-rebase classifier observation can be stale by the time CI completes (other commits may have landed on `origin/{base_branch}` during the wait). Re-dispatch the classifier so the gate is anchored to the *current* head SHA on the rebased branch:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow \
+  baseline-reconcile --plan-id {plan_id} --no-emit
+```
+
+Parse the TOON return for refreshed `classification`, `auto_reconciled`, `conflict_count`, `upstream_commit_count` values. These values are surfaced to the operator in the prompt below so the merge decision is anchored to the post-rebase reality, not the pre-rebase snapshot.
+
+If the script exits non-zero, STOP and return an error TOON to the dispatcher carrying the stderr verbatim. Do NOT silently fall back to `needs_user` on classifier failure — a broken probe is a different signal than a real conflict.
+
+#### Auto-merge bypass (`auto_merge_after_ci == true`)
+
+When `{auto_merge_after_ci} == true`, skip the `AskUserQuestion` block entirely and log the bypass:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: pre-merge auto-proceed (auto_merge_after_ci=true), pre-merge confirmation gate bypassed"
+```
+
+Then proceed directly to **Merge PR (if not yet merged)** below. The `{merge_consent} = explicit_yes` flag is set so the auto-merge fallback path remains active on a branch-protection error.
+
+#### Interactive merge prompt (`auto_merge_after_ci == false`)
+
+Present the merge context and ask the operator to confirm. The prompt is anchored to the current (post-rebase, post-CI) head SHA via the freshly-re-run classifier above:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "CI passed on the rebased branch. Merge PR #{pr_number} now?"
+      header: "Branch Cleanup — Pre-merge"
+      description: |
+        **PR**: {pr_url} (state: open)
+        **Branch**: {head_branch} → {base_branch}
+        **Merge strategy**: {pr_merge_strategy}
+        **Current classifier** (post-rebase): classification={classification}, auto_reconciled={auto_reconciled}, upstream_commits={upstream_commit_count}
+
+        **Actions on "Yes, merge"**:
+        - `pr merge --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch`
+        - On branch-protection error, fall back to `pr auto-merge` with the same strategy
+        - Switch to {base_branch}, pull latest, delete local branch {head_branch}
+
+        **Actions on "No, skip merge"**:
+        - Workflow exits cleanly; the rebased branch is left in place
+        - Re-enter finalize later to merge (state == merged short-circuits this prompt if you merged manually)
+      options:
+        - label: "Yes, merge"
+          description: "Run pr merge --delete-branch with auto-merge fallback on branch protection"
+        - label: "No, skip merge"
+          description: "Defer merge; exit cleanly so finalize can be re-entered later"
+      multiSelect: false
+```
+
+**If user selects "No, skip merge"**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: pre-merge deferred at user request — re-enter finalize later to merge"
+```
+
+Set `{merge_consent} = deferred`. Skip the **Merge PR**, **Wait for Merge CI**, **Remove Worktree**, and **Switch to Base Branch** sections entirely; the rebased branch is left in place with no further mutation. Emit the `mark-step-done` payload below using **Branch C — declined by user** (deferral is the same shape from the workflow's point of view: cleanup was not completed this run, re-entry is expected) and return.
+
+**If user selects "Yes, merge"**: Set `{merge_consent} = explicit_yes` and proceed to **Merge PR (if not yet merged)** below. The auto-merge fallback path remains active on a branch-protection error (explicit consent was given for the merge action; the fallback is part of the same merge intent).
+
 ### Merge PR (if not yet merged)
 
-**Only if `state == open`**:
+**Only if `state == open` AND the pre-merge gate above resolved to `{merge_consent} == explicit_yes`** (the `auto_merge_after_ci == true` bypass also sets `{merge_consent} = explicit_yes`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr merge \
     --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch
 ```
 
-If merge fails with branch protection error ('base branch policy prohibits the merge'), fall back to auto-merge:
+If merge fails with branch protection error ('base branch policy prohibits the merge'), fall back to auto-merge — the operator's "Yes, merge" answer (or the `auto_merge_after_ci == true` bypass) is the consent for both the direct merge and its auto-merge fallback:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr auto-merge \
@@ -309,7 +395,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 Log the fallback:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: direct merge blocked by branch protection, enabled auto-merge"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: direct merge blocked by branch protection, enabled auto-merge (merge_consent=explicit_yes)"
 ```
 
 If auto-merge also fails → log error and abort:
@@ -431,7 +517,7 @@ Applies when `create-pr` is NOT in `manifest.phase_6.steps`. PR creation and mer
 
 Get branch information from references context (already available from Step 2 config read):
 - `head_branch`: current feature branch (from `branch` field in references)
-- `base_branch`: target branch (e.g., `main`)
+- `base_branch`: target branch (consumer-configured via `project.default_base_branch`; per-plan override via `references.base_branch`)
 
 ### User Confirmation Gate
 
