@@ -581,12 +581,12 @@ def _classify_paths_via_extensions(
     for ext in extensions:
         try:
             claims = ext.classify_paths(list(paths))
+            domain_key = _safe_domain_key(ext)
+            for role, claimed_paths in claims.items():
+                for path in claimed_paths:
+                    raw_claims.append((ext, domain_key, role, path))
         except Exception:
             continue
-        domain_key = _safe_domain_key(ext)
-        for role, claimed_paths in claims.items():
-            for path in claimed_paths:
-                raw_claims.append((ext, domain_key, role, path))
 
     # Resolve overlaps per-path: highest specificity wins; alphabetical
     # tie-break on domain_key.
