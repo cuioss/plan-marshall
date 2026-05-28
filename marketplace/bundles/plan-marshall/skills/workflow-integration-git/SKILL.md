@@ -164,6 +164,9 @@ pushed: true
 | `format-commit` | `--type --subject [--scope] [--body] [--breaking] [--footer]` | Format commit message (Co-Authored-By NOT appended — caller adds it at `git commit` time per project convention) |
 | `analyze-diff` | `--worktree-path [--cached]` | Capture and analyze the worktree diff for commit suggestions |
 | `detect-artifacts` | `[--root]` | Scan for committable artifacts |
+| `force-push-with-lease` | `(--plan-id \| --project-dir --branch)` | Force-push feature branch to origin with `--force-with-lease` guard (post-rebase). Resolves branch and worktree path from plan metadata when `--plan-id` is used. |
+| `switch-and-pull` | `(--plan-id \| --project-dir) --base` | Checkout `--base` on the main checkout and pull from origin. Resolves main checkout root from plan metadata when `--plan-id` is used. |
+| `prune-local-and-remote-ref` | `(--plan-id \| --project-dir --head) [--mode local_and_remote\|local_only]` | Delete local feature branch and optionally prune the remote-tracking ref after merge. Internal `show-ref` guard skips ref deletion when already absent. Default mode `local_and_remote`; use `local_only` in local-only plans. |
 | `worktree-path` | `--plan-id` | Resolve the persisted worktree path via `manage-status get-worktree-path` |
 | `worktree-create` | `--plan-id --branch [--base]` | Run `git worktree add` plus project-state bookkeeping (`metadata.use_worktree`/`worktree_path`/`worktree_branch`) |
 | `worktree-remove` | `--plan-id [--force]` | Remove the worktree first, then delete the branch ref |
@@ -374,6 +377,36 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts \
   [--root DIR] [--no-gitignore]
+```
+
+### force-push-with-lease
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow force-push-with-lease \
+  --plan-id PLAN_ID
+# or explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow force-push-with-lease \
+  --project-dir ABS_PATH --branch BRANCH
+```
+
+### switch-and-pull
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull \
+  --plan-id PLAN_ID --base BASE_BRANCH
+# or explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull \
+  --project-dir ABS_PATH --base BASE_BRANCH
+```
+
+### prune-local-and-remote-ref
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow prune-local-and-remote-ref \
+  --plan-id PLAN_ID [--mode local_and_remote|local_only]
+# or explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow prune-local-and-remote-ref \
+  --project-dir ABS_PATH --head HEAD_BRANCH [--mode local_and_remote|local_only]
 ```
 
 ### worktree-path
