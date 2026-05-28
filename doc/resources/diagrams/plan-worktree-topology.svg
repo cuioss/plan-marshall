@@ -86,7 +86,7 @@
   <!-- hub -> plan-a (structural connector) -->
   <line class="connector" x1="560" y1="220" x2="638" y2="157"/>
   <!-- hub -> plan-b -->
-  <line class="connector" x1="562" y1="278" x2="638" y2="263"/>
+  <line class="connector" x1="560" y1="278" x2="638" y2="263"/>
   <!-- hub -> plan-c -->
   <line class="connector" x1="560" y1="338" x2="638" y2="367"/>
 
