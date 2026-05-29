@@ -562,7 +562,7 @@ def _resolve_archived_title_body(plan_id: str) -> Path | None:
         return None
     suffix = f"-{plan_id}"
     try:
-        for candidate in sorted(archived_base.glob(f"*-{plan_id}/title-body.txt")):
+        for candidate in sorted(archived_base.glob(f"*-{plan_id}/title-body.txt"), reverse=True):
             if candidate.is_file() and candidate.parent.name.endswith(suffix):
                 return candidate
     except OSError:
