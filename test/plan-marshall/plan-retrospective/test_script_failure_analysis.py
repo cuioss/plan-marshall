@@ -14,7 +14,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _fixtures import setup_archived_plan, setup_live_plan  # noqa: E402
+from _fixtures import (  # noqa: E402
+    setup_archived_plan,
+    setup_live_plan,
+    write_captured_real_log,
+)
 
 from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
 
@@ -38,14 +42,32 @@ _spec.loader.exec_module(_mod)
 # Fixture log builders
 # ---------------------------------------------------------------------------
 
-_LOG_HEADER_TS = '[2026-05-26T10:00:00Z]'
+def _header(ts_suffix: str, notation: str, sub: str, level: str = 'INFO') -> str:
+    """Produce a script-execution.log header line matching production shape.
+
+    Per ``manage-logging/standards/log-format.md`` the header carries NO
+    inline ``exit_code`` token — the exit code lives on a two-space-indented
+    continuation line for error entries.
+    """
+    return f'[2026-05-26T10:00:{ts_suffix}Z] [{level}] [abc123] {notation} {sub} (0.12s)'
 
 
-def _line(ts_suffix: str, notation: str, sub: str, exit_code: int) -> str:
-    """Produce a script-execution.log header matching production shape."""
+def _success(ts_suffix: str, notation: str, sub: str) -> str:
+    """A successful (exit-zero) call: a bare header with no continuation block."""
+    return _header(ts_suffix, notation, sub)
+
+
+def _failure(ts_suffix: str, notation: str, sub: str, exit_code: int, stderr: str) -> str:
+    """A failed call: header plus a two-space-indented continuation block.
+
+    Matches the documented Error Entry shape (``exit_code: N`` colon + space,
+    ``args:``, ``stderr:`` continuation fields).
+    """
     return (
-        f'[2026-05-26T10:00:{ts_suffix}Z] [INFO] [abc123] '
-        f'{notation} {sub} (0.12s) exit_code={exit_code}'
+        f'{_header(ts_suffix, notation, sub, level="ERROR")}\n'
+        f'  exit_code: {exit_code}\n'
+        f'  args: {sub}\n'
+        f'  stderr: {stderr}'
     )
 
 
@@ -84,18 +106,20 @@ class TestClassifyFailure:
 
 class TestParseFailures:
     def test_skips_successful_calls(self):
-        lines = [
-            _line('01', 'plan-marshall:manage-files:manage-files', 'read', 0),
-            _line('02', 'plan-marshall:manage-tasks:manage-tasks', 'list', 0),
-        ]
+        lines = (
+            _success('01', 'plan-marshall:manage-files:manage-files', 'read') + '\n'
+            + _success('02', 'plan-marshall:manage-tasks:manage-tasks', 'list')
+        ).splitlines()
         assert _mod.parse_failures(lines) == []
 
     def test_captures_failure_with_stderr_block(self):
-        lines = [
-            _line('01', 'plan-marshall:manage-tasks:manage-tasks', 'invalid-sub', 2),
-            "    argparse: invalid choice: 'invalid-sub' (choose from 'add', 'read')",
-            _line('05', 'plan-marshall:manage-files:manage-files', 'read', 0),
-        ]
+        lines = (
+            _failure(
+                '01', 'plan-marshall:manage-tasks:manage-tasks', 'invalid-sub', 2,
+                "argparse: invalid choice: 'invalid-sub' (choose from 'add', 'read')",
+            ) + '\n'
+            + _success('05', 'plan-marshall:manage-files:manage-files', 'read')
+        ).splitlines()
         failures = _mod.parse_failures(lines)
         assert len(failures) == 1
         f = failures[0]
@@ -103,6 +127,36 @@ class TestParseFailures:
         assert f['subcommand'] == 'invalid-sub'
         assert f['exit_code'] == 2
         assert 'invalid choice' in f['stderr']
+
+    def test_skips_header_with_zero_exit_code_continuation(self):
+        # A header whose continuation block reports exit_code 0 is a success.
+        lines = (
+            _failure(
+                '01', 'plan-marshall:manage-files:manage-files', 'read', 0, 'ignored',
+            )
+        ).splitlines()
+        assert _mod.parse_failures(lines) == []
+
+    def test_captures_multiline_stderr_blob(self):
+        # stderr that wraps across continuation lines is accumulated. An
+        # indented line that looks like a field but is NOT one of the known
+        # continuation keys (e.g. ``  details: ...``) must stay part of the
+        # stderr blob — _FIELD_RE is restricted to the known keys so it does
+        # not prematurely close stderr accumulation.
+        lines = [
+            _header('01', 'plan-marshall:manage-tasks:manage-tasks', 'add', level='ERROR'),
+            '  exit_code: 2',
+            '  args: add --plan-id x',
+            '  stderr: usage: manage-tasks add',
+            'manage-tasks: error: the following arguments are required: --title',
+            '  details: some indented error details',
+        ]
+        failures = _mod.parse_failures(lines)
+        assert len(failures) == 1
+        assert failures[0]['exit_code'] == 2
+        assert 'the following arguments are required' in failures[0]['stderr']
+        # The indented field-like line must be captured, not silently dropped.
+        assert 'details: some indented error details' in failures[0]['stderr']
 
 
 class TestDedupeFindings:
@@ -183,9 +237,11 @@ class TestCmdRunLiveMode:
     def test_emits_finding_for_invented_subcommand_pattern(self, tmp_path, monkeypatch):
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch, plan_id='retro-script-fail')
         log = (
-            _line('01', 'plan-marshall:manage-tasks:manage-tasks', 'nuke', 2) + '\n'
-            + "    argparse: invalid choice: 'nuke' (choose from 'add', 'read', 'list')\n"
-            + _line('05', 'plan-marshall:manage-files:manage-files', 'read', 0) + '\n'
+            _failure(
+                '01', 'plan-marshall:manage-tasks:manage-tasks', 'nuke', 2,
+                "argparse: invalid choice: 'nuke' (choose from 'add', 'read', 'list')",
+            ) + '\n'
+            + _success('05', 'plan-marshall:manage-files:manage-files', 'read') + '\n'
         )
         _write_log(plan_dir, log)
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
@@ -227,8 +283,10 @@ class TestCmdRunArchivedMode:
     def test_archived_plan_path_reads_logs(self, tmp_path):
         archived = setup_archived_plan(tmp_path)
         log = (
-            _line('01', 'plan-marshall:manage-tasks:manage-tasks', 'nuke', 2) + '\n'
-            + "    argparse: error: invalid choice: 'nuke'\n"
+            _failure(
+                '01', 'plan-marshall:manage-tasks:manage-tasks', 'nuke', 2,
+                "argparse: error: invalid choice: 'nuke'",
+            ) + '\n'
         )
         _write_log(archived, log)
         result = run_script(
@@ -240,3 +298,52 @@ class TestCmdRunArchivedMode:
         data = result.toon()
         assert data['aspect'] == 'script-failure-analysis'
         assert int(data['total_failures']) == 1
+
+
+class TestRegressionRealLogShape:
+    """Regression guard: the pre-fix parser required an inline ``exit_code=`` token and silently dropped real continuation-line failures.
+
+    Replays a frozen, verbatim-shape excerpt of a production
+    ``script-execution.log`` (see ``_fixtures.write_captured_real_log``) through
+    the aspect. Under the documented Error Entry format the exit code lives ONLY
+    on a two-space-indented continuation line; the pre-fix parser required an
+    inline ``exit_code=N`` token on the header and therefore dropped every
+    failure, reporting ``total_failures: 0``. This test asserts the corrected
+    continuation-line parser surfaces the real rejections — it FAILS if the
+    parser ever reverts to the inline coupling.
+    """
+
+    def test_captured_real_log_surfaces_argparse_rejections(self, tmp_path, monkeypatch):
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch, plan_id='retro-real-log')
+        write_captured_real_log(plan_dir)
+
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+
+        # The captured log carries three continuation-block failures; the
+        # pre-fix inline-exit_code= parser would report zero.
+        assert int(data['total_failures']) > 0, (
+            'parser regressed to inline exit_code= coupling — real-shape '
+            'continuation-line failures were dropped'
+        )
+        assert int(data['unique_failures']) > 0
+
+        findings = data['findings']
+        subtypes = {f['subtype'] for f in findings}
+        assert 'invented_subcommand' in subtypes, (
+            "captured 'invalid choice:' rejection not classified as "
+            'invented_subcommand'
+        )
+
+    def test_captured_real_log_emits_seed_lessons(self, tmp_path, monkeypatch):
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch, plan_id='retro-real-log-seed')
+        write_captured_real_log(plan_dir)
+
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+
+        lessons = data['lessons']
+        assert len(lessons) > 0
+        assert any(lesson['category'] == 'anti-pattern' for lesson in lessons)
