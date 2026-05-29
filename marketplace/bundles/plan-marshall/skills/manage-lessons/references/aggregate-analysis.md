@@ -93,8 +93,8 @@ The `aggregate` verb is read-only. It returns the proposed grouping; it MUST NOT
 ```toon
 status: success
 top_n: N
-groups[K]{primary_id,primary_title,absorb_count,absorbed[M]{lesson_id,title,reason},merged_body_preview}:
-  YYYY-MM-DD-HH-NNN,"Primary title",2,absorbed-rows-flattened-per-toon-conventions,"first ~400 chars of merged body ..."
+groups[K]{primary_id,primary_title,absorb_count,tier,enacted,absorbed[M]{lesson_id,title,reason},merged_body_preview}:
+  YYYY-MM-DD-HH-NNN,"Primary title",2,cross-ref,true,absorbed-rows-flattened-per-toon-conventions,"first ~400 chars of merged body ..."
   ...
 top_n_commands[N]:
   - "/plan-marshall:plan-marshall lesson=YYYY-MM-DD-HH-NNN"
@@ -109,6 +109,8 @@ Field semantics:
 - **groups[].primary_id** — the picked primary's lesson id.
 - **groups[].primary_title** — the picked primary's H1 title (the first `# ` line in its body), with the leading `# ` stripped.
 - **groups[].absorb_count** — the number of absorbed members (excluding the primary). Always `>= 1` because singletons are dropped.
+- **groups[].tier** — the producing signal that grouped the lesson: `cross-ref` | `shared-component` | `shared-standards-dir` | `shared-workflow-boundary`. Matches the strongest matching signal per the signal-priority order above.
+- **groups[].enacted** — `true` only for `cross-ref` tier groups; `false` for every weaker tier. `enacted: false` signals that the group is a co-location suggestion, not an auto-applied merge — the orchestrator MUST treat weaker-tier groups as opt-in.
 - **groups[].absorbed[]** — one row per absorbed member in deterministic order (id ascending). Each row carries:
   - `lesson_id` — the absorbed lesson's id.
   - `title` — the absorbed lesson's H1 title (leading `# ` stripped).
@@ -119,6 +121,6 @@ Field semantics:
 ## Caller contract
 
 - **Read-only caller** (`manage-lessons aggregate`) returns the TOON shape above and exits without side effects.
-- **Orchestrator caller** (`plan-marshall` Action: lessons-aggregate) consumes the TOON, displays a single batch `AskUserQuestion`, and on user confirmation drives `set-body` + `set-title` + `supersede` per group, optionally followed by `cleanup-superseded`. Tombstones at `.tombstones/{id}.json` are preserved regardless of the prune choice.
+- **Orchestrator caller** (`plan-marshall` Action: lessons-aggregate) consumes the TOON and MUST present the groups for per-group selection rather than a single accept-all batch confirmation. `enacted: false` groups MUST default to opt-in (not pre-selected). Only user-selected groups are enacted — for each selected group the orchestrator drives `set-body` + `set-title` + `supersede`, optionally followed by `cleanup-superseded`. Tombstones at `.tombstones/{id}.json` are preserved regardless of the prune choice.
 
 The orchestrator MUST recompose the merged body from disk before calling `set-body` — the `merged_body_preview` field is a UX truncation, not a reproducible payload.

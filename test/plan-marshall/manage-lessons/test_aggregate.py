@@ -140,6 +140,9 @@ class TestGroupByComponent:
         assert len(result['groups']) == 1
         group = result['groups'][0]
         assert group['absorb_count'] == 1
+        # The shared-component tier is NOT enacted (only cross-ref enacts).
+        assert group['tier'] == 'shared-component'
+        assert group['enacted'] is False
         # Both lesson ids appear (one as primary, one absorbed)
         absorbed_ids = {row['lesson_id'] for row in group['absorbed']}
         assert {group['primary_id']} | absorbed_ids == {
@@ -281,6 +284,9 @@ class TestGroupByWorkflowBoundary:
         assert len(result['groups']) == 1
         group = result['groups'][0]
         assert group['absorb_count'] == 1
+        # Workflow-boundary is the weakest tier and is never enacted.
+        assert group['tier'] == 'shared-workflow-boundary'
+        assert group['enacted'] is False
         for row in group['absorbed']:
             assert row['reason'] == (
                 'shared workflow-boundary plan-marshall:phase-5-execute'
@@ -326,6 +332,9 @@ class TestGroupByCrossRef:
         assert len(result['groups']) == 1
         group = result['groups'][0]
         assert group['absorb_count'] == 1
+        # The cross-ref tier is the only enacted tier.
+        assert group['tier'] == 'cross-ref'
+        assert group['enacted'] is True
         all_ids = {group['primary_id']} | {row['lesson_id'] for row in group['absorbed']}
         assert all_ids == {'2025-01-01-01-301', '2025-01-01-01-302'}
         for row in group['absorbed']:
@@ -711,7 +720,7 @@ class TestEndToEndContract:
 
       status: success
       top_n: N
-      groups[K]{primary_id, primary_title, absorb_count,
+      groups[K]{primary_id, primary_title, absorb_count, tier, enacted,
                absorbed[M]{lesson_id, title, reason},
                merged_body_preview}
       top_n_commands[N]
@@ -722,8 +731,16 @@ class TestEndToEndContract:
         'primary_id',
         'primary_title',
         'absorb_count',
+        'tier',
+        'enacted',
         'absorbed',
         'merged_body_preview',
+    }
+    VALID_TIERS = {
+        'cross-ref',
+        'shared-component',
+        'shared-standards-dir',
+        'shared-workflow-boundary',
     }
     REQUIRED_ABSORBED_KEYS = {'lesson_id', 'title', 'reason'}
 
@@ -847,6 +864,10 @@ class TestEndToEndContract:
             assert isinstance(group['primary_title'], str)
             assert isinstance(group['absorb_count'], int)
             assert group['absorb_count'] >= 1
+            assert group['tier'] in self.VALID_TIERS
+            assert isinstance(group['enacted'], bool)
+            # enacted is True iff the tier is cross-ref.
+            assert group['enacted'] == (group['tier'] == 'cross-ref')
             assert isinstance(group['absorbed'], list)
             assert len(group['absorbed']) == group['absorb_count']
             assert isinstance(group['merged_body_preview'], str)

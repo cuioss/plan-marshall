@@ -21,7 +21,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons aggr
   --top-n 5
 ```
 
-Parse `groups[]` (full list, regardless of `top-n`) and `top_n_commands[]` (priority-ordered headline commands surfaced at Step 5). Each group carries `primary_id`, `primary_title`, `absorb_count`, `absorbed[]{lesson_id, title, reason}`, and `merged_body_preview`.
+Parse `groups[]` (full list, regardless of `top-n`) and `top_n_commands[]` (priority-ordered headline commands surfaced at Step 5). Each group carries `primary_id`, `primary_title`, `absorb_count`, `tier`, `enacted`, `absorbed[]{lesson_id, title, reason}`, and `merged_body_preview`. `tier` is the group's strongest grouping signal (`cross-ref` | `shared-component` | `shared-standards-dir` | `shared-workflow-boundary`); `enacted` is `true` only for the `cross-ref` tier — weaker-tier groups are co-location suggestions, not auto-applied merges.
 
 If `groups[]` is empty, log the no-op decision and return immediately:
 
@@ -30,7 +30,14 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id global --level INFO --message "(plan-marshall:lessons-aggregate) No multi-lesson groups detected — nothing to aggregate"
 ```
 
-**Step 2**: Present a single batch confirmation via `AskUserQuestion`. Build the question body from the parsed `groups[]`:
+**Step 2**: Present per-group confirmation via `AskUserQuestion`. Each group is an independently selectable option, so the user enacts only the groups they trust rather than accepting or rejecting the whole batch. Build two questions.
+
+The first question is a `multiSelect: true` group picker with one option per group. The option label is the group's `primary_id`; the description carries `absorb_count`, an absorbed-id summary truncated to 8 with `... and N more`, and a trust marker derived from `enacted`:
+
+- `enacted: true` (cross-ref tier) → marker `recommended — direct cross-reference`
+- `enacted: false` (weaker tier) → marker `suggestion — {tier} co-location only, not auto-applied`
+
+The second question is a single-select prune control.
 
 ```
 AskUserQuestion:
@@ -38,39 +45,39 @@ AskUserQuestion:
     - question: |
         ## Aggressive Lesson Aggregation
 
-        The classifier found {len(groups)} multi-lesson group(s) whose work would land in a single plan. Proceeding will rewrite each primary lesson's body and title to absorb the others, then supersede the absorbed lessons.
-
-        {for each group in groups:}
-        ### {primary_id}: {primary_title}
-        - Will absorb {absorb_count} lesson(s):
-          {for each absorbed in group.absorbed[:8]:}
-          - {absorbed.lesson_id}: {absorbed.title} ({absorbed.reason})
-          {if len(group.absorbed) > 8:}
-          - ... and {len(group.absorbed) - 8} more
-
-        Planned prune count (when "Proceed and prune" is selected): {sum(absorb_count for group in groups)} superseded `.md` stub(s) — tombstones at `.tombstones/{id}.json` are preserved.
-
-        How would you like to proceed?
+        The classifier found {len(groups)} multi-lesson group(s). Select the groups to enact — each selected group's primary lesson is rewritten to absorb the others, and the absorbed lessons are superseded. Weaker-tier groups (co-location only) are NOT pre-selected; opt in deliberately. Selecting nothing cancels.
       options:
-        - label: "Proceed and prune"
-          description: "Apply set-body + set-title + supersede for each group, then cleanup-superseded with --retention-days 0"
-        - label: "Proceed but skip prune"
-          description: "Apply set-body + set-title + supersede for each group; leave the superseded .md stubs in place"
-        - label: "Cancel"
-          description: "Make no changes"
+        {for each group in groups:}
+        - label: "{primary_id}"
+          description: |
+            absorb {absorb_count} lesson(s) — {trust_marker}
+            {for each absorbed in group.absorbed[:8]:}
+            {absorbed.lesson_id}: {absorbed.title} ({absorbed.reason})
+            {if len(group.absorbed) > 8:}
+            ... and {len(group.absorbed) - 8} more
+      multiSelect: true
+    - question: |
+        ## Prune superseded stubs?
+
+        After enacting the selected groups, remove the superseded `.md` stubs? Tombstones at `.tombstones/{id}.json` are preserved either way.
+      options:
+        - label: "Prune"
+          description: "Run cleanup-superseded with --retention-days 0 after enacting the selected groups"
+        - label: "Keep stubs"
+          description: "Leave the superseded .md stubs in place"
       multiSelect: false
 ```
 
-The absorbed-id list is truncated to 8 items per group with a `... and N more` suffix when the group has more than 8 absorbed lessons; this keeps the prompt readable for large groups while still giving the user enough context to decide.
+The trust marker primes the user against the over-aggressive default: only `cross-ref` groups are marked `recommended`; every weaker-tier group is a `suggestion` that defaults to opt-in (not pre-selected). The absorbed-id list is truncated to 8 items per group with a `... and N more` suffix, keeping large-group prompts readable while preserving enough context to decide.
 
-If the user selects "Cancel", log and return:
+An empty multi-select (no groups chosen) is treated as Cancel. Log and return:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id global --level INFO --message "(plan-marshall:lessons-aggregate) User cancelled — no changes applied"
+  decision --plan-id global --level INFO --message "(plan-marshall:lessons-aggregate) User selected no groups — no changes applied"
 ```
 
-**Step 3**: On "Proceed and prune" or "Proceed but skip prune", iterate over `groups[]`. For each group:
+**Step 3**: For each group the user selected in the first question (the selected subset of `groups[]`):
 
 1. Compose the new aggregated title from the primary's existing title plus the absorbed sub-task list. The composer joins the primary title with a parenthesised summary of the absorbed lessons (e.g., `"{primary_title} (aggregated with {N} related lessons)"` for large groups, or `"{primary_title} (with: {absorbed_id_1}, {absorbed_id_2})"` for small groups). Compose deterministically — repeated runs over the same group produce identical titles.
 
@@ -116,21 +123,21 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id global --level INFO --message "(plan-marshall:lessons-aggregate) Aggregated group {primary_id}: absorbed {absorb_count} lesson(s) — {absorbed_ids_joined}"
 ```
 
-**Step 4**: If the user selected "Proceed and prune", run the cleanup with a zero-day retention to immediately remove the superseded `.md` stubs (tombstones at `.tombstones/{id}.json` are preserved by the script):
+**Step 4**: Drive the prune from the second question's answer. If the user selected "Prune", run the cleanup with a zero-day retention to immediately remove the superseded `.md` stubs (tombstones at `.tombstones/{id}.json` are preserved by the script):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons cleanup-superseded \
   --retention-days 0
 ```
 
-Log the prune decision (or its absence):
+Log the prune decision:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id global --level INFO --message "(plan-marshall:lessons-aggregate) Prune complete — removed superseded .md stubs (tombstones preserved)"
 ```
 
-If the user selected "Proceed but skip prune", log the deferred decision instead:
+If the user selected "Keep stubs", log the deferred decision instead:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -153,8 +160,10 @@ Log the final outcome:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id global --level INFO --message "(plan-marshall:lessons-aggregate) Aggregation complete — {len(groups)} group(s) processed, {len(top_n_commands)} headline command(s) surfaced"
+  decision --plan-id global --level INFO --message "(plan-marshall:lessons-aggregate) Aggregation complete — {selected_count} group(s) enacted, {len(top_n_commands)} headline command(s) surfaced"
 ```
+
+Where `{selected_count}` is the number of groups the user selected in Step 2's first question.
 
 ## Output
 
