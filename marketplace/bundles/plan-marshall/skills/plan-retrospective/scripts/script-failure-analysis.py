@@ -61,8 +61,12 @@ _HEADER_RE = re.compile(
 
 # Two-space-indented continuation field: ``  {key}: {value}``. Used to scan
 # the block that follows an error-entry header for ``exit_code``, ``args``,
-# and ``stderr`` fields.
-_FIELD_RE = re.compile(r'^  (?P<key>\w+):\s?(?P<value>.*)$')
+# ``stdout``, and ``stderr`` fields. The key alternation is restricted to the
+# known continuation-field names so an indented line inside a wrapped stderr
+# blob (e.g. ``  details: foo`` or ``  code: 123``) is NOT mistaken for a
+# field — matching it would set ``in_stderr=False`` and prematurely truncate
+# the accumulated stderr.
+_FIELD_RE = re.compile(r'^  (?P<key>exit_code|args|stdout|stderr):\s?(?P<value>.*)$')
 
 # Stderr-signature classifiers (substring matches on the accumulated stderr
 # block). Order matters: ``invalid choice`` is checked before
@@ -172,7 +176,7 @@ def parse_failures(lines: list[str]) -> list[dict[str, Any]]:
                 in_stderr = False
                 continue
             if key == 'stderr':
-                stderr_buf = [value]
+                stderr_buf = [value.strip()]
                 in_stderr = True
                 continue
             # Any other recognised field (e.g. args, stdout) closes the

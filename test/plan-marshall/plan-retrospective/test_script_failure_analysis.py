@@ -138,18 +138,25 @@ class TestParseFailures:
         assert _mod.parse_failures(lines) == []
 
     def test_captures_multiline_stderr_blob(self):
-        # stderr that wraps across continuation lines is accumulated.
+        # stderr that wraps across continuation lines is accumulated. An
+        # indented line that looks like a field but is NOT one of the known
+        # continuation keys (e.g. ``  details: ...``) must stay part of the
+        # stderr blob — _FIELD_RE is restricted to the known keys so it does
+        # not prematurely close stderr accumulation.
         lines = [
             _header('01', 'plan-marshall:manage-tasks:manage-tasks', 'add', level='ERROR'),
             '  exit_code: 2',
             '  args: add --plan-id x',
             '  stderr: usage: manage-tasks add',
             'manage-tasks: error: the following arguments are required: --title',
+            '  details: some indented error details',
         ]
         failures = _mod.parse_failures(lines)
         assert len(failures) == 1
         assert failures[0]['exit_code'] == 2
         assert 'the following arguments are required' in failures[0]['stderr']
+        # The indented field-like line must be captured, not silently dropped.
+        assert 'details: some indented error details' in failures[0]['stderr']
 
 
 class TestDedupeFindings:
