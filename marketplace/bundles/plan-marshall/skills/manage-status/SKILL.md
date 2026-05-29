@@ -294,7 +294,7 @@ value: feature
 
 ### mark-step-done
 
-Record the outcome of a phase step inside `status.metadata.phase_steps`. Phase skills use this to persist intra-phase progress (e.g., discovery, drift-detection) so that resuming a phase can skip completed steps. Outcomes are `done`, `skipped`, `loop_back`, or `failed`. An optional `--display-detail` one-line string is persisted alongside the outcome so downstream renderers (phase-6-finalize vertical-steps block, etc.) can surface user-facing step summaries. Loop-back outcomes carry a mandatory `--loop-back-target` granularity classifier (see "Loop-back target classification" below).
+Record the outcome of a phase step inside `status.metadata.phase_steps`. Phase skills use this to persist intra-phase progress (e.g., discovery, drift-detection) so that resuming a phase can skip completed steps. Outcomes are `done`, `skipped`, `loop_back`, or `failed`. An optional `--display-detail` one-line string is persisted alongside the outcome so downstream renderers (phase-6-finalize vertical-steps block, etc.) can surface user-facing step summaries. Loop-back outcomes carry a mandatory `--loop-back-target` granularity classifier (see "Loop-back target classification" below). Steps that may inline-edit the worktree carry a dirty-worktree invariant on the `done` outcome (see "Dirty-worktree invariant on `done`" below).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
@@ -326,6 +326,17 @@ The `--loop-back-target` flag encodes the granularity invariant from the phase-6
 - `6-finalize` — inline replay for **inline-fixable** dispositions. Use when triage resolved every finding via SUPPRESS, narrow-rationale ACCEPT, or single-annotation FIX (no fix-task allocation, no overflow). The continuation hook stays in `6-finalize`, does NOT call `set-phase`, and re-fires the loop-back-marked step from the resumable re-entry check.
 
 The flag is REQUIRED on every `loop_back` outcome (returns `error: missing_loop_back_target` when absent) and FORBIDDEN on every other outcome (returns `error: unexpected_loop_back_target`). The `argparse` `choices` enforce the two-value enumeration at parse time. There is no backwards-compat fallback — every loop-back-emitting call site MUST classify the disposition before persisting the outcome.
+
+**Dirty-worktree invariant on `done`**:
+
+Some finalize steps may legitimately mutate the worktree during their body — applying review fixes, re-running formatters, or regenerating artifacts. These steps are enumerated in the `MAY_MUTATE_WORKTREE_STEPS` set: `automated-review`, `sonar-roundtrip`, and `finalize-step-simplify`. When such a step reports `--outcome done`, the resolved worktree MUST be clean. Marking one of these steps `done` while uncommitted changes sit in the tree would let the finalize dispatcher advance past `commit-push` (HEAD unchanged + outcome `done` → skip commit) and silently drop the mutation.
+
+The guard fires only when `--outcome=done` AND `--step` is in `MAY_MUTATE_WORKTREE_STEPS`. It resolves the worktree path from `status.metadata` (tri-state: `use_worktree==false` or empty `worktree_path` → main checkout `.`; non-empty → that path) and runs `git -C {path} status --porcelain`. When the porcelain output is non-empty (dirty), the command returns `error: dirty_worktree_done_refused` and refuses to persist the outcome. All other outcomes (`skipped`, `failed`, `loop_back`) and all steps outside the set fall through unchanged — the guard is additive to every call site that marks a clean tree done.
+
+Two escape paths resolve the refusal, both re-issuing the same step as a loop-back:
+
+- `--outcome loop_back --loop-back-target 6-finalize` — replay the step inline so `commit-push` re-fires and the mutation is committed (inline-fixable disposition).
+- `--outcome loop_back --loop-back-target 5-execute` — roll the change into a fix task (fix-task-required disposition).
 
 **Storage shape** (breaking — replaces the old bare-string shape):
 
@@ -394,6 +405,17 @@ step: discovery
 existing_outcome: done
 requested_outcome: done
 message: Step 'discovery' in phase '5-execute' has legacy bare-string storage ('done'); migrate status.metadata.phase_steps to the dict shape {"outcome": ..., "display_detail": ...} before retrying.
+```
+
+**Output — dirty-worktree refusal** (TOON):
+```toon
+status: error
+plan_id: my-feature
+error: dirty_worktree_done_refused
+phase: 6-finalize
+step: automated-review
+dirty: true
+message: Step 'automated-review' in phase '6-finalize' may mutate the worktree, but the working tree is dirty — refusing to mark it done. Re-issue with --outcome loop_back --loop-back-target 6-finalize to replay the step inline (commit-push the change), or --outcome loop_back --loop-back-target 5-execute to roll the change into a fix task.
 ```
 
 ### get-context
@@ -821,6 +843,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status self-t
 | `missing_loop_back_target` | 1 | `mark-step-done`: `--outcome=loop_back` supplied without `--loop-back-target`. The flag is REQUIRED on every loop_back outcome (no backwards-compat fallback). |
 | `invalid_loop_back_target` | 1 | `mark-step-done`: `--loop-back-target` value not in `5-execute`/`6-finalize`. (Argparse `choices` normally catches this at parse time; this error fires only when the validation is bypassed at the API layer.) |
 | `unexpected_loop_back_target` | 1 | `mark-step-done`: `--loop-back-target` supplied alongside an outcome other than `loop_back`. The flag is FORBIDDEN on `done`/`skipped`/`failed` outcomes. |
+| `dirty_worktree_done_refused` | 1 | `mark-step-done`: `--outcome=done` for a step in `MAY_MUTATE_WORKTREE_STEPS` (`automated-review`/`sonar-roundtrip`/`finalize-step-simplify`) while the resolved worktree is dirty (`git status --porcelain` non-empty). Re-issue as `--outcome loop_back --loop-back-target 6-finalize` (inline replay) or `--loop-back-target 5-execute` (fix-task rollback). |
 | `invalid_worktree_args` | 1 | `create`: `--use-worktree` set without `--worktree-branch`. `--worktree-path` is optional — its absence triggers the deferred-materialization window (phase-5-execute Step 2.5 back-fills) rather than an error. |
 | `worktree_unresolved` | 1 | `phase_handshake verify`: `metadata.use_worktree==true` and `metadata.worktree_path` is non-empty but does not resolve on the filesystem. `get-worktree-path` does not emit this error — it returns `worktree_state: pending` for the pre-materialization state. |
 
