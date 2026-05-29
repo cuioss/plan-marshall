@@ -347,6 +347,38 @@ Store as `compatibility` and `compatibility_description` (the long description f
 
 ---
 
+## Step 5b: Load Simplicity Strategy
+
+Read the simplicity knob from project configuration.
+
+**Read-only**: This step MUST only read configuration. The verbs `set`, `init`, `sync-defaults`, and `sync-plan-defaults` are forbidden here — they mutate project configuration that must remain stable across the confidence loop. Only `get` is permitted.
+
+**EXECUTE**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-2-refine get --field simplicity --audit-plan-id {plan_id}
+```
+
+**Default `lean`** — unlike `compatibility`, the simplicity knob defaults when not configured, so existing plans without the key behave as `lean`.
+
+**Valid values with descriptions**:
+
+| Value | Description |
+|-------|-------------|
+| `lean` | Implement the strict minimum; remove or inline surplus structure. Default. |
+| `pragmatic` | Prefer minimal, but keep low-risk structure that aids readability. |
+| `defensive` | Retain belt-and-suspenders structure (guards, abstraction seams) where the outcome is uncertain. |
+
+**Log** (to decision.log - config read is a decision):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine) Config: simplicity={simplicity}"
+```
+
+Store as `simplicity` and `simplicity_description` (the long description from the table above) for use in Step 13 return output.
+
+---
+
 ## Step 6: Load Architecture Context
 
 Query project architecture BEFORE any analysis. Architecture data is pre-computed and compact (~500 tokens).
