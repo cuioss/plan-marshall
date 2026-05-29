@@ -627,6 +627,75 @@ total_phases: 6
 completed_phases: 2
 ```
 
+### merge-lock
+
+Cross-plan merge-coordination mutex with three sub-verbs (`acquire` / `check` / `release`). Serializes the rebase/merge-to-main critical section across concurrently-finalizing plans so two plans can never race on the merge-to-main step. The lock is a cooperative marker stored under `status.metadata` of the acquiring plan:
+
+| Marker field | Type | Description |
+|--------------|------|-------------|
+| `merging_on_main` | bool | `true` while the plan holds the lock |
+| `merge_lock_acquired_at` | string (ISO-8601 UTC) | Acquisition timestamp, so contention diagnostics can identify how long the holder has held the marker |
+
+All marker reads/writes flow through the `_status_core` helpers — there is no direct `.plan/` file access in the handler.
+
+**Lifecycle states**: `acquired` (this plan holds the marker), `released`/absent (no marker), `blocked` (poll window elapsed while another plan held it).
+
+**acquire** — BLOCKING. Scans every OTHER plan's `status.json` (same discovery path as `list`) for an existing holder. If free, writes the marker and returns `status: acquired`. If held, enters a `time.sleep` poll loop (fixed module-level interval, total window 5 minutes / 300s), re-checking each interval; on elapse returns `status: blocked` with `blocking_plan_id`. The poll lives entirely inside the Python handler — there is NEVER a Bash poll loop. `AskUserQuestion` is never issued from this verb: the timeout path only returns the structured `blocked` payload, and the orchestrator (branch-cleanup.md Pre-Merge Gate) owns the user-prompt escalation naming `blocking_plan_id`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-lock acquire \
+  --plan-id {plan_id}
+```
+
+**Output — acquired** (TOON):
+```toon
+status: acquired
+plan_id: my-feature
+acquired_at: 2026-05-29T13:50:00Z
+```
+
+**Output — blocked** (TOON):
+```toon
+status: blocked
+plan_id: my-feature
+blocking_plan_id: other-plan
+poll_window_seconds: 300.0
+```
+
+**check** — non-blocking read of the current holder (including this plan's own self-held marker).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-lock check \
+  --plan-id {plan_id}
+```
+
+**Output — free** (TOON):
+```toon
+status: free
+plan_id: my-feature
+```
+
+**Output — held** (TOON):
+```toon
+status: held
+plan_id: my-feature
+holder_plan_id: other-plan
+```
+
+**release** — idempotently clears this plan's marker (no-op when not held). `released` is `true` only when a marker was actually present and cleared.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-lock release \
+  --plan-id {plan_id}
+```
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+released: true
+```
+
 ### self-test
 
 Verify manage-status health (checks imports, phase routing table, directory access).
@@ -673,6 +742,9 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `get-routing-context` | `--plan-id` | Get combined routing context |
 | `change-type-heuristic` | `--plan-id [--persist]` | Deterministic change-type classifier for phase-3-outline Step 4. Reads the clarified-request narrative (falling back to original_input) and scores it against a fixed keyword table — returns one of `feature`, `bug_fix`, `tech_debt`, `enhancement`, `verification`, `analysis`, or `ambiguous=true` when no keyword fires / two change types tie / confidence < 0.7. With `--persist`, writes the resolved change_type to `status.metadata.change_type` (skipped in the ambiguous branch so the LLM `detect-change-type` workflow is the single writer there). |
 | `aggregate-confidence` | `--plan-id [--scores-file PATH] [--correctness N] [--completeness N] [--consistency N] [--non-duplication N] [--ambiguity N] [--module-mapping N] [--persist]` | Weighted-math confidence aggregator for phase-2-refine Step 10. Computes the overall confidence from per-dimension scores (0..100) using the fixed weights `correctness 20% / completeness 20% / consistency 20% / non-duplication 10% / ambiguity 20% / module-mapping 10%`. Missing dimensions default to 0 and are recorded in `missing_dimensions`. Scores can be supplied via `--scores-file` (JSON object keyed by dimension) and / or individual CLI flags; flags take precedence on conflict. With `--persist`, the overall confidence is written to `status.metadata.confidence`. |
+| `merge-lock acquire` | `--plan-id` | BLOCKING acquire of the cross-plan merge-lock. Writes the `merging_on_main` marker when free; polls (Python `time.sleep`, 5-minute window) when held, then returns `status: blocked` with `blocking_plan_id` on timeout. Never issues `AskUserQuestion` — orchestrator owns the escalation. |
+| `merge-lock check` | `--plan-id` | Non-blocking read of the current merge-lock holder (`status: free` or `held` with `holder_plan_id`). |
+| `merge-lock release` | `--plan-id` | Idempotently clear this plan's merge-lock marker; `released: true` only when a marker was present. |
 | `self-test` | _(none)_ | Verify manage-status health |
 
 ---
@@ -811,6 +883,17 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status aggreg
   [--correctness N] [--completeness N] [--consistency N] \
   [--non-duplication N] [--ambiguity N] [--module-mapping N] \
   [--persist]
+```
+
+### merge-lock
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-lock acquire \
+  --plan-id PLAN_ID
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-lock check \
+  --plan-id PLAN_ID
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-lock release \
+  --plan-id PLAN_ID
 ```
 
 ### self-test
