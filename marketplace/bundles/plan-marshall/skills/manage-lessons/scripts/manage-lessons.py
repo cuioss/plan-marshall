@@ -1171,8 +1171,12 @@ def cmd_aggregate(args: argparse.Namespace) -> dict:
 
     Read-only — never invokes ``set-body``, ``set-title``, ``supersede``, or
     ``cleanup-superseded``. Emits TOON
-    ``{status, top_n, groups[]{primary_id, primary_title, absorb_count,
-    absorbed[{lesson_id, title, reason}], merged_body_preview}, top_n_commands[]}``.
+    ``{status, top_n, groups[]{primary_id, primary_title, absorb_count, tier,
+    enacted, absorbed[{lesson_id, title, reason}], merged_body_preview},
+    top_n_commands[]}``. ``tier`` is the group's strongest signal
+    (cross-ref | shared-component | shared-standards-dir |
+    shared-workflow-boundary); ``enacted`` is ``True`` only for the cross-ref
+    tier.
 
     The classifier rules and primary-pick ordering are specified in
     ``references/aggregate-analysis.md``.
@@ -1220,6 +1224,8 @@ def cmd_aggregate(args: argparse.Namespace) -> dict:
                 'primary_id': primary_id,
                 'primary_title': primary['title'],
                 'absorb_count': len(absorbed_ids),
+                'tier': signal,
+                'enacted': signal == SIGNAL_CROSS_REF,
                 'absorbed': absorbed_rows,
                 'merged_body_preview': preview,
             }

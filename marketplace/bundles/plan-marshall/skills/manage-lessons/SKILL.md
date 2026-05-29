@@ -388,14 +388,14 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons aggr
 ```toon
 status: success
 top_n: 5
-groups[N]{primary_id,primary_title,absorb_count,absorbed,merged_body_preview}:
+groups[N]{primary_id,primary_title,absorb_count,tier,enacted,absorbed,merged_body_preview}:
   ...
 top_n_commands[N]:
   - "/plan-marshall:plan-marshall lesson=2025-12-02-001"
   - "/plan-marshall:plan-marshall lesson=2025-12-04-002"
 ```
 
-Each `absorbed[]` row carries `{lesson_id, title, reason}` where `reason` names the strongest signal that placed the lesson in the group (e.g., `cross-ref to 2025-12-02-001`, `shared component plan-marshall:phase-5-execute`, `shared standards-dir marketplace/bundles/.../standards/`, `shared workflow-boundary plan-marshall:phase-5-execute`). `merged_body_preview` is the first ~400 characters of the would-be merged body so callers can sanity-check the grouping before invoking the orchestrator action.
+Each group carries `tier` (the producing signal: `cross-ref` | `shared-component` | `shared-standards-dir` | `shared-workflow-boundary`) and `enacted` (`true` only for the `cross-ref` tier — weaker tiers are opt-in co-location suggestions, not auto-applied merges). Each `absorbed[]` row carries `{lesson_id, title, reason}` where `reason` names the strongest signal that placed the lesson in the group (e.g., `cross-ref to 2025-12-02-001`, `shared component plan-marshall:phase-5-execute`, `shared standards-dir marketplace/bundles/.../standards/`, `shared workflow-boundary plan-marshall:phase-5-execute`). `merged_body_preview` is the first ~400 characters of the would-be merged body so callers can sanity-check the grouping before invoking the orchestrator action.
 
 Singletons (lessons that match no other lesson at any signal tier) are dropped — only multi-member groups are emitted.
 
