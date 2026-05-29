@@ -386,3 +386,16 @@ class TestBodyIntroNamesDispatcherMove:
             'description must state the field fires on remediated-in-run '
             'review-bot findings'
         )
+
+    def test_signal_script_failure_clusters_field_documents_all_markers(self) -> None:
+        """The ``signal_script_failure_clusters_count`` field description MUST
+        document all three marker classes, not only the [FAILED] marker."""
+        body = _read_workflow()
+        assert 'script_failure' in body, (
+            'lessons-capture.md signal_script_failure_clusters_count field '
+            'description must document the [ERROR] ... script_failure marker'
+        )
+        assert 'voluntary_checkpoint' in body, (
+            'lessons-capture.md signal_script_failure_clusters_count field '
+            'description must document the voluntary_checkpoint -> error marker'
+        )

@@ -24,7 +24,7 @@ See also `standards/lessons-integration.md` for conceptual guidance on when and 
 
 - `signal_qgate_pending_count` — integer; sum across `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize`.
 - `signal_automated_review_count` — integer (0 or 1); 1 when the `automated-review` step had an outstanding/non-done state (outcome anything other than `done`, or its `display_detail` reports a non-zero promoted-comment count) OR when the run remediated one or more actionable review-bot findings (`manage-findings list --type pr-comment --resolution fixed` returned `filtered_count >= 1`). The remediated-in-run trigger fires the signal even when the step `outcome=done` and zero comments are outstanding at gate-evaluation time — a review-bot finding caught-and-fixed in-run is exactly the slipped-then-caught defect class lessons-capture exists to record.
-- `signal_script_failure_clusters_count` — integer; number of distinct failing script notations in `[FAILED]` work-log lines.
+- `signal_script_failure_clusters_count` — integer; number of distinct failing script notations across three marker classes: `[FAILED]` work-log lines, `[ERROR] ... script_failure` lines (the per-call non-zero-exit marker emitted by phase error handling), and `voluntary_checkpoint → error` reclassifications (dispatch-boundary no-progress reclassifications). A notation that fails under more than one marker class counts once (union dedup by distinct notation).
 
 These counts MAY be consulted as context when authoring the lesson bodies (e.g., to focus recording on whichever signal source dominated), but the body MUST NOT re-issue `manage-findings qgate list`, `manage-status read`, or `manage-logging read --type work` to recompute them — the dispatcher already paid that cost.
 
