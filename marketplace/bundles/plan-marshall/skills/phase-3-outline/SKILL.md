@@ -267,6 +267,18 @@ Before assigning `profiles[]` to any deliverable, every author MUST classify the
 
 The canonical doctor invocation cited in all `documentation_only` deliverable Verification fields is `pm-plugin-development:plugin-doctor:doctor-marketplace scan --paths {skill-dir}` (NOT the stale `:plugin-doctor:plugin-doctor`).
 
+### Value-change test-sweep rule (normative)
+
+This rule is track-agnostic — it applies to deliverable authoring on both the Simple Track (Step 7) and the Complex Track (Step 10).
+
+When a deliverable changes a **default value, a constant, or an enum member**, the author MUST identify and enumerate every existing test that asserts the old value, add those test files to the deliverable's `**Affected files:**`, and describe the required test update in `**Change per file:**`. The existing-test sweep is a first-class part of the deliverable — it is NOT deferred to any new test file the plan introduces.
+
+To enumerate the affected tests, sweep the test tree for the old literal value or identifier: `architecture find --pattern '*{old_value}*'` for the structured inventory, falling back to `Grep` for the literal value or constant name across `test/`. Add every test asserting the old value to the deliverable's `**Affected files:**` and state in `**Change per file:**` that those assertions must be updated to the new value.
+
+The deliverable's resolved file-type bucket reflects the added test files: a `documentation_only` or `production_only` deliverable that now enumerates existing tests becomes `mixed_code` (production + test) or `test_only`, so `module_testing` becomes a valid profile per the [File-type classifier](standards/outline-workflow-detail.md#file-type-classifier).
+
+The downstream [phase-4-plan value-change rule](../phase-4-plan/SKILL.md) carries these enumerated existing-test targets into the `module_testing` task's `steps[]` and anchors the obligation into the task `description`, so the executing agent updates every existing test asserting the old value.
+
 **Step 6 may also refine `scope_estimate`**: After deliverables crystalize and the concrete Affected files lists are known, phase-3-outline MAY downgrade `scope_estimate` (e.g., `single_module` → `surgical`) when the final deliverable composition narrows the actual scope. Persist any change via `manage-references set --field scope_estimate`. Refinement happens BEFORE Step 8 so the bypass rule sees the refined value.
 
 **Step 8 — Q-Gate surgical bypass rule** (evaluated BEFORE dispatching the lightweight Q-Gate checks):
@@ -300,6 +312,8 @@ For codebase-wide changes requiring discovery and analysis.
 | **10. Execute Workflow** | Run discovery, analysis, write solution | Follow change-type instructions, resolve verification commands, write `solution_outline.md`. **For each composed deliverable, MUST apply the [File-type classifier](standards/outline-workflow-detail.md#file-type-classifier) to its `affected_files` BEFORE assigning `profiles[]`** — the resolved bucket MUST be recorded as a comment in the `**Profiles:**` block (see Deliverable Template below). Step 10 includes a consumer-sweep when the deliverable deletes/renames a public symbol — see [`consumer-sweep.md`](standards/consumer-sweep.md). |
 | **10b. Self-Modifying Classification** | Classify deliverables that touch plan-marshall runtime infrastructure and surface phasing decision | When predicate fires (path heuristic + `compatibility: breaking` + hard-cutover language), prompt author via `AskUserQuestion` for split / inline-rationale / additive-mode resolution. Standard: [`ref-workflow-architecture/standards/self-modifying-classification.md`](../ref-workflow-architecture/standards/self-modifying-classification.md). |
 | **11. Q-Gate Verification** | Signal q-gate-validation requirement (with surgical bypass) | Bypass when surgical+bug_fix/tech_debt/verification+1 deliverable → set `qgate_validation_required: false`; otherwise set `qgate_validation_required: true` in the return TOON so the orchestrator dispatches `plan-marshall:plan-marshall/workflow/q-gate-validation.md` as a sibling top-level Task after the phase returns (see [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md) for the activation contract). The orchestrator-dispatched workflow runs phase-3-applicable validators: existing checks 2.1-2.7, consumer-sweep §2.9, **argparse-validator §2.10**, **tier-delta-validator §2.13**, **self-modifying-phased-rollout-validator §2.16**, **architecture-mismatch-validator §2.17**. |
+
+**Step 10 deliverable authoring** MUST apply the [Value-change test-sweep rule](#value-change-test-sweep-rule-normative): any deliverable that changes a default value, constant, or enum member enumerates every existing test asserting the old value into its `**Affected files:**`.
 
 **Step 10 may also refine `scope_estimate`**: After Complex Track discovery and deliverable composition, the concrete Affected files lists may narrow the actual scope. Phase-3-outline MAY downgrade `scope_estimate` (e.g., `multi_module` → `single_module`, or `single_module` → `surgical`) and persist via `manage-references set --field scope_estimate`. Refinement happens BEFORE Step 11 so the bypass rule sees the refined value.
 
