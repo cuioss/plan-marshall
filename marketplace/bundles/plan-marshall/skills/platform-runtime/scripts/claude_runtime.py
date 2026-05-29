@@ -68,10 +68,11 @@ _SESSION_ID_RE = re.compile(
 # active plan for the current session.
 _HOOK_COMMAND = "python3 .plan/execute-script.py plan-marshall:platform-runtime:claude_hook"
 
-# Render-title hook command installed across all five render-trigger events plus
-# statusLine. Invoked by Claude Code on SessionStart (matcher-less + matcher
-# "clear"), UserPromptSubmit, Notification, Stop, and PostToolUse:AskUserQuestion;
-# the statusLine variant appends ``--statusline`` for plain-text emission.
+# Render-title hook command installed across all seven render-trigger events
+# plus statusLine. Invoked by Claude Code on SessionStart (matcher-less + matcher
+# "clear"), UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion,
+# PostToolUse:AskUserQuestion, and PostToolUse:Bash; the statusLine variant
+# appends ``--statusline`` for plain-text emission.
 _RENDER_HOOK_COMMAND = (
     "python3 .plan/execute-script.py "
     "plan-marshall:platform-runtime:platform_runtime session render-title"
@@ -86,6 +87,107 @@ _RENDER_TRIGGER_EVENTS: tuple[str, ...] = (
     "Notification",
     "Stop",
 )
+
+# Canonical terminal-title icon palette. The renderer maps each hook event (and,
+# for tool-scoped events, the tool name) to one of three glyphs:
+#   ➤  active / in-progress
+#   ?  waiting on user input ("needs attention")
+#   ✓  done
+_ICON_ACTIVE = "➤"
+_ICON_WAITING = "?"
+_ICON_DONE = "✓"
+
+
+def _resolve_icon(hook_event_name: str | None, tool_name: str | None) -> str:
+    """Map a hook event (+ tool name) to the canonical terminal-title icon.
+
+    Palette:
+
+    - ``UserPromptSubmit`` → ``➤``
+    - ``Notification`` → ``?`` (canonical "needs attention")
+    - ``PreToolUse`` with ``tool_name == "AskUserQuestion"`` → ``?``
+    - ``PostToolUse`` with ``tool_name == "AskUserQuestion"`` → ``➤``
+    - ``PostToolUse`` with any other tool (e.g. ``Bash``) → ``➤``
+    - ``Stop`` → ``✓``
+    - ``SessionStart`` → ``➤``
+    - Unknown / missing event → ``➤`` (defensive default)
+
+    The function never raises; callers pass best-effort values parsed from the
+    hook stdin payload and rely on the defensive default for any unmapped or
+    missing input.
+    """
+    if hook_event_name == "Stop":
+        return _ICON_DONE
+    if hook_event_name == "Notification":
+        return _ICON_WAITING
+    if hook_event_name == "PreToolUse" and tool_name == "AskUserQuestion":
+        return _ICON_WAITING
+    # UserPromptSubmit, SessionStart, PostToolUse (any tool), and every
+    # unknown/missing event fall through to the active default.
+    return _ICON_ACTIVE
+
+
+# Required render-trigger entries inspected by the ``display`` health check, in
+# report order. Each tuple is (label, hooks_block_key, matcher). The label is the
+# token the menu doc tells the user to read; it matches the ``installed_events``
+# naming from ``_install_terminal_title_hooks`` exactly, except SessionStart is
+# split into its two matcher variants so a partial install is named per-line.
+_DISPLAY_RENDER_ENTRIES: tuple[tuple[str, str, str], ...] = (
+    ("SessionStart:matcher-less", "SessionStart", ""),
+    ("SessionStart:clear", "SessionStart", "clear"),
+    ("UserPromptSubmit", "UserPromptSubmit", ""),
+    ("Notification", "Notification", ""),
+    ("Stop", "Stop", ""),
+    ("PreToolUse:AskUserQuestion", "PreToolUse", "AskUserQuestion"),
+    ("PostToolUse:AskUserQuestion", "PostToolUse", "AskUserQuestion"),
+    ("PostToolUse:Bash", "PostToolUse", "Bash"),
+)
+
+
+def _diagnose_display_entries(settings_data: dict[str, Any]) -> tuple[list[str], bool]:
+    """Build the per-entry ``display`` diagnostic lines for *settings_data*.
+
+    Inspects every render-trigger entry in ``_DISPLAY_RENDER_ENTRIES`` plus the
+    ``statusLine`` command and ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE``. For
+    each, appends a line of the form ``"<label>: present"`` or
+    ``"<label>: MISSING"`` (the literal token ``MISSING`` is load-bearing — the
+    menu doc tells the user to grep for it).
+
+    Returns ``(lines, healthy)`` where ``healthy`` is True iff every required
+    entry is present.
+    """
+    hooks_block = settings_data.get("hooks", {})
+    if not isinstance(hooks_block, dict):
+        hooks_block = {}
+
+    lines: list[str] = []
+    healthy = True
+
+    for label, block_key, matcher in _DISPLAY_RENDER_ENTRIES:
+        entries = hooks_block.get(block_key, [])
+        present = isinstance(entries, list) and _has_render_entry(entries, matcher=matcher)
+        lines.append(f"{label}: {'present' if present else 'MISSING'}")
+        if not present:
+            healthy = False
+
+    statusline = settings_data.get("statusLine")
+    statusline_present = isinstance(statusline, dict) and bool(statusline.get("command"))
+    lines.append(f"statusLine: {'present' if statusline_present else 'MISSING'}")
+    if not statusline_present:
+        healthy = False
+
+    env_block = settings_data.get("env", {})
+    env_present = (
+        isinstance(env_block, dict)
+        and env_block.get("CLAUDE_CODE_DISABLE_TERMINAL_TITLE") is not None
+    )
+    lines.append(
+        f"env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE: {'present' if env_present else 'MISSING'}"
+    )
+    if not env_present:
+        healthy = False
+
+    return lines, healthy
 
 
 def _has_render_entry(entries: list[Any], matcher: str | None = None) -> bool:
@@ -166,7 +268,11 @@ def _install_terminal_title_hooks(
       entries (matcher-less + ``matcher: "clear"``).
     - ``hooks.UserPromptSubmit``, ``hooks.Notification``, ``hooks.Stop`` —
       single matcher-less render entries each.
-    - ``hooks.PostToolUse`` — one render entry with ``matcher: "AskUserQuestion"``.
+    - ``hooks.PreToolUse`` — one render entry with ``matcher: "AskUserQuestion"``
+      so the ``?`` icon flips BEFORE the prompt is answered.
+    - ``hooks.PostToolUse`` — two render entries: one with
+      ``matcher: "AskUserQuestion"`` and one with ``matcher: "Bash"`` (the
+      latter refreshes the title immediately after each shell call).
     - ``statusLine`` — ``{"type": "command", "command": _STATUSLINE_COMMAND}``.
       Preserves a foreign existing value unless ``overwrite_statusline`` is True.
     - ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE`` — set to ``"1"``. Preserves a
@@ -185,10 +291,13 @@ def _install_terminal_title_hooks(
         Dict with keys:
 
         - ``io_ok`` (bool): True iff the file was read AND written successfully.
-        - ``installed_events`` (list[str]): event names whose render entry was
+        - ``installed_events`` (list[str]): event labels whose render entry was
           freshly added on this call. SessionStart appears at most once even
-          though it gets two render entries.
-        - ``already_present_events`` (list[str]): event names where our render
+          though it gets two render entries. The tool-scoped PreToolUse and
+          PostToolUse entries use matcher-qualified labels
+          (``PreToolUse:AskUserQuestion``, ``PostToolUse:AskUserQuestion``,
+          ``PostToolUse:Bash``) so each can be reported individually.
+        - ``already_present_events`` (list[str]): event labels where our render
           entry was already present (no write).
         - ``statusLine_status`` (str): one of ``installed``, ``already_present``,
           ``already_present_other``, ``overwritten``.
@@ -254,16 +363,32 @@ def _install_terminal_title_hooks(
             else:
                 already_present_events.append(event_name)
 
-        # --- PostToolUse with matcher:"AskUserQuestion". ---
+        # --- PreToolUse with matcher:"AskUserQuestion" (flip "?" before prompt). ---
+        pre_tool_use = hooks_block.setdefault("PreToolUse", [])
+        if not isinstance(pre_tool_use, list):
+            pre_tool_use = []
+            hooks_block["PreToolUse"] = pre_tool_use
+        if not _has_render_entry(pre_tool_use, matcher="AskUserQuestion"):
+            pre_tool_use.append(_render_entry(matcher="AskUserQuestion"))
+            installed_events.append("PreToolUse:AskUserQuestion")
+        else:
+            already_present_events.append("PreToolUse:AskUserQuestion")
+
+        # --- PostToolUse with matcher:"AskUserQuestion" and matcher:"Bash". ---
         post_tool_use = hooks_block.setdefault("PostToolUse", [])
         if not isinstance(post_tool_use, list):
             post_tool_use = []
             hooks_block["PostToolUse"] = post_tool_use
         if not _has_render_entry(post_tool_use, matcher="AskUserQuestion"):
             post_tool_use.append(_render_entry(matcher="AskUserQuestion"))
-            installed_events.append("PostToolUse")
+            installed_events.append("PostToolUse:AskUserQuestion")
         else:
-            already_present_events.append("PostToolUse")
+            already_present_events.append("PostToolUse:AskUserQuestion")
+        if not _has_render_entry(post_tool_use, matcher="Bash"):
+            post_tool_use.append(_render_entry(matcher="Bash"))
+            installed_events.append("PostToolUse:Bash")
+        else:
+            already_present_events.append("PostToolUse:Bash")
 
         # --- statusLine: command entry with overwrite-on-request semantics. ---
         statusline_block: dict[str, Any] = {
@@ -837,8 +962,8 @@ class ClaudeRuntime(Runtime):
     ) -> str:
         """Install the full terminal-title hook wiring into the named settings file.
 
-        Installs the SessionStart capture entry, five render-trigger hook
-        events, the ``statusLine`` command, and
+        Installs the SessionStart capture entry, seven render-trigger hook
+        entries, the ``statusLine`` command, and
         ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE``. Each block is idempotent.
 
         The ``target`` argument is one of two shapes:
@@ -987,7 +1112,25 @@ class ClaudeRuntime(Runtime):
             return ""
 
         # Step 4: Pick platform icon (Claude Code palette).
-        icon = "➤"  # ➤
+        #
+        # statusLine mode receives no hook stdin payload, so it keeps the
+        # static active icon. Hook mode reads the JSON payload Claude Code
+        # writes to stdin and maps ``hook_event_name`` + ``tool_name`` through
+        # the canonical palette. The parse is best-effort: missing, empty, or
+        # malformed stdin defaults to the active icon and never raises (the
+        # renderer's no-op contract is "write nothing on failure").
+        icon = _ICON_ACTIVE
+        if not statusline:
+            try:
+                raw_payload = sys.stdin.read() if not sys.stdin.isatty() else ""
+                payload = json.loads(raw_payload) if raw_payload.strip() else {}
+                if isinstance(payload, dict):
+                    icon = _resolve_icon(
+                        payload.get("hook_event_name"),
+                        payload.get("tool_name"),
+                    )
+            except (OSError, ValueError):
+                icon = _ICON_ACTIVE
 
         # Step 5: Emit the title. Both modes write to stdout and return "".
         if statusline:
@@ -1746,25 +1889,15 @@ class ClaudeRuntime(Runtime):
         if "display" in checks_to_run:
             settings_local = Path(".claude") / "settings.local.json"
             sd = _read_json(settings_local) or {}
-            session_starts = sd.get("hooks", {}).get("SessionStart", [])
-            healthy = False
-            if isinstance(session_starts, list):
-                for entry in session_starts:
-                    if isinstance(entry, dict):
-                        for h in entry.get("hooks", []):
-                            if isinstance(h, dict) and h.get("command") == _RENDER_HOOK_COMMAND:
-                                healthy = True
-                                break
-                    if healthy:
-                        break
-            detail = (
-                "render-title hook entry present in .claude/settings.local.json"
-                if healthy
-                else (
-                    "render-title hook entry missing from .claude/settings.local.json; "
-                    "run marshall-steward or project install-hook to install"
+            lines, healthy = _diagnose_display_entries(sd)
+            if healthy:
+                detail = "; ".join(lines)
+            else:
+                detail = (
+                    "; ".join(lines)
+                    + "; run marshall-steward or project install-hook to install "
+                    "any MISSING entry"
                 )
-            )
             results.append({"check": "display", "healthy": healthy, "detail": detail})
             if not healthy:
                 all_healthy = False
