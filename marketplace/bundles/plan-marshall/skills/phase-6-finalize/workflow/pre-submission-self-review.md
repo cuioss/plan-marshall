@@ -22,7 +22,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Domain-Aware Candidate Surfacing
 
-The deterministic surfacer is pluggable via the `ext-self-review-{domain}` extension point — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) for the contract. Each implementor exposes a `surface --plan-id {plan_id}` script that emits the seven candidate sub-lists below as TOON. The plan-marshall-domain implementor is the renamed skill `ext-self-review-plan-marshall`; its script notation is `plan-marshall:ext-self-review-plan-marshall:self_review`. Step 1 resolves the implementor via `manage-config skill-domains` against the plan's declared domain.
+The deterministic surfacer is pluggable via the `ext-self-review-{domain}` extension point — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) for the contract. Each implementor exposes a `surface --plan-id {plan_id}` script that emits the eight candidate sub-lists below as TOON. The plan-marshall-domain implementor is the renamed skill `ext-self-review-plan-marshall`; its script notation is `plan-marshall:ext-self-review-plan-marshall:self_review`. Step 1 resolves the implementor via `manage-config skill-domains` against the plan's declared domain.
 
 ## Inputs (inline step — Step 1)
 
@@ -35,7 +35,7 @@ The deterministic surfacer is pluggable via the `ext-self-review-{domain}` exten
 |-------------------|:--------:|-------------|
 | `plan_id` | Yes | Plan identifier. |
 | `WORKTREE` | Yes | Repo-relative working-directory path. |
-| `candidates` | Yes | TOON envelope from the resolved `ext-self-review-{domain}` surface helper — carries the seven candidate sub-lists below. The orchestrator runs the surface helper in Step 1 and forwards its output verbatim; the workflow body does NOT re-invoke the surface helper. |
+| `candidates` | Yes | TOON envelope from the resolved `ext-self-review-{domain}` surface helper — carries the eight candidate sub-lists below. The orchestrator runs the surface helper in Step 1 and forwards its output verbatim; the workflow body does NOT re-invoke the surface helper. |
 
 | `candidates` sub-list | Schema | Purpose |
 |-----------------------|--------|---------|
@@ -43,6 +43,7 @@ The deterministic surfacer is pluggable via the `ext-self-review-{domain}` exten
 | `user_facing_strings[N]{file,line,context,text}` | Added strings in skill prose, error messages, CLI help | Wording disambiguation |
 | `markdown_sections[N]{file,line,heading,siblings}` | Added/edited markdown sections per file with sibling-section list | Duplication scanning |
 | `symmetric_pairs[N]{file,line,name,partner}` | Functions whose names match save/load, init/restore, push/pop, acquire/release, open/close, start/stop pairings | Symmetric pair test-coverage check |
+| `flag_guard_pairs[N]{file,line,flag,forms_covered}` | Argument-presence guards over a `--flag` token, with the flag forms each guard covers (`space` / `equals` / `both`) | Flag-form-coverage comparison (part of check #1) |
 | `contract_sources[N]{file,sources}` | Per modified file: nearby `SKILL.md` and `standards/*.md` paths | Contract cross-reference anchor |
 | `schema_bearing_files[N]{file,format}` | Markdown files within the contract radius whose content contains a fenced JSON or TOON block | Contract drift detection |
 | `keep_markers[N]{file,line,identifier,kind}` + `protected_identifiers[M]` | `<!-- self-review: keep <id> -->` markers in the post-image; the top-level `protected_identifiers` set mirrors the identifier values for fast membership checks | Duplication scan refuses to drop any protected identifier |
@@ -53,7 +54,7 @@ Skills the caller MUST forward in `skills[]`: none (the workflow reads files wit
 
 ### Step 1: Deterministic surface (inline)
 
-Resolve the domain implementor via `manage-config skill-domains`, then invoke its `surface` subcommand. The implementor reads `references.modified_files` for the active plan, computes the staged diff against the worktree's base branch, and emits the seven candidate sub-lists in a single TOON document on stdout.
+Resolve the domain implementor via `manage-config skill-domains`, then invoke its `surface` subcommand. The implementor reads `references.modified_files` for the active plan, computes the staged diff against the worktree's base branch, and emits the eight candidate sub-lists in a single TOON document on stdout.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -75,7 +76,7 @@ Capture the helper's TOON output as `{candidates_toon}` for forwarding to the co
 
 ### Step 1b: Candidate-count gate (inline vs dispatch) — B5
 
-Parse the seven candidate sub-lists from `{candidates_toon}` and compute `total_candidates` as the sum of the seven sub-list lengths (`symmetric_pairs`, `regexes`, `user_facing_strings`, `markdown_sections`, `contract_sources`, `schema_bearing_files`, plus the seventh enumerated sub-list per the surfacing contract).
+Parse the candidate sub-lists from `{candidates_toon}` and read `total_candidates` from the surfacer's `counts.total` field, which sums the six line-level heuristic lists (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`). The review-anchor lists (`contract_sources`, `schema_bearing_files`) and the derived `protected_identifiers` index are excluded from `total_candidates` for the same reason they are excluded from `counts.total` (see the surfacing skill's § Output note).
 
 Evaluate the gate:
 
@@ -152,6 +153,14 @@ For each non-empty candidate list, apply the corresponding cognitive check to th
 
 1. **Symmetric pair test-coverage check** — for each `symmetric_pairs` entry, search the test directory for a test that exercises BOTH `name` and `partner` and asserts the post-state of the partner without first invoking `name` in the same test. A symmetric pair where one half is silently skipped is the canonical defect class. Defect → record finding `{file, line, defect_class: symmetric_pair_uncovered, rationale: <which half is unexercised and why it matters>}`.
 
+   **Flag-form-coverage comparison** — also compare the flag *forms* covered across paired argument guards using the `flag_guard_pairs` candidate list. Group the `flag_guard_pairs` entries that participate in the same mutually-exclusive (or otherwise paired) argument contract — typically two sibling guards in the same change that gate a `--flag` and its alternative. For each such pair, compare the `forms_covered` value of each guard:
+
+   - When one guard covers `both` forms (`--flag value` AND `--flag=value`) and its sibling covers only `space` or only `equals`, the sibling's uncovered form is a defect. Record finding `{file, line, defect_class: flag_form_asymmetry, rationale: <which flag, which form is uncovered, and the contract it risks>}`. The `line` is the under-covering guard's first-occurrence line from its `flag_guard_pairs` entry.
+   - When both guards in a pair cover the same form set (`both`/`both`, `space`/`space`, or `equals`/`equals`), there is no asymmetry — record no finding.
+   - A lone `flag_guard_pairs` entry with no sibling in the change carries no comparison; record a `flag_form_asymmetry` finding for the lone entry only when the surrounding code makes the missing form a real risk (e.g., the guard feeds a mutually-exclusive injection decision).
+
+   **Worked example** (the lesson that drove this check — PR #508, pr-comment hash_id `d9c3c7`): a Bucket B injection helper guarded its two arguments asymmetrically. The `--plan-id` guard covered `both` forms (`'--plan-id' in args` AND `'--plan-id=' in args`), while the `--project-dir` guard covered only the `space` form (`'--project-dir' in args` with no `'--project-dir=' in args` sibling). The `flag_guard_pairs` list surfaces two entries — `{flag: --plan-id, forms_covered: both}` and `{flag: --project-dir, forms_covered: space}` — and the comparison above records a `flag_form_asymmetry` finding: the `--project-dir=value` (equals) form slips past the guard, so a command already carrying `--project-dir=...` would receive a second injected `--project-dir`, violating the mutually-exclusive-arguments contract on the target Bucket B script. The local self-review reported "clean" before this check existed; the strengthened check reproduces the defect the PR-review bot caught.
+
 2. **Regex over-fit boundary check** — for each `regexes` entry, construct one synthetic example that SHOULD match (positive) and one that SHOULD NOT match (negative), and verify the regex/glob's behavior on each. If the boundary is wrong, record finding `{file, line, defect_class: regex_overfit, rationale: <example that fails the intended boundary>}`.
 
 3. **Wording disambiguation check** — for each `user_facing_strings` entry, read the string out of the surrounding context and ask "could this mean two things?". If the answer is yes (an operator could plausibly take the wrong action based on the wording alone), record finding `{file, line, defect_class: ambiguous_wording, rationale: <the two readings, and which one was intended>}`.
@@ -177,7 +186,7 @@ findings[N]{file,line,defect_class,rationale}:
 `status: success` regardless of findings count — the workflow itself succeeds at producing the structural-review verdict; the caller's manifest-step orchestration translates a non-empty `findings` list into the manifest step's `--outcome failed` per the gating-step convention. Empty `findings` → caller marks `--outcome done`.
 
 `display_detail` shape:
-- Empty `findings` → `"self-review clean: {N} candidates examined"` (sum of the six list lengths).
+- Empty `findings` → `"self-review clean: {N} candidates examined"` where `{N}` is the surfacer's `counts.total` (the six line-level heuristic lists: `regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`).
 - Non-empty `findings` → `"self-review found {K} issues"`.
 
 ### Step 4: Mark Step Complete (inline)
