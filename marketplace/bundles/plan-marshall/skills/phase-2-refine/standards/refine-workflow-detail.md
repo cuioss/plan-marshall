@@ -317,6 +317,30 @@ Store as `confidence_threshold` for use in Step 10.
 
 ---
 
+## Step 4b: Load Fast-Path Threshold
+
+Read the fast-path threshold from project configuration.
+
+**Read-only**: This step MUST only read configuration. The verbs `set`, `init`, `sync-defaults`, and `sync-plan-defaults` are forbidden here — they mutate project configuration that must remain stable across the confidence loop. Only `get` is permitted.
+
+**EXECUTE**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-2-refine get --field fast_path_threshold --audit-plan-id {plan_id}
+```
+
+**Default**: If not configured or field not found, use `100` (a perfect first-pass confidence is required to skip the clarification loop).
+
+**Log** (to decision.log - config read is a decision):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine) Config: fast_path_threshold={fast_path_threshold}"
+```
+
+Store as `fast_path_threshold` for use in Step 10. The key governs whether the clarification loop is entered at all after the first analysis pass; it is distinct from `confidence_threshold`, which governs in-loop iteration exit.
+
+---
+
 ## Step 5: Load Compatibility Strategy
 
 Read the compatibility approach from project configuration and persist to references.json in Step 11.
@@ -608,7 +632,13 @@ If confidence >= threshold → go to Step 13. Otherwise continue.
 
 ### Decision
 
+The fast-path check applies on the first analysis pass only and is evaluated before the loop-exit check. It is distinct from `confidence_threshold`: `fast_path_threshold` decides whether the clarification loop is entered at all after the first pass, while `confidence_threshold` decides when an already-entered loop exits.
+
 ```
+IF iteration_count == 1 AND confidence >= fast_path_threshold:
+  Log: "[REFINE:8] Fast path: clarification loop skipped. Confidence: {confidence}% >= fast_path_threshold {fast_path_threshold}%"
+  CONTINUE to Step 13 (Persist and Return Results)
+
 IF confidence >= confidence_threshold:
   Log: "[REFINE:8] Request refinement complete. Confidence: {confidence}%"
   CONTINUE to Step 13 (Persist and Return Results)

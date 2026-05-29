@@ -327,6 +327,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     },
     "phase-2-refine": {
       "confidence_threshold": 95,
+      "fast_path_threshold": 100,
       "compatibility": "breaking"
     },
     "phase-5-execute": {
