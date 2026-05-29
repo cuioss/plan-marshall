@@ -4,7 +4,7 @@ Manage status.json files with phase tracking, metadata, and lifecycle operations
 
 Handles plan status storage (JSON), phase operations, metadata management,
 plan discovery, phase transitions, archiving, and routing.
-Storage: JSON format (.plan/plans/{plan_id}/status.json)
+Storage: JSON format (.plan/local/plans/{plan_id}/status.json)
 Output: TOON format for API responses
 
 Usage:
@@ -178,7 +178,7 @@ def main() -> int:
     list_orphans_parser = subparsers.add_parser(
         'list-orphans',
         help=(
-            'Discover orphan plan directories — entries under .plan/plans/ with no readable '
+            'Discover orphan plan directories — entries under .plan/local/plans/ with no readable '
             'status.json. Inverse of `list`; the archived-plans directory is excluded.'
         ),
         allow_abbrev=False,

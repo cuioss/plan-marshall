@@ -888,7 +888,7 @@ def cmd_phase_boundary(args: argparse.Namespace) -> dict:
 def cmd_accumulate_agent_usage(args: argparse.Namespace) -> dict:
     """Persist running per-phase totals of subagent <usage> data.
 
-    Reads `.plan/plans/{plan_id}/work/metrics-accumulator-{phase}.toon`
+    Reads `.plan/local/plans/{plan_id}/work/metrics-accumulator-{phase}.toon`
     (initialising it when absent), sums in any provided values, increments
     the `samples` counter, and writes the file back. Idempotent across
     successive calls — the only authoritative state is on disk.

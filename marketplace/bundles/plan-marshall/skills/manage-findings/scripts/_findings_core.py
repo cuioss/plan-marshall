@@ -11,9 +11,9 @@ Findings and Q-Gate share the same type taxonomy, resolution model, and severity
 Assessments use a separate certainty/confidence model.
 
 Storage:
-- Plan findings: .plan/plans/{plan_id}/artifacts/findings/{type}.jsonl (one file per type)
-- Q-Gate findings: .plan/plans/{plan_id}/artifacts/findings/qgate-{phase}.jsonl
-- Assessments: .plan/plans/{plan_id}/artifacts/findings/assessments.jsonl
+- Plan findings: .plan/local/plans/{plan_id}/artifacts/findings/{type}.jsonl (one file per type)
+- Q-Gate findings: .plan/local/plans/{plan_id}/artifacts/findings/qgate-{phase}.jsonl
+- Assessments: .plan/local/plans/{plan_id}/artifacts/findings/assessments.jsonl
 
 Stdlib-only - no external dependencies (except shared modules via PYTHONPATH).
 """
@@ -57,13 +57,13 @@ CERTAINTY_VALUES = VALID_CERTAINTIES
 
 
 def get_findings_dir(plan_id: str) -> 'Path':
-    """Returns .plan/plans/{plan_id}/artifacts/findings/"""
+    """Returns .plan/local/plans/{plan_id}/artifacts/findings/"""
     validate_plan_id(plan_id)
     return get_artifact_path(plan_id, FILE_FINDINGS_DIR)
 
 
 def get_findings_path(plan_id: str, finding_type: str) -> 'Path':
-    """Returns .plan/plans/{plan_id}/artifacts/findings/{type}.jsonl
+    """Returns .plan/local/plans/{plan_id}/artifacts/findings/{type}.jsonl
 
     Per-type splitting: each finding type lives in its own JSONL file under the
     findings/ subdirectory. Cross-type queries merge results across files via
@@ -75,7 +75,7 @@ def get_findings_path(plan_id: str, finding_type: str) -> 'Path':
 
 
 def get_qgate_path(plan_id: str, phase: str) -> 'Path':
-    """Returns .plan/plans/{plan_id}/artifacts/findings/qgate-{phase}.jsonl"""
+    """Returns .plan/local/plans/{plan_id}/artifacts/findings/qgate-{phase}.jsonl"""
     if phase not in QGATE_PHASES:
         raise ValueError(f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}')
     return get_findings_dir(plan_id) / f'qgate-{phase}.jsonl'
@@ -427,7 +427,7 @@ def clear_qgate_findings(
 
 
 def get_assessments_path(plan_id: str) -> 'Path':
-    """Returns .plan/plans/{plan_id}/artifacts/findings/assessments.jsonl"""
+    """Returns .plan/local/plans/{plan_id}/artifacts/findings/assessments.jsonl"""
     return get_findings_dir(plan_id) / 'assessments.jsonl'
 
 

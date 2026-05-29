@@ -8,7 +8,7 @@ Provides:
 - Decision logging (dedicated log for decision entries)
 
 Log file locations:
-- Plan-scoped: .plan/plans/{plan_id}/logs/{script-execution,work,decision}.log
+- Plan-scoped: .plan/local/plans/{plan_id}/logs/{script-execution,work,decision}.log
 - Global fallback: .plan/logs/{type}-YYYY-MM-DD.log
 
 Configuration via environment variables:
@@ -596,9 +596,9 @@ if __name__ == '__main__':
     print(f'Max Output Capture: {get_max_output()}')
     print(f'Retention Days: {get_retention_days()}')
     print('\nLog locations (plan-scoped):')
-    print('  .plan/plans/{plan_id}/logs/script-execution.log')
-    print('  .plan/plans/{plan_id}/logs/work.log')
-    print('  .plan/plans/{plan_id}/logs/decision.log')
+    print('  .plan/local/plans/{plan_id}/logs/script-execution.log')
+    print('  .plan/local/plans/{plan_id}/logs/work.log')
+    print('  .plan/local/plans/{plan_id}/logs/decision.log')
     print('\nAvailable functions:')
     print('- format_timestamp() -> str')
     print('- format_log_entry(level, message, **fields) -> str')
