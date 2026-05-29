@@ -134,7 +134,7 @@ Read `confidence_threshold` from project config (`manage-config plan phase-2-ref
 
 ### Step 4b: Load Fast-Path Threshold
 
-Read `fast_path_threshold` from project config (`manage-config plan phase-2-refine get --field fast_path_threshold`). Default: `100`. Read-only during refine — the same `set`/`init`/`sync-defaults`/`sync-plan-defaults` prohibition as Step 5b applies. Store as `fast_path_threshold` for use in Step 10.
+Read `fast_path_threshold` from project config (`manage-config plan phase-2-refine get --field fast_path_threshold`). Default: `100`. Read-only during refine — the same `set`/`init`/`sync-defaults`/`sync-plan-defaults` prohibition defined in the Enforcement section above applies. Store as `fast_path_threshold` for use in Step 10.
 
 ### Step 5: Load Compatibility Strategy
 
