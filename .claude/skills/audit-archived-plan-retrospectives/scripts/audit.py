@@ -1067,7 +1067,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--plan-dir",
         default=".plan/local/archived-plans",
-        help="Directory containing per-plan subdirectories. Defaults to archived-plans.",
+        help="Directory containing per-plan subdirectories. Defaults to .plan/local/archived-plans.",
     )
     parser.add_argument(
         "--plan-id",
