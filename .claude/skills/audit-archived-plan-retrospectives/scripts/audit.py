@@ -452,8 +452,9 @@ def _resolve_step_role(repo_root: Path, step_id: str, cache: dict[str, str | Non
     if bare in cache:
         return cache[bare]
     role: str | None = None
-    doc = repo_root / PHASE_5_STANDARDS_REL / f"{bare}.md"
-    if doc.is_file():
+    standards_dir = (repo_root / PHASE_5_STANDARDS_REL).resolve()
+    doc = (standards_dir / f"{bare}.md").resolve()
+    if doc.is_relative_to(standards_dir) and doc.is_file():
         try:
             for line in doc.read_text(encoding="utf-8").splitlines():
                 m = _ROLE_FRONTMATTER_RE.match(line)
