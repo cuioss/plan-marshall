@@ -225,3 +225,103 @@ def test_release_then_acquire_succeeds(plan_context, monkeypatch):
 
     assert result['status'] == 'acquired'
     assert _read_metadata(waiter_dir)['merging_on_main'] is True
+
+
+# =============================================================================
+# concurrent-acquire TOCTOU tiebreaker
+# =============================================================================
+#
+# Two plans can both observe holder=None and both write their marker before
+# either re-reads (check-then-act race). The fix re-reads after writing and
+# resolves the contention deterministically: the lexicographically LARGER
+# plan_id yields (clears its marker, keeps polling); the smaller wins.
+#
+# The race is simulated single-threaded by monkeypatching _write_marker so the
+# competing plan's marker materialises during the window between the calling
+# plan's first holder check (None) and the post-write double-check.
+
+
+def _inject_competitor_on_write(monkeypatch, *, competitor_plan_id):
+    """Patch _write_marker so the competitor's marker appears concurrently.
+
+    Wraps the real _write_marker: after the calling plan writes its own marker,
+    the competitor's marker is also written directly into the competitor's
+    status.json — reproducing the state where both plans wrote in the same
+    check-then-act window. Done only once (subsequent writes pass through) so
+    later poll iterations see a stable world.
+    """
+    real_write_marker = _mod._write_marker
+    state = {'injected': False}
+
+    def _patched(plan_id):
+        acquired_at = real_write_marker(plan_id)
+        if not state['injected'] and plan_id != competitor_plan_id:
+            state['injected'] = True
+            comp_status = _mod.read_status(competitor_plan_id)
+            comp_status.setdefault('metadata', {})
+            comp_status['metadata'][_mod._MARKER_FIELD] = True
+            comp_status['metadata'][_mod._ACQUIRED_AT_FIELD] = acquired_at
+            _mod.write_status(competitor_plan_id, comp_status)
+        return acquired_at
+
+    monkeypatch.setattr(_mod, '_write_marker', _patched)
+
+
+def test_concurrent_acquire_larger_plan_id_yields(plan_context, monkeypatch):
+    # 'ml-tie-bbb' (larger) races against 'ml-tie-aaa' (smaller). The larger
+    # plan_id must yield: clear its marker and end up blocked, since the
+    # competitor holds the lock for the remainder of the poll window.
+    aaa_dir = plan_context.plan_dir_for('ml-tie-aaa')
+    bbb_dir = plan_context.plan_dir_for('ml-tie-bbb')
+    _write_status(aaa_dir)
+    _write_status(bbb_dir)
+
+    monkeypatch.setattr(_mod, 'MERGE_LOCK_POLL_WINDOW_SECONDS', 0.05)
+    monkeypatch.setattr(_mod, 'MERGE_LOCK_POLL_INTERVAL_SECONDS', 0.01)
+    # When 'ml-tie-bbb' writes its marker, 'ml-tie-aaa' concurrently writes too.
+    _inject_competitor_on_write(monkeypatch, competitor_plan_id='ml-tie-aaa')
+
+    result = cmd_merge_lock_acquire(_ns('ml-tie-bbb'))
+
+    # The larger plan_id yields → it cleared its own marker and (since the
+    # competitor still holds) eventually times out blocked.
+    assert result['status'] == 'blocked'
+    assert result['blocking_plan_id'] == 'ml-tie-aaa'
+    assert 'merging_on_main' not in _read_metadata(bbb_dir)
+
+
+def test_concurrent_acquire_smaller_plan_id_wins(plan_context, monkeypatch):
+    # 'ml-tie2-aaa' (smaller) races against 'ml-tie2-bbb' (larger). The smaller
+    # plan_id keeps its marker and returns acquired even though a competitor
+    # wrote concurrently.
+    aaa_dir = plan_context.plan_dir_for('ml-tie2-aaa')
+    bbb_dir = plan_context.plan_dir_for('ml-tie2-bbb')
+    _write_status(aaa_dir)
+    _write_status(bbb_dir)
+
+    monkeypatch.setattr(_mod, 'MERGE_LOCK_POLL_WINDOW_SECONDS', 0.05)
+    monkeypatch.setattr(_mod, 'MERGE_LOCK_POLL_INTERVAL_SECONDS', 0.01)
+    # When 'ml-tie2-aaa' writes, 'ml-tie2-bbb' concurrently writes too.
+    _inject_competitor_on_write(monkeypatch, competitor_plan_id='ml-tie2-bbb')
+
+    result = cmd_merge_lock_acquire(_ns('ml-tie2-aaa'))
+
+    # The smaller plan_id wins: keeps its marker, returns acquired.
+    assert result['status'] == 'acquired'
+    assert _read_metadata(aaa_dir)['merging_on_main'] is True
+
+
+def test_concurrent_acquire_no_competitor_returns_acquired(plan_context, monkeypatch):
+    # Sanity: when the post-write double-check finds no competitor (the common
+    # case), acquire returns acquired with the marker intact — the new
+    # re-read path must not regress the uncontended fast path.
+    plan_dir = plan_context.plan_dir_for('ml-tie-solo')
+    _write_status(plan_dir)
+
+    monkeypatch.setattr(_mod, 'MERGE_LOCK_POLL_WINDOW_SECONDS', 0.05)
+    monkeypatch.setattr(_mod, 'MERGE_LOCK_POLL_INTERVAL_SECONDS', 0.01)
+
+    result = cmd_merge_lock_acquire(_ns('ml-tie-solo'))
+
+    assert result['status'] == 'acquired'
+    assert _read_metadata(plan_dir)['merging_on_main'] is True

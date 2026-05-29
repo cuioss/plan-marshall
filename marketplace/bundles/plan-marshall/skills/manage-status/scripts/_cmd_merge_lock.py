@@ -17,12 +17,16 @@ The marker carries two fields under ``status.metadata``:
 
 ``acquire`` scans every OTHER plan's ``status.json`` (via the same
 plan-discovery path ``cmd_list`` uses) for an existing holder. If the
-lock is free it writes the marker for this plan and returns
-``status: acquired``. If held it enters a ``time.sleep`` poll loop —
-fixed module-level interval, total window 5 minutes / 300 s — re-checking
-each interval, and on elapse returns ``status: blocked`` with
-``blocking_plan_id``. The poll lives entirely inside this Python handler;
-there is never a Bash poll loop.
+lock is free it writes the marker for this plan, then re-reads to guard
+against a concurrent writer (check-then-act TOCTOU): if another plan wrote
+its marker in the same window, a deterministic tiebreaker resolves the
+contention — the lexicographically LARGER ``plan_id`` yields (clears its
+marker and keeps polling), so the smaller ``plan_id`` is the sole winner.
+A sole writer (or the tiebreaker winner) returns ``status: acquired``.
+If held it enters a ``time.sleep`` poll loop — fixed module-level
+interval, total window 5 minutes / 300 s — re-checking each interval, and
+on elapse returns ``status: blocked`` with ``blocking_plan_id``. The poll
+lives entirely inside this Python handler; there is never a Bash poll loop.
 
 ``check`` is a non-blocking read returning the current holder (or none).
 ``release`` clears this plan's marker idempotently (no-op when not held).
@@ -99,6 +103,23 @@ def _write_marker(plan_id: str) -> str:
     return acquired_at
 
 
+def _clear_marker(plan_id: str) -> None:
+    """Clear this plan's merge-lock marker (tiebreaker-loser path).
+
+    Removes the ``merging_on_main`` / ``merge_lock_acquired_at`` fields from
+    ``status.metadata`` via the same ``_status_core`` helpers ``release`` uses,
+    so the loser of a concurrent-acquire tiebreaker relinquishes the lock
+    without any direct ``.plan/`` file access. Idempotent — a no-op when the
+    marker is absent.
+    """
+    status = read_status(plan_id)
+    metadata = status.get('metadata')
+    if isinstance(metadata, dict) and metadata.get(_MARKER_FIELD):
+        metadata.pop(_MARKER_FIELD, None)
+        metadata.pop(_ACQUIRED_AT_FIELD, None)
+        write_status(plan_id, status)
+
+
 def cmd_merge_lock_acquire(args: Any) -> dict[str, Any]:
     """Blocking acquire of the cross-plan merge-lock.
 
@@ -123,7 +144,34 @@ def cmd_merge_lock_acquire(args: Any) -> dict[str, Any]:
     while True:
         holder = _find_holder(plan_id)
         if holder is None:
+            # Optimistically claim the lock, then re-read to detect a
+            # concurrent writer that observed holder=None in the same window.
             acquired_at = _write_marker(plan_id)
+
+            # Double-check: did another plan also write its marker concurrently?
+            # _find_holder excludes this plan, so a non-None result here means a
+            # genuine competing holder, not our own freshly-written marker.
+            competitor = _find_holder(plan_id)
+            if competitor is not None and plan_id > competitor:
+                # Deterministic tiebreaker: the lexicographically LARGER
+                # plan_id yields. Relinquish our marker and keep polling so the
+                # smaller plan_id is the sole winner.
+                _clear_marker(plan_id)
+                log_entry(
+                    'work',
+                    plan_id,
+                    'INFO',
+                    f'[MANAGE-STATUS] (merge-lock) {plan_id} yielded to '
+                    f'{competitor} on concurrent-acquire tiebreaker — '
+                    f'cleared marker, continuing poll',
+                )
+                blocking_plan_id = competitor
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(MERGE_LOCK_POLL_INTERVAL_SECONDS)
+                continue
+
+            # No competitor, or we hold the smaller plan_id → we won.
             log_entry(
                 'work',
                 plan_id,
