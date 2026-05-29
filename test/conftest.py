@@ -367,7 +367,7 @@ def load_script_module(bundle: str, skill: str, script_file: str, module_name: s
     import importlib.util
 
     script_path = get_scripts_dir(bundle, skill) / script_file
-    if not script_path.exists():
+    if not script_path.is_file():
         raise FileNotFoundError(f'Script not found: {script_path}')
 
     name = module_name or script_path.stem

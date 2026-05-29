@@ -220,7 +220,7 @@ def _resolve_document_path(plan_id: str, document: str) -> tuple[Path | None, st
         executor = None
     cmd = [
         sys.executable,
-        str(executor) if executor is not None and executor.exists() else '.plan/execute-script.py',
+        str(executor) if executor is not None and executor.is_file() else '.plan/execute-script.py',
         notation,
         *sub_args,
         '--plan-id',
