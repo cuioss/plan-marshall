@@ -468,7 +468,7 @@ message: "Task references lesson IDs that do not exist in the live manage-lesson
 **Recovery procedure** — When a write fails with `validation_error: lesson_id_not_found`:
 
 1. Inspect `unresolved_ids` in the error payload to identify which lesson IDs are unknown to the inventory.
-2. Decide per ID: either (a) **create the lesson** via `manage-lessons add` if the reference was meant to point to a real (but not-yet-allocated) lesson, or (b) **drop the ID from the task description** and reword the narrative as a query against the live inventory (e.g., "archive any lessons matching component=X and category=resolved") so the task does not depend on a phantom ID.
+2. Decide per ID: either (a) **create the lesson** via `manage-lessons add` if the reference was meant to point to a real (but not-yet-allocated) lesson — first running the canonical three-gate lesson-creation policy in [`../manage-lessons/standards/lesson-creation-policy.md`](../manage-lessons/standards/lesson-creation-policy.md) (Gate 1 dedup, Gate 2 active-plan check, Gate 3 create) so the recovery create-path is consistent with the policy — or (b) **drop the ID from the task description** and reword the narrative as a query against the live inventory (e.g., "archive any lessons matching component=X and category=resolved") so the task does not depend on a phantom ID.
 3. Re-stage the corrected task batch (re-write the `tasks-batch.json` staging file) and re-invoke `batch-add --tasks-file PATH`. The atomic-write contract guarantees the previous failed attempt left no on-disk state behind, so the retry starts from a clean tasks directory.
 4. NEVER bypass the validation by editing `TASK-NNN.json` files directly or by passing `--no-validate`-style flags — no such bypass exists, and the validation is the only point in the plan lifecycle that catches lesson-ID drift before tasks reach phase-5-execute.
 
@@ -791,7 +791,9 @@ This signaling step runs AFTER the inline Q-Gate checks of Step 9 and BEFORE Ste
 
 ### Step 10: Record Issues as Lessons
 
-On ambiguous deliverable or planning issues, follow the two-step path-allocate flow:
+On ambiguous deliverable or planning issues, first run the canonical three-gate lesson-creation policy in [`../manage-lessons/standards/lesson-creation-policy.md`](../manage-lessons/standards/lesson-creation-policy.md) — Gate 1 (dedup), Gate 2 (active-plan check), Gate 3 (create). The two-step path-allocate flow below is Gate 3, reached only when Gates 1 and 2 both clear; when Gate 1 returns `merge_into` / `already_closed` or Gate 2 finds a covering active plan, extend the existing lesson or fold into the plan instead of allocating a new one. Do not restate the gate mechanics — follow the standard.
+
+When the gates clear, follow the two-step path-allocate flow:
 
 1. Allocate a lesson file and capture the returned `path`:
 

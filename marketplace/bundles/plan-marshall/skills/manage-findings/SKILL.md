@@ -226,7 +226,7 @@ At `6-finalize`:
 
 1. List unpromoted findings: `list --plan-id {plan_id} --promoted false`
 2. For each finding to promote:
-   - **To manage-lessons** (bug, improvement, anti-pattern, triage) — two-step path-allocate flow:
+   - **To manage-lessons** (bug, improvement, anti-pattern) — first run the canonical three-gate lesson-creation policy in [`../manage-lessons/standards/lesson-creation-policy.md`](../manage-lessons/standards/lesson-creation-policy.md) (Gate 1 dedup, Gate 2 active-plan check, Gate 3 create); do not restate the gate mechanics. The two-step path-allocate add flow below is Gate 3, reached only when Gates 1 and 2 both clear:
      ```bash
      # Step A: allocate the lesson file (returns an absolute path)
      manage-lessons add --component {component} --category {type} --title {title}
@@ -234,6 +234,7 @@ At `6-finalize`:
      # Step C: record the promotion
      promote --plan-id {plan_id} --hash-id {hash_id} --promoted-to {lesson_id}
      ```
+     When Gate 1 returns `merge_into` (a similar lesson exists) or Gate 2 finds a covering active plan, do NOT allocate a new lesson — extend the existing lesson / fold into the plan per the policy, then still resolve the finding via `promote --plan-id {plan_id} --hash-id {hash_id} --promoted-to {existing_lesson_id|active-plan}`.
    - **To architecture** (tip, insight, best-practice):
      ```bash
      architecture enrich {type} --module {module} --{type} "{content}" --reasoning "From plan {plan_id}"

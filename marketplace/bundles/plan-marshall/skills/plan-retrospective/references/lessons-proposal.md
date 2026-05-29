@@ -78,19 +78,31 @@ options:
 
 When `Record`, call `manage-lessons add --component {c} --category {cat} --title "{title}"` and `Write` the body. When `Edit`, let the user revise title/body, then proceed.
 
-## Dedup gate (required before recording)
+## Gate sequence (required before recording)
 
-Before any proposal is recorded, classify each one per `plan-marshall:manage-lessons:references/dedup-analysis.md`. Load the full existing lessons corpus via `manage-lessons list --full` and compare each candidate by `component` + root cause.
+Before any proposal is recorded, run the canonical three-gate lesson-creation policy in `plan-marshall:manage-lessons:standards/lesson-creation-policy.md` — Gate 1 (dedup), Gate 2 (active-plan check), Gate 3 (create). Do not restate the gate mechanics; this section names the per-candidate flow the policy resolves to.
 
-- **`new`** → proceed with `manage-lessons add --component {c} --category {cat} --title "{title}"` and `Write` the body.
+### Gate 1 — Dedup
+
+Classify each proposal per `plan-marshall:manage-lessons:references/dedup-analysis.md`. Load the full existing lessons corpus via `manage-lessons list --full` and compare each candidate by `component` + root cause.
+
+- **`new`** → proceed to Gate 2.
 - **`merge_into`** → skip the add; `Edit` the target lesson file at `.plan/local/lessons-learned/{target_id}.md` to append a `## Recurrence — YYYY-MM-DD ({plan_id})` section with the candidate's body content (Context, Root cause, Evidence at minimum).
 - **`already_closed`** → skip both add and append; record the `target_id` in the retrospective report's "Proposed Lessons" section as `"Observed again but already closed by lesson {target_id}"`; delete the stale lesson file at `.plan/local/lessons-learned/{target_id}.md` (requires user confirmation in finalize-step mode because deletion is destructive).
+
+### Gate 2 — Active-plan check
+
+Runs only for candidates Gate 1 classified `new`. Enumerate the active plans via `manage-status list` and compare each `new` candidate's `component` + root cause against each active plan's request scope. When a covering active plan exists, do NOT file a standalone lesson — fold the observation into that plan and record it in the retrospective report's "Proposed Lessons" section as `"Folded into active plan {plan_id}"`. When no active plan covers the candidate, proceed to Gate 3.
+
+### Gate 3 — Create
+
+Runs only when Gates 1 and 2 both clear. Record the lesson via `manage-lessons add --component {c} --category {cat} --title "{title}"` and `Write` the body.
 
 Caller-specific behavior (per `dedup-analysis.md` Caller contracts): finalize-step mode executes `new` adds and `merge_into` appends automatically, but `already_closed` always requires user confirmation because deletion is destructive. User-invocable mode asks per candidate.
 
 ## Finalize-step Flow
 
-Only `confidence: high` proposals are auto-recorded. `medium` proposals are included in the report section but not recorded. This preserves the bar: lessons represent findings the retrospective is confident about. All recording is gated by the Dedup gate above — only `status: new` proposals reach `manage-lessons add`.
+Only `confidence: high` proposals are auto-recorded. `medium` proposals are included in the report section but not recorded. This preserves the bar: lessons represent findings the retrospective is confident about. All recording is gated by the Gate sequence above — only candidates that clear Gate 1 (`new`) and Gate 2 (no covering active plan) reach `manage-lessons add`.
 
 ## Out of Scope
 

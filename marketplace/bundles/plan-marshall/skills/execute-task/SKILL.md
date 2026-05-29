@@ -171,7 +171,9 @@ Before recording any per-task verification deviation that would soften a request
 
 ### Step: Record Lessons
 
-On issues or unexpected patterns, use the two-step path-allocate flow:
+On issues or unexpected patterns, first run the canonical three-gate lesson-creation policy in [`../manage-lessons/standards/lesson-creation-policy.md`](../manage-lessons/standards/lesson-creation-policy.md) — Gate 1 (dedup), Gate 2 (active-plan check), Gate 3 (create). The two-step path-allocate flow below is Gate 3, reached only when Gates 1 and 2 both clear; when Gate 1 returns `merge_into` / `already_closed` or Gate 2 finds a covering active plan, extend the existing lesson or fold into the plan instead of allocating a new one. Do not restate the gate mechanics — follow the standard.
+
+When the gates clear, use the two-step path-allocate flow:
 
 1. Allocate a lesson file and capture the returned `path`:
 
