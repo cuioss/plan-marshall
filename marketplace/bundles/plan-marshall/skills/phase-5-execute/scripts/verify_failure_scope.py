@@ -27,24 +27,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
 
-
-def _resolve_plan_dir(plan_id: str) -> Path:
-    """Resolve the plan directory under .plan/local/plans/{plan_id}/."""
-    result = subprocess.run(
-        ['git', 'rev-parse', '--git-common-dir'],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    git_common = Path(result.stdout.strip())
-    if not git_common.is_absolute():
-        git_common = (Path.cwd() / git_common).resolve()
-    repo_root = git_common.parent
-    return repo_root / '.plan' / 'local' / 'plans' / plan_id
+from file_ops import get_plan_dir  # type: ignore[import-not-found]
 
 
 def _read_modified_files(plan_dir: Path) -> list[str]:
@@ -74,7 +60,7 @@ def classify_failure_scope(
         Dict with the TOON-serialisable summary fields.
     """
     if plan_dir is None:
-        plan_dir = _resolve_plan_dir(plan_id)
+        plan_dir = get_plan_dir(plan_id)
     try:
         declared = set(_read_modified_files(plan_dir))
     except FileNotFoundError as exc:

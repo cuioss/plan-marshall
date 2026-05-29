@@ -37,6 +37,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from file_ops import get_executor_path  # type: ignore[import-not-found]
 from marketplace_paths import git_main_checkout_root  # type: ignore[import-not-found]
 
 
@@ -64,17 +65,18 @@ def _executor_path() -> Path:
     """Locate ``.plan/execute-script.py`` relative to the main checkout.
 
     The helper itself runs inside any worktree, but the executor lives
-    at the main checkout (and is canonical there). Resolving via
-    ``git rev-parse --git-common-dir`` (already cached in
-    ``marketplace_paths``) keeps the lookup worktree-safe.
+    at the main checkout (and is canonical there). Delegates to
+    ``file_ops.get_executor_path()``, which resolves via
+    ``git rev-parse --git-common-dir`` (cached in ``marketplace_paths``)
+    and keeps the lookup worktree-safe.
     """
-    root = git_main_checkout_root()
-    if root is None:
+    try:
+        return get_executor_path()
+    except RuntimeError as exc:
         raise WorktreeResolutionError(
             'Cannot locate executor — not inside a git checkout. '
             "Pass --project-dir explicitly or run from a checkout that contains '.plan/execute-script.py'."
-        )
-    return root / '.plan' / 'execute-script.py'
+        ) from exc
 
 
 def _query_worktree_path(plan_id: str) -> tuple[bool, str]:

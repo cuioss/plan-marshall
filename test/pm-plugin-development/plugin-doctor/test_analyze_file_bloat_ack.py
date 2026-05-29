@@ -18,20 +18,16 @@ Additional cases:
   e. ``subdoc-bloat`` path — same ack logic applies to sub-documents.
 """
 
-import importlib.util
 import sys
 from pathlib import Path
 
+from conftest import get_scripts_dir, load_script_module
+
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-_SCRIPTS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'pm-plugin-development'
-    / 'skills'
-    / 'plugin-doctor'
-    / 'scripts'
-)
+# Retained: this module inserts the scripts dir on sys.path (used outside the
+# module loader) so ``from <module> import ...`` resolves for the modules under
+# test. The loader body itself routes through ``load_script_module``.
+_SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'plugin-doctor')
 
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
@@ -51,12 +47,7 @@ sys.path.insert(0, str(_FILE_OPS_DIR))
 
 
 def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
 
 
 # Load dependency chain in order

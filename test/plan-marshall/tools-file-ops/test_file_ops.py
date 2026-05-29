@@ -26,6 +26,7 @@ from file_ops import (
     ensure_directory,
     generate_markdown_metadata,
     get_base_dir,
+    get_executor_path,
     get_metadata_content_split,
     get_plan_dir,
     get_temp_dir,
@@ -436,7 +437,13 @@ def test_base_path_respects_custom_base():
 
 
 def test_get_worktree_root_returns_plan_local_worktrees(tmp_path, monkeypatch):
-    """get_worktree_root anchors at <root>/.plan/local/worktrees."""
+    """get_worktree_root anchors at <root>/.plan/local/worktrees.
+
+    get_worktree_root resolves through get_base_dir, so the production path
+    is only produced when no PLAN_BASE_DIR override is active and the git
+    root resolves. delenv PLAN_BASE_DIR pins the git-root branch.
+    """
+    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
     monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: tmp_path)
     result = get_worktree_root()
     assert result == tmp_path / '.plan' / 'local' / 'worktrees'
@@ -444,6 +451,7 @@ def test_get_worktree_root_returns_plan_local_worktrees(tmp_path, monkeypatch):
 
 def test_get_worktree_root_path_segments_match_new_constant(tmp_path, monkeypatch):
     """The trailing segments are exactly ('.plan', 'local', 'worktrees')."""
+    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
     monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: tmp_path)
     result = get_worktree_root()
     assert result.parts[-3:] == ('.plan', 'local', 'worktrees')
@@ -451,6 +459,7 @@ def test_get_worktree_root_path_segments_match_new_constant(tmp_path, monkeypatc
 
 def test_get_worktree_root_does_not_use_claude_worktrees(tmp_path, monkeypatch):
     """The legacy .claude/worktrees/ path is no longer produced."""
+    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
     monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: tmp_path)
     result = get_worktree_root()
     # No segment of the resolved path may be ``.claude`` — that prefix is
@@ -458,11 +467,70 @@ def test_get_worktree_root_does_not_use_claude_worktrees(tmp_path, monkeypatch):
     assert '.claude' not in result.parts
 
 
+def test_get_worktree_root_honors_plan_base_dir(tmp_path, monkeypatch):
+    """With PLAN_BASE_DIR set, get_worktree_root isolates under it.
+
+    This is the test-isolation contract: get_worktree_root resolves through
+    get_base_dir, so a PLAN_BASE_DIR override redirects the worktree root to
+    ``<PLAN_BASE_DIR>/worktrees`` — no leakage into the real repo tree.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    result = get_worktree_root()
+    assert result == tmp_path / 'worktrees'
+
+
 def test_get_worktree_root_without_git_repo_raises(monkeypatch):
     """When no git repo can be resolved, get_worktree_root raises RuntimeError."""
+    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+    monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: None)
+    with pytest.raises(RuntimeError, match='git'):
+        get_worktree_root()
+
+
+# =============================================================================
+# get_executor_path tests
+# =============================================================================
+#
+# get_executor_path resolves ``.plan/execute-script.py`` against the main
+# checkout root (via git_main_checkout_root). It is worktree-aware: when
+# called from inside an isolated worktree, git_main_checkout_root still
+# resolves the main checkout (git-common-dir), so the executor path points at
+# the canonical main-checkout copy rather than a per-worktree one.
+
+
+def test_get_executor_path_main_checkout(tmp_path, monkeypatch):
+    """get_executor_path anchors at <main_checkout_root>/.plan/execute-script.py."""
+    monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: tmp_path)
+    result = get_executor_path()
+    assert result == tmp_path / '.plan' / 'execute-script.py'
+
+
+def test_get_executor_path_path_segments(tmp_path, monkeypatch):
+    """The trailing segments are exactly ('.plan', 'execute-script.py')."""
+    monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: tmp_path)
+    result = get_executor_path()
+    assert result.parts[-2:] == ('.plan', 'execute-script.py')
+
+
+def test_get_executor_path_worktree_layout_resolves_to_main_checkout(tmp_path, monkeypatch):
+    """From a worktree, git_main_checkout_root resolves the main checkout, so
+    the executor path is the canonical main-checkout copy — never a path under
+    the worktree's own ``.plan/local/worktrees/`` subtree."""
+    main_root = tmp_path / 'main'
+    main_root.mkdir()
+    # Simulate being inside a worktree: git_main_checkout_root still returns
+    # the main checkout (git-common-dir semantics), not the worktree dir.
+    monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: main_root)
+    result = get_executor_path()
+    assert result == main_root / '.plan' / 'execute-script.py'
+    assert 'worktrees' not in result.parts
+
+
+def test_get_executor_path_without_git_repo_raises(monkeypatch):
+    """When no git repo can be resolved, get_executor_path raises RuntimeError."""
     monkeypatch.setattr(file_ops, 'git_main_checkout_root', lambda: None)
     with pytest.raises(RuntimeError, match='git repository'):
-        get_worktree_root()
+        get_executor_path()
 
 
 # =============================================================================
@@ -546,3 +614,20 @@ def test_plan_not_found_error_carries_plan_id_plan_dir_reason(tmp_path, monkeypa
     assert 'absent' in str(err)
     assert str(err.plan_dir) in str(err)
     assert err.reason
+
+
+def test_jsonl_store_source_uses_canonical_local_plans_path():
+    """The sibling jsonl_store.py references .plan/local/plans, not legacy form.
+
+    Regression guard for the path-consolidation sweep: ``get_artifact_path``'s
+    docstring must spell the artifact location as ``.plan/local/plans/`` — the
+    legacy bare ``.plan/plans/`` form is incorrect since runtime state moved
+    under ``.plan/local``.
+    """
+    import re
+
+    jsonl_store_path = Path(file_ops.__file__).parent / 'jsonl_store.py'
+    source = jsonl_store_path.read_text(encoding='utf-8')
+    assert '.plan/local/plans/' in source
+    legacy = re.findall(r'(?<!local/)\.plan/plans/', source)
+    assert legacy == [], f'Legacy .plan/plans/ strings remain: {legacy}'

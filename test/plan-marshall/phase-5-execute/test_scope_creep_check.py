@@ -77,7 +77,13 @@ def _patch_diff(monkeypatch, files):
 
 
 def _patch_resolve(monkeypatch, plan_dir):
-    monkeypatch.setattr(scc, '_resolve_plan_dir', lambda plan_id: plan_dir)
+    """Patch only the worktree resolver.
+
+    The plan-dir resolution now flows through ``file_ops.get_plan_dir``, which
+    honours the ``PLAN_BASE_DIR`` the ``plan_context`` fixture sets. Each test
+    passes the matching ``plan_id`` so ``get_plan_dir(plan_id)`` resolves to the
+    fixture's ``plan_dir`` with no patching of the resolver itself.
+    """
     monkeypatch.setattr(scc, '_resolve_worktree', lambda plan_id: Path.cwd())
 
 
@@ -163,6 +169,29 @@ def test_threshold_override_via_flag(plan_with_refs, monkeypatch, capsys):
     assert 'threshold: 10' in out
     assert 'finding_emitted: false' in out
     assert recorder.emitted_calls == []
+
+
+def test_plan_dir_resolved_via_plan_base_dir(plan_with_refs, monkeypatch, capsys):
+    """Plan dir is resolved via file_ops.get_plan_dir honouring PLAN_BASE_DIR.
+
+    No patching of any plan-dir resolver: the fixture sets PLAN_BASE_DIR so
+    ``get_plan_dir('scope-creep-test')`` resolves to the fixture's plan dir,
+    where references.json + TASK-001.json already live. A residual over the
+    default threshold confirms the resolved dir was read.
+    """
+    extras = [f'extra/{i}.py' for i in range(6)]
+    _patch_diff(monkeypatch, ['src/a.py'] + extras)
+    monkeypatch.setattr(scc, '_resolve_worktree', lambda plan_id: Path.cwd())
+    recorder = _Recorder()
+    _patch_emit(monkeypatch, recorder)
+
+    rc = scc.cmd_check(Namespace(plan_id='scope-creep-test', threshold=None))
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert 'residual_count: 6' in out
+    assert 'finding_emitted: true' in out
+    assert len(recorder.emitted_calls) == 1
 
 
 def test_threshold_zero_disables_guard(plan_with_refs, monkeypatch, capsys):

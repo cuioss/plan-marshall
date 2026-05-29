@@ -4,7 +4,6 @@
 Tier 2 (direct import) tests with 2 subprocess CLI plumbing tests retained.
 """
 
-import importlib.util
 import os
 import shutil
 import tempfile
@@ -12,25 +11,13 @@ import unittest
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('pm-documents', 'manage-interface', 'manage-interface.py')
 
-# Tier 2 direct imports - load hyphenated module via importlib
-_MANAGE_IFACE_SCRIPT = str(
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'pm-documents'
-    / 'skills'
-    / 'manage-interface'
-    / 'scripts'
-    / 'manage-interface.py'
-)
-_spec = importlib.util.spec_from_file_location('manage_interface', _MANAGE_IFACE_SCRIPT)
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
+# Tier 2 direct imports - load hyphenated module via the conftest helper
+_mod = load_script_module('pm-documents', 'manage-interface', 'manage-interface.py', 'manage_interface')
 
 cmd_list = _mod.cmd_list
 cmd_create = _mod.cmd_create

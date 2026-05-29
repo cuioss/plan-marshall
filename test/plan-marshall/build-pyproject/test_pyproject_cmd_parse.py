@@ -8,33 +8,15 @@ script module loader with mocked dependencies. This file tests the parser in
 isolation for detailed coverage of mypy/ruff/pytest output patterns.
 """
 
-# Tier 2 direct imports via importlib for uniform import style
-import importlib.util  # noqa: E402
 import tempfile
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by conftest)
 from _build_parse import Issue, UnitTestSummary
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'build-pyproject'
-    / 'scripts'
-)
+from conftest import load_script_module
 
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_pyproject_cmd_parse_mod = _load_module('_pyproject_cmd_parse', '_pyproject_cmd_parse.py')
+_pyproject_cmd_parse_mod = load_script_module('plan-marshall', 'build-pyproject', '_pyproject_cmd_parse.py', '_pyproject_cmd_parse')
 
 parse_log = _pyproject_cmd_parse_mod.parse_log
 

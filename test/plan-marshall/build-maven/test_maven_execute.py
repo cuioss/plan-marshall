@@ -5,34 +5,15 @@ Tests the Maven execution config and factory-generated functions.
 """
 
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock
+
+from conftest import load_script_module
 
 sys.modules.setdefault('plan_logging', MagicMock(log_entry=MagicMock()))
 sys.modules.setdefault('run_config', MagicMock(timeout_get=MagicMock(return_value=300), timeout_set=MagicMock()))
 
-# Tier 2 direct imports via importlib for uniform import style
-import importlib.util  # noqa: E402
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'build-maven'
-    / 'scripts'
-)
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_maven_execute_mod = _load_module('_maven_execute', '_maven_execute.py')
+_maven_execute_mod = load_script_module('plan-marshall', 'build-maven', '_maven_execute.py', '_maven_execute')
 
 _CONFIG = _maven_execute_mod._CONFIG
 execute_direct = _maven_execute_mod.execute_direct

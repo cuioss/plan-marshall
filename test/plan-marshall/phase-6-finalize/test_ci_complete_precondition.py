@@ -1478,3 +1478,54 @@ def test_parse_toon_inline_table_handles_colon_in_first_column_csv():
         'The fix must not interfere with array-exit on genuine top-level '
         'key/value pairs that follow the array.'
     )
+
+
+# ---------------------------------------------------------------------------
+# Helper-based executor resolution — the precondition helper resolves the
+# executor proxy via file_ops.get_executor_path() (worktree-safe via
+# git-common-dir) rather than parent-arithmetic on __file__. These tests pin
+# that the resolved path is forwarded into the spawned subprocess argv.
+# ---------------------------------------------------------------------------
+
+
+def test_run_config_timeout_get_uses_resolved_executor(tmp_path, monkeypatch):
+    """_run_run_config_timeout_get spawns the helper-resolved executor path."""
+    executor = tmp_path / 'execute-script.py'
+    captured = {}
+
+    def fake_run(cmd, *args, **kwargs):
+        captured['cmd'] = cmd
+
+        class _Proc:
+            returncode = 0
+            stdout = 'timeout_seconds: 777\n'
+            stderr = ''
+
+        return _Proc()
+
+    monkeypatch.setattr(_resolver_mod, 'git_main_checkout_root', lambda: tmp_path)
+    monkeypatch.setattr(_resolver_mod, 'get_executor_path', lambda: executor)
+    monkeypatch.setattr(_resolver_mod.subprocess, 'run', fake_run)
+
+    result = _resolver_mod._run_run_config_timeout_get(600)
+
+    assert result == 777
+    assert str(executor) in captured['cmd']
+
+
+def test_run_config_timeout_get_degrades_when_no_git_repo(monkeypatch):
+    """When git_main_checkout_root is None, the helper degrades to the default
+    without ever resolving or invoking the executor."""
+    executor_called = {'hit': False}
+
+    def _should_not_run():
+        executor_called['hit'] = True
+        raise AssertionError('get_executor_path must not be called when no repo')
+
+    monkeypatch.setattr(_resolver_mod, 'git_main_checkout_root', lambda: None)
+    monkeypatch.setattr(_resolver_mod, 'get_executor_path', _should_not_run)
+
+    result = _resolver_mod._run_run_config_timeout_get(600)
+
+    assert result == 600
+    assert executor_called['hit'] is False

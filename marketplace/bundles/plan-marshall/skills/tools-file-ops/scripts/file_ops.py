@@ -17,7 +17,8 @@ Usage:
         get_base_dir,
         set_base_dir,
         base_path,
-        get_temp_dir
+        get_temp_dir,
+        get_executor_path
     )
 """
 
@@ -161,20 +162,51 @@ def format_tokens_short(n: int) -> str:
 def get_worktree_root() -> Path:
     """Return the project-local worktree root for plan-marshall.
 
-    Resolves to ``<git_main_checkout_root>/.plan/local/worktrees`` — worktrees
-    live under the existing plan-local tree so they inherit the
+    Resolves to ``<base_dir>/worktrees`` where ``<base_dir>`` is the
+    plan-local runtime-state root returned by :func:`get_base_dir`. In
+    production this is ``<git_main_checkout_root>/.plan/local/worktrees`` —
+    worktrees live under the existing plan-local tree so they inherit the
     ``Write(.plan/**)`` permission and sit next to other plan-scoped state.
 
+    Anchoring on :func:`get_base_dir` (rather than recomputing
+    ``git_main_checkout_root()`` directly) means ``get_worktree_root`` honours
+    the ``PLAN_BASE_DIR`` env var and the :func:`set_base_dir` override, so
+    tests that isolate runtime state under a tmp directory also isolate the
+    worktree root — no leakage into the real repo's ``.plan/local/worktrees``.
+
     Raises:
-        RuntimeError: when not inside a git repository (worktrees require a
-            main checkout to anchor against).
+        RuntimeError: when the base directory cannot be resolved (no
+            override, no ``PLAN_BASE_DIR``, and not inside a git repository).
+            Worktrees require a base directory to anchor against.
+    """
+    return get_base_dir() / 'worktrees'
+
+
+def get_executor_path() -> Path:
+    """Return the canonical path to ``.plan/execute-script.py``.
+
+    The executor lives at the main checkout's ``.plan/`` directory and is
+    canonical there. This helper runs correctly from any worktree because
+    it anchors against ``git_main_checkout_root()`` (resolved via
+    ``git rev-parse --git-common-dir``) rather than the cwd, so callers in
+    an isolated worktree still resolve the executor at the main checkout.
+
+    Joins the existing ``get_plan_dir`` / ``get_base_dir`` /
+    ``get_worktree_root`` helper family.
+
+    Returns:
+        Path to ``<git_main_checkout_root>/.plan/execute-script.py``.
+
+    Raises:
+        RuntimeError: when not inside a git repository (the executor path
+            requires a main checkout to anchor against).
     """
     root = git_main_checkout_root()
     if root is None:
         raise RuntimeError(
-            'get_worktree_root() requires a git repository; no main checkout root could be resolved from cwd.'
+            'get_executor_path() requires a git repository; no main checkout root could be resolved from cwd.'
         )
-    return root / PLAN_DIR_NAME / 'local' / 'worktrees'
+    return root / PLAN_DIR_NAME / 'execute-script.py'
 
 
 def normalize_to_repo_relative(path: str) -> str:

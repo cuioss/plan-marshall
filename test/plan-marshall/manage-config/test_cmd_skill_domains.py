@@ -15,6 +15,7 @@ from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
 
+from _layout_sim import build_phase_layout
 from test_helpers import SCRIPT_PATH, create_marshal_json, create_nested_marshal_json
 
 _SCRIPTS_DIR = (
@@ -1071,35 +1072,16 @@ def test_list_verify_steps_extension_order_from_return_dict(tmp_path):
 _config_defaults = _load_module('_config_defaults', '_config_defaults.py')
 
 
-def _bare(step_name: str) -> str:
-    """Strip the 'default:' prefix from a built-in step name."""
-    return step_name.split(':', 1)[1] if ':' in step_name else step_name
-
-
-def _write_verify_standards(skill_root: Path) -> None:
-    """Create standards/{bare}.md with `order` frontmatter for every built-in verify step."""
-    standards_dir = skill_root / 'standards'
-    standards_dir.mkdir(parents=True, exist_ok=True)
-    for offset, step_name in enumerate(_config_defaults.BUILT_IN_VERIFY_STEPS):
-        bare = _bare(step_name)
-        order = (offset + 1) * 10
-        (standards_dir / f'{bare}.md').write_text(
-            f'---\nname: {bare}\ndescription: {bare} step\norder: {order}\n---\n\n# {bare}\n'
-        )
-
-
 def _build_source_layout_verify(base: Path) -> Path:
     """Build a source/marketplace layout: <base>/plan-marshall/skills/phase-5-execute/..."""
-    skill_root = base / 'plan-marshall' / 'skills' / 'phase-5-execute'
-    _write_verify_standards(skill_root)
-    return base
+    return build_phase_layout(base, 'phase-5-execute', _config_defaults.BUILT_IN_VERIFY_STEPS, cache_layout=False)
 
 
 def _build_cache_layout_verify(base: Path, version: str = '0.1-BETA') -> Path:
     """Build a versioned plugin-cache layout: <base>/plan-marshall/<version>/skills/phase-5-execute/..."""
-    skill_root = base / 'plan-marshall' / version / 'skills' / 'phase-5-execute'
-    _write_verify_standards(skill_root)
-    return base
+    return build_phase_layout(
+        base, 'phase-5-execute', _config_defaults.BUILT_IN_VERIFY_STEPS, cache_layout=True, version=version
+    )
 
 
 def test_discover_verify_steps_source_layout_resolves_order(tmp_path):

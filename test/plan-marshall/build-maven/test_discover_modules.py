@@ -21,30 +21,12 @@ Contract requirements tested:
 
 from pathlib import Path
 
+from conftest import load_script_module
+
 FIXTURES_DIR = Path(__file__).parent / 'fixtures'
 
-# Tier 2 direct imports via importlib for uniform import style
-import importlib.util  # noqa: E402
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'build-maven'
-    / 'scripts'
-)
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_maven_cmd_discover_mod = _load_module('_maven_cmd_discover', '_maven_cmd_discover.py')
+_maven_cmd_discover_mod = load_script_module('plan-marshall', 'build-maven', '_maven_cmd_discover.py', '_maven_cmd_discover')
 
 _build_commands = _maven_cmd_discover_mod._build_commands
 _classify_profile = _maven_cmd_discover_mod._classify_profile

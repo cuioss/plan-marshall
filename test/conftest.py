@@ -312,6 +312,74 @@ def get_script_path(bundle: str, skill: str, script: str) -> Path:
     return path
 
 
+def get_scripts_dir(bundle: str, skill: str) -> Path:
+    """Return the ``scripts/`` directory for a marketplace skill.
+
+    Centralizes the scripts-dir resolution that test files previously open-coded
+    as a per-test ``_SCRIPTS_DIR = PROJECT_ROOT / 'marketplace' / 'bundles' /
+    ... / 'scripts'`` constant. Resolution anchors on :data:`MARKETPLACE_ROOT`
+    (the marketplace-bundles layout) — no per-test ``Path(__file__).parents[N]``
+    arithmetic.
+
+    Args:
+        bundle: Bundle name (e.g., ``'plan-marshall'``).
+        skill: Skill name (e.g., ``'plugin-doctor'``).
+
+    Returns:
+        Absolute path to ``<bundle>/skills/<skill>/scripts``.
+
+    Raises:
+        FileNotFoundError: when the resolved scripts directory does not exist.
+    """
+    scripts_dir = MARKETPLACE_ROOT / bundle / 'skills' / skill / 'scripts'
+    if not scripts_dir.is_dir():
+        raise FileNotFoundError(f'Scripts dir not found: {scripts_dir}')
+    return scripts_dir
+
+
+def load_script_module(bundle: str, skill: str, script_file: str, module_name: str | None = None):
+    """Load a marketplace script as a module via ``spec_from_file_location``.
+
+    Replaces the per-test ``importlib.util.spec_from_file_location`` +
+    ``module_from_spec`` + ``exec_module`` boilerplate. The loaded module is
+    registered in :data:`sys.modules` (matching the historical per-test pattern)
+    so intra-module relative references and dataclass ``__module__`` lookups
+    resolve correctly.
+
+    Both root-level test layouts (``test/<bundle>/test_x.py``) and nested
+    layouts (``test/<bundle>/<skill>/test_x.py``) use the same call — resolution
+    is by ``(bundle, skill, script_file)``, never by the test file's own path.
+
+    Args:
+        bundle: Bundle name (e.g., ``'pm-plugin-development'``).
+        skill: Skill name (e.g., ``'plugin-doctor'``).
+        script_file: Script filename (e.g., ``'_analyze_verb_chains.py'``).
+        module_name: Optional explicit module name for ``sys.modules``
+            registration. Defaults to the script filename stem.
+
+    Returns:
+        The loaded module object.
+
+    Raises:
+        FileNotFoundError: when the script file does not exist.
+        ImportError: when the module spec cannot be created or executed.
+    """
+    import importlib.util
+
+    script_path = get_scripts_dir(bundle, skill) / script_file
+    if not script_path.exists():
+        raise FileNotFoundError(f'Script not found: {script_path}')
+
+    name = module_name or script_path.stem
+    spec = importlib.util.spec_from_file_location(name, script_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f'Could not create import spec for {script_path}')
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 # =============================================================================
 # Temp File Helpers
 # =============================================================================

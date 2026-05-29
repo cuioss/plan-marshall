@@ -4,31 +4,14 @@
 Tier 2 (direct import) tests for path rename mapping and step target rewriting.
 """
 
-import importlib.util
 import json
 from argparse import Namespace
 from pathlib import Path
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-tasks'
-    / 'scripts'
-)
+from conftest import load_script_module
 
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_rename = _load_module('_tasks_cmd_rename', '_cmd_rename.py')
-_crud = _load_module('_tasks_cmd_crud', '_tasks_crud.py')
+_rename = load_script_module('plan-marshall', 'manage-tasks', '_cmd_rename.py', '_tasks_cmd_rename')
+_crud = load_script_module('plan-marshall', 'manage-tasks', '_tasks_crud.py', '_tasks_cmd_crud')
 
 cmd_rename_path = _rename.cmd_rename_path
 cmd_prepare_add = _crud.cmd_prepare_add

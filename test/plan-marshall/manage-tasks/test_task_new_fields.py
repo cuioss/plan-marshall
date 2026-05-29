@@ -9,35 +9,15 @@ import os
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-tasks', 'manage-tasks.py')
 
-# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime)
-import importlib.util  # noqa: E402
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-tasks'
-    / 'scripts'
-)
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_crud = _load_module('_tasks_cmd_crud_nf', '_tasks_crud.py')
-_query = _load_module('_tasks_cmd_query_nf', '_tasks_query.py')
-_step = _load_module('_tasks_cmd_step_nf', '_cmd_step.py')
+_crud = load_script_module('plan-marshall', 'manage-tasks', '_tasks_crud.py', '_tasks_cmd_crud_nf')
+_query = load_script_module('plan-marshall', 'manage-tasks', '_tasks_query.py', '_tasks_cmd_query_nf')
+_step = load_script_module('plan-marshall', 'manage-tasks', '_cmd_step.py', '_tasks_cmd_step_nf')
 
 cmd_prepare_add = _crud.cmd_prepare_add
 cmd_commit_add = _crud.cmd_commit_add

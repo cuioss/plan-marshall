@@ -11,31 +11,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from conftest import load_script_module
+
 sys.modules.setdefault('plan_logging', MagicMock(log_entry=MagicMock()))
 sys.modules.setdefault('run_config', MagicMock(timeout_get=MagicMock(return_value=300), timeout_set=MagicMock()))
 
-# Tier 2 direct imports via importlib for uniform import style
-import importlib.util  # noqa: E402
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'build-pyproject'
-    / 'scripts'
-)
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_pyproject_execute_mod = _load_module('_pyproject_execute', '_pyproject_execute.py')
+_pyproject_execute_mod = load_script_module('plan-marshall', 'build-pyproject', '_pyproject_execute.py', '_pyproject_execute')
 
 _CONFIG = _pyproject_execute_mod._CONFIG
 execute_direct = _pyproject_execute_mod.execute_direct

@@ -133,10 +133,11 @@ def find_marketplace_path(marketplace_root: Path | None = None) -> Path | None:
        ``marketplace_root / 'marketplace/bundles'`` if that directory exists.
     2. ``PM_MARKETPLACE_ROOT`` environment variable — same anchor semantics as
        the explicit parameter, but sourced from the environment.
-    3. Script-relative walk via ``Path(__file__).resolve().parents[6]`` — anchors
-       to the marketplace root that contains this very file. This is robust to
-       cwd changes and worktrees because the script's own location is fixed
-       relative to the repository layout.
+    3. Git-root resolution via :func:`git_main_checkout_root` — anchors to the
+       main checkout root that contains ``marketplace/bundles``. This is robust
+       to cwd changes and worktrees because ``git rev-parse --git-common-dir``
+       resolves worktrees back to the primary checkout, where the source
+       ``marketplace/bundles`` tree lives.
     4. cwd-based discovery — the legacy fallback that probes ``Path.cwd()`` and
        its immediate parent for the standard ``marketplace/bundles`` layout.
        Retained for backward-compat with first-run bootstrap scenarios.
@@ -165,16 +166,14 @@ def find_marketplace_path(marketplace_root: Path | None = None) -> Path | None:
             return candidate
         return None
 
-    # Branch 3: script-relative walk
-    # marketplace_paths.py lives at:
-    #   <root>/marketplace/bundles/plan-marshall/skills/script-shared/scripts/marketplace_paths.py
-    # parents[6] is therefore the marketplace root that contains marketplace/bundles.
-    try:
-        script_anchor = Path(__file__).resolve().parents[6]
-    except IndexError:
-        script_anchor = None
-    if script_anchor is not None:
-        candidate = script_anchor / MARKETPLACE_BUNDLES_PATH
+    # Branch 3: git-root resolution
+    # The source marketplace/bundles tree lives at the main checkout root.
+    # git_main_checkout_root() resolves worktrees back to that primary
+    # checkout via `git rev-parse --git-common-dir`, replacing the brittle
+    # parents[6] index-arithmetic anchor.
+    git_root = git_main_checkout_root()
+    if git_root is not None:
+        candidate = git_root / MARKETPLACE_BUNDLES_PATH
         if candidate.is_dir():
             return candidate
 

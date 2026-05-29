@@ -13,30 +13,14 @@ from pathlib import Path
 
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-maintain', 'maintain.py')
 FIXTURES_DIR = Path(__file__).parent / 'fixtures'
 
-# Tier 2 direct imports via importlib for uniform import style
-import importlib.util  # noqa: E402
-
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'pm-plugin-development'
-    / 'skills'
-    / 'plugin-maintain'
-    / 'scripts'
-)
-
 
 def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module('pm-plugin-development', 'plugin-maintain', filename, name)
 
 
 _cmd_analyze_mod = _load_module('_cmd_analyze', '_cmd_analyze.py')

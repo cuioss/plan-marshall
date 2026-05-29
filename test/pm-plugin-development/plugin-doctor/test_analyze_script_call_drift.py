@@ -14,35 +14,19 @@ executor that emits controlled ``--help`` output.
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 import textwrap
 from pathlib import Path
+
+from conftest import load_script_module
 
 # ---------------------------------------------------------------------------
 # Module loader — spec-load the analyzer directly. Underscore-prefixed
 # analyzers are not importable through the executor.
 # ---------------------------------------------------------------------------
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-_SCRIPTS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'pm-plugin-development'
-    / 'skills'
-    / 'plugin-doctor'
-    / 'scripts'
-)
-
 
 def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
 
 
 _ascd = _load_module('_analyze_script_call_drift', '_analyze_script_call_drift.py')
@@ -373,3 +357,31 @@ def test_no_executor_returns_empty(tmp_path):
     # No .plan/execute-script.py — the rule cannot probe, returns [].
     findings = analyze_script_call_drift(bundles)
     assert findings == []
+
+
+# =============================================================================
+# Detection literal RETAINED — documented executor-proxy form is the anchor
+# =============================================================================
+
+
+def test_documented_executor_proxy_form_remains_detection_anchor(tmp_path):
+    """The ``python3 .plan/execute-script.py {notation}`` literal is RETAINED.
+
+    The path-resolution consolidation (adoption of
+    ``file_ops.get_executor_path()``) changed how production *code* locates the
+    executor at runtime — it did NOT change the documented invocation
+    convention. Skill markdown still uses the executor-proxy form, and this
+    drift detector must continue to parse it: a documented invocation with an
+    invalid verb is still flagged via the retained literal.
+    """
+    _make_fake_executor(tmp_path)
+    bundles = _make_marketplace_with_skill(
+        tmp_path,
+        # The canonical documented form — still the detection anchor.
+        'python3 .plan/execute-script.py pkg:skill:multi invented-verb\n',
+    )
+
+    findings = analyze_script_call_drift(bundles)
+    assert len(findings) == 1
+    assert findings[0]['type'] == 'verb_not_in_subcommand_list'
+    assert findings[0]['invented_verb'] == 'invented-verb'

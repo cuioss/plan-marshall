@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: I001, E402
 """Tests for ``_cmd_manage.py`` — discover, init, derived, derived-module.
 
 Pins the per-module on-disk layout: ``_project.json`` is the canonical module
@@ -7,37 +8,20 @@ data. The legacy monolithic files are intentionally absent from this test
 surface.
 """
 
-import importlib.util
 import json
 import sys
 import tempfile
 from pathlib import Path
 
+from conftest import load_script_module
+
 sys.path.insert(0, str(Path(__file__).parent))
 
 from _arch_fixtures import create_test_project  # noqa: E402
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-architecture'
-    / 'scripts'
-)
 
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_architecture_core = _load_module('_architecture_core', '_architecture_core.py')
-_cmd_manage = _load_module('_cmd_manage', '_cmd_manage.py')
+_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+_cmd_manage = load_script_module('plan-marshall', 'manage-architecture', '_cmd_manage.py', '_cmd_manage')
 
 DataNotFoundError = _architecture_core.DataNotFoundError
 ModuleNotFoundInProjectError = _architecture_core.ModuleNotFoundInProjectError

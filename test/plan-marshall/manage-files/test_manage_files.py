@@ -601,3 +601,88 @@ def test_discover_recursive_glob_across_subdirs(tmp_path):
         ]
     )
     assert paths == expected
+
+
+# =============================================================================
+# _resolve_document_path — helper-based executor resolution
+# =============================================================================
+#
+# _resolve_document_path delegates executor location to file_ops.get_executor_path()
+# (worktree-safe resolution via git-common-dir). When the resolved executor exists
+# on disk it is invoked verbatim; on RuntimeError or a missing file the canonical
+# PATH-relative '.plan/execute-script.py' is used as a defensive fallback.
+
+
+class _RecordingProc:
+    """Stand-in for subprocess.CompletedProcess capturing the argv."""
+
+    def __init__(self, argv, returncode=0, stdout='', stderr=''):
+        self.args = argv
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+class TestResolveDocumentPathExecutor:
+    """Verify _resolve_document_path uses the helper-resolved executor path."""
+
+    def _patch_subprocess(self, monkeypatch, returncode=0, stdout='path: /abs/request.md\n'):
+        captured = {}
+
+        def fake_run(cmd, *args, **kwargs):
+            captured['cmd'] = cmd
+            return _RecordingProc(cmd, returncode=returncode, stdout=stdout)
+
+        monkeypatch.setattr(_mod.subprocess, 'run', fake_run)
+        return captured
+
+    def test_uses_resolved_executor_when_it_exists(self, tmp_path, monkeypatch):
+        """When get_executor_path resolves an existing file, it is used in the argv."""
+        executor = tmp_path / 'execute-script.py'
+        executor.write_text('# executor\n')
+        monkeypatch.setattr(_mod, 'get_executor_path', lambda: executor)
+        captured = self._patch_subprocess(monkeypatch)
+
+        path, detail = _mod._resolve_document_path('test-plan', 'request')
+
+        assert detail is None
+        assert path == Path('/abs/request.md')
+        assert str(executor) in captured['cmd']
+
+    def test_falls_back_to_canonical_path_when_executor_missing(self, tmp_path, monkeypatch):
+        """When the resolved executor does not exist, the canonical relative path is used."""
+        missing = tmp_path / 'execute-script.py'  # never created
+        monkeypatch.setattr(_mod, 'get_executor_path', lambda: missing)
+        captured = self._patch_subprocess(monkeypatch)
+
+        path, detail = _mod._resolve_document_path('test-plan', 'request')
+
+        assert detail is None
+        assert path == Path('/abs/request.md')
+        assert '.plan/execute-script.py' in captured['cmd']
+        assert str(missing) not in captured['cmd']
+
+    def test_falls_back_when_helper_raises_runtime_error(self, monkeypatch):
+        """RuntimeError from get_executor_path → canonical relative path fallback."""
+        def _raise():
+            raise RuntimeError('no git repository')
+        monkeypatch.setattr(_mod, 'get_executor_path', _raise)
+        captured = self._patch_subprocess(monkeypatch)
+
+        path, detail = _mod._resolve_document_path('test-plan', 'request')
+
+        assert detail is None
+        assert path == Path('/abs/request.md')
+        assert '.plan/execute-script.py' in captured['cmd']
+
+    def test_resolver_nonzero_exit_returns_detail(self, tmp_path, monkeypatch):
+        """A non-zero resolver exit returns (None, detail)."""
+        executor = tmp_path / 'execute-script.py'
+        executor.write_text('# executor\n')
+        monkeypatch.setattr(_mod, 'get_executor_path', lambda: executor)
+        self._patch_subprocess(monkeypatch, returncode=1, stdout='')
+
+        path, detail = _mod._resolve_document_path('test-plan', 'request')
+
+        assert path is None
+        assert detail is not None

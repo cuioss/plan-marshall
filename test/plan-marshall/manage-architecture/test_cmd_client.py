@@ -7,38 +7,25 @@ Pins the per-module on-disk layout: readers iterate ``_project.json``'s
 absent from this surface.
 """
 
-import importlib.util
 import sys
 import tempfile
 from argparse import Namespace
 from pathlib import Path
+
+from conftest import get_scripts_dir, load_script_module
 
 sys.path.insert(0, str(Path(__file__).parent))
 
 from _arch_fixtures import create_test_project  # noqa: E402
 from _arch_fixtures import seed_project as _seed_project  # noqa: E402
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-architecture'
-    / 'scripts'
-)
+# Retained for the CLI-plumbing subprocess tests that exec architecture.py
+# directly (e.g. `architecture.py find --help`).
+_SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'manage-architecture')
 
 
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_architecture_core = _load_module('_architecture_core', '_architecture_core.py')
-_cmd_client = _load_module('_cmd_client', '_cmd_client.py')
+_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+_cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
 
 cmd_modules = _cmd_client.cmd_modules
 cmd_resolve = _cmd_client.cmd_resolve
@@ -1178,3 +1165,62 @@ def test_count_profile_skills_unknown_shape_returns_zero():
     assert _count_profile_skills(42) == 0
     assert _count_profile_skills({}) == 0
     assert _count_profile_skills([]) == 0
+
+
+# =============================================================================
+# Bundle-root resolution: rerouted through resolve_bundles_root /
+# resolve_bundle_path (no bare parents[N] anchor, no manual concatenation).
+# =============================================================================
+
+
+def test_marketplace_bundles_dir_resolves_to_real_bundles_root():
+    """``_MARKETPLACE_BUNDLES_DIR`` is the bundles-root resolved by
+    ``resolve_bundles_root`` — it must contain the ``plan-marshall`` bundle
+    rather than a brittle ``parents[4]`` index-arithmetic anchor.
+    """
+    bundles_dir = _cmd_client._MARKETPLACE_BUNDLES_DIR
+    assert bundles_dir.is_dir()
+    assert (bundles_dir / 'plan-marshall').is_dir()
+
+
+def test_load_build_config_resolves_python_config_via_helper():
+    """``_load_build_config`` resolves the build skill's ``_CONFIG`` through the
+    rerouted ``resolve_bundle_path``-based path (end-to-end against the real
+    marketplace layout). A non-None return proves the resolved module path is
+    correct.
+    """
+    config = _cmd_client._load_build_config('python')
+    assert config is not None
+
+
+def test_resolve_bundle_path_prefers_version_pinned_cache_layout(tmp_path):
+    """The rerouted call shape honours the version-pinned plugin-cache layout:
+    when a bundle directory contains a version subdir holding the target
+    subpath, ``resolve_bundle_path`` returns the versioned path rather than the
+    bare (non-versioned) join. This pins the cache-layout behaviour the rerouted
+    ``_cmd_client`` sites now depend on.
+    """
+    from marketplace_bundles import resolve_bundle_path
+
+    subpath = 'skills/build-pyproject/scripts/_pyproject_execute.py'
+    versioned = tmp_path / 'plan-marshall' / '0.1-BETA' / 'skills' / 'build-pyproject' / 'scripts'
+    versioned.mkdir(parents=True)
+    target = versioned / '_pyproject_execute.py'
+    target.write_text('# stub')
+
+    resolved = resolve_bundle_path(tmp_path, 'plan-marshall', subpath)
+
+    assert resolved == target
+
+
+def test_resolve_bundle_path_falls_back_to_non_versioned_marketplace_layout(tmp_path):
+    """When no version subdir holds the subpath, ``resolve_bundle_path`` returns
+    the non-versioned marketplace join — the source-layout path the rerouted
+    sites resolve to when running from the marketplace checkout.
+    """
+    from marketplace_bundles import resolve_bundle_path
+
+    subpath = 'skills/script-shared/scripts/build'
+    resolved = resolve_bundle_path(tmp_path, 'plan-marshall', subpath)
+
+    assert resolved == tmp_path / 'plan-marshall' / subpath

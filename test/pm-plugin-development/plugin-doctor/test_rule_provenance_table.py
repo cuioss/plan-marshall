@@ -22,21 +22,16 @@ the invariants:
    ``harden-phase3-outline-plugin-doctor-audit``).
 """
 
-import importlib.util
 import re
 import sys
 from pathlib import Path
 
+from conftest import get_scripts_dir, load_script_module
+
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-SCRIPTS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'pm-plugin-development'
-    / 'skills'
-    / 'plugin-doctor'
-    / 'scripts'
-)
+# Retained: inserted on sys.path (used outside the module loader) so the
+# analyzer modules' intra-bundle ``from <module> import ...`` references resolve.
+SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'plugin-doctor')
 PROVENANCE_PATH = (
     PROJECT_ROOT
     / 'marketplace'
@@ -65,11 +60,9 @@ sys.path.insert(0, str(_FILE_OPS_DIR))
 
 
 def _load_doctor_shared():
-    spec = importlib.util.spec_from_file_location('_doctor_shared_provenance', SCRIPTS_DIR / '_doctor_shared.py')
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module(
+        'pm-plugin-development', 'plugin-doctor', '_doctor_shared.py', '_doctor_shared_provenance'
+    )
 
 
 # Modules that emit analyzer-internal status tags (extension loading, raw IO

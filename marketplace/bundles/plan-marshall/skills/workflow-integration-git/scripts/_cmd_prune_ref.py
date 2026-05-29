@@ -44,13 +44,10 @@ def _find_executor() -> Path | None:
     implementations in sync when modifying this logic.
     """
     try:
-        from marketplace_paths import git_main_checkout_root  # type: ignore[import-not-found]
-        root = git_main_checkout_root()
-        if root is None:
-            return None
-        candidate = root / '.plan' / 'execute-script.py'
+        from file_ops import get_executor_path  # type: ignore[import-not-found]
+        candidate = get_executor_path()
         return candidate if candidate.exists() else None
-    except ImportError:
+    except (ImportError, RuntimeError):
         return None
 
 

@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import BuildContext
+from conftest import BuildContext, load_script_module
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 BUILD_SCRIPT = (
@@ -65,26 +65,9 @@ def _load_pyproject_build():
 
 pyproject_build = _load_pyproject_build()
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'build-pyproject'
-    / 'scripts'
-)
 
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_pyproject_cmd_parse_mod = _load_module('_pyproject_cmd_parse', '_pyproject_cmd_parse.py')
-_pyproject_execute_mod = _load_module('_pyproject_execute', '_pyproject_execute.py')
+_pyproject_cmd_parse_mod = load_script_module('plan-marshall', 'build-pyproject', '_pyproject_cmd_parse.py', '_pyproject_cmd_parse')
+_pyproject_execute_mod = load_script_module('plan-marshall', 'build-pyproject', '_pyproject_execute.py', '_pyproject_execute')
 
 parse_log = _pyproject_cmd_parse_mod.parse_log
 execute_direct = _pyproject_execute_mod.execute_direct

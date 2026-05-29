@@ -4,13 +4,12 @@
 Tier 2 (direct import) tests with 3 subprocess CLI plumbing tests retained.
 """
 
-import importlib.util
 import json
 import tempfile
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Test directories
 TEST_DIR = Path(__file__).parent
@@ -18,24 +17,10 @@ SCRIPT_PATH = get_script_path('pm-documents', 'ref-asciidoc', 'asciidoc.py')
 FIXTURES_DIR = TEST_DIR / 'fixtures'
 LINK_VERIFY_FIXTURES = FIXTURES_DIR / 'link-verify'
 
-# Tier 2 direct imports - load cmd_* from sub-command modules
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'pm-documents'
-    / 'skills'
-    / 'ref-asciidoc'
-    / 'scripts'
-)
-
 
 # These modules have underscore names, so standard import via importlib works
 def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module('pm-documents', 'ref-asciidoc', filename, name)
 
 
 _stats_mod = _load_module('_cmd_stats', '_cmd_stats.py')

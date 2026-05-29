@@ -13,36 +13,19 @@ Integration scope:
     * ``cmd_create`` persists the derived ``short_description`` in ``status.json``.
 """
 
-import importlib.util
 import json
 from argparse import Namespace
-from pathlib import Path
+
+from conftest import load_script_module
 
 # =============================================================================
 # Module loading (mirrors sibling tests, avoids import ambiguity across skills)
 # =============================================================================
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-status'
-    / 'scripts'
-)
 
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_short = _load_module('_short_description_under_test', '_short_description.py')
-_lifecycle = _load_module('_short_description_lifecycle', '_cmd_lifecycle.py')
-_status_core = _load_module('_short_description_status_core', '_status_core.py')
+_short = load_script_module('plan-marshall', 'manage-status', '_short_description.py', '_short_description_under_test')
+_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_short_description_lifecycle')
+_status_core = load_script_module('plan-marshall', 'manage-status', '_status_core.py', '_short_description_status_core')
 
 derive_short_description = _short.derive_short_description
 cmd_create = _lifecycle.cmd_create

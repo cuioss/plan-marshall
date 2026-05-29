@@ -1328,12 +1328,43 @@ def test_full_content_pattern_excludes_non_matching_subdocs():
 # =============================================================================
 
 
-def test_find_marketplace_path_falls_back_to_script_relative_outside_repo(tmp_path, monkeypatch):
-    """find_marketplace_path() falls back to the script-relative anchor when cwd has no marketplace.
+def test_find_marketplace_path_resolves_via_git_root_from_repo_subdir(monkeypatch):
+    """find_marketplace_path() resolves via git-root from any cwd inside the repo.
 
-    With the four-step resolution chain (param → PM_MARKETPLACE_ROOT → script-relative Path(__file__) → cwd),
-    an "outside-repo" cwd no longer yields None: script-relative resolution still finds the real marketplace
-    that hosts the helper. Failure only manifests when ALL four branches miss.
+    The four-step resolution chain is param → PM_MARKETPLACE_ROOT → git-root
+    (``git rev-parse --git-common-dir``) → cwd. The script-relative
+    ``Path(__file__).parents[6]`` anchor was removed in favour of git-root
+    resolution, which is robust to cwd changes and worktrees because
+    git-common-dir resolves worktrees back to the primary checkout where the
+    source ``marketplace/bundles`` tree lives. From a deep repo subdirectory
+    with no marketplace in cwd, git-root still finds the real anchor.
+    """
+    from marketplace_paths import find_marketplace_path
+
+    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+    original_cwd = os.getcwd()
+    # A deep subdirectory of the repo that does NOT itself contain
+    # marketplace/bundles, so resolution cannot short-circuit on the cwd branch.
+    repo_subdir = Path(__file__).resolve().parent
+    try:
+        os.chdir(repo_subdir)
+        result = find_marketplace_path()
+        assert result is not None, 'git-root resolution should locate the real marketplace anchor'
+        assert result.name == 'bundles' and result.parent.name == 'marketplace', (
+            f'Expected resolved path to point at marketplace/bundles, got {result}'
+        )
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_find_marketplace_path_returns_none_outside_any_repo(tmp_path, monkeypatch):
+    """find_marketplace_path() returns None when cwd is outside any git repo.
+
+    With the script-relative anchor removed, an "outside-repo" cwd with no
+    explicit anchor and no PM_MARKETPLACE_ROOT exhausts every branch: param
+    (none) → env (none) → git-root (not a repo) → cwd (no marketplace). The
+    contract is now fail-closed rather than silently anchoring on the helper's
+    own file location.
     """
     from marketplace_paths import find_marketplace_path
 
@@ -1342,9 +1373,8 @@ def test_find_marketplace_path_falls_back_to_script_relative_outside_repo(tmp_pa
     try:
         os.chdir(tmp_path)
         result = find_marketplace_path()
-        assert result is not None, 'Script-relative fallback should locate the real marketplace anchor'
-        assert result.name == 'bundles' and result.parent.name == 'marketplace', (
-            f'Expected resolved path to point at marketplace/bundles, got {result}'
+        assert result is None, (
+            f'Resolution from outside any git repo with no anchor should return None, got {result}'
         )
     finally:
         os.chdir(original_cwd)
@@ -1364,17 +1394,24 @@ def test_find_marketplace_path_explicit_override_wins(tmp_path, monkeypatch):
     )
 
 
-def test_get_base_path_auto_uses_script_relative_when_cwd_lacks_marketplace(tmp_path, monkeypatch):
-    """get_base_path('auto') resolves via script-relative fallback when cwd has no marketplace."""
+def test_get_base_path_auto_uses_git_root_when_cwd_lacks_marketplace(monkeypatch):
+    """get_base_path('auto') resolves via git-root when cwd (inside the repo) lacks marketplace.
+
+    ``get_base_path('auto')`` delegates to ``find_marketplace_path``, whose
+    script-relative branch was replaced by git-root resolution. From a deep
+    repo subdirectory with no marketplace in cwd, git-root still resolves the
+    real ``marketplace/bundles`` anchor.
+    """
     from marketplace_paths import get_base_path as shared_get_base_path
 
     monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
     original_cwd = os.getcwd()
+    repo_subdir = Path(__file__).resolve().parent
     try:
-        os.chdir(tmp_path)
+        os.chdir(repo_subdir)
         result = shared_get_base_path('auto')
         assert result.name == 'bundles' and result.parent.name == 'marketplace', (
-            f"get_base_path('auto') should fall back to the real marketplace via script-relative resolution, got {result}"
+            f"get_base_path('auto') should resolve the real marketplace via git-root resolution, got {result}"
         )
     finally:
         os.chdir(original_cwd)

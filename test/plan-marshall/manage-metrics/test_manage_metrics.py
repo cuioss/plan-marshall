@@ -1093,3 +1093,19 @@ class TestRecordDispatchBoundaryLegacyCausesStillPass:
         artifact = pdir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
         assert artifact.exists()
         assert f',{cause},' in artifact.read_text(encoding='utf-8')
+
+
+def test_script_source_uses_canonical_local_plans_path():
+    """The script source references .plan/local/plans, not the legacy form.
+
+    Regression guard for the path-consolidation sweep: ``cmd_accumulate_agent_usage``'s
+    docstring must spell the accumulator location as ``.plan/local/plans/`` — the
+    legacy bare ``.plan/plans/`` form is incorrect since runtime state moved
+    under ``.plan/local``.
+    """
+    import re
+
+    source = Path(SCRIPT_PATH).read_text(encoding='utf-8')
+    assert '.plan/local/plans/' in source
+    legacy = re.findall(r'(?<!local/)\.plan/plans/', source)
+    assert legacy == [], f'Legacy .plan/plans/ strings remain: {legacy}'

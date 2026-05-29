@@ -14,6 +14,7 @@ from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
 
+from _layout_sim import build_phase_layout
 from test_helpers import SCRIPT_PATH, create_marshal_json
 
 _SCRIPTS_DIR = (
@@ -504,34 +505,15 @@ def test_execute_add_step_order_collision_returns_error(plan_context, monkeypatc
 # =============================================================================
 
 
-def _bare(step_name: str) -> str:
-    """Strip the 'default:' prefix from a built-in step name."""
-    return step_name.split(':', 1)[1] if ':' in step_name else step_name
-
-
-def _write_phase_standards(skill_root: Path, step_names: list[str]) -> None:
-    """Create standards/{bare}.md with monotonically increasing `order` frontmatter."""
-    standards_dir = skill_root / 'standards'
-    standards_dir.mkdir(parents=True, exist_ok=True)
-    for offset, step_name in enumerate(step_names):
-        bare = _bare(step_name)
-        order = (offset + 1) * 10
-        (standards_dir / f'{bare}.md').write_text(
-            f'---\nname: {bare}\ndescription: {bare} step\norder: {order}\n---\n\n# {bare}\n'
-        )
-
-
-def _build_verify_bundle(base: Path, cache_layout: bool, version: str = '0.1-BETA') -> Path:
-    """Build a phase-5-execute standards tree in either the source layout or the versioned cache layout (selected by `cache_layout`)."""
-    inner = (base / 'plan-marshall' / version) if cache_layout else (base / 'plan-marshall')
-    _write_phase_standards(inner / 'skills' / 'phase-5-execute', _config_defaults.BUILT_IN_VERIFY_STEPS)
-    return base
-
-
 def test_execute_set_steps_round_trip_cache_layout(plan_context):
     """set-steps over built-in verify steps reports no missing_order in the versioned cache layout."""
     create_marshal_json(plan_context.fixture_dir)
-    cache_base = _build_verify_bundle(plan_context.fixture_dir / 'cache_bundles', cache_layout=True)
+    cache_base = build_phase_layout(
+        plan_context.fixture_dir / 'cache_bundles',
+        'phase-5-execute',
+        _config_defaults.BUILT_IN_VERIFY_STEPS,
+        cache_layout=True,
+    )
 
     with (
         patch.object(_cmd_skill_domains, 'BUNDLES_DIR', cache_base),
@@ -558,7 +540,12 @@ def test_execute_set_steps_round_trip_cache_layout(plan_context):
 def test_execute_set_steps_round_trip_source_layout(plan_context):
     """set-steps over built-in verify steps reports no missing_order in the source layout."""
     create_marshal_json(plan_context.fixture_dir)
-    source_base = _build_verify_bundle(plan_context.fixture_dir / 'source_bundles', cache_layout=False)
+    source_base = build_phase_layout(
+        plan_context.fixture_dir / 'source_bundles',
+        'phase-5-execute',
+        _config_defaults.BUILT_IN_VERIFY_STEPS,
+        cache_layout=False,
+    )
 
     with (
         patch.object(_cmd_skill_domains, 'BUNDLES_DIR', source_base),

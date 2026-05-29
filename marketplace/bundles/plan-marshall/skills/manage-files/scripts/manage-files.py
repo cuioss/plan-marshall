@@ -39,6 +39,7 @@ from pathlib import Path
 
 from file_ops import (  # type: ignore[import-not-found]
     atomic_write_file,
+    get_executor_path,
     get_marshal_path,
     get_plan_dir,
     output_toon,
@@ -208,15 +209,18 @@ def _resolve_document_path(plan_id: str, document: str) -> tuple[Path | None, st
     the manage-files convention of delegating to sibling manage-* scripts).
     """
     notation, sub_args = DOCUMENT_RESOLVERS[document]
-    executor = Path(__file__).resolve().parents[4].parent / '.plan' / 'execute-script.py'
-    # When invoked through the executor, `.plan/execute-script.py` lives at
-    # the worktree/repo root. Fall back to the canonical PATH-based lookup
-    # if the relative resolution path is unavailable (defensive — should not
-    # trigger in normal operation since the executor is always staged at the
-    # repo root by manage-architecture).
+    # The executor lives at the main checkout's `.plan/execute-script.py`;
+    # get_executor_path() resolves it worktree-safely via git-common-dir.
+    # Fall back to the canonical PATH-based lookup if resolution fails or the
+    # path is unavailable (defensive — should not trigger in normal operation
+    # since the executor is always staged at the repo root by manage-architecture).
+    try:
+        executor: Path | None = get_executor_path()
+    except RuntimeError:
+        executor = None
     cmd = [
         sys.executable,
-        str(executor) if executor.exists() else '.plan/execute-script.py',
+        str(executor) if executor is not None and executor.exists() else '.plan/execute-script.py',
         notation,
         *sub_args,
         '--plan-id',

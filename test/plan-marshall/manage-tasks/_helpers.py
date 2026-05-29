@@ -5,37 +5,19 @@ Sibling of the split test_manage_tasks_*.py files. Imported explicitly per
 the dev-general-module-testing _fixtures.py / _helpers.py convention.
 """
 
-import importlib.util
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import get_script_path
+from conftest import get_script_path, load_script_module
 
 # Script path for subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-tasks', 'manage-tasks.py')
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-tasks'
-    / 'scripts'
-)
 
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_crud = _load_module('_tasks_cmd_crud', '_tasks_crud.py')
-_query = _load_module('_tasks_cmd_query', '_tasks_query.py')
-_step = _load_module('_tasks_cmd_step', '_cmd_step.py')
-_core = _load_module('_tasks_cmd_core', '_tasks_core.py')
+_crud = load_script_module('plan-marshall', 'manage-tasks', '_tasks_crud.py', '_tasks_cmd_crud')
+_query = load_script_module('plan-marshall', 'manage-tasks', '_tasks_query.py', '_tasks_cmd_query')
+_step = load_script_module('plan-marshall', 'manage-tasks', '_cmd_step.py', '_tasks_cmd_step')
+_core = load_script_module('plan-marshall', 'manage-tasks', '_tasks_core.py', '_tasks_cmd_core')
 
 parse_stdin_task = _core.parse_stdin_task
 

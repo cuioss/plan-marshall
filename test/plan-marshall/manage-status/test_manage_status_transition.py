@@ -17,34 +17,14 @@ from pathlib import Path
 
 import pytest
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Script path for CLI plumbing / subprocess tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
 
-# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime)
-import importlib.util  # noqa: E402
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-status'
-    / 'scripts'
-)
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_lifecycle = _load_module('_status_cmd_lifecycle', '_cmd_lifecycle.py')
-_query = _load_module('_status_cmd_query', '_status_query.py')
+_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_status_cmd_lifecycle')
+_query = load_script_module('plan-marshall', 'manage-status', '_status_query.py', '_status_cmd_query')
 
 cmd_archive = _lifecycle.cmd_archive
 cmd_create = _lifecycle.cmd_create
@@ -993,7 +973,7 @@ def test_transition_4_plan_skips_handshake_verify_on_drift(plan_context, _stubbe
 # Test: Hybrid loopback contract — `--loop-back-target` granularity flag
 # =============================================================================
 
-_cmd_mark_step = _load_module('_cmd_mark_step', '_cmd_mark_step.py')
+_cmd_mark_step = load_script_module('plan-marshall', 'manage-status', '_cmd_mark_step.py', '_cmd_mark_step')
 cmd_mark_step_done = _cmd_mark_step.cmd_mark_step_done
 
 

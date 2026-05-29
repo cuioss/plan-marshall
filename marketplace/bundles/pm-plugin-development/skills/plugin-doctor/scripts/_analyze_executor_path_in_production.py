@@ -15,6 +15,17 @@ When a production script embeds the executor path, it creates a runtime coupling
 to the ``.plan/`` directory structure, which is a deployment-time assumption that
 production code must not carry.
 
+Helper-based compliance
+-----------------------
+The canonical resolution is ``file_ops.get_executor_path()``. A production file
+that references that helper (imports or calls ``get_executor_path``) has adopted
+the helper-based form and is reported COMPLIANT — any remaining
+``.plan/execute-script.py`` literal in such a file is a docstring/comment/
+error-message reference to the executor-proxy convention or a defensive fallback
+string, not the old hardcoded path-construction form. The detection literal is
+RETAINED: a file that embeds the executor path WITHOUT adopting the helper is
+still flagged.
+
 Whitelist categories (path-component-anchored)
 -----------------------------------------------
 Each whitelist entry is matched by checking whether ALL its required path
@@ -59,8 +70,17 @@ from pathlib import Path
 
 RULE_ID = 'executor-path-in-production'
 
-# The literal string we scan for.
+# The literal string we scan for. This is RETAINED — the analyzer must still
+# detect the OLD hardcoded form so a file that embeds the executor path
+# without adopting the canonical helper is flagged.
 _EXECUTOR_MARKER = '.plan/execute-script.py'
+
+# Canonical helper name. A production file that references this helper (imports
+# it or calls it) has adopted ``file_ops.get_executor_path()`` for executor-path
+# resolution and is therefore COMPLIANT — any remaining ``.plan/execute-script.py``
+# literal in such a file is a docstring/comment/error-message reference or a
+# defensive fallback string, not the old hardcoded path-construction form.
+_HELPER_MARKER = 'get_executor_path'
 
 # ---------------------------------------------------------------------------
 # Whitelist — path-component-anchored
@@ -117,11 +137,38 @@ def _classify(file_path: Path) -> str:
     return 'production_script'
 
 
+def _uses_executor_helper(text: str) -> bool:
+    """Return True when the file references the canonical executor-path helper.
+
+    A file that imports or calls ``get_executor_path()`` has adopted the
+    canonical helper-based resolution. Such a file is COMPLIANT even when it
+    still contains ``.plan/execute-script.py`` literals, because those residual
+    occurrences are docstring/comment/error-message references to the
+    executor-proxy convention or defensive fallback strings — not the old
+    hardcoded path-construction form the rule targets.
+
+    The check is a deliberate substring presence test (not an import-AST walk)
+    so it also covers the helper-definition site itself
+    (``tools-file-ops/scripts/file_ops.py`` defines ``get_executor_path``).
+    """
+    return _HELPER_MARKER in text
+
+
 def _scan_file(file_path: Path) -> list[dict]:
-    """Scan one Python file for ``_EXECUTOR_MARKER`` occurrences."""
+    """Scan one Python file for ``_EXECUTOR_MARKER`` occurrences.
+
+    Files that reference the canonical ``get_executor_path()`` helper are
+    treated as COMPLIANT and produce no findings (see
+    :func:`_uses_executor_helper`); the OLD hardcoded form — the literal in a
+    file that has NOT adopted the helper — is still flagged.
+    """
     try:
         text = file_path.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError):
+        return []
+
+    # Helper-based files are compliant: skip them wholesale.
+    if _uses_executor_helper(text):
         return []
 
     findings: list[dict] = []

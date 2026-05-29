@@ -7,33 +7,14 @@ The post-processor mutates the ``modules`` dict in-place — every test
 inspects the resulting ``files`` block on the module dict.
 """
 
-import importlib.util
 import os
-import sys
 import tempfile
 from pathlib import Path
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-architecture'
-    / 'scripts'
-)
+from conftest import load_script_module
 
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_load_module('_architecture_core', '_architecture_core.py')
-_cmd_manage = _load_module('_cmd_manage', '_cmd_manage.py')
+load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+_cmd_manage = load_script_module('plan-marshall', 'manage-architecture', '_cmd_manage.py', '_cmd_manage')
 
 _post_process_files = _cmd_manage._post_process_files
 

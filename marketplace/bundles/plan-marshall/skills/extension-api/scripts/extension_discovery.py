@@ -16,7 +16,7 @@ from typing import Any
 
 # Direct import - executor sets up PYTHONPATH for cross-skill imports
 import resolve_project_dir as _routing  # type: ignore[import-not-found]
-from marketplace_bundles import resolve_bundles_root  # type: ignore[import-not-found]
+from marketplace_bundles import resolve_bundles_root, resolve_skills_root  # type: ignore[import-not-found]
 from plan_logging import log_entry
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
@@ -52,12 +52,13 @@ def get_marketplace_bundles_path() -> Path:
 def get_extension_api_scripts_path() -> Path:
     """Get path to extension scripts directory (where extension_base.py lives).
 
-    This helper assumes the script is located three levels deep within a skill
-    directory (e.g., skills/extension-api/scripts/) to resolve the shared path.
-    Extension base classes live in script-shared/scripts/extension/ while this
-    discovery script lives in extension-api/scripts/.
+    Extension base classes live in ``script-shared/scripts/extension/`` while
+    this discovery script lives in ``extension-api/scripts/``. The owning
+    bundle's ``skills`` directory is resolved via ``resolve_skills_root``
+    (identity walk, no index arithmetic), then descended into the sibling
+    ``script-shared`` skill.
     """
-    return Path(__file__).resolve().parent.parent.parent / 'script-shared' / 'scripts' / 'extension'
+    return resolve_skills_root(Path(__file__)) / 'script-shared' / 'scripts' / 'extension'
 
 
 def load_extension_module(extension_path: Path, bundle_name: str):

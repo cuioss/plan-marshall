@@ -5,37 +5,19 @@ Note: These tests import internal modules directly for detailed testing.
 Public API tests should use npm.py CLI instead.
 """
 
-# Tier 2 direct imports via importlib for uniform import style
-import importlib.util  # noqa: E402
 import tempfile
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by conftest)
 from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'build-npm'
-    / 'scripts'
-)
+from conftest import load_script_module
 
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_npm_parse_errors_mod = _load_module('_npm_parse_errors', '_npm_parse_errors.py')
-_npm_parse_eslint_mod = _load_module('_npm_parse_eslint', '_npm_parse_eslint.py')
-_npm_parse_jest_mod = _load_module('_npm_parse_jest', '_npm_parse_jest.py')
-_npm_parse_tap_mod = _load_module('_npm_parse_tap', '_npm_parse_tap.py')
-_npm_parse_typescript_mod = _load_module('_npm_parse_typescript', '_npm_parse_typescript.py')
+_npm_parse_errors_mod = load_script_module('plan-marshall', 'build-npm', '_npm_parse_errors.py', '_npm_parse_errors')
+_npm_parse_eslint_mod = load_script_module('plan-marshall', 'build-npm', '_npm_parse_eslint.py', '_npm_parse_eslint')
+_npm_parse_jest_mod = load_script_module('plan-marshall', 'build-npm', '_npm_parse_jest.py', '_npm_parse_jest')
+_npm_parse_tap_mod = load_script_module('plan-marshall', 'build-npm', '_npm_parse_tap.py', '_npm_parse_tap')
+_npm_parse_typescript_mod = load_script_module('plan-marshall', 'build-npm', '_npm_parse_typescript.py', '_npm_parse_typescript')
 
 parse_errors = _npm_parse_errors_mod.parse_log
 parse_eslint = _npm_parse_eslint_mod.parse_log

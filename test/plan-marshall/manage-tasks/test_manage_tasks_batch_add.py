@@ -10,34 +10,18 @@ Covers:
   - depends_on alternative encodings
 """
 
-import importlib.util
 import json
 from argparse import Namespace
-from pathlib import Path
 
 import pytest
 
+from conftest import load_script_module
+
 # Load _tasks_crud directly via importlib (mirrors test_manage_tasks.py)
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-tasks'
-    / 'scripts'
-)
 
 
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_crud = _load_module('_tasks_cmd_crud_batch', '_tasks_crud.py')
-_core = _load_module('_tasks_core_for_parse_stdin', '_tasks_core.py')
+_crud = load_script_module('plan-marshall', 'manage-tasks', '_tasks_crud.py', '_tasks_cmd_crud_batch')
+_core = load_script_module('plan-marshall', 'manage-tasks', '_tasks_core.py', '_tasks_core_for_parse_stdin')
 cmd_batch_add = _crud.cmd_batch_add
 parse_stdin_task = _core.parse_stdin_task
 

@@ -23,13 +23,13 @@ inventory state. Real-ID fixtures are copy-pasted from live
 ``test/plan-marshall/tools-input-validation/test_lesson_id_scanner.py``).
 """
 
-import importlib.util
 import json
 import sys
 from argparse import Namespace
-from pathlib import Path
 
 import pytest
+
+from conftest import load_script_module
 
 # =============================================================================
 # Module loading — load _tasks_crud directly via importlib so we can patch
@@ -37,25 +37,8 @@ import pytest
 # input_validation. Mirrors the pattern in test_manage_tasks_batch_add.py.
 # =============================================================================
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-tasks'
-    / 'scripts'
-)
 
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_crud = _load_module('_tasks_cmd_crud_lesson_ref', '_tasks_crud.py')
+_crud = load_script_module('plan-marshall', 'manage-tasks', '_tasks_crud.py', '_tasks_cmd_crud_lesson_ref')
 cmd_commit_add = _crud.cmd_commit_add
 cmd_batch_add = _crud.cmd_batch_add
 

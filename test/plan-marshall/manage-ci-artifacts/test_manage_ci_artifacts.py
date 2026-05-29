@@ -552,3 +552,19 @@ def test_cmd_read_latest_error_envelope_when_no_runs(capsys, plan_context):
     assert exit_code == 1
     out = capsys.readouterr().out
     assert 'no_persisted_runs' in out
+
+
+def test_script_source_uses_canonical_local_plans_path():
+    """The script source references .plan/local/plans, not the legacy form.
+
+    Regression guard for the path-consolidation sweep: ``_run_dir``'s docstring
+    must spell the artifact location as ``.plan/local/plans/`` — the legacy
+    bare ``.plan/plans/`` form is incorrect since runtime state moved under
+    ``.plan/local``.
+    """
+    import re
+
+    source = (_SCRIPTS_DIR / 'manage-ci-artifacts.py').read_text(encoding='utf-8')
+    assert '.plan/local/plans/' in source
+    legacy = re.findall(r'(?<!local/)\.plan/plans/', source)
+    assert legacy == [], f'Legacy .plan/plans/ strings remain: {legacy}'

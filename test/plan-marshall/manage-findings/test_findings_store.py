@@ -1,30 +1,13 @@
 #!/usr/bin/env python3
 """Unit tests for _findings_core.py - the storage engine for findings and Q-Gate findings."""
 
-import importlib.util
-import sys
-from pathlib import Path
+from conftest import get_scripts_dir, load_script_module
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-findings'
-    / 'scripts'
-)
+# Retained for the source-introspection test that reads _findings_core.py text.
+_SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'manage-findings')
 
 
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_findings_core = _load_module('_findings_core', '_findings_core.py')
+_findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
 
 add_finding = _findings_core.add_finding
 add_qgate_finding = _findings_core.add_qgate_finding
@@ -374,3 +357,21 @@ def test_clear_qgate_findings_empty(plan_context):
     result = clear_qgate_findings('store-qgate-clear-empty', '5-execute')
     assert result['status'] == 'success'
     assert result['cleared'] == 0
+
+
+def test_script_source_uses_canonical_local_plans_path():
+    """The script source references .plan/local/plans, not the legacy form.
+
+    Regression guard for the path-consolidation sweep: the module docstring's
+    Storage block and the ``get_findings_dir`` / ``get_findings_path`` /
+    ``get_qgate_path`` / ``get_assessments_path`` docstrings must spell the
+    findings location as ``.plan/local/plans/`` — the legacy bare
+    ``.plan/plans/`` form is incorrect since runtime state moved under
+    ``.plan/local``.
+    """
+    import re
+
+    source = (_SCRIPTS_DIR / '_findings_core.py').read_text(encoding='utf-8')
+    assert '.plan/local/plans/' in source
+    legacy = re.findall(r'(?<!local/)\.plan/plans/', source)
+    assert legacy == [], f'Legacy .plan/plans/ strings remain: {legacy}'
