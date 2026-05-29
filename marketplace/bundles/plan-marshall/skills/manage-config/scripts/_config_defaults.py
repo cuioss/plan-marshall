@@ -230,13 +230,17 @@ DEFAULT_PLAN_FINALIZE = {
     'loop_back_without_asking': False,
     # Gates the final `pr merge --delete-branch` step in the branch-cleanup
     # workflow independently of the pre-rebase auto-proceed gate (driven by
-    # `auto_rebase_threshold` in branch-cleanup.md). Default False is the
-    # conservative shape — after CI passes, the operator is prompted to merge.
-    # Set True to enable full unattended runs where the post-CI merge fires
-    # silently. The auto-merge fallback path (`pr merge` -> `pr auto-merge`
-    # on branch-protection error) is unaffected when an explicit "Yes, merge"
-    # answer was given; it does NOT activate on a deferred "No, skip merge".
-    'auto_merge_after_ci': False,
+    # `auto_rebase_threshold` in branch-cleanup.md). Default True is
+    # auto-merge after CI, coordinated via the cross-plan merge-lock so
+    # concurrent plans serialize safely on the merge-to-main critical section
+    # (the lock is precisely what makes auto-merge a safe default). Set False
+    # to opt into the conservative interactive shape — after CI passes, the
+    # operator is prompted before merging. The auto-merge fallback path
+    # (`pr merge` -> `pr auto-merge` on branch-protection error) is unaffected
+    # when an explicit "Yes, merge" consent (or the `auto_merge_after_ci == true`
+    # bypass) was given; it does NOT activate on a deferred "No, skip merge".
+    # This flag is a plain boolean — NOT a tri-state.
+    'auto_merge_after_ci': True,
     # Threshold gating the pre-rebase auto-proceed decision in branch-cleanup.md,
     # orthogonal to `auto_merge_after_ci` (which gates the post-CI merge). The
     # value `no_overlap_only` permits the auto-rebase to proceed only when the

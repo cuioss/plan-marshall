@@ -36,6 +36,11 @@ from _cmd_lifecycle import (
     verify_blocks_transition,
 )
 from _cmd_mark_step import VALID_LOOP_BACK_TARGETS, cmd_mark_step_done
+from _cmd_merge_lock import (
+    cmd_merge_lock_acquire,
+    cmd_merge_lock_check,
+    cmd_merge_lock_release,
+)
 from _cmd_routing import cmd_get_routing_context, cmd_route, cmd_self_test
 from _status_query import (
     cmd_get_context,
@@ -366,6 +371,52 @@ def main() -> int:
         help='Persist the overall confidence to status.metadata.confidence.',
     )
     aggregate_confidence_parser.set_defaults(func=cmd_aggregate_confidence)
+
+    # merge-lock — cross-plan merge-coordination mutex (acquire/check/release).
+    merge_lock_parser = subparsers.add_parser(
+        'merge-lock',
+        help='Cross-plan merge-coordination mutex (acquire/check/release)',
+        description=(
+            "Acquire, check, or release the cross-plan merge-lock that "
+            "serializes the merge-to-main critical section across "
+            "concurrently-finalizing plans. The marker is stored under "
+            "status.metadata.merging_on_main (plus merge_lock_acquired_at) "
+            "of the acquiring plan. 'acquire' is BLOCKING: it polls "
+            "(Python time.sleep, 5-minute window) until the lock frees or "
+            "the window elapses, returning status: acquired or status: "
+            "blocked with blocking_plan_id. 'check' is a non-blocking read "
+            "(status: free | held). 'release' clears this plan's marker "
+            "idempotently. AskUserQuestion is never issued here — the "
+            "orchestrator owns the timeout escalation."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    merge_lock_subparsers = merge_lock_parser.add_subparsers(dest='merge_lock_verb', required=True)
+
+    merge_lock_acquire_parser = merge_lock_subparsers.add_parser(
+        'acquire',
+        help='Blocking acquire of the merge-lock (5-minute poll window)',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(merge_lock_acquire_parser)
+    merge_lock_acquire_parser.set_defaults(func=cmd_merge_lock_acquire)
+
+    merge_lock_check_parser = merge_lock_subparsers.add_parser(
+        'check',
+        help='Non-blocking read of the current merge-lock holder',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(merge_lock_check_parser)
+    merge_lock_check_parser.set_defaults(func=cmd_merge_lock_check)
+
+    merge_lock_release_parser = merge_lock_subparsers.add_parser(
+        'release',
+        help="Idempotently clear this plan's merge-lock marker",
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(merge_lock_release_parser)
+    merge_lock_release_parser.set_defaults(func=cmd_merge_lock_release)
 
     # self-test
     self_test_parser = subparsers.add_parser('self-test', help='Verify manage-status health', allow_abbrev=False)

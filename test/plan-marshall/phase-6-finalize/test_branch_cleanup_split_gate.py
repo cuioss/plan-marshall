@@ -101,8 +101,8 @@ def test_auto_rebase_threshold_roundtrips_when_set(plan_context):
     assert get_result['value'] == 'auto_resolvable'
 
 
-def test_auto_merge_after_ci_default_is_false(plan_context):
-    """Fresh marshal.json must surface auto_merge_after_ci default False."""
+def test_auto_merge_after_ci_default_is_true(plan_context):
+    """Fresh marshal.json must surface auto_merge_after_ci default True."""
     # Arrange
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
@@ -117,7 +117,7 @@ def test_auto_merge_after_ci_default_is_false(plan_context):
 
     # Assert
     assert result['status'] == 'success'
-    assert result['value'] is False
+    assert result['value'] is True
 
 
 def test_auto_merge_after_ci_roundtrip_true(plan_context):

@@ -101,6 +101,53 @@ class TestLoopBackWithoutAskingDefault:
         )
 
 
+class TestAutoMergeAfterCiDefault:
+    """``auto_merge_after_ci`` defaults to ``True`` — auto-merge after CI,
+    coordinated via the cross-plan merge-lock so concurrently-finalizing
+    plans serialize safely on the merge-to-main critical section. ``False``
+    is the explicit interactive opt-out (prompt the operator before merge).
+    The flag is a plain boolean — NOT a tri-state."""
+
+    def test_default_is_true(self) -> None:
+        """``get_default_config()`` MUST expose
+        ``plan.phase-6-finalize.auto_merge_after_ci == True``."""
+        cfg = _config_defaults.get_default_config()
+        assert (
+            cfg['plan']['phase-6-finalize']['auto_merge_after_ci']
+            is True
+        ), (
+            'get_default_config()["plan"]["phase-6-finalize"]'
+            '["auto_merge_after_ci"] must default to True'
+        )
+
+    def test_finalize_block_default_matches(self) -> None:
+        """The ``DEFAULT_PLAN_FINALIZE`` module constant MUST agree with the
+        value exposed by ``get_default_config()`` — they are the same
+        physical default and must never drift."""
+        assert (
+            _config_defaults.DEFAULT_PLAN_FINALIZE['auto_merge_after_ci']
+            is True
+        )
+
+    def test_fresh_project_seeds_true(self) -> None:
+        """A fresh project bootstrap (calling ``get_default_config()``
+        without any prior marshal.json) MUST seed ``auto_merge_after_ci``
+        with the ``True`` default — the key being absent would force every
+        downstream consumer to apply its own fallback, and the new
+        lock-coordinated default would not flow to fresh projects."""
+        cfg = _config_defaults.get_default_config()
+        finalize = cfg['plan']['phase-6-finalize']
+        assert 'auto_merge_after_ci' in finalize, (
+            'Fresh-project bootstrap must seed auto_merge_after_ci '
+            'explicitly in plan.phase-6-finalize'
+        )
+        assert (
+            finalize['auto_merge_after_ci']
+            == _config_defaults.DEFAULT_PLAN_FINALIZE['auto_merge_after_ci']
+        )
+        assert finalize['auto_merge_after_ci'] is True
+
+
 class TestCiVerifyRegistration:
     """``default:ci-verify`` MUST be registered in the canonical built-in
     finalize-step set so that ``marshall-steward`` seeds it into new

@@ -52,7 +52,7 @@ _cmd_quality_phases_mod = _load_module(
 
 
 def test_default_plan_finalize_includes_auto_merge_after_ci():
-    """DEFAULT_PLAN_FINALIZE must declare auto_merge_after_ci with conservative default False."""
+    """DEFAULT_PLAN_FINALIZE must declare auto_merge_after_ci with default True."""
     # Arrange
     finalize_defaults = _config_defaults_mod.DEFAULT_PLAN_FINALIZE
 
@@ -60,8 +60,10 @@ def test_default_plan_finalize_includes_auto_merge_after_ci():
     assert 'auto_merge_after_ci' in finalize_defaults, (
         'auto_merge_after_ci must be schema-registered in DEFAULT_PLAN_FINALIZE'
     )
-    assert finalize_defaults['auto_merge_after_ci'] is False, (
-        'auto_merge_after_ci default must be False (conservative; prompt on every merge)'
+    assert finalize_defaults['auto_merge_after_ci'] is True, (
+        'auto_merge_after_ci default must be True '
+        '(auto-merge after CI, serialized via the cross-plan merge-lock; '
+        'set False to prompt on every merge)'
     )
 
 

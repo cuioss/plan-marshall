@@ -310,7 +310,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize get --field auto_merge_after_ci --audit-plan-id {plan_id}
 ```
 
-Extract `value` as `{auto_merge_after_ci}` (default: `false`). Valid values: `true`, `false`.
+Extract `value` as `{auto_merge_after_ci}` (default: `true`). Valid values: `true`, `false`. The default is now `true` — auto-merge after CI, serialized across plans via the cross-plan merge-lock so concurrent plans can never race on the merge-to-main critical section. `false` is the explicit interactive opt-out (prompt the operator before merging). The read mechanism is a plain boolean — no tri-state, no back-compat normalization.
 
 #### Re-run the classifier against the current head
 
@@ -334,7 +334,48 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: pre-merge auto-proceed (auto_merge_after_ci=true), pre-merge confirmation gate bypassed"
 ```
 
+##### Acquire the cross-plan merge-lock (auto path only)
+
+The auto path is ALWAYS lock-coordinated: because auto-merge serializes through the cross-plan merge-lock, concurrent plans can never race on the merge-to-main critical section, which is precisely what makes auto-merge a safe default. BEFORE the merge, acquire the lock. `acquire` is BLOCKING — the 5-minute poll loop lives inside the Python script (`time.sleep`), NOT a Bash loop — so call it with a Bash tool timeout of ~360000ms (6 minutes) to cover the 5-minute internal poll plus margin:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-lock acquire \
+  --plan-id {plan_id}
+```
+
+**Bash tool timeout**: 360000ms (6-minute safety net for the 5-minute internal poll window).
+
+Parse the TOON output:
+
+- `status: acquired` → this plan holds the merge-lock. Proceed to **Merge PR (if not yet merged)** below.
+- `status: blocked` → the poll window elapsed while another plan held the lock. The script returns `blocking_plan_id` and does NOT issue `AskUserQuestion` — the orchestrator owns the escalation. Issue:
+
+  ```
+  AskUserQuestion:
+    questions:
+      - question: "Another plan ({blocking_plan_id}) is holding the merge-lock. Wait and retry, or skip this merge?"
+        header: "Branch Cleanup — Merge-lock contention"
+        description: |
+          **Blocking plan**: {blocking_plan_id}
+          **This plan**: {plan_id}
+
+          The cross-plan merge-lock serializes the merge-to-main critical
+          section. {blocking_plan_id} acquired it first and has not yet
+          released. The 5-minute poll window elapsed without the lock
+          freeing.
+        options:
+          - label: "Wait and retry"
+            description: "Re-run merge-lock acquire (another 5-minute poll window)"
+          - label: "Skip merge"
+            description: "Defer merge; exit cleanly so finalize can be re-entered later"
+        multiSelect: false
+  ```
+
+  On **Wait and retry**, re-run the `merge-lock acquire` call above. On **Skip merge**, set `{merge_consent} = deferred` and follow the same skip path as the interactive "No, skip merge" branch.
+
 Then proceed directly to **Merge PR (if not yet merged)** below. The `{merge_consent} = explicit_yes` flag is set so the auto-merge fallback path remains active on a branch-protection error.
+
+> **Sync note**: the `merge-lock` verb is a new `manage-status` subcommand. After this plan merges, finalize will run `/sync-plugin-cache` + executor regeneration so the new notation resolves — already covered by the phase-6 finalize steps (`finalize-step-regenerate-executor`, `finalize-step-sync-plugin-cache`).
 
 #### Interactive merge prompt (`auto_merge_after_ci == false`)
 
@@ -477,6 +518,17 @@ Parse the TOON output:
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: switch-and-pull failed - {error_type}: {message}"
 ```
+
+#### Release the cross-plan merge-lock (auto path only)
+
+**Only if the merge-lock was acquired on the auto path** (`{auto_merge_after_ci} == true` and `merge-lock acquire` returned `status: acquired`). The release fires AFTER `switch-and-pull` has pulled the merge commit into the base branch — the merge-to-main critical section is now complete, so the marker can be freed for the next plan:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-lock release \
+  --plan-id {plan_id}
+```
+
+`release` is idempotent (`released: false` when no marker was present), so a re-entry that already released the lock is a safe no-op. The `false`/prompt opt-out path never acquires the lock and therefore never releases it.
 
 Delete the local feature branch and prune the now-stale remote-tracking ref via `prune-local-and-remote-ref` (see `workflow-integration-git` Canonical invocations → `prune-local-and-remote-ref`). The verb encapsulates the `show-ref` guard and `update-ref -d` so the remote-tracking ref is only deleted when it exists:
 
