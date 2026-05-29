@@ -14,31 +14,15 @@ from argparse import Namespace
 from pathlib import Path
 
 # Import shared infrastructure
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_fix.py')
 FIXTURES_DIR = Path(__file__).parent / 'fixtures' / 'fix'
 
-# Tier 2 direct imports via importlib for uniform import style
-import importlib.util  # noqa: E402
-
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'pm-plugin-development'
-    / 'skills'
-    / 'plugin-doctor'
-    / 'scripts'
-)
-
 
 def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
 
 
 _cmd_apply_mod = _load_module('_cmd_apply', '_cmd_apply.py')
@@ -304,14 +288,9 @@ def test_analysis_does_not_emit_unsupported_tools_field_for_skill_with_tools(tmp
     the issue type is absent from the output.
     """
     # Direct-import the analysis module the same way other analyze tests do.
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location(
-        '_doctor_analysis_for_regression', _SCRIPTS_DIR / '_doctor_analysis.py'
+    da = load_script_module(
+        'pm-plugin-development', 'plugin-doctor', '_doctor_analysis.py', '_doctor_analysis_for_regression'
     )
-    assert spec is not None and spec.loader is not None
-    da = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(da)
 
     skill_path = tmp_path / 'SKILL.md'
     skill_path.write_text(
@@ -340,14 +319,9 @@ def test_analysis_does_not_emit_unsupported_tools_field_for_skill_with_tools(tmp
 
 def test_analysis_does_not_emit_unsupported_tools_field_for_skill_with_allowed_tools(tmp_path):
     """Regression: the rule is also absent when skill uses allowed-tools variant."""
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location(
-        '_doctor_analysis_for_regression_allowed', _SCRIPTS_DIR / '_doctor_analysis.py'
+    da = load_script_module(
+        'pm-plugin-development', 'plugin-doctor', '_doctor_analysis.py', '_doctor_analysis_for_regression_allowed'
     )
-    assert spec is not None and spec.loader is not None
-    da = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(da)
 
     skill_path = tmp_path / 'SKILL.md'
     skill_path.write_text(

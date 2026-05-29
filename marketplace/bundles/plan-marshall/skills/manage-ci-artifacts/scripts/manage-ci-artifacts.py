@@ -94,10 +94,7 @@ def _run_dir(plan_id: str, run_id: str) -> Path:
 
     Resolved via the canonical ``file_ops.get_plan_dir`` helper, so
     artifacts land under ``<repo>/.plan/local/plans/{plan_id}/...`` in
-    production and under the fixture tree in tests. The previous
-    ``_resolve_plan_base_dir`` helper resolved relative to the agent cwd
-    when ``PLAN_BASE_DIR`` was unset and produced a ghost ``.plan/plans/``
-    tree — see the fix-ghost-plan-dir lesson.
+    production and under the fixture tree (``PLAN_BASE_DIR``) in tests.
     """
     return get_plan_dir(plan_id) / _ARTIFACTS_SUBDIR / run_id
 

@@ -40,6 +40,10 @@ from input_validation import (  # type: ignore[import-not-found]
     parse_args_with_toon_errors,
     require_valid_plan_id,
 )
+from marketplace_bundles import (  # type: ignore[import-not-found]
+    resolve_bundles_root,
+    resolve_skills_root,
+)
 from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 
 # =============================================================================
@@ -91,13 +95,10 @@ DEFAULT_PHASE_6_STEPS = (
 
 # Path to the phase-5-execute standards directory, used by ``_role_of`` to
 # resolve a candidate step ID to its source file and read the ``role:``
-# frontmatter field. The script lives at
-# marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/
-# manage-execution-manifest.py — parents[2] resolves to the skill root, and
-# we walk to the sibling phase-5-execute skill's standards directory.
-_PHASE_5_STANDARDS_DIR = (
-    Path(__file__).resolve().parent.parent.parent / 'phase-5-execute' / 'standards'
-)
+# frontmatter field. ``resolve_skills_root`` identity-walks to the owning
+# bundle's ``skills`` directory (no index arithmetic), and we descend into the
+# sibling phase-5-execute skill's standards directory.
+_PHASE_5_STANDARDS_DIR = resolve_skills_root(Path(__file__)) / 'phase-5-execute' / 'standards'
 
 
 def _strip_default_prefix(step: str) -> str:
@@ -1762,16 +1763,16 @@ def cmd_read(args: argparse.Namespace) -> dict[str, Any] | None:
 # workflows (LLM-judgement workflows dispatched as a unit via
 # ``execution-context``) live under ``workflow/``. The loadability check
 # searches both, ``workflow/`` first.
-_PHASE_6_SKILL_DIR = Path(__file__).resolve().parent.parent.parent / 'phase-6-finalize'
+_PHASE_6_SKILL_DIR = resolve_skills_root(Path(__file__)) / 'phase-6-finalize'
 _PHASE_6_WORKFLOW_DIR = _PHASE_6_SKILL_DIR / 'workflow'
 _PHASE_6_STANDARDS_DIR = _PHASE_6_SKILL_DIR / 'standards'
 
 # Repository-root anchor used to render the standards path as a project-relative
-# string in the script output. The script lives at
-# marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/
-# manage-execution-manifest.py — parents[6] resolves to the repo root so rendered
-# paths start with `marketplace/bundles/…` and match the documented contract.
-_REPO_ROOT = Path(__file__).resolve().parents[6]
+# string in the script output. ``resolve_bundles_root`` identity-walks to the
+# ``marketplace/bundles`` root (no index arithmetic); its grandparent is the
+# repo root, so rendered paths start with `marketplace/bundles/…` and match the
+# documented contract.
+_REPO_ROOT = resolve_bundles_root(Path(__file__)).parent.parent
 
 
 def _is_external_step(step_id: str) -> bool:

@@ -8,22 +8,14 @@ provides ``env=`` with ``PYTHONPATH`` derived from ``sys.path``. Lesson
 ``2026-05-02-01-001`` documents the original incident.
 """
 
-import importlib.util
 import textwrap
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-_SCRIPTS_DIR = (
-    PROJECT_ROOT / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'scripts'
-)
+from conftest import load_script_module
 
 
 def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
 
 
 _analyze_test_conventions = _load_module('_analyze_test_conventions', '_analyze_test_conventions.py')

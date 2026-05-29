@@ -9,10 +9,7 @@ extension.py wrapper (unified Extension API). This file tests the internal
 discovery function directly for detailed coverage.
 """
 
-# Tier 2 direct imports via importlib for uniform import style
-import importlib.util  # noqa: E402
 import json
-from pathlib import Path
 
 from discovery_test_helpers import (
     assert_command_uses_executor,
@@ -22,27 +19,9 @@ from discovery_test_helpers import (
 )
 
 # Shared test helpers (test/plan-marshall/conftest.py adds parent to sys.path)
-from conftest import BuildContext
+from conftest import BuildContext, load_script_module
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'build-npm'
-    / 'scripts'
-)
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_npm_cmd_discover_mod = _load_module('_npm_cmd_discover', '_npm_cmd_discover.py')
+_npm_cmd_discover_mod = load_script_module('plan-marshall', 'build-npm', '_npm_cmd_discover.py', '_npm_cmd_discover')
 
 discover_npm_modules = _npm_cmd_discover_mod.discover_npm_modules
 discover_standalone_npm_module = _npm_cmd_discover_mod.discover_standalone_npm_module

@@ -15,6 +15,18 @@ interface. Lessons ``2026-04-29-23-002``, ``2026-05-25-21-001``, and
 replaces (invented subcommands, stale SUBCOMMANDS allowlist, flattened
 nested subparsers).
 
+Detection literal — RETAINED
+----------------------------
+The invocation literal ``python3 .plan/execute-script.py {notation}`` is the
+CANONICAL DOCUMENTED form for invoking a marketplace script and is RETAINED as
+this analyzer's detection anchor. The path-resolution consolidation (adoption of
+``file_ops.get_executor_path()``) changed how production *code* locates the
+executor at runtime — it did NOT change the documented invocation convention.
+Skill markdown still legitimately shows the executor-proxy form, so this analyzer
+continues to scan for it. Helper-based production code is the concern of the
+``executor-path-in-production`` rule (``_analyze_executor_path_in_production.py``),
+not this drift detector.
+
 Detection algorithm
 -------------------
 1. Grep every ``*.md`` under ``marketplace/bundles/**/skills/**`` for

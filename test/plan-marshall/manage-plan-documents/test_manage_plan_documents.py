@@ -16,42 +16,22 @@ arguments were removed when the contract was tightened to path-allocate only.
 A dedicated test below pins that they no longer parse.
 """
 
-import importlib.util
-import sys
 from argparse import Namespace
 from pathlib import Path
 
 import pytest
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Script path for subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-plan-documents', 'manage-plan-documents.py')
 
 # Import toon_parser for subprocess tests
-from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
-
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-plan-documents'
-    / 'scripts'
-)
+from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402, I001
 
 
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_cmd_request = _load_module('_cmd_request', '_cmd_request.py')
-_cmd_types = _load_module('_cmd_types', '_cmd_types.py')
+_cmd_request = load_script_module('plan-marshall', 'manage-plan-documents', '_cmd_request.py', '_cmd_request')
+_cmd_types = load_script_module('plan-marshall', 'manage-plan-documents', '_cmd_types.py', '_cmd_types')
 
 cmd_create = _cmd_request.cmd_create
 cmd_exists = _cmd_request.cmd_exists

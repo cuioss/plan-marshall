@@ -24,7 +24,7 @@ from typing import Any
 
 from _git_helpers import git_dirty_count, git_dirty_files, git_head  # type: ignore[import-not-found]
 from constants import QGATE_PHASES  # type: ignore[import-not-found]
-from file_ops import get_base_dir  # type: ignore[import-not-found]
+from file_ops import get_base_dir, get_worktree_root  # type: ignore[import-not-found]
 from marketplace_paths import find_marketplace_path  # type: ignore[import-not-found]
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
@@ -474,11 +474,16 @@ def _worktree_orphan_dir(plan_id: str) -> Path | None:
     """Return the canonical worktree directory if it exists on disk.
 
     The convention (documented in ``phase-1-init/SKILL.md`` Step 6) is
-    ``<repo_root>/.plan/local/worktrees/{plan_id}``. Returns ``None``
-    when the directory is absent — callers interpret that as "no orphan
-    detection applicable".
+    ``<repo_root>/.plan/local/worktrees/{plan_id}``, resolved via
+    ``file_ops.get_worktree_root()`` (worktree-aware, anchored on the git
+    common-dir). Returns ``None`` when the directory is absent or no main
+    checkout root resolves — callers interpret that as "no orphan detection
+    applicable".
     """
-    candidate = _repo_root() / '.plan' / 'local' / 'worktrees' / plan_id
+    try:
+        candidate = get_worktree_root() / plan_id
+    except RuntimeError:
+        return None
     return candidate if candidate.is_dir() else None
 
 

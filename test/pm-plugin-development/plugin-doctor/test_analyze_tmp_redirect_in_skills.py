@@ -12,28 +12,13 @@ Covers:
 - Multiple findings on the same line (two redirects)
 - Clean baseline: markdown with no tmp redirects produces no findings
 """
-import importlib.util
-import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-_SCRIPTS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'pm-plugin-development'
-    / 'skills'
-    / 'plugin-doctor'
-    / 'scripts'
-)
+from conftest import load_script_module
 
 
 def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
 
 
 _atrs = _load_module(

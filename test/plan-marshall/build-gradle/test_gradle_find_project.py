@@ -4,31 +4,11 @@
 Tests project discovery from settings.gradle files and build.gradle scanning.
 """
 
-# Tier 2 direct imports via importlib for uniform import style
-import importlib.util  # noqa: E402
-from pathlib import Path
-
 import pytest
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'build-gradle'
-    / 'scripts'
-)
+from conftest import load_script_module
 
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_gradle_cmd_find_project_mod = _load_module('_gradle_cmd_find_project', '_gradle_cmd_find_project.py')
+_gradle_cmd_find_project_mod = load_script_module('plan-marshall', 'build-gradle', '_gradle_cmd_find_project.py', '_gradle_cmd_find_project')
 
 find_build_files = _gradle_cmd_find_project_mod.find_build_files
 find_settings_file = _gradle_cmd_find_project_mod.find_settings_file

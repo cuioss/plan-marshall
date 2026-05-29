@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# ruff: noqa: I001
 """Tests for manage-status.py metadata + get-context commands.
 
 Split from test_manage_status.py: covers cmd_metadata (set/get/coercion) and
@@ -8,31 +7,11 @@ cmd_get_context (which composes metadata + phase progress).
 
 import json
 from argparse import Namespace
-from pathlib import Path
 
-# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime)
-import importlib.util  # noqa: E402
+from conftest import load_script_module
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-status'
-    / 'scripts'
-)
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_lifecycle = _load_module('_status_cmd_lifecycle', '_cmd_lifecycle.py')
-_query = _load_module('_status_cmd_query', '_status_query.py')
+_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_status_cmd_lifecycle')
+_query = load_script_module('plan-marshall', 'manage-status', '_status_query.py', '_status_cmd_query')
 
 cmd_create = _lifecycle.cmd_create
 cmd_get_context = _query.cmd_get_context

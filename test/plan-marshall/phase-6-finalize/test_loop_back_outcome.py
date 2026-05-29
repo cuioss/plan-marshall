@@ -24,35 +24,19 @@ The tests use unique ``plan_id`` values per test to avoid cross-test
 contamination (per MEMORY.md "Test Isolation Pattern").
 """
 
-import importlib.util
 from argparse import Namespace
 from pathlib import Path
+
+from conftest import load_script_module
 
 # =============================================================================
 # Module loading (mirrors test_mark_step_done.py / test_manage_status.py)
 # =============================================================================
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-status'
-    / 'scripts'
-)
 
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_lifecycle = _load_module('_loop_back_lifecycle', '_cmd_lifecycle.py')
-_mark_step = _load_module('_loop_back_mark_step', '_cmd_mark_step.py')
-_status_core = _load_module('_loop_back_status_core', '_status_core.py')
+_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_loop_back_lifecycle')
+_mark_step = load_script_module('plan-marshall', 'manage-status', '_cmd_mark_step.py', '_loop_back_mark_step')
+_status_core = load_script_module('plan-marshall', 'manage-status', '_status_core.py', '_loop_back_status_core')
 
 cmd_create = _lifecycle.cmd_create
 cmd_mark_step_done = _mark_step.cmd_mark_step_done

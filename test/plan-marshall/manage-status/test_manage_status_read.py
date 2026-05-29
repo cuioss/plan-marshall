@@ -10,34 +10,14 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Script path for CLI plumbing tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
 
-# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime)
-import importlib.util  # noqa: E402
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-status'
-    / 'scripts'
-)
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_lifecycle = _load_module('_status_cmd_lifecycle', '_cmd_lifecycle.py')
-_query = _load_module('_status_cmd_query', '_status_query.py')
+_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_status_cmd_lifecycle')
+_query = load_script_module('plan-marshall', 'manage-status', '_status_query.py', '_status_cmd_query')
 
 cmd_create = _lifecycle.cmd_create
 cmd_get_worktree_path = _query.cmd_get_worktree_path
@@ -491,3 +471,19 @@ def test_cli_get_routing_context_not_found_exits_zero(plan_context):
     assert result.success, f'Should exit 0, got: {result.stderr}'
     assert 'status: error' in result.stdout
     assert 'file_not_found' in result.stdout
+
+
+def test_script_source_uses_canonical_local_plans_path():
+    """The script source references .plan/local/plans, not the legacy form.
+
+    Regression guard for the path-consolidation sweep: the module docstring's
+    storage line and the ``list-orphans`` help text must spell the plan
+    location as ``.plan/local/plans/`` — the legacy bare ``.plan/plans/`` form
+    is incorrect since runtime state moved under ``.plan/local``.
+    """
+    import re
+
+    source = Path(SCRIPT_PATH).read_text(encoding='utf-8')
+    assert '.plan/local/plans/' in source
+    legacy = re.findall(r'(?<!local/)\.plan/plans/', source)
+    assert legacy == [], f'Legacy .plan/plans/ strings remain: {legacy}'

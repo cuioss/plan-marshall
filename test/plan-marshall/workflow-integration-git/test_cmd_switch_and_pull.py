@@ -42,6 +42,7 @@ _spec.loader.exec_module(_mod)
 cmd_switch_and_pull = _mod.cmd_switch_and_pull
 _resolve_project_dir = _mod._resolve_project_dir
 _verify_git_repo = _mod._verify_git_repo
+_find_executor = _mod._find_executor
 
 
 # ---------------------------------------------------------------------------
@@ -311,6 +312,56 @@ class TestCmdSwitchAndPullEscapeHatch(unittest.TestCase):
         result = cmd_switch_and_pull(args)
         self.assertEqual(result['operation'], 'switch-and-pull')
         self.assertEqual(result['base_branch'], 'develop')
+
+
+# ---------------------------------------------------------------------------
+# Tier 2: _find_executor — helper-based executor path resolution
+# ---------------------------------------------------------------------------
+
+
+class TestFindExecutor(unittest.TestCase):
+    """Direct-import tests for _find_executor's helper-based resolution.
+
+    _find_executor delegates to ``file_ops.get_executor_path()`` (worktree-safe
+    resolution via git-common-dir) and returns the resolved path only when it
+    exists on disk, falling back to None on RuntimeError (no git repo) or a
+    missing executor file.
+    """
+
+    def setUp(self) -> None:
+        import file_ops  # type: ignore[import-not-found]
+        self._file_ops = file_ops
+        self._orig_get_executor_path = file_ops.get_executor_path
+        self._tmpdir = tempfile.mkdtemp()
+        self.path = Path(self._tmpdir)
+
+    def tearDown(self) -> None:
+        import shutil
+        self._file_ops.get_executor_path = self._orig_get_executor_path
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def test_returns_resolved_path_when_executor_exists(self) -> None:
+        """When get_executor_path resolves an existing file, return it."""
+        executor = self.path / 'execute-script.py'
+        executor.write_text('# executor\n')
+        self._file_ops.get_executor_path = lambda: executor
+        result = _find_executor()
+        self.assertEqual(result, executor)
+
+    def test_returns_none_when_executor_missing(self) -> None:
+        """When the resolved path does not exist on disk, return None."""
+        missing = self.path / 'execute-script.py'  # never created
+        self._file_ops.get_executor_path = lambda: missing
+        result = _find_executor()
+        self.assertIsNone(result)
+
+    def test_returns_none_when_helper_raises_runtime_error(self) -> None:
+        """When get_executor_path raises RuntimeError (no git repo), return None."""
+        def _raise() -> Path:
+            raise RuntimeError('no git repository')
+        self._file_ops.get_executor_path = _raise
+        result = _find_executor()
+        self.assertIsNone(result)
 
 
 # ---------------------------------------------------------------------------

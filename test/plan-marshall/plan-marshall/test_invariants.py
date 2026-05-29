@@ -33,13 +33,12 @@ invariants.
 
 from __future__ import annotations
 
-import importlib.util
 import sys
 from argparse import Namespace
 from pathlib import Path
 
 import pytest
-from conftest import get_script_path  # type: ignore[import-not-found]
+from conftest import get_script_path, load_script_module  # type: ignore[import-not-found]
 
 # =============================================================================
 # Import the invariants module under test.
@@ -55,33 +54,13 @@ import _invariants as inv  # noqa: E402
 
 
 # =============================================================================
-# Load manage-tasks command handlers via importlib (same pattern as
-# test_manage_tasks.py) — gives us in-process fixture creation without
-# needing a subprocess wrapper.
+# Load manage-tasks command handlers via the shared conftest loader — gives us
+# in-process fixture creation without needing a subprocess wrapper.
 # =============================================================================
 
-_MT_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-tasks'
-    / 'scripts'
-)
-
-
-def _load_mt_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _MT_SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_crud = _load_mt_module('_invariants_test_tasks_crud', '_tasks_crud.py')
-_query = _load_mt_module('_invariants_test_tasks_query', '_tasks_query.py')
-_step = _load_mt_module('_invariants_test_tasks_step', '_cmd_step.py')
+_crud = load_script_module('plan-marshall', 'manage-tasks', '_tasks_crud.py', '_invariants_test_tasks_crud')
+_query = load_script_module('plan-marshall', 'manage-tasks', '_tasks_query.py', '_invariants_test_tasks_query')
+_step = load_script_module('plan-marshall', 'manage-tasks', '_cmd_step.py', '_invariants_test_tasks_step')
 
 cmd_prepare_add = _crud.cmd_prepare_add
 cmd_commit_add = _crud.cmd_commit_add
@@ -748,7 +727,24 @@ def test_worktree_orphan_no_disk_dir_returns_none(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """No worktree dir + metadata.use_worktree=false → None (not applicable)."""
-    monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
+    monkeypatch.setattr(inv, 'get_worktree_root', lambda: tmp_path / '.plan' / 'local' / 'worktrees')
+    assert inv._capture_worktree_orphan('p', {'use_worktree': False}, '5-execute') is None
+
+
+def test_worktree_orphan_no_git_root_returns_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """get_worktree_root() raising RuntimeError (no git root) → None.
+
+    Pins the new resolver path: _worktree_orphan_dir delegates to
+    file_ops.get_worktree_root() and treats a RuntimeError (not inside a
+    git repo) as "no orphan detection applicable".
+    """
+
+    def _raise() -> Path:
+        raise RuntimeError('no git root')
+
+    monkeypatch.setattr(inv, 'get_worktree_root', _raise)
     assert inv._capture_worktree_orphan('p', {'use_worktree': False}, '5-execute') is None
 
 
@@ -760,7 +756,7 @@ def test_worktree_orphan_metadata_truthy_short_circuits(
     The metadata→disk direction is owned by ``_resolve_worktree_assertion``;
     this invariant only fires for the inverse case.
     """
-    monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
+    monkeypatch.setattr(inv, 'get_worktree_root', lambda: tmp_path / '.plan' / 'local' / 'worktrees')
     orphan_dir = tmp_path / '.plan' / 'local' / 'worktrees' / 'p-truthy'
     orphan_dir.mkdir(parents=True)
     assert (
@@ -777,7 +773,7 @@ def test_worktree_orphan_dir_metadata_false_raises(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Orphan dir + metadata.use_worktree=false → WorktreeMetadataDrift."""
-    monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
+    monkeypatch.setattr(inv, 'get_worktree_root', lambda: tmp_path / '.plan' / 'local' / 'worktrees')
     orphan = tmp_path / '.plan' / 'local' / 'worktrees' / 'p-false'
     orphan.mkdir(parents=True)
     with pytest.raises(inv.WorktreeMetadataDrift) as excinfo:
@@ -796,7 +792,7 @@ def test_worktree_orphan_dir_metadata_missing_raises(
     Mirrors the writer-chain bug: ``manage_status create`` clobbered the
     worktree trio leaving the disk dir orphaned and metadata silent.
     """
-    monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
+    monkeypatch.setattr(inv, 'get_worktree_root', lambda: tmp_path / '.plan' / 'local' / 'worktrees')
     orphan = tmp_path / '.plan' / 'local' / 'worktrees' / 'p-missing'
     orphan.mkdir(parents=True)
     with pytest.raises(inv.WorktreeMetadataDrift) as excinfo:
@@ -812,7 +808,7 @@ def test_worktree_orphan_falsy_metadata_variants_all_raise(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, falsy_value
 ) -> None:
     """All TOON-falsy variants of use_worktree trigger orphan drift."""
-    monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
+    monkeypatch.setattr(inv, 'get_worktree_root', lambda: tmp_path / '.plan' / 'local' / 'worktrees')
     orphan = tmp_path / '.plan' / 'local' / 'worktrees' / 'p-falsy'
     orphan.mkdir(parents=True)
     metadata = {'use_worktree': falsy_value} if falsy_value is not None else {}
@@ -825,7 +821,7 @@ def test_worktree_orphan_truthy_metadata_variants_all_short_circuit(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, truthy_value
 ) -> None:
     """All TOON-truthy variants of use_worktree short-circuit (no raise)."""
-    monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
+    monkeypatch.setattr(inv, 'get_worktree_root', lambda: tmp_path / '.plan' / 'local' / 'worktrees')
     orphan = tmp_path / '.plan' / 'local' / 'worktrees' / 'p-truthy'
     orphan.mkdir(parents=True)
     result = inv._capture_worktree_orphan(
@@ -859,7 +855,7 @@ def test_worktree_orphan_capture_all_propagates_drift(
     Narrows ``INVARIANTS`` to just the orphan entry so the other invariants
     (which would shell out to git etc.) don't interfere with the assertion.
     """
-    monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
+    monkeypatch.setattr(inv, 'get_worktree_root', lambda: tmp_path / '.plan' / 'local' / 'worktrees')
     orphan = tmp_path / '.plan' / 'local' / 'worktrees' / 'p-cap-all'
     orphan.mkdir(parents=True)
 

@@ -12,7 +12,7 @@ from argparse import Namespace
 from pathlib import Path
 
 # Import shared infrastructure
-from conftest import create_temp_file, get_script_path, run_script
+from conftest import create_temp_file, get_script_path, load_script_module, run_script
 
 # Script under test
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -20,34 +20,9 @@ SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_analyz
 SKILL_STRUCTURE_FIXTURES = Path(__file__).parent / 'fixtures' / 'skill-structure'
 CROSS_FILE_FIXTURES = Path(__file__).parent / 'fixtures' / 'cross-file-analysis'
 
-# Tier 2 direct imports via importlib for uniform import style
-import importlib.util  # noqa: E402
-
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'pm-plugin-development'
-    / 'skills'
-    / 'plugin-doctor'
-    / 'scripts'
-)
-
 
 def _load_module(name, filename):
-    import sys as _sys
-
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    # Register before exec so dataclass introspection (which looks up
-    # cls.__module__ in sys.modules during type resolution under Python 3.14)
-    # can find the module. Without this, modules using @dataclass(frozen=True)
-    # fail with ``AttributeError: 'NoneType' object has no attribute '__dict__'``
-    # when the dataclass references types like ``str | None`` that trigger
-    # _is_type during class processing.
-    _sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
 
 
 _analyze_crossfile_mod = _load_module('_analyze_crossfile', '_analyze_crossfile.py')

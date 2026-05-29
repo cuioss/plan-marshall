@@ -459,3 +459,25 @@ def test_list_recent_work_with_limit():
             assert 'Entry 4' in result['entries'][-1]['message']
         finally:
             del os.environ['PLAN_BASE_DIR']
+
+
+# =============================================================================
+# TESTS: canonical .plan/local/plans path strings (regression guard)
+# =============================================================================
+
+
+def test_module_source_uses_canonical_local_plans_path():
+    """The module source references .plan/local/plans, not the legacy form.
+
+    Regression guard for the path-consolidation sweep: the docstring header and
+    the __main__ diagnostic prints must spell the plan-scoped log location as
+    ``.plan/local/plans/{plan_id}/...`` — the legacy bare ``.plan/plans/`` form
+    is incorrect since runtime state moved under ``.plan/local``.
+    """
+    source = Path(module.__file__).read_text(encoding='utf-8')
+    assert '.plan/local/plans/{plan_id}/logs/' in source
+    # No bare ``.plan/plans/`` occurrence (i.e. not preceded by ``local/``).
+    import re
+
+    legacy = re.findall(r'(?<!local/)\.plan/plans/', source)
+    assert legacy == [], f'Legacy .plan/plans/ strings remain: {legacy}'

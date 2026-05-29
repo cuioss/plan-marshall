@@ -6,37 +6,16 @@ Tier 2 (direct import) tests with 3 subprocess tests for CLI plumbing.
 
 import json
 from argparse import Namespace
-from pathlib import Path
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
 
-# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime)
-import importlib.util  # noqa: E402
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-status'
-    / 'scripts'
-)
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_lifecycle = _load_module('_lc_cmd_lifecycle', '_cmd_lifecycle.py')
-_query = _load_module('_lc_cmd_query', '_status_query.py')
-_routing = _load_module('_lc_cmd_routing', '_cmd_routing.py')
+_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_lc_cmd_lifecycle')
+_query = load_script_module('plan-marshall', 'manage-status', '_status_query.py', '_lc_cmd_query')
+_routing = load_script_module('plan-marshall', 'manage-status', '_cmd_routing.py', '_lc_cmd_routing')
 
 cmd_archive, cmd_transition = _lifecycle.cmd_archive, _lifecycle.cmd_transition
 cmd_list = _query.cmd_list

@@ -59,7 +59,7 @@ from _invariants import (  # type: ignore[import-not-found]
     capture_all,
     is_invariant_blocking_at_phase,
 )
-from file_ops import get_base_dir  # type: ignore[import-not-found]
+from file_ops import get_executor_path  # type: ignore[import-not-found]
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 
@@ -234,10 +234,9 @@ def _resolve_worktree_assertion(
 def _load_status_metadata(plan_id: str) -> dict[str, Any]:
     """Return ``status.json`` metadata for ``plan_id`` via ``manage-status``."""
     try:
-        base = get_base_dir()
+        executor = get_executor_path()
     except RuntimeError:
         return {}
-    executor = base.parent.parent / '.plan' / 'execute-script.py'
     if not executor.exists():
         return {}
     try:

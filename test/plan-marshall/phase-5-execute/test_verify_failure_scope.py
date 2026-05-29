@@ -113,3 +113,26 @@ def test_blank_paths_filtered(plan_context):
     assert result['status'] == 'success'
     assert result['total'] == 1
     assert result['in_scope_count'] == 1
+
+
+def test_plan_dir_resolved_via_plan_base_dir(plan_context):
+    """Without a plan_dir override, the plan dir is resolved via PLAN_BASE_DIR.
+
+    The plan-dir resolution now flows through ``file_ops.get_plan_dir``, which
+    honours the ``PLAN_BASE_DIR`` the ``plan_context`` fixture sets. Omitting
+    the ``plan_dir`` argument forces the script to resolve the dir itself; the
+    classification result confirms it read the references.json written under the
+    fixture's plan dir.
+    """
+    plan_id = 'vfs-resolve-via-env'
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    _write_refs(plan_dir, ['src/a.py'])
+    result = vfs.classify_failure_scope(
+        plan_id, ['src/a.py', 'foreign/x.py']
+    )
+    assert result['status'] == 'success'
+    assert result['total'] == 2
+    assert result['in_scope_count'] == 1
+    assert result['out_of_scope_count'] == 1
+    assert result['exclusively_out_of_scope'] is False
+    assert result['out_of_scope_paths'] == ['foreign/x.py']

@@ -82,7 +82,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from file_ops import get_plan_dir  # type: ignore[import-not-found]
+from file_ops import get_executor_path, get_plan_dir  # type: ignore[import-not-found]
 from marketplace_paths import git_main_checkout_root  # type: ignore[import-not-found]
 from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 
@@ -172,7 +172,7 @@ def _run_ci_wait(
             'checkout root via marketplace_paths.git_main_checkout_root() — '
             'is this script running outside a git repository?'
         )
-    executor = repo_root / '.plan' / 'execute-script.py'
+    executor = get_executor_path()
     cmd = [
         sys.executable,
         str(executor),
@@ -232,7 +232,7 @@ def _run_run_config_timeout_get(default_seconds: int) -> int:
     repo_root = git_main_checkout_root()
     if repo_root is None:
         return default_seconds
-    executor = repo_root / '.plan' / 'execute-script.py'
+    executor = get_executor_path()
     cmd = [
         sys.executable,
         str(executor),
@@ -280,7 +280,7 @@ def _run_run_config_timeout_set(duration_seconds: int) -> None:
     repo_root = git_main_checkout_root()
     if repo_root is None:
         return
-    executor = repo_root / '.plan' / 'execute-script.py'
+    executor = get_executor_path()
     cmd = [
         sys.executable,
         str(executor),

@@ -142,6 +142,10 @@ def test_b_worktree_orphan_raises_when_disk_dir_present_but_metadata_false(
     orphan_dir = fake_repo / '.plan' / 'local' / 'worktrees' / plan_id
     orphan_dir.mkdir(parents=True)
 
+    # Orphan detection resolves the worktree root via get_worktree_root()
+    # (= get_base_dir() / 'worktrees', PLAN_BASE_DIR-aware). Pin PLAN_BASE_DIR
+    # to fake_repo/.plan/local so detection finds the orphan we just created.
+    monkeypatch.setenv('PLAN_BASE_DIR', str(fake_repo / '.plan' / 'local'))
     monkeypatch.setattr(inv, '_repo_root', lambda: fake_repo)
 
     with pytest.raises(inv.WorktreeMetadataDrift) as excinfo:
@@ -171,6 +175,7 @@ def test_b_worktree_orphan_no_op_when_metadata_truthy(
     orphan_dir = fake_repo / '.plan' / 'local' / 'worktrees' / plan_id
     orphan_dir.mkdir(parents=True)
 
+    monkeypatch.setenv('PLAN_BASE_DIR', str(fake_repo / '.plan' / 'local'))
     monkeypatch.setattr(inv, '_repo_root', lambda: fake_repo)
 
     # use_worktree=True → returns None (not applicable), no exception.
@@ -196,6 +201,7 @@ def test_b_worktree_orphan_no_op_when_no_orphan_dir(
     fake_repo.mkdir()
     # No .plan/local/worktrees/{plan_id} created.
 
+    monkeypatch.setenv('PLAN_BASE_DIR', str(fake_repo / '.plan' / 'local'))
     monkeypatch.setattr(inv, '_repo_root', lambda: fake_repo)
 
     result = inv._capture_worktree_orphan(plan_id, {'use_worktree': False}, '5-execute')

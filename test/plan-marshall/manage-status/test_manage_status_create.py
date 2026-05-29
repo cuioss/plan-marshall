@@ -7,37 +7,16 @@ seeding) and on-disk JSON storage assertions.
 
 import json
 from argparse import Namespace
-from pathlib import Path
 
 import pytest
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Script path for CLI plumbing tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
 
-# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime)
-import importlib.util  # noqa: E402
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-status'
-    / 'scripts'
-)
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_lifecycle = _load_module('_status_cmd_lifecycle', '_cmd_lifecycle.py')
+_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_status_cmd_lifecycle')
 
 cmd_create = _lifecycle.cmd_create
 
@@ -147,7 +126,7 @@ def test_json_metadata_structure(plan_context):
     """Test that metadata is stored correctly."""
     from argparse import Namespace as _NS
     # Use the metadata-set verb via importlib to seed a value, then check JSON.
-    _query = _load_module('_status_cmd_query', '_status_query.py')
+    _query = load_script_module('plan-marshall', 'manage-status', '_status_query.py', '_status_cmd_query')
     cmd_metadata = _query.cmd_metadata
 
     cmd_create(_NS(plan_id='metadata-json-plan', title='Metadata Test', phases='1-init', force=False))

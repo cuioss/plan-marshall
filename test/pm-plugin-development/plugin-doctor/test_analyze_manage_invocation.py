@@ -26,12 +26,12 @@ verified against the documented schema.
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 import textwrap
 from pathlib import Path
 
 import pytest
+
+from conftest import load_script_module
 
 # ---------------------------------------------------------------------------
 # Module loader — load the analyzer directly from the marketplace scripts dir.
@@ -39,25 +39,9 @@ import pytest
 # spec-load the module by file path the same way the doctor harness does.
 # ---------------------------------------------------------------------------
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-_SCRIPTS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'pm-plugin-development'
-    / 'skills'
-    / 'plugin-doctor'
-    / 'scripts'
-)
-
 
 def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
 
 
 _ami = _load_module('_analyze_manage_invocation', '_analyze_manage_invocation.py')

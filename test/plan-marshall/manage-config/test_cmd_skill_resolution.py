@@ -13,6 +13,7 @@ from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
 
+from _layout_sim import build_phase_layout
 from test_helpers import SCRIPT_PATH, create_marshal_json, create_nested_marshal_json
 
 _SCRIPTS_DIR = (
@@ -703,35 +704,16 @@ def test_list_finalize_steps_optional_bundle_precedes_extensions(tmp_path):
 # =============================================================================
 
 
-def _bare(step_name: str) -> str:
-    """Strip the 'default:' prefix from a built-in step name."""
-    return step_name.split(':', 1)[1] if ':' in step_name else step_name
-
-
-def _write_finalize_standards(skill_root: Path) -> None:
-    """Create standards/{bare}.md with `order` frontmatter for every built-in finalize step."""
-    standards_dir = skill_root / 'standards'
-    standards_dir.mkdir(parents=True, exist_ok=True)
-    for offset, step_name in enumerate(_config_defaults.BUILT_IN_FINALIZE_STEPS):
-        bare = _bare(step_name)
-        order = (offset + 1) * 10
-        (standards_dir / f'{bare}.md').write_text(
-            f'---\nname: {bare}\ndescription: {bare} step\norder: {order}\n---\n\n# {bare}\n'
-        )
-
-
 def _build_source_layout_finalize(base: Path) -> Path:
     """Build a source/marketplace layout: <base>/plan-marshall/skills/phase-6-finalize/..."""
-    skill_root = base / 'plan-marshall' / 'skills' / 'phase-6-finalize'
-    _write_finalize_standards(skill_root)
-    return base
+    return build_phase_layout(base, 'phase-6-finalize', _config_defaults.BUILT_IN_FINALIZE_STEPS, cache_layout=False)
 
 
 def _build_cache_layout_finalize(base: Path, version: str = '0.1-BETA') -> Path:
     """Build a versioned plugin-cache layout: <base>/plan-marshall/<version>/skills/phase-6-finalize/..."""
-    skill_root = base / 'plan-marshall' / version / 'skills' / 'phase-6-finalize'
-    _write_finalize_standards(skill_root)
-    return base
+    return build_phase_layout(
+        base, 'phase-6-finalize', _config_defaults.BUILT_IN_FINALIZE_STEPS, cache_layout=True, version=version
+    )
 
 
 def test_discover_finalize_steps_source_layout_resolves_order(tmp_path):

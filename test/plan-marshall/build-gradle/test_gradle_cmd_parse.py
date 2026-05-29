@@ -6,31 +6,13 @@ Public API tests should use gradle.py CLI instead.
 """
 
 # Direct imports - conftest sets up PYTHONPATH (cross-skill)
-# Tier 2 direct imports via importlib for uniform import style
-import importlib.util
 from pathlib import Path
 
 from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'build-gradle'
-    / 'scripts'
-)
+from conftest import load_script_module
 
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_gradle_cmd_parse_mod = _load_module('_gradle_cmd_parse', '_gradle_cmd_parse.py')
+_gradle_cmd_parse_mod = load_script_module('plan-marshall', 'build-gradle', '_gradle_cmd_parse.py', '_gradle_cmd_parse')
 
 parse_log = _gradle_cmd_parse_mod.parse_log
 

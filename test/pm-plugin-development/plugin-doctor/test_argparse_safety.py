@@ -13,21 +13,15 @@ end-to-end check against the real marketplace tree, which after the
 D1-D4 retrofits MUST produce zero findings.
 """
 
-import importlib.util
 from pathlib import Path
 
+from conftest import load_script_module
+
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-_SCRIPTS_DIR = (
-    PROJECT_ROOT / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'scripts'
-)
 
 
 def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
 
 
 _doctor_analysis = _load_module('_doctor_analysis', '_doctor_analysis.py')

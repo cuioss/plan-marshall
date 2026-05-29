@@ -32,6 +32,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from file_ops import get_plan_dir  # type: ignore[import-not-found]
+
 DEFAULT_THRESHOLD = 5
 
 
@@ -71,22 +73,6 @@ def _collect_declared_files(plan_dir: Path) -> set[str]:
             if target:
                 declared.add(target)
     return declared
-
-
-def _resolve_plan_dir(plan_id: str) -> Path:
-    """Resolve the plan directory under .plan/local/plans/{plan_id}/."""
-    # Use git common dir to anchor to the repo root, then descend.
-    result = subprocess.run(
-        ['git', 'rev-parse', '--git-common-dir'],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    git_common = Path(result.stdout.strip())
-    if not git_common.is_absolute():
-        git_common = (Path.cwd() / git_common).resolve()
-    repo_root = git_common.parent
-    return repo_root / '.plan' / 'local' / 'plans' / plan_id
 
 
 def _resolve_worktree(plan_id: str) -> Path:
@@ -153,7 +139,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         print('disabled: true')
         return 0
 
-    plan_dir = _resolve_plan_dir(plan_id)
+    plan_dir = get_plan_dir(plan_id)
     worktree = _resolve_worktree(plan_id)
     refs = _read_references(plan_dir)
     base_sha = refs.get('plan_creation_sha')

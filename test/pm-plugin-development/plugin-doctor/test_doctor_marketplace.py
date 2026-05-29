@@ -17,7 +17,6 @@ Marketplace discovery in these tests:
   fixture deterministically instead of the real tree.
 """
 
-import importlib.util
 import json
 import shutil
 import sys
@@ -27,7 +26,7 @@ from pathlib import Path
 import pytest
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, get_scripts_dir, load_script_module, run_script
 
 # Script under test
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -37,25 +36,10 @@ MARKETPLACE_ROOT = PROJECT_ROOT / 'marketplace' / 'bundles'
 # Direct-import handle for ``_doctor_shared.find_marketplace_root`` so the
 # --marketplace-root flag tests can exercise the resolution logic without
 # the subprocess overhead of a full doctor-marketplace.py invocation.
-_DOCTOR_SHARED_PATH = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'pm-plugin-development'
-    / 'skills'
-    / 'plugin-doctor'
-    / 'scripts'
-    / '_doctor_shared.py'
-)
 
 
 def _load_doctor_shared():
-    spec = importlib.util.spec_from_file_location('_doctor_shared_under_test', _DOCTOR_SHARED_PATH)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules['_doctor_shared_under_test'] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module('pm-plugin-development', 'plugin-doctor', '_doctor_shared.py', '_doctor_shared_under_test')
 
 
 _doctor_shared = _load_doctor_shared()
@@ -1355,16 +1339,7 @@ def test_quality_gate_real_marketplace_passes():
 
 # Load the analyze rules helpers directly so the small-pure-function tests do
 # not need a subprocess round-trip per case.
-_DOCTOR_MARKETPLACE_PATH = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'pm-plugin-development'
-    / 'skills'
-    / 'plugin-doctor'
-    / 'scripts'
-    / 'doctor-marketplace.py'
-)
+_DOCTOR_SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'plugin-doctor')
 
 
 def _load_doctor_marketplace():
@@ -1376,15 +1351,11 @@ def _load_doctor_marketplace():
     """
     # Add the script directory to sys.path so internal ``from _x import ...``
     # statements resolve.
-    script_dir = _DOCTOR_MARKETPLACE_PATH.parent
-    if str(script_dir) not in sys.path:
-        sys.path.insert(0, str(script_dir))
-    spec = importlib.util.spec_from_file_location('_doctor_marketplace_under_test', _DOCTOR_MARKETPLACE_PATH)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules['_doctor_marketplace_under_test'] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    if str(_DOCTOR_SCRIPTS_DIR) not in sys.path:
+        sys.path.insert(0, str(_DOCTOR_SCRIPTS_DIR))
+    return load_script_module(
+        'pm-plugin-development', 'plugin-doctor', 'doctor-marketplace.py', '_doctor_marketplace_under_test'
+    )
 
 
 _doctor_marketplace = _load_doctor_marketplace()
@@ -1547,16 +1518,11 @@ def test_resolve_active_rules_rules_and_alias_union():
 
 def _load_doctor_analysis():
     """Import ``_doctor_analysis.py`` for direct-call tests."""
-    script_dir = _DOCTOR_MARKETPLACE_PATH.parent
-    if str(script_dir) not in sys.path:
-        sys.path.insert(0, str(script_dir))
-    path = script_dir / '_doctor_analysis.py'
-    spec = importlib.util.spec_from_file_location('_doctor_analysis_under_test', path)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules['_doctor_analysis_under_test'] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    if str(_DOCTOR_SCRIPTS_DIR) not in sys.path:
+        sys.path.insert(0, str(_DOCTOR_SCRIPTS_DIR))
+    return load_script_module(
+        'pm-plugin-development', 'plugin-doctor', '_doctor_analysis.py', '_doctor_analysis_under_test'
+    )
 
 
 def test_analyze_component_skips_verb_chain_when_inactive(tmp_path, monkeypatch):

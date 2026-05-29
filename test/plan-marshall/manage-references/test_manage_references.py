@@ -11,37 +11,17 @@ from pathlib import Path
 
 import pytest
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-references', 'manage-references.py')
 
-# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime)
-import importlib.util  # noqa: E402
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-references'
-    / 'scripts'
-)
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_crud = _load_module('_refs_cmd_crud', '_references_crud.py')
-_list = _load_module('_refs_cmd_list', '_cmd_list.py')
-_ctx = _load_module('_refs_cmd_context', '_cmd_context.py')
-_diff = _load_module('_refs_cmd_diff_files', '_cmd_diff_files.py')
-_core = _load_module('_refs_core', '_references_core.py')
+_crud = load_script_module('plan-marshall', 'manage-references', '_references_crud.py', '_refs_cmd_crud')
+_list = load_script_module('plan-marshall', 'manage-references', '_cmd_list.py', '_refs_cmd_list')
+_ctx = load_script_module('plan-marshall', 'manage-references', '_cmd_context.py', '_refs_cmd_context')
+_diff = load_script_module('plan-marshall', 'manage-references', '_cmd_diff_files.py', '_refs_cmd_diff_files')
+_core = load_script_module('plan-marshall', 'manage-references', '_references_core.py', '_refs_core')
 
 require_references = _core.require_references
 get_references_path = _core.get_references_path
@@ -829,3 +809,19 @@ def test_cli_non_dict_references_surfaces_nonzero_exit(payload, tmp_path, monkey
         f'Expected non-zero exit for non-dict references payload {payload!r}; '
         f'stdout={result.stdout!r} stderr={result.stderr!r}'
     )
+
+
+def test_script_source_uses_canonical_local_plans_path():
+    """The script source references .plan/local/plans, not the legacy form.
+
+    Regression guard for the path-consolidation sweep: the module docstring's
+    storage line must spell the references location as ``.plan/local/plans/`` —
+    the legacy bare ``.plan/plans/`` form is incorrect since runtime state moved
+    under ``.plan/local``.
+    """
+    import re
+
+    source = Path(SCRIPT_PATH).read_text(encoding='utf-8')
+    assert '.plan/local/plans/' in source
+    legacy = re.findall(r'(?<!local/)\.plan/plans/', source)
+    assert legacy == [], f'Legacy .plan/plans/ strings remain: {legacy}'

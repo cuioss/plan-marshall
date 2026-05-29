@@ -69,6 +69,15 @@ class TestOrphanCanonicalBypass:
 
     @pytest.fixture
     def isolated_repo(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        # Orphan detection resolves the worktree root via
+        # ``file_ops.get_worktree_root()`` → ``get_base_dir() / 'worktrees'``,
+        # which honours ``PLAN_BASE_DIR``. Pin it to ``tmp_path/.plan/local`` so
+        # the canonical orphan path the helper materialises
+        # (``tmp_path/.plan/local/worktrees/{plan_id}``) is exactly what
+        # ``get_worktree_root()`` resolves — keeping detection isolated to
+        # ``tmp_path``. ``_repo_root`` is pinned alongside for invariants that
+        # consult it directly.
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan' / 'local'))
         monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
         return tmp_path
 

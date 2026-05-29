@@ -1,33 +1,15 @@
 #!/usr/bin/env python3
 """Tests for the mark-step-done subcommand of manage-status."""
 
-import importlib.util
 from argparse import Namespace
-from pathlib import Path
 
 import pytest
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-status'
-    / 'scripts'
-)
+from conftest import load_script_module
 
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_lifecycle = _load_module('_mark_step_lifecycle', '_cmd_lifecycle.py')
-_mark_step = _load_module('_mark_step_cmd', '_cmd_mark_step.py')
-_status_core = _load_module('_mark_step_core', '_status_core.py')
+_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_mark_step_lifecycle')
+_mark_step = load_script_module('plan-marshall', 'manage-status', '_cmd_mark_step.py', '_mark_step_cmd')
+_status_core = load_script_module('plan-marshall', 'manage-status', '_status_core.py', '_mark_step_core')
 
 cmd_create = _lifecycle.cmd_create
 cmd_mark_step_done = _mark_step.cmd_mark_step_done

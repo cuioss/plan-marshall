@@ -4,35 +4,20 @@
 Tier 2 (direct import) tests with 2 subprocess CLI plumbing tests retained.
 """
 
-import importlib.util
 import tempfile
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Test directories
 TEST_DIR = Path(__file__).parent
 SCRIPT_PATH = get_script_path('pm-documents', 'ref-documentation', 'docs.py')
 FIXTURES_DIR = TEST_DIR / 'fixtures'
 
-# Tier 2 direct imports - load cmd_* from sub-command modules
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'pm-documents'
-    / 'skills'
-    / 'ref-documentation'
-    / 'scripts'
-)
-
 
 def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module('pm-documents', 'ref-documentation', filename, name)
 
 
 _review_mod = _load_module('_cmd_review', '_cmd_review.py')

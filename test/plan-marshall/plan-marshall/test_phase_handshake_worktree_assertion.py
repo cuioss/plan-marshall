@@ -392,15 +392,30 @@ def test_cli_strict_propagates_nonzero_exit_on_worktree_unresolved(
 
 
 def _make_orphan_worktree(plan_id: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """Helper: pin ``_repo_root`` to ``tmp_path`` and create the canonical
-    orphan worktree dir at ``.plan/local/worktrees/{plan_id}``.
+    """Helper: create the orphan worktree dir where orphan detection looks.
+
+    Orphan detection (``inv._worktree_orphan_dir``) resolves the worktree
+    root via ``file_ops.get_worktree_root()``, which anchors on
+    ``get_base_dir()`` and therefore honours ``PLAN_BASE_DIR``. This helper
+    materialises the orphan at the *live* ``get_worktree_root() / plan_id``
+    rather than hard-coding ``.plan/local/worktrees`` — so it stays correct
+    whether the caller relies on a ``plan_context``-set ``PLAN_BASE_DIR``
+    (``tmp_path`` → orphan at ``tmp_path/worktrees``) or no override. This
+    keeps the handshake-row store (``base_path('plans', …)``) and orphan
+    detection anchored on the *same* base dir, avoiding the
+    ``verify`` → ``status: skipped`` mismatch that a divergent
+    ``PLAN_BASE_DIR`` override would introduce.
+
+    ``_repo_root`` is pinned to ``tmp_path`` for the git-SHA / dirty-count
+    invariants that consult it directly.
 
     Returns the orphan path so tests can assert it appears in the error
-    payload. The base_path module is monkeypatched so plan_context usage
-    remains independent of the orphan-detection setup.
+    payload.
     """
+    import file_ops  # type: ignore[import-not-found]
+
     monkeypatch.setattr(inv, '_repo_root', lambda: tmp_path)
-    orphan = tmp_path / '.plan' / 'local' / 'worktrees' / plan_id
+    orphan = file_ops.get_worktree_root() / plan_id
     orphan.mkdir(parents=True, exist_ok=True)
     return orphan
 

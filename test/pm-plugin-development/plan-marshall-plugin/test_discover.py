@@ -10,13 +10,12 @@ module under ``.plan/project-architecture/``). The
 per-module directories are ignored.
 """
 
-import importlib.util
 import json
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
+import plugin_discover
 from plugin_discover import (
     BUILD_SYSTEM,
     _is_plan_marshall_marketplace,
@@ -32,6 +31,8 @@ from plugin_discover import (
     load_plugin_json,
 )
 
+from conftest import load_script_module
+
 # =============================================================================
 # Cross-skill loader: import ``_architecture_core`` for layout fixtures.
 #
@@ -41,23 +42,8 @@ from plugin_discover import (
 # this import will fail loudly instead of letting these tests drift.
 # =============================================================================
 
-_ARCH_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-architecture'
-    / 'scripts'
-)
-
-
 def _load_arch_core():
-    spec = importlib.util.spec_from_file_location('_architecture_core', _ARCH_SCRIPTS_DIR / '_architecture_core.py')
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules['_architecture_core'] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 
 
 _architecture_core = _load_arch_core()
@@ -492,6 +478,52 @@ class TestPerModuleLayoutFixtures(unittest.TestCase):
             arch_dir = tmp_root / _architecture_core.DATA_DIR
             self.assertTrue((arch_dir / '_project.json').is_file())
             self.assertTrue((arch_dir / 'pm-plugin-development' / 'derived.json').is_file())
+
+
+class TestExtensionApiPathResolution(unittest.TestCase):
+    """The ``EXTENSION_API_DIR`` anchor is resolved via the validated
+    bundles-root helper plus ``resolve_bundle_path`` (no bare
+    ``BUNDLES_DIR / 'plan-marshall' / 'skills' / ...`` concatenation).
+    """
+
+    def test_extension_api_dir_resolves_to_real_scripts_dir(self):
+        """``EXTENSION_API_DIR`` points at the real extension-api scripts dir
+        under the resolved bundles root.
+        """
+        extension_api_dir = plugin_discover.EXTENSION_API_DIR
+        self.assertTrue(extension_api_dir.is_dir())
+        self.assertEqual(extension_api_dir.name, 'scripts')
+        self.assertEqual(extension_api_dir.parent.name, 'extension-api')
+
+    def test_resolve_bundle_path_prefers_version_pinned_cache_layout(self):
+        """The rerouted call shape honours the version-pinned plugin-cache
+        layout for the extension-api subpath.
+        """
+        from marketplace_bundles import resolve_bundle_path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            subpath = 'skills/extension-api/scripts'
+            versioned = base / 'plan-marshall' / '0.1-BETA' / 'skills' / 'extension-api' / 'scripts'
+            versioned.mkdir(parents=True)
+
+            resolved = resolve_bundle_path(base, 'plan-marshall', subpath)
+
+            self.assertEqual(resolved, versioned)
+
+    def test_resolve_bundle_path_falls_back_to_non_versioned_layout(self):
+        """When no version subdir holds the subpath, the non-versioned
+        marketplace join is returned (source-checkout layout).
+        """
+        from marketplace_bundles import resolve_bundle_path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            subpath = 'skills/extension-api/scripts'
+
+            resolved = resolve_bundle_path(base, 'plan-marshall', subpath)
+
+            self.assertEqual(resolved, base / 'plan-marshall' / subpath)
 
 
 if __name__ == '__main__':

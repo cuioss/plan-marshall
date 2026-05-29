@@ -42,6 +42,10 @@ from constants import (  # type: ignore[import-not-found]
     DIR_PER_MODULE_DERIVED,
     FILE_PROJECT_META,
 )
+from marketplace_bundles import (  # type: ignore[import-not-found]
+    resolve_bundle_path,
+    resolve_bundles_root,
+)
 
 
 def _load_module_or_raise(module_name: str, project_dir: str) -> dict[str, Any]:
@@ -112,9 +116,10 @@ _HINT_PER_TASK_TEMPLATE: str = 'Bash timeout={ms}ms'
 _HINT_ORCHESTRATOR: str = 'Exceeds Bash ceiling; orchestrator-tier only'
 
 # Marketplace bundle root, used to locate each build skill's ``_*_execute.py``
-# module for ``_CONFIG`` import. Resolved relative to this file so the lookup
-# works from any worktree.
-_MARKETPLACE_BUNDLES_DIR: Path = Path(__file__).resolve().parents[4]
+# module for ``_CONFIG`` import. Resolved via the validated bundles-root
+# helper (identity walking, no index arithmetic) so the lookup honours
+# version-pinned plugin-cache and worktree layouts.
+_MARKETPLACE_BUNDLES_DIR: Path = resolve_bundles_root(Path(__file__))
 
 # Build skills directory layout: each build skill stores its ``_CONFIG``
 # (the ExecuteConfig instance) in a module named ``_{skill}_execute.py``
@@ -227,7 +232,9 @@ def _load_build_config(tool_name: str) -> Any | None:
     if location is None:
         return None
     skill_dir, module_filename = location
-    module_path = _MARKETPLACE_BUNDLES_DIR / 'plan-marshall' / 'skills' / skill_dir / 'scripts' / module_filename
+    module_path = resolve_bundle_path(
+        _MARKETPLACE_BUNDLES_DIR, 'plan-marshall', f'skills/{skill_dir}/scripts/{module_filename}'
+    )
     if not module_path.is_file():
         return None
 
@@ -238,7 +245,9 @@ def _load_build_config(tool_name: str) -> Any | None:
     import sys  # local import: only when classification reaches this point
 
     scripts_dir = str(module_path.parent)
-    script_shared_dir = str(_MARKETPLACE_BUNDLES_DIR / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts' / 'build')
+    script_shared_dir = str(
+        resolve_bundle_path(_MARKETPLACE_BUNDLES_DIR, 'plan-marshall', 'skills/script-shared/scripts/build')
+    )
     added_paths: list[str] = []
     for candidate in (scripts_dir, script_shared_dir):
         if candidate not in sys.path:
@@ -289,7 +298,9 @@ def _lookup_bash_timeout(tool_name: str, command_args: str, project_dir: str) ->
     # Ensure the script-shared and manage-run-config directories are on
     # sys.path so the lazy imports resolve. ``_load_build_config`` already
     # added the shared build dir; this adds run-config.
-    run_config_dir = str(_MARKETPLACE_BUNDLES_DIR / 'plan-marshall' / 'skills' / 'manage-run-config' / 'scripts')
+    run_config_dir = str(
+        resolve_bundle_path(_MARKETPLACE_BUNDLES_DIR, 'plan-marshall', 'skills/manage-run-config/scripts')
+    )
     if run_config_dir not in sys.path:
         sys.path.insert(0, run_config_dir)
 

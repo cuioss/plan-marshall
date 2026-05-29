@@ -13,29 +13,13 @@ Test layers:
   * End-to-end: ``analyze_executor_path_in_production`` scanning a minimal marketplace tree.
 """
 
-import importlib.util
-import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-_SCRIPTS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'pm-plugin-development'
-    / 'skills'
-    / 'plugin-doctor'
-    / 'scripts'
-)
+from conftest import load_script_module
 
 
 def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
 
 
 _aepip = _load_module(
@@ -157,6 +141,68 @@ class TestProductionScriptFinding:
         f = findings[0]
         for key in ('rule_id', 'file', 'line', 'category', 'snippet'):
             assert key in f
+
+
+# ===========================================================================
+# Helper-based compliance: get_executor_path() callers are COMPLIANT
+# ===========================================================================
+
+
+class TestHelperBasedCompliance:
+    """Production code that adopts ``file_ops.get_executor_path()`` is COMPLIANT.
+
+    The detection literal is RETAINED — a file embedding the executor path
+    WITHOUT adopting the helper is still flagged (see
+    :class:`TestProductionScriptFinding`). A file that references the helper is
+    treated as COMPLIANT even when it still contains a residual
+    ``.plan/execute-script.py`` literal (docstring/comment/error-message
+    reference or a defensive fallback string).
+    """
+
+    def test_helper_caller_with_residual_literal_is_compliant(self, tmp_path: Path) -> None:
+        # A production script that imports + calls get_executor_path() but also
+        # keeps the literal in a docstring/fallback — must NOT be flagged.
+        mp = _make_marketplace(tmp_path)
+        py = mp / 'bundles' / 'my-bundle' / 'skills' / 'my-skill' / 'scripts' / 'runner.py'
+        _write_py(
+            py,
+            '"""Invoked via the executor proxy: python3 .plan/execute-script.py."""\n'
+            'from file_ops import get_executor_path\n'
+            'executor = get_executor_path()\n'
+            'fallback = str(executor) if executor else ".plan/execute-script.py"\n',
+        )
+        findings = analyze_executor_path_in_production(mp)
+        assert findings == []
+
+    def test_helper_definition_site_is_compliant(self, tmp_path: Path) -> None:
+        # The helper-definition site itself (file_ops.py defining
+        # get_executor_path) keeps the literal in docstrings; it is COMPLIANT
+        # because it references the helper name.
+        mp = _make_marketplace(tmp_path)
+        py = mp / 'bundles' / 'plan-marshall' / 'skills' / 'tools-file-ops' / 'scripts' / 'file_ops.py'
+        _write_py(
+            py,
+            'def get_executor_path():\n'
+            '    """Return the canonical path to .plan/execute-script.py."""\n'
+            "    return root / '.plan' / 'execute-script.py'\n",
+        )
+        findings = analyze_executor_path_in_production(mp)
+        assert findings == []
+
+    def test_old_hardcoded_form_without_helper_still_flagged(self, tmp_path: Path) -> None:
+        # A production script that embeds the literal WITHOUT adopting the
+        # helper is still flagged — the detection literal is RETAINED.
+        mp = _make_marketplace(tmp_path)
+        py = mp / 'bundles' / 'my-bundle' / 'skills' / 'my-skill' / 'scripts' / 'legacy.py'
+        _write_py(
+            py,
+            '# Legacy: hardcoded executor path, no helper adoption\n'
+            "executor = Path.cwd() / '.plan/execute-script.py'\n",
+        )
+        findings = analyze_executor_path_in_production(mp)
+        assert len(findings) >= 1
+        assert findings[0]['category'] == 'production_script'
+        assert '.plan/execute-script.py' in findings[0]['snippet']
 
 
 # ===========================================================================
