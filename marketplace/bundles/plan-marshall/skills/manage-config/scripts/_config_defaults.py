@@ -175,6 +175,7 @@ DEFAULT_PLAN_EXECUTE = {
 # Prefixed with 'default:' to distinguish from project: and fully-qualified skill steps
 BUILT_IN_FINALIZE_STEPS = [
     'default:pre-push-quality-gate',
+    'default:finalize-step-simplify',
     'default:commit-push',
     'default:create-pr',
     'default:ci-verify',
@@ -183,6 +184,7 @@ BUILT_IN_FINALIZE_STEPS = [
     'default:lessons-capture',
     'default:branch-cleanup',
     'default:record-metrics',
+    'default:finalize-step-print-phase-breakdown',
     'default:archive-plan',
 ]
 
@@ -197,6 +199,7 @@ OPTIONAL_BUNDLE_FINALIZE_STEPS = [
 # Human-readable descriptions for built-in finalize steps
 BUILT_IN_FINALIZE_STEP_DESCRIPTIONS = {
     'default:pre-push-quality-gate': 'Run quality-gate per affected bundle as the last gate before push',
+    'default:finalize-step-simplify': 'Holistic post-implementation simplification sweep — collapse accidental complexity introduced across the plan diff',
     'default:commit-push': 'Commit and push changes',
     'default:create-pr': 'Create pull request',
     'default:ci-verify': 'Classify CI run failures into the multi-failure-mode taxonomy and emit one structured triage finding per failing check (requires: [ci-complete] in consume-failures mode)',
@@ -205,6 +208,7 @@ BUILT_IN_FINALIZE_STEP_DESCRIPTIONS = {
     'default:lessons-capture': 'Capture lessons from triage findings and PR-review escalations (skipped when qgate_findings=0, pr_comments_promoted=0, and script_failure_clusters=0)',
     'default:branch-cleanup': 'Clean up post-merge branch state — merges the PR with --delete-branch when create-pr is in the manifest; otherwise prunes local + remote branches directly',
     'default:record-metrics': 'Record final plan metrics before archive',
+    'default:finalize-step-print-phase-breakdown': 'Optional finalize-summary supplement that captures the Phase Breakdown table from metrics.md and appends it after the per-step [OK] list',
     'default:archive-plan': 'Archive the completed plan',
 }
 

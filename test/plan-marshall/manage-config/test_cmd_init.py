@@ -189,11 +189,15 @@ def test_init_includes_phase_6_finalize(plan_context):
     assert 'default:commit-push' in finalize['steps']
     assert 'default:record-metrics' in finalize['steps']
     assert 'default:archive-plan' in finalize['steps']
-    # Ordering invariant: record-metrics must run immediately before archive-plan,
-    # because archive moves the plan directory and would leave metrics nowhere to write.
+    # Ordering invariant: archive-plan must be the final finalize step (it moves the
+    # plan directory, so nothing may run after it), and record-metrics must precede it
+    # so metrics.md is written before the directory moves. The optional
+    # print-phase-breakdown summary step legitimately runs between them — it reads
+    # metrics.md and writes into the plan dir before archive captures it.
     record_idx = finalize['steps'].index('default:record-metrics')
     archive_idx = finalize['steps'].index('default:archive-plan')
-    assert record_idx + 1 == archive_idx, 'default:record-metrics must immediately precede default:archive-plan'
+    assert archive_idx == len(finalize['steps']) - 1, 'default:archive-plan must be the final finalize step'
+    assert record_idx < archive_idx, 'default:record-metrics must precede default:archive-plan'
     assert '1_commit_push' not in finalize, 'Old boolean keys should not exist'
 
 

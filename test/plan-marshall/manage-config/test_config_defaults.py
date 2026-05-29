@@ -285,3 +285,39 @@ def test_plan_phase_2_refine_get_simplicity_returns_lean_default(plan_context):
     # Assert — default merge surfaces 'lean'
     assert result['status'] == 'success'
     assert result['value'] == 'lean'
+
+
+def test_built_in_finalize_steps_includes_finalize_step_simplify_at_order_8_position():
+    """default:finalize-step-simplify occupies the order-8 ordinal slot in BUILT_IN_FINALIZE_STEPS.
+
+    The slot is index 1: after default:pre-push-quality-gate (order 5, index 0)
+    and before default:commit-push (order 10, index 2).
+    """
+    # Arrange
+    steps = _config_defaults_mod.BUILT_IN_FINALIZE_STEPS
+
+    # Act / Assert — presence and ordinal placement
+    assert 'default:finalize-step-simplify' in steps, (
+        'default:finalize-step-simplify must be seeded into BUILT_IN_FINALIZE_STEPS'
+    )
+    assert steps[0] == 'default:pre-push-quality-gate'
+    assert steps[1] == 'default:finalize-step-simplify'
+    assert steps[2] == 'default:commit-push'
+
+
+def test_built_in_finalize_step_descriptions_includes_finalize_step_simplify():
+    """default:finalize-step-simplify must carry a non-empty description entry.
+
+    The descriptions dict must stay in sync with BUILT_IN_FINALIZE_STEPS so
+    list-finalize-steps can surface a human-readable description.
+    """
+    # Arrange
+    descriptions = _config_defaults_mod.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
+
+    # Act / Assert
+    assert 'default:finalize-step-simplify' in descriptions, (
+        'default:finalize-step-simplify must have a BUILT_IN_FINALIZE_STEP_DESCRIPTIONS entry'
+    )
+    assert descriptions['default:finalize-step-simplify'], (
+        'default:finalize-step-simplify description must be non-empty'
+    )

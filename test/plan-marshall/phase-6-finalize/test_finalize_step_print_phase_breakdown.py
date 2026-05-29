@@ -93,9 +93,12 @@ class TestStandardsFrontmatter:
         assert description, 'frontmatter description is required'
         assert len(description) >= 30, f'description too short: {description!r}'
 
-    def test_order_is_995(self, frontmatter: dict[str, str]):
-        # 995 slots between record-metrics (990) and archive-plan (1000).
-        assert frontmatter['order'] == '995'
+    def test_order_is_997(self, frontmatter: dict[str, str]):
+        # 997 slots between plan-retrospective (995) and archive-plan (1000),
+        # after record-metrics (990) has written metrics.md. The value avoids a
+        # collision with plan-retrospective, which also claims 995, now that
+        # print-phase-breakdown is a discoverable default built-in step.
+        assert frontmatter['order'] == '997'
 
 
 class TestStandardsBodyContract:

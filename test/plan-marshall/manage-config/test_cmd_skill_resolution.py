@@ -303,6 +303,25 @@ def test_list_finalize_steps_count(plan_context, monkeypatch):
     assert result['count'] >= 7
 
 
+def test_list_finalize_steps_surfaces_finalize_step_simplify(plan_context, monkeypatch):
+    """list-finalize-steps surfaces default:finalize-step-simplify with its description."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_list_finalize_steps(Namespace())
+
+    assert result['status'] == 'success'
+    simplify = next(
+        (s for s in result['steps'] if s['name'] == 'default:finalize-step-simplify'),
+        None,
+    )
+    assert simplify is not None, (
+        'default:finalize-step-simplify must be surfaced by list-finalize-steps'
+    )
+    assert simplify['description'], (
+        'default:finalize-step-simplify must carry a non-empty description'
+    )
+
+
 def test_list_finalize_steps_discovers_project_skills(plan_context):
     """Test list-finalize-steps discovers project-local finalize-step-* skills.
 
