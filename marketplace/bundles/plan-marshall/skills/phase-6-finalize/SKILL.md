@@ -607,27 +607,51 @@ FOR each step_id in manifest.phase_6.steps:
 
       a. Compute three signal counts (the body documented these inline; the dispatcher computes them now):
 
-         **Signal 1 — pending Q-Gate findings (sum across five phases)**:
-         For each phase in `{2-refine, 3-outline, 4-plan, 5-execute, 6-finalize}`, invoke:
+         **Signal 1 — Q-Gate findings, pending OR resolved-in-run (sum across five phases)**:
+         For each phase in `{2-refine, 3-outline, 4-plan, 5-execute, 6-finalize}`, invoke the pending query:
 
             python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
               qgate list --plan-id {plan_id} --phase {phase} --resolution pending
 
-         Parse `filtered_count` from each TOON output. `signal_1_count` is the SUM of the five counts. (`total_count` is the unfiltered cardinality of the entire findings store and MUST NOT be used as the pending-count signal — the call filters by `--resolution pending`, so the matching count lives in `filtered_count`.)
+         Parse `filtered_count` from each TOON output — this is the per-phase pending count. (`total_count` is the unfiltered cardinality of the entire findings store and MUST NOT be used as the pending-count signal — the call filters by `--resolution pending`, so the matching count lives in `filtered_count`.) Sum the five `filtered_count` values into `pending_subtotal`.
 
-         **Signal 2 — automated-review outcome**:
+         Then, for each of the same five phases, count the Q-Gate findings the run RESOLVED. The Q-Gate facet shares the same resolved-in-run blind spot as Signals 2 and 3: a finding that was raised AND resolved (`fixed` / `suppressed` / `accepted` / `taken_into_account`) within the run is a slipped-then-caught defect — the highest-value lesson class — yet a pending-only count contributes zero for it. For each phase, invoke the four non-pending resolution filters and sum their `filtered_count` values:
+
+            python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+              qgate list --plan-id {plan_id} --phase {phase} --resolution fixed
+            python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+              qgate list --plan-id {plan_id} --phase {phase} --resolution suppressed
+            python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+              qgate list --plan-id {plan_id} --phase {phase} --resolution accepted
+            python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+              qgate list --plan-id {plan_id} --phase {phase} --resolution taken_into_account
+
+         Parse `filtered_count` from each (NOT `total_count`) and sum all twenty values (five phases × four non-pending resolutions) into `resolved_subtotal`. `signal_1_count = pending_subtotal + resolved_subtotal`, so Signal 1 fires on EITHER pending OR resolved-in-run Q-Gate findings — symmetric with the remediated-in-run triggers added to Signals 2 and 3.
+
+         **Signal 2 — automated-review outcome (outstanding OR remediated-in-run)**:
 
             python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
               read --plan-id {plan_id}
 
-         Locate the `automated-review` step under `metadata.phase_steps["6-finalize"]`. `signal_2_count = 1` when any of the following holds; `0` otherwise: (a) `outcome` is anything other than `done`, (b) `display_detail` reports a non-zero promoted-comment count (e.g. `"3 comments promoted"`).
+         Locate the `automated-review` step under `metadata.phase_steps["6-finalize"]`. Then query the count of review-bot findings the run REMEDIATED:
 
-         **Signal 3 — script-failure clusters**:
+            python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+              list --plan-id {plan_id} --type pr-comment --resolution fixed
+
+         Parse `filtered_count` from that TOON output (the `--resolution fixed` filter narrows the `artifacts/findings/pr-comment.jsonl` store to the in-run-fixed entries). `signal_2_count = 1` when ANY of the following holds; `0` otherwise: (a) `outcome` is anything other than `done`, (b) `display_detail` reports a non-zero promoted-comment count (e.g. `"3 comments promoted"`), (c) the `manage-findings list --type pr-comment --resolution fixed` query returns one or more findings (`filtered_count >= 1`). Trigger (c) is the remediated-in-run facet: a review-bot finding caught-and-fixed within the same run resolves to zero outstanding comments and leaves the step `outcome=done`, so triggers (a) and (b) both report zero — yet the run carried a lesson-bearing slipped-then-caught defect (the originating `hash_id=d9c3c7` case). Counting `resolution=fixed` pr-comment findings fires the signal for exactly that class. Triggers (a) and (b) are preserved unchanged.
+
+         **Signal 3 — script-failure clusters (three marker classes)**:
 
             python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
               read --plan-id {plan_id} --type work
 
-         Scan the returned log lines for `[FAILED]` markers and bucket them by distinct failing script notation (the `bundle:skill:script` token in each `[FAILED]` line). `signal_3_count` is the number of distinct notations.
+         Scan the returned log lines for THREE marker classes and bucket each by the distinct failing script notation (the `bundle:skill:script` token in the line):
+
+         - **`[FAILED]`** lines — the historical marker class (explicit failure markers).
+         - **`[ERROR] ... script_failure`** lines — the canonical per-call non-zero-exit marker emitted by the phase Error Handling sections (argparse rejections, internal errors, "Unknown notation" failures). These never carry a `[FAILED]` token, so the historical scan missed them entirely.
+         - **`voluntary_checkpoint → error`** reclassifications — the dispatch-boundary no-progress reclassification (B7); the failing notation is the dispatched workflow/agent whose dispatch was reclassified.
+
+         `signal_3_count` is the number of distinct notations across the UNION of all three marker classes. The union dedups by distinct notation: a notation that fails under more than one marker class counts once. The motivating case is `2026-05-29-21-001` — long builds lost across the dispatch boundary, logged as `[ERROR] script_failure` plus a `voluntary_checkpoint → error` reclassification but never a `[FAILED]` line, so the historical `[FAILED]`-only scan reported zero and the gate short-circuited against a fix-bearing run. This broadened marker set is kept consistent with the retrospective analyzer's failure-marker set (lesson `2026-05-29-12-001`): both bucket `[FAILED]`, `[ERROR] ... script_failure`, and `voluntary_checkpoint → error` by distinct failing notation, so the Signal-Gate count and the retrospective's script-failure cluster count stay aligned.
 
       b. Three-zero short-circuit:
 
