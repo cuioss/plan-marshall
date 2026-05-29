@@ -109,20 +109,37 @@ def _restore_marshal_json():
     ``autouse=True`` — it is the safety net that makes the tests safe to
     run repeatedly without manual cleanup.
 
-    Restoration is done in the finally block so test failures do not leave
-    the working tree dirty for subsequent tests or CI runs.
+    The restore is applied to **both** the git-common-dir checkout root and
+    ``PROJECT_ROOT``. When the suite runs inside a git worktree these two
+    paths diverge: the worktree owns an independent checked-out copy of the
+    tracked ``.plan/marshal.json``, while ``--git-common-dir`` resolves to
+    the primary checkout. Restoring only one tree leaves the other polluted —
+    the exact failure mode lesson 2026-05-28-23-001 guards against. Restoring
+    both (a no-op when they coincide, as in CI's plain checkout) keeps the
+    test hermetic regardless of execution model.
+
+    Restoration is done after ``yield`` so test failures do not leave the
+    working tree dirty for subsequent tests or CI runs.
     """
     main_root = _resolve_main_checkout_root()
     yield
     # Always restore — even if the test itself never dirtied the file.
-    # ``git checkout --`` on an already-clean file is a no-op.
-    subprocess.run(
-        ['git', 'checkout', '--', '.plan/marshal.json'],
-        cwd=main_root,
-        capture_output=True,
-        check=False,  # Non-fatal: if restoration fails, subsequent tests will detect via pollution guard.
-        timeout=10,
-    )
+    # ``git checkout --`` on an already-clean file is a no-op. Restore both
+    # the common-dir root and PROJECT_ROOT so a worktree run cannot leave
+    # either checkout's copy dirty (the two paths coincide outside worktrees).
+    seen: set[Path] = set()
+    for root in (main_root, PROJECT_ROOT):
+        resolved = root.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        subprocess.run(
+            ['git', 'checkout', '--', '.plan/marshal.json'],
+            cwd=root,
+            capture_output=True,
+            check=False,  # Non-fatal: if restoration fails, subsequent tests will detect via pollution guard.
+            timeout=10,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +166,7 @@ def test_manage_config_set_dirties_marshal_json() -> None:
     marshal_path = main_root / '.plan' / 'marshal.json'
 
     # Arrange — pre-condition: the file must be tracked and clean.
-    assert marshal_path.exists(), (
+    assert marshal_path.is_file(), (
         f'marshal.json not found at {marshal_path}. '
         'The test requires a fully-initialized repository with marshal.json tracked.'
     )
