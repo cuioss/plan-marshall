@@ -261,7 +261,34 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fi
   --settings .claude/settings.json
 ```
 
-**Finalize steps** (phase-6-finalize): Discover available steps, present as multi-select, then apply:
+**Finalize steps** (phase-6-finalize): preset-first, with a Custom escape hatch. Present the finalize-step preset picker BEFORE the per-step `list-finalize-steps` / `set-steps` multi-select, mirroring the single-AskUserQuestion preset-picker pattern documented in [effort-menu.md](../standards/effort-menu.md) (do not inline-copy that flow — the normative contract lives there). The three preset descriptions are sourced verbatim from `FinalizeStepPresets.describe(name)` (`finalize_step_presets.py`), and the Custom option falls through to the existing per-step multi-select.
+
+Optionally detect the current preset first — deep-equality of `plan.phase-6-finalize.steps` against `FinalizeStepPresets.get(name)` for each name in `FinalizeStepPresets.all_names()` — and surface it as `Current: {name} preset` / `Current: custom (manually edited)`, mirroring effort-menu Step 1.
+
+```
+AskUserQuestion:
+  question: "Finalize-step pipeline — pick a preset"
+  header: "Finalize Steps"
+  options:
+    - label: "Apply local preset"
+      description: <FinalizeStepPresets.describe("local")>
+    - label: "Apply standard preset"
+      description: <FinalizeStepPresets.describe("standard")>
+    - label: "Apply full preset"
+      description: <FinalizeStepPresets.describe("full")>
+    - label: "Custom"
+      description: "Pick individual steps via the per-step multi-select"
+  multiSelect: false
+```
+
+On a preset choice (`local`, `standard`, or `full`), apply it and skip the per-step multi-select:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  finalize-steps apply-preset --preset {name}
+```
+
+On `Custom`, fall through to the per-step multi-select escape hatch — discover available steps, present as multi-select, then apply:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-finalize-steps
 ```
@@ -584,7 +611,7 @@ This regenerates the per-module architecture layout under `.plan/project-archite
 
 ## Configuration: Credentials & Secrets
 
-Manage credentials for external tool authentication (SonarCloud, etc.). System-authenticated providers (CI tools like `gh`/`glab` and `git`) are managed via Step 14 of the wizard and the Health Check menu. This section covers token/basic-auth providers only. All provider `skill_name` values use bundle-prefixed format (e.g., `plan-marshall:workflow-integration-sonar`).
+Manage credentials for external tool authentication (SonarCloud, etc.). System-authenticated providers (CI tools like `gh`/`glab` and `git`) are managed via Step 13 of the wizard and the Health Check menu. This section covers token/basic-auth providers only. All provider `skill_name` values use bundle-prefixed format (e.g., `plan-marshall:workflow-integration-sonar`).
 
 ### Credentials Submenu
 

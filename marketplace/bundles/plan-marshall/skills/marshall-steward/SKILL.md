@@ -17,15 +17,32 @@ Project configuration wizard for the planning system.
 
 ## Banner
 
-At command start, produce the banner by running `print_logo.py` and surfacing its stdout — do NOT reproduce the ASCII-art block inside your response.
+At command start, emit the following banner verbatim to the user:
 
-**BOOTSTRAP**: The banner is emitted before the executor exists, so use a DIRECT Python call. Resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/print_logo.py` and capture the first match as `{PRINT_LOGO}`. Then invoke it directly:
-
-```bash
-python3 "{PRINT_LOGO}"
 ```
-
-Surface the script's stdout verbatim to the user. The script prints the full banner and exits 0.
+╔═══════════════════════════════════════════════════════════════════════╗
+║                                 :                                     ║
+║                               .;:;.                                   ║
+║                              :;:::;:                                  ║
+║          ...             .;:::::::::;.              ...               ║
+║          .::;:::::::::::::;:::::::::;:::::::::::::;::.                ║
+║               :;:::::::::::::::::::::::::::::::;:                     ║
+║                .;:::::::::::::::::::::::::::::;.                      ║
+║                                                                       ║
+║                        █▀█ █   █▀█ █▄ █                               ║
+║                        █▀▀ █▄▄ █▀█ █ ▀█                               ║
+║                  █▀▄▀█ █▀█ █▀█ █▀ █ █ █▀█ █   █                       ║
+║                  █ ▀ █ █▀█ █▀▄ ▄█ █▀█ █▀█ █▄▄ █▄▄                     ║
+║                                                                       ║
+║                .;:::::::::::::::::::::::::::::;.                      ║
+║               :;:::::::::::::::::::::::::::::::;:                     ║
+║          .::;:::::::::::::;:::::::::;:::::::::::::;::.                ║
+║         ...              .;:::::::::;.              ...               ║
+║                              :;:::;:                                  ║
+║                               .;:;.                                   ║
+║                                 :                                     ║
+╚═══════════════════════════════════════════════════════════════════════╝
+```
 
 ---
 
@@ -64,7 +81,6 @@ Surface the script's stdout verbatim to the user. The script prints the full ban
 | determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `seed-blocking-finding-types` for the wizard's blocking-partition seed step |
 | gitignore_setup | `plan-marshall:marshall-steward:gitignore_setup` | Configure .gitignore for .plan/ |
 | bootstrap_plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/local/marshall-state.toon` |
-| print_logo | _(direct Python call)_ | Print the marshall-steward ASCII-art banner at command start |
 
 ### Delegated Scripts (require executor)
 
@@ -202,14 +218,16 @@ Then execute the workflow described in that file. Each reference file is loaded 
 
 | Reference | Purpose | Load When |
 |-----------|---------|-----------|
-| `wizard-flow.md` | First-run wizard steps 1-16 (includes architecture_refresh tier prompts at Step 13d) | mode=wizard or --wizard flag |
+| `wizard-flow.md` | First-run wizard steps 1-15 (bootstrap 1-4, configuration 5 onwards) | mode=wizard or --wizard flag |
+| `provider-setup.md` | Provider discovery/activation, CI detection, credential setup (extracted from wizard-flow.md) | Linked from `wizard-flow.md` (provider/CI/credential steps) |
+| `architecture-setup.md` | Extension defaults, module discovery, build commands, Maven profiles, LLM analysis + architecture_refresh tier knobs (extracted from wizard-flow.md) | Linked from `wizard-flow.md` Step 8 |
+| `skill-domains-setup.md` | Skill-domain configuration, profile activation, execute-task/recipe registration (extracted from wizard-flow.md) | Linked from `wizard-flow.md` Step 9 |
 | `menu-maintenance.md` | Regenerate executor, cleanup | Menu option 1 |
 | `menu-healthcheck.md` | Verify setup, diagnose issues | Menu option 2 |
 | `menu-configuration.md` | Build systems, skill domains, architecture refresh tier knobs | Menu option 3 |
 | `standards/effort-menu.md` | Per-phase effort configuration (Effort submenu) | Menu option 4 |
 | `menu-recipes.md` | Built-in recipes available in the wizard | Linked from `menu-configuration.md` |
 | `menu-terminal-title.md` | Two-action sub-menu: install render-hook wiring; override active-plan for the current session | Linked from `menu-configuration.md` (Terminal Title) |
-| `shared-settings.md` | **DEPRECATED** — Plan phases, review gates, quality pipelines now delegate to `manage-config` | Retained for transition reference only |
 | `error-handling.md` | Error types and recovery | On error conditions |
 
 ---
@@ -220,9 +238,11 @@ The wizard seeds `phase-6-finalize.steps` in `marshal.json` from the
 authoritative `BUILT_IN_FINALIZE_STEPS` list defined in
 `manage-config/scripts/_config_defaults.py`. The list intentionally
 covers only steps that are sensible defaults for **any** plan-marshall
-consumer (commit-push, create-pr, automated-review, sonar-roundtrip,
-lessons-capture, branch-cleanup, record-metrics, archive-plan, plus the
-opt-in pre-push-quality-gate gate).
+consumer (pre-push-quality-gate, commit-push, create-pr, ci-verify,
+automated-review, sonar-roundtrip, lessons-capture, branch-cleanup,
+record-metrics, archive-plan). `pre-push-quality-gate` is a built-in
+default like the rest; it simply stays inactive until its
+`pre_push_quality_gate.activation_globs` list is populated.
 
 Steps that are **meta-project-only** — e.g. running the multi-target
 generator and pushing the host plugin cache — are NOT in
@@ -341,10 +361,10 @@ Surfaces inside this skill:
 
 | Surface | Reference | Section |
 |---------|-----------|---------|
-| First-run wizard | `references/wizard-flow.md` | Step 13d |
-| Maintenance menu (returning users) | `references/wizard-flow.md` | Step 13d (reached via Configuration → Full Reconfigure, which re-runs the wizard from Step 5 onwards) |
+| First-run wizard | `references/architecture-setup.md` | Architecture Refresh Tier Knobs (reached via wizard-flow.md Step 8) |
+| Maintenance menu (returning users) | `references/architecture-setup.md` | Architecture Refresh Tier Knobs (reached via Configuration → Full Reconfigure, which re-runs the wizard from Step 5 onwards) |
 
-Both surfaces share the same wizard-flow Step 13d question set, and both delegate persistence to the `manage-run-config architecture-refresh set-tier-*` subcommands — this skill never edits `run-config.json` directly.
+Both surfaces share the same `architecture-setup.md` tier-knob question set, and both delegate persistence to the `manage-run-config architecture-refresh set-tier-*` subcommands — this skill never edits `run-config.json` directly.
 
 ---
 
