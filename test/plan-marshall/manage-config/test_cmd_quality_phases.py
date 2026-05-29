@@ -35,14 +35,17 @@ def _load_module(name, filename):
     return mod
 
 
-# Load _cmd_quality_phases first so it's registered in sys.modules BEFORE _cmd_system_plan
-# does `from _cmd_quality_phases import cmd_phase` — both modules must share the same instance
-# for monkeypatching `_discover_steps_for_phase` to take effect during cmd_plan dispatch.
-_cmd_quality_phases = _load_module('_cmd_quality_phases', '_cmd_quality_phases.py')
-_cmd_system_plan = _load_module('_cmd_system_plan', '_cmd_system_plan.py')
+# Load dependency modules first so sys.modules is populated with test-controlled instances
+# before _cmd_quality_phases executes its module-level imports. This ensures patch.object
+# calls in tests (e.g. patching _cmd_skill_domains.BUNDLES_DIR) affect the same objects
+# that _cmd_quality_phases holds references to.
+# _cmd_quality_phases must still be registered in sys.modules BEFORE _cmd_system_plan
+# does `from _cmd_quality_phases import cmd_phase` — preserving that ordering.
 _cmd_skill_domains = _load_module('_cmd_skill_domains', '_cmd_skill_domains.py')
 _cmd_skill_resolution = _load_module('_cmd_skill_resolution', '_cmd_skill_resolution.py')
 _config_defaults = _load_module('_config_defaults', '_config_defaults.py')
+_cmd_quality_phases = _load_module('_cmd_quality_phases', '_cmd_quality_phases.py')
+_cmd_system_plan = _load_module('_cmd_system_plan', '_cmd_system_plan.py')
 
 cmd_plan = _cmd_system_plan.cmd_plan
 
